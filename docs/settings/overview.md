@@ -50,7 +50,8 @@ On first open of a vault `initializeSettings` is called. If `.settings` is absen
 appearance:
   theme: ink
   icon: hopper-crystal
-  editorFont: Monaspace Xenon
+  uiFont: Monaspace Xenon
+  proseFont: Lora
   editorFontSize: 13.5
   ...
 graph:
@@ -172,8 +173,8 @@ interface SchemaEntry {
 |---|---|---|---|---|
 | `theme` | enum | `ink` | 4 values | Bismuth color theme; selects all colors in the app and graph. Values: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream+indigo, light). |
 | `icon` | enum | `hopper-crystal` | 14 values | App logo mark (favicon + sidebar). Values: `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings`. |
-| `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
-| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
+| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND the mono constructs inside a note (code blocks, inline code, frontmatter, math, in-note tags). Config buffers (`.settings`, `*.yaml`) render entirely in it. |
+| `proseFont` | enum | `Lora` | `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for note body text, note headings, note tables, chat message bodies and the chat composer. Default `Lora` (family string `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
 | `editorFontSize` | number | `13.5` | 11–28 | Note prose font size in px — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size. |
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
@@ -219,7 +220,7 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1.5` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.5` -> 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`) at ~16.9px; 27px of leading gives a 1.6 ratio, the normal range for serif body text — 18px (the old 13.5px-mono-tuned default) would only give 1.07, visibly cramped. |
+| `lineHeight` | number | `1.5` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.5` -> 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale` (`1.04`) ≈ 14px; 27px of leading gives it a loose ~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a rational multiple of the row unit on purpose — 18px (the pre-redesign default) would only give ~1.28. |
 | `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
 | `wrapSelectionChars` | list (string) | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes already wrap via auto-close, so they're omitted by default. |

@@ -24,11 +24,9 @@ describe('settingsToCssVars', () => {
         expect(vars['--ui-font-stack']).toBe(
             "'Monaspace Xenon', ui-monospace, monospace",
         ) // resolved through FONT_STACKS, from appearance.uiFont
-        // DEPRECATED ALIAS (deleted by Task 4): sourced from uiFont, never from the removed
-        // editorFont, so it can never disagree with --ui-font-stack while it's alive.
-        expect(vars['--editor-font']).toBe(
-            "'Monaspace Xenon', ui-monospace, monospace",
-        )
+        // The --editor-font alias is gone (deleted by Task 4): the emitted map must not carry
+        // the key at all, not just an empty/undefined value.
+        expect('--editor-font' in vars).toBe(false)
         expect(vars['--prose-font']).toBe(
             "'Lora Variable', Lora, Georgia, serif",
         ) // resolved through FONT_STACKS, from appearance.proseFont
@@ -50,12 +48,12 @@ describe('settingsToCssVars', () => {
         expect(vars['--accent-purple']).toBe(t.accentPalette[1])
     })
 
-    it('falls back to the default mono stack when uiFont is not a known key (UI + the --editor-font alias)', () => {
+    it('falls back to the default mono stack when uiFont is not a known key', () => {
         const s = structuredClone(DEFAULTS)
         s.appearance.uiFont = 'Comic Sans'
         const vars = settingsToCssVars(s)
         expect(vars['--ui-font-stack']).toBe(FONT_STACKS['Monaspace Xenon'])
-        expect(vars['--editor-font']).toBe(FONT_STACKS['Monaspace Xenon'])
+        expect('--editor-font' in vars).toBe(false)
     })
 
     it('falls back to the default prose stack when proseFont is not a known key', () => {

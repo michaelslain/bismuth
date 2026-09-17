@@ -195,10 +195,6 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
             FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS['Monaspace Xenon'],
         '--prose-font':
             FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['Lora'],
-        // DEPRECATED ALIAS, deleted by Task 4 once nothing reads it. Sourced from uiFont, NOT
-        // from the removed editorFont, so the two can never disagree while the alias is alive.
-        '--editor-font':
-            FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS['Monaspace Xenon'],
         '--editor-font-size': s.appearance.editorFontSize + 'px',
         '--sidebar-width': s.appearance.sidebarWidth + 'px',
         '--sidebar-graph-height': s.appearance.sidebarGraphHeight + 'px',

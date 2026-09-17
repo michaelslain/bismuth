@@ -14,13 +14,13 @@
    (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
    crystal, a four swatch-card theme picker (not a dropdown),
    power-ups as <Card> rows (ui/Card.tsx) with a Chip toggle, and the CTA as the one bracket
-   btn--primary in the takeover. A face picker (5 Monaspace variants) was considered but
-   deliberately left out: PORTING's own "if trivially wired to appearance.uiFont/editorFont
-   SEEDS" is conditional, and it isn't trivial here — persisting a chosen face into the
-   NEW vault would need either a new choose_first_vault argument (a Tauri command-contract
-   change, explicitly out of scope) or a post-restart apply step wired in App.tsx (out of
-   this lane's file boundary). A picker that only live-previewed the intro's own text
-   without actually seeding the vault would be misleading, so it's omitted rather than
+   btn--primary in the takeover. A face picker (5 Monaspace variants, plus Lora for the prose
+   face) was considered but deliberately left out: PORTING's own "if trivially wired to
+   appearance.uiFont/proseFont SEEDS" is conditional, and it isn't trivial here — persisting a
+   chosen face into the NEW vault would need either a new choose_first_vault argument (a Tauri
+   command-contract change, explicitly out of scope) or a post-restart apply step wired in
+   App.tsx (out of this lane's file boundary). A picker that only live-previewed the intro's own
+   text without actually seeding the vault would be misleading, so it's omitted rather than
    half-built. */
 import {
     For,

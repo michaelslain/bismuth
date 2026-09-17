@@ -1618,7 +1618,7 @@ export const livePreview = [
         // Body #hashtags read gold (ASCII redesign: prose tags use --gold, not --teal), in the
         // editor's mono face at the editor size — the same pair the chat transcript, the Milkdown
         // chip and the in-table chip use, so a #tag reads identically on every surface (the user's
-        // call, 2026-09-03). --editor-font rather than the MONO_FONT literal so appearance.editorFont
+        // call, 2026-09-03). --ui-font-stack rather than the MONO_FONT literal so appearance.uiFont
         // still governs it, per Editor.css's family-list note; the token's default IS MONO_FONT's
         // stack, so this is a no-op under default settings. The SIZE comes from Editor.css's size
         // list (a class that sets font-family inline here needs an entry there — see that comment).
