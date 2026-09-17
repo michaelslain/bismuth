@@ -220,3 +220,40 @@ test('UNQUOTED from: [[Base]] in a base file still scopes tasks (YAML nested-arr
     const rows = await resolveBaseRows('DoNow.md', { root: dir })
     expect(rows.map(r => r.note.description)).toEqual(['scoped'])
 })
+
+// An own-rows base (no `source:`) returns the parse's table rows directly, so identity
+// of the returned array is identity of the cached parse's `rows` — the most direct way
+// to observe that the second call skipped parseBaseFile and reused the cache entry.
+test('resolveBaseRows reuses the parsed rows by reference when the file is unchanged', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    const first = await resolveBaseRows('Own.md', { root: dir })
+    const second = await resolveBaseRows('Own.md', { root: dir })
+    expect(second).toBe(first)
+})
+
+test('resolveBaseRows re-parses after the base file is rewritten, even within the same mtime tick', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    const first = await resolveBaseRows('Own.md', { root: dir })
+    expect(first[0].note.title).toBe('Hi')
+
+    // Rewrite immediately — no sleep, so this can land within the same mtime tick as the
+    // first read. A mtime-keyed cache would incorrectly serve the stale 'Hi' row here.
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Bye |',
+    )
+    const second = await resolveBaseRows('Own.md', { root: dir })
+    expect(second).not.toBe(first)
+    expect(second[0].note.title).toBe('Bye')
+})
