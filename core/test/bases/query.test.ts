@@ -1,5 +1,6 @@
-import { test, expect } from 'bun:test'
+import { test, expect, spyOn } from 'bun:test'
 import { runView, canonicalId } from '../../src/bases/query'
+import * as evaluateModule from '../../src/bases/evaluate'
 import type { BaseConfig, Row } from '../../src/bases/types'
 
 function row(name: string, note: Record<string, unknown>): Row {
@@ -709,6 +710,86 @@ test('tasks mode keeps a SUPPLIED status column, so the board can be ticked', ()
         'note.description',
         'note.due',
     ])
+})
+
+// ── Declared-formula AST memoization (perf: parse once, reuse across calls) ────────────
+//
+// computeFormulas / formulaAstCache are module-internal (the brief is explicit: no change
+// to computeFormulas's exported surface), so there is no direct handle on the cache from
+// here. Instead, spy on `evaluate` (imported by query.ts from './evaluate', same pattern
+// `server.test.ts` uses for `spyOn(visibility, 'buildDenyPaths')` to prove a memo isn't
+// re-walking) and capture the exact `ast` object it's called with per row. That IS the
+// parsed Expr computeFormulas resolved for that call, so comparing the captured references
+// with `===` across two runView() calls is a real identity assertion, not a behavioral proxy.
+
+test('the SAME formula source string produces `===`-identical parsed ASTs across calls', () => {
+    const b: BaseConfig = {
+        formulas: { total: 'price * age' },
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.total'] }],
+    }
+    const target = [row('x', { price: 3, age: 4 })]
+    const evalSpy = spyOn(evaluateModule, 'evaluate')
+    evalSpy.mockClear()
+    runView(b, target, 0)
+    const firstAst = evalSpy.mock.calls[0]![0]
+    evalSpy.mockClear()
+    runView(b, target, 0) // same base object, same source text -> should hit the cache
+    const secondAst = evalSpy.mock.calls[0]![0]
+    evalSpy.mockRestore()
+    expect(secondAst).toBe(firstAst) // `===` identity, not just deep equality
+})
+
+test('a DIFFERENT BaseConfig instance with the identical formula source text still hits the cache', () => {
+    // Proves the memoization is keyed on SOURCE TEXT, not on the BaseConfig/formulas object
+    // identity — two independently-built configs sharing the same string still get the
+    // cached AST the second time.
+    const b1: BaseConfig = {
+        formulas: { pu: 'price * qty' },
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.pu'] }],
+    }
+    const b2: BaseConfig = {
+        formulas: { pu: 'price * qty' }, // same text, different object
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.pu'] }],
+    }
+    const target = [row('x', { price: 3, qty: 4 })]
+    const evalSpy = spyOn(evaluateModule, 'evaluate')
+    evalSpy.mockClear()
+    runView(b1, target, 0)
+    const firstAst = evalSpy.mock.calls[0]![0]
+    evalSpy.mockClear()
+    runView(b2, target, 0)
+    const secondAst = evalSpy.mock.calls[0]![0]
+    evalSpy.mockRestore()
+    expect(secondAst).toBe(firstAst)
+})
+
+test('a CHANGED formula source for the same formula name is freshly parsed, not a stale cache hit', () => {
+    const bOld: BaseConfig = {
+        formulas: { calc: 'price + 1' },
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.calc'] }],
+    }
+    const bNew: BaseConfig = {
+        formulas: { calc: 'price + 2' }, // same name "calc", DIFFERENT source text
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.calc'] }],
+    }
+    const target = [row('x', { price: 10 })]
+    const resOld = runView(bOld, target, 0)
+    const resNew = runView(bNew, target, 0)
+    expect(resOld.groups[0].rows[0].formula.calc).toBe(11) // 10 + 1
+    expect(resNew.groups[0].rows[0].formula.calc).toBe(12) // 10 + 2, NOT a stale 11
+})
+
+test('a formula with a syntax error stays undefined on repeat calls without throwing (cached null)', () => {
+    const b: BaseConfig = {
+        formulas: { broken: 'price * (' }, // malformed, caught by parseExpr
+        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.broken'] }],
+    }
+    const target = [row('x', { price: 10 })]
+    expect(() => runView(b, target, 0)).not.toThrow()
+    const res1 = runView(b, target, 0)
+    const res2 = runView(b, target, 0) // second call must hit the cached `null`, not re-throw
+    expect(res1.groups[0].rows[0].formula.broken).toBeUndefined()
+    expect(res2.groups[0].rows[0].formula.broken).toBeUndefined()
 })
 
 test('the legacy calendarContent spelling keeps the status column too', () => {

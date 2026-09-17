@@ -161,3 +161,52 @@ test("date + '0d' honors the zero-length duration (regression: || dropped 0)", (
     const durPlus0 = evaluate(parseExpr('d + duration("0d")'), c) as Date
     expect(durPlus0.getTime()).toBe(base)
 })
+
+test('regex literals compile once per AST node and cache the RegExp instance', () => {
+    const node = parseExpr('/abc/i')
+    const first = evaluate(node, ctx()) as RegExp
+    const second = evaluate(node, ctx({ note: { price: 99 } })) as RegExp
+    expect(first).toBeInstanceOf(RegExp)
+    expect(first).toBe(second) // same node -> same cached instance
+    expect(first.source).toBe('abc')
+    expect(first.flags).toBe('i')
+})
+
+test('two different parsed nodes with the same source get independent RegExp instances', () => {
+    const nodeA = parseExpr('/abc/i')
+    const nodeB = parseExpr('/abc/i')
+    const a = evaluate(nodeA, ctx()) as RegExp
+    const b = evaluate(nodeB, ctx()) as RegExp
+    expect(a).toBeInstanceOf(RegExp)
+    expect(b).toBeInstanceOf(RegExp)
+    expect(a).not.toBe(b) // no cross-node bleed via a shared source-string key
+    expect(a.source).toBe(b.source) // same pattern, different instances
+})
+
+test('a bad regex pattern fails closed on every call, never caching a stale success', () => {
+    const node = parseExpr('/(/') // unbalanced group -> invalid RegExp, lexes fine as a regex token
+    expect(evaluate(node, ctx())).toBeUndefined()
+    // Evaluating the same (invalid) node again must still fail closed, not
+    // return a cached `undefined` masquerading as a compiled RegExp.
+    expect(evaluate(node, ctx())).toBeUndefined()
+})
+
+test('a GLOBAL regex is never cached — each row gets an independent instance', () => {
+    // functions.ts's `matches` re-evaluates the regex AST node once per row (it is
+    // an arg of the `matches()` call, evaluated as part of that row's filter), then
+    // calls .test() exactly ONCE per row. A cached global/sticky regex would hand
+    // back the SAME instance every row; its lastIndex would then carry over from
+    // the previous row's .test() call and matches would alternate true/false down
+    // the row set (main keeps 4/4 matching rows, the un-fixed branch kept 2/4).
+    //
+    // Note: calling .test() twice on the SAME instance is not a valid probe here —
+    // a global regex's OWN lastIndex bookkeeping makes back-to-back .test() calls
+    // on one instance alternate regardless of caching (that is normal RegExp
+    // behavior, not the bug). The real invariant is per-row independence, so this
+    // simulates 3 rows via 3 separate evaluate() calls, one .test() each.
+    const node = parseExpr('/ab/g')
+    for (let row = 0; row < 3; row++) {
+        const re = evaluate(node, ctx()) as RegExp
+        expect(re.test('abc')).toBe(true) // would alternate false on row 1 if instance were shared+cached
+    }
+})

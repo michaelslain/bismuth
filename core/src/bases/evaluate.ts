@@ -8,6 +8,14 @@ import {
 } from './functions'
 import { compare, looseEquals, toNumber, truthy } from './values'
 
+// Regex literals recompile on every evaluation otherwise — a filter/formula
+// evaluated per-row re-compiles the same pattern for every row. Keyed by node
+// identity (not source text) so two different nodes with the same source stay
+// independent; a failed compile is never cached, so a bad pattern keeps
+// failing closed on every call instead of caching `undefined` as if it were
+// a valid result.
+const regexCache = new WeakMap<Expr, RegExp>()
+
 function resolveIdent(name: string, ctx: EvalContext): unknown {
     // Lambda params are bound in an explicit scope chain so they shadow file/note/
     // formula/this/frontmatter cleanly. The chain stores raw values rather than
@@ -55,11 +63,19 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
             return resolveIdent(node.name, ctx)
 
         case 'regex': {
+            const cached = regexCache.get(node)
+            if (cached) return cached
             try {
-                return new RegExp(node.source, node.flags)
+                const re = new RegExp(node.source, node.flags)
+                // A global/sticky regex carries lastIndex ACROSS calls, and
+                // functions.ts's `matches` uses re.test() once per row — a cached
+                // instance would alternate true/false down the rows. Only stateless
+                // patterns are cached; g/y recompile per evaluation, as before.
+                if (!/[gy]/.test(node.flags ?? '')) regexCache.set(node, re)
+                return re
             } catch {
                 return undefined
-            } // fail closed on bad pattern
+            } // fail closed on bad pattern (never cached)
         }
 
         case 'lambda': {
