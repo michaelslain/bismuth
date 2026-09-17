@@ -26,11 +26,13 @@ export const Closed: Story = {
     },
 }
 
-/** The popover open, downward (the default) — six token swatches, the stored colour's swatch
- *  highlighted. */
+/** The popover open, downward (the default) — seven palette tokens, the stored colour's swatch
+ *  highlighted. `color` is a RESOLVED `var(--token)` string, the shape `taskCategoryColors`
+ *  actually hands `ColorChip` (see `app/src/calendar/taskCategory.ts`) — not the bare token
+ *  `CategoryPanel` stores — so this exercises the real seam, not just the stored-token form. */
 export const Open: Story = {
     args: {
-        color: 'jade',
+        color: 'var(--green)',
         open: true,
         onToggle: () => {},
         onPick: () => {},
@@ -41,6 +43,17 @@ export const Open: Story = {
                 document.querySelector('[data-testid="category-palette"]'),
             ).not.toBeNull(),
         )
+        const palette = document.querySelector(
+            '[data-testid="category-palette"]',
+        ) as HTMLElement
+        const pressed = palette.querySelectorAll(
+            'button[aria-pressed="true"]',
+        )
+        // Exactly one swatch is selected, and it is the one matching the resolved colour —
+        // this is the assertion that fails without the ColorChip.tsx `selected` fix, since a
+        // bare `props.value === tok` comparison never matches a `var(--token)` value.
+        expect(pressed.length).toBe(1)
+        expect(pressed[0]).toHaveAttribute('aria-label', 'green')
     },
 }
 
