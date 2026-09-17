@@ -293,7 +293,7 @@ function TasksCalendar(props: {
         return taskFile ? fileBasename(refToPath(taskFile)) : ''
     }
 
-    // The composer's band colour: the resolved colour for the view's defaultCategory. Prefer
+    // The composer's marker colour: the resolved colour for the view's defaultCategory. Prefer
     // `colors()` — the map every chip in this grid was painted from — since a solo
     // `taskCategoryColors([name])` call skips the collision probing and can disagree with the
     // chips directly above the composer. Fall back only when the category has no rows yet (a

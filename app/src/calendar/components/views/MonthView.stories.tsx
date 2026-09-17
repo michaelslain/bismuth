@@ -318,7 +318,7 @@ export const ChipClickDoesNotOpenComposer: Story = {
 /** A month cell with BOTH real task chips and an open composer — the composer must render LAST,
  *  after every chip, inside `month-cell-events`, never in front of or between them.
  *  `compose.color` is also set here (the view's resolved defaultCategory colour), so this
- *  doubles as proof that the colour actually reaches TaskCellComposer's 3px band — a prop
+ *  doubles as proof that the colour actually reaches TaskCellComposer's marker — a prop
  *  CalendarView already populates but neither grid wired through until this fix. */
 export const ComposerBelowChips: Story = {
     render: () => {
@@ -364,10 +364,11 @@ export const ComposerBelowChips: Story = {
         const composer = children[2]
         expect(composer.querySelector('[data-testid="task-cell-composer-marker"]')).not.toBeNull()
         expect(composer.querySelector('[data-testid="task-chip-title"]')).toBeNull()
-        // the band is the composer's FIRST child (TaskCellComposer's Show(color) precedes its
-        // row) and carries the exact design token, not a hardcoded stand-in colour
-        const band = composer.firstElementChild as HTMLElement
-        expect(band.tagName).toBe('SPAN')
-        expect(band.style.background).toBe('var(--blue)')
+        // the colour reaches the marker itself, as an inline style carrying the exact design
+        // token, not a hardcoded stand-in colour
+        const marker = composer.querySelector<HTMLElement>(
+            '[data-testid="task-cell-composer-marker"]',
+        )!
+        expect(marker.style.color).toBe('var(--blue)')
     },
 }

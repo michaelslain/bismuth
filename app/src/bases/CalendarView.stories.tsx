@@ -539,9 +539,9 @@ export const ReconcilePreservesUnchangedChips: Story = {
 /** Three rows from three different SOURCE notes (`file.name`), each on today — `taskCategory.ts`
  *  rule 2: a SCANNED row's (`note.line` is a number, same as every `taskRow` fixture) category is
  *  its source note's basename, with no `categoryField` declared on this view. Distinct sources are
- *  therefore distinct categories, so `TasksCalendar`'s `colorFor` should band each chip a different
- *  colour (`autoCategoryColor`'s stable hash — no `categories:` declared on `TASKS_BASE_CONFIG`, so
- *  every one of the three is auto-assigned). */
+ *  therefore distinct categories, so `TasksCalendar`'s `colorFor` should paint each chip's marker a
+ *  different colour (`autoCategoryColor`'s stable hash — no `categories:` declared on
+ *  `TASKS_BASE_CONFIG`, so every one of the three is auto-assigned). */
 function sourcedFrom(row: Row, name: string): Row {
     return { ...row, file: { ...row.file, name, basename: name, path: `${name}.md` } }
 }
@@ -555,13 +555,11 @@ function coloredTasksRows(): Row[] {
     ]
 }
 
-/** The FIRST child of a chip's root is its colour band (`TaskChip.tsx`'s `<Show when={props.color}>`
- *  wraps a `<span style={{background: ...}}>` ahead of the marker) — reading the inline style
- *  directly, never `getComputedStyle`, so an unset band (no colour at all) reads as `''` rather
- *  than whatever the marker span's own CSS happens to paint. */
-function bandBackground(chipRoot: HTMLElement): string {
-    const first = chipRoot.firstElementChild as HTMLElement | null
-    return first?.style.background ?? ''
+// The marker's category colour, read from the INLINE style (never getComputedStyle) so an
+// uncategorised marker reads as '' rather than whatever --text-muted resolves to.
+function markerColor(root: HTMLElement): string {
+    const el = root.querySelector('[data-testid="task-chip-marker"]') as HTMLElement | null
+    return el?.style.color ?? ''
 }
 
 /** Seeds `currentView`/`currentDate` the same way `TasksCalendarStory` does, but with the
@@ -598,12 +596,12 @@ export const TasksWithCategoryColours: Story = {
         chips.forEach((c, i) =>
             expect(c.title, `chip ${i} rendered`).toBeTruthy(),
         )
-        const bands = chips.map(c => bandBackground(c.root!))
-        bands.forEach((b, i) => expect(b, `chip ${i} has a colour band`).not.toBe(''))
+        const colors = chips.map(c => markerColor(c.root!))
+        colors.forEach((c, i) => expect(c, `chip ${i} has a marker colour`).not.toBe(''))
         // At least two of the three differ — a stable per-name hash makes the same source
         // always the same colour, so three DIFFERENT sources landing on the same colour would
         // mean colours aren't being looked up per-category at all.
-        expect(new Set(bands).size, 'not every chip got the same colour').toBeGreaterThan(1)
+        expect(new Set(colors).size, 'not every chip got the same colour').toBeGreaterThan(1)
     },
 }
 
