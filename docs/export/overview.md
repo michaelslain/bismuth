@@ -223,9 +223,9 @@ reads the vault's own `.settings` (via `readSettings`) and builds a `ThemePalett
   when the vault has no `.settings` or leaves the key unset) and `appearance.editorFontSize`
   (falling back to `13.5`), using the **same ratio the live app's DOM probe computes**:
   `proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)`, where `ROW_H_PX = 18`
-  (the app's `--row-h` row unit) and `PROSE_SCALE = 1.28` (`styles/tokens.css`'s `--prose-scale`) are
-  mirrored as local constants rather than re-derived, so a change to either token in the app is the
-  only place this can drift from.
+  (the app's `--row-h` row unit) and `PROSE_SCALE = 1.04` (`styles/tokens.css`'s `--prose-scale`)
+  are read from `exportTheme.ts`'s exported `PROSE_SCALE` and a local `ROW_H_PX`, so a change to
+  either token in the app is the only place this can drift from.
 - **`monoFont`** — `appearance.uiFont` resolved through `FONT_STACKS` (the same setting and map
   `settingsCssVars.ts` uses for the app's `--ui-font-stack`; `uiFont` is now the sole source for both the
   in-note mono face and the chrome face), or the raw string when the vault names a face the map
