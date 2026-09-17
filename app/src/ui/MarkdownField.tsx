@@ -16,6 +16,7 @@ import {
 import { indentUnit } from '@codemirror/language'
 import { notePathFacet } from '../editor/tableState'
 import { markdownEditingExtensions } from '../editor/cellEditorExtensions'
+import { settingsKeymapCompartment } from '../editor/settingsKeymap'
 import type { NoteCandidate } from '../editor/wikilink'
 import { settings } from '../settings'
 import { api } from '../api'
@@ -100,6 +101,16 @@ function MarkdownField(props: MarkdownFieldProps) {
     // programmatic change straight back out through onInput.
     let syncing = false
 
+    // Settings-driven indent/outdent (default Tab/Shift-Tab, matching the note editor) via a
+    // compartment so a rebind reconfigures this long-lived view live, without rebuilding it.
+    // `onMount` below is synchronous (no `await` before the view is built), so Solid's ambient
+    // Owner is still this component's when `attach` runs — unlike CardEditor.tsx, no
+    // `runWithOwner` pinning is needed here.
+    const fieldKeymap = settingsKeymapCompartment([
+        { id: 'indent', run: indentMore },
+        { id: 'outdent', run: indentLess },
+    ])
+
     onMount(() => {
         view = new EditorView({
             parent: host,
@@ -110,13 +121,9 @@ function MarkdownField(props: MarkdownFieldProps) {
                     drawSelection(),
                     indentUnit.of('  '),
                     EditorState.tabSize.of(2),
-                    // Tab indents/dedents list items (matches the note editor); the rest is the standard
-                    // editing + history keymap.
-                    keymap.of([
-                        { key: 'Tab', run: indentMore, shift: indentLess },
-                        ...defaultKeymap,
-                        ...historyKeymap,
-                    ]),
+                    // See fieldKeymap above. The rest is the standard editing + history keymap.
+                    fieldKeymap.extension,
+                    keymap.of([...defaultKeymap, ...historyKeymap]),
                     // livePreview (inside the shared stack) reads this facet for table/embed path
                     // resolution; props.notePath is the note this field's text belongs to, "" = none.
                     notePathFacet.of(props.notePath ?? ''),
@@ -149,6 +156,7 @@ function MarkdownField(props: MarkdownFieldProps) {
                 ],
             }),
         })
+        fieldKeymap.attach(view)
         if (props.autofocus) view.focus()
     })
 
