@@ -1193,6 +1193,23 @@ const waitForCompletionActive = async (view: EditorView) => {
     await expect(completionStatus(view.state)).toBe('active')
 }
 
+/** Poll until a just-triggered completion is no longer `'pending'` (bounded — 100 * 10ms), then
+ *  return whatever it settled to: `null` (no source returned options), or `'active'`. Sampling
+ *  `completionStatus` once right after a keypress races CM's own async source resolution — see
+ *  this file's header comment on the two rebind traps. Used for a NEGATIVE assertion (the combo
+ *  must not open anything), where `waitForCompletionActive` above (which polls FOR `'active'`)
+ *  is the wrong shape: there is no active state to wait for. */
+const waitForCompletionSettled = async (view: EditorView) => {
+    for (
+        let i = 0;
+        i < 100 && completionStatus(view.state) === 'pending';
+        i++
+    ) {
+        await new Promise(r => setTimeout(r, 10))
+    }
+    return completionStatus(view.state)
+}
+
 /** The contract `settingsKeymapCompartment` exists for: a rebind mid-session takes effect
  *  through the SAME EditorView instance — no rebuild, so the buffer and scroll position survive
  *  it exactly the way DrawModeKeepsBuffer pins for the draw-mode toggle. */
@@ -1211,7 +1228,6 @@ export const RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheVie
             before.dispatch({ selection: { anchor: at, head: at } })
             before.focus()
 
-
             // A scroll position only a real rebuild would reset — REBIND_SCROLL_TEXT is 60+ paragraphs
             // tall against a 700px story container, so this is well within scrollable range.
             before.scrollDOM.scrollTop = 250
@@ -1227,6 +1243,12 @@ export const RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheVie
                 // room for Solid's effect scheduler to run at all.
                 await new Promise(r => setTimeout(r, 300))
 
+                // Re-focus before dispatching: the scroll assignment + the compartment reconfigure
+                // (both real `view.dispatch` calls) can leave the browser's own focus on nothing in
+                // particular by this point (measured: `document.activeElement` had drifted to
+                // `<body>`), and a synthetic keydown on an unfocused editor is not the same thing a
+                // real rebind-then-type user does.
+                before.focus()
                 dispatchOpenCompletionCombo(
                     canvasElement.querySelector('.cm-content')!,
                     'new',
@@ -1265,15 +1287,23 @@ export const TheOldComboStopsFiringAfterARebind: Story = {
             await new Promise(r => setTimeout(r, 300))
 
             const content = canvasElement.querySelector('.cm-content')!
+            // Re-focus before dispatching: the rebind's compartment reconfigure is a real
+            // `view.dispatch`, and by this point in the run the browser's own focus can have
+            // drifted off the editor entirely (measured: `document.activeElement` was `<body>`)
+            // — a synthetic keydown on an unfocused editor is not the same thing a real
+            // rebind-then-type user does.
+            view.focus()
             dispatchOpenCompletionCombo(content, 'old')
-            // A fixed wait, not a poll: the assertion is that nothing ever happens, so there is
-            // no true condition to poll for. 300ms is generous against the 10ms poll interval
-            // waitForCompletionActive uses elsewhere in this file for a REAL activation.
+            // A fixed wait, then poll until any triggered query has settled (not a single sample
+            // right after the keypress — that races CM's `'pending'` intermediate, see this
+            // file's header comment). The assertion is that it settles to something other than
+            // 'active', which a dead combo trivially satisfies by never leaving null.
             await new Promise(r => setTimeout(r, 300))
-            await expect(completionStatus(view.state)).not.toBe('active')
+            await expect(await waitForCompletionSettled(view)).not.toBe('active')
 
             // Sanity: the new combo still works in this same session, so a null result above is
             // "the old combo is dead", not "nothing in this environment ever activates".
+            view.focus()
             dispatchOpenCompletionCombo(content, 'new')
             await waitForCompletionActive(view)
         } finally {
@@ -1961,14 +1991,17 @@ export const RebindOpenCompletion: Story = {
             })
 
             // 5. Ctrl+Space must NO LONGER open the popup — the assertion that was impossible
-            //    before this task. A generous fixed wait (not a poll-for-active), so a regression
-            //    that leaves CM's own keymap on has time to show up as `active`.
+            //    before this task. A generous fixed wait, then settle (not a single sample right
+            //    after the keypress — that races CM's `'pending'` intermediate), so a regression
+            //    that leaves CM's own keymap on still has time to show up as `active`.
+            view.focus()
             press({ key: ' ', code: 'Space', ctrlKey: true })
             await new Promise(r => setTimeout(r, 300))
-            await expect(completionStatus(view.state)).toBeNull()
+            await expect(await waitForCompletionSettled(view)).toBeNull()
 
             // 6. The NEW combo genuinely opens it — the rebind is live, not merely "Ctrl+Space
             //    broke by accident".
+            view.focus()
             press({ key: 'j', code: 'KeyJ', ctrlKey: true })
             await waitActive()
             press({ key: 'Escape', code: 'Escape' })
@@ -1977,12 +2010,14 @@ export const RebindOpenCompletion: Story = {
             // 7. Empty string leaves NO key able to open the popup.
             setSettings('keybindings', 'open-completion', '')
             await new Promise(r => setTimeout(r, 100))
+            view.focus()
             press({ key: 'j', code: 'KeyJ', ctrlKey: true })
             await new Promise(r => setTimeout(r, 300))
-            await expect(completionStatus(view.state)).toBeNull()
+            await expect(await waitForCompletionSettled(view)).toBeNull()
+            view.focus()
             press({ key: ' ', code: 'Space', ctrlKey: true })
             await new Promise(r => setTimeout(r, 300))
-            await expect(completionStatus(view.state)).toBeNull()
+            await expect(await waitForCompletionSettled(view)).toBeNull()
         } finally {
             // The settings store is module-level and shared by every story in the run.
             setSettings('keybindings', 'open-completion', restore)
