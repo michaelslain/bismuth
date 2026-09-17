@@ -596,13 +596,16 @@ categoryField?)` (`app/src/calendar/taskCategory.ts`) in this order:
 
 Colours come from the base's `categories:` frontmatter — the same `[{name, color}]` list the
 events register already writes and reads via `core/src/calendar.ts`'s `categoriesOf` (`BaseConfig.
-categories` in `core/src/bases/types.ts`). **A name with no declared colour still gets one**:
-`autoCategoryColor(name)` (`taskCategory.ts`) hashes the name (a plain djb2-derived string hash)
-into `PALETTE_TOKENS` (`app/src/ui/palette.ts`) and resolves that token through the same
-`resolveCategoryColor` the events register uses — so the mapping is deterministic across reloads,
-panes and processes with zero configuration, and the same source note is always the same colour.
-`taskCategoryColors(names, declared)` (`taskCategory.ts`) builds the full name → resolved-colour
-map each render, declared colours winning over the auto-hashed fallback.
+categories` in `core/src/bases/types.ts`). **A name with no declared colour still gets one**: `taskCategoryColors(names, declared)`
+(`taskCategory.ts`) builds the full name → resolved-colour map each render. Declared colours win;
+every remaining name is hashed (a plain djb2-derived string hash) into `AUTO_CATEGORY_TOKENS`
+(`app/src/calendar/categoryColor.ts` — `PALETTE_TOKENS` minus `accent`, which stays reserved for
+the app's own selection colour and pickable only by hand), then **advanced to the next unused
+token when the hashed one is already taken in this same call**. That is what makes the first six
+distinct categories six distinct colours with zero configuration — the user's literal ask — at the
+cost of perfect stability: adding or removing an earlier-seen category can shift a later one's
+colour. `autoCategoryColor(name)` is the same hash considered alone, with nothing to collide
+against.
 
 `TaskChip` draws the result as a 3px band down the chip's leading edge (`.band` in
 `TaskChip.module.css`), absolutely positioned inside the padding `.chip` already reserves for it —
@@ -810,6 +813,10 @@ active state) and did nothing.
 | **New tasks** | Default category (own-rows bases only) — the category value stamped on a composer-created row | `defaultCategory`, same `setViewProperty` call |
 | **Categories** | Category column (own-rows bases only) — which column `taskCategoryName` reads as `categoryField` | `categoryField`, same `setViewProperty` call |
 | **Categories** | One swatch + name row per category currently in play | picking a colour calls `onPickColor(name, token)` → `api.setProperty(basePath, 'categories', next)` — rewriting the base's WHOLE `categories:` frontmatter array, updating the picked name's entry in place (or appending it, if it wasn't declared yet) and leaving every other declared category untouched |
+
+Picking **Not set** on any of these REMOVES the key from the view config (`api.deleteViewProperty`)
+rather than storing an empty string — an empty `categoryField` would otherwise name a column with
+no name.
 
 **New tasks** shows exactly one of Destination note / Default category, picked by `!props.ownsRows`
 — a sourced base has a note to append to and no row schema to stamp a category onto; an own-rows

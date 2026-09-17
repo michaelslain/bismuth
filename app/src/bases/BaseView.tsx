@@ -726,8 +726,9 @@ export function BaseView(props: {
     }
 
     /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
-     *  contributes its own through `calendarSlots()` (it dates the new task on the day its grid
-     *  is showing, which no other kind has) — and flashcards, which is not a tasks surface. */
+     *  has no bar-level create action at all any more: a click on a day cell opens an inline
+     *  composer that dates the task on that day (CalendarView.tsx's TasksCalendar) — and
+     *  flashcards, which is not a tasks surface. */
     const AddTaskAction = () => (
         <Show
             when={
