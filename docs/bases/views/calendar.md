@@ -218,7 +218,8 @@ amount and the header never drifts out of alignment with the columns below it.
   root through its `class` prop rather than owned by `DayNumber` itself.
 - Each day cell (`data-testid="month-cell"`) shows its event or task chips stacked vertically.
 - Clicking an empty cell opens the `EventModal` to create an event on that date — events register
-  only; a tasks-register cell click does nothing (see [Tasks register](#tasks-register) below).
+  only; a tasks-register cell click opens that cell's own inline composer instead (see
+  [Creating a task](#creating-a-task) below).
 - Week column headers (`data-testid="month-day-name"`) follow the `weekStartsOnMonday` setting
   (Mon–Sun or Sun–Sat).
 
@@ -517,6 +518,12 @@ both `DayHeaderRow` and `AllDayRow` carries `min-width: 0` (a bare flex item's d
 its content width, which is what used to let a busy cell disagree with the header about where a
 day's boundary fell).
 
+Both rows take an optional `gutter` prop (default `true`), and `TaskAllDayStrip` is the one caller
+that passes `gutter={false}` on both. That left-hand spacer column only ever existed to align these
+rows with `TimeGrid`'s hour-label gutter (`DayGutter`) — and this register has no `TimeGrid` under
+it to align with, so `TaskAllDayStrip` renders no gutter at all: the day columns start flush against
+the pane's left edge instead of leaving an empty strip with nothing in it.
+
 ### Where a task's rows come from
 
 A tasks calendar works over **either kind of base**:
@@ -573,6 +580,36 @@ note's own line order. Ties — including every one of the day's own, never-carr
 share `late === 0` — keep their original file order, since the sort is a stable
 `Array.prototype.sort`.
 
+### Categories: a task's source is its category
+
+A task chip's colour band comes from a **category name**, resolved by `taskCategoryName(row,
+categoryField?)` (`app/src/calendar/taskCategory.ts`) in this order:
+
+1. an explicit `categoryField` wins, reading `row.note[categoryField]` — the SAME `categoryField`
+   set in [Task calendar settings](#task-calendar-settings) below — when it is a non-empty string.
+2. otherwise a **scanned** row (one with a real markdown line — `typeof row.note.line ===
+   'number'`) takes its **source note's basename** (`row.file.name`). A `source: tasks` row is
+   always scanned, so with no `categoryField` set, every task's category is simply which note it
+   lives in.
+3. otherwise `row.note.category`.
+4. otherwise the task has no category and its chip renders no band at all.
+
+Colours come from the base's `categories:` frontmatter — the same `[{name, color}]` list the
+events register already writes and reads via `core/src/calendar.ts`'s `categoriesOf` (`BaseConfig.
+categories` in `core/src/bases/types.ts`). **A name with no declared colour still gets one**:
+`autoCategoryColor(name)` (`taskCategory.ts`) hashes the name (a plain djb2-derived string hash)
+into `PALETTE_TOKENS` (`app/src/ui/palette.ts`) and resolves that token through the same
+`resolveCategoryColor` the events register uses — so the mapping is deterministic across reloads,
+panes and processes with zero configuration, and the same source note is always the same colour.
+`taskCategoryColors(names, declared)` (`taskCategory.ts`) builds the full name → resolved-colour
+map each render, declared colours winning over the auto-hashed fallback.
+
+`TaskChip` draws the result as a 3px band down the chip's leading edge (`.band` in
+`TaskChip.module.css`), absolutely positioned inside the padding `.chip` already reserves for it —
+it coexists with the carried/late danger wash from [Overdue tasks](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten)
+above rather than replacing it; a carried task still gets both the danger box and its category
+band.
+
 ### Chip behavior
 
 **Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
@@ -581,7 +618,7 @@ number (`note.line`) AND a resolvable placement field.** A `source: tasks` row a
 self-owned base's row never does — it's a YAML row, not a markdown line. The marker, the drag
 gesture and the context menu all read this ONE function rather than three separate checks, so
 they cannot silently disagree about which rows are writable (see
-[the self-owned-row limitation](#creating-a-task--task) below for what that means in practice).
+[the self-owned-row limitation](#creating-a-task) below for what that means in practice).
 
 - **Left-click the `[ ]` marker** toggles the task, writing back through `POST /tasks/toggle` by
   path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`, the cards
@@ -608,10 +645,12 @@ they cannot silently disagree about which rows are writable (see
 
 The day cell's own `mousedown`-based drag (the events register's drag-to-move/drag-to-create,
 above) and its `click`-based "new event" affordance are both suppressed in the tasks register — a
-grid cell in this register says which DAY, never opens a modal on a bare click (creation is the
-toolbar's `[ + task ]` action below), and the chip stops `click`, `mousedown`, `pointerdown` and
-`dblclick` on its own marker so toggling never also opens the note or starts a drag on the
-underlying cell.
+grid cell in this register says which DAY, not which event: clicking empty space in it opens that
+day's own inline composer instead (see [Creating a task](#creating-a-task) below), never the
+events register's `EventModal`. The chip stops `click`, `mousedown`, `pointerdown` and `dblclick`
+on its own marker so toggling never also opens the note, starts a drag, or opens the composer
+underneath it; the composer itself stops the same four events for the same reason, so clicking
+inside an open composer never re-triggers the cell's own click handler.
 
 ### Keyboard
 
@@ -644,40 +683,91 @@ the task's identity across re-renders) just before firing the write, and the new
 `onMount` calls `.focus()` on itself when its own key matches `focusTaskKey.value`, then clears
 the box — so keyboard focus lands on the task's new location instead of falling back to `<body>`.
 
-### Creating a task: `[ + task ]`
+### The tasks register's view bar
 
-The tasks register's toolbar `actions` slot swaps the events register's `[ + event ]` for
-`[ + task ]` (`calendarSlots(ctx)` in `Toolbar.tsx`, now taking an optional context object —
-`isTasks`, `basePath`, `ownsRows`, `taskFile` — that `BaseView.tsx` computes from the active
-view/base config). What it writes depends on which kind of base is open, the SAME distinction as
-[Where a task's rows come from](#where-a-tasks-rows-come-from) above:
+`calendarSlots(ctx)` (`Toolbar.tsx`) now takes an optional `CalendarSlotsCtx`:
 
-| The base | A task is | `[ + task ]` writes |
+```ts
+export interface CalendarSlotsCtx {
+    isTasks: boolean
+}
+```
+
+`BaseView.tsx` passes `{ isTasks: activeMode() === 'tasks' }` when it computes the calendar's
+`viewSlots`. `isTasks` gates two of the bar's three regions off entirely in this register:
+`config` (the Categories button — it toggles `CategoryPanel`, which only `EventsCalendar` mounts,
+and a task has no event-style category picker to open) and `actions` (the events register's
+`[ + Event ]` button — there is no longer a single destination for a bar-level "new task" button
+to write to, since creation now happens per-cell; see below). Only `locus` — `DateNav` and the
+`[Month, Week, 3 Day, Day]` toggle — renders in the tasks register's bar. The gear (settings) is
+not part of `calendarSlots()` at all; see [Task calendar settings](#task-calendar-settings) below.
+
+### Creating a task
+
+Clicking empty space in any day cell — a month cell, or a week/3-day/day strip cell via
+`TaskAllDayStrip` — opens an inline composer at the bottom of that cell's chip stack
+(`TaskCellComposer.tsx`), autofocused. It shows a `[ ]` marker matching a real chip's, a text
+input, and a `→ <destination>` line naming where the task will land. Keys:
+
+| Key / event | Result |
+|---|---|
+| `Enter`, text non-empty | Commits the task, clears the input, and leaves the composer open on the same day — a second task is one keystroke away |
+| `Enter`, text empty | Closes the composer (same as Escape) |
+| `Escape` | Closes the composer, discarding any typed text |
+| Blur, text non-empty | Commits the task (same as Enter) |
+| Blur, text empty | Closes the composer (same as Escape) |
+
+`TaskComposeProps` (`app/src/calendar/taskCompose.ts`) is the whole contract — `date` (which
+cell, or `null`), `destination`, `open(date)`, `commit(date, text)`, `cancel()` — built once per
+register (`TasksCalendar` in `CalendarView.tsx`) and threaded through every view component as one
+prop, so month/week/3-day/day never grow their own copy of "where is the composer open".
+
+What commit writes depends on which kind of base is open, the SAME distinction as
+[Where a task's rows come from](#where-a-tasks-rows-come-from) above — and the written text always
+carries the **description first**, never a bare date field on its own:
+
+| The base | A task is | Commit writes |
 |---|---|---|
-| owns its rows (no `source:`) | a row in the base file | a new row via `upsertRow` (`core/src/bases/rowOps.ts`, through `POST /row/update` — the SAME write path the CLI `base`/`card` groups and `EditCardsModal` already use; nothing new invented) |
-| sources tasks (`source: tasks`) | a checkbox line in a note | a line appended to the note named by `taskFile`, dated with the currently-viewed day as `[scheduled <day>]` |
+| owns its rows (no `source:`) | a row in the base file | `api.rowCreate(basePath, note)`, `note` = `{ description: text, status: 'todo', scheduled: date, [categoryField ?? 'category']: defaultCategory }` — the category key only when a `defaultCategory` is set in [Task calendar settings](#task-calendar-settings) |
+| sources tasks (`source: tasks`) | a checkbox line in a note | `<text> [scheduled <date>]` appended to the note named by `taskFile`, via `POST /tasks/create` |
+
+**`taskFile` is resolved against the vault, server-side, not turned into a path client-side.**
+`POST /tasks/create` → `core/src/taskCreate.ts`'s `resolveTaskFilePath(ref, noteIds)`: an exact
+match on the ref among the vault's real note ids wins first (with or without `.md`); then
+`pickByBase`/`preferId` (`core/src/linkTarget.ts`) resolve a bare basename the same way a wikilink
+resolves everywhere else in the app, settling a duplicate basename deterministically; only when
+neither matches does `${ref}.md` name a brand-new note. Before this resolver existed, the
+client-side `refToPath()` turned `[[Name]]` straight into `Name.md` **at the vault root** with no
+lookup at all — a `taskFile` naming a note that actually lived in a subfolder got a stray new note
+created at the root, which then failed the base's own source filter: written, invisible,
+unfindable. `appendTaskLine` (both `core/src/taskCreate.ts`'s server-side implementation and
+`app/src/bases/taskCreate.ts`'s thin client wrapper over `POST /tasks/create`) returns the
+vault-relative path it actually wrote to, so the caller reacts to where the task really landed,
+not a guess.
 
 **A self-owned base's task can be CREATED from the grid but not COMPLETED from the grid.** This is
 a real, permanent limitation, not a bug: [tasks are fundamentally a checkbox LINE](../../tasks/syntax.md)
 — that is what the syntax, the parser, `bismuth task migrate`, `POST /tasks/toggle` and the
 right-click status menu all operate on. A base that owns its rows stores tasks as YAML rows
 instead, a different data model that only the creation path above ever addresses. So on a
-self-owned tasks calendar, `[ + task ]` writes a new row fine, but that row's chip renders its
-`[ ]` marker **dimmed and inert** (`isTaskLine`, `app/src/calendar/taskPlacement.ts` — the same
-predicate that gates dragging): clicking it does not toggle, right-click does not open the status
-menu, and there is no error — the click simply falls through to opening the note instead, same as
-clicking anywhere else on the chip. Ticking such a task means opening the note (or the base file
-itself) and editing the row's own `resolved`/`statusChar` fields directly. Building a second,
-row-based write path for toggling was deliberately left undone: it is scope nobody has designed
-yet, and a half-designed write path is worse than a clearly bounded, documented gap. If a vault
-needs both self-owned rows AND grid-completable tasks, use `source: tasks` with a `taskFile`
+self-owned tasks calendar, committing the composer writes a new row fine, but that row's chip
+renders its `[ ]` marker **dimmed and inert** (`isTaskLine`, `app/src/calendar/taskPlacement.ts` —
+the same predicate that gates dragging): clicking it does not toggle, right-click does not open the
+status menu, and there is no error — the click simply falls through to opening the note instead,
+same as clicking anywhere else on the chip. Ticking such a task means opening the note (or the
+base file itself) and editing the row's own `resolved`/`statusChar` fields directly. Building a
+second, row-based write path for toggling was deliberately left undone: it is scope nobody has
+designed yet, and a half-designed write path is worse than a clearly bounded, documented gap. If a
+vault needs both self-owned rows AND grid-completable tasks, use `source: tasks` with a `taskFile`
 instead — every task then really is a checkbox line.
 
-**`source: tasks` with no `taskFile`: the button is not rendered at all.** A grid cell says which
-DAY, not which FILE — nothing here guesses a daily-note convention or any other default
-destination. `taskFile` is a top-level frontmatter key (`core/src/bases/parse.ts`'s `FIELD_KEYS`,
-same flat-persistence mechanism as `dateField`/`categoryField`), so it needs no nested `views:`
-block:
+**`source: tasks` with no `taskFile` set: the composer opens fine, but committing writes nothing.**
+A grid cell says which DAY, not which FILE — nothing here guesses a daily-note convention or any
+other default destination. Committing with no `taskFile` opens [Task calendar
+settings](#task-calendar-settings) and toasts `Set a destination note for new tasks in this
+calendar’s settings first`, so the user can name one instead of the write silently going nowhere.
+`taskFile` is a top-level frontmatter key (`core/src/bases/parse.ts`'s `FIELD_KEYS`, same
+flat-persistence mechanism as `dateField`/`categoryField`), so it needs no nested `views:` block:
 
 ```yaml
 ---
@@ -690,9 +780,44 @@ views:
 ---
 ```
 
-Both write paths are picked up by the vault's normal version-bump/SSE reactivity (`POST
-/row/update` and `PUT /file` both invalidate on write), so the new task appears on the grid without
-any explicit refetch call from the toolbar.
+**A commit outside the active view's own filters still writes, but toasts a warning naming the
+real path.** After either write path returns, `newTaskVisible(config, viewConfig, prospective)`
+checks whether the just-written row would actually match this view's own filters; when it would
+not, the toast reads `Added to <path> — it does not match this view's filters, so it will not
+appear here` — `<path>` is the path the write itself returned (`dest` for the sourced write,
+`basePath` for the owned-rows write), not a client-side guess at where the task went.
+
+Both write paths are picked up by the vault's normal version-bump/SSE reactivity (`POST /row/update`
+and `PUT /file`/`POST /tasks/create` both invalidate on write), so the new task appears on the grid
+without any explicit refetch call from the composer.
+
+### Task calendar settings
+
+The gear button — rendered by `BaseView.tsx` for every base type, not by `calendarSlots()` — opens
+`showCalendarSettings` for a calendar base regardless of register. In the **events** register that
+signal is read by `EventsCalendar`'s `<CalendarSettings>` (field mapping + Google sync, described
+[above](#column-mapping-calendarsettings-modal)). In the **tasks** register it now opens a
+different modal, `TaskCalendarSettings.tsx` — before this task existed, nothing in the tasks
+register listened to `showCalendarSettings` at all, so the gear looked live (it even took the
+active state) and did nothing.
+
+`TaskCalendarSettings` has three sections, in this order:
+
+| Section | Field | Persists as |
+|---|---|---|
+| **Placement** | Date column — which column places a task when no fallback is wanted | `dateField`, via `api.setViewProperty(basePath, viewIndex, 'dateField', value)` |
+| **New tasks** | Destination note (sourced bases only) — which note the composer appends to | `taskFile`, same `setViewProperty` call, stored as a wikilink (`[[Name]]`, or a path-qualified form from `linkTargetFor` when the basename is ambiguous) |
+| **New tasks** | Default category (own-rows bases only) — the category value stamped on a composer-created row | `defaultCategory`, same `setViewProperty` call |
+| **Categories** | Category column (own-rows bases only) — which column `taskCategoryName` reads as `categoryField` | `categoryField`, same `setViewProperty` call |
+| **Categories** | One swatch + name row per category currently in play | picking a colour calls `onPickColor(name, token)` → `api.setProperty(basePath, 'categories', next)` — rewriting the base's WHOLE `categories:` frontmatter array, updating the picked name's entry in place (or appending it, if it wasn't declared yet) and leaving every other declared category untouched |
+
+**New tasks** shows exactly one of Destination note / Default category, picked by `!props.ownsRows`
+— a sourced base has a note to append to and no row schema to stamp a category onto; an own-rows
+base has the opposite. The Destination-note picker's options come from every vault note, valued as
+the wikilink text `TaskCalendarSettings` will write (`noteOptions`, built with the same
+`linkTargetFor` the vault uses everywhere else to keep a wikilink unambiguous). The events
+register's `CalendarSettings` (Google Calendar panel included) is unchanged and stays a wholly
+separate component — the two are deliberately not unified.
 
 ---
 
@@ -791,4 +916,7 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Task syntax](../../tasks/syntax.md) — the bracket-field grammar the tasks register places by
   and rewrites on drag
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/views/DayHeaderRow.tsx`, `app/src/calendar/components/views/AllDayRow.tsx`, `app/src/calendar/components/views/DayGutter.tsx`, `app/src/calendar/components/DayNumber.tsx`, `app/src/calendar/components/CalendarFrame.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/calendar/taskChipKeys.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/calendar/taskChipKeys.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/views/DayHeaderRow.tsx`, `app/src/calendar/components/views/AllDayRow.tsx`, `app/src/calendar/components/views/DayGutter.tsx`, `app/src/calendar/components/DayNumber.tsx`, `app/src/calendar/components/CalendarFrame.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/components/TaskCellComposer.tsx`, `app/src/calendar/components/TaskCalendarSettings.tsx`, `app/src/calendar/taskCompose.ts`, `app/src/calendar/taskCategory.ts`, `app/src/bases/taskCreate.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `app/src/ui/palette.ts`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/calendar/taskChipKeys.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/calendar.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/calendar/taskChipKeys.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`, `core/test/taskCreate.test.ts`
+
+For the `POST /tasks/create` route itself (request/response shape, status codes), see
+[HTTP API reference](../../api/http-reference.md).
