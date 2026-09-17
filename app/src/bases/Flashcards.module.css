@@ -203,7 +203,7 @@
 }
 
 /* Answer face: italic prompt echo, hairline divider, then the answer body. */
-.qcaption { font-family: var(--editor-font); font-style: italic; font-size: var(--fs-lead); line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: var(--sp-6); }
+.qcaption { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: var(--sp-6); }
 .qcaption p { margin: 0; }
 .qcaption img { max-width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--r-0); }
 .fcdiv { width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent); margin-bottom: 18px; flex: 0 0 auto; }
@@ -211,7 +211,7 @@
 
 /* Card prose: the prose font (--editor-font, a Monaspace variant) by default; the UI
    font stack only for `code`/```fences```. Markdown-rendered. */
-.card-md { font-family: var(--editor-font); font-size: var(--fs-display); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
+.card-md { font-family: var(--ui-font-stack); font-size: var(--fs-display); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
 /* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css).
    THIS BLOCK IS NEW and it is the whole reason the ramp was centralized. `.card-md` set NO heading
    sizes at all, so a card's h1-h3 fell through to the BROWSER's default h1/h2/h3 multipliers —
@@ -230,7 +230,7 @@
 .card-md ul, .card-md ol { text-align: left; margin: var(--sp-3) 0; padding-left: 22px; display: flex; flex-direction: column; gap: var(--sp-5); }
 .card-md li { margin: 0; }
 .card-md li::marker { color: var(--faint); }
-.card-md h1, .card-md h2, .card-md h3 { font-family: var(--editor-font); margin: var(--sp-2) 0 var(--sp-4); }
+.card-md h1, .card-md h2, .card-md h3 { font-family: var(--ui-font-stack); margin: var(--sp-2) 0 var(--sp-4); }
 .card-md strong { font-weight: 600; color: var(--fg); }
 .card-md em { font-style: italic; }
 .card-md a { color: var(--accent); }
@@ -262,7 +262,7 @@
 
 /* Done state */
 .done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-6); text-align: center; margin: auto; }
-.done .big { font-family: var(--editor-font); font-size: var(--fs-display); color: var(--fg); }
+.done .big { font-family: var(--ui-font-stack); font-size: var(--fs-display); color: var(--fg); }
 .done .sub { color: var(--text-muted); font-size: var(--fs-body); letter-spacing: 0.04em; }
 .done .sub b { color: var(--fg); }
 .done .good-text { color: var(--blue); }
@@ -270,11 +270,11 @@
 /* Empty/all-done states: faint prose italic, matching the card prose tone (not the
    default mono EmptyState). Scoped to the review so other empty states are untouched. */
 .flashcards-host :global(.ui-empty-block) { gap: var(--sp-2); }
-.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--editor-font); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--faint); }
-.flashcards-host :global(.ui-empty) { font-family: var(--editor-font); font-style: italic; font-size: var(--fs-lead); color: var(--faint); }
+.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--faint); }
+.flashcards-host :global(.ui-empty) { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--faint); }
 .flashcards-host :global(.ui-empty) strong { font-style: italic; font-weight: 600; color: var(--text-muted); }
 .flashcards-host :global(.ui-empty) .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
-.flashcards-host :global(.ui-empty) code { font-family: var(--editor-font); font-style: italic; background: none; padding: 0; }
+.flashcards-host :global(.ui-empty) code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
 
 /* ── Edit-cards modal — "claude-design" handoff ───────────────────────────────
    Two modes: a reorderable Front/Back list (markdown-overlay cells) + a bulk-add
@@ -295,7 +295,7 @@
    stylesheet load order) now that the element renders via `<Heading level={2}
    class={styles['cards-title']}>` — same doubling trick this file already uses for
    `.cards-draft.cards-draft`. */
-.cards-title.cards-title { margin: 0; font-family: var(--editor-font); font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.01em; }
+.cards-title.cards-title { margin: 0; font-family: var(--ui-font-stack); font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.01em; }
 .cards-meta { color: var(--text-muted); font-size: var(--fs-body); display: flex; align-items: center; gap: var(--sp-4); }
 .cards-meta .dot { color: var(--faint); }
 

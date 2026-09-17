@@ -41,7 +41,7 @@ const headingStyle = (n: number) => ({
 
 const BODY = {
     'font-size': 'var(--editor-font-size)',
-    'font-family': 'var(--editor-font)',
+    'font-family': 'var(--ui-font-stack)',
     'line-height': '1.6',
     color: 'var(--fg)',
     margin: '0',
@@ -81,7 +81,7 @@ export const AgainstBody: Story = {
         <Panel>
             {LEVELS.map(n => (
                 <div style={{ 'margin-bottom': '14px' }}>
-                    <div style={{ ...headingStyle(n), 'font-family': 'var(--editor-font)' }}>
+                    <div style={{ ...headingStyle(n), 'font-family': 'var(--ui-font-stack)' }}>
                         {`h${n} — a heading at level ${n}`}
                     </div>
                     <p style={BODY}>
@@ -109,7 +109,7 @@ export const Ladder: Story = {
                     <span style={{ 'min-width': '96px' }}>
                         <Label>{`--fs-h${n}`}</Label>
                     </span>
-                    <span style={{ ...headingStyle(n), 'font-family': 'var(--editor-font)' }}>
+                    <span style={{ ...headingStyle(n), 'font-family': 'var(--ui-font-stack)' }}>
                         The quick brown fox
                     </span>
                 </div>

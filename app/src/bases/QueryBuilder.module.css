@@ -69,7 +69,7 @@
   padding: var(--sp-5) var(--sp-5);
 }
 .panel .qb-preview code {
-  font-family: var(--editor-font, ui-monospace, monospace);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   line-height: 1.6;
   color: var(--text-muted);

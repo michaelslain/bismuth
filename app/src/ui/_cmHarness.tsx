@@ -36,7 +36,7 @@ const harnessTheme = EditorView.theme({
         height: '100%',
     },
     '.cm-scroller': {
-        fontFamily: 'var(--editor-font)',
+        fontFamily: 'var(--ui-font-stack)',
         fontSize: 'var(--editor-font-size, 15px)',
         overflow: 'auto',
     },

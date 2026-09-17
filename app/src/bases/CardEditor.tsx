@@ -111,7 +111,7 @@ const hideNonTaskTheme = EditorView.theme({
 // true, next to hideNonTaskTheme below).
 const tasksChecklistTheme = EditorView.theme({
     '.cm-line': {
-        fontFamily: 'var(--editor-font)',
+        fontFamily: 'var(--ui-font-stack)',
         fontSize: 'var(--fs-micro)',
         lineHeight: '1.45',
     },
@@ -314,7 +314,7 @@ const doneFoldTheme = EditorView.theme({
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        fontFamily: 'var(--editor-font)',
+        fontFamily: 'var(--ui-font-stack)',
         fontSize: 'var(--fs-micro)',
         color: 'var(--text-muted)',
     },

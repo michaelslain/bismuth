@@ -1622,7 +1622,7 @@ export const livePreview = [
         // still governs it, per Editor.css's family-list note; the token's default IS MONO_FONT's
         // stack, so this is a no-op under default settings. The SIZE comes from Editor.css's size
         // list (a class that sets font-family inline here needs an entry there — see that comment).
-        '.cm-tag': { color: 'var(--gold)', 'font-family': 'var(--editor-font)' },
+        '.cm-tag': { color: 'var(--gold)', 'font-family': 'var(--ui-font-stack)' },
         // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
         // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
         // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
@@ -2227,7 +2227,7 @@ export const livePreview = [
         // doing/cancelled are display-only (set by typing [/] or [-]).
         '.cm-task-checkbox': {
             display: 'inline-block',
-            'font-family': 'var(--editor-font)',
+            'font-family': 'var(--ui-font-stack)',
             'text-indent': '0',
             'white-space': 'nowrap',
             color: 'var(--text-muted)',

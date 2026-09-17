@@ -24,9 +24,9 @@
 .panel .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .panel .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
 .panel .propset-row.open .propset-chev { transform: rotate(90deg); }
-.panel .propset-name-txt { flex: 1; min-width: 0; font-family: var(--editor-font); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel .propset-name-txt { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel .propset-name-txt.empty { color: var(--faint); font-style: italic; }
-.panel .propset-kind { flex: 0 0 auto; font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
+.panel .propset-kind { flex: 0 0 auto; font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
 .panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .panel .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .panel .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

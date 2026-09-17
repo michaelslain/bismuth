@@ -168,7 +168,7 @@
 .sresult-head-open:hover { background: var(--hover-bg); }
 .sresult-icon { flex: none; color: var(--accent); }
 .sresult-title {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis; min-width: 0;
@@ -201,7 +201,7 @@
   display: flex;
   gap: var(--sp-5);
   cursor: pointer;
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body);
   line-height: 1.6;
   color: var(--text-muted);

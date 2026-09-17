@@ -157,13 +157,13 @@ const editorTheme = EditorView.theme({
     // font size — editor.lineHeight (--prose-line-height) defaults to 1.5, so prose lines land
     // on a 1.5x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
-        // --prose-font (CMU Serif), NOT --editor-font. This is the ANSWERED monospace-scope
+        // --prose-font (the prose face), NOT --ui-font-stack. This is the ANSWERED monospace-scope
         // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
         // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
         // face is scoped to note prose and chat message bodies. The token existed and was loaded
         // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
         // rendering in Monaspace.
-        // Everything that is NOT prose is pulled back to --editor-font in Editor.css (headings,
+        // Everything that is NOT prose is pulled back to --ui-font-stack in Editor.css (headings,
         // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
         // overrides this whole scroller for config buffers, and its comment has always called
         // this declaration "editorTheme's prose font" — this makes that true.
@@ -248,7 +248,7 @@ const editorTheme = EditorView.theme({
 // while the text comes down to size.
 const codeFontTheme = EditorView.theme({
     '.cm-scroller': {
-        fontFamily: "'Monaspace Xenon', ui-monospace, monospace !important",
+        fontFamily: 'var(--ui-font-stack) !important',
         fontSize: 'var(--editor-font-size) !important',
         lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
     },
@@ -2003,7 +2003,7 @@ export function Editor(props: {
     createEffect(() => {
         const a = settings.appearance
         const e = settings.editor
-        void [a.editorFont, a.editorFontSize, a.monoScale, e.lineHeight] // tracked deps (CSS-reflow leaves)
+        void [a.proseFont, a.uiFont, a.editorFontSize, a.monoScale, e.lineHeight] // tracked deps (CSS-reflow leaves)
         const v = view
         if (!v) return
         const keep = v.scrollDOM.scrollTop

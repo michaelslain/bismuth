@@ -21,6 +21,6 @@
 
 /* new category — distinct dashed card */
 .panel .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }
-.panel .cat-add-head { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); }
+.panel .cat-add-head { font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); }
 .panel .cat-newrow { display: flex; gap: var(--sp-5); align-items: center; }
 .panel .cat-newrow :global(.ui-input) { flex: 1; }

@@ -242,14 +242,14 @@ td.cellMuted { color: var(--text-muted); }
    (`<Label tone="default" lines={2}>`); font-family/size/weight/letter-spacing/line-height and
    the card-cover positioning stay here — not on the app's fixed type scale, so not something
    Label should own. */
-.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+.coverTitle { position: relative; z-index: 1; font-family: var(--ui-font-stack); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
    positioning stay here. */
 .coverAuthor { position: relative; z-index: 1; font-size: var(--fs-ui); margin-top: var(--sp-2); }
 
 .cardBodyInner { padding: var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
-.cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.cardTitle { font-family: var(--ui-font-stack); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11.5px, not on the fixed --fs-* scale) stays here. */
@@ -327,7 +327,7 @@ td.cellMuted { color: var(--text-muted); }
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
    real <ul> of clickable links. No column header, no row borders, no per-row icons. */
-.bullets { padding: var(--sp-3) var(--sp-3) var(--sp-5); font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
+.bullets { padding: var(--sp-3) var(--sp-3) var(--sp-5); font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
 .bulletGroupHead { font-weight: 600; font-size: var(--fs-body-lg); color: var(--fg); letter-spacing: -0.01em; margin: var(--sp-5) 0 var(--sp-2); }
 .bulletGroup:first-child .bulletGroupHead { margin-top: var(--sp-1); }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
@@ -344,7 +344,7 @@ td.cellMuted { color: var(--text-muted); }
 
 /* The faint "query" label in an embedded query's header bar is a <Badge> now (the house rule: never
    a bare <span> where a ui/ primitive fits). `.queryLabel` is deleted with it — it also hardcoded a
-   font family instead of reading `var(--editor-font)`, which is exactly the drift a primitive stops. */
+   font family instead of reading `var(--ui-font-stack)`, which is exactly the drift a primitive stops. */
 
 /* ── Tasks mode, in a table cell ──────────────────────────────────────────────
    The task LINE and its checkbox moved out of this file when <TaskRow>/<TaskCheck> were
@@ -700,7 +700,7 @@ td.cellOverdue { color: var(--danger); }
 
 /* Card face: read-only title + meta chips (frontmatter properties). Clicking opens the modal. */
 .kbCardTitle {
-  font-family: var(--editor-font); font-size: var(--fs-body-lg); font-weight: 600; color: var(--fg);
+  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); font-weight: 600; color: var(--fg);
   line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
@@ -739,7 +739,7 @@ td.cellOverdue { color: var(--danger); }
      calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix. */
   width: 100%; max-width: 200px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: -3px -5px;
-  font-family: var(--editor-font); font-size: var(--fs-ui); color: var(--fg); outline: none;
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); outline: none;
 }
 .kbMetaSelect { display: inline-flex; margin: -3px -5px; }
 .kbMetaSelect :global(.ui-select-trigger) {
@@ -766,7 +766,7 @@ td.cellOverdue { color: var(--danger); }
 .kbMetaMarkdownArea {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-3);
-  font-family: var(--editor-font); font-size: var(--fs-ui); line-height: 1.4; color: var(--fg);
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1.4; color: var(--fg);
   resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
 }
 /* A boolean meta property is always a Chip (display AND editor in one) — shrink the
@@ -798,7 +798,7 @@ td.cellOverdue { color: var(--danger); }
   width: 100%; box-sizing: border-box; margin-top: var(--sp-1); padding: var(--sp-4) var(--sp-5);
   border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-0);
   background: var(--surface-1, var(--panel)); color: var(--fg);
-  font-family: var(--editor-font); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
 }
 
 /* Column color picker popover */
