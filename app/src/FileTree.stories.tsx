@@ -31,6 +31,7 @@ import { FileTree } from './FileTree'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { settings, setSettings } from './settings'
+import { toasts } from './toastStore'
 import { SETTINGS_FILE } from './tabIds'
 import type { TreeEntry } from '../../core/src/graph'
 import type { NativeDragDetail } from './nativeDrop'
@@ -510,13 +511,22 @@ export const UndoDeleteRestoresFile: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const restore = settings.keybindings['undo-delete']
         setSettings('keybindings', 'undo-delete', 'Mod+Z')
+        // Query the runtime `data-ft-path` hook, never rendered text — the label can be split
+        // across elements, which is exactly what made a text matcher miss a row that was
+        // genuinely there.
+        const housingRow = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-ft-path="Housing.md"]',
+            )
         try {
-            fireEvent.click(await canvas.findByText(/Housing/), {
-                metaKey: true,
+            const housing = await waitFor(() => {
+                const el = housingRow()
+                if (!el) throw new Error('Housing.md row not rendered yet')
+                return el
             })
+            fireEvent.click(housing, { metaKey: true })
             // Confirm the selection actually landed before relying on it — the whole prior
             // failure was an assumption exactly like this one going unchecked.
             await waitFor(() =>
@@ -532,6 +542,15 @@ export const UndoDeleteRestoresFile: Story = {
             const row = canvasElement.querySelector<HTMLElement>('[data-ft-path]')!
             row.focus()
 
+            // The delete this story dispatches pushes its own toast (`Deleted 1 items`) via
+            // `pushToast`, right after `FileTree.tsx` populates the undo stack — that push is
+            // the only observable signal that the delete has actually COMMITTED, as opposed to
+            // merely disappeared from the row list (`optimisticRemove` runs the row's removal
+            // instantly, well before the `api.del` round trip resolves and undo becomes
+            // possible). Snapshot the toast ids already in flight so a lingering toast from an
+            // earlier story in the same run can't be mistaken for this one.
+            const toastIdsBefore = new Set(toasts().map(t => t.id))
+
             row.dispatchEvent(
                 new KeyboardEvent('keydown', {
                     key: 'Delete',
@@ -542,11 +561,33 @@ export const UndoDeleteRestoresFile: Story = {
             )
             // The intermediate state: the delete actually happened, proven before undo is
             // even tried. The measured round trip runs ~1.8s under load, so give it real room.
+            await waitFor(() => expect(housingRow()).toBeNull(), {
+                timeout: 3000,
+            })
+
+            // Wait for the real commit signal, not the row's already-true absence. This story's
+            // `render` never mounts `<ToastHost>` (that lives near the app root, in `App.tsx`),
+            // so the toast never reaches the DOM/canvas here — `toasts()` is the same Solid
+            // signal `ToastHost` would render from, read directly from `toastStore.ts`. Without
+            // this wait, Mod+Z below can fire while `doDeleteMany`'s `api.del` round trip is
+            // still outstanding, i.e. before `setUndoStack` has run — `undoLastDelete` then finds
+            // an empty stack and silently no-ops, which is the exact race that made this story
+            // flake under load.
             await waitFor(
-                () => expect(canvas.queryByText(/Housing/)).toBeNull(),
+                () => {
+                    const committed = toasts().some(
+                        t => !toastIdsBefore.has(t.id) && /Deleted/.test(t.message),
+                    )
+                    if (!committed)
+                        throw new Error('delete has not committed yet (no fresh toast)')
+                },
                 { timeout: 3000 },
             )
 
+            // The delete above re-renders the row list (one fewer child), which can drop DOM
+            // focus even though `row` itself stays mounted (it is never the deleted node) —
+            // re-focus it so this keydown bubbles the same way the first one did.
+            row.focus()
             row.dispatchEvent(
                 new KeyboardEvent('keydown', {
                     key: 'z',
@@ -557,7 +598,9 @@ export const UndoDeleteRestoresFile: Story = {
                 }),
             )
             // Measured restore round trip runs ~2.5s under load.
-            await waitFor(() => canvas.getByText(/Housing/), { timeout: 4000 })
+            await waitFor(() => expect(housingRow()).not.toBeNull(), {
+                timeout: 4000,
+            })
         } finally {
             setSettings('keybindings', 'undo-delete', restore)
         }
