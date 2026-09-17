@@ -198,13 +198,7 @@ export const RebindMovesToggleBold: Story = {
 
         // `settings` is a module-level store shared by every story in the run — restore it
         // no matter how the checks below turn out.
-        // `as keyof typeof settings.keybindings` — this branch predates `b4624935` ("derive
-        // keybindings settings type from KEYBINDING_CATALOG", merged into `rebindable-keys`/
-        // `rebindable-keys-fix-2`/`rebindable-keys-task-7b` but not into this worktree's base),
-        // so `Settings['keybindings']` here is still the old hand-written literal that doesn't
-        // list `toggle-bold`. This is the SAME cast `settingsKeymap.ts`'s `comboFor` already
-        // uses today for exactly this gap — not a new hole.
-        const KB_TOGGLE_BOLD = 'toggle-bold' as keyof typeof settings.keybindings
+        const KB_TOGGLE_BOLD = 'toggle-bold'
         const previous = settings.keybindings[KB_TOGGLE_BOLD]
         setSettings('keybindings', KB_TOGGLE_BOLD, 'Mod+Y')
         try {

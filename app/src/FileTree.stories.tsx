@@ -526,28 +526,38 @@ export const UndoDeleteRestoresFile: Story = {
                 ).toBe(1),
             )
 
-            window.dispatchEvent(
+            // `onKey` lives on `window`, but it is a real keydown listener, not a synthetic-only
+            // seam — focus a row first so the event bubbles up to it the way a real keypress
+            // would, rather than firing on `window` itself.
+            const row = canvasElement.querySelector<HTMLElement>('[data-ft-path]')!
+            row.focus()
+
+            row.dispatchEvent(
                 new KeyboardEvent('keydown', {
                     key: 'Delete',
                     code: 'Delete',
                     bubbles: true,
+                    cancelable: true,
                 }),
             )
             // The intermediate state: the delete actually happened, proven before undo is
-            // even tried.
-            await waitFor(() =>
-                expect(canvas.queryByText(/Housing/)).toBeNull(),
+            // even tried. The measured round trip runs ~1.8s under load, so give it real room.
+            await waitFor(
+                () => expect(canvas.queryByText(/Housing/)).toBeNull(),
+                { timeout: 3000 },
             )
 
-            window.dispatchEvent(
+            row.dispatchEvent(
                 new KeyboardEvent('keydown', {
                     key: 'z',
                     code: 'KeyZ',
                     metaKey: true,
                     bubbles: true,
+                    cancelable: true,
                 }),
             )
-            await waitFor(() => canvas.getByText(/Housing/))
+            // Measured restore round trip runs ~2.5s under load.
+            await waitFor(() => canvas.getByText(/Housing/), { timeout: 4000 })
         } finally {
             setSettings('keybindings', 'undo-delete', restore)
         }
