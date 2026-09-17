@@ -16,8 +16,7 @@
 // transform can't compile — so it must only ever be reached from a `.tsx` (Editor.tsx) or via a
 // DYNAMIC import (cellEditor.ts is dynamically imported by tableWidget.ts), never statically from a
 // headless-tested `.ts`.
-import { keymap } from '@codemirror/view'
-import { Prec, type Extension } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { syntaxHighlighting } from '@codemirror/language'
@@ -30,6 +29,7 @@ import { latexHighlightTheme } from './latexHighlight'
 import { vaultCompletion } from './autocomplete'
 import { completionTheme } from './completionDisplay'
 import { codeHighlightStyle } from './codeHighlight'
+import { buildSettingsKeymap } from './settingsKeymap'
 import type { NoteCandidate } from './wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
 import type { FileCandidate } from './atMention'
@@ -78,14 +78,18 @@ export function markdownEditingExtensions(
     opts: MarkdownStackOptions,
 ): Extension[] {
     return [
-        // Cmd/Ctrl-B bold, Cmd/Ctrl-I italic (Prec.high so they beat any default Mod-b/Mod-i binding),
-        // matching the note editor.
-        Prec.high(
-            keymap.of([
-                { key: 'Mod-b', run: toggleBold },
-                { key: 'Mod-i', run: toggleItalic },
-            ]),
-        ),
+        // toggle-bold / toggle-italic are settings-driven (core/src/keybindings.ts; default
+        // Mod-B / Mod-I), via `buildSettingsKeymap` — read once, when this array is built. Every
+        // current caller rebuilds this whole stack at a point that already reflects the current
+        // setting: cellEditor.ts on every cell activation (transient by design), and the note
+        // editor / MarkdownField once at mount. Neither wires a LIVE (no-rebuild) reconfigure for
+        // this pair — a caller that needs a rebind to take effect on an already-mounted, long-lived
+        // view without rebuilding it would need its own `settingsKeymapCompartment` layered in front
+        // of this, the same way it already owns its own Tab/indent bindings (see MarkdownField.tsx).
+        buildSettingsKeymap([
+            { id: 'toggle-bold', run: toggleBold },
+            { id: 'toggle-italic', run: toggleItalic },
+        ]),
         // `remove: ["IndentedCode"]` keeps a 4-space-indented line prose, not a code block.
         markdown({
             codeLanguages: languages,

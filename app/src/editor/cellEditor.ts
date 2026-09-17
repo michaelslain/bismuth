@@ -29,6 +29,7 @@ import {
     closeBracketsKeymap,
 } from '@codemirror/autocomplete'
 import { markdownEditingExtensions } from './cellEditorExtensions'
+import { buildSettingsKeymap } from './settingsKeymap'
 import { wrapSelection } from './wrapSelection'
 import { settings } from '../settings'
 import { api } from '../api'
@@ -186,9 +187,15 @@ export function mountCellEditor(h: CellEditorHooks): EditorView {
                                 return true
                             },
                         },
-                        { key: 'Ctrl-Space', run: startCompletion },
                     ]),
                 ),
+                // Open-completion is settings-driven (core/src/keybindings.ts; default Ctrl-Space,
+                // with Mod-Shift-Space as a fallback for the macOS input-source clash) via
+                // `buildSettingsKeymap` — read once, which is fine here since a cell editor is
+                // transient and rebuilt on every activation.
+                buildSettingsKeymap([
+                    { id: 'open-completion', run: startCompletion },
+                ]),
                 // The shared markdown stack (live preview + markdown + autocomplete + math + bold/italic) —
                 // the SAME code the note editor runs, so the cell reads + completes identically (#15/#49).
                 ...markdownEditingExtensions({
