@@ -9,6 +9,14 @@ import { PALETTE_TOKENS, type PaletteTokenName } from '../ui/palette'
 export const THEME_SWATCHES = PALETTE_TOKENS
 export type ThemeSwatch = PaletteTokenName
 
+/** Palette tokens used for AUTO-assigned category colours only — never for the picker's
+ *  choices, which stay the full `THEME_SWATCHES` above (so `accent` remains pickable, and any
+ *  event category already stored as `accent` still highlights the right swatch). Excludes
+ *  `accent` because it is the app's own selection colour (the today pill, the `DONE` outline),
+ *  so a band an AUTO-assignment paints in it would read as "selected" rather than
+ *  "categorised" — a user may still choose it deliberately via the picker. */
+export const AUTO_CATEGORY_TOKENS = PALETTE_TOKENS.filter(t => t !== 'accent')
+
 export function isThemeToken(color: string | undefined): color is ThemeSwatch {
     return !!color && (THEME_SWATCHES as readonly string[]).includes(color)
 }
