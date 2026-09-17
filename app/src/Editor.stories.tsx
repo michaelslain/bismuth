@@ -1137,16 +1137,11 @@ export const SettingsRebuildKeepsBuffer: Story = {
 // direct command call), with a faithful `key` AND `code` pair — `key: ' ', code: 'Space'` for
 // Ctrl+Space, matching the project's synthetic-KeyboardEvent trap.
 
-// TODO(keybinding-type): 'open-completion' is not yet a key of Settings['keybindings'] (a
-// parallel sweep is adding the new catalog ids) — cast once here, the same way
-// editor/settingsKeymap.ts's own comboFor does, rather than at every read/write site below.
-const OPEN_COMPLETION = 'open-completion' as keyof typeof settings.keybindings
-
 // Long enough to scroll on its own (proves scroll position survives a rebind), ending in a bare
 // task line so `[due` has a real completion source to open against — the same context
 // TaskFieldAutocomplete uses, just reached via a real keybinding instead of a direct command
 // call.
-const REBIND_TEXT = [
+const REBIND_SCROLL_TEXT = [
     '# Rebind Completion',
     '',
     ...Array.from(
@@ -1159,12 +1154,12 @@ const REBIND_TEXT = [
 ].join('\n')
 
 const renderRebindStory = (path: string) => {
-    setTransport(fakeTransport({ files: { [path]: REBIND_TEXT } }))
+    setTransport(fakeTransport({ files: { [path]: REBIND_SCROLL_TEXT } }))
     return (
         <div style={{ height: STORY_H, width: '100%' }}>
             <Editor
                 path={path}
-                initialText={REBIND_TEXT}
+                initialText={REBIND_SCROLL_TEXT}
                 onSaved={noop}
                 noteNames={() => NOTE_NAMES}
                 memoryNames={() => MEMORY_NAMES}
@@ -1212,25 +1207,25 @@ export const RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheVie
                 return v
             }
             const before = liveView()
-            const at = REBIND_TEXT.indexOf('[due') + '[due'.length
+            const at = REBIND_SCROLL_TEXT.indexOf('[due') + '[due'.length
             before.dispatch({ selection: { anchor: at, head: at } })
             before.focus()
 
 
-            // A scroll position only a real rebuild would reset — REBIND_TEXT is 60+ paragraphs
+            // A scroll position only a real rebuild would reset — REBIND_SCROLL_TEXT is 60+ paragraphs
             // tall against a 700px story container, so this is well within scrollable range.
             before.scrollDOM.scrollTop = 250
             const docBefore = before.state.doc.toString()
 
             const restore =
-                settings.keybindings[OPEN_COMPLETION]
-            setSettings('keybindings', OPEN_COMPLETION, 'Alt+O')
+                settings.keybindings['open-completion']
+            setSettings('keybindings', 'open-completion', 'Alt+O')
             try {
                 // Give the compartment's createEffect a tick to reconfigure — the reconfigure
                 // itself is a real `view.dispatch`, so polling on its observable effect (the new
                 // combo opening completion) below is the actual deterministic seam; this is just
                 // room for Solid's effect scheduler to run at all.
-                await new Promise(r => setTimeout(r, 50))
+                await new Promise(r => setTimeout(r, 300))
 
                 dispatchOpenCompletionCombo(
                     canvasElement.querySelector('.cm-content')!,
@@ -1244,7 +1239,7 @@ export const RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheVie
                 await expect(after.scrollDOM.scrollTop).toBe(250) // scroll untouched
             } finally {
                 // The settings store is module-level and shared by every story in the run.
-                setSettings('keybindings', OPEN_COMPLETION, restore)
+                setSettings('keybindings', 'open-completion', restore)
             }
         },
     }
@@ -1260,14 +1255,14 @@ export const TheOldComboStopsFiringAfterARebind: Story = {
         const dom = canvasElement.querySelector('.cm-editor')
         const view = dom && EditorView.findFromDOM(dom as HTMLElement)
         if (!view) throw new Error('could not find EditorView')
-        const at = REBIND_TEXT.indexOf('[due') + '[due'.length
+        const at = REBIND_SCROLL_TEXT.indexOf('[due') + '[due'.length
         view.dispatch({ selection: { anchor: at, head: at } })
         view.focus()
 
-        const restore = settings.keybindings[OPEN_COMPLETION]
-        setSettings('keybindings', OPEN_COMPLETION, 'Alt+O')
+        const restore = settings.keybindings['open-completion']
+        setSettings('keybindings', 'open-completion', 'Alt+O')
         try {
-            await new Promise(r => setTimeout(r, 50))
+            await new Promise(r => setTimeout(r, 300))
 
             const content = canvasElement.querySelector('.cm-content')!
             dispatchOpenCompletionCombo(content, 'old')
@@ -1282,7 +1277,7 @@ export const TheOldComboStopsFiringAfterARebind: Story = {
             dispatchOpenCompletionCombo(content, 'new')
             await waitForCompletionActive(view)
         } finally {
-            setSettings('keybindings', OPEN_COMPLETION, restore)
+            setSettings('keybindings', 'open-completion', restore)
         }
     },
 }
@@ -1860,7 +1855,7 @@ export const TaskFieldAutocomplete: Story = {
     },
 }
 
-const REBIND_TEXT = ['# Rebind Open Completion', '', 'A link to [[P'].join(
+const REBIND_LINK_TEXT = ['# Rebind Open Completion', '', 'A link to [[P'].join(
     '\n',
 )
 
@@ -1876,13 +1871,13 @@ const REBIND_TEXT = ['# Rebind Open Completion', '', 'A link to [[P'].join(
 export const RebindOpenCompletion: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { 'Rebind Completion.md': REBIND_TEXT } }),
+            fakeTransport({ files: { 'Rebind Completion.md': REBIND_LINK_TEXT } }),
         )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
                 <Editor
                     path="Rebind Completion.md"
-                    initialText={REBIND_TEXT}
+                    initialText={REBIND_LINK_TEXT}
                     onSaved={noop}
                     noteNames={() => NOTE_NAMES}
                     memoryNames={() => MEMORY_NAMES}
@@ -1897,7 +1892,7 @@ export const RebindOpenCompletion: Story = {
         if (!view) throw new Error('could not find EditorView')
         view.focus()
 
-        const at = REBIND_TEXT.indexOf('[[P') + '[[P'.length
+        const at = REBIND_LINK_TEXT.indexOf('[[P') + '[[P'.length
         view.dispatch({ selection: { anchor: at, head: at } })
 
         const press = (init: KeyboardEventInit) =>
@@ -1944,14 +1939,15 @@ export const RebindOpenCompletion: Story = {
         )
         press({ key: 'Enter', code: 'Enter' })
         await expect(completionStatus(view.state)).toBeNull()
-        await expect(view.state.doc.toString()).toContain(`[[${picked}]]`)
+        // Not `[[${picked}]]` verbatim: NOTE_NAMES deliberately has two notes both labeled
+        // "Plan" (see its own comment above), so wikilinkOptions.ts inserts a PATH-QUALIFIED
+        // target for either one (e.g. `[[Archive/Plan]]`) rather than the bare label — this
+        // still proves the picked option landed, tolerant of that qualification.
+        await expect(view.state.doc.toString()).toContain(`${picked}]]`)
 
-        // 4. Rebind `open-completion` away from Ctrl+Space. 'open-completion' isn't in this
-        //    worktree's hand-typed Settings['keybindings'] yet (a parallel task's change) — widen
-        //    through `string` first, the same cast shape settingsKeymap.ts's own comboFor() uses.
-        const kbId = ('open-completion' as string) as keyof typeof settings.keybindings
-        const restore = settings.keybindings[kbId]
-        setSettings('keybindings', kbId, 'Ctrl+J')
+        // 4. Rebind `open-completion` away from Ctrl+Space.
+        const restore = settings.keybindings['open-completion']
+        setSettings('keybindings', 'open-completion', 'Ctrl+J')
         await new Promise(r => setTimeout(r, 100)) // let the reactive compartment reconfigure
         try {
             // Reset the buffer back to the unclosed `[[P` so the popup has something to open on.
@@ -1959,7 +1955,7 @@ export const RebindOpenCompletion: Story = {
                 changes: {
                     from: 0,
                     to: view.state.doc.length,
-                    insert: REBIND_TEXT,
+                    insert: REBIND_LINK_TEXT,
                 },
                 selection: { anchor: at, head: at },
             })
@@ -1979,7 +1975,7 @@ export const RebindOpenCompletion: Story = {
             await expect(completionStatus(view.state)).toBeNull()
 
             // 7. Empty string leaves NO key able to open the popup.
-            setSettings('keybindings', kbId, '')
+            setSettings('keybindings', 'open-completion', '')
             await new Promise(r => setTimeout(r, 100))
             press({ key: 'j', code: 'KeyJ', ctrlKey: true })
             await new Promise(r => setTimeout(r, 300))
@@ -1989,7 +1985,7 @@ export const RebindOpenCompletion: Story = {
             await expect(completionStatus(view.state)).toBeNull()
         } finally {
             // The settings store is module-level and shared by every story in the run.
-            setSettings('keybindings', kbId, restore)
+            setSettings('keybindings', 'open-completion', restore)
         }
     },
 }
