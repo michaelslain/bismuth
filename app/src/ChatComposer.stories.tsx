@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { ChatComposer, type ComposerHandle } from './ChatComposer'
-import { expectProseFace } from './ui/_fontFace'
+import { expectProseFace, expectFamilyReallyLoaded } from './ui/_fontFace'
 import './ChatComposer.module.css'
 
 const meta = {
@@ -68,9 +68,12 @@ export const Drafting: Story = {
         // loaded — a stack that silently fell through to the Georgia fallback would still match
         // a family-name regex. expectProseFace follows the LIVE --prose-font token instead (so a
         // repointed token is honored rather than a literal being re-pinned), and
-        // document.fonts.check proves the Lora Variable face actually resolved.
+        // expectFamilyReallyLoaded proves the Lora Variable face actually resolved —
+        // document.fonts.check cannot: it is true for a family that doesn't exist (the fallback
+        // is usable) and false for a registered-but-not-yet-laid-out webface, so it stays green
+        // when Lora is absent and turns red the moment Lora is really present.
         expectProseFace(scroller as HTMLElement)
-        await expect(document.fonts.check("16px 'Lora Variable'")).toBe(true)
+        await expectFamilyReallyLoaded('Lora Variable')
         // --prose-font-size is --editor-font-size * --prose-scale, so it must exceed the mono size
         // rather than merely differ from it — a bare inequality would pass on a wrong-way change.
         const root = getComputedStyle(document.documentElement)

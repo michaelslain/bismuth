@@ -28,15 +28,16 @@ const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 // default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
 // same role DEFAULT_PALETTE plays for colour.
 const DEFAULT_PROSE_FONT = "'Lora Variable', Lora, Georgia, serif"
-// PLACEHOLDER — mirrors styles/tokens.css's --prose-scale for Lora and MUST be kept in sync with
-// it. Task 1 (this plan's Lora swap, a sibling worktree) is the one measuring the real value —
-// expected near 1.0, not CMU Serif's 1.28 — and this constant could not be read from that
-// worktree. Reconcile at merge: replace 1.28 below with Task 1's measured --prose-scale.
-const PROSE_SCALE = 1.28
+// Mirrors styles/tokens.css's --prose-scale for Lora and MUST be kept in sync with it. Measured
+// (Task 1, canvas x-height at 100px em): Monaspace Xenon 51.75, Lora Variable 50.00 -> 1.04.
+// Advance-width parity gave 1.02 and disagreed; x-height governs apparent size at a glance, so it
+// wins. 1.04 replaces an earlier 1.28, which was CMU Serif's x-height ratio from before the swap
+// to Lora and does not describe this font pairing.
+const PROSE_SCALE = 1.04
 // The app's defaults: --row-h 18px x editor.lineHeight 1.5 = 27px of leading on prose set at
 // editorFontSize 13.5 x --prose-scale PROSE_SCALE. 27 / (13.5 * PROSE_SCALE), "the normal range
-// for serif body text" that editor.lineHeight's own schema doc cites, at whatever PROSE_SCALE
-// currently is (see the placeholder note above it).
+// for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured
+// value above.
 const DEFAULT_PROSE_LEADING = 27 / (13.5 * PROSE_SCALE)
 
 // The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved

@@ -45,6 +45,28 @@ export function expectEditorSize(el: HTMLElement): void {
     expect(parseFloat(getComputedStyle(el).fontSize)).toBe(px)
 }
 
+/** A mixed-case pangram, wide enough that two genuinely different faces measure to different
+ *  widths at any reasonable size — used only by expectFamilyReallyLoaded below. */
+const MEASURE_PANGRAM = 'The Quick Brown Fox Jumps Over The Lazy Dog 0123456789'
+
+/** True only if `family` genuinely resolved — a family that does not exist renders with the
+ *  fallback and therefore measures identically to a nonsense family. `document.fonts.check`
+ *  cannot tell those apart (it answers "is SOMETHING renderable", and says yes for a missing
+ *  family, no for a registered-but-unloaded one), which is why this measures instead.
+ *
+ *  `document.fonts.load` runs first because a lazily-loaded (`font-display: swap`) webface is
+ *  not laid out, and therefore not measurable, until something has asked for it. */
+export async function expectFamilyReallyLoaded(family: string): Promise<void> {
+    await document.fonts.load(`16px '${family}'`)
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    ctx.font = `16px '${family}'`
+    const targetWidth = ctx.measureText(MEASURE_PANGRAM).width
+    ctx.font = "16px 'Totally Nonexistent Font 12345'"
+    const bogusWidth = ctx.measureText(MEASURE_PANGRAM).width
+    expect(targetWidth).not.toBe(bogusWidth)
+}
+
 /** Assert `el`'s family is bound to the `--ui-font-stack` TOKEN, not merely equal to its value.
  *
  *  --ui-font-stack and --prose-font resolve to visibly different families, so a naive equality
