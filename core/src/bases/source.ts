@@ -47,13 +47,17 @@ export async function resolveBaseRows(
     const seen = ctx.seen ?? new Set<string>()
     const fa = await getFileAccess()
 
-    // FileAccess.realPath is documented to take an ABSOLUTE path, so resolve the base file
-    // against the vault root first. Passing the vault-relative path (as this did) made node's
-    // realpath() resolve against the SERVER's cwd: it fell back to the relative path verbatim,
-    // leaving `seen` and baseParseCache cwd-dependent, shared across vaults, and doing no
-    // symlink resolution at all. Rooted, the keys are vault-scoped and symlinked aliases of one
-    // base file collapse to a single entry. Best-effort: realPath() returns its input when it
-    // cannot resolve (e.g. on iOS, where the tauri impl is the identity).
+    // FileAccess.realPath is documented to take an ABSOLUTE path, so resolve
+    // the base file against the vault root first. Passing the vault-relative
+    // path (as this did) made node's realpath() resolve against the SERVER's
+    // cwd -- falling back to the relative path verbatim, or worse,
+    // canonicalizing an unrelated same-named file under cwd -- leaving `seen`
+    // and baseParseCache cwd-dependent, shared across vaults, and doing no
+    // symlink resolution at all. Rooted, the keys are vault-scoped and
+    // symlinked aliases collapse to one `seen` entry (see the parse cache's
+    // own key below, which must not collapse them). Best-effort: realPath()
+    // returns its input when it cannot resolve (e.g. on iOS, where the tauri
+    // impl is the identity).
     const absPath = `${ctx.root.replace(/\/+$/, '')}/${path}`
     const realPath = await fa.realPath(absPath)
 
@@ -71,11 +75,16 @@ export async function resolveBaseRows(
     // 1s or coarser, so an edit-then-immediate-read within the same tick could
     // incorrectly serve a stale parse under an mtime check. Comparing the raw text
     // (already read above) costs nothing extra and has no such race.
-    const cached = baseParseCache.get(realPath)
+    // The cached VALUE embeds `path` (parseRows -> syntheticBaseFile(meta.path)
+    // -- the write-back handle), which `realPath` no longer determines once
+    // aliases collapse -- so the parse cache keys on both, while `seen`
+    // stays on realPath alone.
+    const parseKey = `${realPath}\0${path}`
+    const cached = baseParseCache.get(parseKey)
     const fresh = cached?.raw === text
     const parsed = fresh ? cached! : parseBaseFile(text, { name, path })
     if (!fresh)
-        baseParseCache.set(realPath, {
+        baseParseCache.set(parseKey, {
             raw: text,
             config: parsed.config,
             rows: parsed.rows,
