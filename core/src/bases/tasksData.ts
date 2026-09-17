@@ -42,7 +42,12 @@ export async function patchTaskRows(
     cache: AsyncCache<Row[]>,
 ): Promise<void> {
     const current = cache.peek()
-    const mdPaths = paths.filter(p => p.endsWith('.md'))
+    // listMarkdown scans with `dot: false`, so a full rebuild never yields rows for a
+    // dot-path note (.daemon/memory/*.md, .daemon/pages/*.md, …). Adding them here would
+    // make the patched feed permanently diverge from a rebuild.
+    const mdPaths = paths.filter(
+        p => p.endsWith('.md') && !p.split('/').some(seg => seg.startsWith('.')),
+    )
     if (!current || mdPaths.length === 0) {
         if (!current && mdPaths.length) cache.invalidate()
         return
