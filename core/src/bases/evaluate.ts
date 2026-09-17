@@ -67,7 +67,11 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
             if (cached) return cached
             try {
                 const re = new RegExp(node.source, node.flags)
-                regexCache.set(node, re)
+                // A global/sticky regex carries lastIndex ACROSS calls, and
+                // functions.ts's `matches` uses re.test() once per row — a cached
+                // instance would alternate true/false down the rows. Only stateless
+                // patterns are cached; g/y recompile per evaluation, as before.
+                if (!/[gy]/.test(node.flags ?? '')) regexCache.set(node, re)
                 return re
             } catch {
                 return undefined
