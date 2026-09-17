@@ -41,7 +41,8 @@ function computeFormulas(
 ): void {
     if (!formulas) return
     const compiled = Object.entries(formulas).map(([name, src]) => {
-        if (formulaAstCache.has(src)) return [name, formulaAstCache.get(src)!] as const
+        if (formulaAstCache.has(src))
+            return [name, formulaAstCache.get(src)!] as const
         let ast: Expr | null
         try {
             ast = parseExpr(src)
