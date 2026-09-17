@@ -1,9 +1,13 @@
 import { tempDir } from '../helpers'
 import { test, expect } from 'bun:test'
-import { taskToRow, buildTaskRows, patchTaskRows } from '../../src/bases/tasksData'
+import {
+    taskToRow,
+    buildTaskRows,
+    patchTaskRows,
+} from '../../src/bases/tasksData'
 import { createAsyncCache } from '../../src/asyncCache'
 import { writeNote } from '../../src/files'
-import { rmSync } from 'node:fs'
+import { rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Task } from '../../src/tasks'
 
@@ -136,4 +140,16 @@ test('patchTaskRows: empty cache and non-md paths are safe no-ops', async () => 
     cache.invalidate()
     await patchTaskRows(vault, ['a.md'], cache)
     expect(cache.peek()).toBeNull()
+})
+
+test('patchTaskRows: a dot-path note never enters the feed', async () => {
+    const vault = tempDir('bismuth-task-patch-')
+    await writeNote(vault, 'a.md', '- [ ] real\n')
+    const cache = await seededCache(vault)
+
+    mkdirSync(join(vault, '.daemon/memory'), { recursive: true })
+    writeFileSync(join(vault, '.daemon/memory/m.md'), '- [ ] phantom\n')
+    await patchTaskRows(vault, ['.daemon/memory/m.md'], cache)
+
+    expect(norm(cache.peek()!)).toBe(norm(await buildTaskRows(vault)))
 })

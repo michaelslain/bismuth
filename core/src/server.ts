@@ -688,8 +688,8 @@ export function createServer(cfg: CoreConfig) {
                 )
             else rowsCache.invalidate()
             // Tasks feed: same patch-in-place as the rows feed above, for the same reason —
-            // a client refetching /tasks after this event must see the patched feed, not a
-            // stale one. Awaited before the SSE publish below.
+            // a client refetching POST /rows for a tasks-source base after this event must
+            // see the patched feed, not a stale one. Awaited before the SSE publish below.
             if (paths.length > 0)
                 await patchTaskRows(cfg.vault, paths, tasksCache).catch(() =>
                     tasksCache.invalidate(),
