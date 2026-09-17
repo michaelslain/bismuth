@@ -17,6 +17,7 @@ import type { Extension } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import {
     completionDisplayConfig,
+    completionNavKeymap,
     type IconedCompletion,
 } from './completionDisplay'
 import type {
@@ -724,16 +725,20 @@ export function settingsCompletion(
     getVaultPaths: () => VaultPath[],
     listFsPaths: (value: string, only?: 'dir' | 'file') => Promise<VaultPath[]>,
 ): Extension {
-    return autocompletion({
-        ...completionDisplayConfig,
-        override: [
-            settingsCompletionSource(
-                getSchema,
-                getIconNames,
-                getTemplatePaths,
-                getVaultPaths,
-                listFsPaths,
-            ),
-        ],
-    })
+    return [
+        autocompletion({
+            ...completionDisplayConfig,
+            defaultKeymap: false, // see completionNavKeymap's doc comment
+            override: [
+                settingsCompletionSource(
+                    getSchema,
+                    getIconNames,
+                    getTemplatePaths,
+                    getVaultPaths,
+                    listFsPaths,
+                ),
+            ],
+        }),
+        completionNavKeymap,
+    ]
 }
