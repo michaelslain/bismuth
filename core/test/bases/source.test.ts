@@ -3,6 +3,8 @@ import { test, expect, describe, afterEach } from 'bun:test'
 import { writeNote } from '../../src/files'
 import { resolveSource, resolveBaseRows } from '../../src/bases/source'
 import { setFileAccess, type FileAccess } from '../../src/fileAccess'
+import { symlinkSync } from 'node:fs'
+import { join } from 'node:path'
 
 test("resolveSource('notes') returns vault rows filtered by where", async () => {
     const dir = tempDir('bismuth-src-')
@@ -235,6 +237,30 @@ test('resolveBaseRows reuses the parsed rows by reference when the file is uncha
     const first = await resolveBaseRows('Own.md', { root: dir })
     const second = await resolveBaseRows('Own.md', { root: dir })
     expect(second).toBe(first)
+})
+
+// Regression: the parse cache used to be keyed on realPath alone, so a symlinked
+// alias of a base file shared its cache entry with the real file -- and since the
+// cached VALUE embeds `path` (the write-back handle used by rowUpdate/rowDelete),
+// whichever name resolved first "won" the entry and the other name's rows silently
+// carried the WRONG file.path. Resolving Real.md first (warming the cache), then
+// Alias.md, must still return rows carrying Alias.md's own path.
+test('resolveBaseRows does not let a symlinked alias share the other name file.path', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Real.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    symlinkSync(join(dir, 'Real.md'), join(dir, 'Alias.md'))
+
+    const realRows = await resolveBaseRows('Real.md', { root: dir })
+    const aliasRows = await resolveBaseRows('Alias.md', { root: dir })
+
+    expect(realRows.length).toBeGreaterThan(0)
+    expect(aliasRows.length).toBeGreaterThan(0)
+    expect(realRows[0].file.path).toBe('Real.md')
+    expect(aliasRows[0].file.path).toBe('Alias.md')
 })
 
 test('resolveBaseRows re-parses after the base file is rewritten, with no sleep between writes', async () => {
