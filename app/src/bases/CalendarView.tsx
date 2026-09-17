@@ -245,6 +245,10 @@ function EventsCalendar(props: { basePath?: string; onChange?: () => void }) {
  * toggle `showCalendarSettings`, a signal only `EventsCalendar`'s `<CalendarSettings>`
  * listened to — in the tasks register it looked live and did nothing).
  */
+// `line`/`resolved`/`statusChar`/`placed` are the task parser's own handles, not columns a
+// person authored — offering them as a Date/Category column choice is nonsense.
+const INTERNAL_KEYS = new Set(['line', 'resolved', 'statusChar', 'placed'])
+
 function TasksCalendar(props: {
     result?: ViewResult
     config?: BaseConfig
@@ -293,7 +297,7 @@ function TasksCalendar(props: {
         const vc = view()
         if (props.ownsRows) {
             if (!props.basePath) return
-            const field = vc?.categoryField ?? 'category'
+            const field = vc?.categoryField || 'category'
             const category = vc?.defaultCategory
             // The description comes FIRST and is never empty — the old bar button wrote
             // just `[scheduled <day>]`, a blank chip the user could not find again.
@@ -318,7 +322,6 @@ function TasksCalendar(props: {
                         `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
                     )
             }
-            setComposeDate(null)
             props.onChange?.()
             return
         }
@@ -351,7 +354,6 @@ function TasksCalendar(props: {
                     `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
                 )
         }
-        setComposeDate(null)
         props.onChange?.()
     }
 
@@ -376,7 +378,9 @@ function TasksCalendar(props: {
     })
     const columns = createMemo(() => {
         const seen = new Set<string>()
-        for (const row of rows()) for (const key of Object.keys(row.note)) seen.add(key)
+        for (const row of rows())
+            for (const key of Object.keys(row.note))
+                if (!INTERNAL_KEYS.has(key)) seen.add(key)
         return [...seen]
     })
     const names = createMemo(() => taskCategoryNames(rows(), categoryField()))
@@ -385,7 +389,11 @@ function TasksCalendar(props: {
         value: string,
     ) => {
         if (!props.basePath) return
-        void api.setViewProperty(props.basePath, props.viewIndex, key, value)
+        // "Not set" REMOVES the key — storing `''` leaves a dead field in the user's
+        // frontmatter, and an empty categoryField would name a column with no name.
+        if (value === '')
+            void api.deleteViewProperty(props.basePath, props.viewIndex, key)
+        else void api.setViewProperty(props.basePath, props.viewIndex, key, value)
     }
     // Rewrites the base's WHOLE `categories:` array — preserving every category already
     // declared and adding the picked one only when it is not there yet.

@@ -20,14 +20,14 @@
 // element) or a computed style, never a class name.
 import { createSignal, onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CalendarView } from './CalendarView'
 import { currentDate, currentView, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { assertChipsWhole, assertHeaderAligned, taskRow } from '../ui/_calendarAssertions'
-import { setTransport } from '../api'
+import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 
 const meta = {
@@ -629,5 +629,75 @@ export const TasksComposerOpen: Story = {
             )
             expect(input, 'composer input opened in the clicked cell').toBeTruthy()
         })
+    },
+}
+
+/** The write itself: open the composer in a day cell, type, press Enter, and the request that
+ *  commits it carries the checkbox line's TEXT — description FIRST and the day appended, never
+ *  the old blank `[scheduled <day>]`. Spies on `api.createTask` (restored on cleanup) rather
+ *  than reading a write back through `fakeTransport`: that write resolves server-side
+ *  (`POST /tasks/create` → `core/src/taskCreate.ts`), a route `_fakeTransport.ts` does not
+ *  implement (confirmed — without the spy this story throws `unhandled POST(json)
+ *  /tasks/create` inside `commitTask`'s try/catch, which swallows it into a toast and leaves
+ *  `Inbox.md` unchanged, so a read-back assertion can never turn green here). The spy proves
+ *  the exact call `CalendarView`'s composer makes, which is what this finding is actually
+ *  about. Replaces Toolbar.stories.tsx's deleted `ClickingCreatesTaskLineInTaskFile`, which
+ *  proved the same bytes through the deleted button and a real `api.write`. */
+export const TasksCommitsTaskLineInTaskFile: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Inbox.md': '- [ ] existing\n' } }))
+        const prevView = currentView.value
+        const prevDate = currentDate.value
+        onMount(() => {
+            currentView.value = 'month'
+            currentDate.value = new Date()
+        })
+        onCleanup(() => {
+            currentView.value = prevView
+            currentDate.value = prevDate
+        })
+        const view: ViewConfig = { ...TASKS_VIEW, taskFile: '[[Inbox]]' }
+        return (
+            <CalendarView
+                basePath="cal.md"
+                result={{ ...tasksResult([]), view }}
+                config={TASKS_BASE_CONFIG}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls: Array<{ file: string; body: string }> = []
+        const original = api.createTask
+        api.createTask = (file, body) => {
+            calls.push({ file, body })
+            return Promise.resolve({ path: 'Inbox.md' })
+        }
+        try {
+            const cells = [
+                ...canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="month-cell"]',
+                ),
+            ]
+            const quiet = cells.find(
+                c => !c.querySelector('[data-testid="task-chip-title"]'),
+            )!
+            await userEvent.click(quiet)
+            const input = await waitFor(() => {
+                const el = quiet.querySelector<HTMLInputElement>(
+                    '[data-testid="task-cell-composer-input"]',
+                )
+                expect(el, 'composer opened').not.toBeNull()
+                return el!
+            })
+            await userEvent.type(input, 'buy milk{Enter}')
+            await waitFor(() => {
+                expect(calls, 'commitTask called api.createTask').toHaveLength(1)
+            })
+            expect(calls[0]!.file).toBe('[[Inbox]]')
+            // description FIRST and non-empty, day appended — the "jank" this plan fixes.
+            expect(calls[0]!.body).toMatch(/^buy milk \[scheduled \d{4}-\d{2}-\d{2}\]$/)
+        } finally {
+            api.createTask = original
+        }
     },
 }
