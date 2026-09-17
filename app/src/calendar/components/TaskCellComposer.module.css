@@ -1,10 +1,14 @@
-/* Matches TaskChip.module.css's padding/gap/font values exactly — this composer sits directly
-   under real TaskChip rows and a pixel of drift between the two is the whole reason this is a
-   component and not a bare <input> dropped into a cell. */
+/* Matches TaskChip.module.css's padding/gap/font values exactly, including the
+   `calc(var(--sp-3) + 3px)` inline-start padding `.chip` reserves for its category band —
+   this composer sits directly under real TaskChip rows and a pixel of drift between the two
+   is the whole reason this is a component and not a bare <input> dropped into a cell. */
 .composer {
     display: flex;
     flex-direction: column;
     padding: var(--sp-1) var(--sp-3);
+    /* Mirrors TaskChip's reserved band gutter (.chip's padding-inline-start) so the composer's
+       marker and text line up with the chips it renders under, band or no band. */
+    padding-inline-start: calc(var(--sp-3) + 3px);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
 }

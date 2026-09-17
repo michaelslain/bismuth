@@ -5,6 +5,9 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import TaskCellComposer from './TaskCellComposer'
+import TaskChip from './TaskChip'
+import type { PlacedTask } from '../taskPlacement'
+import { EMPTY_FILE } from '../../../../core/src/bases/types'
 
 const meta = {
     title: 'Calendar/Components/TaskCellComposer',
@@ -21,6 +24,18 @@ const cell = (width: string) => (children: import('solid-js').JSX.Element) => (
 
 const monthCell = cell('220px')
 const narrowCell = cell('120px')
+
+function chipTask(description: string): PlacedTask {
+    return {
+        row: {
+            file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+            note: { description, placed: '2026-09-09', resolved: false },
+            formula: {},
+        },
+        placed: '2026-09-09',
+        late: 0,
+    }
+}
 
 /** Freshly opened, nothing typed yet — proves the marker/input/destination layout on its own,
  *  before any interaction. */
@@ -93,7 +108,7 @@ export const NarrowColumn: Story = {
     render: () =>
         narrowCell(
             <TaskCellComposer
-                destination="General Tasks"
+                destination="Projects/Q4-Planning/Backlog-Items-Needing-Triage/General Tasks"
                 onCommit={() => {}}
                 onCancel={() => {}}
             />,
@@ -111,11 +126,48 @@ export const NarrowColumn: Story = {
         expect(composer.getBoundingClientRect().right).toBeLessThanOrEqual(
             container.getBoundingClientRect().right + 1,
         )
-        expect(destination.scrollWidth).toBeGreaterThanOrEqual(
-            destination.clientWidth,
-        )
+        expect(destination.scrollWidth).toBeGreaterThan(destination.clientWidth)
 
         // the input still got real room — not squeezed to nothing by the marker + padding
         expect(input.getBoundingClientRect().width).toBeGreaterThan(40)
+    },
+}
+
+/** The real layout: the composer opens as a sibling of TaskChip rows in the same day cell.
+ *  Their `[ ]` markers must sit at the same left edge — .chip reserves
+ *  `padding-inline-start: calc(var(--sp-3) + 3px)` for its category band, and .composer must
+ *  mirror that exactly or its marker/text drift a few pixels left of the chips above it. */
+export const AlignedWithChips: Story = {
+    render: () =>
+        monthCell(
+            <div>
+                <TaskChip
+                    task={chipTask('email ana')}
+                    onToggle={() => {}}
+                    onOpen={() => {}}
+                    onSetStatus={() => {}}
+                />
+                <TaskChip
+                    task={chipTask('water the plants')}
+                    color="var(--teal)"
+                    onToggle={() => {}}
+                    onOpen={() => {}}
+                    onSetStatus={() => {}}
+                />
+                <TaskCellComposer
+                    destination="General Tasks"
+                    onCommit={() => {}}
+                    onCancel={() => {}}
+                />
+            </div>,
+        ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const chipMarkers = canvas.getAllByTestId('task-chip-marker')
+        const composerMarker = canvas.getByTestId('task-cell-composer-marker')
+        const composerLeft = composerMarker.getBoundingClientRect().left
+        for (const marker of chipMarkers) {
+            expect(marker.getBoundingClientRect().left).toBeCloseTo(composerLeft, 0)
+        }
     },
 }

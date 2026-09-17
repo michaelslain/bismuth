@@ -22,6 +22,11 @@ export type TaskCellComposerProps = {
 // signature) means a later prop change is always seen, not frozen at mount.
 const TaskCellComposer: Component<TaskCellComposerProps> = props => {
     const [text, setText] = createSignal('')
+    // Guards against WebKit's inconsistent behaviour of dispatching `blur` on an element removed
+    // from the DOM while focused: the caller unmounts this composer in response to onCancel, and
+    // if blur then fires anyway, onBlur below must NOT also commit the very text Escape (or an
+    // empty Enter) just discarded.
+    let done = false
 
     return (
         <div
@@ -56,6 +61,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     onKeyDown={e => {
                         if (e.key === 'Escape') {
                             e.preventDefault()
+                            done = true
                             props.onCancel()
                             return
                         }
@@ -63,6 +69,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         e.preventDefault()
                         const trimmed = text().trim()
                         if (!trimmed) {
+                            done = true
                             props.onCancel()
                             return
                         }
@@ -73,6 +80,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         setText('')
                     }}
                     onBlur={() => {
+                        if (done) return
                         const trimmed = text().trim()
                         if (trimmed) props.onCommit(trimmed)
                         else props.onCancel()
