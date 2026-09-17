@@ -12,12 +12,8 @@
    padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
 .panel .cat-nameedit { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); margin: -3px -7px; }
 
-/* color chip + palette popover */
-.panel .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
-/* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
-.panel .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
-.panel .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
-.panel .cat-sws { display: flex; gap: var(--sp-3); align-items: center; }
+/* color chip + palette popover now live in ui/ColorChip.module.css — CategoryPanel just
+   composes <ColorChip>, it no longer owns these rules. */
 
 /* new category — distinct dashed card */
 .panel .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }

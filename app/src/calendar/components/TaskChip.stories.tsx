@@ -104,6 +104,39 @@ export const CarriedManyDays: Story = {
         ),
 }
 
+/** A category band — a 3px absolutely-positioned strip along the chip's leading edge, never a
+ *  border (TaskChip.module.css's `.band`). Not carried, so this is the band alone with no
+ *  danger wash to share space with. */
+export const WithCategoryColour: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('water the plants', '2026-09-09', 0)}
+                color="var(--teal)"
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+}
+
+/** THE acceptance case for this task: a carried chip (danger wash + hairline border) AND a
+ *  category band must both be visible at once, never one replacing the other. The band is
+ *  absolutely positioned rather than a second border specifically so it cannot collide with
+ *  `.carried`'s own 1px `--danger` hairline. */
+export const CarriedWithCategoryColour: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('renew passport', '2026-08-15', 25)}
+                color="var(--violet)"
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+}
+
 /** A long description in a narrow cell must wrap onto as many lines as it needs — no clamp, no
  *  ellipsis — rather than force the cell open or clip mid-word. The title is the only flexible
  *  element in the chip's flex row; the marker and the "Nd late" suffix stay pinned to the
@@ -220,6 +253,42 @@ export const CarriedNarrowColumn: Story = {
         expect(late.getBoundingClientRect().top).toBeGreaterThan(
             title.getBoundingClientRect().top,
         )
+    },
+}
+
+/** The exact regression a design review caught: a ~171px WEEK column (not the 220px month
+ *  cell, not the 120px stress test above) is where `.title`'s old `min-width: min(12ch, 100%)`
+ *  pinned the title to a ~12-character ribbon on EVERY line once "Nd late" moved inline beside
+ *  it — 13 lines for this chip, only 4 fitting the visible grid, versus 8 lines/6 chips before
+ *  the regression. `min-width: min(22ch, 100%)` fixes it: below ~250px the late label drops to
+ *  its own line instead (matching the month grid), so the title gets real per-line width back. */
+export const CarriedWeekColumn: Story = {
+    render: () => (
+        <div style={{ width: '171px', border: '1px solid var(--border)' }}>
+            <TaskChip
+                task={task(
+                    'follow up on the overdue item number 21 — a long enough description to wrap',
+                    '2026-08-30',
+                    2,
+                )}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+        const lines = Math.round(title.getBoundingClientRect().height / lineHeight)
+        // The regression wrapped this exact chip to 13 lines at this exact width. The fix
+        // must land meaningfully under that — proof the floor actually moved, not a fluke of
+        // this one description.
+        expect(lines).toBeLessThan(10)
+        // nothing clipped
+        expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1)
     },
 }
 

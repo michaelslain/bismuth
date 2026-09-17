@@ -5,11 +5,11 @@
 // resolveRows/...) against seeded in-memory data instead of a live backend. NOT a story file
 // itself — the `*.stories.*` glob (see `.storybook/main.ts`) skips underscore-prefixed files.
 //
-// Covers the paths `api`'s most-used verbs hit: GET /tree, GET /file, PUT /file, POST /rows.
-// Every other mutation (move/create/delete/toggle/...) gets a generic 200 ack rather than a
-// per-route implementation — a story exercising those usually isn't asserting on the response.
-// An unmapped GET throws instead of guessing a shape, since a silently-wrong response is worse
-// than a loud "add a case here" error.
+// Covers the paths `api`'s most-used verbs hit: GET /tree, GET /file, PUT /file, POST /rows,
+// POST /tasks/create. Every other mutation (move/delete/toggle/...) gets a generic 200 ack
+// rather than a per-route implementation — a story exercising those usually isn't asserting on
+// the response. An unmapped GET throws instead of guessing a shape, since a silently-wrong
+// response is worse than a loud "add a case here" error.
 import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
@@ -42,6 +42,24 @@ export interface FakeTransportSeed {
      *  return something else. Omitting it keeps the previous behaviour (throws), so every
      *  existing caller is unaffected. */
     onUpload?: (targetPath: string, bytes: ArrayBuffer) => string | void
+}
+
+/** Mirrors core/src/taskCreate.ts's resolveTaskFilePath (the server-side resolution a real
+ *  `POST /tasks/create` does): strip `[[`/`]]`, an EXACT match on the ref among the seeded
+ *  paths wins (with or without a trailing `.md`), else a basename match, else `${ref}.md`
+ *  names a brand-new note — same as a wikilink to a nonexistent note everywhere else.
+ *  Deliberately simpler than core's `pickByBase`/`preferId` tie-break — a story seeding two
+ *  notes with the same basename would resolve differently here; `core/test/taskCreate.test.ts`
+ *  owns that case. */
+function resolveTaskFilePath(ref: string, paths: Iterable<string>): string {
+    const bare = ref.replace(/^\[\[/, '').replace(/\]\]$/, '').trim()
+    const withoutExt = bare.endsWith('.md') ? bare.slice(0, -3) : bare
+    const ids = [...paths].map(p => (p.endsWith('.md') ? p.slice(0, -3) : p))
+    if (ids.includes(withoutExt)) return `${withoutExt}.md`
+    const base = withoutExt.split('/').pop()
+    const byBase = ids.find(id => id.split('/').pop() === base)
+    if (byBase !== undefined) return `${byBase}.md`
+    return `${withoutExt}.md`
 }
 
 function splitPath(pathAndQuery: string): {
@@ -152,6 +170,20 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             if (pathname === '/rows') {
                 const { spec } = body as { spec: SourceSpec }
                 return resolveRows(spec) as unknown as T
+            }
+            // Mirrors core/src/taskCreate.ts's appendTaskLine: resolve `file` against the
+            // seeded vault paths, then append `- [ ] <body>`, inserting the separating newline
+            // only when the file doesn't already end in one.
+            if (pathname === '/tasks/create') {
+                const { file, body: taskBody } = body as {
+                    file: string
+                    body: string
+                }
+                const path = resolveTaskFilePath(file, files.keys())
+                const text = files.get(path) ?? ''
+                const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
+                files.set(path, `${text}${sep}- [ ] ${taskBody}\n`)
+                return { path } as unknown as T
             }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
         },

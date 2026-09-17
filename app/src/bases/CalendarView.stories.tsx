@@ -20,14 +20,14 @@
 // element) or a computed style, never a class name.
 import { createSignal, onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CalendarView } from './CalendarView'
 import { currentDate, currentView, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { assertChipsWhole, assertHeaderAligned, taskRow } from '../ui/_calendarAssertions'
-import { setTransport } from '../api'
+import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 
 const meta = {
@@ -531,5 +531,162 @@ export const ReconcilePreservesUnchangedChips: Story = {
 
         // bravo DID change — a fresh node for it is fine, but it must reflect the new state.
         expect(after.get('bravo')!.getAttribute('aria-label')).toContain('done')
+    },
+}
+
+// ---- category colours + the cell composer -----------------------------------------------
+
+/** Three rows from three different SOURCE notes (`file.name`), each on today — `taskCategory.ts`
+ *  rule 2: a SCANNED row's (`note.line` is a number, same as every `taskRow` fixture) category is
+ *  its source note's basename, with no `categoryField` declared on this view. Distinct sources are
+ *  therefore distinct categories, so `TasksCalendar`'s `colorFor` should band each chip a different
+ *  colour (`autoCategoryColor`'s stable hash — no `categories:` declared on `TASKS_BASE_CONFIG`, so
+ *  every one of the three is auto-assigned). */
+function sourcedFrom(row: Row, name: string): Row {
+    return { ...row, file: { ...row.file, name, basename: name, path: `${name}.md` } }
+}
+
+function coloredTasksRows(): Row[] {
+    const today = todayISO()
+    return [
+        sourcedFrom(taskRow('email ana', { line: 1, scheduled: today }), 'Inbox'),
+        sourcedFrom(taskRow('renew passport', { line: 2, scheduled: today }), 'Errands'),
+        sourcedFrom(taskRow('draft the roadmap', { line: 3, scheduled: today }), 'Work'),
+    ]
+}
+
+/** The FIRST child of a chip's root is its colour band (`TaskChip.tsx`'s `<Show when={props.color}>`
+ *  wraps a `<span style={{background: ...}}>` ahead of the marker) — reading the inline style
+ *  directly, never `getComputedStyle`, so an unset band (no colour at all) reads as `''` rather
+ *  than whatever the marker span's own CSS happens to paint. */
+function bandBackground(chipRoot: HTMLElement): string {
+    const first = chipRoot.firstElementChild as HTMLElement | null
+    return first?.style.background ?? ''
+}
+
+/** Seeds `currentView`/`currentDate` the same way `TasksCalendarStory` does, but with the
+ *  3-source `coloredTasksRows()` fixture instead of the 22-row carried-pile one — that fixture
+ *  puts every row through the SAME source note (`taskRow`'s fixed `file.name: 'tasks'`), so it
+ *  cannot exercise per-category colour at all. */
+function ColoredTasksStory() {
+    const prevView = currentView.value
+    const prevDate = currentDate.value
+    onMount(() => {
+        currentView.value = 'month'
+        currentDate.value = new Date()
+    })
+    onCleanup(() => {
+        currentView.value = prevView
+        currentDate.value = prevDate
+    })
+    return (
+        <CalendarView
+            result={tasksResult(coloredTasksRows())}
+            config={TASKS_BASE_CONFIG}
+        />
+    )
+}
+
+export const TasksWithCategoryColours: Story = {
+    render: () => <ColoredTasksStory />,
+    play: async ({ canvasElement }) => {
+        const chips = [
+            findChip(canvasElement, 'email ana'),
+            findChip(canvasElement, 'renew passport'),
+            findChip(canvasElement, 'draft the roadmap'),
+        ]
+        chips.forEach((c, i) =>
+            expect(c.title, `chip ${i} rendered`).toBeTruthy(),
+        )
+        const bands = chips.map(c => bandBackground(c.root!))
+        bands.forEach((b, i) => expect(b, `chip ${i} has a colour band`).not.toBe(''))
+        // At least two of the three differ — a stable per-name hash makes the same source
+        // always the same colour, so three DIFFERENT sources landing on the same colour would
+        // mean colours aren't being looked up per-category at all.
+        expect(new Set(bands).size, 'not every chip got the same colour').toBeGreaterThan(1)
+    },
+}
+
+/** Clicking an empty day cell opens that cell's composer (`TaskComposeProps.open`, wired by
+ *  MonthView) instead of doing nothing — the FIRST half of "super jank": there used to be no
+ *  way to start a task from the grid at all. Targets a cell with no chips in it so the
+ *  composer's own markup isn't lost among 15 stacked chips. */
+export const TasksComposerOpen: Story = {
+    render: () => <TasksCalendarStory view="month" />,
+    play: async ({ canvasElement }) => {
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        const quiet = cells.find(
+            c => !c.querySelector('[data-testid="task-chip-title"]'),
+        )!
+        await fireEvent.click(quiet)
+        await waitFor(() => {
+            const input = quiet.querySelector(
+                'input, textarea, [contenteditable="true"], [role="textbox"]',
+            )
+            expect(input, 'composer input opened in the clicked cell').toBeTruthy()
+        })
+    },
+}
+
+/** The write itself: open the composer in a day cell, type, press Enter, and read the note back
+ *  — the committed line carries the description FIRST with the day appended, never the old blank
+ *  `[scheduled <day>]`. `_fakeTransport.ts` implements `POST /tasks/create` (mirroring
+ *  core/src/taskCreate.ts's resolution + append rules), so this asserts the real bytes rather
+ *  than spying on `api.createTask`. Replaces Toolbar.stories.tsx's deleted
+ *  `ClickingCreatesTaskLineInTaskFile`, which proved the same bytes through the deleted button —
+ *  this is that proof restored, through the composer instead. */
+export const TasksCommitsTaskLineInTaskFile: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Inbox.md': '- [ ] existing\n' } }))
+        const prevView = currentView.value
+        const prevDate = currentDate.value
+        onMount(() => {
+            currentView.value = 'month'
+            currentDate.value = new Date()
+        })
+        onCleanup(() => {
+            currentView.value = prevView
+            currentDate.value = prevDate
+        })
+        const view: ViewConfig = { ...TASKS_VIEW, taskFile: '[[Inbox]]' }
+        return (
+            <CalendarView
+                basePath="cal.md"
+                result={{ ...tasksResult([]), view }}
+                config={TASKS_BASE_CONFIG}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        const quiet = cells.find(
+            c => !c.querySelector('[data-testid="task-chip-title"]'),
+        )!
+        await userEvent.click(quiet)
+        const input = await waitFor(() => {
+            const el = quiet.querySelector<HTMLInputElement>(
+                '[data-testid="task-cell-composer-input"]',
+            )
+            expect(el, 'composer opened').not.toBeNull()
+            return el!
+        })
+        await userEvent.type(input, 'buy milk{Enter}')
+        const text = await waitFor(async () => {
+            const t = await api.read('Inbox.md')
+            expect(t, 'new line written to Inbox.md').toContain('buy milk')
+            return t
+        })
+        // the existing line survives
+        expect(text).toContain('- [ ] existing')
+        // description FIRST and non-empty, day appended — the "jank" this plan fixes.
+        expect(text).toMatch(/- \[ \] buy milk \[scheduled \d{4}-\d{2}-\d{2}\]/)
     },
 }

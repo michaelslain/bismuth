@@ -18,75 +18,8 @@ import { IconButton } from '../../ui/IconButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
-import Swatch from '../../ui/Swatch'
-import { THEME_SWATCHES, resolveCategoryColor } from '../categoryColor'
+import ColorChip from '../../ui/ColorChip'
 import styles from './CategoryPanel.module.css'
-
-/** Palette popover: the six token swatches + accent (PALETTE_TOKENS) — token-driven,
- *  no custom hex wheel. A category already on a non-token colour (set before this
- *  redesign) just shows no swatch highlighted; picking any swatch here replaces it. */
-function Palette(props: {
-    value: string
-    onPick: (c: string) => void
-    up?: boolean
-}) {
-    return (
-        <div
-            class={`${styles['cat-pop']}${props.up ? ` ${styles['up']}` : ''}`}
-            data-testid="category-palette"
-            onClick={e => e.stopPropagation()}
-        >
-            <div class={styles['cat-sws']}>
-                <For each={THEME_SWATCHES}>
-                    {tok => (
-                        <Swatch
-                            color={`var(--${tok})`}
-                            label={tok}
-                            selected={props.value === tok}
-                            onClick={() => props.onPick(tok)}
-                        />
-                    )}
-                </For>
-            </div>
-        </div>
-    )
-}
-
-function ColorChip(props: {
-    color: string
-    open: boolean
-    up?: boolean
-    onToggle: () => void
-    onPick: (c: string) => void
-}) {
-    // Stopping `mousedown` here (not `click`) is what actually matters: the panel's
-    // outside-click guard below listens for `mousedown` on window, so this is the event
-    // that must never leave this subtree. Stopping it declares "this press is mine" to
-    // the guard without the guard ever needing to interrogate the DOM for a class name —
-    // so nothing here breaks when this file's classes become CSS-module hashed locals.
-    return (
-        <div
-            class={styles['cat-chipwrap']}
-            data-testid="category-chip"
-            onMouseDown={e => e.stopPropagation()}
-        >
-            <Swatch
-                size="sm"
-                color={resolveCategoryColor(props.color)}
-                label="Choose colour"
-                selected={props.open}
-                onClick={props.onToggle}
-            />
-            <Show when={props.open}>
-                <Palette
-                    value={props.color}
-                    onPick={props.onPick}
-                    up={props.up}
-                />
-            </Show>
-        </div>
-    )
-}
 
 export function CategoryPanel(props: { store: EventStore }) {
     const [newName, setNewName] = createSignal('')

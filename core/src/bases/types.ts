@@ -114,6 +114,11 @@ export interface ViewConfig {
     // Calendar view, tasks register only: the note a new task is appended to. Without it
     // there is no create action, because a grid cell says which DAY, not which FILE.
     taskFile?: string
+    // Calendar view, tasks register only, OWN-ROWS bases (no `source:`) only: the category a
+    // grid-created task gets. A scanned base's created tasks derive their category from the
+    // source note instead (see app/src/calendar/taskCategory.ts), so this only matters when
+    // the base owns its rows and has no source note to fall back on.
+    defaultCategory?: string
     // Calendar view: PER-CALENDAR Google Calendar sync (replaces the old GLOBAL
     // googleCalendar.{basePath,calendarId,enabled} settings). Each calendar base declares
     // which Google calendar it syncs with + whether sync is on, so a vault can hold several
@@ -255,6 +260,11 @@ export interface BaseConfig {
     // Unified additions:
     source?: SourceSpec // base-level default source for all views
     schema?: Record<string, string> // column -> type ("text"|"date"|"time"|"number"|"checkbox"|"list"|"link")
+    // Declared calendar categories, straight off frontmatter `categories: [{name, color}]` —
+    // the same list the events register already writes (core/src/calendar.ts's Category /
+    // categoriesOf). Lets a task's source-derived category resolve a declared colour without
+    // building a BaseBackend/EventStore. Absent when the frontmatter carries no array.
+    categories?: { name: string; color: string }[]
 }
 
 // ---- The data model (one Row per note) ----

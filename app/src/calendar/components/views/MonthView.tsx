@@ -9,8 +9,10 @@ import {
 import { EventStore } from '../../EventStore'
 import { EventChip } from '../EventChip'
 import TaskChip from '../TaskChip'
+import TaskCellComposer from '../TaskCellComposer'
 import DayNumber from '../DayNumber'
 import type { PlacedTask } from '../../taskPlacement'
+import type { TaskComposeProps } from '../../taskCompose'
 import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import { toDateStr, startOfWeek } from '../../dates'
 import { addDaysISO } from '../../../../../core/src/dates'
@@ -33,6 +35,8 @@ export function MonthView(props: {
     onOpenTask?: (row: PlacedTask['row']) => void
     onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
     onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
+    compose?: TaskComposeProps
+    colorFor?: (task: PlacedTask) => string | undefined
 }) {
     const year = () => currentDate.value.getFullYear()
     const month = () => currentDate.value.getMonth()
@@ -88,11 +92,16 @@ export function MonthView(props: {
                                     class={styles['month-cell']}
                                     data-testid="month-cell"
                                     onClick={() => {
-                                        // Tasks register: no "create event" affordance on a
-                                        // bare cell click — creating a task is the toolbar's
-                                        // "[ + task ]" action, which knows which file to write
-                                        // to. A grid cell only ever says which DAY.
-                                        if (props.placed) return
+                                        // Tasks register: a bare cell click opens the inline
+                                        // composer for THIS day (props.compose) rather than the
+                                        // "create event" modal — tasks and events are different
+                                        // files/writes, and the composer knows which one to write
+                                        // to. The events register's create-event click below is
+                                        // untouched.
+                                        if (props.placed) {
+                                            props.compose?.open(dateStr())
+                                            return
+                                        }
                                         showEventModal.value = { date: dateStr() }
                                     }}
                                     onDragOver={e => {
@@ -122,7 +131,10 @@ export function MonthView(props: {
                                         today={isToday()}
                                         class={`${styles['month-cell-number']}${inMonth() ? '' : ` ${styles['dim']}`}`}
                                     />
-                                    <div class={styles['month-cell-events']}>
+                                    <div
+                                        class={styles['month-cell-events']}
+                                        data-testid="month-cell-events"
+                                    >
                                         <Show
                                             when={props.placed}
                                             fallback={
@@ -153,6 +165,7 @@ export function MonthView(props: {
                                                 {t => (
                                                     <TaskChip
                                                         task={t}
+                                                        color={props.colorFor?.(t)}
                                                         onToggle={() =>
                                                             props.onToggleTask?.(
                                                                 t.row,
@@ -188,6 +201,16 @@ export function MonthView(props: {
                                                     />
                                                 )}
                                             </For>
+                                            <Show when={props.compose?.date === dateStr()}>
+                                                <TaskCellComposer
+                                                    destination={props.compose!.destination}
+                                                    color={props.compose!.color}
+                                                    onCommit={text =>
+                                                        props.compose!.commit(dateStr(), text)
+                                                    }
+                                                    onCancel={() => props.compose!.cancel()}
+                                                />
+                                            </Show>
                                         </Show>
                                     </div>
                                 </div>
