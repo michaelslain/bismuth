@@ -104,6 +104,39 @@ export const CarriedManyDays: Story = {
         ),
 }
 
+/** A category band — a 3px absolutely-positioned strip along the chip's leading edge, never a
+ *  border (TaskChip.module.css's `.band`). Not carried, so this is the band alone with no
+ *  danger wash to share space with. */
+export const WithCategoryColour: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('water the plants', '2026-09-09', 0)}
+                color="var(--teal)"
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+}
+
+/** THE acceptance case for this task: a carried chip (danger wash + hairline border) AND a
+ *  category band must both be visible at once, never one replacing the other. The band is
+ *  absolutely positioned rather than a second border specifically so it cannot collide with
+ *  `.carried`'s own 1px `--danger` hairline. */
+export const CarriedWithCategoryColour: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('renew passport', '2026-08-15', 25)}
+                color="var(--violet)"
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+}
+
 /** A long description in a narrow cell must wrap onto as many lines as it needs — no clamp, no
  *  ellipsis — rather than force the cell open or clip mid-word. The title is the only flexible
  *  element in the chip's flex row; the marker and the "Nd late" suffix stay pinned to the
