@@ -34,11 +34,11 @@ const DEFAULT_PROSE_FONT = "'Lora Variable', Lora, Georgia, serif"
 // wins. 1.04 replaces an earlier 1.28, which was CMU Serif's x-height ratio from before the swap
 // to Lora and does not describe this font pairing.
 export const PROSE_SCALE = 1.04
-// The app's defaults: --row-h 18px x editor.lineHeight 1.5 = 27px of leading on prose set at
-// editorFontSize 13.5 x --prose-scale PROSE_SCALE. 27 / (13.5 * PROSE_SCALE), "the normal range
+// The app's defaults: --row-h 18px x editor.lineHeight 1.25 = 22.5px of leading on prose set at
+// editorFontSize 13.5 x --prose-scale PROSE_SCALE. 22.5 / (13.5 * PROSE_SCALE), "the normal range
 // for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured
 // value above.
-const DEFAULT_PROSE_LEADING = 27 / (13.5 * PROSE_SCALE)
+const DEFAULT_PROSE_LEADING = 22.5 / (13.5 * PROSE_SCALE)
 
 // The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved
 // heading sizes. The ramp is applied to a document's own body size by headingSizes() — see

@@ -180,7 +180,7 @@
   /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
   --lh-tight: 1.4;
   --lh-ui: 1.7;
-  --lh-prose: 1.9;
+  --lh-prose: 1.6;
   --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
 
   /* ── Letter spacing — unchanged, moved verbatim from ui.css:46-48. Eyebrows/labels are
