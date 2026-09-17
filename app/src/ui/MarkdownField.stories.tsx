@@ -9,8 +9,10 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor } from 'storybook/test'
+import { EditorView } from '@codemirror/view'
 import MarkdownField from './MarkdownField'
 import type { NoteCandidate } from '../editor/wikilink'
+import { settings, setSettings } from '../settings'
 
 const meta = {
     title: 'UI/MarkdownField',
@@ -156,6 +158,191 @@ export const RendersLivePreview: Story = {
         await expect(hidden.length).toBeGreaterThan(0)
         for (const el of hidden) {
             await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
+        }
+    },
+}
+
+/** MarkdownField's own `indent`/`outdent` go through a `settingsKeymapCompartment`
+ *  (`fieldKeymap` in MarkdownField.tsx), reconfigured live on a rebind — same proof shape as
+ *  CardEditor's `RebindMovesToggleBold`. The default `Tab` combo indents the line, a rebind
+ *  moves which combo does that WITHOUT remounting the field, and the old combo goes inert. */
+export const RebindMovesIndent: Story = {
+    render: () => <Controlled initial="line" />,
+    play: async ({ canvasElement }) => {
+        const content = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('.cm-content')
+            if (!el) throw new Error('field not mounted yet')
+            return el
+        })
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        // Caret at the very start of the line, so indentMore's effect is unambiguous: the line
+        // gains one `indentUnit` (MarkdownField.tsx sets it to two spaces).
+        liveView().dispatch({ selection: { anchor: 0, head: 0 } })
+
+        const pressTab = () =>
+            content.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Tab',
+                    code: 'Tab',
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        const pressModBracket = () =>
+            content.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: ']',
+                    code: 'BracketRight',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+
+        // Default: Tab indents.
+        pressTab()
+        await waitFor(() =>
+            expect(liveView().state.doc.toString()).toBe('  line'),
+        )
+
+        // `settings` is a module-level store shared by every story in the run — restore it no
+        // matter how the checks below turn out.
+        // `as keyof typeof settings.keybindings` — this branch predates `b4624935` ("derive
+        // keybindings settings type from KEYBINDING_CATALOG", merged into `rebindable-keys`/
+        // `rebindable-keys-fix-2`/`rebindable-keys-task-7b` but not into this worktree's base),
+        // so `Settings['keybindings']` here is still the old hand-written literal that doesn't
+        // list `indent`. This is the SAME cast `settingsKeymap.ts`'s `comboFor` already uses
+        // today for exactly this gap — not a new hole.
+        const KB_INDENT = 'indent' as keyof typeof settings.keybindings
+        const previous = settings.keybindings[KB_INDENT]
+        setSettings('keybindings', KB_INDENT, 'Mod+]')
+        try {
+            // Let the compartment's createEffect reconfigure before probing it.
+            await new Promise(r => setTimeout(r, 150))
+
+            // OLD combo (Tab): inert now. CodeMirror's own `defaultKeymap` never binds Tab on
+            // its own (CM6 deliberately leaves it unbound to avoid trapping focus), so if this
+            // still indented, the helper never actually removed the old binding.
+            pressTab()
+            await new Promise(r => setTimeout(r, 150))
+            await expect(liveView().state.doc.toString()).toBe('  line')
+
+            // NEW combo (Mod+]): runs the same command, live, no remount.
+            pressModBracket()
+            await waitFor(() =>
+                expect(liveView().state.doc.toString()).toBe('    line'),
+            )
+        } finally {
+            setSettings('keybindings', KB_INDENT, previous)
+        }
+    },
+}
+
+/** MarkdownField's bold/italic arrive through the SHARED `markdownEditingExtensions` stack
+ *  (`cellEditorExtensions.ts`'s `buildSettingsKeymap`, read once when the view's extensions are
+ *  built in `onMount`) — not the field's own compartment, unlike `indent`/`outdent` above. This
+ *  is a documented, deliberate asymmetry (see the task 5 report), not a bug to paper over: a
+ *  rebind of `toggle-bold` does NOT reach an already-mounted field. This story proves both
+ *  halves for real — the OLD combo keeps firing and the NEW one is inert while still mounted,
+ *  and only a remount (a fresh EditorView instance, asserted below) swaps them. */
+export const RebindTogglesBoldOnlyAfterRemount: Story = {
+    render: () => {
+        const [generation, setGeneration] = createSignal(0)
+        return (
+            <div>
+                <button
+                    data-testid="remount"
+                    onClick={() => setGeneration(g => g + 1)}
+                >
+                    remount
+                </button>
+                {generation() % 2 === 0 ? <Controlled /> : <Controlled />}
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const contentEl = () => {
+            const el = canvasElement.querySelector<HTMLElement>('.cm-content')
+            if (!el) throw new Error('field not mounted yet')
+            return el
+        }
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        await waitFor(() => contentEl())
+        const beforeView = liveView()
+
+        const pressModB = () =>
+            contentEl().dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'b',
+                    code: 'KeyB',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        const pressModY = () =>
+            contentEl().dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'y',
+                    code: 'KeyY',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+
+        // `settings` is a module-level store shared by every story in the run — restore it no
+        // matter how the checks below turn out.
+        // See RebindMovesIndent above for why this cast is needed on this branch.
+        const KB_TOGGLE_BOLD = 'toggle-bold' as keyof typeof settings.keybindings
+        const previous = settings.keybindings[KB_TOGGLE_BOLD]
+        setSettings('keybindings', KB_TOGGLE_BOLD, 'Mod+Y')
+        try {
+            await new Promise(r => setTimeout(r, 150))
+
+            // STILL MOUNTED from before the rebind: this instance's keymap was built from
+            // settings as they were at mount time, so the OLD combo keeps working...
+            pressModB()
+            await waitFor(() =>
+                expect(liveView().state.doc.toString()).toBe('****'),
+            )
+            // ...and the NEW combo does nothing yet.
+            const mid = liveView()
+            mid.dispatch({ changes: { from: 0, to: mid.state.doc.length } })
+            pressModY()
+            await new Promise(r => setTimeout(r, 150))
+            await expect(liveView().state.doc.toString()).toBe('')
+
+            // Force an actual remount — a fresh EditorView instance, not the same one settling.
+            const remountBtn = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="remount"]',
+            )
+            if (!remountBtn) throw new Error('remount button missing')
+            await userEvent.click(remountBtn)
+            await waitFor(() => expect(liveView()).not.toBe(beforeView))
+
+            // AFTER the remount, `markdownEditingExtensions` was rebuilt from CURRENT settings:
+            // the OLD combo is now inert...
+            pressModB()
+            await new Promise(r => setTimeout(r, 150))
+            await expect(liveView().state.doc.toString()).toBe('')
+            // ...and the NEW combo runs the command.
+            pressModY()
+            await waitFor(() =>
+                expect(liveView().state.doc.toString()).toBe('****'),
+            )
+        } finally {
+            setSettings('keybindings', KB_TOGGLE_BOLD, previous)
         }
     },
 }
