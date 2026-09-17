@@ -173,7 +173,7 @@ describe('prose documents carry the app typography (settings-driven)', () => {
     const p = {
         ...DEFAULT_PALETTE.dark,
         font: 'UiMono, monospace',
-        proseFont: "'CMU Serif', Georgia, serif",
+        proseFont: "'Lora Variable', Lora, Georgia, serif",
         proseLeading: 1.5,
     }
     const doc = (
@@ -192,12 +192,12 @@ describe('prose documents carry the app typography (settings-driven)', () => {
         )
 
     test('a prose document uses the prose face, not the UI face', () => {
-        expect(doc()).toContain("'CMU Serif', Georgia, serif")
+        expect(doc()).toContain("'Lora Variable', Lora, Georgia, serif")
     })
 
     test('a non-prose document keeps the UI face (base/calendar exports unchanged)', () => {
         const out = doc(p, false)
-        expect(out).not.toContain("'CMU Serif'")
+        expect(out).not.toContain("'Lora Variable'")
         expect(out).toContain('UiMono, monospace')
         expect(out).toContain(`line-height: ${RULE_PX}px`)
     })
@@ -300,7 +300,7 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
     const p = {
         ...DEFAULT_PALETTE.dark,
         font: 'UiMono, monospace',
-        proseFont: "'CMU Serif', Georgia, serif",
+        proseFont: "'Lora Variable', Lora, Georgia, serif",
     }
     const pRule = (palette: typeof p, pt = 12): string => {
         const out = wrapHtmlDocument(
