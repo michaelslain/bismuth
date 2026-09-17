@@ -88,6 +88,13 @@
 .carried {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     border: 1px solid var(--danger);
+    /* The leading edge belongs to the CATEGORY BAND, not to the overdue hairline. A salmon
+       1px pressed against the 3px band reads as one mis-registered stripe rather than as two
+       facts, and it makes the same category look like a different colour on a carried chip
+       than on a chip two rows up. The band cannot simply cover it — `.chip` clips at its
+       padding edge — so the hairline yields this one edge and keeps the other three, which
+       is enough to carry "late" alongside the wash. */
+    border-inline-start-color: transparent;
 }
 .carried .marker {
     color: var(--danger);
