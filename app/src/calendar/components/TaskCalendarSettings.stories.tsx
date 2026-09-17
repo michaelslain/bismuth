@@ -2,10 +2,19 @@
 // should have opened (see the component's own header comment for why it didn't). Presentational
 // and stateless about persistence: every prop is a plain value or callback, so every state below
 // is just an `args` object — no fakeTransport wrapping needed, unlike CalendarSettings.
+//
+// The Categories list's swatches are INTERACTIVE — each one is a live `ColorChip`, and clicking
+// it is how a person sets that category's colour (see `Interactive` below). The names beside them
+// are derived from the data itself and cannot be added, renamed or deleted here.
+//
+// Every `colors` map below is built by calling `taskCategoryColors` — the same function
+// `TasksCalendar` calls for real — rather than hand-written, so a name with no declared colour
+// shows its real auto-assigned swatch instead of a fabricated stand-in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskCalendarSettings from './TaskCalendarSettings'
+import { taskCategoryColors, type TaskCategory } from '../taskCategory'
 
 const meta = {
     title: 'Calendar/TaskCalendarSettings',
@@ -25,6 +34,15 @@ const NOTES = [
 ]
 const SIX_NAMES = ['Work', 'Personal', 'Health', 'Errands', 'Reading', 'Ideas']
 
+/** Three of the six names have a declared colour; the other three fall back to
+ *  `autoCategoryColor` — matching what `taskCategoryColors` actually does for a set that is
+ *  only partly configured. */
+const THREE_DECLARED: TaskCategory[] = [
+    { name: 'Work', color: 'blue' },
+    { name: 'Personal', color: 'rose' },
+    { name: 'Health', color: 'green' },
+]
+
 /** A base with `source:` set (`ownsRows: false`) — new tasks need a destination note, so the
  *  "New tasks" section shows the Destination-note picker rather than a default category. Six
  *  category names, three carrying a declared colour and three falling back to the default
@@ -38,13 +56,7 @@ export const Sourced: Story = {
             dateField="scheduled"
             taskFile="[[Website Relaunch]]"
             names={SIX_NAMES}
-            colors={
-                new Map([
-                    ['Work', 'var(--blue)'],
-                    ['Personal', 'var(--rose)'],
-                    ['Health', 'var(--green)'],
-                ])
-            }
+            colors={taskCategoryColors(SIX_NAMES, THREE_DECLARED)}
             onPickColor={() => {}}
             onSetField={() => {}}
             onClose={() => {}}
@@ -53,7 +65,8 @@ export const Sourced: Story = {
 }
 
 /** Same as `Sourced`, but `taskFile` is unset — the destination field reads "Not set" and
- *  carries a hint that new tasks have nowhere to go until it is. */
+ *  carries a hint that new tasks have nowhere to go until it is. No name here has a declared
+ *  colour, so every swatch is auto-assigned — and, per `taskCategoryColors`, distinct. */
 export const SourcedUnconfigured: Story = {
     render: () => (
         <TaskCalendarSettings
@@ -61,7 +74,7 @@ export const SourcedUnconfigured: Story = {
             columns={COLUMNS}
             notes={NOTES}
             names={SIX_NAMES}
-            colors={new Map()}
+            colors={taskCategoryColors(SIX_NAMES, undefined)}
             onPickColor={() => {}}
             onSetField={() => {}}
             onClose={() => {}}
@@ -91,13 +104,7 @@ export const OwnRows: Story = {
             categoryField="category"
             defaultCategory="Work"
             names={SIX_NAMES}
-            colors={
-                new Map([
-                    ['Work', 'var(--blue)'],
-                    ['Personal', 'var(--rose)'],
-                    ['Health', 'var(--green)'],
-                ])
-            }
+            colors={taskCategoryColors(SIX_NAMES, THREE_DECLARED)}
             onPickColor={() => {}}
             onSetField={() => {}}
             onClose={() => {}}
@@ -120,7 +127,9 @@ export const Interactive: Story = {
     render: () => {
         const [open, setOpen] = createSignal(false)
         const [colors, setColors] = createSignal(
-            new Map([['Work', 'var(--blue)']]),
+            taskCategoryColors(['Work', 'Personal'], [
+                { name: 'Work', color: 'blue' },
+            ]),
         )
         return (
             <Show

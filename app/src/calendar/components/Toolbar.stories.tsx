@@ -371,18 +371,36 @@ export const NonCalendarBaseBarForComparison: Story = {
 // `TasksCommitsTaskLineInTaskFile` (the write itself).
 
 /** Same composition as `InBaseBar`, but passing a `CalendarSlotsCtx` — what `BaseView.tsx`
- *  computes once it knows which register (events/tasks) is active. */
+ *  computes once it knows which register (events/tasks) is active. Carries the same trailing
+ *  gear + `</>` `IconButton`s `InBaseBar` appends — those are BaseView's own, not the calendar's,
+ *  so the tasks register ships with them too; without them here the story proves only the
+ *  deletion half of acceptance #2, not the trail that replaces it. */
 function InTasksBar(props: { ctx: CalendarSlotsCtx }) {
     const slots = calendarSlots(props.ctx)
     return (
         <div style={{ width: '1100px', 'max-width': 'none' }}>
-            <ViewBar identity={<Crumb icon="Table">Calendar</Crumb>} {...slots} />
+            <ViewBar
+                identity={<Crumb icon="Table">Calendar</Crumb>}
+                {...slots}
+                actions={
+                    <>
+                        {slots.actions}
+                        <IconButton
+                            icon="Settings"
+                            label="Settings"
+                            size="sm"
+                        />
+                        <IconButton icon="Code" label="Source" size="sm" />
+                    </>
+                }
+            />
         </div>
     )
 }
 
 /** This is acceptance #2: in tasks mode the actions slot renders NEITHER "New task" (deleted)
- *  NOR "New event" (the events-only fallback) — nothing at all. */
+ *  NOR "New event" (the events-only fallback), and the trailing controls are exactly the gear
+ *  and `</>`, in that order. */
 export const TasksRegisterHasNoActionButton: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'month', false)
@@ -391,5 +409,15 @@ export const TasksRegisterHasNoActionButton: Story = {
     play: async ({ canvasElement }) => {
         expect(canvasElement.querySelector('[title="New task"]')).toBeNull()
         expect(canvasElement.querySelector('[title="New event"]')).toBeNull()
+        const settings = canvasElement.querySelector('[title="Settings"]')
+        const code = canvasElement.querySelector('[title="Source"]')
+        expect(settings).not.toBeNull()
+        expect(code).not.toBeNull()
+        expect(
+            !!(
+                settings!.compareDocumentPosition(code!) &
+                Node.DOCUMENT_POSITION_FOLLOWING
+            ),
+        ).toBe(true)
     },
 }
