@@ -100,7 +100,16 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
             <ModalBody>
                 <SettingsSection>Placement</SettingsSection>
                 <SettingsGrid>
-                    <SettingsField icon="calendar" label="Date column" span>
+                    <SettingsField
+                        icon="calendar"
+                        label="Date column"
+                        span
+                        hint={
+                            props.dateField
+                                ? undefined
+                                : 'Tasks fall back to scheduled, then due, until this is set.'
+                        }
+                    >
                         <Select
                             value={props.dateField ?? ''}
                             options={dateOptions(props.columns)}
@@ -156,7 +165,16 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                 <SettingsSection>Categories</SettingsSection>
                 <Show when={props.ownsRows}>
                     <SettingsGrid>
-                        <SettingsField icon="Tag" label="Category column" span>
+                        <SettingsField
+                            icon="Tag"
+                            label="Category column"
+                            span
+                            hint={
+                                props.categoryField
+                                    ? undefined
+                                    : "A task's category comes from its source note instead."
+                            }
+                        >
                             <Select
                                 value={props.categoryField ?? ''}
                                 options={columnOptions(props.columns)}
