@@ -19,6 +19,8 @@ import SettingsSection from '../../ui/SettingsSection'
 import SettingsGrid from '../../ui/SettingsGrid'
 import SettingsField from '../../ui/SettingsField'
 import Select, { type SelectOption } from '../../ui/Select'
+import TextInput from '../../ui/TextInput'
+import SettingsHint from '../../ui/SettingsHint'
 import { TextButton } from '../../ui/TextButton'
 import Label from '../../ui/Label'
 import ColorChip from '../../ui/ColorChip'
@@ -64,10 +66,6 @@ function dateOptions(columns: string[]): SelectOption[] {
 
 function columnOptions(columns: string[]): SelectOption[] {
     return [{ value: '', label: 'Not set' }, ...columns.map(c => ({ value: c, label: c }))]
-}
-
-function categoryOptions(names: string[]): SelectOption[] {
-    return [{ value: '', label: 'Not set' }, ...names.map(n => ({ value: n, label: n }))]
 }
 
 /** `props.notes` (vault-relative paths) as Select options: the basename as the label, the full
@@ -129,14 +127,20 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                                 label="Default category"
                                 span
                             >
-                                <Select
+                                <TextInput
                                     value={props.defaultCategory ?? ''}
-                                    options={categoryOptions(props.names)}
                                     placeholder="Not set"
-                                    onChange={v =>
+                                    list="task-calendar-settings-category-names"
+                                    class={styles['category-input']}
+                                    onInput={v =>
                                         props.onSetField('defaultCategory', v)
                                     }
                                 />
+                                <datalist id="task-calendar-settings-category-names">
+                                    <For each={props.names}>
+                                        {name => <option value={name} />}
+                                    </For>
+                                </datalist>
                             </SettingsField>
                         }
                     >
@@ -163,6 +167,12 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                 </SettingsGrid>
 
                 <SettingsSection>Categories</SettingsSection>
+                <Show when={!props.names.length}>
+                    <SettingsHint>
+                        Categories appear here once tasks have a source note
+                        or a category value.
+                    </SettingsHint>
+                </Show>
                 <Show when={props.ownsRows}>
                     <SettingsGrid>
                         <SettingsField
@@ -172,7 +182,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                             hint={
                                 props.categoryField
                                     ? undefined
-                                    : "A task's category comes from its source note instead."
+                                    : "Without this, a task's category comes from a `category` column, if it has one."
                             }
                         >
                             <Select
