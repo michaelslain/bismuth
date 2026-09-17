@@ -4,15 +4,23 @@
 // live in core/src/keybindings.ts; this is just the runtime matcher used by
 // App.tsx's global keydown handler.
 //
-//   "Mod"  — Cmd on macOS / Ctrl elsewhere (matches metaKey OR ctrlKey),
-//            mirroring CodeMirror's convention.
+//   "Mod"  — the portable default: Cmd on macOS / Ctrl elsewhere. Matches
+//            metaKey OR ctrlKey — either satisfies it (mirrors CodeMirror's
+//            own "Mod" convention), and both may be held at once.
+//   "Ctrl"/"Control" — EXACT: requires ctrlKey, independent of Mod. Lets a
+//            combo pin down the physical Ctrl key even on macOS.
+//   "Cmd"/"Command"/"Meta"/"Super" — EXACT: requires metaKey, independent of
+//            Mod.
 //   "Alt"  — Option/Alt;  "Shift" — Shift.
 //   The final "+"-separated token is the key (e.g. "P", "=", "`", "ArrowLeft").
 //   Comma-separate alternatives: "Mod+`, Mod+J".
 //
 // Matching is EXACT on modifiers: a combo with no Shift token does NOT fire when
 // Shift is held, so "Mod+D" (split-right) and "Mod+Shift+D" (split-down) stay
-// distinct. Key comparison is case-insensitive (against KeyboardEvent.key).
+// distinct. The same exactness holds for Ctrl and Meta — "Ctrl+Space" does not
+// fire under a stray Cmd, and a combo naming none of Mod/Ctrl/Meta requires
+// NEITHER modifier held. Key comparison is case-insensitive (against
+// KeyboardEvent.key).
 //
 // Physical-key matching: on macOS, holding Option (Alt) composes a special
 // character — `Alt+S` reports `event.key === "ß"`, `Alt+=` reports `"≠"` — so
@@ -22,22 +30,29 @@
 // EITHER the produced key or the physical key matches.
 
 export interface ParsedCombo {
-    mod: boolean // Cmd/Ctrl (either)
+    mod: boolean    // "Mod" — Cmd on macOS / Ctrl elsewhere; matches metaKey OR ctrlKey
+    ctrl: boolean   // "Ctrl"/"Control" — EXACT, ctrlKey only
+    meta: boolean   // "Cmd"/"Command"/"Meta"/"Super" — EXACT, metaKey only
     alt: boolean
     shift: boolean
-    key: string // normalized main key, lowercased
+    key: string     // normalized main key, lowercased
 }
 
-// Modifier tokens → which flag they set. Cmd/Ctrl/Meta all fold into `mod`
-// because the app treats Cmd-on-mac and Ctrl-elsewhere as the same shortcut.
-const MODIFIER_TOKENS: Record<string, 'mod' | 'alt' | 'shift'> = {
+// Modifier tokens → which flag they set. "Mod" alone keeps the portable fold;
+// Ctrl/Control and Cmd/Command/Meta/Super now set their OWN exact flag instead
+// of folding into `mod` — that's what lets a combo pin down one physical key
+// (e.g. "Ctrl+Space", to dodge a platform hotkey squatting on the portable one).
+const MODIFIER_TOKENS: Record<
+    string,
+    'mod' | 'ctrl' | 'meta' | 'alt' | 'shift'
+> = {
     mod: 'mod',
-    cmd: 'mod',
-    command: 'mod',
-    ctrl: 'mod',
-    control: 'mod',
-    meta: 'mod',
-    super: 'mod',
+    ctrl: 'ctrl',
+    control: 'ctrl',
+    cmd: 'meta',
+    command: 'meta',
+    meta: 'meta',
+    super: 'meta',
     alt: 'alt',
     option: 'alt',
     opt: 'alt',
@@ -106,7 +121,14 @@ export function parseCombo(combo: string): ParsedCombo | null {
         .map(p => p.trim())
         .filter(p => p.length > 0)
     if (parts.length === 0) return null
-    const out: ParsedCombo = { mod: false, alt: false, shift: false, key: '' }
+    const out: ParsedCombo = {
+        mod: false,
+        ctrl: false,
+        meta: false,
+        alt: false,
+        shift: false,
+        key: '',
+    }
     parts.forEach((part, i) => {
         const mod = MODIFIER_TOKENS[part.toLowerCase()]
         // A token counts as a modifier only when it isn't the final (key) token, so
@@ -121,7 +143,19 @@ export function parseCombo(combo: string): ParsedCombo | null {
 export function matchesCombo(e: KeyboardEvent, combo: string): boolean {
     const p = parseCombo(combo)
     if (!p) return false
-    if (p.mod !== (e.metaKey || e.ctrlKey)) return false
+    // Ctrl/Meta are exact when the combo names them explicitly. When it doesn't
+    // name one, that physical key may only be held if `Mod` is present — Mod's
+    // portable fold can be satisfied via either — otherwise it's an unrequested
+    // extra modifier and the combo must reject it.
+    if (p.ctrl) {
+        if (!e.ctrlKey) return false
+    } else if (!p.mod && e.ctrlKey) return false
+    if (p.meta) {
+        if (!e.metaKey) return false
+    } else if (!p.mod && e.metaKey) return false
+    // Mod's own "at least one" requirement only needs checking when neither
+    // Ctrl nor Meta already pinned an exact physical key above.
+    if (p.mod && !p.ctrl && !p.meta && !(e.metaKey || e.ctrlKey)) return false
     if (p.alt !== e.altKey) return false
     if (p.shift !== e.shiftKey) return false
     // Match the produced key OR the physical key — the latter survives Option
@@ -151,9 +185,19 @@ export const KEYBIND_MODIFIERS = ['Mod', 'Alt', 'Shift', 'Cmd', 'Ctrl', 'Meta']
 
 // Which family a modifier token belongs to, so the completion can hide a family
 // that's already present in the combo (e.g. once "Mod" is typed, drop Cmd/Ctrl too).
-// Identical to the matcher's MODIFIER_TOKENS map — derived from it so the two can't
-// drift; the family name is exactly the flag a token sets.
-const MODIFIER_FAMILY: Record<string, string> = MODIFIER_TOKENS
+// Deliberately COARSER than the matcher's MODIFIER_TOKENS: Mod/Cmd/Ctrl/Meta now
+// set three different exact MATCH flags (see the header comment — mod/ctrl/meta
+// are independent), but they're still the same "pick one platform-modifier
+// spelling" choice from the completion's point of view, so this folds ctrl/meta
+// back to "mod" for hiding purposes. Derived from MODIFIER_TOKENS (rather than a
+// second hand-copied token list) so the two can't drift on which tokens exist —
+// only on how ctrl/meta are grouped once they do.
+const MODIFIER_FAMILY: Record<string, string> = Object.fromEntries(
+    Object.entries(MODIFIER_TOKENS).map(([token, flag]) => [
+        token,
+        flag === 'ctrl' || flag === 'meta' ? 'mod' : flag,
+    ]),
+)
 
 /** The modifier family of a token, or null if the token is a plain key. */
 export function modifierFamily(token: string): string | null {
@@ -229,4 +273,102 @@ export function eventToCombo(e: KeyboardEvent): string | null {
     const physical = codeToKey(e.code)
     parts.push(displayKey(physical ?? e.key))
     return parts.join('+')
+}
+
+// ── CodeMirror bridge ─────────────────────────────────────────────────────
+// toCmKeys() turns a settings combo string into the key string(s) CodeMirror's
+// own keymap facet expects (dash-joined, e.g. "Mod-Shift-b"), so an action can
+// be wired as a CM keybinding without hand-maintaining a second copy of the
+// combo in CM's syntax.
+
+// Reverse of the named-key handling above: our parsed key is lowercased
+// ("arrowleft", "escape", " "), but CodeMirror's key strings use its own
+// PascalCase names for anything but a literal character — and CM's own
+// `normalizeKeyName` re-derives " " from the literal WORD "Space" itself, so
+// we must emit that word, never the raw space character.
+const CM_KEY_NAMES: Record<string, string> = {
+    ' ': 'Space',
+    arrowleft: 'ArrowLeft',
+    arrowright: 'ArrowRight',
+    arrowup: 'ArrowUp',
+    arrowdown: 'ArrowDown',
+    escape: 'Escape',
+    enter: 'Enter',
+    tab: 'Tab',
+    backspace: 'Backspace',
+    delete: 'Delete',
+    home: 'Home',
+    end: 'End',
+    pageup: 'PageUp',
+    pagedown: 'PageDown',
+    insert: 'Insert',
+    f1: 'F1',
+    f2: 'F2',
+    f3: 'F3',
+    f4: 'F4',
+    f5: 'F5',
+    f6: 'F6',
+    f7: 'F7',
+    f8: 'F8',
+    f9: 'F9',
+    f10: 'F10',
+    f11: 'F11',
+    f12: 'F12',
+}
+
+// Our modifier families → the modifier name CodeMirror's normalizeKeyName
+// expects. "Mod" is understood by CM itself (it resolves Cmd-vs-Ctrl by
+// platform, the same convention this module uses), so it passes straight
+// through; "Super" has no CM equivalent, hence the fold to "Meta" via the
+// MODIFIER_TOKENS map above.
+const CM_MODIFIER_NAMES: Record<
+    'mod' | 'ctrl' | 'meta' | 'alt' | 'shift',
+    string
+> = {
+    mod: 'Mod',
+    ctrl: 'Ctrl',
+    meta: 'Meta',
+    alt: 'Alt',
+    shift: 'Shift',
+}
+
+/**
+ * One combo (no commas) → the CodeMirror key string it corresponds to, or null.
+ * Mirrors parseCombo's token walk rather than reusing its output, because the
+ * modifier ORDER matters here (CM keys read left-to-right same as written) and
+ * ParsedCombo discards it in favour of plain booleans.
+ */
+function comboToCmKey(combo: string): string | null {
+    const parts = combo
+        .split('+')
+        .map(p => p.trim())
+        .filter(p => p.length > 0)
+    if (parts.length === 0) return null
+    const cmParts: string[] = []
+    let key = ''
+    parts.forEach((part, i) => {
+        const family = MODIFIER_TOKENS[part.toLowerCase()]
+        if (family && i < parts.length - 1)
+            cmParts.push(CM_MODIFIER_NAMES[family])
+        else key = normalizeKey(part)
+    })
+    if (!key) return null
+    cmParts.push(CM_KEY_NAMES[key] ?? key)
+    return cmParts.join('-')
+}
+
+/**
+ * Convert a settings keybinding combo string into the CodeMirror key string(s)
+ * it corresponds to — one per comma-separated alternative
+ * ("Mod+`, Mod+J" → ["Mod-`", "Mod-j"]). Pure, no DOM. Empty/nullish/garbage
+ * input → [].
+ */
+export function toCmKeys(setting: string | undefined | null): string[] {
+    if (!setting) return []
+    return setting
+        .split(',')
+        .map(c => c.trim())
+        .filter(c => c.length > 0)
+        .map(comboToCmKey)
+        .filter((k): k is string => k !== null)
 }
