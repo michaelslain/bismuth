@@ -81,16 +81,24 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                             return
                         }
                         props.onCommit(trimmed)
-                        // The caller keeps the composer mounted after a commit — clearing here
-                        // (rather than waiting for the caller to remount it) is what makes a
-                        // second task one keystroke away.
-                        setText('')
+                        // Keep the draft when there is nowhere to write it: an empty
+                        // `destination` is the no-taskFile state (see the hint below), where
+                        // the caller opens settings instead of writing. Clearing there would
+                        // throw the typed task away. `done` stops the settings modal stealing
+                        // focus from re-firing this text through onBlur.
+                        if (props.destination) setText('')
+                        else done = true
                     }}
                     onBlur={() => {
                         if (done) return
                         const trimmed = text().trim()
-                        if (trimmed) props.onCommit(trimmed)
-                        else props.onCancel()
+                        // Same as the Enter path: commit, then clear. The caller keeps the
+                        // composer mounted, so leaving the committed text in the input would
+                        // invite a second Enter writing the same task again.
+                        if (trimmed) {
+                            props.onCommit(trimmed)
+                            setText('')
+                        } else props.onCancel()
                     }}
                 />
             </div>

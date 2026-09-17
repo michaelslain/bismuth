@@ -3,7 +3,7 @@
 // that truncates rather than growing the cell. See TaskChip.stories.tsx for the sibling spec
 // this file's shape is modeled on.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, within } from 'storybook/test'
 import TaskCellComposer from './TaskCellComposer'
 import TaskChip from './TaskChip'
 import type { PlacedTask } from '../taskPlacement'
@@ -214,5 +214,78 @@ export const AlignedWithChips: Story = {
         for (const marker of chipMarkers) {
             expect(marker.getBoundingClientRect().left).toBeCloseTo(composerLeft, 0)
         }
+    },
+}
+
+/** [Important finding] `CalendarView.tsx`'s `commitTask` no longer closes the composer after a
+ *  write (that's the fix restoring acceptance #4 — Enter writes and leaves the composer open
+ *  and empty). Blur must match the Enter path exactly: commit, then clear. A blur that commits
+ *  but leaves the typed text sitting in the input means clicking back in and pressing Enter
+ *  writes the same task a second time — this proves the input is actually emptied, not just
+ *  that onCommit fired. */
+export const BlurCommitsThenClears: Story = {
+    render: () => {
+        const calls: string[] = []
+        ;(window as unknown as { __blurCalls?: string[] }).__blurCalls = calls
+        return monthCell(
+            <TaskCellComposer
+                destination="General Tasks"
+                onCommit={text => calls.push(text)}
+                onCancel={() => calls.push('cancel')}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __blurCalls: string[] }).__blurCalls
+        const canvas = within(canvasElement)
+        const input = canvas.getByTestId(
+            'task-cell-composer-input',
+        ) as HTMLInputElement
+
+        await userEvent.type(input, 'water the plants')
+        fireEvent.blur(input)
+
+        expect(calls).toEqual(['water the plants'])
+        // The finding: blur committed but left the just-written text sitting in the input,
+        // inviting a duplicate write on the next Enter.
+        expect(input.value).toBe('')
+    },
+}
+
+/** [Important finding] a sourced calendar with no `taskFile` set (a new task calendar's
+ *  first-run state) has `destination === ''` — the same state that drives the composer's own
+ *  `--danger` "no destination note // set one in settings" hint below the input.
+ *  `CalendarView.tsx`'s `commitTask` writes nothing for that state; it opens settings instead.
+ *  Enter used to clear the input unconditionally regardless, throwing away what the user typed
+ *  with nowhere for it to have gone. Proves the draft survives Enter when there is no
+ *  destination to write it to. */
+export const EnterKeepsDraftWithNoDestination: Story = {
+    render: () => {
+        const calls: string[] = []
+        ;(window as unknown as { __noDestCalls?: string[] }).__noDestCalls = calls
+        return monthCell(
+            <TaskCellComposer
+                destination=""
+                onCommit={text => calls.push(text)}
+                onCancel={() => calls.push('cancel')}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __noDestCalls: string[] }).__noDestCalls
+        const canvas = within(canvasElement)
+        const input = canvas.getByTestId(
+            'task-cell-composer-input',
+        ) as HTMLInputElement
+
+        await userEvent.type(input, 'water the plants')
+        input.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+
+        expect(calls).toEqual(['water the plants'])
+        // The finding: Enter cleared the input even though commitTask writes nothing when
+        // there's no destination, throwing the typed task away.
+        expect(input.value).toBe('water the plants')
     },
 }
