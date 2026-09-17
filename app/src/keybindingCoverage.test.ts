@@ -100,15 +100,7 @@ const ALLOWED_FILES: AllowEntry[] = [
     },
     {
         file: 'PreviewView.tsx',
-        reason: 'KNOWN GAP, not a design decision — see task-12 report. Two things: (1) the ink-undo/ink-redo hand-rolled (metaKey||ctrlKey)+(z|Z) branch duplicates the ink-undo/ink-redo catalog ids instead of calling matchesKeybinding (this file already imports matchesKeybinding two lines below for toggle-draw-mode/find, so the settings path was right there); (2) the PDF find panel mirrors editor/findPanel.ts\'s Enter-steps/Escape-closes convention',
-    },
-    {
-        file: 'editor/InkOverlay.tsx',
-        reason: 'KNOWN GAP, not a design decision — see task-12 report. onHostKey hardcodes Escape (exit-draw-mode) and Mod+Z/Mod+Shift+Z (ink-undo/ink-redo) instead of reading those three catalog ids; none of the three ids are referenced anywhere in app/src',
-    },
-    {
-        file: 'preview/PageInk.tsx',
-        reason: 'KNOWN GAP, not a design decision — see task-12 report. Same onHostKey shape as editor/InkOverlay.tsx: hardcoded Escape + Mod+Z/Mod+Shift+Z instead of exit-draw-mode/ink-undo/ink-redo',
+        reason: 'the PDF find panel\'s own Enter-steps/Escape-closes convention, mirroring editor/findPanel.ts — universal "find bar" behavior, not an independently rebindable command (ink-undo/ink-redo in this file are matchesKeybinding-driven, same as InkOverlay.tsx/PageInk.tsx)',
     },
     {
         file: 'editor/drawBlock.ts',

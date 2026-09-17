@@ -94,6 +94,8 @@ import {
 import { remapAnchorLine, remapSeams } from './inkRemap'
 import { minimalChange } from './normalizeFrontmatter'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
+import { settings } from '../settings'
+import { matchesKeybinding } from '../keybindings'
 import styles from './InkOverlay.module.css'
 
 // Tool state is module-level so the pen/color/size choice follows the user across notes for
@@ -1427,23 +1429,28 @@ export function InkOverlay(props: {
         e.preventDefault()
     }
 
-    // Draw-mode key handling: while active, the HOST (tabindex=-1) takes focus, so Escape and
-    // Mod+Z / Mod+Shift+Z are handled right here — scoped to this pane by focus itself, never a
-    // window-level capture that could hijack a sibling pane's keys. This is the DRAWING undo;
+    // Draw-mode key handling: while active, the HOST (tabindex=-1) takes focus, so exit-draw-mode
+    // and ink-undo / ink-redo are handled right here — scoped to this pane by focus itself, never
+    // a window-level capture that could hijack a sibling pane's keys. This is the DRAWING undo;
     // the editor's own history never sees an ink transaction (see InkEdit above).
     const onHostKey = (e: KeyboardEvent) => {
         if (!props.active()) return
-        if (e.key === 'Escape') {
+        if (matchesKeybinding(e, settings.keybindings['exit-draw-mode'])) {
             e.preventDefault()
             e.stopPropagation()
             props.onExit()
             return
         }
-        if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (matchesKeybinding(e, settings.keybindings['ink-undo'])) {
             e.preventDefault()
             e.stopPropagation()
-            if (e.shiftKey) redo()
-            else undo()
+            undo()
+            return
+        }
+        if (matchesKeybinding(e, settings.keybindings['ink-redo'])) {
+            e.preventDefault()
+            e.stopPropagation()
+            redo()
         }
     }
 
