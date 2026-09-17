@@ -293,6 +293,16 @@ function TasksCalendar(props: {
         return taskFile ? fileBasename(refToPath(taskFile)) : ''
     }
 
+    // The composer's band colour: the resolved colour for the view's defaultCategory, computed
+    // independently of `colors()` above — `colors()` only knows names actually present in
+    // `rows()`, so a base with no rows yet (or none of this category yet) would otherwise show
+    // no band for a defaultCategory that is nonetheless configured and about to be written.
+    const composeColor = createMemo(() => {
+        const name = view()?.defaultCategory
+        if (!name) return undefined
+        return taskCategoryColors([name], props.config?.categories).get(name)
+    })
+
     const commitTask = async (date: string, text: string) => {
         const vc = view()
         if (props.ownsRows) {
@@ -363,6 +373,9 @@ function TasksCalendar(props: {
         },
         get destination() {
             return destination()
+        },
+        get color() {
+            return composeColor()
         },
         open: date => setComposeDate(date),
         commit: (date, text) => void commitTask(date, text),

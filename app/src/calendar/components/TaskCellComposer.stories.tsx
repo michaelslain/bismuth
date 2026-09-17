@@ -50,6 +50,46 @@ export const Empty: Story = {
         ),
 }
 
+/** No destination configured — `CalendarView.tsx`'s `destination()` returns `''` when a
+ *  sourced view has no `taskFile` set yet. The old unconditional `→ {props.destination}` read
+ *  as a bare `→` with nothing after it, a stray character under the caret — worse, the
+ *  composer still opened and still accepted typing, and the failure only arrived after Enter as
+ *  a toast. This proves the line now reads as an explicit hint instead, in place, with the
+ *  composer still open and usable. */
+export const NoDestination: Story = {
+    render: () =>
+        monthCell(
+            <TaskCellComposer destination="" onCommit={() => {}} onCancel={() => {}} />,
+        ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const destination = canvas.getByTestId('task-cell-composer-destination')
+        expect(destination.textContent?.trim()).toBe(
+            '→ no destination note // set one in settings',
+        )
+        // The composer stays open and usable — this is a hint in place, not a refusal to open.
+        expect(
+            canvas.getByTestId('task-cell-composer-input'),
+        ).not.toBeDisabled()
+    },
+}
+
+/** The composer previews the category band a commit will actually carry — `CalendarView.tsx`
+ *  passes the resolved colour of the view's `defaultCategory` through `TaskComposeProps.color`.
+ *  Same 3px absolutely-positioned strip as `TaskChip`'s own band (TaskChip.module.css), copied
+ *  rather than imported into this component's own stylesheet. */
+export const WithCategoryColour: Story = {
+    render: () =>
+        monthCell(
+            <TaskCellComposer
+                destination="General Tasks"
+                color="var(--teal)"
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />,
+        ),
+}
+
 /** Types into the input and asserts the DOM value actually changed — not just that typing
  *  happened, but that the composer's own signal round-tripped back into the field. */
 export const Typing: Story = {
@@ -71,13 +111,17 @@ export const Typing: Story = {
     },
 }
 
-/** A destination deep enough to overflow the cell must truncate with an ellipsis rather than
- *  wrap onto a second line or force the composer wider than its column. */
+/** A destination NAME long enough to overflow the cell must truncate at the tail with an
+ *  ellipsis rather than wrap onto a second line or force the composer wider than its column.
+ *  `CalendarView.tsx`'s `destination()` always passes a basename (`fileBasename`), never a
+ *  path — this fixture used to be a long path, a case the component's contract forbids and the
+ *  app never actually produces. A long single name (a verbose note title) is the real case:
+ *  the tail is the part that identifies it, so truncating there is correct. */
 export const LongDestination: Story = {
     render: () =>
         monthCell(
             <TaskCellComposer
-                destination="Projects/Q4-Planning/Backlog-Items-Needing-Triage/General Tasks"
+                destination="Q4 Planning Backlog and Intake Items Needing Immediate Triage"
                 onCommit={() => {}}
                 onCancel={() => {}}
             />,
@@ -103,12 +147,13 @@ export const LongDestination: Story = {
 
 /** The real case: a ~120px day column (the actual month-cell width), not the 220px cell used
  *  above. The `→ destination` line must truncate and the input must keep real, usable width —
- *  proof the destination line never pushes the input, only itself gives way. */
+ *  proof the destination line never pushes the input, only itself gives way. Same long-basename
+ *  fixture as LongDestination — see that story's note on why this is never a path. */
 export const NarrowColumn: Story = {
     render: () =>
         narrowCell(
             <TaskCellComposer
-                destination="Projects/Q4-Planning/Backlog-Items-Needing-Triage/General Tasks"
+                destination="Q4 Planning Backlog and Intake Items Needing Immediate Triage"
                 onCommit={() => {}}
                 onCancel={() => {}}
             />,

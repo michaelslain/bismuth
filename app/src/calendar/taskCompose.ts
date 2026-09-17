@@ -14,6 +14,8 @@ export type TaskComposeProps = {
     date: string | null
     /** Basename of where a commit will land, shown under the input ("General Tasks"). */
     destination: string
+    /** Resolved CSS colour of the view's defaultCategory. Undefined → no band. */
+    color?: string
     open: (date: string) => void
     commit: (date: string, text: string) => void
     cancel: () => void
