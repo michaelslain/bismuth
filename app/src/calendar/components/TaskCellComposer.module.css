@@ -1,35 +1,21 @@
-/* Matches TaskChip.module.css's padding/gap/font values exactly, including the
-   `calc(var(--sp-3) + 3px)` inline-start padding `.chip` reserves for its category band —
-   this composer sits directly under real TaskChip rows and a pixel of drift between the two
-   is the whole reason this is a component and not a bare <input> dropped into a cell. */
+/* Matches TaskChip.module.css's padding/gap/font values exactly — this composer sits directly
+   under real TaskChip rows and a pixel of drift between the two is the whole reason this is a
+   component and not a bare <input> dropped into a cell. Neither carries a band gutter any more:
+   a task's category paints its `[ ]` marker directly instead. */
 .composer {
     display: flex;
     flex-direction: column;
-    /* Positions .band below, the same way TaskChip.module.css's .chip does for its own band. */
-    position: relative;
     padding: var(--sp-1) var(--sp-3);
-    /* Mirrors TaskChip's reserved band gutter (.chip's padding-inline-start) so the composer's
-       marker and text line up with the chips it renders under, band or no band. */
-    padding-inline-start: calc(var(--sp-3) + 3px);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
-}
-/* The default category's band, previewing what a commit will actually carry. Copied from
-   TaskChip.module.css's own `.band` rule rather than imported — each component keeps its own
-   colocated stylesheet (one module, one importer); an absolutely-positioned strip, never a
-   border, spanning the whole composer (both the input row and the destination line) the same
-   way the gutter above is reserved across both. */
-.band {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    width: 3px;
 }
 .row {
     display: flex;
     align-items: baseline;
     gap: var(--sp-1);
 }
+/* --text-muted is the fallback; a destination with a category overrides it with an inline
+   `color` (see TaskCellComposer.tsx). */
 .marker {
     color: var(--text-muted);
     flex-shrink: 0;
