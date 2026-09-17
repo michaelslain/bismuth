@@ -1,4 +1,4 @@
-import type { Row, SourceSpec } from './types'
+import type { BaseConfig, Row, SourceSpec } from './types'
 import { buildVaultRows } from '../basesData'
 import { buildTaskRows } from './tasksData'
 import { parseBaseFile } from './parse'
@@ -25,6 +25,11 @@ export interface SourceCtx {
      *  to buildTaskRows(root, paths) when absent. */
     vaultTasks?: (paths?: string[]) => Promise<Row[]>
 }
+
+// Composed base files are re-parsed on every resolveBaseRows call along a composition
+// chain; cache the parse keyed by CONTENT (not mtime — see the comment at the call
+// site below) so repeated resolves of the same unchanged base file skip parseBaseFile.
+const baseParseCache = new Map<string, { raw: string; config: BaseConfig; rows: Row[] }>()
 
 /**
  * Resolve a base FILE to its rows, following its OWN declared source (composition).
@@ -54,7 +59,15 @@ export async function resolveBaseRows(
         return []
     }
     const name = fileBasename(path)
-    const { config, rows } = parseBaseFile(text, { name, path })
+    // Keyed by content equality, NOT mtime: filesystem mtime resolution is commonly
+    // 1s or coarser, so an edit-then-immediate-read within the same tick could
+    // incorrectly serve a stale parse under an mtime check. Comparing the raw text
+    // (already read above) costs nothing extra and has no such race.
+    const cached = baseParseCache.get(realPath)
+    const fresh = cached?.raw === text
+    const parsed = fresh ? cached! : parseBaseFile(text, { name, path })
+    if (!fresh) baseParseCache.set(realPath, { raw: text, config: parsed.config, rows: parsed.rows })
+    const { config, rows } = parsed
     // No declared source => inline (own-rows) base: return its table rows.
     if (!config.source) return rows
     return resolveSource(config.source, { ...ctx, seen })
