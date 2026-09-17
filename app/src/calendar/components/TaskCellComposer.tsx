@@ -13,8 +13,9 @@ export type TaskCellComposerProps = {
     /** Shown under the input as `→ {destination}`, or an explicit hint when no destination is
      *  configured — see the destination line below. */
     destination: string
-    /** Resolved CSS colour of the destination's default category. Undefined → no band, the
-     *  same contract as TaskChip's own `color` prop. */
+    /** Resolved CSS colour of the destination's default category, painted on the `[ ]` marker.
+     *  Undefined → the marker's default --text-muted — the same contract as TaskChip's own
+     *  `color` prop. */
     color?: string
     onCommit: (text: string) => void
     onCancel: () => void
@@ -45,11 +46,12 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             onPointerDown={e => e.stopPropagation()}
             onDblClick={e => e.stopPropagation()}
         >
-            <Show when={props.color}>
-                <span class={styles.band} style={{ background: props.color }} />
-            </Show>
             <div class={styles.row}>
-                <span class={styles.marker} data-testid="task-cell-composer-marker">
+                <span
+                    class={styles.marker}
+                    data-testid="task-cell-composer-marker"
+                    style={props.color ? { color: props.color } : undefined}
+                >
                     [ ]
                 </span>
                 <TextInput
