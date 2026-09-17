@@ -7,7 +7,9 @@ import {
     eventToCombo,
     modifierFamily,
     codeToKey,
+    toCmKeys,
 } from './keybindings'
+import { KEYBINDING_CATALOG } from '../../core/src/keybindings'
 
 // Minimal KeyboardEvent stand-in (the matcher reads key/code + the four mods).
 function ev(
@@ -34,28 +36,63 @@ describe('parseCombo', () => {
     it('parses modifiers and the final key', () => {
         expect(parseCombo('Mod+Shift+D')).toEqual({
             mod: true,
+            ctrl: false,
+            meta: false,
             alt: false,
             shift: true,
             key: 'd',
         })
         expect(parseCombo('Alt+T')).toEqual({
             mod: false,
+            ctrl: false,
+            meta: false,
             alt: true,
             shift: false,
             key: 't',
         })
         expect(parseCombo('Mod+`')).toEqual({
             mod: true,
+            ctrl: false,
+            meta: false,
             alt: false,
             shift: false,
             key: '`',
         })
     })
 
-    it('folds Cmd/Ctrl/Meta tokens into `mod`', () => {
-        expect(parseCombo('Cmd+P')?.mod).toBe(true)
-        expect(parseCombo('Ctrl+P')?.mod).toBe(true)
-        expect(parseCombo('Meta+P')?.mod).toBe(true)
+    it('sets Ctrl and Meta as their own exact flags, independent of `mod`', () => {
+        // Cmd/Command/Meta/Super all set the exact `meta` flag — none of them
+        // fold into `mod` any more.
+        expect(parseCombo('Cmd+P')).toEqual({
+            mod: false,
+            ctrl: false,
+            meta: true,
+            alt: false,
+            shift: false,
+            key: 'p',
+        })
+        expect(parseCombo('Command+P')?.meta).toBe(true)
+        expect(parseCombo('Meta+P')?.meta).toBe(true)
+        expect(parseCombo('Super+P')?.meta).toBe(true)
+        // Ctrl/Control set the exact `ctrl` flag.
+        expect(parseCombo('Ctrl+P')).toEqual({
+            mod: false,
+            ctrl: true,
+            meta: false,
+            alt: false,
+            shift: false,
+            key: 'p',
+        })
+        expect(parseCombo('Control+P')?.ctrl).toBe(true)
+        // Only literal "Mod" sets `mod`.
+        expect(parseCombo('Mod+P')).toEqual({
+            mod: true,
+            ctrl: false,
+            meta: false,
+            alt: false,
+            shift: false,
+            key: 'p',
+        })
     })
 
     it('normalizes key aliases and is whitespace/case tolerant', () => {
@@ -141,6 +178,46 @@ describe('matchesCombo — exact modifier matching', () => {
     })
 })
 
+describe('matchesCombo — Ctrl/Meta exact, independent of Mod', () => {
+    // Table-driven over all four (ctrlKey, metaKey) states, per combo.
+    it('Ctrl+Space: matches ctrlKey only, never metaKey-only or neither', () => {
+        expect(matchesCombo(ev(' ', {}), 'Ctrl+Space')).toBe(false)
+        expect(matchesCombo(ev(' ', { ctrl: true }), 'Ctrl+Space')).toBe(true)
+        expect(matchesCombo(ev(' ', { meta: true }), 'Ctrl+Space')).toBe(false)
+        expect(
+            matchesCombo(ev(' ', { ctrl: true, meta: true }), 'Ctrl+Space'),
+        ).toBe(false)
+    })
+
+    it('Mod+Space: matches ctrlKey, metaKey, or both — never neither', () => {
+        expect(matchesCombo(ev(' ', {}), 'Mod+Space')).toBe(false)
+        expect(matchesCombo(ev(' ', { ctrl: true }), 'Mod+Space')).toBe(true)
+        expect(matchesCombo(ev(' ', { meta: true }), 'Mod+Space')).toBe(true)
+        expect(
+            matchesCombo(ev(' ', { ctrl: true, meta: true }), 'Mod+Space'),
+        ).toBe(true)
+    })
+
+    it('Cmd+P (meta) mirrors Ctrl: exact metaKey, independent of mod', () => {
+        expect(matchesCombo(ev('p', {}), 'Cmd+P')).toBe(false)
+        expect(matchesCombo(ev('p', { meta: true }), 'Cmd+P')).toBe(true)
+        expect(matchesCombo(ev('p', { ctrl: true }), 'Cmd+P')).toBe(false)
+        expect(
+            matchesCombo(ev('p', { meta: true, ctrl: true }), 'Cmd+P'),
+        ).toBe(false)
+    })
+
+    it('a combo naming none of Mod/Ctrl/Meta requires neither modifier held', () => {
+        expect(matchesCombo(ev('t', { alt: true }), 'Alt+T')).toBe(true)
+        expect(
+            matchesCombo(ev('t', { alt: true, ctrl: true }), 'Alt+T'),
+        ).toBe(false)
+        expect(
+            matchesCombo(ev('t', { alt: true, meta: true }), 'Alt+T'),
+        ).toBe(false)
+    })
+})
+
 describe('codeToKey — physical key resolution', () => {
     it('resolves letters, digits, numpad, and punctuation', () => {
         expect(codeToKey('KeyS')).toBe('s')
@@ -182,10 +259,16 @@ describe('matchesKeybinding — comma-separated alternatives', () => {
 })
 
 describe('modifierFamily', () => {
+    // Coarser than parseCombo's own ctrl/meta split (see keybindings.ts):
+    // this is what the autocomplete uses to hide an already-picked platform
+    // modifier, so Mod/Cmd/Ctrl/Meta/Super still fold into one 'mod' family
+    // here even though they set three different exact match flags now.
     it('folds platform modifier tokens into a family, returns null for keys', () => {
         expect(modifierFamily('Mod')).toBe('mod')
         expect(modifierFamily('cmd')).toBe('mod')
         expect(modifierFamily('Ctrl')).toBe('mod')
+        expect(modifierFamily('Meta')).toBe('mod')
+        expect(modifierFamily('Super')).toBe('mod')
         expect(modifierFamily('Option')).toBe('alt')
         expect(modifierFamily('Shift')).toBe('shift')
         expect(modifierFamily('D')).toBeNull()
@@ -217,5 +300,131 @@ describe('eventToCombo — recording a shortcut', () => {
         expect(eventToCombo(ev('Shift', { shift: true }))).toBeNull()
         expect(eventToCombo(ev('Meta', { meta: true }))).toBeNull()
         expect(eventToCombo(ev('Control', { ctrl: true }))).toBeNull()
+    })
+})
+
+describe('KEYBINDING_CATALOG back-compat', () => {
+    // None of the 24 defaults use a literal Ctrl/Cmd/Meta token — only
+    // Mod/Alt/Shift — so replaying each one here (iterating the catalog, not
+    // hand-listing combos) proves the new exact Ctrl/Meta flags left Mod's
+    // portable fold, and the plain Alt/Shift-only combos, matching exactly
+    // what they matched before this task.
+    const hasToken = (tokens: string[], name: string) =>
+        tokens.some(t => t.toLowerCase() === name)
+
+    KEYBINDING_CATALOG.forEach(spec => {
+        it(`${spec.id}: "${spec.default}" still matches what it matched before`, () => {
+            spec.default.split(',').forEach(rawCombo => {
+                const combo = rawCombo.trim()
+                const tokens = combo.split('+').map(t => t.trim())
+                const key = tokens[tokens.length - 1]
+                const mod = hasToken(tokens, 'mod')
+                const alt = hasToken(tokens, 'alt')
+                const shift = hasToken(tokens, 'shift')
+
+                if (mod) {
+                    // Mod still fires under either physical modifier…
+                    expect(
+                        matchesCombo(ev(key, { meta: true, alt, shift }), combo),
+                    ).toBe(true)
+                    expect(
+                        matchesCombo(ev(key, { ctrl: true, alt, shift }), combo),
+                    ).toBe(true)
+                    // …and not under neither.
+                    expect(matchesCombo(ev(key, { alt, shift }), combo)).toBe(
+                        false,
+                    )
+                } else {
+                    // No Mod token: neither Ctrl nor Meta may substitute for it.
+                    expect(matchesCombo(ev(key, { alt, shift }), combo)).toBe(
+                        true,
+                    )
+                    expect(
+                        matchesCombo(ev(key, { ctrl: true, alt, shift }), combo),
+                    ).toBe(false)
+                    expect(
+                        matchesCombo(ev(key, { meta: true, alt, shift }), combo),
+                    ).toBe(false)
+                }
+
+                if (alt) {
+                    expect(
+                        matchesCombo(
+                            ev(key, { meta: mod, alt: false, shift }),
+                            combo,
+                        ),
+                    ).toBe(false)
+                }
+                if (shift) {
+                    expect(
+                        matchesCombo(
+                            ev(key, { meta: mod, alt, shift: false }),
+                            combo,
+                        ),
+                    ).toBe(false)
+                }
+            })
+        })
+    })
+})
+
+describe('toCmKeys — the CodeMirror key-string converter', () => {
+    it('converts a bare key', () => {
+        expect(toCmKeys('P')).toEqual(['p'])
+        expect(toCmKeys('Escape')).toEqual(['Escape'])
+    })
+
+    it('converts Mod', () => {
+        expect(toCmKeys('Mod+F')).toEqual(['Mod-f'])
+    })
+
+    it('converts Ctrl', () => {
+        expect(toCmKeys('Ctrl+Space')).toEqual(['Ctrl-Space'])
+    })
+
+    it('converts Shift', () => {
+        expect(toCmKeys('Shift+Tab')).toEqual(['Shift-Tab'])
+    })
+
+    it('converts Alt', () => {
+        expect(toCmKeys('Alt+T')).toEqual(['Alt-t'])
+    })
+
+    it('converts multi-modifier combos, preserving written order', () => {
+        expect(toCmKeys('Mod+Shift+B')).toEqual(['Mod-Shift-b'])
+        expect(toCmKeys('Mod+Alt+ArrowLeft')).toEqual(['Mod-Alt-ArrowLeft'])
+    })
+
+    it('converts comma-separated alternatives to one key string each', () => {
+        expect(toCmKeys('Mod+`, Mod+J')).toEqual(['Mod-`', 'Mod-j'])
+    })
+
+    it('converts named keys — Space becomes the word, not a literal " "', () => {
+        expect(toCmKeys('ArrowLeft')).toEqual(['ArrowLeft'])
+        expect(toCmKeys('Escape')).toEqual(['Escape'])
+        expect(toCmKeys('Mod+Space')).toEqual(['Mod-Space'])
+    })
+
+    it('converts punctuation keys', () => {
+        expect(toCmKeys('Mod+`')).toEqual(['Mod-`'])
+        expect(toCmKeys('Mod+=')).toEqual(['Mod-='])
+        expect(toCmKeys('Mod+-')).toEqual(['Mod--'])
+    })
+
+    it('returns [] for empty, whitespace, nullish and garbage input', () => {
+        expect(toCmKeys('')).toEqual([])
+        expect(toCmKeys('   ')).toEqual([])
+        expect(toCmKeys(undefined)).toEqual([])
+        expect(toCmKeys(null)).toEqual([])
+        expect(toCmKeys(' , , ')).toEqual([])
+    })
+
+    it('covers every KEYBINDING_CATALOG default without throwing', () => {
+        // Regression net: whatever combo core ships as a default must survive
+        // the converter — a throw or an empty result here would silently drop
+        // a CM-side binding.
+        KEYBINDING_CATALOG.forEach(spec => {
+            expect(toCmKeys(spec.default).length).toBeGreaterThan(0)
+        })
     })
 })
