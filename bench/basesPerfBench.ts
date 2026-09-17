@@ -25,9 +25,9 @@ const VIEW_LOOP_COUNT = 20
 const COMPOSED_LOOP_COUNT = 20
 
 /** Optional export from core/src/bases/tasksData.ts, added by task 1 of this plan
- *  (.claude/plans/2026-09-17-bases-perf.md, "incremental task-row patching"). Absent
- *  today — resolved via dynamic import so this file needs no changes once it lands;
- *  the patch-timing row below just starts appearing in the printed table. */
+ *  (.claude/plans/2026-09-17-bases-perf.md, "incremental task-row patching"). Added by
+ *  task 1 (already landed on this branch); resolved via dynamic import so this bench
+ *  also runs cleanly against an older checkout that predates it. */
 type PatchTaskRows = (
     root: string,
     paths: string[],
@@ -106,6 +106,27 @@ export async function runBasesPerfBench(
     results.push({
         label: `runView x${VIEW_LOOP_COUNT} (calendar base, same resolved rows)`,
         ms: performance.now() - viewStart,
+    })
+
+    // 4b. The same composed-base resolution, but with vaultRows/vaultTasks providers —
+    // the shape core/src/server.ts ALWAYS uses (POST /rows always passes rowsCache/tasksCache
+    // as providers). Without this row, the bench can't validate the plan's stated trigger for
+    // a follow-up /bust (whether runView ever becomes the dominant cost at realistic scale),
+    // because the unprovided-providers row above is dominated by a full uncached vault scan
+    // that production never pays more than once.
+    let cachedTasks: Promise<Row[]> | undefined
+    const serverShapedCtx = {
+        root: vault.root,
+        vaultTasks: () => (cachedTasks ??= buildTaskRows(vault.root)),
+    }
+    await serverShapedCtx.vaultTasks() // warm it once, like the server's cache would be
+    const composedServerShapedStart = performance.now()
+    for (let i = 0; i < COMPOSED_LOOP_COUNT; i++) {
+        await resolveBaseRows(vault.composedBasePath, serverShapedCtx)
+    }
+    results.push({
+        label: `resolveBaseRows x${COMPOSED_LOOP_COUNT} (composed base, server-shaped ctx with cached providers)`,
+        ms: performance.now() - composedServerShapedStart,
     })
 
     // 4. resolveBaseRows against the composed base, looped 20x — each call re-resolves
