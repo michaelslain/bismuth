@@ -367,8 +367,8 @@ export const NonCalendarBaseBarForComparison: Story = {
 // mode therefore renders NOTHING: it only ever chooses between "+ Event" (events register)
 // and nothing (tasks register). The four button-presence/click-writes-a-line stories that
 // used to live here proved the deleted button's two creation paths and its scope-check toast
-// — all superseded by CalendarView.stories.tsx's `ClickingCommitsTaskInComposer`/composer
-// coverage, which now owns proving a task actually gets written.
+// — all superseded by CalendarView.stories.tsx's `TasksComposerOpen` (the composer opens) and
+// `TasksCommitsTaskLineInTaskFile` (the write itself).
 
 /** Same composition as `InBaseBar`, but passing a `CalendarSlotsCtx` — what `BaseView.tsx`
  *  computes once it knows which register (events/tasks) is active. */
