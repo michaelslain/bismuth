@@ -3,3 +3,7 @@
    than the header and bring back D1's drift. */
 .strip { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; isolation: isolate; }
 .head { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+/* Wraps a day's chips + the inline composer inside AllDayRow's own `.cell` (AllDayRow.module.css,
+   not ours — it owns the outer cell box). Fills that cell's full height so a click anywhere in
+   the empty area of a quiet day still opens the composer, not just a click landing on a chip. */
+.cellInner { height: 100%; min-width: 0; cursor: pointer; }

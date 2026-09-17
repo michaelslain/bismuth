@@ -4,17 +4,19 @@
 // register, a `placed` map) — events/categories/currentDate come from calendar/state.ts
 // module-level signals (see app/src/ui/_calendarFixtures.ts). MonthView owns its own
 // MonthView.module.css (2026-09-13) — nothing here imports Calendar.module.css.
-import { onCleanup } from 'solid-js'
+import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
 import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import CalendarFrame from '../CalendarFrame'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
 import { currentDate } from '../../state'
 import { placeRows } from '../../taskPlacement'
+import type { PlacedTask } from '../../taskPlacement'
 import { todayISO, addDaysISO } from '../../../../../core/src/dates'
 import type { Row } from '../../../../../core/src/bases/types'
+import { EMPTY_FILE } from '../../../../../core/src/bases/types'
 import { assertChipsWhole, assertHeaderAligned, taskRow } from '../../../ui/_calendarAssertions'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
@@ -187,5 +189,175 @@ export const QuietTasks: Story = {
         const todayCircle = numbers.find(n => Math.round(n.getBoundingClientRect().width) === 20)!
         const other = numbers.find(n => n !== todayCircle && getComputedStyle(n).opacity === '1')!
         expect(getComputedStyle(todayCircle).color).not.toBe(getComputedStyle(other).color)
+    },
+}
+/** Minimal PlacedTask fixture for the transition stories below, matching
+ *  TaskAllDayStrip.stories.tsx's own `task()` helper — these stories only need a task that
+ *  renders one chip, not a real markdown-backed row. */
+function placedTask(description: string, placed: string, late: number): PlacedTask {
+    return {
+        row: {
+            file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+            note: { description, placed, resolved: false },
+            formula: {},
+        },
+        placed,
+        late,
+    }
+}
+
+/** Clicking a bare cell in the TASKS register opens the inline composer for that day — proven
+ *  directly against MonthView's OWN click-wiring, which is separate code from
+ *  TaskAllDayStrip's (the month grid never delegates to it). */
+export const ComposerOpensOnCellClick: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={new Map()}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            open: d => setOpenDate(d),
+                            commit: () => setOpenDate(null),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
+        expect(cells.length).toBeGreaterThan(20)
+        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
+        await userEvent.click(cells[10])
+        await new Promise(r => setTimeout(r, 0))
+        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+    },
+}
+
+/** Open on one day, then click a different day — the FIRST cell's composer must actually close,
+ *  not merely leave a second one also open. */
+export const ComposerMovesBetweenCells: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={new Map()}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            open: d => setOpenDate(d),
+                            commit: () => setOpenDate(null),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
+        await userEvent.click(cells[10])
+        await new Promise(r => setTimeout(r, 0))
+        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+        await userEvent.click(cells[11])
+        await new Promise(r => setTimeout(r, 0))
+        // the FIRST cell's composer is GONE — not merely a second one also present
+        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
+        expect(cells[11].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+    },
+}
+
+/** TaskChip already stops its own click from bubbling — clicking a chip must open its note
+ *  (onOpenTask) and must never also open the month cell's composer underneath it. */
+export const ChipClickDoesNotOpenComposer: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        const [openedCount, setOpenedCount] = createSignal(0)
+        const placed = new Map([['2026-01-14', [placedTask('write the report', '2026-01-14', 0)]]])
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={placed}
+                        onOpenTask={() => setOpenedCount(c => c + 1)}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            open: d => setOpenDate(d),
+                            commit: () => setOpenDate(null),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+                <div data-testid="opened-count">{openedCount()}</div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>('[data-testid="task-chip-title"]')!
+        await userEvent.click(title)
+        await new Promise(r => setTimeout(r, 0))
+        expect(canvasElement.querySelector('[data-testid="opened-count"]')!.textContent).toBe('1')
+        expect(canvasElement.querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
+    },
+}
+
+/** A month cell with BOTH real task chips and an open composer — the composer must render LAST,
+ *  after every chip, inside `month-cell-events`, never in front of or between them. */
+export const ComposerBelowChips: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const placed = new Map([
+            [
+                '2026-01-14',
+                [
+                    placedTask('renew passport', '2026-01-01', 13),
+                    placedTask('pay rent', '2026-01-08', 6),
+                ],
+            ],
+        ])
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={placed}
+                        compose={{
+                            date: '2026-01-14',
+                            destination: 'General Tasks',
+                            open: () => {},
+                            commit: () => {},
+                            cancel: () => {},
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const boxes = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell-events"]'),
+        ]
+        const box = boxes.find(b => b.querySelector('[data-testid="task-chip-title"]'))!
+        const children = [...box.children]
+        expect(children.length).toBe(3) // 2 chips + the composer
+        expect(children[0].querySelector('[data-testid="task-chip-title"]')).not.toBeNull()
+        expect(children[1].querySelector('[data-testid="task-chip-title"]')).not.toBeNull()
+        // the composer is LAST — proves it never displaces the chips above it
+        expect(children[2].querySelector('[data-testid="task-cell-composer-marker"]')).not.toBeNull()
+        expect(children[2].querySelector('[data-testid="task-chip-title"]')).toBeNull()
     },
 }
