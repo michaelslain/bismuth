@@ -161,3 +161,32 @@ test("date + '0d' honors the zero-length duration (regression: || dropped 0)", (
     const durPlus0 = evaluate(parseExpr('d + duration("0d")'), c) as Date
     expect(durPlus0.getTime()).toBe(base)
 })
+
+test('regex literals compile once per AST node and cache the RegExp instance', () => {
+    const node = parseExpr('/abc/i')
+    const first = evaluate(node, ctx()) as RegExp
+    const second = evaluate(node, ctx({ note: { price: 99 } })) as RegExp
+    expect(first).toBeInstanceOf(RegExp)
+    expect(first).toBe(second) // same node -> same cached instance
+    expect(first.source).toBe('abc')
+    expect(first.flags).toBe('i')
+})
+
+test('two different parsed nodes with the same source get independent RegExp instances', () => {
+    const nodeA = parseExpr('/abc/i')
+    const nodeB = parseExpr('/abc/i')
+    const a = evaluate(nodeA, ctx()) as RegExp
+    const b = evaluate(nodeB, ctx()) as RegExp
+    expect(a).toBeInstanceOf(RegExp)
+    expect(b).toBeInstanceOf(RegExp)
+    expect(a).not.toBe(b) // no cross-node bleed via a shared source-string key
+    expect(a.source).toBe(b.source) // same pattern, different instances
+})
+
+test('a bad regex pattern fails closed on every call, never caching a stale success', () => {
+    const node = parseExpr('/(/') // unbalanced group -> invalid RegExp, lexes fine as a regex token
+    expect(evaluate(node, ctx())).toBeUndefined()
+    // Evaluating the same (invalid) node again must still fail closed, not
+    // return a cached `undefined` masquerading as a compiled RegExp.
+    expect(evaluate(node, ctx())).toBeUndefined()
+})
