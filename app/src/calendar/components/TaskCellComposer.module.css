@@ -1,0 +1,38 @@
+/* Matches TaskChip.module.css's padding/gap/font values exactly — this composer sits directly
+   under real TaskChip rows and a pixel of drift between the two is the whole reason this is a
+   component and not a bare <input> dropped into a cell. */
+.composer {
+    display: flex;
+    flex-direction: column;
+    padding: var(--sp-1) var(--sp-3);
+    font-size: var(--fs-micro);
+    font-family: var(--editor-font);
+}
+.row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-1);
+}
+.marker {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+/* min-width: 0 lets the input actually shrink inside the flex row instead of forcing the row
+   (and the destination line below it, via .composer's shared width) wider than the cell. */
+.input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+/* Truncates with an ellipsis rather than wrapping onto a second line or pushing the input wider
+   — a long destination path must never be the thing that changes the composer's width.
+   min-width: 0 matters here too: .composer is itself a flex container (column), so this is
+   also a flex item, and a flex item's default min-width:auto refuses to shrink below its own
+   content — which silently defeats text-overflow: ellipsis. */
+.destination {
+    min-width: 0;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
