@@ -46,8 +46,8 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 |-----|------|---------|-----------------|-----|
 | `theme` | enum | `ink` | `ink`, `paper`, `cathode`, `riso` | Bismuth color theme: ink (default) · paper · cathode · riso. |
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
-| `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (`--prose-font`, CMU Serif). |
-| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
+| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND the mono constructs inside a note: code blocks, inline code, frontmatter, math and in-note tags. Config buffers (`.settings`, `*.yaml`) render entirely in it. |
+| `proseFont` | enum | `Lora` | `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. Default `Lora` (family string `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
 | `editorFontSize` | number | `13.5` | min `11`, max `28` | Note prose font size (px) — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size, because chrome is scanned and prose is read. |
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
@@ -63,7 +63,7 @@ Example:
 appearance:
   theme: cathode
   icon: lattice
-  editorFont: Monaspace Xenon
+  uiFont: Monaspace Xenon
   editorFontSize: 18
   sidebarWidth: 320
 ```
@@ -120,7 +120,7 @@ CodeMirror editor behavior.
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper). Independent of spellcheck; off by default. |
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
-| `lineHeight` | number | `1.5` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px — `ui.css` `:root`), not the font size. Default `1.5` → 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`) at ~16.9px; 27px of leading gives it a 1.6 ratio, the normal range for serif body text — 18px (the old 13.5px-mono-tuned default) would only give 1.07, visibly cramped. |
+| `lineHeight` | number | `1.5` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px — `ui.css` `:root`), not the font size. Default `1.5` → 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale` (`1.04`) ≈ 14px; 27px of leading gives it a loose ~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a **rational multiple of the row unit** on purpose rather than tuned tight to the font size — 18px (the pre-redesign default) would only give ~1.28. |
 | `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press `*` → `*word*`; press again → `**word**`). |
 | `wrapSelectionChars` | list&lt;string&gt; | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes `( [ { ' " $` already wrap via auto-close, so they're omitted by default. |

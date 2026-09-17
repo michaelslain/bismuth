@@ -431,23 +431,23 @@ The interface is **one monospace family throughout**, with exactly one proportio
 
 ### The prose face (`--prose-font`)
 
-Note prose (the CodeMirror surface) and chat message bodies render in a **proportional serif** rather than the mono stack. It is **not** a setting — there is no enum, no `.settings` key, and no user choice; it is three tokens in `app/src/styles/tokens.css`:
+Note prose (the CodeMirror surface), note headings, note tables, chat message bodies and the chat composer render in a **proportional serif** rather than the mono stack. It **is** a setting — `appearance.proseFont`, an enum of `Lora` (the default) plus the same five Monaspace variants (for an all-mono editor) — projected by `settingsCssVars.ts` into three CSS tokens:
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--prose-font` | `'CMU Serif', Georgia, serif` | The one proportional face — CMU Serif (Computer Modern, Knuth's LaTeX face). |
-| `--prose-scale` | `1.28` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height and `n` advance — it is not a constant that survives a face swap. |
+| `--prose-font` | `'Lora Variable', Lora, Georgia, serif` (default) | Resolved from `appearance.proseFont` via `FONT_STACKS`. `'Lora Variable'` is the family `@fontsource-variable/lora` actually declares — plain `'Lora'` resolves nothing and falls silently through to `Georgia`. |
+| `--prose-scale` | `1.04` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height (Lora Variable 50.00 vs. Monaspace Xenon 51.75 at 100px em) — it is not a constant that survives a face swap. |
 | `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
 
-The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--editor-font` in `Editor.css` and `ChatTranscript.module.css`.
+The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` in `Editor.css` and `ChatTranscript.module.css`.
 
-The family is declared in `app/src/styles/cmu.css` — four `@font-face` rules (400/700 × upright/italic) pointing at the `computer-modern` package's woff2 files — rather than importing that package's own stylesheet, which declares upright faces as `font-style: roman` (not a CSS value; browsers only render it via error recovery) and its "regular" at weight 500. CMU Serif ships **two real weights**, 400 and 700; anything else is a synthesised weight.
+The five Monaspace families are declared via `@fontsource` imports in `app/src/index.tsx`; Lora is declared via the `@fontsource-variable/lora` package. There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
 
-The family string in `--prose-font` must match `cmu.css` verbatim. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face (reading sizes, both weights, italic, lining vs. oldstyle numerals) and carries the same string — it lies rather than fails if the two drift apart.
+The family string in `--prose-font` must match what the chosen package actually declares. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere — this is the exact trap that let the old CMU-era stack go unnoticed for weeks. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face and carries the same string — it lies rather than fails if the two drift apart.
 
 The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body, and is unrelated to `--prose-scale`, which corrects in the other direction); the mono chrome needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
 
-**Adding a new font**: add it to `EDITOR_FONTS` in `settingsSchema.ts` AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
+**Adding a new font**: add it to `MONO_FONTS` (extends both `uiFont` and, via `PROSE_FONTS = ['Lora', ...MONO_FONTS]`, `proseFont`) or to `PROSE_FONTS` directly for a prose-only face, in both `settingsSchema.ts` and `settings.ts`, AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
 
 ---
 
