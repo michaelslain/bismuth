@@ -74,10 +74,9 @@ export const NoDestination: Story = {
     },
 }
 
-/** The composer previews the category band a commit will actually carry — `CalendarView.tsx`
- *  passes the resolved colour of the view's `defaultCategory` through `TaskComposeProps.color`.
- *  Same 3px absolutely-positioned strip as `TaskChip`'s own band (TaskChip.module.css), copied
- *  rather than imported into this component's own stylesheet. */
+/** The composer previews the category a commit will actually carry — `CalendarView.tsx` passes
+ *  the resolved colour of the view's `defaultCategory` through `TaskComposeProps.color`, and it
+ *  paints straight onto the `[ ]` marker's text colour, matching `TaskChip`'s own marker. */
 export const WithCategoryColour: Story = {
     render: () =>
         monthCell(
@@ -88,6 +87,11 @@ export const WithCategoryColour: Story = {
                 onCancel={() => {}}
             />,
         ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const marker = canvas.getByTestId('task-cell-composer-marker')
+        expect(marker.style.color).toBe('var(--teal)')
+    },
 }
 
 /** Types into the input and asserts the DOM value actually changed — not just that typing
@@ -179,9 +183,10 @@ export const NarrowColumn: Story = {
 }
 
 /** The real layout: the composer opens as a sibling of TaskChip rows in the same day cell.
- *  Their `[ ]` markers must sit at the same left edge — .chip reserves
- *  `padding-inline-start: calc(var(--sp-3) + 3px)` for its category band, and .composer must
- *  mirror that exactly or its marker/text drift a few pixels left of the chips above it. */
+ *  Their `[ ]` markers must sit at the same left edge — neither .chip nor .composer reserves a
+ *  band gutter any more, so both share the plain `.row`/`.marker` padding and line up whether or
+ *  not either one carries a colour. One chip here carries a `color`, the other does not, proving
+ *  the alignment holds either way — a coloured marker is still the same box, just painted. */
 export const AlignedWithChips: Story = {
     render: () =>
         monthCell(
