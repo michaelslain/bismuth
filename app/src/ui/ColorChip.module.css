@@ -1,0 +1,10 @@
+/* app/src/ui/ColorChip.module.css — the swatch chip + its palette popover, extracted from
+   CategoryPanel.module.css's `.cat-chipwrap` / `.cat-pop` / `.cat-sws` (there qualified under
+   `.panel`, that file's own ancestor selector). ColorChip owns these rules now, so they are
+   root-level — no ancestor qualifier needed, this file has exactly one purpose. */
+.chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+/* Floating popover, portal-free — it sits directly under the chip inside the modal's own
+   stacking context. */
+.pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
+.pop.up { top: auto; bottom: calc(100% + 7px); }
+.sws { display: flex; gap: var(--sp-3); align-items: center; }

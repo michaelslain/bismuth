@@ -515,3 +515,46 @@ test('#99: a property with no type key stays untyped (type undefined)', () => {
     expect(base.properties?.notes?.type).toBeUndefined()
     expect(base.properties?.notes?.displayName).toBe('Notes')
 })
+
+// ── Task categories (a task's source is its category) ─────────────────────────────────
+
+test('categories comes straight off frontmatter.categories', () => {
+    const base = parseBase(
+        `categories:\n  - name: work\n    color: rose\n  - name: home\n    color: "#00ff00"\nviews:\n  - type: table\n    name: V\n`,
+    )
+    expect(base.categories).toEqual([
+        { name: 'work', color: 'rose' },
+        { name: 'home', color: '#00ff00' },
+    ])
+})
+
+test('categories is undefined when frontmatter carries no array (same tolerance as categoriesOf)', () => {
+    expect(parseBase(`views:\n  - type: table\n    name: V\n`).categories).toBeUndefined()
+    expect(
+        parseBase(`categories: not-an-array\nviews:\n  - type: table\n    name: V\n`)
+            .categories,
+    ).toBeUndefined()
+})
+
+test('defaultCategory parses on a nested view', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    mode: tasks\n    defaultCategory: chores\n`,
+    )
+    expect(base.views[0].defaultCategory).toBe('chores')
+})
+
+test('promotes top-level defaultCategory into the default view (flat persistence)', () => {
+    const { config } = parseBaseFile(
+        '---\ntype: base\nview: calendar\nmode: tasks\ndefaultCategory: chores\n---\n',
+        { name: 'T', path: 'T.md' },
+    )
+    expect(config.views[0].defaultCategory).toBe('chores')
+})
+
+test('a single-view base with defaultCategory only inside a nested views: block also works', () => {
+    const { config } = parseBaseFile(
+        '---\ntype: base\nviews:\n  - type: calendar\n    name: Cal\n    mode: tasks\n    defaultCategory: chores\n---\n',
+        { name: 'T', path: 'T.md' },
+    )
+    expect(config.views[0].defaultCategory).toBe('chores')
+})

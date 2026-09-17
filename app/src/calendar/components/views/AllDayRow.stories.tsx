@@ -37,3 +37,33 @@ export const FillsParent: Story = {
         expect(Math.abs(cells[0].parentElement!.getBoundingClientRect().bottom - parentBottom)).toBeLessThanOrEqual(1)
     },
 }
+
+/** With vs without the left time-gutter spacer, side by side — `gutter` defaults true (left)
+ *  and the tasks strip is the caller that passes `false` (right), where there is no TimeGrid
+ *  underneath to align to. */
+export const GutterComparison: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
+            <div>
+                <p>gutter (default)</p>
+                <AllDayRow dates={dates} cell={() => <div>task</div>} />
+            </div>
+            <div>
+                <p>gutter={'{false}'}</p>
+                <AllDayRow dates={dates} cell={() => <div>task</div>} gutter={false} />
+            </div>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="allday-cell"]')]
+        expect(rows).toHaveLength(10)
+        const withGutter = canvasElement.querySelectorAll('[data-testid="allday-cell"]')[0]
+            .parentElement!.children[0]
+        const withoutGutter = canvasElement.querySelectorAll('[data-testid="allday-cell"]')[5]
+            .parentElement!.children[0]
+        // The gutter is the row's first child and is not itself an allday-cell — when omitted,
+        // the first child IS the first cell instead.
+        expect(withGutter.getAttribute('data-testid')).not.toBe('allday-cell')
+        expect(withoutGutter.getAttribute('data-testid')).toBe('allday-cell')
+    },
+}

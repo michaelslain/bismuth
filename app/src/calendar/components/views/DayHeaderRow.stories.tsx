@@ -42,3 +42,31 @@ export const Week: Story = {
         expect(withCircle).toHaveLength(1)
     },
 }
+
+/** With vs without the left time-gutter spacer, side by side — `gutter` defaults true (top,
+ *  aligned over a TimeGrid) and the tasks strip is the caller that passes `false` (bottom),
+ *  where there is no TimeGrid underneath to align to. */
+export const GutterComparison: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
+            <div>
+                <p>gutter (default)</p>
+                <DayHeaderRow dates={dates} today={toDateStr(addDays(anchor, 2))} />
+            </div>
+            <div>
+                <p>gutter={'{false}'}</p>
+                <DayHeaderRow dates={dates} today={toDateStr(addDays(anchor, 2))} gutter={false} />
+            </div>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="day-header"]')]
+        expect(rows).toHaveLength(14)
+        const withGutterFirstChild = rows[0].parentElement!.children[0]
+        const withoutGutterFirstChild = rows[7].parentElement!.children[0]
+        // The gutter is the row's first child and is not itself a day-header — when omitted,
+        // the first child IS the first header instead.
+        expect(withGutterFirstChild.getAttribute('data-testid')).not.toBe('day-header')
+        expect(withoutGutterFirstChild.getAttribute('data-testid')).toBe('day-header')
+    },
+}

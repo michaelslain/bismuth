@@ -1,4 +1,13 @@
-import { onMount, createEffect, createMemo, Show, Switch, Match } from 'solid-js'
+import {
+    onMount,
+    createEffect,
+    createMemo,
+    createSignal,
+    createResource,
+    Show,
+    Switch,
+    Match,
+} from 'solid-js'
 import { lastChange } from '../serverVersion'
 import { EventStore, MemoryBackend } from '../calendar/EventStore'
 import {
@@ -21,10 +30,26 @@ import { EventModal } from '../calendar/components/EventModal'
 import { RecurrenceDialog } from '../calendar/components/RecurrenceDialog'
 import { CategoryPanel } from '../calendar/components/CategoryPanel'
 import { CalendarSettings } from '../calendar/components/CalendarSettings'
+import TaskCalendarSettings from '../calendar/components/TaskCalendarSettings'
 import { placeRows } from '../calendar/taskPlacement'
 import type { PlacedTask } from '../calendar/taskPlacement'
+import type { TaskComposeProps } from '../calendar/taskCompose'
+import {
+    taskCategoryName,
+    taskCategoryNames,
+    taskCategoryColors,
+} from '../calendar/taskCategory'
+import {
+    newTaskVisible,
+    prospectiveLineTaskRow,
+    prospectiveStoredTaskRow,
+} from './taskScope'
+import { appendTaskLine } from './taskCreate'
 import { todayISO } from '../../../core/src/dates'
+import { fileBasename } from '../../../core/src/pathUtils'
+import { refToPath } from '../../../core/src/bases/sourceSpec'
 import { api } from '../api'
+import { pushToast } from '../toastStore'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
 import CalendarFrame from '../calendar/components/CalendarFrame'
@@ -48,6 +73,8 @@ export function CalendarView(props: {
     basePath?: string
     result?: ViewResult
     config?: BaseConfig
+    ownsRows?: boolean
+    viewIndex?: number
     onChange?: () => void
 }) {
     // `props.result` only exists for the tasks register (BaseView's `result()` memo
@@ -84,7 +111,14 @@ export function CalendarView(props: {
                     </Show>
                 }
             >
-                <TasksCalendar result={props.result} onChange={props.onChange} />
+                <TasksCalendar
+                    result={props.result}
+                    config={props.config}
+                    basePath={props.basePath}
+                    ownsRows={props.ownsRows ?? false}
+                    viewIndex={props.viewIndex ?? 0}
+                    onChange={props.onChange}
+                />
             </Show>
         </CalendarFrame>
     )
@@ -203,16 +237,193 @@ function EventsCalendar(props: { basePath?: string; onChange?: () => void }) {
  * touch the hourly time grid. `placed` is a `createMemo` fed its own previous value as
  * `prev`, so `placeRows` can reuse unchanged rows' `PlacedTask` objects — a refetch where
  * only one row changed keeps every other chip's identity, so `<For>` doesn't remount them.
+ *
+ * Also owns the two things the bar's old `[ + task ]` button used to own, now that the
+ * button is gone (Toolbar.tsx): a per-cell COMPOSER (clicking a day starts writing a task
+ * right there, instead of a modal-less button that wrote a blank `[scheduled <day>]` line
+ * nobody could find again) and the tasks register's own SETTINGS modal (the gear used to
+ * toggle `showCalendarSettings`, a signal only `EventsCalendar`'s `<CalendarSettings>`
+ * listened to — in the tasks register it looked live and did nothing).
  */
-function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
+// `line`/`resolved`/`statusChar`/`placed` are the task parser's own handles, not columns a
+// person authored — offering them as a Date/Category column choice is nonsense.
+const INTERNAL_KEYS = new Set(['line', 'resolved', 'statusChar', 'placed'])
+
+function TasksCalendar(props: {
+    result?: ViewResult
+    config?: BaseConfig
+    basePath?: string
+    ownsRows: boolean
+    viewIndex: number
+    onChange?: () => void
+}) {
+    const rows = createMemo(() => props.result?.groups.flatMap(g => g.rows) ?? [])
+    // The active view's own config, already resolved server-side into `result.view` — the
+    // same object `placed` below already reads `.dateField` off, so `dateField`/
+    // `categoryField`/`taskFile`/`defaultCategory` all come from here rather than indexing
+    // `props.config.views[props.viewIndex]` a second time.
+    const view = () => props.result?.view
+
     const placed = createMemo<Map<string, PlacedTask[]>>(prev =>
-        placeRows(
-            props.result?.groups.flatMap(g => g.rows) ?? [],
-            todayISO(),
-            props.result?.view.dateField,
-            prev,
+        placeRows(rows(), todayISO(), view()?.dateField, prev),
+    )
+
+    // ---- colours: a task's SOURCE is its category (taskCategory.ts) ----------------------
+    const categoryField = () => view()?.categoryField
+    const colors = createMemo(() =>
+        taskCategoryColors(
+            taskCategoryNames(rows(), categoryField()),
+            props.config?.categories,
         ),
     )
+    const colorFor = (task: PlacedTask) => {
+        const name = taskCategoryName(task.row, categoryField())
+        return name === undefined ? undefined : colors().get(name)
+    }
+
+    // ---- composer: click a cell, start writing a task right there ------------------------
+    // One signal for which day's cell is open — TaskCellComposer (Task 6) owns the input
+    // itself; this only owns WHERE the composer is open and WHAT commit does with its text.
+    const [composeDate, setComposeDate] = createSignal<string | null>(null)
+
+    const destination = () => {
+        if (props.ownsRows)
+            return props.basePath ? fileBasename(props.basePath) : ''
+        const taskFile = view()?.taskFile
+        return taskFile ? fileBasename(refToPath(taskFile)) : ''
+    }
+
+    // The composer's band colour: the resolved colour for the view's defaultCategory. Prefer
+    // `colors()` — the map every chip in this grid was painted from — since a solo
+    // `taskCategoryColors([name])` call skips the collision probing and can disagree with the
+    // chips directly above the composer. Fall back only when the category has no rows yet (a
+    // base with no rows yet, or none of this category yet, so `colors()` has no entry for it).
+    const composeColor = createMemo(() => {
+        const name = view()?.defaultCategory
+        if (!name) return undefined
+        return (
+            colors().get(name) ??
+            taskCategoryColors([name], props.config?.categories).get(name)
+        )
+    })
+
+    const commitTask = async (date: string, text: string) => {
+        const vc = view()
+        if (props.ownsRows) {
+            if (!props.basePath) return
+            const field = vc?.categoryField || 'category'
+            const category = vc?.defaultCategory
+            // The description comes FIRST and is never empty — the old bar button wrote
+            // just `[scheduled <day>]`, a blank chip the user could not find again.
+            const note: Record<string, unknown> = {
+                description: text,
+                status: 'todo',
+                scheduled: date,
+                ...(category ? { [field]: category } : {}),
+            }
+            try {
+                await api.rowCreate(props.basePath, note)
+            } catch (err) {
+                pushToast(
+                    `Could not create the task: ${err instanceof Error ? err.message : String(err)}`,
+                )
+                return
+            }
+            if (props.config && vc) {
+                const prospective = prospectiveStoredTaskRow(props.basePath, note, 0)
+                if (!newTaskVisible(props.config, vc, prospective))
+                    pushToast(
+                        `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
+                    )
+            }
+            props.onChange?.()
+            return
+        }
+
+        const taskFile = vc?.taskFile
+        if (!taskFile) {
+            // No destination configured — a silent no-op here is exactly what made the
+            // old button read as broken. Open settings so the user can name one.
+            showCalendarSettings.value = true
+            pushToast(
+                'Set a destination note for new tasks in this calendar’s settings first',
+            )
+            return
+        }
+        const body = `${text} [scheduled ${date}]`
+        let dest: string
+        try {
+            dest = await appendTaskLine(taskFile, body)
+        } catch (err) {
+            pushToast(
+                `Could not create the task: ${err instanceof Error ? err.message : String(err)}`,
+            )
+            return
+        }
+        // Feed the scope check the path the write RETURNED, not a client-side guess.
+        if (props.config && vc) {
+            const prospective = prospectiveLineTaskRow(dest, body)
+            if (prospective && !newTaskVisible(props.config, vc, prospective))
+                pushToast(
+                    `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
+                )
+        }
+        props.onChange?.()
+    }
+
+    const compose: TaskComposeProps = {
+        get date() {
+            return composeDate()
+        },
+        get destination() {
+            return destination()
+        },
+        get color() {
+            return composeColor()
+        },
+        open: date => setComposeDate(date),
+        commit: (date, text) => void commitTask(date, text),
+        cancel: () => setComposeDate(null),
+    }
+
+    // ---- settings: THIS register's own modal, not EventsCalendar's <CalendarSettings> ----
+    const [notes] = createResource(async () => {
+        const entries = await api.tree()
+        return entries
+            .filter(e => e.kind === 'file' && e.path.endsWith('.md'))
+            .map(e => e.path)
+    })
+    const columns = createMemo(() => {
+        const seen = new Set<string>()
+        for (const row of rows())
+            for (const key of Object.keys(row.note))
+                if (!INTERNAL_KEYS.has(key)) seen.add(key)
+        return [...seen]
+    })
+    const names = createMemo(() => taskCategoryNames(rows(), categoryField()))
+    const onSetField = (
+        key: 'dateField' | 'categoryField' | 'taskFile' | 'defaultCategory',
+        value: string,
+    ) => {
+        if (!props.basePath) return
+        // "Not set" REMOVES the key — storing `''` leaves a dead field in the user's
+        // frontmatter, and an empty categoryField would name a column with no name.
+        if (value === '')
+            void api.deleteViewProperty(props.basePath, props.viewIndex, key)
+        else void api.setViewProperty(props.basePath, props.viewIndex, key, value)
+    }
+    // Rewrites the base's WHOLE `categories:` array — preserving every category already
+    // declared and adding the picked one only when it is not there yet.
+    const onPickColor = (name: string, token: string) => {
+        if (!props.basePath) return
+        const declared = props.config?.categories ?? []
+        const idx = declared.findIndex(c => c.name === name)
+        const next =
+            idx >= 0
+                ? declared.map((c, i) => (i === idx ? { name, color: token } : c))
+                : [...declared, { name, color: token }]
+        void api.setProperty(props.basePath, 'categories', next)
+    }
 
     // Left-click the marker toggles the task (POST /tasks/toggle by path + line, same
     // as every other row-based task view — ListView.tsx, CardBody.tsx); clicking the
@@ -252,58 +463,86 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
     const store = new EventStore(new MemoryBackend())
 
     return (
-        <Switch
-            fallback={
-                <WeekView
-                    store={store}
-                    placed={placed()}
-                    onToggleTask={toggleTaskRow}
-                    onOpenTask={openTaskRow}
-                    onSetTaskStatus={setTaskStatus}
-                    onRescheduleTask={rescheduleTaskRow}
+        <>
+            <Switch
+                fallback={
+                    <WeekView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                        onSetTaskStatus={setTaskStatus}
+                        onRescheduleTask={rescheduleTaskRow}
+                        compose={compose}
+                        colorFor={colorFor}
+                    />
+                }
+            >
+                <Match when={currentView.value === 'month'}>
+                    <MonthView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                        onSetTaskStatus={setTaskStatus}
+                        onRescheduleTask={rescheduleTaskRow}
+                        compose={compose}
+                        colorFor={colorFor}
+                    />
+                </Match>
+                <Match when={currentView.value === 'week'}>
+                    <WeekView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                        onSetTaskStatus={setTaskStatus}
+                        onRescheduleTask={rescheduleTaskRow}
+                        compose={compose}
+                        colorFor={colorFor}
+                    />
+                </Match>
+                <Match when={currentView.value === '3day'}>
+                    <ThreeDayView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                        onSetTaskStatus={setTaskStatus}
+                        onRescheduleTask={rescheduleTaskRow}
+                        compose={compose}
+                        colorFor={colorFor}
+                    />
+                </Match>
+                <Match when={currentView.value === 'day'}>
+                    <DayView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                        onSetTaskStatus={setTaskStatus}
+                        onRescheduleTask={rescheduleTaskRow}
+                        compose={compose}
+                        colorFor={colorFor}
+                    />
+                </Match>
+            </Switch>
+            <Show when={showCalendarSettings.value && props.basePath}>
+                <TaskCalendarSettings
+                    ownsRows={props.ownsRows}
+                    columns={columns()}
+                    notes={notes() ?? []}
+                    dateField={view()?.dateField}
+                    categoryField={view()?.categoryField}
+                    taskFile={view()?.taskFile}
+                    defaultCategory={view()?.defaultCategory}
+                    names={names()}
+                    colors={colors()}
+                    onPickColor={onPickColor}
+                    onSetField={onSetField}
+                    onClose={() => (showCalendarSettings.value = false)}
                 />
-            }
-        >
-            <Match when={currentView.value === 'month'}>
-                <MonthView
-                    store={store}
-                    placed={placed()}
-                    onToggleTask={toggleTaskRow}
-                    onOpenTask={openTaskRow}
-                    onSetTaskStatus={setTaskStatus}
-                    onRescheduleTask={rescheduleTaskRow}
-                />
-            </Match>
-            <Match when={currentView.value === 'week'}>
-                <WeekView
-                    store={store}
-                    placed={placed()}
-                    onToggleTask={toggleTaskRow}
-                    onOpenTask={openTaskRow}
-                    onSetTaskStatus={setTaskStatus}
-                    onRescheduleTask={rescheduleTaskRow}
-                />
-            </Match>
-            <Match when={currentView.value === '3day'}>
-                <ThreeDayView
-                    store={store}
-                    placed={placed()}
-                    onToggleTask={toggleTaskRow}
-                    onOpenTask={openTaskRow}
-                    onSetTaskStatus={setTaskStatus}
-                    onRescheduleTask={rescheduleTaskRow}
-                />
-            </Match>
-            <Match when={currentView.value === 'day'}>
-                <DayView
-                    store={store}
-                    placed={placed()}
-                    onToggleTask={toggleTaskRow}
-                    onOpenTask={openTaskRow}
-                    onSetTaskStatus={setTaskStatus}
-                    onRescheduleTask={rescheduleTaskRow}
-                />
-            </Match>
-        </Switch>
+            </Show>
+        </>
     )
 }

@@ -11,16 +11,6 @@ import BarLabel from '../../ui/BarLabel'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { toDateStr } from '../dates'
-import { api } from '../../api'
-import { pushToast } from '../../toastStore'
-import { appendTaskLine } from '../../bases/taskCreate'
-import {
-    newTaskVisible,
-    prospectiveLineTaskRow,
-    prospectiveStoredTaskRow,
-} from '../../bases/taskScope'
-import { refToPath } from '../../../../core/src/bases/sourceSpec'
-import type { BaseConfig, ViewConfig } from '../../../../core/src/bases/types'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
@@ -33,86 +23,21 @@ const VIEWS: { id: ViewType; label: string; short: string }[] = [
     { id: 'day', label: 'Day', short: 'D' },
 ]
 
-/** What `calendarSlots()` needs to know to draw the right `actions` control for the ACTIVE
- *  register — everything else in the bar (locus/config) is identical for events and tasks.
+/** What `calendarSlots()` needs to know to pick the `actions` control for the ACTIVE register —
+ *  everything else in the bar (locus/config) is identical for events and tasks. In tasks mode the
+ *  `actions` slot renders NOTHING now: task creation lives in the grid's own cells (a click starts
+ *  writing a task right there — see CalendarView.tsx's `TasksCalendar`), not behind a bar button.
  *  Passed in by BaseView.tsx, since the calendar's own module-level state has no notion of
  *  "which base/view is on screen" (that lives in BaseView's own `data()`/`activeViewConfig()`).
  *  Omitted entirely by the standalone `Toolbar()` below and by any caller that predates the
  *  tasks register — both fall back to the events "+ event" action unchanged. */
 export interface CalendarSlotsCtx {
     isTasks: boolean
-    /** The open base file's path — for a self-owned base, this IS the file a new row writes
-     *  into (`upsertRow` via `POST /row/update`). */
-    basePath?: string
-    /** True when the view resolves NO declared `source:` (base-level or view-level) — the
-     *  base owns its rows in its own inline table, same test `source.ts` uses to fall back to
-     *  a base's own rows. */
-    ownsRows: boolean
-    /** `source: tasks` register only: the note a new task line is appended to. Absent means
-     *  no create action at all — see createTask below. */
-    taskFile?: string
-    /** The base's config and the active view's config — needed only to check whether the
-     *  task `createTask` is about to write would actually survive this view's filters
-     *  (`newTaskVisible`). Optional so the standalone `Toolbar()` below, and any caller that
-     *  predates the scope check, keep compiling: with either absent, `createTask` writes and
-     *  says nothing further, same as before this check existed. */
-    config?: BaseConfig
-    view?: ViewConfig
-}
-
-/** `[ + task ]`'s write, decided by the SAME two cases the design doc's creation table lays
- *  out: a self-owned base gets a new ROW (rowOps.ts's `upsertRow`, via the same `POST
- *  /row/update` the CLI `base`/`card` groups and EditCardsModal already use); a `source:
- *  tasks` base gets a checkbox LINE appended to `taskFile`, dated on the day the calendar is
- *  currently showing (`currentDate`, the same date the "+ event" action already uses). Both
- *  writes are read-refreshed reactively by the vault's normal version-bump/SSE path — no
- *  local refetch needed here. */
-async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
-    const day = toDateStr(currentDate.value)
-    if (ctx.ownsRows) {
-        if (!ctx.basePath) return
-        // `resolved` and `statusChar` are DERIVED — normalizeStoredTaskRow computes both from
-        // `status`. Writing them as real columns made them the user's own data under the rule
-        // that a stored column always wins, so normalization stopped refreshing them and they
-        // went stale on the first toggle: a completed task kept reporting `resolved: false`.
-        // The shape below is the one BaseView's own "+ task" writes, and the description
-        // matches it too — an empty one renders as a blank card the user cannot find again.
-        const note = { description: 'New task', status: 'todo', scheduled: day }
-        await api.rowCreate(ctx.basePath, note)
-        // The write happened; this only tells the truth about where it went. A task that
-        // cannot match this view's filters is invisible HERE, not lost — so name the file it
-        // did land in, which is the one piece of information the user needs to go find it.
-        if (ctx.config && ctx.view) {
-            // The index passed here is a write-back handle, not data a filter can read —
-            // no FilterNode expression can reference `Row.index` — so which number it is
-            // does not change the answer. 0 is fine.
-            const prospective = prospectiveStoredTaskRow(ctx.basePath, note, 0)
-            if (!newTaskVisible(ctx.config, ctx.view, prospective))
-                pushToast(
-                    `Added to ${ctx.basePath} — it does not match this view's filters, so it will not appear here`,
-                )
-        }
-        return
-    }
-    if (!ctx.taskFile) return // no destination named — nothing to guess, nothing to write
-    // The append itself is bases/taskCreate.ts's, shared with the "+ task" every OTHER view
-    // kind grew in tasks mode. Only the line's BODY is the calendar's own — it dates the task
-    // on the day the grid is showing, which no other kind has.
-    const body = `[scheduled ${day}]`
-    await appendTaskLine(ctx.taskFile, body)
-    if (ctx.config && ctx.view) {
-        const dest = refToPath(ctx.taskFile)
-        const prospective = prospectiveLineTaskRow(dest, body)
-        if (prospective && !newTaskVisible(ctx.config, ctx.view, prospective))
-            pushToast(
-                `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
-            )
-    }
 }
 
 /**
  * The calendar's contribution to whichever view bar it lands in — the base's, or the standalone
- * one below. Four REGIONS, not one block:
+ * one below. Three REGIONS, not one block:
  *
  *   locus   — DateNav (Today · prev · the date, which also jumps to today · next) followed by the period
  *             switcher.
@@ -122,9 +47,8 @@ async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
  *             different scope in one bar have to be told apart by position, since they cannot be
  *             told apart by weight.
  *   config  — Categories, which governs what this session shows rather than doing anything.
- *   actions — the bar's one primary action, last: `+ Event` in the events register, `+ Task` in
- *             the tasks register (omitted outright when a `source: tasks` base names no
- *             `taskFile` — see `createTask`).
+ *   actions — the bar's one primary action: `+ Event` in the events register, nothing at all in
+ *             the tasks register (a grid cell IS the create action there now).
  *
  * A FUNCTION RETURNING SLOTS, NOT A COMPONENT. The base owns exactly one <ViewBar>; a view kind
  * that rendered its own would stack a second full-height band of chrome above every calendar,
@@ -175,50 +99,22 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             </Show>
         ),
         actions: (
-            <Show
-                when={ctx?.isTasks}
-                fallback={
-                    <VBtn
-                        class={styles.cta}
-                        icon="Plus"
-                        title="New event"
-                        onClick={() =>
-                            (showEventModal.value = {
-                                date: toDateStr(currentDate.value),
-                            })
-                        }
-                    >
-                        <BarLabel long="EVENT" drop="early" />
-                    </VBtn>
-                }
-            >
-                {/* A `source: tasks` base with no `taskFile` renders NO button at all — a
-                    grid cell says which DAY, not which FILE, and nothing here guesses one. */}
-                <Show when={ctx!.ownsRows || ctx!.taskFile}>
-                    <VBtn
-                        class={styles.cta}
-                        icon="Plus"
-                        title="New task"
-                        onClick={() =>
-                            /* Surfaced, not swallowed. `createTask` writes to the note named by
-                               `taskFile`, and that write can fail for reasons the user can act on
-                               — a taskFile naming a note that does not exist, a permission error.
-                               Before this it rejected into nothing and the button just appeared
-                               inert, which is indistinguishable from the button being broken. */
-                            void createTask(ctx!).catch(err =>
-                                pushToast(
-                                    `Could not create the task: ${
-                                        err instanceof Error
-                                            ? err.message
-                                            : String(err)
-                                    }`,
-                                ),
-                            )
-                        }
-                    >
-                        <BarLabel long="TASK" drop="early" />
-                    </VBtn>
-                </Show>
+            /* Tasks register: no button at all. Clicking a grid cell opens that cell's composer
+               directly — see TasksCalendar's `compose` in CalendarView.tsx — so there is no longer
+               a single destination for a bar-level "new task" action to write to. */
+            <Show when={!ctx?.isTasks}>
+                <VBtn
+                    class={styles.cta}
+                    icon="Plus"
+                    title="New event"
+                    onClick={() =>
+                        (showEventModal.value = {
+                            date: toDateStr(currentDate.value),
+                        })
+                    }
+                >
+                    <BarLabel long="EVENT" drop="early" />
+                </VBtn>
             </Show>
         ),
     }

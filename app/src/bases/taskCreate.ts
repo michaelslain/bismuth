@@ -10,29 +10,25 @@
 // every other kind has no day to date it on), so wrapping it would hide the one part that
 // actually varies behind a function that adds nothing.
 import { api } from '../api'
-import { refToPath } from '../../../core/src/bases/sourceSpec'
 
 /**
- * Append `- [ ] <body>` to `file`, inserting the separating newline only when the file does
- * not already end in one — so appending to a file that ends mid-line does not join onto it,
- * and appending to a normal file does not leave a blank line behind.
+ * Append `- [ ] <body>` to the note `file` (a taskFile REF, e.g. `[[General Tasks]]`) resolves
+ * to. Resolution and the write both happen SERVER-SIDE (`POST /tasks/create` →
+ * `core/src/taskCreate.ts`'s `resolveTaskFilePath`/`appendTaskLine`), against the vault's real
+ * note list — not by turning the ref into a path client-side, which is what used to write a
+ * brand-new note at the vault ROOT whenever the real note lived in a subfolder (see
+ * taskCreate.ts's header on the backend for the reproduced defect).
  *
  * `body` is the task line's text AFTER the checkbox: a description, bracket fields, or both
  * (`[scheduled 2026-09-09]`). It is written verbatim — this does not build task syntax.
  *
- * `file` is a `taskFile` value, which the docs and the settings UI both spell as a WIKILINK
- * (`[[Inbox]]`) — the same shape `source.from` and `source.ref` use. It has to go through
- * `refToPath` before it can be read: handed straight to the file API the literal string
- * `[[Inbox]]` reads back empty and the write fails with a 500, so `+ task` did nothing and said
- * nothing. `refToPath` passes a plain path (`Inbox.md`, or a bare `Inbox`) through unchanged,
- * so both spellings work and a vault already written either way keeps working.
+ * Returns the vault-relative path actually written, so a caller that needs to react to the new
+ * row (open it, invalidate a specific base) knows exactly where it landed.
  */
 export async function appendTaskLine(
     file: string,
     body: string,
-): Promise<void> {
-    const path = refToPath(file)
-    const text = await api.read(path)
-    const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
-    await api.write(path, `${text}${sep}- [ ] ${body}\n`)
+): Promise<string> {
+    const { path } = await api.createTask(file, body)
+    return path
 }

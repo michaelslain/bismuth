@@ -52,6 +52,7 @@ import {
     reorderTaskBlocks,
     archiveResolvedTasks,
 } from './tasks'
+import { appendTaskLine } from './taskCreate'
 import { todayISO } from './dates'
 import {
     dueCards,
@@ -2790,6 +2791,24 @@ export function createServer(cfg: CoreConfig) {
             },
             b => (b as { path?: string }).path,
         ),
+
+        // The write seam for the "+ task" action: `file` is a taskFile REF (a wikilink, same
+        // shape as source.from/source.ref), never a literal path — resolveTaskFilePath is what
+        // makes that safe (see taskCreate.ts's header for the defect this fixes). Mutating, not
+        // read-table: PUT /file doesn't invalidate, which is the exact race taskScope.ts's
+        // header describes (a refetch right after a create legitimately missing the new row).
+        // No `pathOf`: the written path isn't known until resolveTaskFilePath runs against the
+        // vault's live note list, which pathOf can't do (it only sees the raw request body,
+        // synchronously, before `run` executes) — so this always falls back to full invalidation,
+        // same as /daily-note and the legacy branch of /cards/review above.
+        'POST /tasks/create': mutatingHandler(async req => {
+            const { file, body } = (await req.json()) as {
+                file: string
+                body: string
+            }
+            const path = await appendTaskLine(cfg.vault, file, body)
+            return ok({ path })
+        }),
 
         'POST /cards/review': mutatingHandler(
             async req => {

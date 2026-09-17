@@ -279,6 +279,7 @@ function normalizeView(raw: unknown): ViewConfig {
         calendarContent,
         mode,
         taskFile: strOrUndef(o.taskFile),
+        defaultCategory: strOrUndef(o.defaultCategory),
         // per-calendar Google Calendar sync bindings
         googleCalendarId: strOrUndef(o.googleCalendarId),
         googleCalendarSync:
@@ -343,6 +344,11 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
         views,
         source: normalizeSource(o.source, o),
         schema: o.schema as BaseConfig['schema'],
+        // Same tolerance as core/src/calendar.ts's categoriesOf: an array, or nothing — no
+        // per-entry validation, matching what that reader already accepts.
+        categories: Array.isArray(o.categories)
+            ? (o.categories as BaseConfig['categories'])
+            : undefined,
     }
 }
 
@@ -405,6 +411,7 @@ export function parseBaseFile(
             'image',
             'descriptionField',
             'taskFile',
+            'defaultCategory',
         ] as const
         for (const k of FIELD_KEYS) {
             if (typeof raw[k] === 'string')

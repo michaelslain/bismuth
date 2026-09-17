@@ -541,6 +541,11 @@ export const api = {
         post('/tasks/archive', path ? { path } : {}).then(
             r => r.json() as Promise<{ removed: number; files: number }>,
         ),
+    // Append `- [ ] <body>` to the note a taskFile ref (`file`) resolves to — resolved server-side
+    // against the vault (see core/src/taskCreate.ts), not by turning the ref into a root-level
+    // path. Returns the vault-relative path actually written.
+    createTask: (file: string, body: string) =>
+        postJson<{ path: string }>('/tasks/create', { file, body }),
 
     noteCards: (path: string) =>
         getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),

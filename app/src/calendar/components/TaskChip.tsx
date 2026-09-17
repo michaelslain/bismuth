@@ -25,6 +25,8 @@ export type TaskChipProps = {
     onOpen: () => void
     onSetStatus: (char: string) => void
     onReschedule?: (days: number) => void
+    /** Resolved CSS colour of this task's category. Undefined → no band. */
+    color?: string
     class?: string
 }
 
@@ -149,6 +151,9 @@ const TaskChip: Component<TaskChipProps> = props => {
                 props.onOpen()
             }}
         >
+            <Show when={props.color}>
+                <span class={styles.band} style={{ background: props.color }} />
+            </Show>
             <span
                 class={[styles.marker, writable() ? '' : styles.readOnly]
                     .filter(Boolean)
