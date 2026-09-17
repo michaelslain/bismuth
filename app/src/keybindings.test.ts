@@ -304,53 +304,177 @@ describe('eventToCombo — recording a shortcut', () => {
 })
 
 describe('KEYBINDING_CATALOG back-compat', () => {
-    // None of the 24 defaults use a literal Ctrl/Cmd/Meta token — only
-    // Mod/Alt/Shift — so replaying each one here (iterating the catalog, not
-    // hand-listing combos) proves the new exact Ctrl/Meta flags left Mod's
-    // portable fold, and the plain Alt/Shift-only combos, matching exactly
-    // what they matched before this task.
-    const hasToken = (tokens: string[], name: string) =>
-        tokens.some(t => t.toLowerCase() === name)
+    // The catalog now has 50 entries, and unlike the original 24 it uses literal
+    // Ctrl/Cmd/Meta tokens (open-completion: "Ctrl+Space, Mod+Shift+Space") and
+    // shifted-punctuation alternatives (graph-zoom-in: "=, Shift+=, Plus") on top
+    // of the plain Mod/Alt/Shift combos. A synthetic KeyboardEvent built from a
+    // combo's literal token is NOT what a browser actually sends — a real space
+    // keypress is `key: ' ', code: 'Space'`, not `key: 'Space'` — so this block
+    // builds each event the way `parseCombo`/`codeToKey` (the same primitives the
+    // matcher itself uses) say a real one would look, then walks the full
+    // Mod / exact-Ctrl / exact-Meta / none truth table plus Alt/Shift requiredness.
+    // Still iterates the catalog — never hand-lists ids — so a new default gets
+    // this coverage for free.
+
+    // Reverse of `codeToKey`: probe every code it knows how to resolve and record
+    // the first one that resolves to each normalized key, so the physical `code`
+    // half of a synthetic event is derived from the real mapping instead of a
+    // hand-copied guess that can drift from it.
+    const CODE_CANDIDATES = [
+        ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => `Key${c}`),
+        ...'0123456789'.split('').map(d => `Digit${d}`),
+        'Minus',
+        'Equal',
+        'BracketLeft',
+        'BracketRight',
+        'Backslash',
+        'Semicolon',
+        'Quote',
+        'Backquote',
+        'Comma',
+        'Period',
+        'Slash',
+        'Space',
+        'NumpadAdd',
+        'NumpadSubtract',
+        'NumpadMultiply',
+        'NumpadDivide',
+        'NumpadDecimal',
+        ...'0123456789'.split('').map(d => `Numpad${d}`),
+    ]
+    const keyToCode: Record<string, string> = {}
+    CODE_CANDIDATES.forEach(code => {
+        const key = codeToKey(code)
+        if (key !== null && !(key in keyToCode)) keyToCode[key] = code
+    })
+
+    // The handful of punctuation/digit keys whose Shift-held `event.key` is a
+    // DIFFERENT character than the bare key (Shift+Equal reports "+", not "="):
+    // real, confirmed values — there's no exported table to derive them from.
+    // Anything shift-sensitive that shows up without an entry here throws below
+    // rather than silently building an event that only matches by accident.
+    const SHIFT_SHIFTS: Record<string, string> = {
+        '=': '+',
+        '-': '_',
+    }
+    const SHIFT_SENSITIVE = new Set([
+        '`',
+        '-',
+        '=',
+        '[',
+        ']',
+        '\\',
+        ';',
+        "'",
+        ',',
+        '.',
+        '/',
+        '0',
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+        '9',
+    ])
 
     KEYBINDING_CATALOG.forEach(spec => {
         it(`${spec.id}: "${spec.default}" still matches what it matched before`, () => {
             spec.default.split(',').forEach(rawCombo => {
                 const combo = rawCombo.trim()
-                const tokens = combo.split('+').map(t => t.trim())
-                const key = tokens[tokens.length - 1]
-                const mod = hasToken(tokens, 'mod')
-                const alt = hasToken(tokens, 'alt')
-                const shift = hasToken(tokens, 'shift')
+                const parsed = parseCombo(combo)
+                if (!parsed)
+                    throw new Error(`catalog default "${combo}" failed to parse`)
+                const { mod, ctrl, meta, alt, shift, key } = parsed
+
+                let eventKey = key
+                if (shift && SHIFT_SENSITIVE.has(key)) {
+                    const shifted = SHIFT_SHIFTS[key]
+                    if (shifted === undefined)
+                        throw new Error(
+                            `"${combo}": no known Shift-modified character for key "${key}" — add it to SHIFT_SHIFTS instead of building an unfaithful event`,
+                        )
+                    eventKey = shifted
+                }
+                const code = keyToCode[key]
+
+                const build = (
+                    over: {
+                        ctrl?: boolean
+                        meta?: boolean
+                        alt?: boolean
+                        shift?: boolean
+                    } = {},
+                ) => ev(eventKey, { alt, shift, code, ...over })
 
                 if (mod) {
-                    // Mod still fires under either physical modifier…
+                    // Mod fires under metaKey alone, ctrlKey alone, or both…
                     expect(
-                        matchesCombo(ev(key, { meta: true, alt, shift }), combo),
+                        matchesCombo(build({ meta: true, ctrl: false }), combo),
                     ).toBe(true)
                     expect(
-                        matchesCombo(ev(key, { ctrl: true, alt, shift }), combo),
+                        matchesCombo(build({ ctrl: true, meta: false }), combo),
+                    ).toBe(true)
+                    expect(
+                        matchesCombo(build({ ctrl: true, meta: true }), combo),
                     ).toBe(true)
                     // …and not under neither.
-                    expect(matchesCombo(ev(key, { alt, shift }), combo)).toBe(
-                        false,
-                    )
-                } else {
-                    // No Mod token: neither Ctrl nor Meta may substitute for it.
-                    expect(matchesCombo(ev(key, { alt, shift }), combo)).toBe(
-                        true,
-                    )
                     expect(
-                        matchesCombo(ev(key, { ctrl: true, alt, shift }), combo),
+                        matchesCombo(build({ ctrl: false, meta: false }), combo),
+                    ).toBe(false)
+                } else if (ctrl) {
+                    // Exact Ctrl: ctrlKey alone only — not metaKey-only, not both,
+                    // not bare.
+                    expect(
+                        matchesCombo(build({ ctrl: true, meta: false }), combo),
+                    ).toBe(true)
+                    expect(
+                        matchesCombo(build({ ctrl: false, meta: true }), combo),
                     ).toBe(false)
                     expect(
-                        matchesCombo(ev(key, { meta: true, alt, shift }), combo),
+                        matchesCombo(build({ ctrl: true, meta: true }), combo),
+                    ).toBe(false)
+                    expect(
+                        matchesCombo(build({ ctrl: false, meta: false }), combo),
+                    ).toBe(false)
+                } else if (meta) {
+                    // Exact Cmd/Meta: mirrors Ctrl.
+                    expect(
+                        matchesCombo(build({ meta: true, ctrl: false }), combo),
+                    ).toBe(true)
+                    expect(
+                        matchesCombo(build({ meta: false, ctrl: true }), combo),
+                    ).toBe(false)
+                    expect(
+                        matchesCombo(build({ meta: true, ctrl: true }), combo),
+                    ).toBe(false)
+                    expect(
+                        matchesCombo(build({ meta: false, ctrl: false }), combo),
+                    ).toBe(false)
+                } else {
+                    // No Mod/Ctrl/Meta token: neither may substitute for it.
+                    expect(
+                        matchesCombo(build({ ctrl: false, meta: false }), combo),
+                    ).toBe(true)
+                    expect(
+                        matchesCombo(build({ ctrl: true, meta: false }), combo),
+                    ).toBe(false)
+                    expect(
+                        matchesCombo(build({ ctrl: false, meta: true }), combo),
                     ).toBe(false)
                 }
 
+                // Whichever modifier satisfied the branch above, dropping Alt or
+                // Shift when the combo asks for either must still reject.
+                const satisfyCtrl = ctrl
+                const satisfyMeta = meta || mod
                 if (alt) {
                     expect(
                         matchesCombo(
-                            ev(key, { meta: mod, alt: false, shift }),
+                            build({ ctrl: satisfyCtrl, meta: satisfyMeta, alt: false }),
                             combo,
                         ),
                     ).toBe(false)
@@ -358,7 +482,11 @@ describe('KEYBINDING_CATALOG back-compat', () => {
                 if (shift) {
                     expect(
                         matchesCombo(
-                            ev(key, { meta: mod, alt, shift: false }),
+                            build({
+                                ctrl: satisfyCtrl,
+                                meta: satisfyMeta,
+                                shift: false,
+                            }),
                             combo,
                         ),
                     ).toBe(false)
