@@ -21,6 +21,8 @@ import {
     startCompletion,
     acceptCompletion,
     completionStatus,
+    selectedCompletionIndex,
+    currentCompletions,
 } from '@codemirror/autocomplete'
 import { taskDescStart } from './editor/taskComplete'
 import { settings, setSettings } from './settings'
@@ -1855,6 +1857,140 @@ export const TaskFieldAutocomplete: Story = {
         // DESCRIPTION (the checkbox's own `[ ]` is not the thing under test).
         const description = line.slice(taskDescStart(line)!)
         await expect(description.match(/\[/g)?.length).toBe(1)
+    },
+}
+
+const REBIND_TEXT = ['# Rebind Open Completion', '', 'A link to [[P'].join(
+    '\n',
+)
+
+/** THE proof this task exists for. CodeMirror's `autocompletion()` used to install its OWN
+ *  Ctrl-Space keymap at Prec.highest, unconditionally, in front of anything `.settings`
+ *  configured — so rebinding `open-completion` away from Ctrl+Space never actually took Ctrl+Space
+ *  away. Every `autocompletion()` call site now passes `defaultKeymap: false`, and the popup's
+ *  navigation keys are rebuilt by hand in `completionNavKeymap` (completionDisplay.ts), which
+ *  deliberately does NOT include Ctrl-Space/Alt-`/Alt-i — opening the popup is `open-completion`'s
+ *  job alone. Every key below is a REAL KeyboardEvent dispatched at the contentDOM (never the bare
+ *  command function), so a regression that leaves CM's own keymap installed shows up as step 5
+ *  going red: Ctrl+Space would still open the popup after the rebind. */
+export const RebindOpenCompletion: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Rebind Completion.md': REBIND_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Rebind Completion.md"
+                    initialText={REBIND_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        view.focus()
+
+        const at = REBIND_TEXT.indexOf('[[P') + '[[P'.length
+        view.dispatch({ selection: { anchor: at, head: at } })
+
+        const press = (init: KeyboardEventInit) =>
+            view.contentDOM.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    bubbles: true,
+                    cancelable: true,
+                    ...init,
+                }),
+            )
+        const waitActive = async () => {
+            for (
+                let i = 0;
+                i < 100 && completionStatus(view.state) !== 'active';
+                i++
+            ) {
+                await new Promise(r => setTimeout(r, 10))
+            }
+            await expect(completionStatus(view.state)).toBe('active')
+            await new Promise(r => setTimeout(r, 90)) // clear CM's 75ms interactionDelay
+        }
+
+        // 1. DEFAULT settings: Ctrl+Space — a FAITHFUL synthetic shape (key ' ', code 'Space', not
+        //    the string "Space") — still opens the popup.
+        press({ key: ' ', code: 'Space', ctrlKey: true })
+        await waitActive()
+
+        // 2. completionNavKeymap's own bindings still work: ArrowDown/ArrowUp move the selected
+        //    row, Escape closes.
+        await expect(selectedCompletionIndex(view.state)).toBe(0)
+        press({ key: 'ArrowDown', code: 'ArrowDown' })
+        await expect(selectedCompletionIndex(view.state)).toBe(1)
+        press({ key: 'ArrowUp', code: 'ArrowUp' })
+        await expect(selectedCompletionIndex(view.state)).toBe(0)
+        press({ key: 'Escape', code: 'Escape' })
+        await expect(completionStatus(view.state)).toBeNull()
+
+        // 3. Reopen + Enter accepts the highlighted option (whichever CM ranked first).
+        press({ key: ' ', code: 'Space', ctrlKey: true })
+        await waitActive()
+        const picked = String(
+            currentCompletions(view.state)[selectedCompletionIndex(view.state)!]
+                .label,
+        )
+        press({ key: 'Enter', code: 'Enter' })
+        await expect(completionStatus(view.state)).toBeNull()
+        await expect(view.state.doc.toString()).toContain(`[[${picked}]]`)
+
+        // 4. Rebind `open-completion` away from Ctrl+Space. 'open-completion' isn't in this
+        //    worktree's hand-typed Settings['keybindings'] yet (a parallel task's change) — widen
+        //    through `string` first, the same cast shape settingsKeymap.ts's own comboFor() uses.
+        const kbId = ('open-completion' as string) as keyof typeof settings.keybindings
+        const restore = settings.keybindings[kbId]
+        setSettings('keybindings', kbId, 'Ctrl+J')
+        await new Promise(r => setTimeout(r, 100)) // let the reactive compartment reconfigure
+        try {
+            // Reset the buffer back to the unclosed `[[P` so the popup has something to open on.
+            view.dispatch({
+                changes: {
+                    from: 0,
+                    to: view.state.doc.length,
+                    insert: REBIND_TEXT,
+                },
+                selection: { anchor: at, head: at },
+            })
+
+            // 5. Ctrl+Space must NO LONGER open the popup — the assertion that was impossible
+            //    before this task. A generous fixed wait (not a poll-for-active), so a regression
+            //    that leaves CM's own keymap on has time to show up as `active`.
+            press({ key: ' ', code: 'Space', ctrlKey: true })
+            await new Promise(r => setTimeout(r, 300))
+            await expect(completionStatus(view.state)).toBeNull()
+
+            // 6. The NEW combo genuinely opens it — the rebind is live, not merely "Ctrl+Space
+            //    broke by accident".
+            press({ key: 'j', code: 'KeyJ', ctrlKey: true })
+            await waitActive()
+            press({ key: 'Escape', code: 'Escape' })
+            await expect(completionStatus(view.state)).toBeNull()
+
+            // 7. Empty string leaves NO key able to open the popup.
+            setSettings('keybindings', kbId, '')
+            await new Promise(r => setTimeout(r, 100))
+            press({ key: 'j', code: 'KeyJ', ctrlKey: true })
+            await new Promise(r => setTimeout(r, 300))
+            await expect(completionStatus(view.state)).toBeNull()
+            press({ key: ' ', code: 'Space', ctrlKey: true })
+            await new Promise(r => setTimeout(r, 300))
+            await expect(completionStatus(view.state)).toBeNull()
+        } finally {
+            // The settings store is module-level and shared by every story in the run.
+            setSettings('keybindings', kbId, restore)
+        }
     },
 }
 
