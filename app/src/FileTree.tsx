@@ -479,11 +479,7 @@ export function FileTree(props: {
 
     const onKey = (e: KeyboardEvent) => {
         const typing = isTypingTarget(e.target)
-        // `undo-delete`/`delete-selection` are 2 of the 26 ids Settings['keybindings'] (settings.ts)
-        // hasn't caught up to yet — they're real in DEFAULTS/.settings (derived from
-        // KEYBINDING_CATALOG), just not in that hand-written type. A central fix is in flight; cast
-        // here in the meantime rather than widen someone else's file.
-        const kb = settings.keybindings as unknown as Record<string, string> // TODO(keybinding-type)
+        const kb = settings.keybindings
         // CodeMirror's own historyKeymap bindings set `preventDefault` but not `stopPropagation`
         // on Mod-z/Mod-Shift-z, so the keydown still bubbles all the way to this window-level
         // listener after CM has already handled it. `matchesKeybinding` matches modifiers
