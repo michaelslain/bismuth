@@ -1122,6 +1122,222 @@ export const SettingsRebuildKeepsBuffer: Story = {
     },
 }
 
+// ── Rebindable open-completion transitions ──────────────────────────────────────────────────
+// editor/settingsKeymap.ts's settingsKeymapCompartment reconfigures a CM Compartment IN PLACE
+// on a rebind, instead of rebuilding the view the way SettingsRebuildKeepsBuffer's
+// `settings.editor.*` leaves do. `createEffect` is a no-op under `bun test` (bare `solid-js`
+// resolves to its SSR build there, where it is literally `function createEffect() {}`), so these
+// three stories — run under REAL client Solid — are the only place any of this is provable:
+//   1. a rebind takes effect without rebuilding (same EditorView instance, buffer, scroll)
+//   2. the OLD combo is fully replaced, not merely joined by the new one
+//   3. a settings change that is NOT a keybinding still goes through the ordinary rebuild path
+// Every keypress below is a real synthetic KeyboardEvent dispatched at `.cm-content` (never a
+// direct command call), with a faithful `key` AND `code` pair — `key: ' ', code: 'Space'` for
+// Ctrl+Space, matching the project's synthetic-KeyboardEvent trap.
+
+// TODO(keybinding-type): 'open-completion' is not yet a key of Settings['keybindings'] (a
+// parallel sweep is adding the new catalog ids) — cast once here, the same way
+// editor/settingsKeymap.ts's own comboFor does, rather than at every read/write site below.
+const OPEN_COMPLETION = 'open-completion' as keyof typeof settings.keybindings
+
+// Long enough to scroll on its own (proves scroll position survives a rebind), ending in a bare
+// task line so `[due` has a real completion source to open against — the same context
+// TaskFieldAutocomplete uses, just reached via a real keybinding instead of a direct command
+// call.
+const REBIND_TEXT = [
+    '# Rebind Completion',
+    '',
+    ...Array.from(
+        { length: 60 },
+        (_, i) => `Paragraph ${i + 1}, long enough that the note scrolls on its own.`,
+    ),
+    '',
+    '- [ ] rent [due',
+    '',
+].join('\n')
+
+const renderRebindStory = (path: string) => {
+    setTransport(fakeTransport({ files: { [path]: REBIND_TEXT } }))
+    return (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <Editor
+                path={path}
+                initialText={REBIND_TEXT}
+                onSaved={noop}
+                noteNames={() => NOTE_NAMES}
+                memoryNames={() => MEMORY_NAMES}
+                tagNames={() => TAG_NAMES}
+            />
+        </div>
+    )
+}
+
+/** Ctrl+Space is the shipped default; Alt+O is a combo nothing else in this keymap uses, so
+ *  rebinding to it is unambiguous evidence the NEW combo (not some other coincidental binding)
+ *  is what opened the popup. */
+const dispatchOpenCompletionCombo = (target: Element, combo: 'old' | 'new') => {
+    const init: KeyboardEventInit =
+        combo === 'old'
+            ? { key: ' ', code: 'Space', ctrlKey: true }
+            : { key: 'o', code: 'KeyO', altKey: true }
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true }),
+    )
+}
+
+const waitForCompletionActive = async (view: EditorView) => {
+    for (
+        let i = 0;
+        i < 100 && completionStatus(view.state) !== 'active';
+        i++
+    ) {
+        await new Promise(r => setTimeout(r, 10))
+    }
+    await expect(completionStatus(view.state)).toBe('active')
+}
+
+/** The contract `settingsKeymapCompartment` exists for: a rebind mid-session takes effect
+ *  through the SAME EditorView instance — no rebuild, so the buffer and scroll position survive
+ *  it exactly the way DrawModeKeepsBuffer pins for the draw-mode toggle. */
+export const RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheView: Story =
+    {
+        render: () => renderRebindStory('Rebind Mid-Session.md'),
+        play: async ({ canvasElement }) => {
+            const liveView = () => {
+                const dom = canvasElement.querySelector('.cm-editor')
+                const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+                if (!v) throw new Error('could not find EditorView')
+                return v
+            }
+            const before = liveView()
+            const at = REBIND_TEXT.indexOf('[due') + '[due'.length
+            before.dispatch({ selection: { anchor: at, head: at } })
+            before.focus()
+
+
+            // A scroll position only a real rebuild would reset — REBIND_TEXT is 60+ paragraphs
+            // tall against a 700px story container, so this is well within scrollable range.
+            before.scrollDOM.scrollTop = 250
+            const docBefore = before.state.doc.toString()
+
+            const restore =
+                settings.keybindings[OPEN_COMPLETION]
+            setSettings('keybindings', OPEN_COMPLETION, 'Alt+O')
+            try {
+                // Give the compartment's createEffect a tick to reconfigure — the reconfigure
+                // itself is a real `view.dispatch`, so polling on its observable effect (the new
+                // combo opening completion) below is the actual deterministic seam; this is just
+                // room for Solid's effect scheduler to run at all.
+                await new Promise(r => setTimeout(r, 50))
+
+                dispatchOpenCompletionCombo(
+                    canvasElement.querySelector('.cm-content')!,
+                    'new',
+                )
+                await waitForCompletionActive(before)
+
+                const after = liveView()
+                await expect(after).toBe(before) // no rebuild happened
+                await expect(after.state.doc.toString()).toBe(docBefore) // buffer untouched
+                await expect(after.scrollDOM.scrollTop).toBe(250) // scroll untouched
+            } finally {
+                // The settings store is module-level and shared by every story in the run.
+                setSettings('keybindings', OPEN_COMPLETION, restore)
+            }
+        },
+    }
+
+/** The half that catches a helper which merely ADDS the new binding instead of REPLACING the
+ *  old one: after rebinding open-completion away from Ctrl+Space, the shipped default must no
+ *  longer open anything. A helper with that bug would leave Ctrl+Space live alongside Alt+O and
+ *  this assertion goes red, even though
+ *  RebindingOpenCompletionMidSessionTakesEffectWithoutRebuildingTheView above would still pass. */
+export const TheOldComboStopsFiringAfterARebind: Story = {
+    render: () => renderRebindStory('Rebind Old Combo.md'),
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        const at = REBIND_TEXT.indexOf('[due') + '[due'.length
+        view.dispatch({ selection: { anchor: at, head: at } })
+        view.focus()
+
+        const restore = settings.keybindings[OPEN_COMPLETION]
+        setSettings('keybindings', OPEN_COMPLETION, 'Alt+O')
+        try {
+            await new Promise(r => setTimeout(r, 50))
+
+            const content = canvasElement.querySelector('.cm-content')!
+            dispatchOpenCompletionCombo(content, 'old')
+            // A fixed wait, not a poll: the assertion is that nothing ever happens, so there is
+            // no true condition to poll for. 300ms is generous against the 10ms poll interval
+            // waitForCompletionActive uses elsewhere in this file for a REAL activation.
+            await new Promise(r => setTimeout(r, 300))
+            await expect(completionStatus(view.state)).not.toBe('active')
+
+            // Sanity: the new combo still works in this same session, so a null result above is
+            // "the old combo is dead", not "nothing in this environment ever activates".
+            dispatchOpenCompletionCombo(content, 'new')
+            await waitForCompletionActive(view)
+        } finally {
+            setSettings('keybindings', OPEN_COMPLETION, restore)
+        }
+    },
+}
+
+/** The companion regression guard: the keybinding-compartment work must not have narrowed the
+ *  view-building effect's dependencies so that only `settings.keybindings.*` triggers a rebuild.
+ *  Same mechanism and shape as SettingsRebuildKeepsBuffer above (flip an unrelated
+ *  `settings.editor` leaf, confirm a NEW EditorView instance carries the buffer forward) — kept
+ *  as its own story here, named for this task's rebind-vs-rebuild contract specifically. */
+export const ASettingsChangeThatIsNotAKeybindingStillRebuildsTheViewAsBefore: Story =
+    {
+        render: () => {
+            setTransport(
+                fakeTransport({ files: { 'Rebuild Still Works.md': DRAW_TOGGLE_TEXT } }),
+            )
+            return (
+                <div style={{ height: STORY_H, width: '100%' }}>
+                    <Editor
+                        path="Rebuild Still Works.md"
+                        initialText={DRAW_TOGGLE_TEXT}
+                        onSaved={noop}
+                        noteNames={() => NOTE_NAMES}
+                        memoryNames={() => MEMORY_NAMES}
+                        tagNames={() => TAG_NAMES}
+                    />
+                </div>
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const liveView = () => {
+                const dom = canvasElement.querySelector('.cm-editor')
+                const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+                if (!v) throw new Error('could not find EditorView')
+                return v
+            }
+            const before = liveView()
+            const MARK = 'UNSAVED-ACROSS-A-NON-KEYBINDING-REBUILD'
+            before.dispatch({
+                changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+            })
+            await expect(before.state.doc.toString()).toContain(MARK)
+
+            const restore = settings.editor.lineNumbers
+            setSettings('editor', 'lineNumbers', !restore)
+            try {
+                await waitFor(() => expect(liveView()).not.toBe(before))
+                await new Promise(r => setTimeout(r, 250))
+
+                const after = liveView()
+                await expect(after).not.toBe(before) // the rebuild really happened
+                await expect(after.state.doc.toString()).toContain(MARK)
+            } finally {
+                setSettings('editor', 'lineNumbers', restore)
+            }
+        },
+    }
+
 // ── Endless scroll space while drawing ──────────────────────────────────────────────────────
 // The two stories below are the ONLY place the scroll-space rule can be checked: happy-dom has
 // no layout engine, so `scrollHeight`/`clientHeight` read back zero under `bun test` and every
