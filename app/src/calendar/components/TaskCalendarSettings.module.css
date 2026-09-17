@@ -4,3 +4,10 @@
 .catgroup { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
 .catrow { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-1) var(--sp-5); }
 .catrow + .catrow { border-top: 1px solid var(--border-soft); }
+
+/* The free-text `Default category` field carries a `list` attribute so Chromium offers the
+   `datalist` suggestions, but the browser's own native dropdown-arrow affordance for that
+   (`::-webkit-list-button`) is a solid triangle that doesn't match this app's own thin Select
+   chevron — hide it so the field reads as this app's language, not a bare web form control. */
+.category-input::-webkit-list-button,
+.category-input::-webkit-calendar-picker-indicator { display: none !important; }

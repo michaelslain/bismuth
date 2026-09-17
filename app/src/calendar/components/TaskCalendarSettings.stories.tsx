@@ -12,7 +12,7 @@
 // shows its real auto-assigned swatch instead of a fabricated stand-in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show } from 'solid-js'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import TaskCalendarSettings from './TaskCalendarSettings'
 import { taskCategoryColors, type TaskCategory } from '../taskCategory'
 
@@ -93,9 +93,14 @@ export const SourcedUnconfigured: Story = {
 
 /** A base that owns its rows (no `source:`) — new tasks are written straight into the base's
  *  own notes, so "New tasks" offers a Default category instead of a destination, and the
- *  Categories section gains a Category-column mapping select above the colour list. */
+ *  Categories section gains a Category-column mapping select above the colour list.
+ *
+ *  `Default category` is a free-text field (`ui/TextInput`) seeded with a `<datalist>` of
+ *  `names`, not a closed `Select` — a fresh own-rows base has no rows yet, so a select built
+ *  from `names` could never offer the very default the user needs to set. The play() below
+ *  types a name that is NOT in `SIX_NAMES`, the case the old closed select made impossible. */
 export const OwnRows: Story = {
-    render: () => (
+    render: args => (
         <TaskCalendarSettings
             ownsRows
             columns={COLUMNS}
@@ -106,17 +111,55 @@ export const OwnRows: Story = {
             names={SIX_NAMES}
             colors={taskCategoryColors(SIX_NAMES, THREE_DECLARED)}
             onPickColor={() => {}}
-            onSetField={() => {}}
+            onSetField={args.onSetField}
             onClose={() => {}}
         />
     ),
-    play: async () => {
+    args: { onSetField: fn() },
+    play: async ({ args }) => {
         const canvas = within(document.body)
         expect(canvas.getByText('Default category')).toBeInTheDocument()
         expect(canvas.getByText('Category column')).toBeInTheDocument()
         expect(
             canvas.queryByText('Destination note'),
         ).not.toBeInTheDocument()
+
+        const input = canvas.getByDisplayValue('Work') as HTMLInputElement
+        await userEvent.clear(input)
+        await userEvent.type(input, 'Side projects')
+        await expect(args.onSetField).toHaveBeenCalledWith(
+            'defaultCategory',
+            'Side projects',
+        )
+    },
+}
+
+/** A sourced base (`ownsRows: false`) with no categories yet — both the Category-column field
+ *  (own-rows only) and the colour list (gated on `names.length`) are hidden, so without the
+ *  hint this covers, the "Categories" heading would sit over empty space. */
+export const CategoriesEmpty: Story = {
+    render: () => (
+        <TaskCalendarSettings
+            ownsRows={false}
+            columns={COLUMNS}
+            notes={NOTES}
+            dateField="scheduled"
+            taskFile="[[Website Relaunch]]"
+            names={[]}
+            colors={new Map()}
+            onPickColor={() => {}}
+            onSetField={() => {}}
+            onClose={() => {}}
+        />
+    ),
+    play: async () => {
+        const canvas = within(document.body)
+        expect(canvas.getByText('Categories')).toBeInTheDocument()
+        expect(
+            canvas.getByText(
+                'Categories appear here once tasks have a source note or a category value.',
+            ),
+        ).toBeInTheDocument()
     },
 }
 
