@@ -256,6 +256,42 @@ export const CarriedNarrowColumn: Story = {
     },
 }
 
+/** The exact regression a design review caught: a ~171px WEEK column (not the 220px month
+ *  cell, not the 120px stress test above) is where `.title`'s old `min-width: min(12ch, 100%)`
+ *  pinned the title to a ~12-character ribbon on EVERY line once "Nd late" moved inline beside
+ *  it — 13 lines for this chip, only 4 fitting the visible grid, versus 8 lines/6 chips before
+ *  the regression. `min-width: min(22ch, 100%)` fixes it: below ~250px the late label drops to
+ *  its own line instead (matching the month grid), so the title gets real per-line width back. */
+export const CarriedWeekColumn: Story = {
+    render: () => (
+        <div style={{ width: '171px', border: '1px solid var(--border)' }}>
+            <TaskChip
+                task={task(
+                    'follow up on the overdue item number 21 — a long enough description to wrap',
+                    '2026-08-30',
+                    2,
+                )}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+        const lines = Math.round(title.getBoundingClientRect().height / lineHeight)
+        // The regression wrapped this exact chip to 13 lines at this exact width. The fix
+        // must land meaningfully under that — proof the floor actually moved, not a fluke of
+        // this one description.
+        expect(lines).toBeLessThan(10)
+        // nothing clipped
+        expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1)
+    },
+}
+
 /** A DONE task on the calendar — history stays on the day it happened (`placeRows` never
  *  excludes resolved rows), so this chip must NOT read as still-open. Marker renders `[x]`,
  *  read straight off `note.statusChar` rather than derived from `resolved` alone. */

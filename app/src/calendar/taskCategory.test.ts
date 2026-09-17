@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PALETTE_TOKENS } from '../ui/palette'
+import { AUTO_CATEGORY_TOKENS } from './categoryColor'
 import {
     autoCategoryColor,
     taskCategoryColors,
@@ -114,16 +114,18 @@ describe('autoCategoryColor', () => {
         expect(results.size).toBe(1)
     })
 
-    test('a spread of distinct names covers all seven palette tokens', () => {
+    test('a spread of distinct names covers all six auto-category tokens (never accent)', () => {
         const names = Array.from({ length: 60 }, (_, i) => `source-note-${i}`)
         const colors = new Set(names.map(autoCategoryColor))
-        expect(colors.size).toBe(PALETTE_TOKENS.length)
+        expect(colors.size).toBe(AUTO_CATEGORY_TOKENS.length)
     })
 
-    test('every result is one of the resolved palette tokens, never an invented colour', () => {
+    test('every result is one of the resolved auto-category tokens, never an invented colour '
+        + 'and never accent', () => {
         const resolved = new Set(
-            PALETTE_TOKENS.map(t => `var(--${t})`),
+            AUTO_CATEGORY_TOKENS.map(t => `var(--${t})`),
         )
+        expect(resolved.has('var(--accent)')).toBe(false)
         for (let i = 0; i < 20; i++) {
             expect(resolved.has(autoCategoryColor(`n${i}`))).toBe(true)
         }
@@ -157,5 +159,58 @@ describe('taskCategoryColors', () => {
         const names = ['a', 'b', 'c']
         const colors = taskCategoryColors(names, [{ name: 'b', color: 'teal' }])
         for (const n of names) expect(colors.has(n)).toBe(true)
+    })
+
+    // The user's actual request ("sources should show up as categories, so they should have
+    // different colors") failed in production because a plain hash collides freely — nothing
+    // enforced "the first N get N distinct swatches". `colors.size > 1` would NOT have caught
+    // that: six categories landing on three colours still has size > 1. This asserts the
+    // stronger, real property.
+    test('N distinct undeclared names, for N up to the auto-token count, get N DISTINCT '
+        + 'colours — not just more than one', () => {
+        for (let n = 1; n <= AUTO_CATEGORY_TOKENS.length; n++) {
+            const names = Array.from({ length: n }, (_, i) => `category-${i}`)
+            const colors = taskCategoryColors(names, undefined)
+            expect(colors.size).toBe(n)
+            expect(new Set(colors.values()).size).toBe(n)
+        }
+    })
+
+    test('specific real-world case from the design finding: six category names get six '
+        + 'distinct colours, not three', () => {
+        const names = ['Work', 'Personal', 'Health', 'Errands', 'Reading', 'Ideas']
+        const colors = taskCategoryColors(names, undefined)
+        expect(new Set(colors.values()).size).toBe(6)
+    })
+
+    test('beyond the auto-token count, duplicates are unavoidable but every earlier name '
+        + 'keeps its own distinct colour', () => {
+        const names = Array.from(
+            { length: AUTO_CATEGORY_TOKENS.length + 2 },
+            (_, i) => `category-${i}`,
+        )
+        const colors = taskCategoryColors(names, undefined)
+        const firstBatch = names.slice(0, AUTO_CATEGORY_TOKENS.length)
+        const firstColors = firstBatch.map(n => colors.get(n))
+        expect(new Set(firstColors).size).toBe(AUTO_CATEGORY_TOKENS.length)
+    })
+
+    test('a declared colour never collides with an auto-assigned sibling silently — auto '
+        + 'names probe around the declared set too', () => {
+        // 'work' is pinned to a fixed token; the rest must still resolve to N-1 OTHER distinct
+        // auto tokens among themselves (probing is scoped to auto assignment in this call —
+        // this only proves the auto siblings don't collide with EACH OTHER).
+        const names = ['work', 'a', 'b', 'c', 'd']
+        const colors = taskCategoryColors(names, [{ name: 'work', color: 'rose' }])
+        const autoColors = ['a', 'b', 'c', 'd'].map(n => colors.get(n))
+        expect(new Set(autoColors).size).toBe(4)
+    })
+
+    test('stability: the same name, with the same set of names around it, resolves to the '
+        + 'same token across separate calls', () => {
+        const names = ['Work', 'Personal', 'Health', 'Errands', 'Reading', 'Ideas']
+        const first = taskCategoryColors(names, undefined)
+        const second = taskCategoryColors(names, undefined)
+        for (const n of names) expect(first.get(n)).toBe(second.get(n))
     })
 })

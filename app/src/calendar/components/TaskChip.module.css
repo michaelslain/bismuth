@@ -43,15 +43,20 @@
     cursor: default;
     opacity: 0.4;
 }
-/* min-width guarantees at least ~12 characters of title before .chip's flex-wrap lets "Nd late"
+/* min-width guarantees at least ~22 characters of title before .chip's flex-wrap lets "Nd late"
    drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first,
    which (combined with overflow-wrap: anywhere, whose min-content is a SINGLE character) means
    the title would rather explode into one letter per line than push the late label down. min()
    against 100% so this never forces the chip wider than its column when the column itself is
-   under 12ch (the 41px DenseNarrow stress test, which stays a pre-existing, accepted limit). */
+   under 22ch (the 41px DenseNarrow stress test, which stays a pre-existing, accepted limit).
+   22ch (not 12ch) is deliberate: at a ~171px week column, 12ch pinned the title to a ~12-char
+   ribbon on EVERY line once "Nd late" moved inline beside it, not just the first — a long chip
+   wrapped to 13 lines instead of the month grid's 8. Below ~250px this floor now loses to
+   min(…, 100%) and the late label drops to its own line instead (matching the month grid); at
+   all-day-strip width it stays inline, which is where inline actually reads well. */
 .title {
     flex: 1 1 0;
-    min-width: min(12ch, 100%);
+    min-width: min(22ch, 100%);
     overflow-wrap: anywhere;
 }
 .late {
