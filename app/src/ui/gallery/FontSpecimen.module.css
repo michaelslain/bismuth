@@ -1,6 +1,6 @@
 /* app/src/ui/gallery/FontSpecimen.module.css — chrome for FontSpecimen.tsx, a Storybook-only
    page (see that file's header) that has no call site in app/. Uses the app's mono chrome font
-   for its OWN labels/tags deliberately — it demonstrates the Newsreader prose face inside samples,
+   for its OWN labels/tags deliberately — it demonstrates the Lora prose face inside samples,
    not by becoming a prose surface itself. */
 
 .page {

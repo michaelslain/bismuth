@@ -20,13 +20,13 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
-// Same reasoning as above, for the app entry's Newsreader import (visual-unification wave 0,
-// §9.1 — the prose serif for note bodies + chat messages). Without this line here too,
-// FontSpecimen.stories.tsx — the ONE place this font is judged before any real surface consumes
-// it — would silently render its "Newsreader Variable" declarations against the Georgia fallback,
-// passing every visual check while proving nothing.
-import '@fontsource-variable/newsreader/wght.css'
-import '@fontsource-variable/newsreader/wght-italic.css'
+// Same reasoning as above, for the app entry's Lora import (visual-unification wave 0, §9.1 — the
+// prose serif for note bodies + chat messages). Without this line here too, FontSpecimen.stories.tsx
+// — the ONE place this font is judged before any real surface consumes it — would silently render
+// its "Lora Variable" declarations against the Georgia fallback, passing every visual check while
+// proving nothing.
+import '@fontsource-variable/lora/wght.css'
+import '@fontsource-variable/lora/wght-italic.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
