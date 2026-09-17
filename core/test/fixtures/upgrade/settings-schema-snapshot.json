@@ -8,22 +8,6 @@
     "max": null,
     "required": false
   },
-  "appearance.editorFont": {
-    "type": {
-      "kind": "enum",
-      "values": [
-        "Monaspace Argon",
-        "Monaspace Krypton",
-        "Monaspace Neon",
-        "Monaspace Radon",
-        "Monaspace Xenon"
-      ]
-    },
-    "default": "Monaspace Xenon",
-    "min": null,
-    "max": null,
-    "required": false
-  },
   "appearance.editorFontSize": {
     "type": "number",
     "default": 13.5,
@@ -68,6 +52,23 @@
     "default": 15,
     "min": 13,
     "max": 18,
+    "required": false
+  },
+  "appearance.proseFont": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "Lora",
+        "Monaspace Argon",
+        "Monaspace Krypton",
+        "Monaspace Neon",
+        "Monaspace Radon",
+        "Monaspace Xenon"
+      ]
+    },
+    "default": "Lora",
+    "min": null,
+    "max": null,
     "required": false
   },
   "appearance.sidebarGraphHeight": {

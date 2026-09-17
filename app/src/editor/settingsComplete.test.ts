@@ -344,11 +344,11 @@ describe('settings key + enum completion (schema-driven discovery)', () => {
         const doc = [
             'appearance:',
             '  theme: ink',
-            '  editorF',
+            '  uiF',
             'graph:',
             '  spin: true',
         ].join('\n')
-        const pos = doc.indexOf('  editorF') + '  editorF'.length
+        const pos = doc.indexOf('  uiF') + '  uiF'.length
         const state = EditorState.create({ doc })
         const ctx = new CompletionContext(state, pos, false)
         const res = settingsCompletionSource(
@@ -359,8 +359,8 @@ describe('settings key + enum completion (schema-driven discovery)', () => {
             async () => [],
         )(ctx) as { options: { label: string }[] } | null
         expect(res?.options.map(o => o.label)).toEqual([
-            'editorFont',
-            'editorFontSize',
+            'uiFont',
+            'uiFontSize',
         ])
     })
 })
