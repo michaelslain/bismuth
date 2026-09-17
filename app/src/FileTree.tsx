@@ -37,6 +37,7 @@ import { setPendingCursor } from './pendingCursor'
 import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
 import { isTypingTarget } from './editableTarget'
+import { matchesKeybinding } from './keybindings'
 import Collapsible from './Collapsible'
 import VisibilityBadge from './VisibilityBadge'
 import { EditableLabel } from './EditableLabel'
@@ -478,21 +479,21 @@ export function FileTree(props: {
 
     const onKey = (e: KeyboardEvent) => {
         const typing = isTypingTarget(e.target)
-        // `!e.shiftKey` matters even when an editor IS focused (so `typing` is true and this whole
-        // branch is skipped): CodeMirror's own historyKeymap bindings set `preventDefault` but not
-        // `stopPropagation` on Mod-z/Mod-Shift-z, so the keydown still bubbles all the way to this
-        // window-level listener after CM has already handled it. Without the shift check, THIS
-        // listener also matched Mod-Shift-z (`.toLowerCase()` folds "Z" back to "z" regardless of
-        // Shift) whenever focus wasn't on an editable element (e.g. between two panes, or right after
-        // a table-cell edit commits and blurs without refocusing the editor) — silently eating a
-        // REDO keystroke as a (usually no-op) "restore last deleted file" instead of leaving it alone
-        // (#44). Mod-Shift-Z has never been this app's redo-a-delete shortcut, only Mod-Z is.
-        if (
-            !typing &&
-            (e.metaKey || e.ctrlKey) &&
-            !e.shiftKey &&
-            e.key.toLowerCase() === 'z'
-        ) {
+        // `undo-delete`/`delete-selection` are 2 of the 26 ids Settings['keybindings'] (settings.ts)
+        // hasn't caught up to yet — they're real in DEFAULTS/.settings (derived from
+        // KEYBINDING_CATALOG), just not in that hand-written type. A central fix is in flight; cast
+        // here in the meantime rather than widen someone else's file.
+        const kb = settings.keybindings as unknown as Record<string, string> // TODO(keybinding-type)
+        // CodeMirror's own historyKeymap bindings set `preventDefault` but not `stopPropagation`
+        // on Mod-z/Mod-Shift-z, so the keydown still bubbles all the way to this window-level
+        // listener after CM has already handled it. `matchesKeybinding` matches modifiers
+        // EXACTLY, so the `undo-delete` combo (default `Mod+Z`) does not match a Mod-Shift-Z
+        // event — that exact-modifier matching is what keeps this listener from also treating a
+        // REDO keystroke as a (usually no-op) "restore last deleted file" whenever focus wasn't on
+        // an editable element (e.g. between two panes, or right after a table-cell edit commits
+        // and blurs without refocusing the editor) (#44). Mod-Shift-Z has never been this app's
+        // redo-a-delete shortcut, only Mod-Z is.
+        if (!typing && matchesKeybinding(e, kb['undo-delete'])) {
             e.preventDefault()
             undoLastDelete()
             return
@@ -500,7 +501,7 @@ export function FileTree(props: {
         // Delete/Backspace removes the current multi-selection (undoable via the toast / Cmd+Z).
         if (
             !typing &&
-            (e.key === 'Delete' || e.key === 'Backspace') &&
+            matchesKeybinding(e, kb['delete-selection']) &&
             selected().size > 0
         ) {
             e.preventDefault()

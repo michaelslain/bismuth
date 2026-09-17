@@ -30,6 +30,7 @@ import { mockIPC, clearMocks } from '@tauri-apps/api/mocks'
 import { FileTree } from './FileTree'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { settings, setSettings } from './settings'
 import { SETTINGS_FILE } from './tabIds'
 import type { TreeEntry } from '../../core/src/graph'
 import type { NativeDragDetail } from './nativeDrop'
@@ -356,6 +357,127 @@ export const NativeOsDropUpload: Story = {
             expect(uploads.some(u => u.target.includes('archive'))).toBe(false)
         } finally {
             clearMocks()
+        }
+    },
+}
+
+
+/** Task 7's #44 regression guard. CodeMirror's own `historyKeymap` sets `preventDefault` but not
+ *  `stopPropagation` on Mod-z/Mod-Shift-z, so a REDO keystroke still bubbles to this window-level
+ *  listener after CodeMirror has already handled it. Before the `matchesKeybinding` migration this
+ *  listener matched Mod-Shift-Z too, because `.toLowerCase()` folds the shifted `"Z"` back to `"z"`
+ *  regardless of Shift — silently eating the redo as a (usually no-op) "restore last deleted file"
+ *  whenever focus wasn't on an editable element. `matchesKeybinding` matches modifiers EXACTLY, so
+ *  `undo-delete`'s default `Mod+Z` does not match a `shiftKey: true` event — this story proves that
+ *  by deleting a file and confirming Cmd+Shift+Z does NOT bring it back (only Cmd+Z, proven above,
+ *  does). It fails against any implementation that folds Shift back into a bare key comparison. */
+export const ShiftUndoDoesNotRestore: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        fireEvent.click(await canvas.findByText(/Housing/), { metaKey: true })
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'Delete',
+                code: 'Delete',
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => expect(canvas.queryByText(/Housing/)).toBeNull())
+
+        // A real shifted Mod+Z reports an UPPERCASE key — faithfully reproduced here, not "Z" typed
+        // as a stand-in for "shift held".
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'Z',
+                code: 'KeyZ',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+            }),
+        )
+        // No positive signal to await for a guard that must do nothing — give the (mocked, in-
+        // memory) restore round trip, which resolves in a couple of microtasks, ample room to have
+        // shown up if the guard had failed.
+        await new Promise(r => setTimeout(r, 100))
+        expect(canvas.queryByText(/Housing/)).toBeNull()
+    },
+}
+
+/** Task 7: a rebind of `undo-delete` takes effect immediately (`FileTree` reads
+ *  `settings.keybindings['undo-delete']` fresh on every keydown, never a value captured at mount)
+ *  and the OLD combo stops working — the third acceptance case (a rebind "moves" the shortcut). */
+export const RebindingUndoDeleteMovesIt: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // `undo-delete` isn't in Settings['keybindings'] yet (settings.ts) though it's real in
+        // DEFAULTS/.settings — see the matching cast + comment in FileTree.tsx's onKey.
+        const kb = settings.keybindings as unknown as Record<string, string> // TODO(keybinding-type)
+        const setKb = setSettings as unknown as (section: 'keybindings', id: string, value: string) => void // TODO(keybinding-type)
+        const restore = kb['undo-delete']
+        setKb('keybindings', 'undo-delete', 'Mod+Shift+R')
+        try {
+            fireEvent.click(await canvas.findByText(/Housing/), {
+                metaKey: true,
+            })
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Delete',
+                    code: 'Delete',
+                    bubbles: true,
+                }),
+            )
+            await waitFor(() => expect(canvas.queryByText(/Housing/)).toBeNull())
+
+            // The OLD combo (Mod+Z) no longer restores.
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'z',
+                    code: 'KeyZ',
+                    metaKey: true,
+                    bubbles: true,
+                }),
+            )
+            await new Promise(r => setTimeout(r, 100))
+            expect(canvas.queryByText(/Housing/)).toBeNull()
+
+            // The NEW combo (Mod+Shift+R) does.
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'r',
+                    code: 'KeyR',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                }),
+            )
+            await waitFor(() => canvas.getByText(/Housing/))
+        } finally {
+            // The settings store is module-level and shared by every story in the run.
+            setKb('keybindings', 'undo-delete', restore)
         }
     },
 }
