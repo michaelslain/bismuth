@@ -57,7 +57,7 @@
   background: var(--paper-bg);
 }
 .export-empty {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   color: var(--faint);
   text-align: center;
   padding: 48px 52px;

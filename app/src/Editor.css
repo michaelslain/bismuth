@@ -297,7 +297,7 @@
    Milkdown chip, so a tag does not change size depending on whether it sits inside a table. */
 .cm-editor .cm-td .bismuth-tag {
   color: var(--gold);
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--editor-font-size);
 }
 
@@ -326,7 +326,7 @@
    the rule count small. The alternative — tagging every prose line — would need a decoration on
    every line in the document.
 
-   --editor-font (not a literal) so the user's appearance.editorFont setting still governs the mono
+   --ui-font-stack (not a literal) so the user's appearance.uiFont setting still governs the mono
    half of the editor; it just no longer governs prose, which is the point of the decision. */
 /* HEADINGS ARE PROSE and are deliberately absent from this list. They used to be pulled back to
    the mono face with everything else, on the reading of the token scope that a heading is chrome.
@@ -351,7 +351,7 @@
 .cm-editor .cm-math,
 .cm-editor .cm-math-src,
 .cm-editor .cm-inline-math {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
 }
 
 /* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
@@ -390,7 +390,7 @@
    cursor-reveal to build. Same token pair as .cm-tag so a field and a #tag read as one
    family, and the editor face at the editor size so nothing is scaled out of prose. */
 .cm-editor .cm-task-field {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--editor-font-size);
   color: var(--text-muted);
   background: var(--surface-2);

@@ -66,7 +66,7 @@
   border: none;
   outline: none;
   color: var(--fg);
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-display);
   font-weight: var(--fw-bold);
   line-height: 1.1;

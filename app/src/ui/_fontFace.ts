@@ -31,11 +31,11 @@ export function expectProseFace(el: HTMLElement): void {
     expect(firstFamily(getComputedStyle(el).fontFamily)).toBe(firstFamily(prose))
 }
 
-/** Assert `el` resolves to the same first family as the `--editor-font` token. */
-export function expectEditorFace(el: HTMLElement): void {
-    const editor = token('--editor-font')
-    expect(editor.length).toBeGreaterThan(0)
-    expect(firstFamily(getComputedStyle(el).fontFamily)).toBe(firstFamily(editor))
+/** Assert `el` resolves to the same first family as the `--ui-font-stack` token. */
+export function expectUiFace(el: HTMLElement): void {
+    const ui = token('--ui-font-stack')
+    expect(ui.length).toBeGreaterThan(0)
+    expect(firstFamily(getComputedStyle(el).fontFamily)).toBe(firstFamily(ui))
 }
 
 /** Assert `el` renders at exactly `--editor-font-size`, not a scaled multiple of it. */
@@ -45,27 +45,27 @@ export function expectEditorSize(el: HTMLElement): void {
     expect(parseFloat(getComputedStyle(el).fontSize)).toBe(px)
 }
 
-/** Assert `el`'s family is bound to the `--editor-font` TOKEN, not merely equal to its value.
+/** Assert `el`'s family is bound to the `--ui-font-stack` TOKEN, not merely equal to its value.
  *
- *  --editor-font and --ui-font-stack both default to Monaspace Xenon, so comparing resolved
- *  families cannot tell them apart — reverting a rule to var(--ui-font-stack), the exact site
- *  of the original #tag drift, leaves expectEditorFace green. Repointing the token to a family
- *  nothing else uses is the only way to distinguish the two. The probe name never has to exist
- *  as a real font: getComputedStyle reports the declared stack, not what the system resolved.
+ *  --ui-font-stack and --prose-font resolve to visibly different families, so a naive equality
+ *  check on the resolved value would already catch most drift — but repointing the TOKEN itself
+ *  is what proves the rule is actually a live `var()` reference rather than a literal that
+ *  happens to match today's default. The probe name never has to exist as a real font:
+ *  getComputedStyle reports the declared stack, not what the system resolved.
  *
  *  Repoints via document.documentElement.style, matching how settingsCssVars.ts's setCssVars
  *  actually writes every token (root.style.setProperty), so this reads back through the same
  *  cascade path the app itself uses. The restore is in a `finally` — a failing assertion here
- *  must not leave the probe family bound to --editor-font for every story that runs after it in
- *  the same Storybook session. */
-export function expectBoundToEditorFont(el: HTMLElement): void {
+ *  must not leave the probe family bound to --ui-font-stack for every story that runs after it
+ *  in the same Storybook session. */
+export function expectBoundToUiFont(el: HTMLElement): void {
     const root = document.documentElement
-    const saved = root.style.getPropertyValue('--editor-font')
+    const saved = root.style.getPropertyValue('--ui-font-stack')
     try {
-        root.style.setProperty('--editor-font', 'EditorFontBindingProbe, monospace')
-        expect(firstFamily(getComputedStyle(el).fontFamily)).toBe('EditorFontBindingProbe')
+        root.style.setProperty('--ui-font-stack', 'UiFontBindingProbe, monospace')
+        expect(firstFamily(getComputedStyle(el).fontFamily)).toBe('UiFontBindingProbe')
     } finally {
-        if (saved) root.style.setProperty('--editor-font', saved)
-        else root.style.removeProperty('--editor-font')
+        if (saved) root.style.setProperty('--ui-font-stack', saved)
+        else root.style.removeProperty('--ui-font-stack')
     }
 }

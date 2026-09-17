@@ -39,7 +39,7 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
         >
             <div
                 style={{
-                    'font-family': 'var(--editor-font)',
+                    'font-family': 'var(--ui-font-stack)',
                     'font-size': 'var(--fs-title)',
                     color: 'var(--fg)',
                 }}

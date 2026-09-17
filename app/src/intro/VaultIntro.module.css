@@ -202,7 +202,7 @@
    bases/Flashcards.module.css's `.cards-draft.cards-draft` already
    uses for the identical reason. */
 /* THE INTRO'S PROSE IS PROSE, so it is set in the prose face — not the editor mono.
-   Both of these used to read `var(--editor-font)`, which made the one surface in the app
+   Both of these used to read `var(--ui-font-stack)`, which made the one surface in the app
    that is pure running prose the only one refusing the app's proportional face. CLAUDE.md's
    typography rule is explicit: one mono family for the whole interface, with ONE
    proportional exception — note prose and chat message bodies use --prose-font. A marketing
@@ -329,7 +329,7 @@
   flex: 1;
 }
 .vi-powerup-desc {
-  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body);
   line-height: 1.45;
   color: color-mix(in srgb, var(--fg) 60%, var(--text-muted));
