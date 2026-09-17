@@ -191,12 +191,17 @@ describe('upgrading an old-era settings file through reconcile', () => {
         rmSync(vault, { recursive: true, force: true })
     })
 
-    test('legacy theme + serif editor font are migrated to current-era values', async () => {
+    test('legacy theme is migrated to a current-era value; the legacy editorFont key is gone, not translated', async () => {
         const { vault } = await upgradeOldVault()
         const appearance = (await serializeSettingsForFrontend(vault))
             .appearance as Record<string, unknown>
         expect(appearance.theme).toBe('ink') // "rose-gold" is a retired dark theme
-        expect(appearance.editorFont).toBe('Monaspace Xenon') // "Lora" is a retired serif
+        // editorFont is deleted outright (RETIRED_KEYS), never translated into uiFont — so a
+        // vault that once had "Lora" here does NOT end up with uiFont forced to a Monaspace
+        // variant. uiFont/proseFont just resolve their own schema defaults, like any absent key.
+        expect(appearance.editorFont).toBeUndefined()
+        expect(appearance.uiFont).toBe('Monaspace Xenon')
+        expect(appearance.proseFont).toBe('Lora')
         rmSync(vault, { recursive: true, force: true })
     })
 
@@ -204,6 +209,44 @@ describe('upgrading an old-era settings file through reconcile', () => {
         const { vault, text } = await upgradeOldVault()
         await reconcileSettings(vault)
         expect(readFileSync(join(vault, SETTINGS_FILE), 'utf8')).toBe(text)
+        rmSync(vault, { recursive: true, force: true })
+    })
+})
+
+describe('editorFont deletion round-trips cleanly: key gone, its comment and an unrelated unknown key intact', () => {
+    test('a saved editorFont key with its own leading comment is deleted outright (never translated into uiFont); the comment carries onto the key that takes its slot, and an unrelated unknown key survives untouched', async () => {
+        const vault = emptyVault()
+        const before = [
+            'appearance:',
+            '  theme: ink',
+            '  # my favorite mono face, kept from ages ago',
+            '  editorFont: Georgia',
+            '  uiFont: Monaspace Neon',
+            'mystery:',
+            '  keepMe: yes',
+            '',
+        ].join('\n')
+        writeFileSync(join(vault, SETTINGS_FILE), before)
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        // 'editorFont:' (with the colon) so this doesn't false-positive on the unrelated,
+        // still-valid 'editorFontSize:' key.
+        expect(text).not.toContain('editorFont:') // key gone
+        // The comment sat directly above the removed key — pruneRetiredKeys carries it onto
+        // the key that shifted into that slot rather than dropping it with the key.
+        expect(text).toContain('# my favorite mono face, kept from ages ago')
+        expect(text).toContain('mystery') // unrelated unknown section untouched
+        expect(text).toContain('keepMe: yes') // unrelated unknown key untouched
+
+        const data = (await readSettings(vault))!.data as Record<
+            string,
+            Record<string, unknown>
+        >
+        // The explicit uiFont value survives, and is NOT overwritten by the deleted editorFont's
+        // "Georgia" — the two keys are handled entirely independently now.
+        expect(data.appearance.uiFont).toBe('Monaspace Neon')
         rmSync(vault, { recursive: true, force: true })
     })
 })

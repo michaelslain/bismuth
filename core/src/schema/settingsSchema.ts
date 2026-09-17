@@ -23,15 +23,19 @@ const DAEMON_BACKEND_IDS = BACKEND_LIST.filter(b => b.capabilities.daemon).map(
     b => b.id,
 )
 
-// Kept in lockstep with app/src/settings.ts FONT_STACKS. One family does the whole
-// interface: all five Monaspace variants, no serif/system-ui.
-const EDITOR_FONTS = [
+// Kept in lockstep with app/src/settings.ts MONO_FONTS/PROSE_FONTS/FONT_STACKS.
+// The five Monaspace variants — chrome + in-note mono constructs (uiFont), and an
+// all-mono-editor option on proseFont too.
+const MONO_FONTS = [
     'Monaspace Xenon',
     'Monaspace Neon',
     'Monaspace Argon',
     'Monaspace Krypton',
     'Monaspace Radon',
 ]
+// proseFont's valid values: Lora (the proportional default) plus the same five Monaspace
+// variants, for a user who wants an all-mono editor.
+const PROSE_FONTS = ['Lora', ...MONO_FONTS]
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE]
@@ -95,15 +99,15 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 'hopper-crystal',
             doc: 'App logo mark: hopper-crystal // node-b // square-funnel // nested-diamonds // pinwheel // node-crystal // lattice // diamond-bloom // node-diamond // octagon-bloom // spin-cross // tri-bloom // radial-graph // node-rings.',
         },
-        editorFont: {
-            type: enumType(EDITOR_FONTS),
-            default: 'Monaspace Xenon',
-            doc: 'Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (--prose-font, CMU Serif).',
-        },
         uiFont: {
-            type: enumType(EDITOR_FONTS),
+            type: enumType(MONO_FONTS),
             default: 'Monaspace Xenon',
-            doc: 'UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.',
+            doc: 'UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND for the mono constructs inside a note: code blocks, inline code, frontmatter, math and in-note tags. Config buffers (.settings, *.yaml) render entirely in it.',
+        },
+        proseFont: {
+            type: enumType(PROSE_FONTS),
+            default: 'Lora',
+            doc: "PROSE font — the proportional face for everything that is the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. Lora // the five Monaspace variants. Set it to a Monaspace variant for an all-mono editor.",
         },
         editorFontSize: {
             type: 'number',
