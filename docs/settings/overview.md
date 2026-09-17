@@ -570,7 +570,8 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 
 | Setting | CSS Variable |
 |---|---|
-| `appearance.editorFont` | `--editor-font` (resolved to full CSS font stack via `FONT_STACKS`) |
+| `appearance.uiFont` | `--ui-font-stack` (resolved to full CSS font stack via `FONT_STACKS`) |
+| `appearance.proseFont` | `--prose-font` (resolved to full CSS font stack via `FONT_STACKS`) |
 | `appearance.editorFontSize` | `--editor-font-size` |
 | `appearance.sidebarWidth` | `--sidebar-width` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` |
