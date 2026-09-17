@@ -300,7 +300,7 @@ test('the 26 new ids are present with their exact specified defaults', () => {
         'flashcard-good': '2',
         'flashcard-easy': '3',
         'graph-reset-view': 'Escape',
-        'graph-focus-node': 'Z',
+        'graph-focus-node': 'Z, Shift+Z',
         'graph-zoom-in': '=, Shift+=, Plus',
         'graph-zoom-out': '-, Shift+-',
         'ink-undo': 'Mod+Z',

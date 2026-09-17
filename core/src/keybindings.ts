@@ -281,7 +281,7 @@ export const KEYBINDING_CATALOG = [
     {
         id: 'graph-focus-node',
         label: 'Focus hovered graph node',
-        default: 'Z',
+        default: 'Z, Shift+Z',
         doc: 'Focus and center the hovered graph node (resets the view instead when nothing is hovered).',
     },
     {

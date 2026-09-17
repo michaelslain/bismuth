@@ -775,7 +775,7 @@
   },
   "keybindings.graph-focus-node": {
     "type": "keybind",
-    "default": "Z",
+    "default": "Z, Shift+Z",
     "min": null,
     "max": null,
     "required": false
