@@ -15,8 +15,8 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The full specimen: prose at --fs-read and --fs-body, the 200–800 weight ramp, italic,
+/** The full specimen: prose at --fs-read and --fs-body, the 400–700 weight ramp, italic,
  *  lining vs oldstyle numerals, and a side-by-side against Monaspace Xenon. */
-export const CmuSerif: Story = {
+export const Lora: Story = {
     render: () => <FontSpecimen />,
 }

@@ -249,8 +249,8 @@ const styleOf = (el: Element | null) => (el ? getComputedStyle(el) : null)
 const lineWith = (root: ParentNode, re: RegExp) =>
     [...root.querySelectorAll('.cm-line')].find(l => re.test(l.textContent ?? ''))
 
-/** ONE ROW RHYTHM. A note sets prose in CMU Serif and pulls code/frontmatter back to the mono
- *  face — but every one of those rows must still sit on the same leading, or a code fence reads
+/** ONE ROW RHYTHM. A note sets prose in the proportional face (`--prose-font`, Lora) and pulls
+ *  code/frontmatter back to the mono face — but every one of those rows must still sit on the same leading, or a code fence reads
  *  as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height: 1.5`,
  *  which put its rows at 20px inside a document whose every other row was 27px. Asserts the
  *  leading is shared and that mono is at the MONO size, not the serif's optically-compensated one.
