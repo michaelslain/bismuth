@@ -9,7 +9,6 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0 var(--sp-1);
-    position: relative;
     padding: var(--sp-1) var(--sp-3);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
