@@ -195,15 +195,14 @@ describe('taskCategoryColors', () => {
         expect(new Set(firstColors).size).toBe(AUTO_CATEGORY_TOKENS.length)
     })
 
-    test('a declared colour never collides with an auto-assigned sibling silently — auto '
-        + 'names probe around the declared set too', () => {
-        // 'work' is pinned to a fixed token; the rest must still resolve to N-1 OTHER distinct
-        // auto tokens among themselves (probing is scoped to auto assignment in this call —
-        // this only proves the auto siblings don't collide with EACH OTHER).
-        const names = ['work', 'a', 'b', 'c', 'd']
-        const colors = taskCategoryColors(names, [{ name: 'work', color: 'rose' }])
-        const autoColors = ['a', 'b', 'c', 'd'].map(n => colors.get(n))
-        expect(new Set(autoColors).size).toBe(4)
+    test('a declared colour never collides with an auto-assigned sibling — auto names probe '
+        + 'around the declared set too', () => {
+        // The real-world shape: the user pins ONE category in the settings modal. Every other
+        // name must still get a colour of its own, INCLUDING against the pinned one.
+        const names = ['Work', 'Personal', 'Health', 'Errands', 'Reading', 'Ideas']
+        const colors = taskCategoryColors(names, [{ name: 'Work', color: 'gold' }])
+        expect(new Set(colors.values()).size).toBe(6)
+        expect(colors.get('Work')).toBe('var(--gold)')
     })
 
     test('stability: the same name, with the same set of names around it, resolves to the '

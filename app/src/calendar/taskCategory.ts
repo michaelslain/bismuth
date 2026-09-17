@@ -106,12 +106,16 @@ export function taskCategoryColors(
     )
     const colors = new Map<string, string>()
     const usedTokens = new Set<string>()
+    // Declared colours are claimed FIRST, so an auto-assigned sibling probes around them too —
+    // otherwise pinning one category's colour silently duplicates it onto another.
     for (const name of names) {
         const declaredColor = declaredByName.get(name)
-        if (declaredColor !== undefined) {
-            colors.set(name, resolveCategoryColor(declaredColor))
-            continue
-        }
+        if (declaredColor === undefined) continue
+        colors.set(name, resolveCategoryColor(declaredColor))
+        usedTokens.add(declaredColor)
+    }
+    for (const name of names) {
+        if (colors.has(name)) continue
         const token = autoCategoryToken(name, usedTokens)
         usedTokens.add(token)
         colors.set(name, resolveCategoryColor(token))

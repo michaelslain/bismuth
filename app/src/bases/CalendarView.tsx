@@ -293,14 +293,18 @@ function TasksCalendar(props: {
         return taskFile ? fileBasename(refToPath(taskFile)) : ''
     }
 
-    // The composer's band colour: the resolved colour for the view's defaultCategory, computed
-    // independently of `colors()` above — `colors()` only knows names actually present in
-    // `rows()`, so a base with no rows yet (or none of this category yet) would otherwise show
-    // no band for a defaultCategory that is nonetheless configured and about to be written.
+    // The composer's band colour: the resolved colour for the view's defaultCategory. Prefer
+    // `colors()` — the map every chip in this grid was painted from — since a solo
+    // `taskCategoryColors([name])` call skips the collision probing and can disagree with the
+    // chips directly above the composer. Fall back only when the category has no rows yet (a
+    // base with no rows yet, or none of this category yet, so `colors()` has no entry for it).
     const composeColor = createMemo(() => {
         const name = view()?.defaultCategory
         if (!name) return undefined
-        return taskCategoryColors([name], props.config?.categories).get(name)
+        return (
+            colors().get(name) ??
+            taskCategoryColors([name], props.config?.categories).get(name)
+        )
     })
 
     const commitTask = async (date: string, text: string) => {
