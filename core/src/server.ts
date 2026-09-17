@@ -39,7 +39,7 @@ import {
 } from './frontmatter'
 import { AppError } from './error'
 import { buildVaultRows, patchVaultRows } from './basesData'
-import { buildTaskRows } from './bases/tasksData'
+import { buildTaskRows, patchTaskRows } from './bases/tasksData'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
@@ -687,8 +687,14 @@ export function createServer(cfg: CoreConfig) {
                     rowsCache.invalidate(),
                 )
             else rowsCache.invalidate()
-            // Tasks derive from arbitrary body checkboxes — rebuild lazily on next read.
-            tasksCache.invalidate()
+            // Tasks feed: same patch-in-place as the rows feed above, for the same reason —
+            // a client refetching POST /rows for a tasks-source base after this event must
+            // see the patched feed, not a stale one. Awaited before the SSE publish below.
+            if (paths.length > 0)
+                await patchTaskRows(cfg.vault, paths, tasksCache).catch(() =>
+                    tasksCache.invalidate(),
+                )
+            else tasksCache.invalidate()
         }
         version++
         sse.publish({ version, paths, dirty })

@@ -1,7 +1,10 @@
 import { tempDir } from '../helpers'
-import { test, expect } from 'bun:test'
+import { test, expect, describe, afterEach } from 'bun:test'
 import { writeNote } from '../../src/files'
 import { resolveSource, resolveBaseRows } from '../../src/bases/source'
+import { setFileAccess, type FileAccess } from '../../src/fileAccess'
+import { symlinkSync } from 'node:fs'
+import { join } from 'node:path'
 
 test("resolveSource('notes') returns vault rows filtered by where", async () => {
     const dir = tempDir('bismuth-src-')
@@ -219,4 +222,92 @@ test('UNQUOTED from: [[Base]] in a base file still scopes tasks (YAML nested-arr
     )
     const rows = await resolveBaseRows('DoNow.md', { root: dir })
     expect(rows.map(r => r.note.description)).toEqual(['scoped'])
+})
+
+// An own-rows base (no `source:`) returns the parse's table rows directly, so identity
+// of the returned array is identity of the cached parse's `rows` — the most direct way
+// to observe that the second call skipped parseBaseFile and reused the cache entry.
+test('resolveBaseRows reuses the parsed rows by reference when the file is unchanged', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    const first = await resolveBaseRows('Own.md', { root: dir })
+    const second = await resolveBaseRows('Own.md', { root: dir })
+    expect(second).toBe(first)
+})
+
+// Regression: the parse cache used to be keyed on realPath alone, so a symlinked
+// alias of a base file shared its cache entry with the real file -- and since the
+// cached VALUE embeds `path` (the write-back handle used by rowUpdate/rowDelete),
+// whichever name resolved first "won" the entry and the other name's rows silently
+// carried the WRONG file.path. Resolving Real.md first (warming the cache), then
+// Alias.md, must still return rows carrying Alias.md's own path.
+test('resolveBaseRows does not let a symlinked alias share the other name file.path', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Real.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    symlinkSync(join(dir, 'Real.md'), join(dir, 'Alias.md'))
+
+    const realRows = await resolveBaseRows('Real.md', { root: dir })
+    const aliasRows = await resolveBaseRows('Alias.md', { root: dir })
+
+    expect(realRows.length).toBeGreaterThan(0)
+    expect(aliasRows.length).toBeGreaterThan(0)
+    expect(realRows[0].file.path).toBe('Real.md')
+    expect(aliasRows[0].file.path).toBe('Alias.md')
+})
+
+test('resolveBaseRows re-parses after the base file is rewritten, with no sleep between writes', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    const first = await resolveBaseRows('Own.md', { root: dir })
+    expect(first[0].note.title).toBe('Hi')
+
+    // Rewrite immediately — no sleep, so this can land within the same mtime tick as the
+    // first read. A mtime-keyed cache would incorrectly serve the stale 'Hi' row here.
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Bye |',
+    )
+    const second = await resolveBaseRows('Own.md', { root: dir })
+    expect(second).not.toBe(first)
+    expect(second[0].note.title).toBe('Bye')
+})
+
+// Scoped in its own describe so the injected stub resets after this test and never
+// leaks into the on-disk tests above/below, which all go through the real files.ts
+// reader via tempDir/writeNote.
+describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
+    afterEach(() => setFileAccess(undefined as unknown as FileAccess))
+
+    test('resolveBaseRows canonicalizes an ABSOLUTE vault path, so its keys are vault-scoped', async () => {
+        const asked: string[] = []
+        const stub = (): FileAccess => ({
+            listMarkdown: async () => ['A.md'],
+            listTree: async () => [],
+            readNote: async () => '---\ntype: base\n---\n',
+            writeNote: async () => {},
+            statNote: async () => null,
+            realPath: async p => {
+                asked.push(p)
+                return p
+            },
+        })
+        setFileAccess(stub())
+        await resolveSource({ kind: 'base', ref: '[[A]]' }, { root: '/vault-one' })
+        await resolveSource({ kind: 'base', ref: '[[A]]' }, { root: '/vault-two' })
+        // Absolute and rooted, so the two vaults' identically-named base files never share a key.
+        expect(asked).toEqual(['/vault-one/A.md', '/vault-two/A.md'])
+    })
 })
