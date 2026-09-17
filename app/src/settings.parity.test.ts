@@ -7,6 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import { SETTINGS_SCHEMA } from '../../core/src/schema/settingsSchema'
 import { DEFAULTS } from './settings'
 import type { Schema, SchemaEntry } from '../../core/src/schema/types'
+import { keybindingsCoverCatalog } from './keybindingsCoverage'
 
 const isObjectEntry = (e: SchemaEntry): boolean =>
     typeof e.type === 'object' && (e.type as { kind: string }).kind === 'object'
@@ -56,5 +57,15 @@ describe('settings schema parity', () => {
             }
         }
         check(SETTINGS_SCHEMA)
+    })
+
+    it('Settings["keybindings"] covers exactly the KEYBINDING_CATALOG ids (compile-time)', () => {
+        // A runtime comparison here (Object.keys(DEFAULTS.keybindings) vs. the catalog) can
+        // never fail — both derive from the same schema. The real check is the imported
+        // keybindingsCoverCatalog: it only typechecks when keyof Settings['keybindings'] and
+        // KeybindingId (core/src/keybindings.ts) are exactly equal — see
+        // app/src/keybindingsCoverage.ts for why it lives in its own module rather than inline
+        // here (app/tsconfig.json excludes *.test.ts from the type-checked program).
+        expect(keybindingsCoverCatalog).toBe(true)
     })
 })
