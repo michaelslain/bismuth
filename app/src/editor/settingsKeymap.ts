@@ -30,23 +30,21 @@ import {
 import { createEffect } from 'solid-js'
 import { settings } from '../settings'
 import { toCmKeys } from '../keybindings'
+import type { KeybindingId } from '../../../core/src/keybindings'
 
 /** One settings-driven CodeMirror binding: a catalog id plus what it runs. */
 export type SettingsBinding = {
-    id: string // a KEYBINDING_CATALOG id, e.g. 'open-completion'
+    id: KeybindingId
     run: Command
     shift?: Command
     preventDefault?: boolean
 }
 
-// The combo string currently held at settings.keybindings.<id>, or undefined if
-// this id isn't (yet) a key in the settings shape. `id` is deliberately a plain
-// string on SettingsBinding (callers pass catalog ids some of which land in the
-// settings schema in a later task), so this reads through a cast the same way
-// CommandPalette.tsx's COMMAND_KEYBINDINGS lookup does, rather than constraining
-// SettingsBinding.id to `keyof Settings['keybindings']`.
-function comboFor(id: string): string | undefined {
-    return settings.keybindings[id as keyof typeof settings.keybindings]
+// The combo string currently held at settings.keybindings.<id>. `id` is typed as
+// KeybindingId (derived from KEYBINDING_CATALOG), so an unknown or typo'd id is a
+// compile error at every call site instead of silently returning undefined.
+function comboFor(id: KeybindingId): string | undefined {
+    return settings.keybindings[id]
 }
 
 // Build the CodeMirror KeyBinding entries for one SettingsBinding: zero entries

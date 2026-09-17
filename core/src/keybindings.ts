@@ -25,7 +25,7 @@ export interface KeybindingSpec {
     doc: string
 }
 
-export const KEYBINDING_CATALOG: KeybindingSpec[] = [
+export const KEYBINDING_CATALOG = [
     {
         id: 'find',
         label: 'Find in note',
@@ -326,4 +326,11 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
         default: 'Enter',
         doc: 'Confirm or accept the focused transient panel — a modal, popover, or menu.',
     },
-]
+] as const satisfies readonly KeybindingSpec[]
+
+// The literal union of every catalog id, derived from KEYBINDING_CATALOG itself —
+// never hand-listed. This is what lets app/src/settings.ts's Settings['keybindings']
+// (and every other keybindings-indexing call site) be checked against the catalog
+// at compile time instead of through an `as` cast that would hide a typo'd or
+// deleted id as silent `undefined`.
+export type KeybindingId = (typeof KEYBINDING_CATALOG)[number]['id']
