@@ -7,12 +7,20 @@ import type {
     ResultGroup,
     SortSpec,
 } from './types'
+import type { Expr } from './ast'
 import { viewMode } from './types'
 import { parseExpr } from './parser'
 import { evaluate } from './evaluate'
 import { passesFilter, combineFilters } from './filters'
 import { compare, toNumber } from './values'
 import { declaredFormulas } from './properties'
+
+// Declared-formula source text -> its parsed AST (or null on a parse failure), so a
+// formula shared across many runView() calls (e.g. the same base rendered repeatedly)
+// is parsed once, not once per call. Keyed on the SOURCE TEXT itself, not the formula
+// name, so an edited formula's new text is a cache miss and gets freshly parsed rather
+// than reusing a stale AST under the same name.
+const formulaAstCache = new Map<string, Expr | null>()
 
 export function toContext(
     row: Row,
@@ -33,11 +41,15 @@ function computeFormulas(
 ): void {
     if (!formulas) return
     const compiled = Object.entries(formulas).map(([name, src]) => {
+        if (formulaAstCache.has(src)) return [name, formulaAstCache.get(src)!] as const
+        let ast: Expr | null
         try {
-            return [name, parseExpr(src)] as const
+            ast = parseExpr(src)
         } catch {
-            return [name, null] as const
+            ast = null
         }
+        formulaAstCache.set(src, ast)
+        return [name, ast] as const
     })
     for (const row of rows) {
         const ctx = toContext(row, hostThis)
