@@ -632,17 +632,13 @@ export const TasksComposerOpen: Story = {
     },
 }
 
-/** The write itself: open the composer in a day cell, type, press Enter, and the request that
- *  commits it carries the checkbox line's TEXT — description FIRST and the day appended, never
- *  the old blank `[scheduled <day>]`. Spies on `api.createTask` (restored on cleanup) rather
- *  than reading a write back through `fakeTransport`: that write resolves server-side
- *  (`POST /tasks/create` → `core/src/taskCreate.ts`), a route `_fakeTransport.ts` does not
- *  implement (confirmed — without the spy this story throws `unhandled POST(json)
- *  /tasks/create` — `_fakeTransport.ts` now implements that route (mirroring
- *  core/src/taskCreate.ts's resolution + append rules), so this reads the real bytes back
- *  through `api.read` instead of spying on `api.createTask`. Replaces Toolbar.stories.tsx's
- *  deleted `ClickingCreatesTaskLineInTaskFile`, which proved the same bytes through the deleted
- *  button and a real `api.write` — this is that proof restored, through the composer instead. */
+/** The write itself: open the composer in a day cell, type, press Enter, and read the note back
+ *  — the committed line carries the description FIRST with the day appended, never the old blank
+ *  `[scheduled <day>]`. `_fakeTransport.ts` implements `POST /tasks/create` (mirroring
+ *  core/src/taskCreate.ts's resolution + append rules), so this asserts the real bytes rather
+ *  than spying on `api.createTask`. Replaces Toolbar.stories.tsx's deleted
+ *  `ClickingCreatesTaskLineInTaskFile`, which proved the same bytes through the deleted button —
+ *  this is that proof restored, through the composer instead. */
 export const TasksCommitsTaskLineInTaskFile: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { 'Inbox.md': '- [ ] existing\n' } }))

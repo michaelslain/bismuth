@@ -47,7 +47,10 @@ export interface FakeTransportSeed {
 /** Mirrors core/src/taskCreate.ts's resolveTaskFilePath (the server-side resolution a real
  *  `POST /tasks/create` does): strip `[[`/`]]`, an EXACT match on the ref among the seeded
  *  paths wins (with or without a trailing `.md`), else a basename match, else `${ref}.md`
- *  names a brand-new note — same as a wikilink to a nonexistent note everywhere else. */
+ *  names a brand-new note — same as a wikilink to a nonexistent note everywhere else.
+ *  Deliberately simpler than core's `pickByBase`/`preferId` tie-break — a story seeding two
+ *  notes with the same basename would resolve differently here; `core/test/taskCreate.test.ts`
+ *  owns that case. */
 function resolveTaskFilePath(ref: string, paths: Iterable<string>): string {
     const bare = ref.replace(/^\[\[/, '').replace(/\]\]$/, '').trim()
     const withoutExt = bare.endsWith('.md') ? bare.slice(0, -3) : bare
