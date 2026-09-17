@@ -11,23 +11,15 @@
     gap: 0 var(--sp-1);
     position: relative;
     padding: var(--sp-1) var(--sp-3);
-    padding-inline-start: calc(var(--sp-3) + 3px);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
     color: var(--fg);
     overflow: hidden;
 }
 
-/* The category band — an absolutely-positioned strip, never a border. `.carried` already
-   spends the border on its own danger hairline; a category border would fight it for the same
-   1px edge. The band lives in the padding-inline-start `.chip` reserves for it above, so it
-   never overlaps the marker/title/late text regardless of which colour it renders. */
-.band {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    width: 3px;
-}
+/* Fallback marker colour. A categorised task overrides this with an inline `color` from
+   `props.color` (TaskChip.tsx), which wins over this class rule — so no class rule here or
+   below may set the marker's colour, or it would fight that inline style on specificity. */
 .marker {
     color: var(--text-muted);
     cursor: pointer;
@@ -88,17 +80,10 @@
 .carried {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     border: 1px solid var(--danger);
-    /* The leading edge belongs to the CATEGORY BAND, not to the overdue hairline. A salmon
-       1px pressed against the 3px band reads as one mis-registered stripe rather than as two
-       facts, and it makes the same category look like a different colour on a carried chip
-       than on a chip two rows up. The band cannot simply cover it — `.chip` clips at its
-       padding edge — so the hairline yields this one edge and keeps the other three, which
-       is enough to carry "late" alongside the wash. */
-    border-inline-start-color: transparent;
+    /* Closes on all four sides now — there is no band to yield an edge to. */
 }
-.carried .marker {
-    color: var(--danger);
-}
+/* Ruling 1: no colour override here. The marker's colour means the category, full stop —
+   lateness is already carried by the wash, the hairline above, and the `Nd late` label. */
 
 /* Keyboard focus. Inset (negative offset) because .chip still clips overflow (kept so the
    focus ring and danger wash don't bleed past the chip's own box now that the title wraps). */
