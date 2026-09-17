@@ -355,8 +355,8 @@
 }
 
 /* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
-   optically compensated prose size (--prose-font-size, ~15% up), and mono does not need that
-   compensation — inheriting it would render every code span too large.
+   optically compensated prose size (--prose-font-size, scaled up by --prose-scale), and mono does
+   not need that compensation — inheriting it would render every code span too large.
    HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own absolute sizes
    off the fixed type scale (--fs-h1..--fs-h6), so resetting them here would flatten the whole
    heading ramp to body size. They take the family reset and nothing else.
@@ -365,9 +365,9 @@
    would flatten it back to mono size after the family reset already moved it to serif.
    .cm-list-marker / .cm-syntax-mark / .cm-tag set their font-family INLINE in livePreview.ts's
    EditorView.theme() rather than going through the family list above, and were never added here
-   either — so all three silently inherited --prose-font-size (17.28px against a 13.5px editor
-   size, exactly the 1.28 --prose-scale). Any class that sets font-family inline in livePreview.ts
-   needs a matching entry in THIS list too, or it optically renders 28% too large. */
+   either — so all three silently inherited --prose-font-size against the 13.5px editor size,
+   exactly the --prose-scale compensation. Any class that sets font-family inline in livePreview.ts
+   needs a matching entry in THIS list too, or it optically renders too large next to the mono size. */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
