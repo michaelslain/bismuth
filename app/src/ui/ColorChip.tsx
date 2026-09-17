@@ -9,7 +9,7 @@ import Swatch from './Swatch'
 import { THEME_SWATCHES, resolveCategoryColor } from '../calendar/categoryColor'
 import styles from './ColorChip.module.css'
 
-/** Palette popover: the six token swatches (PALETTE_TOKENS) — token-driven, no custom hex
+/** Palette popover: the seven palette tokens (PALETTE_TOKENS) — token-driven, no custom hex
  *  wheel. A colour already set to a non-token value (a hex from before this) just shows no
  *  swatch highlighted; picking any swatch here replaces it. */
 const Palette: Component<{
@@ -28,7 +28,10 @@ const Palette: Component<{
                     <Swatch
                         color={`var(--${tok})`}
                         label={tok}
-                        selected={props.value === tok}
+                        selected={
+                            props.value === tok ||
+                            props.value === `var(--${tok})`
+                        }
                         onClick={() => props.onPick(tok)}
                     />
                 )}

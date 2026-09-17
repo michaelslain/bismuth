@@ -40,9 +40,9 @@ export const Sourced: Story = {
             names={SIX_NAMES}
             colors={
                 new Map([
-                    ['Work', 'blue'],
-                    ['Personal', 'rose'],
-                    ['Health', 'green'],
+                    ['Work', 'var(--blue)'],
+                    ['Personal', 'var(--rose)'],
+                    ['Health', 'var(--green)'],
                 ])
             }
             onPickColor={() => {}}
@@ -93,9 +93,9 @@ export const OwnRows: Story = {
             names={SIX_NAMES}
             colors={
                 new Map([
-                    ['Work', 'blue'],
-                    ['Personal', 'rose'],
-                    ['Health', 'green'],
+                    ['Work', 'var(--blue)'],
+                    ['Personal', 'var(--rose)'],
+                    ['Health', 'var(--green)'],
                 ])
             }
             onPickColor={() => {}}
@@ -120,7 +120,7 @@ export const Interactive: Story = {
     render: () => {
         const [open, setOpen] = createSignal(false)
         const [colors, setColors] = createSignal(
-            new Map([['Work', 'blue']]),
+            new Map([['Work', 'var(--blue)']]),
         )
         return (
             <Show
@@ -142,7 +142,9 @@ export const Interactive: Story = {
                     names={['Work', 'Personal']}
                     colors={colors()}
                     onPickColor={(name, token) =>
-                        setColors(m => new Map(m).set(name, token))
+                        setColors(m =>
+                            new Map(m).set(name, `var(--${token})`),
+                        )
                     }
                     onSetField={() => {}}
                     onClose={() => setOpen(false)}
