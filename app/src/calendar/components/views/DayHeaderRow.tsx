@@ -1,4 +1,4 @@
-import { For, type Component } from 'solid-js'
+import { For, Show, type Component } from 'solid-js'
 import { toDateStr } from '../../dates'
 import DayGutter from './DayGutter'
 import DayNumber from '../DayNumber'
@@ -8,6 +8,10 @@ export type DayHeaderRowProps = {
     dates: Date[]
     /** ISO date to mark as today. Passed in, not read from the clock, so a story can pin it. */
     today: string
+    /** Render the left time-gutter spacer. Default true — it aligns these rows with TimeGrid's
+     *  hour labels. A grid with no TimeGrid under it (the tasks strip) passes false: there is
+     *  nothing to align to and the column is empty. */
+    gutter?: boolean
     class?: string
 }
 
@@ -15,7 +19,7 @@ export type DayHeaderRowProps = {
  *  tasks strip, so the two registers can never disagree about column geometry. */
 const DayHeaderRow: Component<DayHeaderRowProps> = props => (
     <div class={[styles.row, props.class ?? ''].filter(Boolean).join(' ')}>
-        <DayGutter />
+        <Show when={props.gutter !== false}><DayGutter /></Show>
         <For each={props.dates}>
             {d => {
                 const ds = toDateStr(d)
