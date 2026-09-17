@@ -582,7 +582,7 @@ share `late === 0` — keep their original file order, since the sort is a stabl
 
 ### Categories: a task's source is its category
 
-A task chip's colour band comes from a **category name**, resolved by `taskCategoryName(row,
+A task chip's marker colour comes from a **category name**, resolved by `taskCategoryName(row,
 categoryField?)` (`app/src/calendar/taskCategory.ts`) in this order:
 
 1. an explicit `categoryField` wins, reading `row.note[categoryField]` — the SAME `categoryField`
@@ -592,7 +592,7 @@ categoryField?)` (`app/src/calendar/taskCategory.ts`) in this order:
    always scanned, so with no `categoryField` set, every task's category is simply which note it
    lives in.
 3. otherwise `row.note.category`.
-4. otherwise the task has no category and its chip renders no band at all.
+4. otherwise the task has no category and its marker keeps its default `var(--text-muted)`.
 
 Colours come from the base's `categories:` frontmatter — the same `[{name, color}]` list the
 events register already writes and reads via `core/src/calendar.ts`'s `categoriesOf` (`BaseConfig.
@@ -607,11 +607,12 @@ cost of perfect stability: adding or removing an earlier-seen category can shift
 colour. `autoCategoryColor(name)` is the same hash considered alone, with nothing to collide
 against.
 
-`TaskChip` draws the result as a 3px band down the chip's leading edge (`.band` in
-`TaskChip.module.css`), absolutely positioned inside the padding `.chip` already reserves for it —
-it coexists with the carried/late danger wash from [Overdue tasks](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten)
-above rather than replacing it; a carried task still gets both the danger box and its category
-band.
+`TaskChip` paints the resolved colour as the **text colour of the `[ ]` marker** — an inline
+`color` (TaskChip.tsx), so it overrides every class rule, including `.carried`'s own styling. A
+task with no category keeps the marker's default `var(--text-muted)`. A carried/late task shows
+its CATEGORY colour on the marker; lateness is carried instead by the danger wash, the hairline
+border, and the `Nd late` label from [Overdue tasks](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten)
+above — never by the marker's own colour.
 
 ### Chip behavior
 

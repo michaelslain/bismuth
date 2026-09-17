@@ -104,9 +104,9 @@ export const CarriedManyDays: Story = {
         ),
 }
 
-/** A category band — a 3px absolutely-positioned strip along the chip's leading edge, never a
- *  border (TaskChip.module.css's `.band`). Not carried, so this is the band alone with no
- *  danger wash to share space with. */
+/** The category colour is now the marker's TEXT colour, not a strip — an inline `style` on the
+ *  `[ ]` marker span (TaskChip.tsx) that wins over `.marker`'s own `--text-muted`. Not carried,
+ *  so this is the coloured marker alone with no danger wash to share space with. */
 export const WithCategoryColour: Story = {
     render: () =>
         cell(
@@ -118,12 +118,20 @@ export const WithCategoryColour: Story = {
                 onSetStatus={() => {}}
             />,
         ),
+    play: async ({ canvasElement }) => {
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.style.color).toBe('var(--teal)')
+        // the marker is the chip root's FIRST element child — nothing (no band span) precedes it.
+        const root = marker.closest('div')!
+        expect(root.firstElementChild).toBe(marker)
+    },
 }
 
-/** THE acceptance case for this task: a carried chip (danger wash + hairline border) AND a
- *  category band must both be visible at once, never one replacing the other. The band is
- *  absolutely positioned rather than a second border specifically so it cannot collide with
- *  `.carried`'s own 1px `--danger` hairline. */
+/** THE acceptance case for Ruling 1: a carried chip's marker shows its CATEGORY colour
+ *  (violet), never `--danger` — lateness is carried entirely by the wash, the now-complete
+ *  four-sided hairline border, and the `25d late` label, not by the marker's colour. */
 export const CarriedWithCategoryColour: Story = {
     render: () =>
         cell(
@@ -135,6 +143,37 @@ export const CarriedWithCategoryColour: Story = {
                 onSetStatus={() => {}}
             />,
         ),
+    play: async ({ canvasElement }) => {
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.style.color).toBe('var(--violet)')
+    },
+}
+
+/** Acceptance 7: a carried chip with NO category still shows a `--text-muted` marker inside the
+ *  salmon box — the marker no longer switches to `--danger` just because the chip carried. */
+export const CarriedWithoutCategoryColour: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('renew passport', '2026-08-15', 25)}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.style.color).toBe('')
+        // "carried" proven by the painted hairline (TaskChip.module.css's `.carried`), not by a
+        // hashed CSS-module class name — same convention CalendarView.stories.tsx's
+        // MonthWithTasks uses.
+        const root = marker.closest('div')!
+        expect(getComputedStyle(root).borderTopStyle).toBe('solid')
+    },
 }
 
 /** A long description in a narrow cell must wrap onto as many lines as it needs — no clamp, no
