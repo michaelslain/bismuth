@@ -153,6 +153,14 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const { spec } = body as { spec: SourceSpec }
                 return resolveRows(spec) as unknown as T
             }
+            // api.del posts JSON (unlike move/create/restore, which use the plain `post` verb
+            // above and already fall through to a generic 200 ack) — give it the same generic
+            // ack this file's header comment already promises for "delete", so a story can
+            // drive a real FileTree delete + Cmd+Z undo round trip.
+            if (pathname === '/delete') {
+                const { path: p } = body as { path: string }
+                return { trashPath: `.trash/${p}` } as unknown as T
+            }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
         },
         writeFileChecked: async (
