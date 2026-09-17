@@ -34,10 +34,11 @@ const NUMERAL_SAMPLE = '0123456789 — 1,204.50 km · §9.2 · 27 Aug 2026 · £
  * §9.1) can be judged in Storybook before any real surface consumes it. Nothing in `app/` renders
  * this; it is reachable only via its own story.
  *
- * Sections: prose at the two sizes note prose actually ships at (`--fs-read`/`--fs-body`, with
- * fallbacks matching their pre-token literals since this wave does not define those tokens yet),
- * the 400–700 weight axis, italic, numeral rendering, and a same-text side-by-side against
- * the current mono face so the contrast this token is FOR is visible in one frame.
+ * Sections: prose at the two sizes note prose actually ships at (`--prose-font-size`, the real
+ * token note prose renders at, and `--fs-body` with its pre-token literal fallback since this
+ * wave does not define that token yet), the 400–700 weight axis, italic, numeral rendering, and
+ * a same-text side-by-side against the current mono face so the contrast this token is FOR is
+ * visible in one frame.
  */
 const FontSpecimen: Component = () => {
     return (
@@ -53,13 +54,13 @@ const FontSpecimen: Component = () => {
 
             <section class={styles.section}>
                 <h2 class={styles.label}>
-                    Note prose size — var(--fs-read, 15px)
+                    Note prose size — var(--prose-font-size)
                 </h2>
                 <p
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                     }}
                 >
                     {READ_SAMPLE}
@@ -109,7 +110,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-style': 'italic',
                     }}
                 >
@@ -124,7 +125,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-variant-numeric': 'lining-nums',
                     }}
                 >
@@ -134,7 +135,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-variant-numeric': 'oldstyle-nums',
                     }}
                 >
@@ -155,7 +156,7 @@ const FontSpecimen: Component = () => {
                             class={styles.prose}
                             style={{
                                 'font-family': PROSE,
-                                'font-size': 'var(--fs-read, 15px)',
+                                'font-size': 'var(--prose-font-size)',
                             }}
                         >
                             {READ_SAMPLE}
@@ -169,7 +170,7 @@ const FontSpecimen: Component = () => {
                             class={styles.prose}
                             style={{
                                 'font-family': MONO,
-                                'font-size': 'var(--fs-read, 15px)',
+                                'font-size': 'var(--prose-font-size)',
                             }}
                         >
                             {READ_SAMPLE}
