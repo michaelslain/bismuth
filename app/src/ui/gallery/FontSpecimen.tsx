@@ -82,7 +82,7 @@ const FontSpecimen: Component = () => {
             </section>
 
             <section class={styles.section}>
-                <h2 class={styles.label}>Weight axis, 200–800</h2>
+                <h2 class={styles.label}>Weight axis, 400–700</h2>
                 <div class={styles.weightRamp}>
                     <For each={WEIGHTS}>
                         {w => (

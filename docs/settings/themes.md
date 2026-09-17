@@ -440,7 +440,7 @@ Note prose (the CodeMirror surface), note headings, note tables, chat message bo
 | `--prose-scale` | `1.04` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height (Lora Variable 50.00 vs. Monaspace Xenon 51.75 at 100px em) — it is not a constant that survives a face swap. |
 | `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
 
-The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` in `Editor.css` and `ChatTranscript.module.css`.
+The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` in `Editor.css` and `chat/ChatTextBubble.module.css`.
 
 The five Monaspace families are declared via `@fontsource` imports in `app/src/index.tsx`; Lora is declared via the `@fontsource-variable/lora` package. There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
 

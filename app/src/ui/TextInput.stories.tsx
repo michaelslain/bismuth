@@ -67,7 +67,7 @@ export const Placeholder: Story = {
     render: () => <Controlled placeholder="Search notes…" />,
 }
 
-/** Single-line input with a value (values render in the prose font, --editor-font). */
+/** Single-line input with a value (values render in the UI/mono font, --ui-font-stack). */
 export const Filled: Story = {
     render: () => <Controlled initial="Meeting notes 2026-07-07" />,
 }
