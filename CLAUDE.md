@@ -132,7 +132,7 @@ A base can also be **queried inside a note** via a ` ```query ` block — the on
 
 ### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
-Calendar is a **Bases view kind** — no standalone page; open one via a `type: base` md with `views: [{ type: calendar }]`. `app/src/calendar/` holds shared state + components (`EventStore.ts`, `state.ts`, `dates.ts`, `categoryColor.ts`, `components/views/` Month/Week/ThreeDay/Day/TimeGrid). Its toolbar renders **no bar of its own** — `calendarSlots()` returns `ViewBarSlots` that `BaseView` merges in. Time-grid drag-create is the pure `timeGridDrag.ts` (4px deadzone, 30-min snap floor). Two-way **Google Calendar** sync: `core/src/gcal/`, `docs/gcal/overview.md`.
+Calendar is a **Bases view kind** — no standalone page; open one via a `type: base` md with `views: [{ type: calendar }]`. `app/src/calendar/` holds shared state + components (`EventStore.ts`, `state.ts`, `dates.ts`, `categoryColor.ts`, `components/views/` Month/Week/ThreeDay/Day/TimeGrid). Its toolbar renders **no bar of its own** — `calendarSlots()` returns `ViewBarSlots` that `BaseView` merges in. Time-grid drag-create is the pure `timeGridDrag.ts` (4px deadzone, 30-min snap floor). Two-way **Google Calendar** sync: `core/src/gcal/`, `docs/gcal/overview.md`. The **tasks register** (`mode: tasks`) has no toolbar create button at all — clicking a day cell opens an inline composer that writes a row (`api.rowCreate`) or a checkbox line (`POST /tasks/create`, resolved against the vault) depending on whether the base owns its rows or sources tasks; ref: `docs/bases/views/calendar.md#tasks-register`.
 
 ### Tasks (`core/src/tasks*.ts`)
 
