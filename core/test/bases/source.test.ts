@@ -1,7 +1,8 @@
 import { tempDir } from '../helpers'
-import { test, expect } from 'bun:test'
+import { test, expect, describe, afterEach } from 'bun:test'
 import { writeNote } from '../../src/files'
 import { resolveSource, resolveBaseRows } from '../../src/bases/source'
+import { setFileAccess, type FileAccess } from '../../src/fileAccess'
 
 test("resolveSource('notes') returns vault rows filtered by where", async () => {
     const dir = tempDir('bismuth-src-')
@@ -236,7 +237,7 @@ test('resolveBaseRows reuses the parsed rows by reference when the file is uncha
     expect(second).toBe(first)
 })
 
-test('resolveBaseRows re-parses after the base file is rewritten, even within the same mtime tick', async () => {
+test('resolveBaseRows re-parses after the base file is rewritten, with no sleep between writes', async () => {
     const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
@@ -256,4 +257,31 @@ test('resolveBaseRows re-parses after the base file is rewritten, even within th
     const second = await resolveBaseRows('Own.md', { root: dir })
     expect(second).not.toBe(first)
     expect(second[0].note.title).toBe('Bye')
+})
+
+// Scoped in its own describe so the injected stub resets after this test and never
+// leaks into the on-disk tests above/below, which all go through the real files.ts
+// reader via tempDir/writeNote.
+describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
+    afterEach(() => setFileAccess(undefined as unknown as FileAccess))
+
+    test('resolveBaseRows canonicalizes an ABSOLUTE vault path, so its keys are vault-scoped', async () => {
+        const asked: string[] = []
+        const stub = (): FileAccess => ({
+            listMarkdown: async () => ['A.md'],
+            listTree: async () => [],
+            readNote: async () => '---\ntype: base\n---\n',
+            writeNote: async () => {},
+            statNote: async () => null,
+            realPath: async p => {
+                asked.push(p)
+                return p
+            },
+        })
+        setFileAccess(stub())
+        await resolveSource({ kind: 'base', ref: '[[A]]' }, { root: '/vault-one' })
+        await resolveSource({ kind: 'base', ref: '[[A]]' }, { root: '/vault-two' })
+        // Absolute and rooted, so the two vaults' identically-named base files never share a key.
+        expect(asked).toEqual(['/vault-one/A.md', '/vault-two/A.md'])
+    })
 })

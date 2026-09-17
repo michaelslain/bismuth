@@ -29,7 +29,10 @@ export interface SourceCtx {
 // Composed base files are re-parsed on every resolveBaseRows call along a composition
 // chain; cache the parse keyed by CONTENT (not mtime — see the comment at the call
 // site below) so repeated resolves of the same unchanged base file skip parseBaseFile.
-const baseParseCache = new Map<string, { raw: string; config: BaseConfig; rows: Row[] }>()
+const baseParseCache = new Map<
+    string,
+    { raw: string; config: BaseConfig; rows: Row[] }
+>()
 
 /**
  * Resolve a base FILE to its rows, following its OWN declared source (composition).
@@ -44,10 +47,15 @@ export async function resolveBaseRows(
     const seen = ctx.seen ?? new Set<string>()
     const fa = await getFileAccess()
 
-    // Resolve symlinks to their real paths to detect cycles even through symlink chains.
-    // E.g., if A -> link-to-A or A -> B -> link-to-A, both are caught. Best-effort:
-    // realPath() falls back to the input path when it can't resolve (e.g. on iOS).
-    const realPath = await fa.realPath(path)
+    // FileAccess.realPath is documented to take an ABSOLUTE path, so resolve the base file
+    // against the vault root first. Passing the vault-relative path (as this did) made node's
+    // realpath() resolve against the SERVER's cwd: it fell back to the relative path verbatim,
+    // leaving `seen` and baseParseCache cwd-dependent, shared across vaults, and doing no
+    // symlink resolution at all. Rooted, the keys are vault-scoped and symlinked aliases of one
+    // base file collapse to a single entry. Best-effort: realPath() returns its input when it
+    // cannot resolve (e.g. on iOS, where the tauri impl is the identity).
+    const absPath = `${ctx.root.replace(/\/+$/, '')}/${path}`
+    const realPath = await fa.realPath(absPath)
 
     if (seen.has(realPath)) return [] // cycle: A -> ... -> A (possibly through symlinks)
     seen.add(realPath)
@@ -66,7 +74,12 @@ export async function resolveBaseRows(
     const cached = baseParseCache.get(realPath)
     const fresh = cached?.raw === text
     const parsed = fresh ? cached! : parseBaseFile(text, { name, path })
-    if (!fresh) baseParseCache.set(realPath, { raw: text, config: parsed.config, rows: parsed.rows })
+    if (!fresh)
+        baseParseCache.set(realPath, {
+            raw: text,
+            config: parsed.config,
+            rows: parsed.rows,
+        })
     const { config, rows } = parsed
     // No declared source => inline (own-rows) base: return its table rows.
     if (!config.source) return rows
