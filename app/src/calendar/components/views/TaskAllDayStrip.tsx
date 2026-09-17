@@ -84,6 +84,7 @@ export function TaskAllDayStrip(props: {
                         <Show when={props.compose?.date === ds}>
                             <TaskCellComposer
                                 destination={props.compose!.destination}
+                                color={props.compose!.color}
                                 onCommit={text => props.compose!.commit(ds, text)}
                                 onCancel={() => props.compose!.cancel()}
                             />

@@ -204,6 +204,7 @@ export function MonthView(props: {
                                             <Show when={props.compose?.date === dateStr()}>
                                                 <TaskCellComposer
                                                     destination={props.compose!.destination}
+                                                    color={props.compose!.color}
                                                     onCommit={text =>
                                                         props.compose!.commit(dateStr(), text)
                                                     }
