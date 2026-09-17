@@ -558,6 +558,12 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **Response:** `{ removed: number, files: number }` — total tasks removed and the number of files touched. Single-`path` form returns `files: removed > 0 ? 1 : 0`.
 - **`pathOf`:** the body's `path` (single-note archive invalidates just that note; a vault-wide archive passes `undefined` → full invalidation).
 
+### `POST /tasks/create`
+- **Body:** `{ file: string, body: string }` — `file` is a `taskFile` REF (a wikilink, e.g. `[[General Tasks]]` — the same shape `source.from`/`source.ref` use), never a literal path. `body` is the task line's text after the checkbox (a description, bracket fields, or both), written verbatim.
+- **Action:** `appendTaskLine(vault, file, body)` (`core/src/taskCreate.ts`) resolves `file` against the vault's live note list via `resolveTaskFilePath` — an exact id match wins, then `pickByBase` (`core/src/linkTarget.ts`, settling a shared basename via `preferId`), else `${ref}.md` names a brand-new note — and appends `- [ ] <body>`, inserting the separating newline only when the file doesn't already end in one. This is the fix for `refToPath` turning any ref into a ROOT-level path regardless of where the real note lives.
+- **Response:** `{ path: string }` — the vault-relative path actually written.
+- **`pathOf`:** none passed → full invalidation. The written path isn't known until `resolveTaskFilePath` runs against the vault, which `pathOf` can't do (synchronous, sees only the raw body, before `run` executes).
+
 ### `POST /cards/review`
 Dual-mode SRS review.
 - **Body (row-based, flashcard base):** `{ file: string, index: number, response: ReviewResponse, dueField?, easeField?, intervalField? }`. When `file != null && index != null`, advances the scheduling columns on row `index` of the base file via `applyReviewToRow(row.note, response, today, appConfig.srs, fields?)`. Pass the `*Back` triple (`dueField`/`easeField`/`intervalField`) for a bidirectional reverse review (each direction schedules independently); default is the forward columns. Errors: `AppError("EINVAL", "row not found: <file>#<index>", 400)` if the row index is out of range.
@@ -771,6 +777,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/tasks/toggle` | mutating | yes |
 | POST | `/tasks/reschedule` | mutating | yes |
 | POST | `/tasks/archive` | mutating | yes |
+| POST | `/tasks/create` | mutating | yes (full) |
 | POST | `/cards/review` | mutating | yes |
 | POST | `/daily-note` | mutating | yes (full) |
 | POST | `/daemon/pages` | mutating | yes (page path) |
@@ -780,4 +787,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/chat` | (WS upgrade) | n/a |
 | GET | `/ui` | (WS upgrade) | n/a |
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`
