@@ -1,0 +1,14 @@
+/* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
+/* Reads like the note's own `- item` prose: group key as a small serif heading, then a
+   real <ul> of clickable links. No column header, no row borders, no per-row icons. */
+.bullets { padding: var(--sp-3) var(--sp-3) var(--sp-5); font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
+.bulletGroupHead { font-weight: 600; font-size: var(--fs-body-lg); color: var(--fg); letter-spacing: -0.01em; margin: var(--sp-5) 0 var(--sp-2); }
+.bulletGroup:first-child .bulletGroupHead { margin-top: var(--sp-1); }
+.bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
+.bulletItem { margin: var(--sp-2) 0; line-height: 1.55; }
+.bulletItem::marker { color: var(--text-muted); }
+/* The bullets view's note links are <NoteLink> now (ui/NoteLink.module.css owns the treatment), so
+   the ad-hoc `.bulletItem a` copy that used to live here is gone. It was one of the three divergent
+   renderings of a single affordance — keeping it would just re-create the drift one view at a
+   time. Any OTHER anchor inside a bullet (a markdown link in the note's own text) intentionally
+   keeps the content layer's link style rather than borrowing the note-link one. */

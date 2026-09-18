@@ -1,0 +1,33 @@
+/* ---------- list view ---------- */
+.list { padding: var(--sp-4) 0; }
+.lgroup { padding: var(--sp-4) 0; }
+.lghead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 18px;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.lghead .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
+.lghead .count { color: var(--faint); }
+.lrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-4) 18px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  font-size: var(--fs-body);
+  color: var(--fg);
+  cursor: pointer;
+}
+.lrow:hover { background: var(--hover-bg); }
+.ltextGlyph { color: var(--accent); flex: 0 0 auto; font-family: var(--ui-font-stack); }
+/* flex/min-width/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label fill>`); nothing
+   bespoke remained, so the rule and the `class` merge onto the element are both gone. */
+/* Faint author suffix after a list row's title. */
+.lrowAuthor { color: var(--faint); }
+/* The optional right-aligned third column (dates / counts). */
+.lrowRight { color: var(--text-muted); font-size: var(--fs-ui); flex: 0 0 auto; }

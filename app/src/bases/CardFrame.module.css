@@ -1,0 +1,44 @@
+.card {
+  background: var(--surface-1, var(--panel));
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.taskCard {
+  background: var(--surface-1, var(--panel));
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* Cards open their note on click — show it's interactive. Flat + hairline: no in-flow
+   elevation shadow (the ASCII system's floating-only shadow rule); hover reads as an
+   accent border + the shared hover-bg wash instead of a lift. */
+.interactive.card { cursor: pointer; transition: background 0.08s ease, border-color 0.08s ease; }
+.interactive.card:hover { border-color: var(--accent); background: var(--hover-bg); }
+
+/* Kanban board: pointer-drag owns the gesture (no native text selection, no scroll steal),
+   a slower transition (matches the in-flight drag reflow) and `will-change` for the drag
+   transform. A task card gets the drag affordance but no click-to-open hover wash — only
+   the marker's own toggle/status-menu handlers react to a tap. */
+.draggable.card {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background 130ms ease, border-color 130ms ease, opacity 130ms ease;
+  will-change: transform;
+}
+.draggable.card:hover { background: var(--hover-bg); border-color: var(--accent); }
+.draggable.taskCard { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.draggable.card:active, .draggable.taskCard:active { cursor: grabbing; }
+
+/* Image-drop target: an OS image file dragged over this card. A solid accent ring + soft accent
+   wash signals "drop the image here to attach it". */
+.dropTarget {
+  border-color: var(--accent);
+  background: var(--bismuth-accent-soft);
+  box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset;
+}

@@ -11,7 +11,7 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { plainLabel } from './renderValue'
 import { settings } from '../settings'
-import styles from './BaseView.module.css'
+import styles from './MapView.module.css'
 
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
 // Standard slippy-map projection — one tile = 256px, 2^z tiles per axis.

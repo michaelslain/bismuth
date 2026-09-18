@@ -1,0 +1,159 @@
+/* ---- Kanban ---- */
+/* Trello-style board: fills its container's height exactly (flex:1/min-height:0 inside
+   .baseKanban, which is itself capped to the pane's height) instead of growing as tall as its
+   tallest column. `overflow-x` is this element's own — so its scrollbar renders at the very
+   bottom of the (height-capped) board, i.e. the bottom of the window, not below the fold.
+   `align-items: flex-start` is preserved (NOT stretch) so a board with only short columns keeps
+   looking exactly as before — columns size to their own content, not the board's full height;
+   `.kanbanColumn`'s `max-height: 100%` only ever clips a column that's ACTUALLY taller than the
+   board. `overflow-y: hidden` guards against the board itself ever growing a second (vertical)
+   scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). */
+.kanban {
+  display: flex;
+  gap: var(--sp-5);
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: flex-start;
+  padding: 18px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+.kanbanColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--kanban-col-min, 248px);
+  max-width: var(--kanban-col-max, 288px);
+  max-height: 100%;
+  flex: 1;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 60%, var(--panel));
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  overflow: hidden;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.kanbanColumnOver {
+  border-color: var(--bismuth-accent-border);
+  background: var(--bismuth-surface-2);
+  box-shadow: 0 0 0 1px var(--bismuth-accent-border) inset;
+}
+.kanbanColHeader {
+  display: flex; align-items: center; gap: var(--sp-4); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
+  padding: var(--sp-5) var(--sp-5);
+  border-radius: var(--r-0) var(--r-card, 4px) 0 0;
+  background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  /* Never shrink — a tall column's `.kanbanCards` (below) is the one that scrolls internally, so
+     the header must stay full-size and in place rather than the flex column squeezing it. */
+  flex: none;
+}
+.kanbanColHeader:active { cursor: grabbing; }
+/* While a pointer-drag is live (class set on <html>), force the grabbing cursor everywhere and kill
+   text selection — the drag runs on window listeners, so the cursor isn't over the source element. */
+:global(html.kb-dragging), :global(html.kb-dragging) * { cursor: grabbing !important; user-select: none !important; }
+:global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
+.kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
+.kanbanColTitle { text-transform: capitalize; color: var(--fg); }
+.kbDotBtn { display: inline-flex; align-items: center; padding: var(--sp-1); margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
+.kbDotBtn:disabled { cursor: default; }
+.kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
+.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
+
+/* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
+   cards when the column is taller than the board — the header above stays put (it's a separate,
+   non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
+.kanbanCards { display: flex; flex-direction: column; padding: var(--sp-4) var(--sp-5) var(--sp-5); gap: var(--sp-4); flex: 1; min-height: 0; overflow-y: auto; }
+/* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
+   `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
+   this they compress to fit the now height-capped column instead of overflowing it, which both
+   clips every card's text AND means `scrollHeight === clientHeight`, so the column never grows a
+   scrollbar at all. Measured before this rule: a card rendered 79px tall in a short column was
+   crushed to 14px (content clipped) in a 28-card one, with no way to scroll to the rest. */
+.kanbanCards > * { flex: none; }
+/* The drag/drop/hover look of a card itself is CardFrame's own (`draggable`/`dropTarget`
+   props) — this file no longer reaches into a `.card`/`.taskCard` class it doesn't own. */
+
+/* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
+   when a card hovers this column. Spacing comes purely from the column's flex `gap` (plus the
+   column's top padding), so the placeholder sits with the same margins as a real card in any
+   slot — including the very top. A negative margin-bottom cancels the trailing gap while
+   collapsed so an inactive placeholder adds no space between cards. */
+.kanbanPlaceholder {
+  height: 0;
+  opacity: 0;
+  margin-bottom: -9px;
+  border: 1px dashed transparent;
+  border-radius: var(--r-0);
+  background: transparent;
+  pointer-events: none;
+  transition: height 170ms cubic-bezier(0.2, 0, 0, 1), opacity 170ms ease, margin-bottom 170ms ease;
+}
+.kanbanPlaceholderActive {
+  height: var(--kb-drag-h, 46px);
+  opacity: 1;
+  margin-bottom: 0;
+  border-color: var(--bismuth-accent-border);
+  background: var(--bismuth-accent-soft);
+}
+
+.kanbanHint { padding: 40px var(--sp-7); text-align: center; color: var(--bismuth-muted); line-height: 1.6; }
+
+/* Column reorder feedback */
+.kanbanColDragging { opacity: 0.5; }
+.kanbanColReorder { box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset; }
+/* Column drop-gap placeholder — a slim, full-height insertion bar marking the slot the dragged
+   column will land in (the horizontal analogue of .kanbanPlaceholderActive for cards). Stretches
+   to the board's height; the flex `gap` gives it breathing room. pointer-events:none so it never
+   steals elementFromPoint's column resolution mid-drag. */
+.kanbanColPlaceholder {
+  align-self: stretch;
+  flex: 0 0 5px;
+  min-height: 80px;
+  border-radius: var(--r-0);
+  background: var(--bismuth-accent-border);
+  box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
+  pointer-events: none;
+}
+
+/* Add-card composer — a compact "+" icon button */
+.kbAddBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-top: var(--sp-1); padding: 0;
+  border: none; background: none; border-radius: var(--r-0); color: var(--text-muted);
+  cursor: pointer; transition: background 120ms ease, color 120ms ease;
+}
+.kbAddBtn:hover { background: var(--surface-2); color: var(--fg); }
+/* The composer gets a text caret + real text selection back (a dragged card sets
+   user-select:none via CardFrame's `draggable` variant). Both declaration blocks target the
+   same `.kbComposer` element — kept as one merged rule (the source file had them as two
+   selector blocks under this same class name, which CSS just cascades together). */
+.kbComposer {
+  cursor: text; user-select: text; -webkit-user-select: text;
+  width: 100%; box-sizing: border-box; margin-top: var(--sp-1); padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-0);
+  background: var(--surface-1, var(--panel)); color: var(--fg);
+  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
+}
+
+/* Column color picker popover */
+.kbColorBackdrop { position: fixed; inset: 0; z-index: 40; }
+.kbColorPop {
+  position: absolute; z-index: 41; top: 40px; left: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4);
+  background: var(--panel); border: var(--rule); border-radius: var(--r-0);
+  /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+  box-shadow: var(--lift); width: max-content; max-width: 214px;
+}
+.kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: var(--rule-soft, 1px solid var(--border-soft)); cursor: pointer; padding: 0; }
+.kbSwatch:hover { transform: scale(1.12); }
+.kbSwatchAuto {
+  height: 20px; padding: 0 var(--sp-4); border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft));
+  background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: var(--fs-ui); cursor: pointer;
+}
+.kbSwatchAuto:hover { color: var(--fg); }

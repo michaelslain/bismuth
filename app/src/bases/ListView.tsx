@@ -5,7 +5,7 @@ import { renderValue, isTaskRow } from './renderValue'
 import { groupColor } from '../ui/StatusDot'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import styles from './ListView.module.css'
 
 export function ListView(props: {
     result: ViewResult

@@ -22,6 +22,8 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
 import TaskRow from './TaskRow'
+import CardFrame from './CardFrame'
+import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import {
@@ -55,7 +57,7 @@ import { STATUS_COLOR } from '../ui/StatusDot'
 import { pushToast } from '../Toast'
 import { suppressCardContextMenu } from './kanbanCardMenu'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
-import styles from './BaseView.module.css'
+import styles from './KanbanView.module.css'
 
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = 'order'
@@ -1302,17 +1304,17 @@ export function KanbanView(props: {
                                                         />
                                                         <Show when={row()}>
                                                             {r => (
-                                                                <div
-                                                                    class={
+                                                                <CardFrame
+                                                                    kind={
                                                                         isTasks()
-                                                                            ? styles.taskCard
-                                                                            : styles.card
+                                                                            ? 'task'
+                                                                            : 'note'
                                                                     }
-                                                                    classList={{
-                                                                        [styles.kbCardDropTarget]:
-                                                                            dropCardId() ===
-                                                                            id,
-                                                                    }}
+                                                                    draggable
+                                                                    dropTarget={
+                                                                        dropCardId() ===
+                                                                        id
+                                                                    }
                                                                     data-kbcard=""
                                                                     data-path={
                                                                         id
@@ -1360,10 +1362,8 @@ export function KanbanView(props: {
                                                                     <Show
                                                                         when={isTasks()}
                                                                         fallback={
-                                                                            <div
-                                                                                class={
-                                                                                    styles.cardBodyInner
-                                                                                }
+                                                                            <CardBodyInner
+                                                                                looseGap
                                                                             >
                                                                                 <KanbanCard
                                                                                     row={r()}
@@ -1407,7 +1407,7 @@ export function KanbanView(props: {
                                                                                         siblingValuesFor
                                                                                     }
                                                                                 />
-                                                                            </div>
+                                                                            </CardBodyInner>
                                                                         }
                                                                     >
                                                                         <TaskRow
@@ -1433,7 +1433,7 @@ export function KanbanView(props: {
                                                                             }
                                                                         />
                                                                     </Show>
-                                                                </div>
+                                                                </CardFrame>
                                                             )}
                                                         </Show>
                                                     </>

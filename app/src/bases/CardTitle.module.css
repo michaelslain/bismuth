@@ -1,0 +1,9 @@
+.cardTitle {
+  font-family: var(--ui-font-stack);
+  font-size: calc(var(--editor-font-size, 13.5px) + 1.5px);
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,8 @@
+.bodyCard {
+  display: flex;
+  flex-direction: column;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  padding: var(--sp-5) var(--sp-5);
+  background: var(--surface-1, var(--panel));
+}
