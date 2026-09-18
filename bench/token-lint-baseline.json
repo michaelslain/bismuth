@@ -20,91 +20,13 @@
  {
   "file": "bases/BaseSettings.module.css",
   "rule": "spacing-literal",
+  "detail": "1px 6px",
+  "count": 2
+ },
+ {
+  "file": "bases/BaseSettings.module.css",
+  "rule": "spacing-literal",
   "detail": "8px",
-  "count": 1
- },
- {
-  "file": "bases/BaseSkeleton.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "-1px -4px",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "-2px",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "-3px -5px",
-  "count": 3
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "-9px",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
-  "count": 2
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px",
-  "count": 2
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
-  "count": 2
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "40px var(--sp-7)",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-1) 20px var(--sp-1) var(--sp-3)",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-1) 22px var(--sp-1) var(--sp-3)",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-4) 18px",
-  "count": 2
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-4) 18px var(--sp-2)",
-  "count": 1
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-5) var(--sp-5) var(--sp-5) 18px",
   "count": 1
  },
  {
@@ -117,12 +39,6 @@
   "file": "bases/CardEditModal.module.css",
   "rule": "spacing-literal",
   "detail": "22px",
-  "count": 1
- },
- {
-  "file": "bases/CardEditModal.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-5) 20px",
   "count": 1
  },
  {
@@ -132,87 +48,183 @@
   "count": 1
  },
  {
-  "file": "bases/CardEditModal.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-6) 20px var(--sp-5)",
-  "count": 1
- },
- {
-  "file": "bases/Charts.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
-  "count": 1
- },
- {
-  "file": "bases/Charts.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px var(--sp-7)",
-  "count": 1
- },
- {
-  "file": "bases/Charts.module.css",
-  "rule": "spacing-literal",
-  "detail": "22px",
-  "count": 1
- },
- {
-  "file": "bases/Flashcards.module.css",
-  "rule": "spacing-literal",
-  "detail": "0 1px",
-  "count": 1
- },
- {
-  "file": "bases/Flashcards.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
-  "count": 1
- },
- {
-  "file": "bases/Flashcards.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px var(--sp-7) 20px",
-  "count": 1
- },
- {
-  "file": "bases/Flashcards.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
-  "count": 3
- },
- {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/CardsModal.module.css",
   "rule": "spacing-literal",
   "detail": "20px var(--sp-7) var(--sp-6)",
   "count": 1
  },
  {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/CardsSkeleton.module.css",
   "rule": "spacing-literal",
-  "detail": "22px",
+  "detail": "18px",
   "count": 1
  },
  {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/CardsView.module.css",
   "rule": "spacing-literal",
-  "detail": "26px",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "bases/CardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 18px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/CardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) var(--sp-5) var(--sp-5) 18px",
+  "count": 1
+ },
+ {
+  "file": "bases/ChartFrame.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px var(--sp-7)",
+  "count": 1
+ },
+ {
+  "file": "bases/EditCardsModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
   "count": 2
  },
  {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/EditCardsModal.module.css",
   "rule": "spacing-literal",
   "detail": "30px",
   "count": 1
  },
  {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 1px",
+  "count": 1
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px var(--sp-7) 20px",
+  "count": 1
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
+  "rule": "spacing-literal",
+  "detail": "26px",
+  "count": 2
+ },
+ {
+  "file": "bases/FlashcardsView.module.css",
   "rule": "spacing-literal",
   "detail": "32px var(--sp-7)",
   "count": 1
  },
  {
-  "file": "bases/Flashcards.module.css",
+  "file": "bases/FlashcardsView.module.css",
   "rule": "spacing-literal",
   "detail": "44px 46px 40px",
+  "count": 1
+ },
+ {
+  "file": "bases/HeatmapView.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanCard.module.css",
+  "rule": "spacing-literal",
+  "detail": "-1px -4px",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanCard.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 2
+ },
+ {
+  "file": "bases/KanbanCard.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-2px",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-9px",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanView.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "bases/KanbanView.module.css",
+  "rule": "spacing-literal",
+  "detail": "40px var(--sp-7)",
+  "count": 1
+ },
+ {
+  "file": "bases/ListView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 18px",
+  "count": 2
+ },
+ {
+  "file": "bases/MapView.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/PropertyValueEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "-3px -5px",
+  "count": 3
+ },
+ {
+  "file": "bases/PropertyValueEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 20px var(--sp-1) var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "bases/PropertyValueEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 22px var(--sp-1) var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "bases/StatTiles.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
   "count": 1
  },
  {
@@ -244,12 +256,6 @@
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 1
- },
- {
-  "file": "chat/ChatComposerBar.module.css",
-  "rule": "hex-color",
-  "detail": "#fff",
-  "count": 2
  },
  {
   "file": "chat/ChatHistoryPanel.module.css",
@@ -373,12 +379,6 @@
  },
  {
   "file": "ExportView.module.css",
-  "rule": "hex-color",
-  "detail": "#f7f6f2",
-  "count": 1
- },
- {
-  "file": "ExportView.module.css",
   "rule": "spacing-literal",
   "detail": "18px",
   "count": 1
@@ -396,9 +396,9 @@
   "count": 1
  },
  {
-  "file": "GraphView.module.css",
-  "rule": "font-size-literal",
-  "detail": "10.5px",
+  "file": "GraphSearch.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
   "count": 1
  },
  {
@@ -410,31 +410,19 @@
  {
   "file": "GraphView.module.css",
   "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
+  "detail": "2px 8px",
   "count": 1
  },
  {
-  "file": "graph/GraphAtmosphere.module.css",
-  "rule": "hex-color",
-  "detail": "#000",
-  "count": 1
- },
- {
-  "file": "intro/VaultIntro.module.css",
-  "rule": "hex-color",
-  "detail": "#08090e",
+  "file": "intro/TermPanel.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px 18px",
   "count": 1
  },
  {
   "file": "intro/VaultIntro.module.css",
   "rule": "spacing-literal",
   "detail": "0 40px",
-  "count": 1
- },
- {
-  "file": "intro/VaultIntro.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
   "count": 1
  },
  {
@@ -450,9 +438,9 @@
   "count": 1
  },
  {
-  "file": "intro/VaultIntro.module.css",
+  "file": "intro/WordmarkHero.module.css",
   "rule": "spacing-literal",
-  "detail": "var(--sp-6) 20px 18px",
+  "detail": "18px",
   "count": 1
  },
  {
@@ -462,7 +450,7 @@
   "count": 1
  },
  {
-  "file": "palette/Palette.module.css",
+  "file": "palette/PaletteFrame.module.css",
   "rule": "spacing-literal",
   "detail": "15px 18px",
   "count": 1
@@ -470,13 +458,13 @@
  {
   "file": "palette/SwitcherBar.module.css",
   "rule": "spacing-literal",
-  "detail": "var(--sp-5) 18px",
+  "detail": "1px var(--sp-3)",
   "count": 1
  },
  {
-  "file": "preview/HighlightLayer.module.css",
-  "rule": "radius-literal",
-  "detail": "1px",
+  "file": "palette/SwitcherBar.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 18px",
   "count": 1
  },
  {
@@ -490,12 +478,6 @@
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 2
- },
- {
-  "file": "SearchResultRows.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-3)",
-  "count": 1
  },
  {
   "file": "SearchResultRows.module.css",
@@ -517,32 +499,8 @@
  },
  {
   "file": "SheetView.module.css",
-  "rule": "hex-color",
-  "detail": "#c00",
-  "count": 1
- },
- {
-  "file": "SheetView.module.css",
   "rule": "spacing-literal",
   "detail": "16px",
-  "count": 1
- },
- {
-  "file": "shell/TabRail.module.css",
-  "rule": "spacing-literal",
-  "detail": "-2px 0",
-  "count": 1
- },
- {
-  "file": "shell/TabRail.module.css",
-  "rule": "spacing-literal",
-  "detail": "0 10px",
-  "count": 1
- },
- {
-  "file": "shell/TabRail.module.css",
-  "rule": "spacing-literal",
-  "detail": "0 5px",
   "count": 1
  },
  {
@@ -552,7 +510,25 @@
   "count": 1
  },
  {
-  "file": "shell/TabRail.module.css",
+  "file": "shell/TabRailRow.module.css",
+  "rule": "spacing-literal",
+  "detail": "-2px 0",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRailRow.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 10px",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRailRow.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 5px",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRailRow.module.css",
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 1
@@ -567,12 +543,6 @@
   "file": "shell/TopStrip.module.css",
   "rule": "spacing-literal",
   "detail": "78px",
-  "count": 1
- },
- {
-  "file": "Terminal.css",
-  "rule": "hex-color",
-  "detail": "#08090e",
   "count": 1
  },
  {
@@ -625,12 +595,6 @@
  },
  {
   "file": "ui/ui.css",
-  "rule": "hex-color",
-  "detail": "#000",
-  "count": 1
- },
- {
-  "file": "ui/ui.css",
   "rule": "spacing-literal",
   "detail": "-1px",
   "count": 1
@@ -645,12 +609,6 @@
   "file": "ui/ui.css",
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.module.css",
-  "rule": "hex-color",
-  "detail": "1px solid var(--border, rgba(0, 0, 0, 0.2))",
   "count": 1
  },
  {

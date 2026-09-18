@@ -894,9 +894,10 @@ another iteration instead of a wrong capture.
 | `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (759 stories as of 2026-09-14, up from an older ~737 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 | `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
-| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px/hex) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Not wired into either git hook yet — see below. |
+| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below. |
 | `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
 | `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
+| `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props), ratcheted by `design-system.baseline.json`. Wired into `scripts/gate.ts` pre-commit — see below. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
 
@@ -1097,30 +1098,57 @@ focused, or interacted with, and nothing the story doesn't itself render.
 ### `bench/tokenLint.ts` — literal-value lint for stylesheets, checked against a committed baseline
 
 Greps every `app/src/**/*.css`/`*.module.css` declaration for a magic value that should have been a
-design token instead: a non-zero px `border-radius`, a literal non-zero px `padding`/`margin`/`gap`
-(and their longhands), a px `font-size`, a `box-shadow` with a non-zero blur radius, any
-`backdrop-filter` other than `none`, or a literal hex/`rgb()`/`rgba()` color — the last one is the
-only check that also looks inside custom-property (`--foo: …`) declarations, since a component
-inventing its own hardcoded color is exactly the drift the token system is otherwise free of; the
-other checks exempt custom properties, because the token layer itself (`styles/tokens.css`) is who
-is allowed to write the literal a component later reads via `var(...)`.
+design token instead: a literal non-zero px `padding`/`margin`/`gap` (and their longhands), a
+`box-shadow` with a non-zero blur radius, or any `backdrop-filter` other than `none`. All three
+checks exempt custom-property (`--foo: …`) declarations, because the token layer itself
+(`styles/tokens.css`) is who is allowed to write the literal a component later reads via
+`var(...)`. **Literal hardcoded colour, border-radius and font-size moved to the design-system
+gate below** (2026-09-18, task 24 of the ds-conformance plan) — it checks the same three things
+against `DESIGN.md`'s token/governance block instead of duplicating them here under a second name.
 
 **Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
 `(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
 file's 6 `padding: 8px` literals can never mask a 7th, *different* literal in the same file/rule.
 A run only fails on a violation with no matching baseline entry, i.e. a genuinely NEW magic number;
-the ~700 pre-existing ones (this repo started the visual-unification audit with ~40 unswept
+the pre-existing ones (this repo started the visual-unification audit with ~40 unswept
 stylesheets) stay green until their surface's own sweep wave lands and blesses a lower count.
-**Deliberately NOT wired into `scripts/gate.ts` or `.githooks/` yet** — work-in-progress sweep waves
-need to touch watched files without every commit failing mid-sweep; promoting it into the gate is
-planned for the last wave, once every surface has had its own pass.
+**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside the design-system gate,
+whenever a staged path touches `app/src/`, `DESIGN.md`, `design-system.baseline.json` or
+`scripts/designSystem/` (`touchesDesignSystem` in `scripts/gate.ts`).
 
 ```bash
 bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
 bun bench/tokenLint.ts --list          # every CURRENT violation, grouped by file
-bun bench/tokenLint.ts --rule hex-color  # scope either mode to one rule
+bun bench/tokenLint.ts --rule spacing-literal  # scope either mode to one rule
 bun bench/tokenLint.ts --bless         # overwrite the baseline with the CURRENT violation set
 ```
+
+### The design-system gate — `scripts/designSystem/gate.mjs`, tested by `scripts/designSystem.test.ts`
+
+Installed by the `design-system` skill's `install-gate` (`checks.mjs`, `gate.mjs` and `lib/` are
+**copies**, not an import from `~/.claude`, so the repo stays self-contained on any machine — each
+copy's first line records the skill-scripts version it was copied from). It parses `DESIGN.md`'s
+`governance:` frontmatter block (source roots, the component/stylesheet glob, the primitive-element
+map, the token file list, story-coverage rules and any `global`/exempt paths) and scans
+`app/src/**` for what it describes: a bare `<p>`/`<span>`/`<h1>`–`<h6>`/`<button>`/`<input>`/
+`<textarea>`/`<select>`/`<label>` where a primitive from `primitives.elements` should be used
+instead, a `.module.css` with more than one importer, a component with no sibling
+`{name}.stories.tsx`, a Solid component that destructures its props, and — the three checks moved
+out of `tokenLint.ts` above — a literal hardcoded colour, border-radius or font-size instead of a
+token from `tokens.files`.
+
+**Ratcheted by `design-system.baseline.json`** at the repo root (`{ "accepted": [{ "check",
+"path" }] }`, matched by `check`+`path`, ignoring line) — the same debt-not-exemption model as
+`tokenLint.ts`'s own baseline: a genuine, permanent exception belongs in `DESIGN.md`'s `governance`
+block instead (`stories.exempt`, `global`, or a documented `checks` change).
+
+```bash
+node scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json
+bun test scripts/designSystem.test.ts    # what the gate actually runs in CI/pre-commit
+```
+
+**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside `tokenLint.ts`, on the
+same trigger (see above) — so a change under `app/src/` runs both checks once each, never twice.
 
 ### `bench/moduleClassCheck.ts` — emitted-CSS ↔ emitted-JS cross-check
 
@@ -1205,4 +1233,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design-system.baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`

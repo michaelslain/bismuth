@@ -10,40 +10,28 @@
 // bench/ invariant that greps for literal border-radius: / padding: px in *.module.css would make
 // every later wave self-policing."
 //
+// RECONCILED WITH THE DESIGN-SYSTEM GATE (2026-09-18, task 24 of the ds-conformance plan). That
+// gate (scripts/designSystem/gate.mjs, installed from ~/.claude/skills/design-system) now owns
+// literal hardcoded colour, border-radius and font-size against DESIGN.md's token/governance
+// block — the SAME three checks this file used to run 1/3/6 of, against a different (but
+// equivalent) source of truth. Running both would mean two gates disagreeing about the same
+// literal, or the same finding reported twice under two different names. So those three checks
+// were REMOVED here rather than kept in parallel; this file keeps only the three the
+// design-system gate does not cover.
+//
 // WHAT IT CHECKS, in every app/src/**/*.css and app/src/**/*.module.css declaration:
-//   1. border-radius (any longhand corner too) with a non-zero PX value. `50%` survives — a
-//      circle is a shape, not a softened corner (see §9.2 of the audit: --r-1 was rejected;
-//      radius is 0 everywhere except genuine dots).
-//   2. padding / margin / gap (and their longhands: -top/-inline-start/etc, plus row-gap /
+//   1. padding / margin / gap (and their longhands: -top/-inline-start/etc, plus row-gap /
 //      column-gap / inset) with a literal non-zero PX value. `var(--sp-N)` is not a literal and
 //      never matches; a raw px number is flagged even when it happens to equal a scale step,
 //      because the point is CONSUMING THE TOKEN, not merely rendering the same pixel by luck.
-//   3. font-size with a literal PX value (em/rem/%/var() are not this check's business).
-//   4. box-shadow whose blur radius (the third length in `x y blur spread color`) is non-zero.
+//   2. box-shadow whose blur radius (the third length in `x y blur spread color`) is non-zero.
 //      `--lift: 2px 2px 0 var(--shadow-hard)` — zero blur — is the sanctioned shape (§9.3); the
 //      four deleted `--shadow-menu/-popup/-card/-modal` tokens are the target, not this check's
 //      business directly (they are core/src/theme/tokens.ts + custom-property VALUES, not a
-//      `box-shadow:` declaration — see `checksCustomProps` on the `Rule` type below for why
-//      custom properties are exempt from checks 1-5).
-//   5. backdrop-filter at all (any value other than literally `none`) — the audit calls for ALL
+//      `box-shadow:` declaration — custom-property declarations are the token layer itself, so
+//      this check skips them, same as it always did).
+//   3. backdrop-filter at all (any value other than literally `none`) — the audit calls for ALL
 //      five sites deleted, not tuned, so there is no "acceptable" blur radius to allow.
-//   6. literal hex (#abc / #aabbcc / #aabbccdd) or rgb()/rgba() with numeric (not var()) channels,
-//      in ANY declaration's value, standard property or custom property alike — this is the one
-//      check that DOES look inside custom-property definitions, because a component inventing its
-//      own hardcoded color (ExportView.css's `--paper-bg: #f7f6f2`) is exactly the drift the color
-//      system is otherwise free of.
-//
-// WHY CUSTOM PROPERTIES (`--foo: …`) ARE EXEMPT FROM CHECKS 1-5 BUT NOT CHECK 6. A custom property
-// declaration is the TOKEN LAYER ITSELF — `styles/tokens.css` is who is ALLOWED to write
-// `--shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)`, because that literal only
-// becomes a violation at the moment some component's `box-shadow:` reads it, and by design every
-// component here reads it through `var(--shadow-card)` (checked: no component-level box-shadow
-// in this repo currently ships a literal blurred shadow — the blur lives entirely in the token
-// file, which is core/src/theme/tokens.ts's problem, outside app/src, and the token file's own
-// custom-property value, which check 6 does NOT re-flag as a shadow violation but WOULD flag if it
-// contained a bare hex it didn't already carry a documented exemption for). Colour is the one axis
-// where a token file hardcoding a value and a component hardcoding a value are the SAME mistake
-// (drift), so check 6 applies uniformly.
 //
 // THE BASELINE, AND WHY IT IS PER (file, rule, exact-literal-value) RATHER THAN PER (file, rule).
 // This repo is starting from ~40 unswept stylesheets and will be for nine more waves (see the
@@ -51,7 +39,7 @@
 // into irrelevance — the same lesson bench/cssBaseline.ts already paid for. So known-current
 // violations are recorded once, as a committed baseline (token-lint-baseline.json), and a run only
 // FAILS on a violation with no matching baseline entry — a genuinely NEW magic number, not the
-// ~700 that already exist.
+// ones that already exist.
 //
 // The key is (file, rule, exact declaration text) with a COUNT, not just (file, rule): fixing 4 of
 // FileTree's 6 `padding: 8px` literals should never mask a 7th, DIFFERENT literal (`padding: 5px`)
@@ -73,17 +61,15 @@
 // regression back toward the old number is caught too. Nothing here auto-shrinks the committed
 // file; a run that merely improves things still exits 0 without being blessed.
 //
-// NOT WIRED INTO THE PRE-COMMIT GATE THIS WAVE. See `bun run gate` / `.githooks/pre-commit` — this
-// check is deliberately left OUT of both hooks for now: work-in-progress waves need to touch files
-// this check watches without every commit failing mid-sweep. Wave 9 (the componentization/backlog
-// wave, the last one in the plan) is the right point to promote it into `scripts/gate.ts` — by then
-// every surface has had its own wave and the baseline should be at or near zero.
+// WIRED INTO THE PRE-COMMIT GATE. `scripts/gate.ts` runs this (alongside the design-system gate,
+// as one combined step) whenever a staged path touches app/src/, DESIGN.md,
+// design-system.baseline.json or scripts/designSystem/ — see `touchesDesignSystem` there.
 //
 // Usage:
 //   bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
 //   bun bench/tokenLint.ts --list           # every CURRENT violation, grouped by file (pick up a
 //                                           #   surface's todo list — add --file <substr> to scope)
-//   bun bench/tokenLint.ts --rule hex-color # scope either mode to one rule
+//   bun bench/tokenLint.ts --rule spacing-literal # scope either mode to one rule
 //   bun bench/tokenLint.ts --json           # machine-readable
 //   bun bench/tokenLint.ts --bless          # overwrite the baseline with the CURRENT violation set
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, rmSync } from 'node:fs'
@@ -119,16 +105,6 @@ const SKIP_FILES = new Set<string>([
     // markup (a literal `#` becomes `%23`), so today it trips nothing here anyway; skipped by
     // name so a future regeneration that inlines a raw color can't silently join the baseline.
     'sheet/univer-icons.css',
-])
-
-/** Files where a literal colour is a DOCUMENTED, sanctioned exception — not drift to eventually
- *  fix, so check 6 does not run on them at all (a permanent skip, unlike the baseline's per-value
- *  entries which are always implicitly "fix this eventually"). */
-const COLOR_EXEMPT_FILES = new Set<string>([
-    // styles/tokens.css's own header: this file's hex/rgba literals are the deliberate first-paint
-    // :root fallbacks that MUST byte-match core/src/theme/tokens.ts (themeGuard.test.ts enforces
-    // that match already — this tool would just re-litigate a decision already guarded elsewhere).
-    'styles/tokens.css',
 ])
 
 // ---------------------------------------------------------------------------------------------
@@ -180,23 +156,14 @@ function lineOf(css: string, index: number): number {
 // Per-rule matchers. Each returns a short "detail" string (the exact literal) when it finds a
 // violation, or null when the declaration is clean.
 // ---------------------------------------------------------------------------------------------
-const RADIUS_PROP = /^(-webkit-|-moz-)?border(-(top|bottom)-(left|right))?-radius$/
 /** padding/margin/gap and every longhand (-top, -inline-start, …) plus row-gap/column-gap/inset. */
 const SPACING_PROP = /^(padding|margin|gap|row-gap|column-gap|inset)(-[a-z]+)*$/
 const PX_TOKEN = /^-?\d*\.?\d+px$/
 const nonZeroPx = (tok: string) => PX_TOKEN.test(tok) && parseFloat(tok) !== 0
 
-function checkRadius(value: string): string | null {
-    if (value.trim() === '50%') return null // a genuine circular dot, not a softened corner
-    const bad = value.split(/\s+/).filter(nonZeroPx)
-    return bad.length ? value : null
-}
 function checkSpacing(value: string): string | null {
     const bad = value.split(/\s+/).filter(nonZeroPx)
     return bad.length ? value : null
-}
-function checkFontSize(value: string): string | null {
-    return nonZeroPx(value.trim()) ? value : null
 }
 /** True if this box-shadow VALUE has a non-zero blur radius in any of its comma-separated layers.
  *  Reads only the LEADING run of plain length tokens in each layer (offset-x offset-y blur
@@ -241,68 +208,32 @@ function checkBoxShadow(value: string): string | null {
 function checkBackdropFilter(value: string): string | null {
     return /^\s*none\s*$/i.test(value) ? null : value
 }
-const HEX_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/
-const RGB_FN = /\brgba?\(\s*[0-9.]/
-function checkColor(value: string): string | null {
-    const hex = value.match(HEX_COLOR)
-    if (hex) return hex[0]
-    const rgb = value.match(RGB_FN)
-    if (rgb) return value
-    return null
-}
 
 type Rule = {
     id: string
     label: string
     /** Does this declaration's PROPERTY belong to this rule at all? */
     props: (prop: string) => boolean
-    /** Custom-property (`--x`) declarations are the token layer itself — see the header comment —
-     *  so structural rules (1-5) skip them; only the colour rule (6) reads inside them. */
-    checksCustomProps: boolean
     check: (value: string) => string | null
 }
 const RULES: Rule[] = [
     {
-        id: 'radius-literal',
-        label: 'border-radius: literal non-zero px (want --r-0 / 50% only)',
-        props: p => RADIUS_PROP.test(p),
-        checksCustomProps: false,
-        check: checkRadius,
-    },
-    {
         id: 'spacing-literal',
         label: 'padding/margin/gap: literal px (want --sp-1..7)',
         props: p => SPACING_PROP.test(p),
-        checksCustomProps: false,
         check: checkSpacing,
-    },
-    {
-        id: 'font-size-literal',
-        label: 'font-size: literal px (want the type scale)',
-        props: p => p === 'font-size',
-        checksCustomProps: false,
-        check: checkFontSize,
     },
     {
         id: 'shadow-blur',
         label: 'box-shadow: non-zero blur radius (want --lift, zero blur)',
         props: p => p === 'box-shadow' || p === '-webkit-box-shadow',
-        checksCustomProps: false,
         check: checkBoxShadow,
     },
     {
         id: 'backdrop-filter',
         label: 'backdrop-filter: present at all (want none — deleted per the audit)',
         props: p => p === 'backdrop-filter' || p === '-webkit-backdrop-filter',
-        checksCustomProps: false,
         check: checkBackdropFilter,
-    },
-    {
-        id: 'hex-color',
-        label: 'hex / rgb() literal colour (want a var() from core/src/theme/tokens.ts)',
-        props: () => true, // any property, INCLUDING custom properties — see checksCustomProps
-        checksCustomProps: true,
-        check: checkColor,
     },
 ]
 const rulesToRun = RULE_FILTER ? RULES.filter(r => r.id === RULE_FILTER) : RULES
@@ -323,11 +254,12 @@ for (const rel of allCssFiles) {
     const raw = readFileSync(join(SRC, rel), 'utf8')
     const clean = blankComments(raw)
     for (const d of declarations(clean)) {
-        const isCustom = d.property.startsWith('--')
+        // Custom-property (`--x`) declarations are the token layer itself, not a consumer of it —
+        // every remaining rule here is structural (spacing/shadow/backdrop-filter), so none of
+        // them read inside a custom property's own value.
+        if (d.property.startsWith('--')) continue
         for (const rule of rulesToRun) {
-            if (isCustom && !rule.checksCustomProps) continue
-            if (rule.id === 'hex-color' && COLOR_EXEMPT_FILES.has(rel)) continue
-            if (!isCustom && !rule.props(d.property)) continue
+            if (!rule.props(d.property)) continue
             const detail = rule.check(d.value)
             if (detail !== null)
                 findings.push({

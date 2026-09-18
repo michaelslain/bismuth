@@ -1,0 +1,13 @@
+{
+  "note": "both entries are permanent exemptions the manifest schema cannot express per line, not debt: bareElement app/src/drawing/DrawingPage.tsx (the flagged <input> is a visually-hidden native file-picker trigger, not UI chrome -- no Field primitive applies to a hidden upload input) and bareElement app/src/bases/EditCardsModal.tsx (the flagged <span> is inside an innerHTML template-literal string the checker misreads as JSX, not a live Solid element). Regenerated on the ds-conformance integration branch at bc5ec20d, after task 23 + task 25 merged.",
+  "accepted": [
+    {
+      "check": "bareElement",
+      "path": "app/src/bases/EditCardsModal.tsx"
+    },
+    {
+      "check": "bareElement",
+      "path": "app/src/drawing/DrawingPage.tsx"
+    }
+  ]
+}
