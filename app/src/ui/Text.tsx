@@ -19,7 +19,9 @@ export type TextProps = {
     /** Text color: 'default' reads --fg, 'muted' --text-muted, 'faint' --faint. 'inherit'
      *  emits no color, leaving it to whatever ancestor rule already set it. */
     tone?: TextTone
-    /** Font weight (--fw-*). 'regular' (400) is the default and adds no class. */
+    /** Font weight (--fw-*). 'regular' (400) is the default; it still emits its own class
+     *  (font-weight inherits, so an unset weight would otherwise pick up a bold/medium
+     *  ancestor's weight instead of resetting to 400). */
     weight?: TextWeight
     /** The uppercase, tracked "section label" register (--ls-eyebrow) already hand-rolled
      *  per call site as DaemonList.module.css's .daemon-section-head and
@@ -39,7 +41,7 @@ function textClass(props: TextProps): string {
         styles.text,
         size !== 'inherit' ? styles[`text--${size}`] : '',
         tone !== 'inherit' ? styles[`text--${tone}`] : '',
-        weight !== 'regular' ? styles[`text--${weight}`] : '',
+        styles[`text--${weight}`],
         props.eyebrow ? styles['text--eyebrow'] : '',
         props.class,
     ]

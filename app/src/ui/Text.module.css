@@ -32,9 +32,10 @@
 .text--muted { color: var(--text-muted); }
 .text--faint { color: var(--faint); }
 
-/* ── weight (--fw-*) — 'regular' is unchanged: no font-weight class, since --fw-regular (400)
-   equals the initial/UA font-weight for p/span/div, so leaving it unset is computed-style
-   equivalent ── */
+/* ── weight (--fw-*) — font-weight INHERITS, so a Text rendered inside a bold/medium ancestor
+   (a button label, a heading row, a th) needs its own default pinned just like size/tone;
+   leaving 'regular' unset let it silently inherit the ancestor's weight instead of 400. ── */
+.text--regular { font-weight: var(--fw-regular); }
 .text--medium { font-weight: var(--fw-medium); }
 .text--bold { font-weight: var(--fw-bold); }
 
