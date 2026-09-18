@@ -2,7 +2,7 @@
 //
 // Pins the exact canonical-name count and guards against the two ways this list can silently rot:
 // a duplicate name (two entries collapsing to one registry key) and drift away from nerdGlyphs.ts
-// while that module still exists in the tree as the specimen's name source.
+// while that module still exists in the tree as the icon font's codepoint source.
 import { test, expect } from 'bun:test'
 import { ICON_NAMES } from './iconNames'
 import { NERD_GLYPHS } from './nerdGlyphs'

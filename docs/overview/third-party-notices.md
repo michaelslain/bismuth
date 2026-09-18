@@ -31,9 +31,9 @@ its own hand-authored `FALLBACK_ART` rather than an empty icon. `icon-manifest.j
 **No longer shipped or referenced by `<Icon>`.** Bismuth's interface icons used a subset of the
 Nerd Fonts symbols-only font from mid-2026 until the Phosphor migration above retired it —
 `app/src/icons/nerdGlyphs.ts` (the codepoint table this section describes) says so in its own
-header: *"registry.ts no longer imports this file."* It survives in the tree only because
-`app/src/icons/specimen/` — the decision record for the Phosphor move — still renders this era's
-glyphs in a side-by-side comparison column, via the real subset font below.
+header: *"registry.ts no longer imports this file."* The font itself is still bundled and still
+loaded by `app/src/styles/icons.css` (`--icon-font-stack`), and `nerdGlyphs.ts` remains its
+codepoint source (`app/scripts/build-icon-font.ts`), which is why both survive in the tree.
 
 - **Source**: <https://github.com/ryanoasis/nerd-fonts> (release `v3.5.0`, asset
   `NerdFontsSymbolsOnly.zip`, member `SymbolsNerdFontMono-Regular.ttf`)
@@ -52,8 +52,9 @@ producing `app/src/assets/fonts/symbols-nerd-font-mono.woff2` at ~11 KB. The out
 were unmodified — subsetting removes glyphs, it does not redraw them. The **Mono** variant was used
 so every glyph advanced exactly one cell. `app/src/assets/fonts/symbols-nerd-font-mono.json`
 records which release and which codepoints the committed file was built from. The font asset and
-`build-icon-font.ts` remain in the tree to serve the specimen comparison above; this notice is kept
-because that font file is still bundled and its attribution requirement still applies.
+`build-icon-font.ts` remain in the tree because `styles/icons.css` still loads the font
+(`--icon-font-stack`); this notice is kept because that font file is still bundled and its
+attribution requirement still applies.
 
 ## HackerNoon Pixel Icon Library (retired)
 
@@ -73,7 +74,7 @@ The two live icon scripts each name their output:
 | Script | Builds | Status |
 | --- | --- | --- |
 | `bun run icons:svg` | Phosphor SVG art + `icon-manifest.json` (`app/scripts/build-icon-svgs.ts`) | current, see [Phosphor Icons](#phosphor-icons) |
-| `bun run icons:font` | the Nerd Font subset woff2 (`app/scripts/build-icon-font.ts`) | still used by `app/src/styles/icons.css` and `icons/specimen/` |
+| `bun run icons:font` | the Nerd Font subset woff2 (`app/scripts/build-icon-font.ts`) | still used by `app/src/styles/icons.css` |
 
 This notice is kept as a historical record in case a reader is looking for why this era's assets no
 longer exist.

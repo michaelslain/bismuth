@@ -7,8 +7,8 @@
 // names to a set's own identifiers changes — see iconMap.ts for the current one.
 //
 // Deliberately its own module rather than reading nerdGlyphs.ts's keys at runtime: nerdGlyphs.ts
-// is now a RETIRED subsystem (kept only for icons/specimen/ and its own historical tests — see
-// nerdGlyphs.ts's header), and a live seam should not depend on a dead one. iconNames.test.ts
+// is now a RETIRED subsystem (kept only as the icon font's codepoint source and its own historical
+// tests — see nerdGlyphs.ts's header), and a live seam should not depend on a dead one. iconNames.test.ts
 // cross-checks this list against nerdGlyphs.ts's key set so the two cannot silently drift apart
 // while both still exist in the tree.
 //
