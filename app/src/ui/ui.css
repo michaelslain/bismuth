@@ -489,7 +489,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
 /* Serif crumb title (standalone calendar month, etc.). */
-.viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
+.viewbar .crumb b.crumb-serif { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
 /* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1): height 28 -> --h-control
    (24), radius 7px -> --r-0, tracking 0.03em -> --ls-label. `.active` used to fill (--surface-2 +
    a --border ring) — the same "selected state should not fill" defect .btn--text.btn--selected

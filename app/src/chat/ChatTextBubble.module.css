@@ -170,7 +170,7 @@
 }
 .chat-bubble :global(.bismuth-tag) {
     color: var(--accent);
-    font-family: var(--editor-font);
+    font-family: var(--ui-font-stack);
     font-size: var(--editor-font-size);
 }
 .chat-bubble img {
@@ -184,7 +184,7 @@
 .chat-bubble code,
 .chat-bubble pre,
 .chat-bubble pre code {
-    font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+    font-family: var(--ui-font-stack);
     font-size: var(--editor-font-size, 13.5px);
 }
 

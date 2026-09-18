@@ -227,7 +227,7 @@ function buildDecorations(state: EditorState): DecorationSet {
 // Monospace the revealed source, matching the editor's code font (same as ```query).
 const graphTheme = EditorView.theme({
     '.cm-graphblock-body': {
-        fontFamily: "'Monaspace Xenon', ui-monospace, monospace",
+        fontFamily: 'var(--ui-font-stack)',
         fontSize: 'calc(1em * var(--mono-scale, 0.85))',
     },
 })

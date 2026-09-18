@@ -2,19 +2,20 @@ import type { Component } from 'solid-js'
 import { For } from 'solid-js'
 import styles from './FontSpecimen.module.css'
 
-/** The prose face this app actually ships, declared in styles/cmu.css and consumed via
- *  --prose-font (styles/tokens.css). Repointed here 2026-08-29 when CMU Serif was chosen over
- *  Newsreader: leaving the old constant would have rendered the Georgia FALLBACK while the page
- *  still claimed to be specimening Newsreader — the package is uninstalled — which is the exact
- *  silent-fallback failure the previous comment warned about, just from the other direction.
- *  The family string must match styles/cmu.css verbatim or this page lies. */
-const PROSE = "'CMU Serif', Georgia, serif"
+/** The prose face this app actually ships, loaded via @fontsource-variable/lora (index.tsx) and
+ *  consumed via --prose-font (styles/tokens.css). Repointed here from CMU Serif: leaving the old
+ *  constant would have rendered the Georgia FALLBACK while the page still claimed to be
+ *  specimening CMU — the package is uninstalled — which is the exact silent-fallback failure
+ *  the previous comment warned about, just from the other direction. The family string must be
+ *  'Lora Variable', NOT bare 'Lora' — the package declares the former, and the latter resolves
+ *  nothing and falls silently through to Georgia. See the --prose-font comment in tokens.css. */
+const PROSE = "'Lora Variable', Lora, Georgia, serif"
 const MONO = "'Monaspace Xenon', ui-monospace, monospace"
 
-/* CMU Serif ships TWO real weights (400 and 700 — see styles/cmu.css). The old 200-800 ramp came
-   from Newsreader, a variable font with a continuous axis; keeping it here would render five
-   synthesised weights and present them as if the face had them. */
-const WEIGHTS = [400, 700] as const
+/* Lora Variable is a continuous 400-700 weight axis (see @fontsource-variable/lora/wght.css) —
+   unlike CMU Serif's two discrete static weights, so this ramp samples four stops across the
+   real axis instead of listing every weight the face happens to ship. */
+const WEIGHTS = [400, 500, 600, 700] as const
 
 const READ_SAMPLE =
     'The wikilink resolves by file name, not path, so two notes with the same title in ' +
@@ -28,36 +29,38 @@ const BODY_SAMPLE =
 const NUMERAL_SAMPLE = '0123456789 — 1,204.50 km · §9.2 · 27 Aug 2026 · £83.19'
 
 /**
- * A specimen page for the Newsreader variable font — NOT a reusable app component. It exists
+ * A specimen page for the Lora variable font — NOT a reusable app component. It exists
  * only so the font choice (note prose + chat message bodies, per the visual-unification audit
  * §9.1) can be judged in Storybook before any real surface consumes it. Nothing in `app/` renders
  * this; it is reachable only via its own story.
  *
- * Sections: prose at the two sizes note prose actually ships at (`--fs-read`/`--fs-body`, with
- * fallbacks matching their pre-token literals since this wave does not define those tokens yet),
- * the full 200–800 weight axis, italic, numeral rendering, and a same-text side-by-side against
- * the current mono face so the contrast this token is FOR is visible in one frame.
+ * Sections: prose at the two sizes note prose actually ships at (`--prose-font-size`, the real
+ * token note prose renders at, and `--fs-body` with its pre-token literal fallback since this
+ * wave does not define that token yet), the 400–700 weight axis, italic, numeral rendering, and
+ * a same-text side-by-side against the current mono face so the contrast this token is FOR is
+ * visible in one frame.
  */
 const FontSpecimen: Component = () => {
     return (
         <div class={styles.page}>
             <header class={styles.head}>
-                <h1 class={styles.title}>Newsreader — prose serif specimen</h1>
+                <h1 class={styles.title}>Lora — prose serif specimen</h1>
                 <p class={styles.meta}>
-                    @fontsource-variable/newsreader // variable weight 200–800 // italic // latin +
-                    latin-ext + vietnamese // self-hosted, no network fetch
+                    @fontsource-variable/lora // variable weight 400–700 // italic // latin +
+                    latin-ext + cyrillic + cyrillic-ext + vietnamese + math + symbols //
+                    self-hosted, no network fetch
                 </p>
             </header>
 
             <section class={styles.section}>
                 <h2 class={styles.label}>
-                    Note prose size — var(--fs-read, 15px)
+                    Note prose size — var(--prose-font-size)
                 </h2>
                 <p
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                     }}
                 >
                     {READ_SAMPLE}
@@ -80,7 +83,7 @@ const FontSpecimen: Component = () => {
             </section>
 
             <section class={styles.section}>
-                <h2 class={styles.label}>Weight axis, 200–800</h2>
+                <h2 class={styles.label}>Weight axis, 400–700</h2>
                 <div class={styles.weightRamp}>
                     <For each={WEIGHTS}>
                         {w => (
@@ -107,7 +110,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-style': 'italic',
                     }}
                 >
@@ -122,7 +125,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-variant-numeric': 'lining-nums',
                     }}
                 >
@@ -132,7 +135,7 @@ const FontSpecimen: Component = () => {
                     class={styles.prose}
                     style={{
                         'font-family': PROSE,
-                        'font-size': 'var(--fs-read, 15px)',
+                        'font-size': 'var(--prose-font-size)',
                         'font-variant-numeric': 'oldstyle-nums',
                     }}
                 >
@@ -147,13 +150,13 @@ const FontSpecimen: Component = () => {
                 <div class={styles.compareGrid}>
                     <div class={styles.compareCol}>
                         <div class={styles.compareTag}>
-                            Newsreader Variable (prose — proposed)
+                            Lora Variable (prose)
                         </div>
                         <p
                             class={styles.prose}
                             style={{
                                 'font-family': PROSE,
-                                'font-size': 'var(--fs-read, 15px)',
+                                'font-size': 'var(--prose-font-size)',
                             }}
                         >
                             {READ_SAMPLE}
@@ -167,7 +170,7 @@ const FontSpecimen: Component = () => {
                             class={styles.prose}
                             style={{
                                 'font-family': MONO,
-                                'font-size': 'var(--fs-read, 15px)',
+                                'font-size': 'var(--prose-font-size)',
                             }}
                         >
                             {READ_SAMPLE}

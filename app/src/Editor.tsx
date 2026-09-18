@@ -154,16 +154,16 @@ const editorTheme = EditorView.theme({
     // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
     // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
     // Line-height is a multiple of the app's row unit (--row-h, ui.css :root), NOT of the
-    // font size — editor.lineHeight (--prose-line-height) defaults to 1.5, so prose lines land
-    // on a 1.5x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
+    // font size — editor.lineHeight (--prose-line-height) defaults to 1.25, so prose lines land
+    // on a 1.25x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
-        // --prose-font (CMU Serif), NOT --editor-font. This is the ANSWERED monospace-scope
+        // --prose-font (the prose face), NOT --ui-font-stack. This is the ANSWERED monospace-scope
         // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
         // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
         // face is scoped to note prose and chat message bodies. The token existed and was loaded
         // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
         // rendering in Monaspace.
-        // Everything that is NOT prose is pulled back to --editor-font in Editor.css (headings,
+        // Everything that is NOT prose is pulled back to --ui-font-stack in Editor.css (headings,
         // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
         // overrides this whole scroller for config buffers, and its comment has always called
         // this declaration "editorTheme's prose font" — this makes that true.
@@ -236,11 +236,11 @@ const editorTheme = EditorView.theme({
 //
 // THE SIZE RESET IS THE POINT AND WAS MISSING. This theme used to override only the family and the
 // line-height, so a config buffer kept editorTheme's `--prose-font-size` — which is
-// `--editor-font-size * --prose-scale`, and --prose-scale (1.28) is an OPTICAL COMPENSATION FOR THE
-// SERIF: CMU Serif needs ~28% more nominal px to read the same size as the mono. Applied to
-// Monaspace it is not a compensation, it is just 28% too big, so `.settings` rendered at 17.28px
-// against 13.5px mono everywhere else in the app. A pull-back has to move the size with the family
-// or it only half-lands.
+// `--editor-font-size * --prose-scale`, and --prose-scale (1.04) is an OPTICAL COMPENSATION FOR THE
+// SERIF: Lora needs ~4% more nominal px to read the same size as the mono. Applied to
+// Monaspace it is not a compensation, it is just 4% too big, so `.settings` rendered at 14.04px
+// (17.28px under the previous 1.28 scale) against 13.5px mono everywhere else in the app. A
+// pull-back has to move the size with the family or it only half-lands.
 //
 // Row rhythm, not a bare ratio: `1.55` on the old oversized text happened to land near a note's
 // 27px row, so shrinking the text to 13.5px would have taken the leading down to ~21px with it and
@@ -248,7 +248,7 @@ const editorTheme = EditorView.theme({
 // while the text comes down to size.
 const codeFontTheme = EditorView.theme({
     '.cm-scroller': {
-        fontFamily: "'Monaspace Xenon', ui-monospace, monospace !important",
+        fontFamily: 'var(--ui-font-stack) !important',
         fontSize: 'var(--editor-font-size) !important',
         lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
     },
@@ -2003,7 +2003,7 @@ export function Editor(props: {
     createEffect(() => {
         const a = settings.appearance
         const e = settings.editor
-        void [a.editorFont, a.editorFontSize, a.monoScale, e.lineHeight] // tracked deps (CSS-reflow leaves)
+        void [a.proseFont, a.uiFont, a.editorFontSize, a.monoScale, e.lineHeight] // tracked deps (CSS-reflow leaves)
         const v = view
         if (!v) return
         const keep = v.scrollDOM.scrollTop

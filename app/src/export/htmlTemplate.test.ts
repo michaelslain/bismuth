@@ -1,7 +1,7 @@
 // app/src/export/htmlTemplate.test.ts
 import { test, expect, describe } from 'bun:test'
 import { wrapHtmlDocument, RULE_PX } from './htmlTemplate'
-import { DEFAULT_PALETTE } from './exportTheme'
+import { DEFAULT_PALETTE, PROSE_SCALE } from './exportTheme'
 import { renderMarkdown } from '../bases/markdown'
 
 describe('wrapHtmlDocument', () => {
@@ -173,7 +173,7 @@ describe('prose documents carry the app typography (settings-driven)', () => {
     const p = {
         ...DEFAULT_PALETTE.dark,
         font: 'UiMono, monospace',
-        proseFont: "'CMU Serif', Georgia, serif",
+        proseFont: "'Lora Variable', Lora, Georgia, serif",
         proseLeading: 1.5,
     }
     const doc = (
@@ -192,12 +192,12 @@ describe('prose documents carry the app typography (settings-driven)', () => {
         )
 
     test('a prose document uses the prose face, not the UI face', () => {
-        expect(doc()).toContain("'CMU Serif', Georgia, serif")
+        expect(doc()).toContain("'Lora Variable', Lora, Georgia, serif")
     })
 
     test('a non-prose document keeps the UI face (base/calendar exports unchanged)', () => {
         const out = doc(p, false)
-        expect(out).not.toContain("'CMU Serif'")
+        expect(out).not.toContain("'Lora Variable'")
         expect(out).toContain('UiMono, monospace')
         expect(out).toContain(`line-height: ${RULE_PX}px`)
     })
@@ -300,7 +300,7 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
     const p = {
         ...DEFAULT_PALETTE.dark,
         font: 'UiMono, monospace',
-        proseFont: "'CMU Serif', Georgia, serif",
+        proseFont: "'Lora Variable', Lora, Georgia, serif",
     }
     const pRule = (palette: typeof p, pt = 12): string => {
         const out = wrapHtmlDocument(
@@ -463,7 +463,7 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
         for (const efs of EDITOR_FONT_SIZES)
             for (const lh of LINE_HEIGHTS)
                 for (const pt of PT_SIZES) {
-                    const css = emit(pt, (18 * lh) / (efs * 1.28))
+                    const css = emit(pt, (18 * lh) / (efs * PROSE_SCALE))
                     for (const tag of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
                         const r = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
                         const size = Number(/font-size:\s*([\d.]+)px/.exec(r)![1])

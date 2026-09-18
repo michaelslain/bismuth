@@ -195,7 +195,7 @@ This produces four sections (Overdue in red-ish accent, This week and Later in a
 
 ### What It Is
 
-`bullets` is a plain `<ul>` list rendered in the editor font — it looks like the note's own `- item` prose. There is no table chrome: no column headers, no row borders, no per-row icons, no secondary label. Each row becomes a single `<li>` whose content is the first column rendered via `renderValue`. Group keys appear as small bold headings above each `<ul>`. The source comment in the code describes its intended use case: "reading-quote lists where the table UI is overkill."
+`bullets` is a plain `<ul>` list rendered in the UI/mono font (`var(--ui-font-stack)`) — it echoes a note's `- item` markup, but not its rendered face: an in-note bullet list is prose and paints in `--prose-font` (Lora), while this Bases view's list is chrome and stays on the mono face like every other Bases view. There is no table chrome: no column headers, no row borders, no per-row icons, no secondary label. Each row becomes a single `<li>` whose content is the first column rendered via `renderValue`. Group keys appear as small bold headings above each `<ul>`. The source comment in the code describes its intended use case: "reading-quote lists where the table UI is overkill."
 
 ### Base File Configuration
 
@@ -257,7 +257,7 @@ When `groupBy` is absent, a single group with `key: ""` is produced; the heading
 
 ### Styling Details
 
-- Container: `padding: 6px 6px 14px`, editor font (`var(--editor-font)`), 15 px base size.
+- Container: `padding: 6px 6px 14px`, UI/mono font (`var(--ui-font-stack)`), 15 px base size.
 - Group heading: `font-weight: 600`, `font-size: 1.05em`, `color: var(--fg)`, `letter-spacing: -0.01em`, `margin: 14px 0 5px` (first heading: `margin-top: 2px`).
 - List: real `<ul>` with `list-style: disc`, `padding-left: 1.5em`.
 - Items: `margin: 3px 0`, `line-height: 1.55`. Marker color: `var(--text-muted)`.

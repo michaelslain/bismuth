@@ -1,6 +1,6 @@
 // app/src/export/htmlTemplate.ts
 import { escapeHtml } from '../htmlEscape'
-import { DEFAULT_PALETTE } from './exportTheme'
+import { DEFAULT_PALETTE, PROSE_SCALE } from './exportTheme'
 import { headingSizes } from './types'
 import type { ThemePalette } from './types'
 import { CALLOUT_TYPES } from '../editor/callout'
@@ -88,10 +88,11 @@ function styles(
     // Half a rule of SEPARATION between two stacked formulas, split across the two margins,
     // which do not collapse on an inline-block. Whole px so every line box stays an integer.
     const katexGap = Math.round(rule / 4)
-    // The MONO size. Prose renders at --prose-scale (1.28) times the editor size for optical
-    // parity with the mono beside it, so anything pulled back to mono divides that out rather
-    // than inheriting the scaled size — which is the app's rule, not an approximation.
-    const editorPx = prose ? Math.round(bodySizePx / 1.28) : bodySizePx
+    // The MONO size. Prose renders at --prose-scale (see exportTheme.ts's PROSE_SCALE, measured
+    // 1.04) times the editor size for optical parity with the mono beside it, so anything pulled
+    // back to mono divides that out rather than inheriting the scaled size — which is the app's
+    // rule, not an approximation.
+    const editorPx = prose ? Math.round(bodySizePx / PROSE_SCALE) : bodySizePx
     const bodyFont = prose ? p.proseFont : p.font
     // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
     // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html

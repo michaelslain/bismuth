@@ -343,8 +343,8 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.proseFont` | `--prose-font` | `'Lora Variable', Lora, Georgia, serif` |
 | `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
@@ -391,12 +391,13 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
 in `Editor.tsx`. Default `1.5` → **27px**, not 18px: prose renders in
-the proportional serif face (`--prose-font`, ~16.9px effective size) now, and 18px of leading on that
-is a cramped 1.07 ratio — the old default was tuned for 13.5px MONO prose, before the serif face
-existed. `1.5` gives a 1.6 ratio, the normal range for serif body text, while staying a **rational
-multiple of the row unit** on purpose: two prose lines still span exactly three tree rows, so the
-"prose lands on the app's grid" property this token exists to protect survives — now as a 2:3
-relationship instead of 1:1, rather than an arbitrary one.
+the proportional serif face (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the
+measured `--prose-scale` (`1.04`) ≈ 14px, and 18px of leading on that would be a cramped 1.28 ratio —
+the old default was tuned for 13.5px MONO prose, before the serif face existed. `1.5` gives a loose
+~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a **rational multiple of the
+row unit** on purpose rather than tuned tight to the font size: two prose lines still span exactly
+three tree rows, so the "prose lands on the app's grid" property this token exists to protect
+survives — now as a 2:3 relationship instead of 1:1, rather than an arbitrary one.
 
 ### From `calendar.*`
 
@@ -415,9 +416,9 @@ relationship instead of 1:1, rather than an arbitrary one.
 
 ---
 
-## Editor & UI Fonts (EDITOR_FONTS / FONT_STACKS)
+## Editor & UI Fonts (MONO_FONTS / FONT_STACKS)
 
-The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.editorFont` is the **mono** face: everything in a note that is not prose (headings, code blocks and inline code, tables, frontmatter, math), plus the editor chrome. `appearance.uiFont` covers rail/tabs/tables/buttons/menus. Each independently picks one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
+The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.uiFont` is the **mono** face: all chrome (rail, tabs, buttons, menus, calendar chips) AND everything in a note that is not prose (code blocks and inline code, frontmatter, math, in-note tags) — config buffers (`.settings`, `*.yaml`) render entirely in it too. It picks one of the five Monaspace variants (`MONO_FONTS` in `app/src/settings.ts`), defaulting to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in the same file:
 
 | Setting value | CSS font stack | Notes |
 |---|---|---|
@@ -427,27 +428,27 @@ The interface is **one monospace family throughout**, with exactly one proportio
 | `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
 | `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
 
-`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--editor-font` receives `editorFont`'s stack, `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
+`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
 
 ### The prose face (`--prose-font`)
 
-Note prose (the CodeMirror surface) and chat message bodies render in a **proportional serif** rather than the mono stack. It is **not** a setting — there is no enum, no `.settings` key, and no user choice; it is three tokens in `app/src/styles/tokens.css`:
+Note prose (the CodeMirror surface), note headings, note tables, chat message bodies and the chat composer render in a **proportional serif** rather than the mono stack. It **is** a setting — `appearance.proseFont`, an enum of `Lora` (the default) plus the same five Monaspace variants (for an all-mono editor) — projected by `settingsCssVars.ts` into three CSS tokens:
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--prose-font` | `'CMU Serif', Georgia, serif` | The one proportional face — CMU Serif (Computer Modern, Knuth's LaTeX face). |
-| `--prose-scale` | `1.28` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height and `n` advance — it is not a constant that survives a face swap. |
+| `--prose-font` | `'Lora Variable', Lora, Georgia, serif` (default) | Resolved from `appearance.proseFont` via `FONT_STACKS`. `'Lora Variable'` is the family `@fontsource-variable/lora` actually declares — plain `'Lora'` resolves nothing and falls silently through to `Georgia`. |
+| `--prose-scale` | `1.04` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height (Lora Variable 50.00 vs. Monaspace Xenon 51.75 at 100px em) — it is not a constant that survives a face swap. |
 | `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
 
-The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--editor-font` in `Editor.css` and `ChatTranscript.module.css`.
+The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` in `Editor.css` and `chat/ChatTextBubble.module.css`.
 
-The family is declared in `app/src/styles/cmu.css` — four `@font-face` rules (400/700 × upright/italic) pointing at the `computer-modern` package's woff2 files — rather than importing that package's own stylesheet, which declares upright faces as `font-style: roman` (not a CSS value; browsers only render it via error recovery) and its "regular" at weight 500. CMU Serif ships **two real weights**, 400 and 700; anything else is a synthesised weight.
+The five Monaspace families are declared via `@fontsource` imports in `app/src/index.tsx`; Lora is declared via the `@fontsource-variable/lora` package. There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
 
-The family string in `--prose-font` must match `cmu.css` verbatim. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face (reading sizes, both weights, italic, lining vs. oldstyle numerals) and carries the same string — it lies rather than fails if the two drift apart.
+The family string in `--prose-font` must match what the chosen package actually declares. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere — this is the exact trap that let the old CMU-era stack go unnoticed for weeks. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face and carries the same string — it lies rather than fails if the two drift apart.
 
 The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body, and is unrelated to `--prose-scale`, which corrects in the other direction); the mono chrome needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
 
-**Adding a new font**: add it to `EDITOR_FONTS` in `settingsSchema.ts` AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
+**Adding a new font**: add it to `MONO_FONTS` (extends both `uiFont` and, via `PROSE_FONTS = ['Lora', ...MONO_FONTS]`, `proseFont`) or to `PROSE_FONTS` directly for a prose-only face, in both `settingsSchema.ts` and `settings.ts`, AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
 
 ---
 

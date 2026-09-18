@@ -25,7 +25,7 @@ import {
 import { taskDescStart } from './editor/taskComplete'
 import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
+import { expectProseFace, expectUiFace, expectEditorSize, expectBoundToUiFont, expectFamilyReallyLoaded } from './ui/_fontFace'
 import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
 import {
     insertDrawBlock,
@@ -249,8 +249,8 @@ const styleOf = (el: Element | null) => (el ? getComputedStyle(el) : null)
 const lineWith = (root: ParentNode, re: RegExp) =>
     [...root.querySelectorAll('.cm-line')].find(l => re.test(l.textContent ?? ''))
 
-/** ONE ROW RHYTHM. A note sets prose in CMU Serif and pulls code/frontmatter back to the mono
- *  face — but every one of those rows must still sit on the same leading, or a code fence reads
+/** ONE ROW RHYTHM. A note sets prose in the proportional face (`--prose-font`, Lora) and pulls
+ *  code/frontmatter back to the mono face — but every one of those rows must still sit on the same leading, or a code fence reads
  *  as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height: 1.5`,
  *  which put its rows at 20px inside a document whose every other row was 27px. Asserts the
  *  leading is shared and that mono is at the MONO size, not the serif's optically-compensated one.
@@ -298,9 +298,19 @@ export const MixedTypography: Story = {
         await expect(parseFloat(scroller.fontSize)).toBeGreaterThan(editorPx)
         // Extra cross-check, not the primary assertion: code and frontmatter agree with each other.
         await expect(styleOf(codeLine)!.fontSize).toBe(styleOf(fmLine)!.fontSize)
-        // Prose, headings included, is the proportional face; code is not.
-        await expect(scroller.fontFamily).toMatch(/CMU Serif/)
-        await expect(styleOf(canvasElement.querySelector('.cm-h1'))!.fontFamily).toMatch(/CMU Serif/)
+        // Prose, headings included, is the proportional face; code is not. Computed font-family
+        // returns the DECLARED STACK STRING, not whether the face ever loaded — a stack that
+        // silently fell through to the Georgia fallback would still match a family-name regex,
+        // which is exactly how "Storybook has been rendering prose in the Georgia fallback"
+        // went unnoticed for three weeks. Two checks instead: expectProseFace follows the LIVE
+        // token (so a repointed token is honored rather than a literal being re-pinned), and
+        // expectFamilyReallyLoaded proves the actual face resolved — document.fonts.check
+        // cannot: it reports true for a family that doesn't exist at all (the fallback is
+        // usable) and false for a registered-but-not-yet-laid-out webface, so it is green when
+        // Lora is absent and red when Lora is present. Measuring instead catches both.
+        expectProseFace(canvasElement.querySelector('.cm-scroller') as HTMLElement)
+        expectProseFace(canvasElement.querySelector('.cm-h1') as HTMLElement)
+        await expectFamilyReallyLoaded('Lora Variable')
         await expect(styleOf(codeLine)!.fontFamily).toMatch(/Monaspace/)
         // Tables are PROSE. Asserted against --prose-font rather than a literal family name — see
         // the story doc comment above.
@@ -610,7 +620,7 @@ A paragraph with **bold text**, a #demo-tag, and \`inline code\`.
  *  their font-family INLINE in livePreview.ts's EditorView.theme() rather than through the
  *  family-reset selector list, and were never added to the paired SIZE-reset list either — so
  *  all three silently inherited --prose-font-size (17.28px against the intended 13.5px, exactly
- *  the 1.28 --prose-scale optical compensation meant only for CMU Serif prose). The user's exact
+ *  the --prose-scale optical compensation meant only for prose). The user's exact
  *  report was the revealed "1. " on a numbered list.
  *
  *  Compares against the LIVE --editor-font-size token, never a hardcoded 13.5 — the size is a
@@ -786,11 +796,12 @@ const TAG_TYPOGRAPHY_TEXT = [
  *  (Editor.css) than the decoration does (livePreview.ts's theme). ChatView carries the other
  *  surface.
  *
- *  expectBoundToEditorFont, alongside expectEditorFace, is load-bearing here: --editor-font and
- *  --ui-font-stack both default to Monaspace Xenon, so a rule reverted to var(--ui-font-stack) —
- *  the exact site of the original drift — would still satisfy expectEditorFace's resolved-value
- *  comparison. Only repointing the token and confirming the element follows proves the rule is
- *  bound to the right one. */
+ *  expectBoundToUiFont, alongside expectUiFace, is load-bearing here: a rule that hardcoded the
+ *  literal 'Monaspace Xenon' instead of `var(--ui-font-stack)` — the exact site of the original
+ *  drift — would still satisfy expectUiFace's resolved-value comparison, since the default value
+ *  is the same string either way. Only repointing the TOKEN and confirming the element follows
+ *  proves the rule is a live var() reference, bound to the right one, rather than a literal that
+ *  happens to match today's default. */
 export const TagTypography: Story = {
     render: () => {
         setTransport(
@@ -828,9 +839,9 @@ export const TagTypography: Story = {
         const body = canvasElement.querySelectorAll<HTMLElement>('.cm-tag')
         await expect(body.length).toBeGreaterThan(0)
         for (const el of body) {
-            expectEditorFace(el)
+            expectUiFace(el)
             expectEditorSize(el)
-            expectBoundToEditorFont(el)
+            expectBoundToUiFont(el)
         }
 
         const inTable = canvasElement.querySelectorAll<HTMLElement>(
@@ -838,9 +849,9 @@ export const TagTypography: Story = {
         )
         await expect(inTable.length).toBeGreaterThan(0)
         for (const el of inTable) {
-            expectEditorFace(el)
+            expectUiFace(el)
             expectEditorSize(el)
-            expectBoundToEditorFont(el)
+            expectBoundToUiFont(el)
         }
 
         // The two paths must agree with EACH OTHER too, not merely each with the token —
@@ -910,7 +921,7 @@ export const TaskFields: Story = {
         const fields = canvasElement.querySelectorAll<HTMLElement>('.cm-task-field')
         await expect(fields.length).toBe(5)
         for (const el of fields) {
-            expectEditorFace(el)
+            expectUiFace(el)
             expectEditorSize(el)
             // The literal syntax IS the chip's content — a mark decorates, it never replaces.
             await expect(el.textContent).toMatch(/^\[.*\]$/)

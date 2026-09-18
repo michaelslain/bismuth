@@ -22,7 +22,7 @@ type Story = StoryObj<typeof meta>
 const TASK_CHECKBOX_CSS = `
   .cm-task-checkbox {
     display: inline-block;
-    font-family: var(--editor-font);
+    font-family: var(--ui-font-stack);
     text-indent: 0;
     white-space: nowrap;
     color: var(--text-muted);

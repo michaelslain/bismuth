@@ -20,13 +20,13 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
-// Same reasoning as above, for the app entry's Newsreader import (visual-unification wave 0,
-// §9.1 — the prose serif for note bodies + chat messages). Without this line here too,
-// FontSpecimen.stories.tsx — the ONE place this font is judged before any real surface consumes
-// it — would silently render its "Newsreader Variable" declarations against the Georgia fallback,
-// passing every visual check while proving nothing.
-import '@fontsource-variable/newsreader/wght.css'
-import '@fontsource-variable/newsreader/wght-italic.css'
+// Same reasoning as above, for the app entry's Lora import (visual-unification wave 0, §9.1 — the
+// prose serif for note bodies + chat messages). Without this line here too, FontSpecimen.stories.tsx
+// — the ONE place this font is judged before any real surface consumes it — would silently render
+// its "Lora Variable" declarations against the Georgia fallback, passing every visual check while
+// proving nothing.
+import '@fontsource-variable/lora/wght.css'
+import '@fontsource-variable/lora/wght-italic.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
@@ -81,13 +81,13 @@ applyTheme((DEFAULTS as any).appearance.theme)
 // That is not a cosmetic gap: it makes a story actively lie. ChatView's AskUserQuestion card
 // (`.chat-question-option { font: inherit }`) rendered its labels and descriptions in Times in the
 // catalog while being correct Monaspace in the app — a reviewer comparing them would "fix" a bug
-// that does not exist, or distrust the surface. Components that DO name a family (--ui-font-stack,
-// --editor-font) looked right, so the breakage was partial and easy to misread.
+// that does not exist, or distrust the surface. Components that DO name a family (--ui-font-stack)
+// looked right, so the breakage was partial and easy to misread.
 //
 // Mirrors `.app-shell`'s own declaration in App.css. Global, so no story has to re-solve it — the
 // same reason the theme tokens and the fake transport are installed here rather than per story.
 const appFont = document.createElement('style')
-appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }`
+appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }`
 document.head.appendChild(appFont)
 
 // ── Backend seam ──────────────────────────────────────────────────────────────

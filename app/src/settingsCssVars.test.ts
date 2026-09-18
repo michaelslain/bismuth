@@ -1,7 +1,7 @@
 // app/src/settingsCssVars.test.ts
 import { describe, expect, it } from 'bun:test'
 import { settingsToCssVars } from './settingsCssVars'
-import { DEFAULTS } from './settings'
+import { DEFAULTS, FONT_STACKS } from './settings'
 import { THEMES } from './themes'
 
 function withTheme(theme: string) {
@@ -21,12 +21,15 @@ describe('settingsToCssVars', () => {
             `${DEFAULTS.appearance.editorFontSize}px`,
         )
         expect(vars['--editor-font-size']).toMatch(/^\d+(\.\d+)?px$/)
-        expect(vars['--editor-font']).toBe(
-            "'Monaspace Xenon', ui-monospace, monospace",
-        ) // resolved through FONT_STACKS
         expect(vars['--ui-font-stack']).toBe(
             "'Monaspace Xenon', ui-monospace, monospace",
-        ) // resolved through FONT_STACKS
+        ) // resolved through FONT_STACKS, from appearance.uiFont
+        // The --editor-font alias is gone (deleted by Task 4): the emitted map must not carry
+        // the key at all, not just an empty/undefined value.
+        expect('--editor-font' in vars).toBe(false)
+        expect(vars['--prose-font']).toBe(
+            "'Lora Variable', Lora, Georgia, serif",
+        ) // resolved through FONT_STACKS, from appearance.proseFont
     })
 
     it('derives the color tokens from the default theme (ink)', () => {
@@ -45,10 +48,18 @@ describe('settingsToCssVars', () => {
         expect(vars['--accent-purple']).toBe(t.accentPalette[1])
     })
 
-    it('falls back to the raw font value when not a known stack key', () => {
+    it('falls back to the default mono stack when uiFont is not a known key', () => {
         const s = structuredClone(DEFAULTS)
-        s.appearance.editorFont = 'Comic Sans'
-        expect(settingsToCssVars(s)['--editor-font']).toBe('Comic Sans')
+        s.appearance.uiFont = 'Comic Sans'
+        const vars = settingsToCssVars(s)
+        expect(vars['--ui-font-stack']).toBe(FONT_STACKS['Monaspace Xenon'])
+        expect('--editor-font' in vars).toBe(false)
+    })
+
+    it('falls back to the default prose stack when proseFont is not a known key', () => {
+        const s = structuredClone(DEFAULTS)
+        s.appearance.proseFont = 'Comic Sans'
+        expect(settingsToCssVars(s)['--prose-font']).toBe(FONT_STACKS['Lora'])
     })
 
     it('maps appearance/ui sizing to px vars and passes CSS lengths through', () => {

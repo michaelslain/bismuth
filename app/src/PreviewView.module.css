@@ -122,7 +122,7 @@
   margin: 0;
   padding: var(--sp-5) var(--sp-6);
   box-sizing: border-box;
-  font-family: 'Monaspace Xenon', ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--fg);

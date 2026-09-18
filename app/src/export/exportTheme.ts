@@ -19,7 +19,7 @@ const DARK_SCOPE = DEFAULT_THEME // "ink"
 const LIGHT_SCOPE = 'paper'
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif'
-// appearance.editorFont's default, in the same shape FONT_STACKS gives it. NOT DEFAULT_FONT: that
+// appearance.uiFont's default, in the same shape FONT_STACKS gives it. NOT DEFAULT_FONT: that
 // is a sans-serif chrome fallback, and pointing the mono scoping at it rendered code and
 // frontmatter in Helvetica.
 const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
@@ -27,11 +27,18 @@ const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 // Mirrors app/src/styles/tokens.css (--prose-font, --prose-scale) and editor.lineHeight's schema
 // default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
 // same role DEFAULT_PALETTE plays for colour.
-const DEFAULT_PROSE_FONT = "'CMU Serif', Georgia, serif"
-// The app's defaults: --row-h 18px x editor.lineHeight 1.5 = 27px of leading on prose set at
-// editorFontSize 13.5 x --prose-scale 1.28 = 17.28px. 27 / 17.28 = 1.5625, "the normal range for
-// serif body text" that editor.lineHeight's own schema doc cites.
-const DEFAULT_PROSE_LEADING = 27 / (13.5 * 1.28)
+const DEFAULT_PROSE_FONT = "'Lora Variable', Lora, Georgia, serif"
+// Mirrors styles/tokens.css's --prose-scale for Lora and MUST be kept in sync with it. Measured
+// (Task 1, canvas x-height at 100px em): Monaspace Xenon 51.75, Lora Variable 50.00 -> 1.04.
+// Advance-width parity gave 1.02 and disagreed; x-height governs apparent size at a glance, so it
+// wins. 1.04 replaces an earlier 1.28, which was CMU Serif's x-height ratio from before the swap
+// to Lora and does not describe this font pairing.
+export const PROSE_SCALE = 1.04
+// The app's defaults: --row-h 18px x editor.lineHeight 1.25 = 22.5px of leading on prose set at
+// editorFontSize 13.5 x --prose-scale PROSE_SCALE. 22.5 / (13.5 * PROSE_SCALE), "the normal range
+// for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured
+// value above.
+const DEFAULT_PROSE_LEADING = 22.5 / (13.5 * PROSE_SCALE)
 
 // The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved
 // heading sizes. The ramp is applied to a document's own body size by headingSizes() — see

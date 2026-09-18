@@ -1,9 +1,20 @@
 // app/src/export/exporters.test.ts
 import { test, expect, describe } from 'bun:test'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { unlink } from 'node:fs/promises'
 import { renderExport, renderPreview } from './exporters'
 import { defaultExportOptions } from './options'
 import { THEMES } from '../themes'
+import { DOC_FACES, faceCss } from './fontFaceCss'
 import type { ExportDeps, ExportOptions } from './types'
+
+// The real Lora Variable file bytes, off disk — via Bun's `with { type: 'file' }` import
+// attribute (the SAME mechanism cli/src/docFontCss.ts uses for its headless build; the app's own
+// docFontCss.ts instead relies on Vite's `?inline`, a browser-only transform bun test can't run,
+// which is why the task 6 embedding test below builds its own docFontCss dep rather than
+// importing app/src/export/docFontCss.ts directly).
+import loraNormalPath from '@fontsource-variable/lora/files/lora-latin-wght-normal.woff2' with { type: 'file' }
 
 const opts = (o: Partial<ExportOptions>): ExportOptions => ({
     ...defaultExportOptions(),
@@ -631,5 +642,133 @@ describe('preview shows page separation (sheet per section)', () => {
     test('a base preview never gets sheet wrappers', async () => {
         const r = await renderPreview('Reading.md', 'html', deps())
         expect(r.previewHtml).not.toContain('bismuth-preview-page')
+    })
+})
+
+// Task 6: the export pipeline embeds Lora Variable (replacing the earlier static serif). docFontCss.ts's own
+// header comment records the exact shape of the bug this guards against — the export NAMED a
+// prose family in its font stack but shipped no file for it, so every export silently fell
+// through the stack to Georgia. A test that only checks the `@font-face` STRING is present would
+// have passed on that broken build too (the string was always there; only the bytes were
+// missing) — this is exactly the mistake this plan already made once with `document.fonts.check`,
+// which reports true for a family that resolved to nothing. So this proves resolution the only
+// way that can't be faked headlessly: register the bytes the export actually embedded with a real
+// font engine and MEASURE a rendered string through the export's own font-family stack, comparing
+// it against the same string through Georgia alone.
+//
+// The font engine is @napi-rs/canvas (core/src/drawing/export.ts already rasterises ink with it),
+// but it is a dependency of the `core` workspace, not `app` — and app's own bun test cannot
+// resolve an undeclared package (confirmed directly: importing it at the top of this file makes
+// bun test fail the whole file with "Cannot find module"). Rather than add it to
+// app/package.json (outside this task's file list, and node_modules here is a symlink this task
+// was told not to `bun install`), the measurement runs in a short-lived subprocess whose script
+// lives OUTSIDE every workspace (a tmp file) — the one place Bun's resolver reaches the
+// already-installed package without a workspace declaration.
+describe('the embedded Lora Variable face actually resolves (task 6)', () => {
+    test('a prose run measures a different width through the real embedded face than through Georgia alone', async () => {
+        const loraFace = DOC_FACES.find(
+            f => f.family === 'Lora Variable' && f.style === 'normal',
+        )
+        expect(loraFace).toBeDefined()
+
+        // Build the SAME kind of docFontCss the headless (cli) export path builds for real —
+        // real file bytes off disk, base64-inlined via the shared faceCss() — since the app's own
+        // docFontCss.ts relies on Vite's `?inline`, which is a browser-only transform bun test
+        // cannot exercise (confirmed: under plain `bun test` that import resolves to a bare cache
+        // file PATH string, not inlined base64, so calling it directly here would silently embed
+        // garbage and pass anyway).
+        const bytes = await Bun.file(loraNormalPath).arrayBuffer()
+        const src = `data:font/woff2;base64,${Buffer.from(bytes).toString('base64')}`
+        const docFontCss = async () => faceCss([{ ...loraFace!, src }])
+
+        const r = await renderExport('a/note.md', 'html', deps({ docFontCss }))
+        const html = enc.decode(r.bytes)
+
+        // Acceptance: a real @font-face block for Lora Variable carrying a data: URI, and the
+        // prose stack naming it FIRST (a browser only ever reaches Georgia if this entry misses).
+        expect(html).toContain("@font-face{font-family:'Lora Variable'")
+        expect(html).toMatch(/src:url\(data:font\/woff2;base64,/)
+        expect(html).toContain("'Lora Variable', Lora, Georgia, serif")
+
+        // Pull the bytes back out of the RENDERED document (not the ones handed in above) so the
+        // measurement proves the whole pipeline, not just the fixture.
+        const m =
+            /@font-face\{font-family:'Lora Variable';font-style:normal;font-weight:[^;]+;font-display:swap;src:url\((data:font\/woff2;base64,[^)]+)\)/.exec(
+                html,
+            )
+        expect(m).not.toBeNull()
+        const embeddedDataUri = m![1]!
+        const embeddedBytes = Buffer.from(
+            embeddedDataUri.split(',')[1]!,
+            'base64',
+        )
+        expect(embeddedBytes.length).toBeGreaterThan(1000) // a real font file, not a stub
+
+        const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const fontFile = join(tmpdir(), `task6-lora-${stamp}.woff2`)
+        const scriptFile = join(tmpdir(), `task6-measure-${stamp}.ts`)
+        await Bun.write(fontFile, embeddedBytes)
+        // The full stack, exactly as the export names it, so the fallback semantics (does the
+        // renderer actually try the NEXT entry when the first is unregistered?) are exercised the
+        // same way a real browser's font matching would, not just a bare family name in
+        // isolation. Registers under the SAME family name the export declares, then measures
+        // once before and once after — before registering, 'Lora Variable' genuinely doesn't
+        // exist, so the stack must fall through to Georgia and measure IDENTICALLY to it. That is
+        // the original bug's exact shape, reproduced on purpose as a sanity check the real
+        // assertion depends on.
+        await Bun.write(
+            scriptFile,
+            `import { createCanvas, GlobalFonts } from '@napi-rs/canvas'
+const PANGRAM = 'The quick brown fox jumps over the lazy dog 0123456789'
+const stack = "16px 'Lora Variable', Lora, Georgia, serif"
+const canvas = createCanvas(10, 10)
+const ctx = canvas.getContext('2d')
+ctx.font = stack
+const beforeRegistering = ctx.measureText(PANGRAM).width
+ctx.font = '16px Georgia'
+const georgiaWidth = ctx.measureText(PANGRAM).width
+const bytes = await Bun.file(process.argv[2]).arrayBuffer()
+const key = GlobalFonts.register(Buffer.from(bytes), 'Lora Variable')
+ctx.font = stack
+const loraWidth = ctx.measureText(PANGRAM).width
+console.log(JSON.stringify({ beforeRegistering, georgiaWidth, loraWidth, registered: key !== null }))
+`,
+        )
+        try {
+            const proc = Bun.spawn(
+                [process.execPath, 'run', scriptFile, fontFile],
+                { stdout: 'pipe', stderr: 'pipe' },
+            )
+            const [stdout, stderr, exitCode] = await Promise.all([
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+                proc.exited,
+            ])
+            if (exitCode !== 0) {
+                throw new Error(
+                    `font measurement subprocess exited ${exitCode}: ${stderr}`,
+                )
+            }
+            const result = JSON.parse(stdout) as {
+                beforeRegistering: number
+                georgiaWidth: number
+                loraWidth: number
+                registered: boolean
+            }
+
+            expect(result.registered).toBe(true)
+            // Sanity: unregistered, the export's own stack collapses onto Georgia exactly — the
+            // original bug's shape. If this ever failed, the proof below would be meaningless.
+            expect(result.beforeRegistering).toBe(result.georgiaWidth)
+            // The proof: registering the REAL bytes this export embeds changes the measured
+            // width of the export's own font stack, and it no longer collapses onto Georgia's.
+            expect(result.loraWidth).toBeGreaterThan(0)
+            expect(result.loraWidth).not.toBe(result.georgiaWidth)
+        } finally {
+            await Promise.all([
+                unlink(fontFile).catch(() => {}),
+                unlink(scriptFile).catch(() => {}),
+            ])
+        }
     })
 })
