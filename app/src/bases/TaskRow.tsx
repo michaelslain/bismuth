@@ -2,6 +2,7 @@ import { Show, type Component, type JSX } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { todayISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
+import Text from '../ui/Text'
 import TaskCheck from './TaskCheck'
 import { checkStatus, isOverdue, PRIORITY_MARK } from './taskDisplay'
 import styles from './TaskRow.module.css'
@@ -24,7 +25,11 @@ function renderTaskText(text: string): JSX.Element[] {
             const label = display ?? target.split('/').pop() ?? target
             const path = target.endsWith('.md') ? target : `${target}.md`
             out.push(
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     class={styles.taskLink}
                     onClick={e => {
                         e.stopPropagation()
@@ -34,14 +39,18 @@ function renderTaskText(text: string): JSX.Element[] {
                     }}
                 >
                     {label}
-                </span>,
+                </Text>,
             )
         } else if (m[2] !== undefined) {
             // [label](url) -> external links open in a new tab; note paths open in-app
             const url = m[3]
             const external = /^https?:\/\//.test(url)
             out.push(
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     class={styles.taskLink}
                     title={url}
                     onClick={e => {
@@ -58,11 +67,21 @@ function renderTaskText(text: string): JSX.Element[] {
                     }}
                 >
                     {m[2]}
-                </span>,
+                </Text>,
             )
         } else if (m[5] !== undefined) {
             if (m[4]) out.push(m[4]) // preserve the whitespace captured before the tag
-            out.push(<span class={styles.taskTag}>#{m[5]}</span>)
+            out.push(
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles.taskTag}
+                >
+                    #{m[5]}
+                </Text>,
+            )
         } else if (m[6] !== undefined) {
             out.push(<strong>{m[6]}</strong>)
         } else if (m[7] !== undefined) {
@@ -124,37 +143,71 @@ const TaskRow: Component<TaskRowProps> = props => {
                 onToggle={e => props.onToggle(props.row, e)}
                 onSetStatus={e => props.onSetStatus(props.row, e)}
             />
-            <span class={`${styles.taskBody} ${done() ? styles.done : ''}`}>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={`${styles.taskBody} ${done() ? styles.done : ''}`}
+            >
                 {renderTaskText(desc())}
                 <Show when={priority() && priority() !== 'none'}>
-                    <span
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         class={styles.taskField}
                         title={`${priority()} priority`}
                     >
                         {PRIORITY_MARK[priority()!]}
-                    </span>
+                    </Text>
                 </Show>
                 <Show when={start()}>
-                    <span class={styles.taskField}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.taskField}
+                    >
                         {formatDateField('start', start()!)}
-                    </span>
+                    </Text>
                 </Show>
                 <Show when={scheduled()}>
-                    <span class={styles.taskField}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.taskField}
+                    >
                         {formatDateField('scheduled', scheduled()!)}
-                    </span>
+                    </Text>
                 </Show>
                 <Show when={due()}>
-                    <span
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         class={`${styles.taskField} ${overdue() ? styles.overdue : ''}`}
                     >
                         {formatDateField('due', due()!)}
-                    </span>
+                    </Text>
                 </Show>
                 <Show when={recurrence()}>
-                    <span class={styles.taskField}>[{recurrence()}]</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.taskField}
+                    >
+                        [{recurrence()}]
+                    </Text>
                 </Show>
-            </span>
+            </Text>
         </div>
     )
 }
