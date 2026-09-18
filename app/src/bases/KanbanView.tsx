@@ -1283,17 +1283,19 @@ export function KanbanView(props: {
                                                     />
                                                 )}
                                             </For>
-                                            <Swatch
-                                                size="sm"
-                                                color="var(--surface-2, var(--panel))"
-                                                label="Auto"
+                                            <PlainButton
+                                                class={styles.kbSwatchAuto}
+                                                title="Auto"
+                                                aria-label="Auto"
                                                 onClick={() =>
                                                     void setColColor(
                                                         group().key,
                                                         null,
                                                     )
                                                 }
-                                            />
+                                            >
+                                                Auto
+                                            </PlainButton>
                                         </div>
                                     </Show>
 
