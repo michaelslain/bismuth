@@ -143,7 +143,7 @@
 .cards-chiprow { display: inline-flex; gap: var(--sp-3); flex-wrap: wrap; }
 .cards-bulk-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: var(--sp-6); min-height: 0; padding-bottom: var(--sp-6); }
 .cards-bulk-input { display: flex; flex-direction: column; min-height: 0; }
-.cards-bulk-input label { color: var(--faint); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: var(--sp-4); }
+.cards-bulk-lab { letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: var(--sp-4); }
 /* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + sizing. */
 .cards-bulk-input textarea.cards-bulk-textarea {
   flex: 1; min-height: 240px; resize: none;

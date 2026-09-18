@@ -440,11 +440,25 @@ export function EditCardsModal(props: {
                         <div class={styles['cards-del']} />
                     </div>
                     <div class={styles['cards-addrow']}>
-                        <span class={styles['cards-lefthint']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-lefthint']}
+                        >
                             Type above, then{' '}
-                            <span class={styles['key']}>&crarr;</span> to add —
-                            keeps going for fast entry.
-                        </span>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['key']}
+                            >
+                                &crarr;
+                            </Text>{' '}
+                            to add — keeps going for fast entry.
+                        </Text>
                         <IconTextButton
                             icon="Plus"
                             iconSize={14}
@@ -462,7 +476,15 @@ export function EditCardsModal(props: {
             <Show when={mode() === 'bulk'}>
                 <div class={styles['cards-bulkwrap']}>
                     <div class={styles['cards-bulk-toolbar']}>
-                        <span class={styles['cards-lab']}>Separator</span>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-lab']}
+                        >
+                            Separator
+                        </Text>
                         <div class={styles['cards-chiprow']}>
                             <TextButton
                                 size="sm"
@@ -492,13 +514,26 @@ export function EditCardsModal(props: {
                             </For>
                         </div>
                         <div class={styles['sp']} />
-                        <span class={styles['cards-hint']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-hint']}
+                        >
                             One card per line // front ‹sep› back
-                        </span>
+                        </Text>
                     </div>
                     <div class={styles['cards-bulk-grid']}>
                         <div class={styles['cards-bulk-input']}>
-                            <label>Paste your cards</label>
+                            <Text
+                                as="span"
+                                size="micro"
+                                tone="faint"
+                                class={styles['cards-bulk-lab']}
+                            >
+                                Paste your cards
+                            </Text>
                             <TextInput
                                 multiline
                                 class={styles['cards-bulk-textarea']}
@@ -512,11 +547,25 @@ export function EditCardsModal(props: {
                         </div>
                         <div class={styles['cards-bulk-preview']}>
                             <div class={styles['cards-pvhead']}>
-                                <span class={styles['cards-lab']}>Preview</span>
-                                <span class={styles['cards-cnt']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['cards-lab']}
+                                >
+                                    Preview
+                                </Text>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['cards-cnt']}
+                                >
                                     {parsed().length}{' '}
                                     {parsed().length === 1 ? 'card' : 'cards'}
-                                </span>
+                                </Text>
                             </div>
                             <div class={styles['cards-pvlist']}>
                                 <Show
