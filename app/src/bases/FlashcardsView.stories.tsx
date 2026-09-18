@@ -9,6 +9,7 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
+import { settings, setSettings } from '../settings'
 
 const meta = {
     title: 'Bases/FlashcardsView',
@@ -412,5 +413,116 @@ export const CardEditModalOpen: Story = {
         // actually see and hit, not the one on the face turned away behind it.
         const front = canvasElement.querySelector('.flip-front') as HTMLElement
         await userEvent.click(await within(front).findByLabelText('Edit this card'))
+    },
+}
+
+// ── Keyboard shortcuts are rebindable settings (FlashcardsView.tsx's `onKey` + `GRADE_KEYS`,
+// matched via matchesKeybinding against settings.keybindings — never a hardcoded key literal).
+// These two stories are the pair that actually proves it, not just that keys "work": the first
+// exercises the REAL keyboard path at the shipped defaults (every story above reveals by
+// clicking `.flip-front`, which never reaches onKey's flip branch at all), the second rebinds
+// both flip and grade-hard and proves the OLD combos go dead while the NEW ones take over — the
+// half that catches an onKey a rebind never reaches.
+
+/** Defaults, via the keyboard: Space (flashcard-flip) reveals, then '1' (flashcard-hard)
+ *  grades and advances. No basePath, so — same as `Default`/`CramMode` above — `persisted` is
+ *  false and grading never awaits a row write. */
+export const KeyboardDefaultsRevealAndGrade: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        // Not revealed yet — the grade row only renders when `revealed()` is true.
+        expect(
+            canvasElement.querySelector('[class*="grade-row"]'),
+        ).toBeNull()
+
+        const before = canvasElement.querySelector(
+            '.flip-front',
+        ) as HTMLElement
+        const shownBefore = before.textContent ?? ''
+
+        await userEvent.keyboard(' ')
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelector('[class*="grade-row"]'),
+            ).not.toBeNull()
+        })
+
+        await userEvent.keyboard('1')
+        await waitFor(() => {
+            const next = canvasElement.querySelector(
+                '.flip-front',
+            ) as HTMLElement | null
+            const nextText = next ? next.textContent ?? '' : null
+            expect(nextText === null || nextText !== shownBefore).toBe(true)
+        })
+    },
+}
+
+/** Rebinds flashcard-flip to 'f' and flashcard-hard to 'j', proves the OLD combos (Space, '1')
+ *  now do nothing, and that the NEW combos do exactly what Space/'1' used to. Lowercase letters
+ *  only — `userEvent.keyboard` presses Shift for an uppercase letter, and matching is EXACT on
+ *  modifiers, so a capital combo here would silently never match. `settings` is a module-level
+ *  store shared by every story in the run (same pattern as Editor.stories.tsx's rebind stories),
+ *  so the rebind is restored in `finally` regardless of assertion outcome. */
+export const RebindingKeysReplacesTheOldOnes: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const restoreFlip = settings.keybindings['flashcard-flip']
+        const restoreHard = settings.keybindings['flashcard-hard']
+        setSettings('keybindings', 'flashcard-flip', 'f')
+        setSettings('keybindings', 'flashcard-hard', 'j')
+        try {
+            // The OLD flip combo (Space) is now inert. A fixed wait, not a poll: the assertion
+            // is that nothing ever happens, so there is no true condition to poll for (same
+            // idiom as Editor.stories.tsx's TheOldComboStopsFiringAfterARebind).
+            await userEvent.keyboard(' ')
+            await new Promise(resolve => setTimeout(resolve, 200))
+            expect(
+                canvasElement.querySelector('[class*="grade-row"]'),
+            ).toBeNull()
+
+            // The NEW flip combo ('f') reveals.
+            const before = canvasElement.querySelector(
+                '.flip-front',
+            ) as HTMLElement
+            const shownBefore = before.textContent ?? ''
+            await userEvent.keyboard('f')
+            await waitFor(() => {
+                expect(
+                    canvasElement.querySelector('[class*="grade-row"]'),
+                ).not.toBeNull()
+            })
+
+            // The OLD grade combo ('1') is now inert — same card, still revealed.
+            await userEvent.keyboard('1')
+            await new Promise(resolve => setTimeout(resolve, 200))
+            const stillFront = canvasElement.querySelector(
+                '.flip-front',
+            ) as HTMLElement
+            expect(stillFront.textContent ?? '').toBe(shownBefore)
+
+            // The NEW grade combo ('j') grades hard and advances.
+            await userEvent.keyboard('j')
+            await waitFor(() => {
+                const next = canvasElement.querySelector(
+                    '.flip-front',
+                ) as HTMLElement | null
+                const nextText = next ? next.textContent ?? '' : null
+                expect(nextText === null || nextText !== shownBefore).toBe(
+                    true,
+                )
+            })
+        } finally {
+            setSettings('keybindings', 'flashcard-flip', restoreFlip)
+            setSettings('keybindings', 'flashcard-hard', restoreHard)
+        }
     },
 }

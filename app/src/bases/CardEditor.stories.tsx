@@ -10,9 +10,11 @@
 // that only shows a spinner would be verifying that failure mode, not the editor.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { EditorView } from '@codemirror/view'
 import { CardEditor } from './CardEditor'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { api } from '../api'
+import { settings, setSettings } from '../settings'
 
 const meta = {
     title: 'Bases/CardEditor',
@@ -133,4 +135,89 @@ export const EmptyNote: Story = {
             />
         </Frame>
     ),
+}
+
+/** Proves CardEditor's `toggle-bold` binding is genuinely settings-driven end to end, not a
+ *  hardcoded Mod-B that happens to match the default: the default combo fires, a rebind swaps
+ *  which combo fires WITHOUT remounting the view (`cardKeymap` is a `settingsKeymapCompartment`,
+ *  reconfigured live), and — the half that actually catches a broken helper — the OLD combo goes
+ *  completely inert afterward. A helper that only ADDS the new binding alongside the old one
+ *  would still pass the "new combo works" checks below but fail the "old combo stops" ones. */
+export const RebindMovesToggleBold: Story = {
+    render: () => (
+        <Frame>
+            <CardEditor
+                path="projects/Rebind Bold Test.md"
+                title="Rebind Bold Test"
+                mode="body"
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const content = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('.cm-content')
+            if (!el) throw new Error('editor not mounted yet')
+            return el
+        })
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        const pressModB = () =>
+            content.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'b',
+                    code: 'KeyB',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        const pressModY = () =>
+            content.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'y',
+                    code: 'KeyY',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+
+        // Default: Mod-B on an empty caret wraps it in `**` markers (markdownFormat.ts's
+        // toggleWrap with an empty selection).
+        pressModB()
+        await waitFor(() => expect(liveView().state.doc.toString()).toBe('****'))
+
+        // Reset the buffer so the checks below aren't reading residue from this one.
+        const view = liveView()
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length } })
+        await expect(view.state.doc.toString()).toBe('')
+
+        // `settings` is a module-level store shared by every story in the run — restore it
+        // no matter how the checks below turn out.
+        const KB_TOGGLE_BOLD = 'toggle-bold'
+        const previous = settings.keybindings[KB_TOGGLE_BOLD]
+        setSettings('keybindings', KB_TOGGLE_BOLD, 'Mod+Y')
+        try {
+            // Let the compartment's createEffect reconfigure before probing it.
+            await new Promise(r => setTimeout(r, 150))
+
+            // OLD combo: now inert. If it still wrapped the caret, the helper never actually
+            // removed the old binding.
+            pressModB()
+            await new Promise(r => setTimeout(r, 150))
+            await expect(liveView().state.doc.toString()).toBe('')
+
+            // NEW combo: runs the same command, live, with no remount.
+            pressModY()
+            await waitFor(() =>
+                expect(liveView().state.doc.toString()).toBe('****'),
+            )
+        } finally {
+            setSettings('keybindings', KB_TOGGLE_BOLD, previous)
+        }
+    },
 }

@@ -235,6 +235,161 @@ test('DEFAULTS.keybindings materializes every catalog combo', () => {
     }
 })
 
+// --- Task 2: the 25 new rebindable-keys ids, on top of the original 24. ---
+
+test('KEYBINDING_CATALOG has exactly 49 entries (24 original + 25 rebindable-keys)', () => {
+    expect(KEYBINDING_CATALOG.length).toBe(49)
+})
+
+test('every KEYBINDING_CATALOG id is unique', () => {
+    const ids = KEYBINDING_CATALOG.map(k => k.id)
+    expect(new Set(ids).size).toBe(ids.length)
+})
+
+test('every KEYBINDING_CATALOG doc is non-empty', () => {
+    for (const spec of KEYBINDING_CATALOG) {
+        expect(spec.doc.trim().length).toBeGreaterThan(0)
+    }
+})
+
+test('every KEYBINDING_CATALOG default is syntactically parseable', () => {
+    // core has no frontend imports (see core/src/keybindings.ts's header), so this
+    // test cannot import Task 1's app/src/keybindings.ts parseCombo and must not —
+    // this is a structural re-check of the same "+"-delimited grammar documented at
+    // the top of core/src/keybindings.ts: split on ',' for alternatives, then on '+'
+    // for modifiers-then-key; a combo parses when that second split yields at least
+    // one non-empty token (parseCombo treats the final token as the key even when it
+    // is not a recognized modifier word, e.g. a bare "Tab" or "1").
+    function altParses(alt: string): boolean {
+        return (
+            alt
+                .split('+')
+                .map(p => p.trim())
+                .filter(Boolean).length > 0
+        )
+    }
+    // No known exceptions: every alternative of every default must parse. (A
+    // controller ruling on 2026-09-17 corrected graph-zoom-in's `'=, +'` and
+    // graph-zoom-out's `'-, _'` — a bare `+` is unparseable under this "+"-delimited
+    // grammar, and Shift is matched EXACTLY so a bare `_`/`+` never fires for an event
+    // carrying shiftKey — to `'=, Shift+=, Plus'` / `'-, Shift+-'`, the same pattern
+    // the existing `zoom-in` entry already uses. This assertion is what should have
+    // caught that, so it carries no carve-out.)
+    for (const spec of KEYBINDING_CATALOG) {
+        const alts = spec.default
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+        expect(alts.length).toBeGreaterThan(0)
+        for (const alt of alts) {
+            expect(altParses(alt)).toBe(true)
+        }
+    }
+})
+
+test('the 25 new ids are present with their exact specified defaults', () => {
+    const kb = objectFields(SETTINGS_SCHEMA.keybindings)
+    const expected: Record<string, string> = {
+        'open-completion': 'Ctrl+Space, Mod+Shift+Space',
+        'accept-completion': 'Tab',
+        indent: 'Tab',
+        outdent: 'Shift+Tab',
+        'toggle-bold': 'Mod+B',
+        'toggle-italic': 'Mod+I',
+        'chat-send': 'Enter, Mod+Enter',
+        'chat-stop': 'Escape',
+        'chat-history-prev': 'ArrowUp',
+        'chat-history-next': 'ArrowDown',
+        'undo-delete': 'Mod+Z',
+        'delete-selection': 'Delete, Backspace, Mod+Delete, Mod+Backspace',
+        'flashcard-flip': 'Space',
+        'flashcard-hard': '1',
+        'flashcard-good': '2',
+        'flashcard-easy': '3',
+        'graph-reset-view': 'Escape',
+        'graph-focus-node': 'Z, Shift+Z',
+        'graph-zoom-in': '=, Shift+=, Plus',
+        'graph-zoom-out': '-, Shift+-',
+        'ink-undo': 'Mod+Z',
+        'ink-redo': 'Mod+Shift+Z',
+        'exit-draw-mode': 'Escape',
+        'ui-dismiss': 'Escape',
+        'ui-confirm': 'Enter',
+    }
+    expect(Object.keys(expected).length).toBe(25)
+    for (const [id, combo] of Object.entries(expected)) {
+        expect(kb[id]).toBeDefined()
+        expect(kb[id].default).toBe(combo)
+        expect(kb[id].doc).toBeTruthy()
+    }
+})
+
+test('new keybinding defaults collide only where the plan says they deliberately should (same-surface repeats)', () => {
+    // Surface is NOT a field on KeybindingSpec (id/label/default/doc only) — this
+    // grouping mirrors the id/default/surface table in the plan
+    // (.claude/plans/2026-09-17-rebindable-keys.md, Task 2's own interface block)
+    // purely for this test. Parenthetical activation conditions in that table
+    // ("(while streaming)", "(hovered node, else reset)", "(at first/last visual
+    // line)") are stripped: they describe WHEN a surface's own binding fires, not a
+    // second surface, so they are not part of the grouping key.
+    const SURFACES: Record<string, string[]> = {
+        'open-completion': [
+            'note editor',
+            '.settings',
+            'card editor',
+            'table-cell editor',
+            'chat composer',
+        ],
+        'accept-completion': ['note editor', 'card editor'],
+        indent: ['note editor', 'card editor', 'markdown field'],
+        outdent: ['note editor', 'card editor', 'markdown field'],
+        'toggle-bold': ['card editor', 'cell editor', 'note editor'],
+        'toggle-italic': ['card editor', 'cell editor', 'note editor'],
+        'chat-send': ['chat composer'],
+        'chat-stop': ['chat composer'],
+        'chat-history-prev': ['chat composer'],
+        'chat-history-next': ['chat composer'],
+        'undo-delete': ['file tree'],
+        'delete-selection': ['file tree'],
+        'flashcard-flip': ['flashcards view'],
+        'flashcard-hard': ['flashcards view'],
+        'flashcard-good': ['flashcards view'],
+        'flashcard-easy': ['flashcards view'],
+        'graph-reset-view': ['graph renderer'],
+        'graph-focus-node': ['graph renderer'],
+        'graph-zoom-in': ['graph renderer'],
+        'graph-zoom-out': ['graph renderer'],
+        'ink-undo': ['ink overlay', 'page ink', 'preview annotations'],
+        'ink-redo': ['ink overlay', 'page ink', 'preview annotations'],
+        'exit-draw-mode': ['ink overlay', 'page ink'],
+        'ui-dismiss': ['every transient widget'],
+        'ui-confirm': ['every transient widget'],
+    }
+    // The one deliberate same-surface repeat the plan calls out: Tab is bound to both
+    // accept-completion and indent, on the note editor and card editor surfaces (they
+    // are mutually exclusive at runtime — Tab accepts an open completion popup, else
+    // indents — not a real ambiguity).
+    const ALLOWED = new Set(['note editor:Tab', 'card editor:Tab'])
+    const bySurface = new Map<string, Map<string, string[]>>()
+    for (const [id, surfaces] of Object.entries(SURFACES)) {
+        const spec = KEYBINDING_CATALOG.find(k => k.id === id)
+        if (!spec) throw new Error(`SURFACES references unknown id "${id}"`)
+        for (const surface of surfaces) {
+            if (!bySurface.has(surface)) bySurface.set(surface, new Map())
+            const byDefault = bySurface.get(surface)!
+            if (!byDefault.has(spec.default)) byDefault.set(spec.default, [])
+            byDefault.get(spec.default)!.push(id)
+        }
+    }
+    for (const [surface, byDefault] of bySurface) {
+        for (const [combo, ids] of byDefault) {
+            if (ids.length > 1) {
+                expect(ALLOWED.has(`${surface}:${combo}`)).toBe(true)
+            }
+        }
+    }
+})
+
 test('properties section is an empty object schema (the registry placeholder)', () => {
     expect(SETTINGS_SCHEMA.properties.type).toEqual({
         kind: 'object',

@@ -45,6 +45,7 @@ import {
 import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
 import type { DocEditorHandle } from '../milkdown/milkdownEditor'
+import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import styles from './CardEditModal.module.css'
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */
@@ -360,10 +361,10 @@ export function CardEditModal(props: {
                             onInput={e => setTitleDraft(e.currentTarget.value)}
                             onBlur={commitTitle}
                             onKeyDown={e => {
-                                if (e.key === 'Enter') {
+                                if (isConfirmKey(e)) {
                                     e.preventDefault()
                                     e.currentTarget.blur()
-                                } else if (e.key === 'Escape') {
+                                } else if (isDismissKey(e)) {
                                     setTitleDraft(
                                         titleOf(props.row, props.titleCol),
                                     )

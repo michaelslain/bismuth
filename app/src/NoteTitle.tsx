@@ -14,6 +14,7 @@ import { api } from './api'
 import { pushToast } from './Toast'
 import { deriveTitle, renamedPath } from './noteTitleOps'
 import { flushEditorByPath } from './editorRegistry'
+import { isDismissKey, isConfirmKey } from './ui/widgetKeys'
 import styles from './NoteTitle.module.css'
 
 export function NoteTitle(props: {
@@ -168,11 +169,11 @@ export function NoteTitle(props: {
                 onKeyDown={e => {
                     // Enter commits (renames) rather than inserting a newline — the title
                     // is a single logical string that merely wraps visually.
-                    if (e.key === 'Enter') {
+                    if (isConfirmKey(e)) {
                         e.preventDefault()
                         inputRef?.blur()
                     } // commit via blur
-                    else if (e.key === 'Escape') {
+                    else if (isDismissKey(e)) {
                         revert()
                         inputRef?.blur()
                     }

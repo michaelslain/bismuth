@@ -30,6 +30,8 @@ import { mockIPC, clearMocks } from '@tauri-apps/api/mocks'
 import { FileTree } from './FileTree'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { settings, setSettings } from './settings'
+import { toasts } from './toastStore'
 import { SETTINGS_FILE } from './tabIds'
 import type { TreeEntry } from '../../core/src/graph'
 import type { NativeDragDetail } from './nativeDrop'
@@ -356,6 +358,251 @@ export const NativeOsDropUpload: Story = {
             expect(uploads.some(u => u.target.includes('archive'))).toBe(false)
         } finally {
             clearMocks()
+        }
+    },
+}
+
+
+/** Task 7's #44 regression guard. CodeMirror's own `historyKeymap` sets `preventDefault` but not
+ *  `stopPropagation` on Mod-z/Mod-Shift-z, so a REDO keystroke still bubbles to this window-level
+ *  listener after CodeMirror has already handled it. Before the `matchesKeybinding` migration this
+ *  listener matched Mod-Shift-Z too, because `.toLowerCase()` folds the shifted `"Z"` back to `"z"`
+ *  regardless of Shift — silently eating the redo as a (usually no-op) "restore last deleted file"
+ *  whenever focus wasn't on an editable element. `matchesKeybinding` matches modifiers EXACTLY, so
+ *  `undo-delete`'s default `Mod+Z` does not match a `shiftKey: true` event — this story proves that
+ *  by deleting a file and confirming Cmd+Shift+Z does NOT bring it back (only Cmd+Z, proven above,
+ *  does). It fails against any implementation that folds Shift back into a bare key comparison. */
+export const ShiftUndoDoesNotRestore: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        fireEvent.click(await canvas.findByText(/Housing/), { metaKey: true })
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'Delete',
+                code: 'Delete',
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => expect(canvas.queryByText(/Housing/)).toBeNull())
+
+        // A real shifted Mod+Z reports an UPPERCASE key — faithfully reproduced here, not "Z" typed
+        // as a stand-in for "shift held".
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'Z',
+                code: 'KeyZ',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+            }),
+        )
+        // No positive signal to await for a guard that must do nothing — give the (mocked, in-
+        // memory) restore round trip, which resolves in a couple of microtasks, ample room to have
+        // shown up if the guard had failed.
+        await new Promise(r => setTimeout(r, 100))
+        expect(canvas.queryByText(/Housing/)).toBeNull()
+    },
+}
+
+/** Task 7: a rebind of `undo-delete` takes effect immediately (`FileTree` reads
+ *  `settings.keybindings['undo-delete']` fresh on every keydown, never a value captured at mount)
+ *  and the OLD combo stops working — the third acceptance case (a rebind "moves" the shortcut). */
+export const RebindingUndoDeleteMovesIt: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const restore = settings.keybindings['undo-delete']
+        setSettings('keybindings', 'undo-delete', 'Mod+Shift+R')
+        try {
+            fireEvent.click(await canvas.findByText(/Housing/), {
+                metaKey: true,
+            })
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Delete',
+                    code: 'Delete',
+                    bubbles: true,
+                }),
+            )
+            await waitFor(() => expect(canvas.queryByText(/Housing/)).toBeNull())
+
+            // The OLD combo (Mod+Z) no longer restores.
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'z',
+                    code: 'KeyZ',
+                    metaKey: true,
+                    bubbles: true,
+                }),
+            )
+            await new Promise(r => setTimeout(r, 100))
+            expect(canvas.queryByText(/Housing/)).toBeNull()
+
+            // The NEW combo (Mod+Shift+R) does.
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'r',
+                    code: 'KeyR',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                }),
+            )
+            await waitFor(() => canvas.getByText(/Housing/))
+        } finally {
+            // The settings store is module-level and shared by every story in the run.
+            setSettings('keybindings', 'undo-delete', restore)
+        }
+    },
+}
+
+/** Task 7's acceptance case (1): the default `undo-delete` combo (Mod+Z) restores the last
+ *  deleted file. Selection is established the same harness-supported way `MultiSelected` does —
+ *  a Cmd-click, never a plain click. A plain click COLLAPSES any selection to a single active
+ *  file with `selected().size === 0`, so the subsequent Delete becomes a silent no-op — exactly
+ *  why the previous attempt at this story went red: nothing was ever deleted, so there was
+ *  nothing on the undo stack for Mod+Z to restore. Deliberately one row, not `MultiSelected`'s
+ *  two: `undoLastDelete` (FileTree.tsx) pops exactly ONE entry off the LIFO undo stack per
+ *  keydown, so a two-row delete would need two Mod+Z presses to fully round-trip — asserting both
+ *  rows back after a single dispatched keydown would test a press count this story never sends.
+ *  The row's absence is asserted right after Delete, BEFORE Mod+Z runs at all, so a future no-op
+ *  delete fails loudly here instead of being masked by an unrelated restore path.
+ *
+ *  `undo-delete` is pinned to its literal default ('Mod+Z') for the duration, same defensive
+ *  shape `RebindingUndoDeleteMovesIt` already uses — `settings.ts` seeds the store by merging
+ *  `readCache(SETTINGS_CACHE_KEY)` (an actual browser `localStorage` blob) over DEFAULTS, and
+ *  that storage persists across every story and every `verify` run against this same long-lived
+ *  Storybook tab. Assuming the ambient binding was still the shipped default (rather than pinning
+ *  it) is exactly the kind of unchecked assumption this story exists to avoid. */
+export const UndoDeleteRestoresFile: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const restore = settings.keybindings['undo-delete']
+        setSettings('keybindings', 'undo-delete', 'Mod+Z')
+        // Query the runtime `data-ft-path` hook, never rendered text — the label can be split
+        // across elements, which is exactly what made a text matcher miss a row that was
+        // genuinely there.
+        const housingRow = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-ft-path="Housing.md"]',
+            )
+        try {
+            const housing = await waitFor(() => {
+                const el = housingRow()
+                if (!el) throw new Error('Housing.md row not rendered yet')
+                return el
+            })
+            fireEvent.click(housing, { metaKey: true })
+            // Confirm the selection actually landed before relying on it — the whole prior
+            // failure was an assumption exactly like this one going unchecked.
+            await waitFor(() =>
+                expect(
+                    canvasElement.querySelectorAll('[class*="selected"]')
+                        .length,
+                ).toBe(1),
+            )
+
+            // `onKey` lives on `window`, but it is a real keydown listener, not a synthetic-only
+            // seam — focus a row first so the event bubbles up to it the way a real keypress
+            // would, rather than firing on `window` itself.
+            const row = canvasElement.querySelector<HTMLElement>('[data-ft-path]')!
+            row.focus()
+
+            // The delete this story dispatches pushes its own toast (`Deleted 1 items`) via
+            // `pushToast`, right after `FileTree.tsx` populates the undo stack — that push is
+            // the only observable signal that the delete has actually COMMITTED, as opposed to
+            // merely disappeared from the row list (`optimisticRemove` runs the row's removal
+            // instantly, well before the `api.del` round trip resolves and undo becomes
+            // possible). Snapshot the toast ids already in flight so a lingering toast from an
+            // earlier story in the same run can't be mistaken for this one.
+            const toastIdsBefore = new Set(toasts().map(t => t.id))
+
+            row.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Delete',
+                    code: 'Delete',
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            // The intermediate state: the delete actually happened, proven before undo is
+            // even tried. The measured round trip runs ~1.8s under load, so give it real room.
+            await waitFor(() => expect(housingRow()).toBeNull(), {
+                timeout: 3000,
+            })
+
+            // Wait for the real commit signal, not the row's already-true absence. This story's
+            // `render` never mounts `<ToastHost>` (that lives near the app root, in `App.tsx`),
+            // so the toast never reaches the DOM/canvas here — `toasts()` is the same Solid
+            // signal `ToastHost` would render from, read directly from `toastStore.ts`. Without
+            // this wait, Mod+Z below can fire while `doDeleteMany`'s `api.del` round trip is
+            // still outstanding, i.e. before `setUndoStack` has run — `undoLastDelete` then finds
+            // an empty stack and silently no-ops, which is the exact race that made this story
+            // flake under load.
+            await waitFor(
+                () => {
+                    const committed = toasts().some(
+                        t => !toastIdsBefore.has(t.id) && /Deleted/.test(t.message),
+                    )
+                    if (!committed)
+                        throw new Error('delete has not committed yet (no fresh toast)')
+                },
+                { timeout: 3000 },
+            )
+
+            // The delete above re-renders the row list (one fewer child), which can drop DOM
+            // focus even though `row` itself stays mounted (it is never the deleted node) —
+            // re-focus it so this keydown bubbles the same way the first one did.
+            row.focus()
+            row.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'z',
+                    code: 'KeyZ',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            // Measured restore round trip runs ~2.5s under load.
+            await waitFor(() => expect(housingRow()).not.toBeNull(), {
+                timeout: 4000,
+            })
+        } finally {
+            setSettings('keybindings', 'undo-delete', restore)
         }
     },
 }

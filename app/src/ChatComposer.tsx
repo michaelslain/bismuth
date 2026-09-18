@@ -31,6 +31,7 @@ import {
 } from '@codemirror/autocomplete'
 import { markdownEditingExtensions } from './editor/cellEditorExtensions'
 import { wrapSelection } from './editor/wrapSelection'
+import { settingsKeymapCompartment } from './editor/settingsKeymap'
 import { settings } from './settings'
 import { api } from './api'
 import type { NoteCandidate } from './editor/wikilink'
@@ -111,8 +112,10 @@ export interface ChatComposerProps {
     /** Clipboard paste (image intake) — ChatView's `onComposerPaste`. Returns nothing; never consumes
      *  text paste, so pasting markdown lands in the doc normally. */
     onPaste: (e: ClipboardEvent) => void
-    /** Delegated keydown for the composer's OWN keys (Enter=send, Shift+Enter=newline, Escape=stop,
-     *  slash-popover nav, ArrowUp/Down=prompt-history recall at a boundary). Returns true when it fully
+    /** Delegated keydown for the composer's OWN keys (defaults: Enter=send, Shift+Enter=newline,
+     *  Escape=stop, ArrowUp/Down=prompt-history recall at a boundary — chat-send/chat-stop/
+     *  chat-history-prev/chat-history-next are `.settings.keybindings` combos, not hardcoded literals;
+     *  slash-popover nav stays hardcoded). Returns true when it fully
      *  handled the event so CodeMirror stops — false to let CodeMirror handle it (a plain newline,
      *  ordinary typing/caret movement). NOT called for keys the vault autocomplete popup owns while it's
      *  open (those go straight to CodeMirror). `boundary` reports whether the caret sits on the
@@ -131,6 +134,16 @@ export function ChatComposer(props: ChatComposerProps) {
     let host!: HTMLDivElement
     let view: EditorView | undefined
     const placeholderComp = new Compartment()
+    // `open-completion` (default 'Ctrl+Space, Mod+Shift+Space') is a plain CodeMirror binding with no
+    // external state to consult — unlike chat-send/chat-stop/chat-history-*, which classifyComposerKey
+    // decides from the parent's own state and so aren't wired here — so it goes straight into a live
+    // settings-driven keymap. Two default alternatives because macOS steals Ctrl+Space for the
+    // input-source switcher whenever more than one input source is enabled; both must keep working
+    // after a rebind, which `settingsKeymapCompartment` gives for free (one CM binding per
+    // comma-separated alternative, reconfigured in place — no view rebuild — on every settings change).
+    const openCompletionKeymap = settingsKeymapCompartment([
+        { id: 'open-completion', run: startCompletion },
+    ])
 
     onMount(() => {
         view = new EditorView({
@@ -232,11 +245,12 @@ export function ChatComposer(props: ChatComposerProps) {
                     // Basic editing + history at default precedence (enterKeymap in the shared stack owns Enter
                     // for list continuation; the domEventHandler above owns plain-Enter=send).
                     keymap.of([
-                        { key: 'Ctrl-Space', run: startCompletion },
                         ...closeBracketsKeymap,
                         ...defaultKeymap,
                         ...historyKeymap,
                     ]),
+                    // open-completion, settings-driven (see the compartment built above).
+                    openCompletionKeymap.extension,
                     EditorView.lineWrapping,
                     composerTheme,
                     placeholderComp.of(cmPlaceholder(props.placeholder())),
@@ -248,6 +262,7 @@ export function ChatComposer(props: ChatComposerProps) {
                 ],
             }),
         })
+        openCompletionKeymap.attach(view)
         props.onReady({
             focus: () => view?.contentDOM.focus(),
             scrollIntoView: () => host?.scrollIntoView({ block: 'nearest' }),

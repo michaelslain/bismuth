@@ -10,7 +10,11 @@ import {
     type CompletionSource,
 } from '@codemirror/autocomplete'
 import { syntaxTree } from '@codemirror/language'
-import { completionDisplayConfig, completionTheme } from './completionDisplay'
+import {
+    completionDisplayConfig,
+    completionNavKeymap,
+    completionTheme,
+} from './completionDisplay'
 import { Prec, type Extension } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import {
@@ -321,11 +325,13 @@ export function memoryRefSource(
 
 // A line that is exactly `??` is the SRS multi-reversed flashcard separator (core/src/srs/parser.ts
 // matches `l.trim() === "??"`). Typing `??`↵ is how you AUTHOR one — but our picker opens on the
-// bare `??`, and CodeMirror's completionKeymap binds Enter to `acceptCompletion` at Prec.highest,
-// so Enter would silently insert a memory slug instead of the newline the user wanted, breaking an
-// existing feature. This guard runs first (Prec.highest, registered BEFORE `autocompletion()` so it
-// wins the tie), closes the popup, and returns FALSE so Enter falls through to its normal handler
-// and still inserts the newline. Any other line (`??alp`↵) is a real pick and is left alone.
+// bare `??`, and `completionNavKeymap` (completionDisplay.ts — our hand-rebuilt replacement for
+// CodeMirror's disabled default completion keymap) binds Enter to `acceptCompletion` at
+// Prec.highest, so Enter would silently insert a memory slug instead of the newline the user
+// wanted, breaking an existing feature. This guard runs first (Prec.highest, registered BEFORE
+// `completionNavKeymap` so it wins the tie), closes the popup, and returns FALSE so Enter falls
+// through to its normal handler and still inserts the newline. Any other line (`??alp`↵) is a real
+// pick and is left alone.
 const srsSeparatorEnterGuard = Prec.highest(
     keymap.of([
         {
@@ -640,8 +646,10 @@ export function taskCompletion(): Extension {
     return [
         autocompletion({
             ...completionDisplayConfig,
+            defaultKeymap: false, // see completionNavKeymap's doc comment
             override: [taskSource()],
         }),
+        completionNavKeymap,
         completionTheme,
     ]
 }
@@ -711,11 +719,12 @@ export function vaultCompletion(opts: {
 }): Extension {
     const getMemories = opts.getMemories
     return [
-        // BEFORE autocompletion(): both keymaps sit at Prec.highest, so extension order breaks the
-        // tie and this guard must be consulted before CM's Enter→acceptCompletion binding.
+        // BEFORE completionNavKeymap: both sit at Prec.highest, so extension order breaks the
+        // tie and this guard must be consulted before its Enter→acceptCompletion binding.
         ...(getMemories ? [srsSeparatorEnterGuard] : []),
         autocompletion({
             ...completionDisplayConfig,
+            defaultKeymap: false, // see completionNavKeymap's doc comment
             override: [
                 // frontmatter-position sources (gated by inFrontmatter)
                 propertyKeySource(opts.getSchema, opts.inFrontmatter),
@@ -744,6 +753,7 @@ export function vaultCompletion(opts: {
                 emojiSource(),
             ],
         }),
+        completionNavKeymap,
         wikilinkAutoTrigger,
     ]
 }

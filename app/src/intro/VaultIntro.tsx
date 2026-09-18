@@ -53,6 +53,7 @@ import {
 import { settingsToCssVars, setCssVars } from '../settingsCssVars'
 import { DEFAULTS } from '../settings'
 import { isTauri } from '../nativeMenu'
+import { isDismissKey } from '../ui/widgetKeys'
 import WordmarkHero from './WordmarkHero'
 import Lockup from './Lockup'
 import TermPanel, { DAEMON_LINES, AGENT_LINES } from './TermPanel'
@@ -260,13 +261,16 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     })
 
     const onKey = (e: KeyboardEvent) => {
+        // ArrowLeft/ArrowRight stay hardcoded — paging through a slideshow is spatial
+        // navigation, not a rebindable command. Escape IS the intro's skip, so it reads
+        // through the shared dismiss key.
         if (e.key === 'ArrowRight') {
             e.preventDefault()
             next()
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault()
             prev()
-        } else if (e.key === 'Escape') {
+        } else if (isDismissKey(e)) {
             e.preventDefault()
             skip()
         }

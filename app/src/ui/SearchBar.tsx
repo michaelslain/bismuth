@@ -3,13 +3,15 @@ import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
 import { searchBarClass, searchBarInputClass } from './buttonClass'
+import { isConfirmKey } from './widgetKeys'
 import './ui.css'
 
 export type SearchBarProps = {
     value: string
     onInput: (value: string) => void
     placeholder?: string
-    /** Convenience: called on Enter. Ignored if `onKeyDown` is provided (use that for full key handling). */
+    /** Convenience: called on the confirm key (Enter by default, settings.keybindings['ui-confirm']).
+     *  Ignored if `onKeyDown` is provided (use that for full key handling). */
     onEnter?: () => void
     /** Full keydown passthrough on the input — for list-navigation search boxes (arrows/escape/enter). Takes precedence over `onEnter`. */
     onKeyDown?: (e: KeyboardEvent) => void
@@ -65,7 +67,7 @@ function SearchBar(props: SearchBarProps) {
                 onInput={e => local.onInput(e.currentTarget.value)}
                 onKeyDown={e => {
                     if (local.onKeyDown) local.onKeyDown(e)
-                    else if (e.key === 'Enter') local.onEnter?.()
+                    else if (isConfirmKey(e)) local.onEnter?.()
                 }}
             />
             {local.children}

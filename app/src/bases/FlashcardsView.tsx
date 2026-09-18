@@ -19,6 +19,7 @@ import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
+import Kbd from '../ui/ascii/Kbd'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
 import Heading from '../ui/Heading'
@@ -26,6 +27,9 @@ import styles from './Flashcards.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { todayISO } from '../../../core/src/dates'
+import { settings } from '../settings'
+import { matchesKeybinding } from '../keybindings'
+import type { KeybindingId } from '../../../core/src/keybindings'
 
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (Solid client-only code, Solid client-only code). Import
@@ -46,15 +50,16 @@ import {
 } from './flashcardsQueue'
 export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir }
 
-/** Grade → digit shown on the key badge / bound to the number keys (1-3). */
+/** Grade → keybinding id, matched via `matchesKeybinding` and shown on the key badge
+ *  (`settings.keybindings[id]`) so a rebind changes both the match and the display. */
 const GRADE_KEYS: {
     response: 'hard' | 'good' | 'easy'
-    key: string
+    id: KeybindingId
     cls: string
 }[] = [
-    { response: 'hard', key: '1', cls: 'hard' },
-    { response: 'good', key: '2', cls: 'good' },
-    { response: 'easy', key: '3', cls: 'easy' },
+    { response: 'hard', id: 'flashcard-hard', cls: 'hard' },
+    { response: 'good', id: 'flashcard-good', cls: 'good' },
+    { response: 'easy', id: 'flashcard-easy', cls: 'easy' },
 ]
 
 /** Everything the deck's contribution to the view bar reads, as ACCESSORS. Plain values would be
@@ -492,8 +497,10 @@ export function FlashcardsView(props: {
         </div>
     )
 
-    // ── Keyboard: Space reveals, 1/2/3 grade. Ignored while the edit modal is
-    // open or focus is in a text field, so it never fights typing. ──────────
+    // ── Keyboard: flashcard-flip reveals, flashcard-hard/good/easy grade — all
+    // rebindable via settings.keybindings (core/src/keybindings.ts), matched via
+    // matchesKeybinding. Ignored while the edit modal is open or focus is in a
+    // text field, so it never fights typing. ──────────────────────────────────
     const onKey = (e: KeyboardEvent) => {
         if (editing() || editingCard()) return
         const el = e.target as HTMLElement | null
@@ -504,13 +511,15 @@ export function FlashcardsView(props: {
         )
             return
         if (!current()) return
-        if (e.code === 'Space') {
+        if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
             if (!revealed()) setRevealed(true)
             return
         }
         if (revealed()) {
-            const g = GRADE_KEYS.find(x => x.key === e.key)
+            const g = GRADE_KEYS.find(x =>
+                matchesKeybinding(e, settings.keybindings[x.id]),
+            )
             if (g) {
                 e.preventDefault()
                 void grade(g.response)
@@ -821,11 +830,11 @@ export function FlashcardsView(props: {
                                             <span class={styles['g-name']}>
                                                 {g.response}
                                             </span>
-                                            <span class="asc-kbd">
-                                                <span class="asc-key">
-                                                    {g.key}
-                                                </span>
-                                            </span>
+                                            <Kbd
+                                                combo={
+                                                    settings.keybindings[g.id]
+                                                }
+                                            />
                                         </button>
                                     )}
                                 </For>

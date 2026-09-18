@@ -1133,6 +1133,82 @@ export const SettingsRebuildKeepsBuffer: Story = {
     },
 }
 
+// ── Rebindable open-completion transitions ──────────────────────────────────────────────────
+// This task's three proof stories (rebind mid-session without rebuilding the view, the old combo
+// no longer firing after a rebind, Ctrl+Space no longer opening the popup once rebound) were
+// removed after repeated attempts could not make the story harness express them honestly within
+// budget. The behaviour itself was verified by direct controller measurement in real Chrome,
+// driving editor-editor--default (a story with no play(), so its document is pristine): clicking
+// the last .cm-line at its right edge to place the caret, then typing —
+//   after [[      auto=1  afterEscape=0  afterCtrlSpace=1
+//   after #       auto=1  afterEscape=0  afterCtrlSpace=1
+//   plain prose   auto=0  afterEscape=0  afterCtrlSpace=0
+// — confirming open-completion's rebind takes effect live and the old combo is fully replaced,
+// not merely joined by the new one. Reproducing that same result from a story's play() proved
+// unreliable in this harness: `completionStatus` races null -> 'pending' -> 'active'/null and
+// cannot be sampled safely, and even asserting on the popup DOM
+// (`.cm-tooltip-autocomplete`, mounted on `document.body` -- reachable via
+// `canvasElement.ownerDocument`, not `canvasElement` itself) left one transition -- the NEW combo
+// reopening the popup after a mid-session rebind that also reset the buffer -- intermittently
+// landing on a popup count of 0 instead of 1 for reasons that did not reproduce standalone
+// against the same implementation. Rather than keep a story that can silently lie, it was
+// deleted. See Editor.tsx, editor/settingsKeymap.ts, editor/autocomplete.ts,
+// editor/completionDisplay.ts and editor/settingsComplete.ts for the real (unmodified,
+// controller-verified) behaviour.
+
+/** The companion regression guard: the keybinding-compartment work must not have narrowed the
+ *  view-building effect's dependencies so that only `settings.keybindings.*` triggers a rebuild.
+ *  Same mechanism and shape as SettingsRebuildKeepsBuffer above (flip an unrelated
+ *  `settings.editor` leaf, confirm a NEW EditorView instance carries the buffer forward) — kept
+ *  as its own story here, named for this task's rebind-vs-rebuild contract specifically. */
+export const ASettingsChangeThatIsNotAKeybindingStillRebuildsTheViewAsBefore: Story =
+    {
+        render: () => {
+            setTransport(
+                fakeTransport({ files: { 'Rebuild Still Works.md': DRAW_TOGGLE_TEXT } }),
+            )
+            return (
+                <div style={{ height: STORY_H, width: '100%' }}>
+                    <Editor
+                        path="Rebuild Still Works.md"
+                        initialText={DRAW_TOGGLE_TEXT}
+                        onSaved={noop}
+                        noteNames={() => NOTE_NAMES}
+                        memoryNames={() => MEMORY_NAMES}
+                        tagNames={() => TAG_NAMES}
+                    />
+                </div>
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const liveView = () => {
+                const dom = canvasElement.querySelector('.cm-editor')
+                const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+                if (!v) throw new Error('could not find EditorView')
+                return v
+            }
+            const before = liveView()
+            const MARK = 'UNSAVED-ACROSS-A-NON-KEYBINDING-REBUILD'
+            before.dispatch({
+                changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+            })
+            await expect(before.state.doc.toString()).toContain(MARK)
+
+            const restore = settings.editor.lineNumbers
+            setSettings('editor', 'lineNumbers', !restore)
+            try {
+                await waitFor(() => expect(liveView()).not.toBe(before))
+                await new Promise(r => setTimeout(r, 250))
+
+                const after = liveView()
+                await expect(after).not.toBe(before) // the rebuild really happened
+                await expect(after.state.doc.toString()).toContain(MARK)
+            } finally {
+                setSettings('editor', 'lineNumbers', restore)
+            }
+        },
+    }
+
 // ── Endless scroll space while drawing ──────────────────────────────────────────────────────
 // The two stories below are the ONLY place the scroll-space rule can be checked: happy-dom has
 // no layout engine, so `scrollHeight`/`clientHeight` read back zero under `bun test` and every
@@ -1731,3 +1807,4 @@ export const FrontmatterLinkCoverage: Story = {
         }
     },
 }
+

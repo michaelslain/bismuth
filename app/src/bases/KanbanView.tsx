@@ -54,6 +54,7 @@ import { declaredDefaults } from '../../../core/src/bases/properties'
 import { STATUS_COLOR } from '../ui/StatusDot'
 import { pushToast } from '../Toast'
 import { suppressCardContextMenu } from './kanbanCardMenu'
+import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import styles from './BaseView.module.css'
 
 // Frontmatter key used to persist manual within-column ordering.
@@ -694,7 +695,7 @@ export function KanbanView(props: {
         await api.setProperties(writes)
     }
     function onDragKey(e: KeyboardEvent): void {
-        if (e.key === 'Escape') endDrag()
+        if (isDismissKey(e)) endDrag()
     }
     function endDrag(): void {
         window.removeEventListener('pointermove', onPointerMove)
@@ -1493,10 +1494,7 @@ export function KanbanView(props: {
                                                         )
                                                     }
                                                     onKeyDown={e => {
-                                                        if (
-                                                            e.key === 'Enter' &&
-                                                            !e.shiftKey
-                                                        ) {
+                                                        if (isConfirmKey(e)) {
                                                             e.preventDefault()
                                                             // Capture the element NOW — after the await, `e.currentTarget` is null
                                                             // (it only points at the handler's node during dispatch), so the old
@@ -1510,7 +1508,7 @@ export function KanbanView(props: {
                                                                 el.focus(),
                                                             )
                                                         } else if (
-                                                            e.key === 'Escape'
+                                                            isDismissKey(e)
                                                         ) {
                                                             setComposerCol(null)
                                                             setDraft('')

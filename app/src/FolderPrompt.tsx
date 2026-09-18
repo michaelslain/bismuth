@@ -8,6 +8,7 @@ import PromptModal from './ui/PromptModal'
 import PromptHint from './ui/PromptHint'
 import PromptInput from './ui/PromptInput'
 import { TextButton } from './ui/TextButton'
+import { isConfirmKey } from './ui/widgetKeys'
 
 export function FolderPrompt(props: {
     onClose: () => void
@@ -52,7 +53,7 @@ export function FolderPrompt(props: {
                 autocorrect="off"
                 onInput={e => setValue(e.currentTarget.value)}
                 onKeyDown={e => {
-                    if (e.key === 'Enter') {
+                    if (isConfirmKey(e)) {
                         e.preventDefault()
                         submit()
                     }

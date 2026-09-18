@@ -13,6 +13,7 @@ import { TextButton } from './ui/TextButton'
 import { TextInput } from './ui/TextInput'
 import { loadHarperState, normalizeDictWord } from './editor/harperStore'
 import { addDictionaryWord, removeDictionaryWord } from './editor/harper'
+import { isConfirmKey } from './ui/widgetKeys'
 import styles from './EditDictionaryModal.module.css'
 
 /** The user's custom words, alphabetized for a stable, scannable list. */
@@ -95,7 +96,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                         value={draft()}
                         onInput={setDraft}
                         onKeyDown={e => {
-                            if (e.key === 'Enter') {
+                            if (isConfirmKey(e)) {
                                 e.preventDefault()
                                 add()
                             }

@@ -8,8 +8,14 @@
 //
 // The icon span comes from the shared rowDom helper (createPopoverIcon), the same
 // builder the yaml-fix hover uses, so the autocomplete's icon DOM matches the menu's.
-import type { Completion } from '@codemirror/autocomplete'
-import { EditorView } from '@codemirror/view'
+import {
+    closeCompletion,
+    moveCompletionSelection,
+    acceptCompletion,
+    type Completion,
+} from '@codemirror/autocomplete'
+import { Prec, type Extension } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
 import { completionIcon } from '../ui/popover/iconMap'
 import { createPopoverIcon } from '../ui/popover/rowDom'
 
@@ -18,6 +24,27 @@ import { createPopoverIcon } from '../ui/popover/rowDom'
  *  shows its own icon) and path suggestions (Folder vs File). `iconName` is read
  *  by the render hook below; CM ignores unknown fields. */
 export type IconedCompletion = Completion & { iconName?: string }
+
+// The completion popup's SPATIAL navigation contract — Escape/ArrowUp/ArrowDown/PageUp/PageDown/
+// Enter — reproduced here because every `autocompletion({...})` call site now passes
+// `defaultKeymap: false`. CodeMirror bundles that navigation keymap together with the keys that
+// OPEN the popup (Ctrl-Space, plus the undocumented macOS Alt-`/Alt-i) as one all-or-nothing flag,
+// and opening the popup must be `open-completion`'s job alone (settings.keybindings) — so the
+// bundle has to be turned off entirely and only the navigation half rebuilt by hand. These bindings
+// stay HARDCODED on purpose: they are the popup's menu navigation, not a named/rebindable command,
+// exactly like arrow-key navigation in any other menu. At `Prec.highest` to sit where CodeMirror's
+// own (now-disabled) completionKeymap used to. Spread into every `autocompletion()` call site
+// alongside `completionDisplayConfig`.
+export const completionNavKeymap: Extension = Prec.highest(
+    keymap.of([
+        { key: 'Escape', run: closeCompletion },
+        { key: 'ArrowDown', run: moveCompletionSelection(true) },
+        { key: 'ArrowUp', run: moveCompletionSelection(false) },
+        { key: 'PageDown', run: moveCompletionSelection(true, 'page') },
+        { key: 'PageUp', run: moveCompletionSelection(false, 'page') },
+        { key: 'Enter', run: acceptCompletion },
+    ]),
+)
 
 export const completionDisplayConfig = {
     icons: false as const,

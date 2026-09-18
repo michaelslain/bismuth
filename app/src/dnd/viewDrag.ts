@@ -17,6 +17,7 @@ import {
     type Zone,
 } from './geometry'
 import { usesReferenceGeometry } from './noteRef'
+import { isDismissKey } from '../ui/widgetKeys'
 
 // A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
 // drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
@@ -244,7 +245,7 @@ export function createViewDrag(
     }
 
     function onKey(e: KeyboardEvent): void {
-        if (e.key === 'Escape') cleanup()
+        if (isDismissKey(e)) cleanup()
     }
 
     function arm(

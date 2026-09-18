@@ -39,12 +39,21 @@ const TOKEN: Record<string, (mac: boolean) => string> = {
     Down: () => '↓',
     Left: () => '<',
     Right: () => '>',
+    ArrowUp: () => '↑',
+    ArrowDown: () => '↓',
+    ArrowLeft: () => '<',
+    ArrowRight: () => '>',
+    Plus: () => '+',
+    Command: () => '⌘',
+    Super: () => '⌘',
+    Opt: () => '⌥',
 }
 
 /**
  * Split a stored combo into display caps. Accepts the app's keybinding syntax:
  *   "Mod+Shift+D"        → [["⌘","Shift","D"]]        a chord
- *   "Mod+`, Mod+J"       → [["⌘","`"], ["⌘","J"]]     a sequence (comma-separated)
+ *   "Mod+`, Mod+J"       → [["⌘","`"], ["⌘","J"]]     ALTERNATIVES (comma-separated) — either one
+ *                                                        fires, not a press-this-then-that sequence
  * `mac` defaults to the running platform; pass it explicitly to render for a
  * specific platform (tests, or a cross-platform hint list).
  */

@@ -5,6 +5,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import InlineTextInput from './InlineTextInput'
 import Text from './Text'
+import { settings, setSettings } from '../settings'
 
 let commits: string[] = []
 let cancels = 0
@@ -120,5 +121,52 @@ export const EscapeCancels: Story = {
         key(el, 'Enter')
         await expect(cancels).toBe(1)
         await expect(commits).toEqual([])
+    },
+}
+
+/** `ui-confirm`/`ui-dismiss` (settings.keybindings) are rebindable — proves the input reads
+ *  through widgetKeys.ts's isConfirmKey/isDismissKey rather than a hardcoded `e.key` check.
+ *  Once rebound, the plain Enter/Escape this component used to hardcode no longer fire, and
+ *  only the new combo does. */
+export const RebindableKeys: Story = {
+    render: () => {
+        commits = []
+        cancels = 0
+        return (
+            <div style={{ width: '220px' }}>
+                <InlineTextInput
+                    value="Chapter 2"
+                    onCommit={v => commits.push(v)}
+                    onCancel={() => cancels++}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const el = input(canvasElement)
+        const savedConfirm = settings.keybindings['ui-confirm']
+        const savedDismiss = settings.keybindings['ui-dismiss']
+        try {
+            setSettings('keybindings', 'ui-confirm', 'Mod+Enter')
+            setSettings('keybindings', 'ui-dismiss', 'Mod+.')
+            // Plain Enter/Escape no longer fire once rebound away from them.
+            key(el, 'Enter')
+            key(el, 'Escape')
+            await expect(commits).toEqual([])
+            await expect(cancels).toBe(0)
+            // The new combo does.
+            el.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    code: 'Enter',
+                    metaKey: true,
+                    bubbles: true,
+                }),
+            )
+            await expect(commits).toEqual(['Chapter 2'])
+        } finally {
+            setSettings('keybindings', 'ui-confirm', savedConfirm)
+            setSettings('keybindings', 'ui-dismiss', savedDismiss)
+        }
     },
 }

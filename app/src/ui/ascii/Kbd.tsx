@@ -14,7 +14,7 @@ export function Key(props: { children?: JSX.Element }) {
 }
 
 export type KbdProps = {
-    /** The app's keybinding syntax: "Mod+Shift+D", or "Mod+`, Mod+J" for a sequence. */
+    /** The app's keybinding syntax: "Mod+Shift+D", or "Mod+`, Mod+J" for alternatives (either fires). */
     combo?: string
     /** Literal cap content when you aren't passing a combo. */
     children?: JSX.Element
@@ -23,8 +23,9 @@ export type KbdProps = {
 
 /**
  * A keybinding. Pass `combo` in the app's syntax ("Mod+Shift+D") or literal
- * children. Chords render as adjacent caps; a comma-separated sequence renders
- * its groups separated by a faint "then".
+ * children. Chords render as adjacent caps; a comma-separated list of
+ * ALTERNATIVES (either one fires the command, never press-this-then-that)
+ * renders its groups separated by a faint "or".
  */
 function Kbd(props: KbdProps) {
     return (
@@ -34,7 +35,7 @@ function Kbd(props: KbdProps) {
                     {(keys, gi) => (
                         <>
                             <Show when={gi() > 0}>
-                                <span class={styles['asc-kbd-then']}>then</span>
+                                <span class={styles['asc-kbd-then']}>or</span>
                             </Show>
                             <For each={keys}>{k => <Key>{k}</Key>}</For>
                         </>

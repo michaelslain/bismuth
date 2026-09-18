@@ -2,6 +2,7 @@ import { onCleanup, onMount, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import './ui.css'
 import styles from './Modal.module.css'
+import { isDismissKey } from './widgetKeys'
 
 export type ModalProps = {
     onClose: () => void
@@ -34,10 +35,12 @@ const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**
- * Shared overlay shell: a Portal-mounted backdrop that closes on Escape and
- * (optionally) on backdrop click, with the inner panel stopping propagation.
- * Replaces the hand-rolled `.modal-overlay > panel` + Escape-keydown blocks that
- * EventModal / RecurrenceDialog / CategoryPanel / PaletteModal each reimplemented.
+ * Shared overlay shell: a Portal-mounted backdrop that closes on the dismiss key
+ * (settings.keybindings['ui-dismiss'], Escape by default — see ui/widgetKeys.ts's
+ * isDismissKey) and (optionally) on backdrop click, with the inner panel stopping
+ * propagation. Replaces the hand-rolled `.modal-overlay > panel` + Escape-keydown
+ * blocks that EventModal / RecurrenceDialog / CategoryPanel / PaletteModal each
+ * reimplemented.
  *
  * The inner panel always carries `.asc-modal` (ui/ui.css: pop-bg-strong fill, hairline border,
  * radius 0, no blur, no shadow — flattened 2026-08-27, visual-unification audit §9.2/§9.3,
@@ -65,13 +68,16 @@ function Modal(props: ModalProps) {
 
     const focusables = () =>
         panelEl
-            ? ([...panelEl.querySelectorAll(FOCUSABLE)] as HTMLElement[]).filter(
-                  el => el.offsetParent !== null || el === document.activeElement,
+            ? (
+                  [...panelEl.querySelectorAll(FOCUSABLE)] as HTMLElement[]
+              ).filter(
+                  el =>
+                      el.offsetParent !== null || el === document.activeElement,
               )
             : []
 
     const handleKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
+        if (isDismissKey(e)) {
             e.stopPropagation()
             props.onClose()
             return

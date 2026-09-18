@@ -30,6 +30,7 @@ import {
     selectOptionsWithCurrent,
 } from './propertyEdit'
 import { numberEditValue, parseNumberEdit } from './numberFormat'
+import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import styles from './BaseView.module.css'
 
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
@@ -154,10 +155,10 @@ export function PropertyValueEditor(props: {
                                     }
                                     onBlur={commit}
                                     onKeyDown={e => {
-                                        if (e.key === 'Enter') {
+                                        if (isConfirmKey(e)) {
                                             e.preventDefault()
                                             e.currentTarget.blur()
-                                        } else if (e.key === 'Escape') {
+                                        } else if (isDismissKey(e)) {
                                             e.stopPropagation()
                                             setDraft(toDraft())
                                             e.currentTarget.blur()
@@ -184,7 +185,7 @@ export function PropertyValueEditor(props: {
                                 onBlur={commit}
                                 onKeyDown={e => {
                                     // Enter inserts a newline (multiline body) — only Escape/blur leave the editor.
-                                    if (e.key === 'Escape') {
+                                    if (isDismissKey(e)) {
                                         e.stopPropagation()
                                         setDraft(toDraft())
                                         e.currentTarget.blur()
@@ -288,7 +289,7 @@ function MultiSelectEditor(props: {
             class={styles.kbMetaMultiselect}
             ref={rootRef}
             onKeyDown={e => {
-                if (e.key === 'Escape') {
+                if (isDismissKey(e)) {
                     e.stopPropagation()
                     props.onCancel()
                 }

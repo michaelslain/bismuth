@@ -634,6 +634,41 @@
     "max": null,
     "required": false
   },
+  "keybindings.accept-completion": {
+    "type": "keybind",
+    "default": "Tab",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-history-next": {
+    "type": "keybind",
+    "default": "ArrowDown",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-history-prev": {
+    "type": "keybind",
+    "default": "ArrowUp",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-send": {
+    "type": "keybind",
+    "default": "Enter, Mod+Enter",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-stop": {
+    "type": "keybind",
+    "default": "Escape",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.close-pane": {
     "type": "keybind",
     "default": "Mod+W",
@@ -648,6 +683,13 @@
     "max": null,
     "required": false
   },
+  "keybindings.delete-selection": {
+    "type": "keybind",
+    "default": "Delete, Backspace, Mod+Delete, Mod+Backspace",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.equalize-panes": {
     "type": "keybind",
     "default": "Mod+Alt+=",
@@ -655,9 +697,44 @@
     "max": null,
     "required": false
   },
+  "keybindings.exit-draw-mode": {
+    "type": "keybind",
+    "default": "Escape",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.find": {
     "type": "keybind",
     "default": "Mod+F",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.flashcard-easy": {
+    "type": "keybind",
+    "default": "3",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.flashcard-flip": {
+    "type": "keybind",
+    "default": "Space",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.flashcard-good": {
+    "type": "keybind",
+    "default": "2",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.flashcard-hard": {
+    "type": "keybind",
+    "default": "1",
     "min": null,
     "max": null,
     "required": false
@@ -690,6 +767,34 @@
     "max": null,
     "required": false
   },
+  "keybindings.graph-focus-node": {
+    "type": "keybind",
+    "default": "Z, Shift+Z",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.graph-reset-view": {
+    "type": "keybind",
+    "default": "Escape",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.graph-zoom-in": {
+    "type": "keybind",
+    "default": "=, Shift+=, Plus",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.graph-zoom-out": {
+    "type": "keybind",
+    "default": "-, Shift+-",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.history-back": {
     "type": "keybind",
     "default": "Mod+[",
@@ -700,6 +805,27 @@
   "keybindings.history-forward": {
     "type": "keybind",
     "default": "Mod+]",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.indent": {
+    "type": "keybind",
+    "default": "Tab",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.ink-redo": {
+    "type": "keybind",
+    "default": "Mod+Shift+Z",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.ink-undo": {
+    "type": "keybind",
+    "default": "Mod+Z",
     "min": null,
     "max": null,
     "required": false
@@ -721,6 +847,20 @@
   "keybindings.new-tab": {
     "type": "keybind",
     "default": "Mod+T",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.open-completion": {
+    "type": "keybind",
+    "default": "Ctrl+Space, Mod+Shift+Space",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.outdent": {
+    "type": "keybind",
+    "default": "Shift+Tab",
     "min": null,
     "max": null,
     "required": false
@@ -760,9 +900,23 @@
     "max": null,
     "required": false
   },
+  "keybindings.toggle-bold": {
+    "type": "keybind",
+    "default": "Mod+B",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.toggle-draw-mode": {
     "type": "keybind",
     "default": "Mod+Shift+I",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.toggle-italic": {
+    "type": "keybind",
+    "default": "Mod+I",
     "min": null,
     "max": null,
     "required": false
@@ -777,6 +931,27 @@
   "keybindings.toggle-tab-rail": {
     "type": "keybind",
     "default": "Alt+Shift+S",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.ui-confirm": {
+    "type": "keybind",
+    "default": "Enter",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.ui-dismiss": {
+    "type": "keybind",
+    "default": "Escape",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.undo-delete": {
+    "type": "keybind",
+    "default": "Mod+Z",
     "min": null,
     "max": null,
     "required": false
