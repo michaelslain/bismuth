@@ -17,6 +17,7 @@ import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
 import { chipKeyAction, taskKey } from '../taskChipKeys'
 import { focusTaskKey, requestTaskFocus } from '../state'
+import Text from '../../ui/Text'
 import styles from './TaskChip.module.css'
 
 export type TaskChipProps = {
@@ -152,7 +153,11 @@ const TaskChip: Component<TaskChipProps> = props => {
                 props.onOpen()
             }}
         >
-            <span
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={[styles.marker, writable() ? '' : styles.readOnly]
                     .filter(Boolean)
                     .join(' ')}
@@ -198,8 +203,12 @@ const TaskChip: Component<TaskChipProps> = props => {
                 }}
             >
                 [{markerChar(props.task.row)}]
-            </span>
-            <span
+            </Text>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={[
                     styles.title,
                     props.task.row.note.resolved ? styles.resolved : '',
@@ -209,9 +218,17 @@ const TaskChip: Component<TaskChipProps> = props => {
                 data-testid="task-chip-title"
             >
                 {String(props.task.row.note.description ?? '')}
-            </span>
+            </Text>
             <Show when={props.task.late > 0}>
-                <span class={styles.late}>{props.task.late}d late</span>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles.late}
+                >
+                    {props.task.late}d late
+                </Text>
             </Show>
         </div>
     )

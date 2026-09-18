@@ -8,6 +8,7 @@
 import { currentView, currentDate, settings } from '../state'
 import { VBtn } from '../../ui/ViewBar'
 import BarLabel from '../../ui/BarLabel'
+import Text from '../../ui/Text'
 import { rangeLabel, stepDate } from '../dates'
 import styles from './DateNav.module.css'
 
@@ -62,9 +63,16 @@ export function DateNav(props: DateNavProps) {
             >
                 {/* TEST-ONLY testid: the span is the box that ellipsizes (block + overflow hidden),
                     so it is the one element where scrollWidth > clientWidth means "date eaten". */}
-                <span class={styles['range-text']} data-testid="range">
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['range-text']}
+                    data-testid="range"
+                >
                     <BarLabel long={label().long} short={label().short} />
-                </span>
+                </Text>
             </VBtn>
             <VBtn
                 class={styles.step}
