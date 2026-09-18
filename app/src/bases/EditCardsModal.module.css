@@ -114,8 +114,13 @@
 .cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 var(--sp-2); background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
 .cell:focus-within .cell-tag { opacity: 1; }
 /* Draft row: plain monospace inputs (no markdown overlay), dashed until focused. */
+/* `height: 44px` (not `auto`) is deliberate: these three TextInput multiline call sites can't
+   pass `rows={1}` (TextInputProps types multiline's rest as InputHTMLAttributes, which has no
+   `rows` — see ui/TextInput.tsx's Primitive gap), so with `height: auto` the browser falls back
+   to the HTML default of 2 rows, doubling this to ~58.5px. A fixed height keeps the pre-swap
+   single-line size regardless of the missing attribute. */
 .cards-draft .cell textarea {
-  position: relative; height: auto; min-height: 44px; display: block; overflow: hidden;
+  position: relative; height: 44px; min-height: 44px; display: block; overflow: hidden;
   color: var(--fg); caret-color: var(--accent); background: transparent; border: 1px dashed var(--border);
 }
 .cards-draft .cell textarea:focus { background: var(--surface-2); border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -143,7 +148,7 @@
 .cards-chiprow { display: inline-flex; gap: var(--sp-3); flex-wrap: wrap; }
 .cards-bulk-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: var(--sp-6); min-height: 0; padding-bottom: var(--sp-6); }
 .cards-bulk-input { display: flex; flex-direction: column; min-height: 0; }
-.cards-bulk-input label { color: var(--faint); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: var(--sp-4); }
+.cards-bulk-lab { letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: var(--sp-4); }
 /* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + sizing. */
 .cards-bulk-input textarea.cards-bulk-textarea {
   flex: 1; min-height: 240px; resize: none;

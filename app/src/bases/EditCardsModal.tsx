@@ -7,6 +7,7 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
+import Text from '../ui/Text'
 import CardsModal from './CardsModal'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
@@ -92,14 +93,23 @@ function CardCell(props: {
                     `<span class="${styles['cell-ph']}">${escapeHtml(props.placeholder)}</span>`
                 }
             />
-            <textarea
-                rows={1}
+            <TextInput
+                multiline
+                plain
                 value={val()}
                 placeholder={props.placeholder}
-                onInput={e => setVal(e.currentTarget.value)}
+                onInput={setVal}
                 onBlur={() => val() !== props.value && props.onCommit(val())}
             />
-            <span class={styles['cell-tag']}>{props.field}</span>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['cell-tag']}
+            >
+                {props.field}
+            </Text>
         </div>
     )
 }
@@ -241,9 +251,24 @@ export function EditCardsModal(props: {
             onClose={close}
             meta={
                 <Show when={props.deckName}>
-                    <span class={styles['cards-meta']}>
-                        <span class={styles['dot']}>//</span> {props.deckName}
-                    </span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['cards-meta']}
+                    >
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['dot']}
+                        >
+                            //
+                        </Text>{' '}
+                        {props.deckName}
+                    </Text>
                 </Show>
             }
         >
@@ -274,10 +299,24 @@ export function EditCardsModal(props: {
                 />
                 <div class={styles['sp']} />
                 <Show when={mode() === 'list'}>
-                    <span class={styles['cards-hint']}>
-                        <span class={styles['key']}>&crarr;</span> adds a card //
-                        drag # to reorder
-                    </span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['cards-hint']}
+                    >
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['key']}
+                        >
+                            &crarr;
+                        </Text>{' '}
+                        adds a card // drag # to reorder
+                    </Text>
                 </Show>
             </div>
 
@@ -285,10 +324,16 @@ export function EditCardsModal(props: {
             <Show when={mode() === 'list'}>
                 <div class={styles['cards-listwrap']}>
                     <div class={styles['cards-collbl']}>
-                        <span>#</span>
-                        <span>Front</span>
-                        <span>Back</span>
-                        <span />
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            #
+                        </Text>
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            Front
+                        </Text>
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            Back
+                        </Text>
+                        <div />
                     </div>
                     <For each={cards()}>
                         {(n, i) => (
@@ -355,13 +400,12 @@ export function EditCardsModal(props: {
                             +
                         </div>
                         <div class={`${styles.cell} cell-front`}>
-                            <textarea
-                                rows={1}
+                            <TextInput
+                                multiline
+                                plain
                                 value={draftFront()}
                                 placeholder="Front of new card…"
-                                onInput={e =>
-                                    setDraftFront(e.currentTarget.value)
-                                }
+                                onInput={setDraftFront}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault()
@@ -371,14 +415,20 @@ export function EditCardsModal(props: {
                             />
                         </div>
                         <div class={`${styles.cell} ${styles['cell-back']}`}>
-                            <textarea
-                                ref={draftBackRef}
-                                rows={1}
+                            <TextInput
+                                multiline
+                                plain
+                                ref={el => {
+                                    // TextInput's `ref` is typed for HTMLInputElement even in
+                                    // `multiline` mode, since TextInputProps always derives from
+                                    // JSX.InputHTMLAttributes<HTMLInputElement> — see this task's
+                                    // report, "Primitive gaps". The element IS a textarea at
+                                    // runtime because `multiline` is set.
+                                    draftBackRef = el as unknown as HTMLTextAreaElement
+                                }}
                                 value={draftBack()}
                                 placeholder="Back…"
-                                onInput={e =>
-                                    setDraftBack(e.currentTarget.value)
-                                }
+                                onInput={setDraftBack}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault()
@@ -390,11 +440,25 @@ export function EditCardsModal(props: {
                         <div class={styles['cards-del']} />
                     </div>
                     <div class={styles['cards-addrow']}>
-                        <span class={styles['cards-lefthint']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-lefthint']}
+                        >
                             Type above, then{' '}
-                            <span class={styles['key']}>&crarr;</span> to add —
-                            keeps going for fast entry.
-                        </span>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['key']}
+                            >
+                                &crarr;
+                            </Text>{' '}
+                            to add — keeps going for fast entry.
+                        </Text>
                         <IconTextButton
                             icon="Plus"
                             iconSize={14}
@@ -412,7 +476,15 @@ export function EditCardsModal(props: {
             <Show when={mode() === 'bulk'}>
                 <div class={styles['cards-bulkwrap']}>
                     <div class={styles['cards-bulk-toolbar']}>
-                        <span class={styles['cards-lab']}>Separator</span>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-lab']}
+                        >
+                            Separator
+                        </Text>
                         <div class={styles['cards-chiprow']}>
                             <TextButton
                                 size="sm"
@@ -442,13 +514,26 @@ export function EditCardsModal(props: {
                             </For>
                         </div>
                         <div class={styles['sp']} />
-                        <span class={styles['cards-hint']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['cards-hint']}
+                        >
                             One card per line // front ‹sep› back
-                        </span>
+                        </Text>
                     </div>
                     <div class={styles['cards-bulk-grid']}>
                         <div class={styles['cards-bulk-input']}>
-                            <label>Paste your cards</label>
+                            <Text
+                                as="span"
+                                size="micro"
+                                tone="faint"
+                                class={styles['cards-bulk-lab']}
+                            >
+                                Paste your cards
+                            </Text>
                             <TextInput
                                 multiline
                                 class={styles['cards-bulk-textarea']}
@@ -462,11 +547,25 @@ export function EditCardsModal(props: {
                         </div>
                         <div class={styles['cards-bulk-preview']}>
                             <div class={styles['cards-pvhead']}>
-                                <span class={styles['cards-lab']}>Preview</span>
-                                <span class={styles['cards-cnt']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['cards-lab']}
+                                >
+                                    Preview
+                                </Text>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['cards-cnt']}
+                                >
                                     {parsed().length}{' '}
                                     {parsed().length === 1 ? 'card' : 'cards'}
-                                </span>
+                                </Text>
                             </div>
                             <div class={styles['cards-pvlist']}>
                                 <Show
