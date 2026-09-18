@@ -396,21 +396,21 @@
   "count": 1
  },
  {
-  "file": "graph/Graph.module.css",
+  "file": "GraphSearch.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "GraphView.module.css",
   "rule": "spacing-literal",
   "detail": "1px",
   "count": 2
  },
  {
-  "file": "graph/Graph.module.css",
+  "file": "GraphView.module.css",
   "rule": "spacing-literal",
   "detail": "2px 8px",
-  "count": 1
- },
- {
-  "file": "GraphSearch.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
   "count": 1
  },
  {

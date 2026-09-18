@@ -1,89 +1,13 @@
 {
-  "note": "design-system debt baseline, generated from task 24 base commit 584496f2 (before task 23/root-misc-files and task 25/graph-rename land). The controller regenerates this after merging every ds-conformance task. Two entries are permanent exemptions the manifest schema cannot express per-line rather than debt: bareElement app/src/drawing/DrawingPage.tsx (the flagged <input> is a visually-hidden native file picker trigger, not UI chrome — no Field primitive applies to a hidden upload input) and bareElement app/src/bases/EditCardsModal.tsx (the flagged <span> is inside an innerHTML template-literal string the checker misreads as JSX, not a live Solid element).",
+  "note": "both entries are permanent exemptions the manifest schema cannot express per line, not debt: bareElement app/src/drawing/DrawingPage.tsx (the flagged <input> is a visually-hidden native file-picker trigger, not UI chrome -- no Field primitive applies to a hidden upload input) and bareElement app/src/bases/EditCardsModal.tsx (the flagged <span> is inside an innerHTML template-literal string the checker misreads as JSX, not a live Solid element). Regenerated on the ds-conformance integration branch at bc5ec20d, after task 23 + task 25 merged.",
   "accepted": [
-    {
-      "check": "bareElement",
-      "path": "app/src/Backlinks.tsx"
-    },
     {
       "check": "bareElement",
       "path": "app/src/bases/EditCardsModal.tsx"
     },
     {
       "check": "bareElement",
-      "path": "app/src/bases/KanbanView.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/chat/ChatTranscript.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/ChatColorDot.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/ContextMenu.tsx"
-    },
-    {
-      "check": "bareElement",
       "path": "app/src/drawing/DrawingPage.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/EditDictionaryModal.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/editor/CodeHeader.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/editor/TaskCheckbox.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/FileTree.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/graph/EmbeddedGraph.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/icons/Icon.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/InboxPageView.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/NoteTitle.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/palette/SwitcherBar.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/Toast.tsx"
-    },
-    {
-      "check": "bareElement",
-      "path": "app/src/UpdateBanner.tsx"
-    },
-    {
-      "check": "hardcodedColor",
-      "path": "app/src/graph/Graph.module.css"
-    },
-    {
-      "check": "hardcodedFontSize",
-      "path": "app/src/intro/VaultIntro.module.css"
-    },
-    {
-      "check": "oneImporter",
-      "path": "app/src/graph/Graph.module.css"
     }
   ]
 }
