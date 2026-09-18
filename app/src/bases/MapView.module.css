@@ -2,24 +2,29 @@
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
 .map {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
   overflow: hidden;
-  background: var(--map-bg, var(--bg));
   cursor: grab;
-  touch-action: none;
+  background: var(--bismuth-surface);
+  border: var(--rule);
+  border-radius: var(--r-0);
+  user-select: none;
 }
+/* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
 .mapVector {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  display: block;
 }
 .mapSea { fill: var(--map-sea); }
 .mapGrid { stroke: var(--map-grid); stroke-width: 0.75; opacity: 0.7; }
 .mapGridBold { stroke: var(--map-coast); stroke-width: 1.25; opacity: 0.85; }
 .mapLand {
-  fill: var(--map-land, transparent);
+  fill: var(--map-land);
   stroke: var(--map-coast);
   stroke-width: 1;
+  stroke-linejoin: round;
 }
 .mapMarkers {
   position: absolute;

@@ -218,6 +218,7 @@ export function CardsView(props: {
                                                 }
                                             >
                                                 <BodyCard
+                                                    class={styles.bodyGridCard}
                                                     row={row}
                                                     result={props.result}
                                                     config={props.config}

@@ -18,6 +18,7 @@ export function BodyCard(props: {
     result: ViewResult
     config: BaseConfig
     mode?: 'body' | 'tasks'
+    class?: string
 }) {
     const firstCol = () => props.result.columns[0] ?? 'file.name'
     // Plain-string title used both as the chip and to detect+strip a duplicate `# Title` heading.
@@ -29,7 +30,7 @@ export function BodyCard(props: {
     }
 
     return (
-        <div class={styles.bodyCard}>
+        <div class={`${styles.bodyCard} ${props.class ?? ''}`}>
             <CardTitle>
                 {renderValue(firstCol(), props.row)}
             </CardTitle>

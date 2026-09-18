@@ -71,6 +71,12 @@
 /* Google-Keep/Pinterest MASONRY container for `body`/`tasks`-content cards (BodyCard owns its
    own masonry-item rules — it renders only inside this grid). */
 .bodyGrid { column-width: 240px; column-gap: var(--sp-5); }
+/* Google-Keep/Pinterest MASONRY via CSS multicol: `break-inside: avoid` + full-width
+   `inline-block` keep each BodyCard WHOLE within one column, so the embedded CodeMirror
+   editor is never fragmented across a column boundary (which would wreck caret placement /
+   drag-select). Passed to BodyCard as an extra `class` — BodyCard renders elsewhere (its own
+   story) without this masonry context and must not carry it unconditionally. */
+.bodyGridCard { break-inside: avoid; margin: 0 0 var(--sp-5); width: 100%; display: inline-block; }
 
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
 .groupHeader { font-weight: 500; margin: var(--sp-4) 18px var(--sp-2); font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
