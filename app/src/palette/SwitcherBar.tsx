@@ -31,14 +31,16 @@ import {
 import { Icon } from '../icons/Icon'
 import SearchBar from '../ui/SearchBar'
 import Kbd from '../ui/ascii/Kbd'
+import PlainButton from '../ui/PlainButton'
+import Text from '../ui/Text'
+import EmptyState, { Loading } from '../ui/EmptyState'
 import { createMenuNav } from '../ui/popover/createMenuNav'
-import Label from '../ui/Label'
 import {
     createPointerGuard,
     resetActiveOnChange,
     scrollSelectedIntoView,
 } from './paletteNav'
-import { Highlight } from './PaletteModal'
+import PaletteRow, { Highlight } from './PaletteRow'
 import { rankItems, type Match } from './rankItems'
 import { vaultFileItems } from './vaultFileItems'
 import { refreshVaultTree, vaultTree } from '../treeStore'
@@ -58,7 +60,6 @@ import {
     type ContentHits,
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
-import styles from './Palette.module.css'
 import searchStyles from '../SearchResultRows.module.css'
 import switcherStyles from './SwitcherBar.module.css'
 import './switcher.css'
@@ -328,42 +329,35 @@ export function SwitcherBar(props: Props) {
                 <Show when={aiPhase() === 'idle'}>
                     <For each={fileRows()}>
                         {(r, i) => (
-                            <div
-                                class={styles['palette-row']}
-                                classList={{ selected: selected() === i() }}
-                                data-testid={`palette-row-${r.item.id}`}
+                            <PaletteRow
+                                icon={r.item.icon}
+                                selected={selected() === i()}
+                                testid={`palette-row-${r.item.id}`}
                                 onMouseMove={e => onRowPointerMove(i(), e)}
                                 onClick={() => commitFile(r.item)}
-                            >
-                                <Show when={r.item.icon}>
-                                    <span class={styles['palette-icon']}>
-                                        <Icon value={r.item.icon!} size={14} />
-                                    </span>
-                                </Show>
-                                <span class={styles['palette-text']}>
-                                    <Label fill class={styles['palette-label']}>
-                                        <Highlight
-                                            text={r.item.label}
-                                            indices={r.indices}
-                                        />
-                                    </Label>
-                                </span>
-                                <Show when={r.item.sublabel}>
-                                    <Label
-                                        tone="faint"
-                                        class={styles['palette-sub']}
-                                    >
-                                        {r.item.sublabel}
-                                    </Label>
-                                </Show>
-                            </div>
+                                label={
+                                    <Highlight
+                                        text={r.item.label}
+                                        indices={r.indices}
+                                    />
+                                }
+                                sublabel={r.item.sublabel}
+                            />
                         )}
                     </For>
                     {/* Keyword content matches, under the file-name rows — the old Search tab's
               full-text results folded into this one list. Selection indices continue from
               the file rows (the nav walks the whole list). */}
                     <Show when={contentRows().length > 0}>
-                        <div class={switcherStyles['switcher-section']}>Content matches</div>
+                        <Text
+                            as="div"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={switcherStyles['switcher-section']}
+                        >
+                            Content matches
+                        </Text>
                         <SearchResultRows
                             results={contentRows()}
                             onOpen={openPath}
@@ -376,8 +370,7 @@ export function SwitcherBar(props: Props) {
                     {/* Persistent AI affordance for question-shaped queries that DO have rows — plain
               Enter commits the highlighted row, so the AI needs its own visible path. */}
                     <Show when={navCount() > 0 && shaped()}>
-                        <button
-                            type="button"
+                        <PlainButton
                             class={`${searchStyles['search-ask-ai']} ${switcherStyles['switcher-ask-ai']}`}
                             onClick={askAi}
                             title="Search your vault with Bismuth AI (natural-language)"
@@ -387,19 +380,23 @@ export function SwitcherBar(props: Props) {
                                 size={14}
                                 class={searchStyles['search-ask-ai-icon']}
                             />
-                            <span class={searchStyles['search-ask-ai-label']}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={searchStyles['search-ask-ai-label']}
+                            >
                                 Ask Bismuth AI about your vault
-                            </span>
+                            </Text>
                             <span class={searchStyles['search-ask-ai-kbd']}>
                                 <kbd class={searchStyles['search-kbd']}>⌘↵</kbd>
                             </span>
-                        </button>
+                        </PlainButton>
                     </Show>
                     <Show when={navCount() === 0}>
                         <Show when={!query().trim()}>
-                            <div class={styles['palette-empty']}>
-                                Loading files…
-                            </div>
+                            <Loading>Loading files…</Loading>
                         </Show>
                         {/* Any zero-result search — the Enter-to-AI empty state. Inside
                         navCount() === 0, offerAi() reduces to !!query().trim() (see
@@ -407,8 +404,7 @@ export function SwitcherBar(props: Props) {
                         !offerAi() here would be X && !X — permanently unreachable. There is no
                         third state: empty query -> Loading files…, non-empty -> this CTA. */}
                         <Show when={offerAi()}>
-                            <button
-                                type="button"
+                            <PlainButton
                                 class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}
                                 data-testid="switcher-ask-ai-cta"
                                 onClick={askAi}
@@ -418,58 +414,48 @@ export function SwitcherBar(props: Props) {
                                     size={22}
                                     class={searchStyles['search-empty-icon']}
                                 />
-                                <div class={searchStyles['search-empty-title']}>
+                                <Text
+                                    as="div"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={searchStyles['search-empty-title']}
+                                >
                                     No matching files
-                                </div>
-                                <div class={searchStyles['search-empty-hint']}>
-                                    Press <kbd class={searchStyles['search-kbd']}>Enter</kbd> to
+                                </Text>
+                                <Text
+                                    as="div"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={searchStyles['search-empty-hint']}
+                                >
+                                    Press{' '}
+                                    <kbd class={searchStyles['search-kbd']}>Enter</kbd> to
                                     ask Bismuth AI about your vault
-                                </div>
-                            </button>
+                                </Text>
+                            </PlainButton>
                         </Show>
                     </Show>
                 </Show>
+                {/* aiPhase 'loading'/'error'/empty-'results' are readonly informational panels —
+            the canonical EmptyState/Loading primitives (ui/EmptyState.tsx) replace the former
+            bespoke `.search-state`/`.search-empty` panels here. This is intentional drift from
+            the pre-migration screenshots (the Sparkles/TriangleAlert icon and the loading
+            spinner/hint line are dropped — EmptyState has no icon slot) — see the task report. */}
                 <Show when={aiPhase() === 'loading'}>
-                    <div class={searchStyles['search-state']}>
-                        <span class={`${searchStyles['search-spinner']} ${searchStyles['search-spinner-lg']} asc-caret`}>
-                            _
-                        </span>
-                        <div class={searchStyles['search-state-title']}>
-                            Searching your vault with Bismuth AI…
-                        </div>
-                        <div class={searchStyles['search-state-hint']}>
-                            Reading your notes to find what answers your
-                            question
-                        </div>
-                    </div>
+                    <Loading>Searching your vault with Bismuth AI…</Loading>
                 </Show>
                 <Show when={aiPhase() === 'error'}>
-                    <div class={`${searchStyles['search-state']} search-state-error`}>
-                        <Icon
-                            value="TriangleAlert"
-                            size={24}
-                            class={searchStyles['search-state-error-icon']}
-                        />
-                        <div class={searchStyles['search-state-title']}>
-                            Bismuth AI couldn’t complete the search
-                        </div>
-                        <div class={searchStyles['search-state-msg']}>{aiState().error}</div>
-                    </div>
+                    <EmptyState title="Bismuth AI couldn’t complete the search">
+                        {aiState().error}
+                    </EmptyState>
                 </Show>
                 <Show when={aiPhase() === 'results'}>
                     <Show
                         when={aiState().results.length > 0}
                         fallback={
-                            <div class={searchStyles['search-empty']}>
-                                <Icon
-                                    value="Sparkles"
-                                    size={22}
-                                    class={searchStyles['search-empty-icon']}
-                                />
-                                <div class={searchStyles['search-empty-title']}>
-                                    Bismuth AI found nothing relevant
-                                </div>
-                            </div>
+                            <EmptyState title="Bismuth AI found nothing relevant" />
                         }
                     >
                         <SearchResultRows

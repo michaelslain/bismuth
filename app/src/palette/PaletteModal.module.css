@@ -1,0 +1,5 @@
+/* app/src/palette/PaletteModal.module.css — PaletteModal.tsx's own chrome: just the scrollable
+   results list. Panel/search chrome lives in PaletteFrame.module.css (shared with
+   ui/gallery/SymbolGallery.tsx); row anatomy lives in PaletteRow.module.css (shared with
+   SwitcherBar.tsx). Moved verbatim from the former Palette.module.css. */
+.palette-list { overflow-y: auto; padding: var(--sp-4); }

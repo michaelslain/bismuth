@@ -125,7 +125,7 @@
 .search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: 500; }
 .search-empty-hint { font-size: var(--fs-ui); color: var(--text-muted); }
 .search-kbd {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   padding: 1px var(--sp-3);
   border: 1px solid var(--border);
@@ -214,7 +214,7 @@
   min-width: 28px;
   text-align: right;
   color: var(--faint);
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   align-self: center;
 }
