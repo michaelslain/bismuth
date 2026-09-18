@@ -3,7 +3,7 @@
 // decorative flourish (the wordmark's gradient sheen, ui.css/patterns.css), so the hero
 // IS that flourish, not another glow layered around the logo mark.
 import { type Component } from 'solid-js'
-import styles from './VaultIntro.module.css'
+import styles from './WordmarkHero.module.css'
 
 export type WordmarkHeroProps = {
     icon: string

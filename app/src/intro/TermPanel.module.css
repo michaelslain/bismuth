@@ -1,0 +1,92 @@
+/* app/src/intro/TermPanel.module.css — the intro's static terminal panels (daemon / claude
+   slides): plain ASCII terminal chrome (a bracketed session tab and an .asc-caret blinking
+   underline) rather than macOS traffic-light dots and a glow cursor, so the first-run screen
+   speaks the same visual language as the app behind it. Every colour comes from the theme CSS
+   vars, so the intro's own theme picker re-themes all of it live.
+
+   Split out of VaultIntro.module.css (design-system conformance, one-stylesheet-one-importer):
+   `.vi-term*` and the derived-ANSI `.t-*` line colours were only ever written by TermPanel.tsx,
+   so they move here with their sole importer, along with the `vi-line` keyframe and the
+   reduced-motion rule that animate `.vi-term-line` — nothing else in the app references either.
+   Rules moved verbatim, no changes. */
+
+/* ---- terminal hero (daemon / claude) — flat register: hairline border, square corners,
+   a bracket session tab instead of macOS traffic-light dots (see TermPanel.tsx /
+   bismuth-design/ascii-extended's terminal chrome vocabulary). ---- */
+.vi-term {
+  width: 510px;
+  max-width: 100%;
+  background: var(--term-bg, #08090e);
+  border: 1px solid var(--border);
+  text-align: left;
+  color: var(--term-fg, var(--fg));
+}
+.vi-term-bar {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--sp-5);
+  background: var(--rail);
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.vi-term-tab {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.vi-term-body {
+  padding: var(--sp-6) 20px 18px;
+  font-size: var(--fs-body);
+  line-height: 1.85;
+  white-space: nowrap;
+}
+/* Same derived-ANSI vocabulary as Terminal.tsx's real palette (bismuth-design/ascii-extended
+   PORTING.md §1a): prompt = accent, success = green, the reply arrow = violet — a token,
+   not a hand-picked color, and no glow on the status dot (flat register). */
+.t-pmt {
+  color: var(--accent);
+}
+.t-cmd {
+  color: var(--term-fg, var(--fg));
+}
+.t-dim {
+  color: var(--faint);
+}
+.t-accent {
+  color: var(--accent);
+}
+.t-dots {
+  color: var(--faint);
+}
+.t-ok {
+  color: var(--green);
+}
+.t-prompt {
+  color: var(--violet);
+}
+.t-on {
+  color: var(--green);
+}
+.t-status {
+  color: var(--text-muted);
+}
+
+/* ---- motion (enhancement only; resting state above is fully visible) ---- */
+@keyframes vi-line {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vi-term-line {
+    opacity: 0;
+    animation: vi-line 0.5s ease both;
+  }
+  /* The terminal cursor is .asc-caret (ui.css) — its blink comes from the shared
+     asc-blink keyframe + --blink var, not a local one. */
+}
