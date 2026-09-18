@@ -1494,9 +1494,7 @@ export function KanbanView(props: {
                                                         )
                                                     }
                                                     onKeyDown={e => {
-                                                        if (
-                                                            isConfirmKey(e)
-                                                        ) {
+                                                        if (isConfirmKey(e)) {
                                                             e.preventDefault()
                                                             // Capture the element NOW — after the await, `e.currentTarget` is null
                                                             // (it only points at the handler's node during dispatch), so the old

@@ -172,7 +172,7 @@ const ALLOWED_FILES: AllowEntry[] = [
     },
     {
         file: 'ui/ToggleRow.tsx',
-        reason: 'KNOWN GAP, not a design decision — Enter/Space activates the toggle like a native checkbox, but Enter is a bare e.key literal rather than isConfirmKey-driven, making it a genuine ui-confirm migration candidate. Not fixed here: this file belongs to another task in this plan (flagged in fix-C-report.md, not fixed)',
+        reason: 'Enter now reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — it is this control\'s own activation gesture under the WAI-ARIA switch pattern (role="switch"), not an independently rebindable command',
     },
 ]
 
