@@ -56,7 +56,13 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                         {summary()}
                     </Text>
                 </Show>
-                <span class={styles['chat-tool-status']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['chat-tool-status']}
+                >
                     <Show
                         when={props.part.pending}
                         fallback={
@@ -75,7 +81,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                             …
                         </Text>
                     </Show>
-                </span>
+                </Text>
                 <Icon
                     value={open() ? 'ChevronDown' : 'ChevronRight'}
                     size={13}

@@ -16,6 +16,7 @@ import {
     type JSX,
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
+import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { openContextMenu } from '../nativeMenu'
@@ -222,7 +223,9 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                                 size={13}
                                 class={styles['chat-turn-error-icon']}
                             />
-                            <span>{msg()}</span>
+                            <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                                {msg()}
+                            </Text>
                         </ChatTurnColumn>
                     )}
                 </Show>

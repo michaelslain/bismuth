@@ -7,6 +7,7 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import styles from './ChatAuthPanel.module.css'
 import { Icon } from '../icons/Icon'
+import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
 import { pushToast } from '../Toast'
@@ -115,9 +116,25 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
                     {p => (
                         <div class={styles.row}>
                             <Icon value="KeyRound" size={13} />
-                            <span class={styles.name}>{p.name}</span>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles.name}
+                            >
+                                {p.name}
+                            </Text>
                             <Show when={p.kind}>
-                                <span class={styles.kind}>{p.kind}</span>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles.kind}
+                                >
+                                    {p.kind}
+                                </Text>
                             </Show>
                         </div>
                     )}
