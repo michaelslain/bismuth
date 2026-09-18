@@ -40,6 +40,7 @@ import {
     FALLBACK_ART,
     type IconArt,
 } from './registry'
+import Text from '../ui/Text'
 
 export interface IconProps {
     /** Icon name (any casing, optional Li/Lu prefix) OR an emoji / arbitrary string. */
@@ -88,7 +89,15 @@ export const Icon: Component<IconProps> = props => {
         ...props.style,
     })
     return (
-        <span class={props.class} aria-hidden="true" style={boxStyle()}>
+        <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            weight="inherit"
+            class={props.class}
+            aria-hidden="true"
+            style={boxStyle()}
+        >
             {(() => {
                 const a = art()
                 if (a.kind === 'svg')
@@ -111,16 +120,20 @@ export const Icon: Component<IconProps> = props => {
                 // whatever the surrounding UI font stack resolves it to (system emoji fallback
                 // included), same as any other text on the page.
                 return (
-                    <span
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         style={{
                             'font-size': `${Math.round(size() * 0.85)}px`,
                             'white-space': 'nowrap',
                         }}
                     >
                         {a.text}
-                    </span>
+                    </Text>
                 )
             })()}
-        </span>
+        </Text>
     )
 }

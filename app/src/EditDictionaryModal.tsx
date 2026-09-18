@@ -11,6 +11,7 @@ import { IconButton } from './ui/IconButton'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextButton } from './ui/TextButton'
 import { TextInput } from './ui/TextInput'
+import Text from './ui/Text'
 import { loadHarperState, normalizeDictWord } from './editor/harperStore'
 import { addDictionaryWord, removeDictionaryWord } from './editor/harper'
 import { isConfirmKey } from './ui/widgetKeys'
@@ -75,7 +76,15 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                         <For each={words()}>
                             {w => (
                                 <div class={styles['dict-row']}>
-                                    <span class={styles['dict-word']}>{w}</span>
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles['dict-word']}
+                                    >
+                                        {w}
+                                    </Text>
                                     <IconButton
                                         icon="Trash2"
                                         label={`Remove “${w}”`}
@@ -115,9 +124,15 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
             </div>
 
             <div class={styles['dict-foot']}>
-                <span class={styles['dict-hint']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['dict-hint']}
+                >
                     <b>esc</b> to close
-                </span>
+                </Text>
                 <div class={styles['dict-sp']} />
                 <TextButton
                     size="sm"

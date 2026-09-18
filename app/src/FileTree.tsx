@@ -47,6 +47,7 @@ import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
 import { treePrefix } from './ui/ascii/treePrefix'
+import Text from './ui/Text'
 
 import { buildTree, reconcileTree, type TreeNode } from './fileTreeModel'
 
@@ -1283,9 +1284,15 @@ function Level(props: {
                             }}
                             onContextMenu={e => props.onMenu(child, e)}
                         >
-                            <span class={styles['ft-prefix']}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['ft-prefix']}
+                            >
                                 {prefixFor(i()).trimEnd()}
-                            </span>
+                            </Text>
                             {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
                   FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
                   A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
@@ -1378,9 +1385,15 @@ function Level(props: {
                         }}
                         onContextMenu={e => props.onMenu(child, e)}
                     >
-                        <span class={styles['ft-prefix']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['ft-prefix']}
+                        >
                             {prefixFor(i()).trimEnd()}
-                        </span>
+                        </Text>
                         <Icon
                             value={child.icon}
                             fallback={

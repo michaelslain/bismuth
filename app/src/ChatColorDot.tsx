@@ -6,6 +6,7 @@
 // dot itself was still inlined as a bare <span> at the menu-item call site. A stylesheet with no
 // component is a missing component.
 import type { Component } from 'solid-js'
+import Text from './ui/Text'
 import styles from './ChatColorDot.module.css'
 
 export type ChatColorDotProps = {
@@ -24,7 +25,11 @@ export type ChatColorDotProps = {
  * rule is written for React and does not apply in this repo. Match Text.tsx / Heading.tsx /
  * Badge.tsx, which all take `props` whole. */
 const ChatColorDot: Component<ChatColorDotProps> = props => (
-    <span
+    <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        weight="inherit"
         class={`${styles['chat-color-dot']} ${props.none ? styles['chat-color-dot--none'] : ''}`}
         style={
             !props.none && props.color ? { background: props.color } : undefined

@@ -6,6 +6,7 @@
 // marker is the literal `[ ]` / `[x]` / `[/]` / `[-]` text, the same register as
 // bases/TaskCheck.tsx and the calendar TaskChip, so every todo in the app reads alike.
 import { type Accessor } from 'solid-js'
+import Text from '../ui/Text'
 
 // Status comes from the char between the brackets: space=todo, x/X=done,
 // "/" or "\"=in-progress, "-"=cancelled. done + cancelled strike the text.
@@ -28,8 +29,15 @@ const MARK: Record<TaskStatus, string> = {
 /** The bracket marker. Styled by livePreview.ts's theme (`.cm-task-checkbox[data-status]`). */
 export function TaskCheckbox(props: { status: Accessor<TaskStatus> }) {
     return (
-        <span class="cm-task-checkbox" data-status={props.status()}>
+        <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            weight="inherit"
+            class="cm-task-checkbox"
+            data-status={props.status()}
+        >
             {MARK[props.status()]}
-        </span>
+        </Text>
     )
 }
