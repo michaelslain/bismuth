@@ -45,13 +45,6 @@
   flex-wrap: wrap;
 }
 
-.graph-block-edit-label {
-  font-size: var(--fs-micro);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .graph-block-input {
   height: 24px;
   font-size: var(--fs-ui);

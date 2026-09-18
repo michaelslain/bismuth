@@ -19,6 +19,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // TextInput is controlled, so each story owns local state to stay interactive.
+// `multiline` is read here only to pick which branch to render — TextInputProps
+// discriminates on a LITERAL `true`, so a plain `boolean` can never be forwarded
+// directly (see TextInput.tsx).
 function Controlled(props: {
     initial?: string
     multiline?: boolean
@@ -29,14 +32,23 @@ function Controlled(props: {
     const [v, setV] = createSignal(props.initial ?? '')
     return (
         <div style={{ width: '320px' }}>
-            <TextInput
-                value={v()}
-                onInput={setV}
-                multiline={props.multiline}
-                placeholder={props.placeholder}
-                disabled={props.disabled}
-                type={props.type}
-            />
+            {props.multiline ? (
+                <TextInput
+                    multiline
+                    value={v()}
+                    onInput={setV}
+                    placeholder={props.placeholder}
+                    disabled={props.disabled}
+                />
+            ) : (
+                <TextInput
+                    value={v()}
+                    onInput={setV}
+                    placeholder={props.placeholder}
+                    disabled={props.disabled}
+                    type={props.type}
+                />
+            )}
         </div>
     )
 }
@@ -77,6 +89,34 @@ export const Multiline: Story = {
     render: () => (
         <Controlled multiline initial={'First line\nSecond line\nThird line'} />
     ),
+}
+
+/** Multiline with an explicit `rows` + a `ref` — the shape NoteTitle needs (a `<textarea>`-typed
+ *  ref and `rows` only typecheck once `multiline` discriminates the union in TextInput.tsx). */
+export const MultilineRows: Story = {
+    render: () => {
+        const [v, setV] = createSignal('First line\nSecond line')
+        return (
+            <div style={{ width: '320px' }}>
+                <TextInput
+                    ref={(el: HTMLTextAreaElement) => el.focus}
+                    multiline
+                    rows={3}
+                    value={v()}
+                    onInput={setV}
+                    data-testid="ti-multiline-rows"
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const el = canvasElement.querySelector<HTMLTextAreaElement>(
+            '[data-testid="ti-multiline-rows"]',
+        )
+        expect(el).not.toBeNull()
+        expect(el!.tagName).toBe('TEXTAREA')
+        expect(el!.rows).toBe(3)
+    },
 }
 
 /** Disabled state. */

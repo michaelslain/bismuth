@@ -8,6 +8,10 @@ import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
 import { pushToast } from './Toast'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
 import { plural } from './plural'
+import Callout from './ui/Callout'
+import Text from './ui/Text'
+import { TextButton } from './ui/TextButton'
+import { IconButton } from './ui/IconButton'
 import styles from './UpdateBanner.module.css'
 
 function phaseLabel(p: UpdatePhase | ''): string {
@@ -48,34 +52,29 @@ export function UpdateBanner() {
 
     return (
         <Show when={show()}>
-            <div class={styles['update-banner']}>
-                <span class={styles['update-banner-text']}>
+            <Callout class={styles['update-banner']}>
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
                     Bismuth update available — {plural(behind(), 'commit')}{' '}
                     behind
-                </span>
-                <span class={styles['update-banner-actions']}>
+                </Text>
+                <div class={styles['update-banner-actions']}>
                     <Show when={working()}>
-                        <span class={styles['update-banner-phase']}>
+                        <Text as="span" size="micro" tone="muted">
                             {phaseLabel(phase())}
-                        </span>
+                        </Text>
                     </Show>
-                    <button
-                        class={styles['update-banner-btn']}
-                        onClick={update}
-                        disabled={working()}
-                    >
+                    <TextButton onClick={update} disabled={working()}>
                         {working() ? 'UPDATING…' : 'UPDATE'}
-                    </button>
-                    <button
-                        class={styles['update-banner-dismiss']}
+                    </TextButton>
+                    <IconButton
+                        icon="X"
+                        label="Dismiss"
+                        size="sm"
                         onClick={() => setDismissed(true)}
                         disabled={working()}
-                        title="Dismiss"
-                    >
-                        ✕
-                    </button>
-                </span>
-            </div>
+                    />
+                </div>
+            </Callout>
         </Show>
     )
 }

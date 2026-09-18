@@ -5,6 +5,7 @@
 // copy button on the right that fires a toast on success.
 import { pushToast } from '../Toast'
 import { IconButton } from '../ui/IconButton'
+import Text from '../ui/Text'
 
 export function CodeHeader(props: { lang: string; body: string }) {
     const copy = (e: MouseEvent) => {
@@ -19,7 +20,15 @@ export function CodeHeader(props: { lang: string; body: string }) {
 
     return (
         <div class="cm-code-header">
-            <span class="cm-code-lang">{'```' + props.lang}</span>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class="cm-code-lang"
+            >
+                {'```' + props.lang}
+            </Text>
             <IconButton
                 class="cm-code-copy"
                 type="button"
