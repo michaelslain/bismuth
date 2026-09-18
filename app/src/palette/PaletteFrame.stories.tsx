@@ -23,6 +23,7 @@ export const Basic: Story = {
                 placeholder="Search…"
                 value={value()}
                 onInput={setValue}
+                inputRef={() => {}}
             >
                 <div style={{ padding: '16px' }}>Body content goes here.</div>
             </PaletteFrame>
@@ -38,6 +39,7 @@ export const Empty: Story = {
             placeholder="Search…"
             value="zzz"
             onInput={() => {}}
+            inputRef={() => {}}
         >
             <PaletteEmpty>No matches</PaletteEmpty>
         </PaletteFrame>

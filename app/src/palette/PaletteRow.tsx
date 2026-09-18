@@ -37,11 +37,23 @@ function PaletteRow(props: PaletteRowProps) {
             onClick={() => props.onClick?.()}
         >
             <Show when={props.icon}>
-                <span class={styles['palette-icon']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['palette-icon']}
+                >
                     <Icon value={props.icon!} size={14} />
-                </span>
+                </Text>
             </Show>
-            <span class={styles['palette-text']}>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['palette-text']}
+            >
                 <Label fill class={styles['palette-label']}>
                     {props.label}
                 </Label>
@@ -56,22 +68,33 @@ function PaletteRow(props: PaletteRowProps) {
                         {props.desc}
                     </Text>
                 </Show>
-            </span>
+            </Text>
             <Show when={props.sublabel}>
                 <Label tone="faint" class={styles['palette-sub']}>
                     {props.sublabel}
                 </Label>
             </Show>
             <Show when={props.shortcut}>
-                <span class={`${styles['palette-shortcut']} row-kbd`}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={`${styles['palette-shortcut']} row-kbd`}
+                >
                     {props.shortcut}
-                </span>
+                </Text>
             </Show>
         </div>
     )
 }
 
 export default PaletteRow
+
+/** The row's own hashed class, for the one caller (PaletteModal.tsx) that needs to build a CSS
+ *  selector string (`scrollSelectedIntoView`'s `.${paletteRowClass}.selected`) rather than apply
+ *  the class directly — keeps that caller from importing PaletteRow.module.css itself. */
+export const paletteRowClass = styles['palette-row']
 
 /** Render a label with its fuzzy-matched characters highlighted. Shared by PaletteModal.tsx and
  *  SwitcherBar.tsx so both render identical highlighted rows. */

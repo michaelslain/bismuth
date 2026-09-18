@@ -1,42 +1,40 @@
 /* app/src/SearchResultRows.module.css — shared styles for the unified search surface (#8).
-   Result cards (.sresult), the LOADING/ERROR/EMPTY state panels (.search-state/.search-empty),
-   the AI affordances (.search-ask-ai, .search-kbd) and the spinner. Moved out of the global
-   searchResults.css verbatim (2026-08 CSS modularization) except for the `:global()` wrapping
-   documented below. All colors use the app's canonical theme tokens.
+   Result cards (.sresult), the AI affordances (.search-ask-ai, .search-kbd) and the zero-results
+   CTA (.search-empty). Moved out of the global searchResults.css verbatim (2026-08 CSS
+   modularization) except for the `:global()` wrapping documented below. All colors use the app's
+   canonical theme tokens.
 
    SHARED BY TWO COMPONENTS ON PURPOSE, same reason as PaneTree.module.css. searchResults.tsx's
    `SearchResultRows` renders `.sresult` cards; palette/SwitcherBar.tsx renders the
-   `.search-ask-ai`/`.search-state`/`.search-empty`/`.search-kbd` markup around those same cards
-   (the AI-search escalation UI). Both files import THIS module — CSS Modules hash per file, so a
-   second copy of the module would hash to a different name than the first and any selector or
-   call site expecting one name would silently stop matching the other.
+   `.search-ask-ai`/`.search-empty`/`.search-kbd` markup around those same cards (the AI-search
+   escalation UI). Both files import THIS module — CSS Modules hash per file, so a second copy of
+   the module would hash to a different name than the first and any selector or call site
+   expecting one name would silently stop matching the other.
 
    `.sresult:global(.selected)` — `selected` is the app-wide bare "keyboard-highlighted row"
-   convention (see Palette.module.css's header for the full list of consumers), and
+   convention (see PaletteRow.module.css's header for the full list of consumers), and
    SwitcherBar.tsx's `scrollSelectedIntoView(..., '.selected')` queries it generically across
    `.palette-row` file rows AND `.sresult` AI-result cards in the SAME list. Hashing it here would
    silently break that query. `classList={{ selected: … }}` in searchResults.tsx stays a bare
    literal for the same reason.
 
-   `:global(.asc-caret).search-spinner` / `:global(.asc-caret).search-spinner-lg` — `.asc-caret`
-   is the shared blinking-caret primitive (ui/ui.css), reached the same way every other module
-   layers module-local tint/size on top of a shared primitive class.
-
    `:global(.switcher-list) .sresult` — FOLDED IN from palette/switcher.css, which no longer
    defines this selector. That file's own header already explains switcher.css reuses
-   `.sresult`/`.search-state`/`.search-empty` from this file; the margin-top override belongs
-   beside the class it adjusts, not in the file reaching in from outside. `.switcher-list` itself
-   stays global (switcher.css owns the results-column chrome), reached here via `:global()`
-   exactly like Palette.module.css's own `:global(.switcher-list)` reach.
+   `.sresult`/`.search-empty` from this file; the margin-top override belongs beside the class it
+   adjusts, not in the file reaching in from outside. `.switcher-list` itself stays global
+   (switcher.css owns the results-column chrome), reached here via `:global()` exactly like
+   PaletteRow.module.css's own `:global(.switcher-list)` reach.
 
-   `search-state-error` (the modifier class SwitcherBar.tsx composes onto `.search-state` for the
-   error phase) has NO rule here — it never did in the original global file either (confirmed:
-   `grep` for it before this migration found only `.search-state-error-icon`, a different class).
-   Left as a bare literal in SwitcherBar.tsx on purpose; inventing a rule for it would not be a
-   verbatim move. `switcher-ask-ai` is a SEPARATE, hashed class of its own now (moved to
-   palette/SwitcherBar.module.css, CSS modules migration Task 9) that SwitcherBar.tsx composes
-   alongside this module's `search-ask-ai` on the same element — it is switcher-owned chrome,
-   not this module's, but it is no longer a bare literal; behavior is unaffected either way. */
+   `.search-state`/`.search-state-*`/`.search-spinner`/`.search-spinner-lg` (the bespoke
+   LOADING/ERROR/EMPTY-with-icon panels) were DROPPED here (Task 8, ds-conformance) — their last
+   readers, SwitcherBar.tsx's three readonly AI-phase panels, were swapped to the canonical
+   `ui/EmptyState.tsx` primitives (`Loading`/`EmptyState`) as intentional design-system drift (see
+   that task's report: the Sparkles/TriangleAlert icon and the loading panel's hint line are
+   dropped — EmptyState has no icon slot). `search-state-error` (the bare-literal modifier class
+   SwitcherBar.tsx used to compose onto `.search-state` for the error phase) is gone with it.
+   `switcher-ask-ai` is a SEPARATE, hashed class of its own (palette/SwitcherBar.module.css) that
+   SwitcherBar.tsx still composes alongside this module's `search-ask-ai` on the persistent AI
+   affordance — switcher-owned chrome, not this module's, unaffected by the above. */
 
 /* .search-ask-ai — the persistent AI affordance (BUG #8): shown under the result rows whenever
    the query is question-shaped, so the AI search is reachable in one obvious click even when
@@ -64,37 +62,6 @@
 .search-ask-ai-icon { flex: none; color: var(--teal); }
 .search-ask-ai-label { font-weight: 500; }
 .search-ask-ai-kbd { margin-left: auto; }
-
-/* Live indicator while the one-shot AI turn is in flight — reuses the shared blinking
-   .asc-caret (ui/ui.css). The teal tint + larger size are layered on via this combo
-   selector so they win over .asc-caret's default accent color/size (higher specificity
-   than the bare class, same override pattern as ui/Modal.tsx's `.asc-modal` note). */
-:global(.asc-caret).search-spinner { color: var(--teal); }
-/* The larger caret used in the prominent LOADING panel. */
-:global(.asc-caret).search-spinner-lg { font-size: var(--fs-display); }
-
-/* .search-state — the prominent, centered panels for the three "no list yet" states
-   (LOADING / ERROR / EMPTY). Big enough that the user is never unsure what happened (BUG #8). */
-.search-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-4);
-  text-align: center;
-  padding: calc(var(--sp-7) * 2) var(--sp-7);
-  color: var(--text-muted);
-}
-.search-state-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: 500; }
-.search-state-hint { font-size: var(--fs-ui); color: var(--text-muted); }
-/* The error message itself — the backend's actual text, so a broken setup is diagnosable. */
-.search-state-msg {
-  font-size: var(--fs-body);
-  color: var(--danger);
-  max-width: 460px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-.search-state-error-icon { color: var(--danger); opacity: 0.9; }
 
 /* .search-empty — zero-results affordance: a centered column nudging the user toward the AI
    fallback (clickable CTA) or reporting the AI found nothing. */

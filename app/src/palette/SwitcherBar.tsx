@@ -321,9 +321,15 @@ export function SwitcherBar(props: Props) {
             >
                 {/* A real binding (Escape closes the switcher — see nav.onEscape above), not a
             fabricated hint. */}
-                <span class={switcherStyles['switcher-esc']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={switcherStyles['switcher-esc']}
+                >
                     <Kbd combo="Escape" />
-                </span>
+                </Text>
             </SearchBar>
             <div class="switcher-list" ref={listRef}>
                 <Show when={aiPhase() === 'idle'}>
@@ -389,9 +395,15 @@ export function SwitcherBar(props: Props) {
                             >
                                 Ask Bismuth AI about your vault
                             </Text>
-                            <span class={searchStyles['search-ask-ai-kbd']}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={searchStyles['search-ask-ai-kbd']}
+                            >
                                 <kbd class={searchStyles['search-kbd']}>⌘↵</kbd>
-                            </span>
+                            </Text>
                         </PlainButton>
                     </Show>
                     <Show when={navCount() === 0}>

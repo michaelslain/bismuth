@@ -13,8 +13,7 @@ import {
 } from './paletteNav'
 import { rankItems, type Match, type PaletteItem } from './rankItems'
 import PaletteFrame, { PaletteEmpty } from './PaletteFrame'
-import PaletteRow, { Highlight } from './PaletteRow'
-import rowStyles from './PaletteRow.module.css'
+import PaletteRow, { Highlight, paletteRowClass } from './PaletteRow'
 import styles from './PaletteModal.module.css'
 
 // Re-exported so existing importers (CommandPalette, and SwitcherBar) keep resolving
@@ -74,14 +73,15 @@ export function PaletteModal(props: Props) {
 
     // Keep the highlighted row scrolled into view. `selected` is the app-wide bare state-class
     // convention (see PaletteRow.module.css's header) — it never hashes, so this selector stays
-    // a plain string; only `palette-row` needs the module lookup.
+    // a plain string; only `palette-row` needs the module lookup (via PaletteRow's exported
+    // class, so this file never imports PaletteRow.module.css itself).
     scrollSelectedIntoView(
         () => {
             selected()
             results()
         },
         () => listRef,
-        `.${rowStyles['palette-row']}.selected`,
+        `.${paletteRowClass}.selected`,
     )
 
     onMount(() => inputRef?.focus())
