@@ -60,8 +60,16 @@
 :global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
 .kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
 .kanbanColTitle { text-transform: capitalize; color: var(--fg); }
-.kbDotBtn { display: inline-flex; align-items: center; padding: var(--sp-1); margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
-.kbDotBtn:disabled { cursor: default; }
+/* text-align + color restore what the bare <button> got for free from the UA default under
+   this app's `color-scheme: dark` (native ButtonText renders white) — PlainButton's reset
+   (`appearance: none; color: inherit`) strips that, so it's pinned back explicitly here rather
+   than left to inherit --fg from .kanbanColHeader. --on-scrim is the one token documented as
+   "always white, every theme" (tokens.css), so it stands in for that native white rather than a
+   literal hex. The disabled dimming was likewise free UA behaviour, reproduced with color-mix. */
+.kbDotBtn { display: inline-flex; align-items: center; padding: var(--sp-1); margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; text-align: center; color: var(--on-scrim); }
+/* rgba(), not color-mix(): color-mix's computed value serializes as color(srgb …), which
+   would drift against the plain rgba() the UA default itself produced — see csscheck. */
+.kbDotBtn:disabled { cursor: default; color: rgba(255, 255, 255, 0.3); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
 
@@ -127,6 +135,9 @@
   width: 28px; height: 28px; margin-top: var(--sp-1); padding: 0;
   border: none; background: none; border-radius: var(--r-0); color: var(--text-muted);
   cursor: pointer; transition: background 120ms ease, color 120ms ease;
+  /* The bare <button> centred by default (UA text-align: center); PlainButton's reset sets
+     text-align: inherit, so pin it back explicitly. */
+  text-align: center;
 }
 .kbAddBtn:hover { background: var(--surface-2); color: var(--fg); }
 /* The composer gets a text caret + real text selection back (a dragged card sets
@@ -150,8 +161,9 @@
   /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
   box-shadow: var(--lift); width: max-content; max-width: 214px;
 }
-.kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: var(--rule-soft, 1px solid var(--border-soft)); cursor: pointer; padding: 0; }
-.kbSwatch:hover { transform: scale(1.12); }
+/* Palette swatches are now the shared ui/Swatch.tsx primitive (Task 14) — the size="sm" variant
+   renders the same 20px bordered circle this rule used to hand-roll. The "Auto" reset stays a
+   plain button: ui/Swatch has no children slot, and Auto needs its visible text label. */
 .kbSwatchAuto {
   height: 20px; padding: 0 var(--sp-4); border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: var(--fs-ui); cursor: pointer;

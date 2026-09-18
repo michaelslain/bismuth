@@ -57,6 +57,11 @@ import { STATUS_COLOR } from '../ui/StatusDot'
 import { pushToast } from '../Toast'
 import { suppressCardContextMenu } from './kanbanCardMenu'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
+import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import TextInput from '../ui/TextInput'
+import Swatch from '../ui/Swatch'
+import Callout from '../ui/Callout'
 import styles from './KanbanView.module.css'
 
 // Frontmatter key used to persist manual within-column ordering.
@@ -1163,10 +1168,10 @@ export function KanbanView(props: {
         <Show
             when={groupBy()}
             fallback={
-                <div class={styles.kanbanHint}>
+                <Callout class={styles.kanbanHint}>
                     This kanban view needs a "groupBy" property. Add e.g.
                     groupBy: note.status to the view.
-                </div>
+                </Callout>
             }
         >
             <div
@@ -1213,8 +1218,7 @@ export function KanbanView(props: {
                                             startColDrag(e, key)
                                         }
                                     >
-                                        <button
-                                            type="button"
+                                        <PlainButton
                                             class={styles.kbDotBtn}
                                             title={
                                                 editable()
@@ -1231,15 +1235,27 @@ export function KanbanView(props: {
                                             }
                                         >
                                             <span class={styles.dot} />
-                                        </button>
-                                        <span class={styles.kanbanColTitle}>
+                                        </PlainButton>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles.kanbanColTitle}
+                                        >
                                             {group().key === ''
                                                 ? '(empty)'
                                                 : group().key}
-                                        </span>
-                                        <span class={styles.kanbanCount}>
+                                        </Text>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles.kanbanCount}
+                                        >
                                             {group().rows.length}
-                                        </span>
+                                        </Text>
                                     </div>
 
                                     {/* Color picker popover */}
@@ -1251,12 +1267,13 @@ export function KanbanView(props: {
                                         <div class={styles.kbColorPop}>
                                             <For each={PALETTE}>
                                                 {c => (
-                                                    <button
-                                                        type="button"
-                                                        class={styles.kbSwatch}
-                                                        style={{
-                                                            background: c,
-                                                        }}
+                                                    <Swatch
+                                                        size="sm"
+                                                        color={c}
+                                                        label={c.replace(
+                                                            /^var\(--|\)$/g,
+                                                            '',
+                                                        )}
                                                         onClick={() =>
                                                             void setColColor(
                                                                 group().key,
@@ -1266,10 +1283,10 @@ export function KanbanView(props: {
                                                     />
                                                 )}
                                             </For>
-                                            <button
-                                                type="button"
+                                            <PlainButton
                                                 class={styles.kbSwatchAuto}
                                                 title="Auto"
+                                                aria-label="Auto"
                                                 onClick={() =>
                                                     void setColColor(
                                                         group().key,
@@ -1278,7 +1295,7 @@ export function KanbanView(props: {
                                                 }
                                             >
                                                 Auto
-                                            </button>
+                                            </PlainButton>
                                         </div>
                                     </Show>
 
@@ -1458,8 +1475,7 @@ export function KanbanView(props: {
                                                     group().key
                                                 }
                                                 fallback={
-                                                    <button
-                                                        type="button"
+                                                    <PlainButton
                                                         class={styles.kbAddBtn}
                                                         title="Add a card"
                                                         aria-label="Add a card"
@@ -1474,24 +1490,22 @@ export function KanbanView(props: {
                                                             value="Plus"
                                                             size={16}
                                                         />
-                                                    </button>
+                                                    </PlainButton>
                                                 }
                                             >
-                                                <textarea
+                                                <TextInput
+                                                    multiline
+                                                    plain
                                                     class={styles.kbComposer}
                                                     value={draft()}
-                                                    rows={2}
                                                     placeholder="Card title…  (⏎ to add, Esc to close)"
                                                     ref={el =>
                                                         queueMicrotask(() =>
                                                             el.focus(),
                                                         )
                                                     }
-                                                    onInput={e =>
-                                                        setDraft(
-                                                            e.currentTarget
-                                                                .value,
-                                                        )
+                                                    onInput={value =>
+                                                        setDraft(value)
                                                     }
                                                     onKeyDown={e => {
                                                         if (isConfirmKey(e)) {

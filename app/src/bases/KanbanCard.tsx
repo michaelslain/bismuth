@@ -21,6 +21,7 @@ import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
 import Chip from '../ui/Chip'
+import Text from '../ui/Text'
 import styles from './KanbanCard.module.css'
 import EmptyValue from '../ui/EmptyValue'
 
@@ -254,19 +255,30 @@ export function KanbanCard(props: {
                                     const v = value()
                                     if (typeof v === 'number')
                                         return (
-                                            <span>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                            >
                                                 {formatNumberDisplay(
                                                     v,
                                                     k.format,
                                                     k.unit,
                                                 )}
-                                            </span>
+                                            </Text>
                                         )
                                 }
                                 if (k.kind === 'boolean') {
                                     const on = value() === true
                                     return (
-                                        <span class={styles.kbMetaBoolChip}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles.kbMetaBoolChip}
+                                        >
                                             <Chip
                                                 selected={on}
                                                 icon={on ? 'Check' : 'Square'}
@@ -274,7 +286,7 @@ export function KanbanCard(props: {
                                             >
                                                 {on ? 'Yes' : 'No'}
                                             </Chip>
-                                        </span>
+                                        </Text>
                                     )
                                 }
                                 if (k.kind === 'multiselect') {
@@ -284,7 +296,11 @@ export function KanbanCard(props: {
                                             <EmptyValue />
                                         )
                                     return (
-                                        <span
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
                                             class={
                                                 styles.kbMetaMultiselectDisplay
                                             }
@@ -292,7 +308,7 @@ export function KanbanCard(props: {
                                             <For each={vals}>
                                                 {t => <Chip selected>{t}</Chip>}
                                             </For>
-                                        </span>
+                                        </Text>
                                     )
                                 }
                                 return renderCell(id, displayRow(), true)
@@ -310,11 +326,21 @@ export function KanbanCard(props: {
                                             !props.hideLabels
                                         }
                                     >
-                                        <span class={styles.kbMetaLabel}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles.kbMetaLabel}
+                                        >
                                             {columnLabel(id, props.config)}
-                                        </span>
+                                        </Text>
                                     </Show>
-                                    <span
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
                                         class={styles.kbMetaValueWrap}
                                         classList={{
                                             [styles.kbMetaClickable]:
@@ -327,7 +353,7 @@ export function KanbanCard(props: {
                                         }
                                     >
                                         {display()}
-                                    </span>
+                                    </Text>
                                 </div>
                             )
                         }}
