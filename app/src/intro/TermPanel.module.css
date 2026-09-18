@@ -49,14 +49,8 @@
 .t-cmd {
   color: var(--term-fg, var(--fg));
 }
-.t-dim {
-  color: var(--faint);
-}
 .t-accent {
   color: var(--accent);
-}
-.t-dots {
-  color: var(--faint);
 }
 .t-ok {
   color: var(--green);
@@ -66,9 +60,6 @@
 }
 .t-on {
   color: var(--green);
-}
-.t-status {
-  color: var(--text-muted);
 }
 
 /* ---- motion (enhancement only; resting state above is fully visible) ---- */

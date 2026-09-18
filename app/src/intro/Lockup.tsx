@@ -6,6 +6,7 @@
 // component file that did not look like one, and four components that could not be found by their
 // own names. Its story file exported only two of the four, so two rendered in no story at all.
 import { type Component } from 'solid-js'
+import Text from '../ui/Text'
 import styles from './Lockup.module.css'
 
 export type LockupProps = {
@@ -16,14 +17,20 @@ export type LockupProps = {
 const Lockup: Component<LockupProps> = props => {
     return (
         <div class={styles['vi-lockup']}>
-            <span class={styles['vi-lockup-mark']}>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['vi-lockup-mark']}
+            >
                 <img
                     src={`/logos/${props.icon}.svg`}
                     width={30}
                     height={30}
                     alt="Bismuth"
                 />
-            </span>
+            </Text>
         </div>
     )
 }
