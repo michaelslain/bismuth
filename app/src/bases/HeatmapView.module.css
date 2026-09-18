@@ -1,0 +1,32 @@
+/* ---------- heatmap (bases-heatmap.card.html) ----------
+   One character = one day; intensity is the GLYPH, never the cell size. */
+.heatmap { display: flex; flex-direction: column; gap: var(--sp-6); }
+.heatMonths {
+  display: flex;
+  padding-left: 22px;
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
+}
+.heatMonthCol { width: 14px; flex: none; overflow: visible; white-space: nowrap; }
+.heatGrid { display: flex; flex-direction: column; }
+.heatRow { display: flex; align-items: center; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 16px; }
+.heatDow { width: 14px; flex: none; color: var(--faint); }
+.heatCol { width: 14px; flex: none; text-align: center; }
+.heatCol.lv0 { color: var(--faint); }
+.heatCol.lv1 { color: var(--node-cold, var(--faint)); }
+.heatCol.lv2, .heatCol.lv3 { color: var(--accent); }
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0;
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
+}
+.legend .legendGlyph { width: 12px; text-align: center; }
+.legendSpacer { flex: 1; }
+
+/* Spacing for the heatmap's streak-stat row (StatTiles). */
+.streakStats { margin-top: var(--sp-5); }
