@@ -150,10 +150,5 @@
   /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
   box-shadow: var(--lift); width: max-content; max-width: 214px;
 }
-.kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: var(--rule-soft, 1px solid var(--border-soft)); cursor: pointer; padding: 0; }
-.kbSwatch:hover { transform: scale(1.12); }
-.kbSwatchAuto {
-  height: 20px; padding: 0 var(--sp-4); border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft));
-  background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: var(--fs-ui); cursor: pointer;
-}
-.kbSwatchAuto:hover { color: var(--fg); }
+/* Palette swatches + the "Auto" reset are now the shared ui/Swatch.tsx primitive (Task 14) —
+   the size="sm" variant renders the same 20px bordered circle these rules used to hand-roll. */
