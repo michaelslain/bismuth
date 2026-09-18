@@ -279,7 +279,6 @@
   font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
 }
 .vi-theme-card.selected .vi-theme-name {
   color: var(--accent);

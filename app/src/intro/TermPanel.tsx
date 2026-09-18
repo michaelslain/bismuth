@@ -12,6 +12,7 @@
 // The lines are exported as data instead, and the call site passes them. That also makes the panel
 // storyable with arbitrary content rather than only in its two shipped configurations.
 import { For, type Component, type JSX } from 'solid-js'
+import Text from '../ui/Text'
 import styles from './TermPanel.module.css'
 
 export type TermLine =
@@ -39,38 +40,115 @@ function Line(props: { ln: TermLine }): JSX.Element {
     const ln = props.ln
     if ('p' in ln)
         return (
-            <span>
-                <span class={styles['t-pmt']}>{ln.p} </span>
-                <span class={styles['t-cmd']}>{ln.c}</span>
-            </span>
+            <>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-pmt']}
+                >
+                    {ln.p}{' '}
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-cmd']}
+                >
+                    {ln.c}
+                </Text>
+            </>
         )
     if ('user' in ln)
         return (
-            <span>
-                <span class={styles['t-prompt']}>› </span>
-                <span class={styles['t-cmd']}>{ln.user}</span>
-            </span>
+            <>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-prompt']}
+                >
+                    ›{' '}
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-cmd']}
+                >
+                    {ln.user}
+                </Text>
+            </>
         )
     if ('status' in ln)
         return (
-            <span>
-                <span class={styles['t-on']}>●</span>{' '}
-                <span class={styles['t-status']}>{ln.status}</span>
-            </span>
+            <>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-on']}
+                >
+                    ●
+                </Text>{' '}
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="muted"
+                    weight="inherit"
+                >
+                    {ln.status}
+                </Text>
+            </>
         )
     return (
-        <span>
-            <span class={styles['t-dim']}>{ln.d}</span>
+        <>
+            <Text as="span" size="inherit" tone="faint" weight="inherit">
+                {ln.d}
+            </Text>
             {ln.accent && (
-                <span>
+                <>
                     {' '}
-                    <span class={styles['t-accent']}>{ln.accent}</span>
-                </span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['t-accent']}
+                    >
+                        {ln.accent}
+                    </Text>
+                </>
             )}
-            {ln.dd && <span class={styles['t-dim']}> {ln.dd}</span>}
-            {ln.ok && <span class={styles['t-dots']}> {'·'.repeat(14)} </span>}
-            {ln.ok && <span class={styles['t-ok']}>{ln.ok}</span>}
-        </span>
+            {ln.dd && (
+                <Text as="span" size="inherit" tone="faint" weight="inherit">
+                    {' '}
+                    {ln.dd}
+                </Text>
+            )}
+            {ln.ok && (
+                <Text as="span" size="inherit" tone="faint" weight="inherit">
+                    {' '}
+                    {'·'.repeat(14)}{' '}
+                </Text>
+            )}
+            {ln.ok && (
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['t-ok']}
+                >
+                    {ln.ok}
+                </Text>
+            )}
+        </>
     )
 }
 
@@ -87,7 +165,15 @@ const TermPanel: Component<TermPanelProps> = props => {
           bismuth-design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
           or macOS traffic-light dots. */}
             <div class={styles['vi-term-bar']}>
-                <span class={styles['vi-term-tab']}>[ {props.name} ]</span>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['vi-term-tab']}
+                >
+                    [ {props.name} ]
+                </Text>
             </div>
             <div class={styles['vi-term-body']}>
                 <For each={props.lines}>
@@ -108,8 +194,24 @@ const TermPanel: Component<TermPanelProps> = props => {
                         'animation-delay': `${0.15 + props.lines.length * 0.28}s`,
                     }}
                 >
-                    <span class={styles['t-pmt']}>~/vault ❯ </span>
-                    <span class="asc-caret">_</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['t-pmt']}
+                    >
+                        ~/vault ❯{' '}
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class="asc-caret"
+                    >
+                        _
+                    </Text>
                 </div>
             </div>
         </div>

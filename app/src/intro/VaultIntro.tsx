@@ -37,6 +37,7 @@ import Chip from '../ui/Chip'
 import Card from '../ui/Card'
 import Heading from '../ui/Heading'
 import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
 import { Icon } from '../icons/Icon'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
 import type { GraphRenderer } from '../graph/graphRenderer'
@@ -388,7 +389,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 {/* hide the corner mark on slides that already show the big centered logo */}
                 <Show
                     when={slide().key !== 'welcome' && slide().key !== 'begin'}
-                    fallback={<span />}
+                    fallback={<div />}
                 >
                     <Lockup icon={DEFAULTS.appearance.icon} />
                 </Show>
@@ -461,8 +462,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                             {name => {
                                 const t = THEMES[name]
                                 return (
-                                    <button
-                                        type="button"
+                                    <PlainButton
                                         class={styles['vi-theme-card']}
                                         classList={{
                                             [styles['selected']]: themeName() === name,
@@ -470,25 +470,43 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         aria-pressed={themeName() === name}
                                         onClick={() => setThemeName(name)}
                                     >
-                                        <span
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
                                             class={styles['vi-theme-swatch']}
                                             style={{ background: t.background }}
                                         >
-                                            <span
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
                                                 class={styles['vi-theme-swatch-fg']}
                                                 style={{
                                                     background: t.foreground,
                                                 }}
                                             />
-                                            <span
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
                                                 class={styles['vi-theme-swatch-accent']}
                                                 style={{ background: t.accent }}
                                             />
-                                        </span>
-                                        <span class={styles['vi-theme-name']}>
+                                        </Text>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="muted"
+                                            weight="inherit"
+                                            class={styles['vi-theme-name']}
+                                        >
                                             {THEME_LABELS[name]}
-                                        </span>
-                                    </button>
+                                        </Text>
+                                    </PlainButton>
                                 )
                             }}
                         </For>
@@ -511,9 +529,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                     >
                                         <div class={styles['vi-powerup-top']}>
                                             <Icon value={p.icon} size={16} />
-                                            <span class={styles['vi-powerup-name']}>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles['vi-powerup-name']}
+                                            >
                                                 {p.name}
-                                            </span>
+                                            </Text>
                                             <Chip
                                                 selected={on()}
                                                 title={
@@ -529,9 +553,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                                 {on() ? 'ON' : 'OFF'}
                                             </Chip>
                                         </div>
-                                        <span class={styles['vi-powerup-desc']}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles['vi-powerup-desc']}
+                                        >
                                             {p.desc}
-                                        </span>
+                                        </Text>
                                     </Card>
                                 )
                             }}
@@ -550,8 +580,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     <div class={styles['vi-dots']}>
                         <For each={SLIDES}>
                             {(_, k) => (
-                                <button
-                                    type="button"
+                                <PlainButton
                                     class={styles['vi-dot']}
                                     classList={{ [styles['on']]: k() === i() }}
                                     aria-label={`Go to slide ${k() + 1}`}
