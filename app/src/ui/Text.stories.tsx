@@ -152,6 +152,35 @@ export const LongWordWrapping: Story = {
     ),
 }
 
+/** `size="inherit"` / `tone="inherit"` emit no font-size+line-height / color at all, leaving
+ *  both to whatever ancestor rule already set them — the seam a caller needs when it already
+ *  controls typography (a heading's inline run, a button's label) and only wants Text's other
+ *  behavior (overflow-wrap, margin reset). */
+export const Inherit: Story = {
+    render: () => (
+        <div style={{ 'font-size': '22px', color: 'var(--accent)' }}>
+            <Text size="inherit" tone="inherit">
+                Inherits the ambient 22px size and accent color from its parent.
+            </Text>
+        </div>
+    ),
+}
+
+/** Every other HTML attribute and `ref` pass through untouched onto the rendered element —
+ *  `title`, `data-testid`, `onClick` here, but this covers the whole set (style, classList,
+ *  aria-*, data-*, id, role, ref). */
+export const PassThrough: Story = {
+    render: () => (
+        <Text
+            title="a native tooltip"
+            data-testid="text-passthrough"
+            onClick={() => window.alert('Text onClick fired')}
+        >
+            Hover for the title attribute, click to fire onClick — inspect data-testid in the DOM.
+        </Text>
+    ),
+}
+
 /** The full matrix at a glance. */
 export const AllVariants: Story = {
     render: () => (
