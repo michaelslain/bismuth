@@ -139,10 +139,6 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'PENDING SWEEP — a local Enter-to-open on a card, not yet migrated (see task-12 report)',
     },
     {
-        file: 'daemon/InboxRow.tsx',
-        reason: 'PENDING SWEEP — role="button" + Enter/Space opens the row, added because it nests real action buttons when due so it cannot be a <button> itself; the same shape as bases/CardsView.tsx\'s card-open, not yet migrated',
-    },
-    {
         file: 'preview/BookmarkRow.tsx',
         reason: 'PENDING SWEEP — Enter-to-jump and F2-to-rename on a bookmark row, not yet migrated (see task-12 report)',
     },

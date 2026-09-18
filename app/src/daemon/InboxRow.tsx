@@ -10,6 +10,7 @@ import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
+import { isConfirmKey } from '../ui/widgetKeys'
 import styles from './InboxRow.module.css'
 
 export type InboxRowProps = {
@@ -57,7 +58,7 @@ function InboxRow(props: InboxRowProps) {
             tabindex={0}
             onClick={() => props.onOpen(props.page.path)}
             onKeyDown={e => {
-                if (e.key !== 'Enter' && e.key !== ' ') return
+                if (!isConfirmKey(e)) return
                 e.preventDefault()
                 props.onOpen(props.page.path)
             }}
