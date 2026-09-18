@@ -9,6 +9,7 @@ import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
+import Text from '../ui/Text'
 import styles from './InboxRow.module.css'
 
 export type InboxRowProps = {
@@ -46,27 +47,56 @@ function InboxRow(props: InboxRowProps) {
     }
 
     return (
+        // Not a PlainButton: `showActions` can nest real buttons (below) inside this row, and a
+        // button element can never contain another one — invalid HTML, and the browser would
+        // hoist the inner one out, breaking the layout and the a11y tree. `role="button"` +
+        // `tabindex` + a matching onKeyDown give it the same keyboard reachability instead.
         <div
             class={`${styles['inbox-row']} ${props.class ?? ''}`}
+            role="button"
+            tabindex={0}
             onClick={() => props.onOpen(props.page.path)}
+            onKeyDown={e => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                props.onOpen(props.page.path)
+            }}
         >
-            <span
+            <div
                 class={styles['inbox-row-dot']}
                 style={{ color: STATUS_COLOR[props.page.status] }}
             />
             <div class={styles['inbox-row-main']}>
                 <div class={styles['inbox-row-head']}>
-                    <span class={styles['inbox-row-title']}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['inbox-row-title']}
+                    >
                         {props.page.title}
-                    </span>
+                    </Text>
                     <Show when={props.page.source}>
-                        <span class={styles['inbox-row-source']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['inbox-row-source']}
+                        >
                             {props.page.source}
-                        </span>
+                        </Text>
                     </Show>
-                    <span class={styles['inbox-row-time']}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['inbox-row-time']}
+                    >
                         {relTimeISO(props.page.createdAt)}
-                    </span>
+                    </Text>
                 </div>
                 <div class={styles['inbox-row-snippet']}>
                     {snippet(props.page.body)}
@@ -76,7 +106,11 @@ function InboxRow(props: InboxRowProps) {
                 <div
                     class={styles['inbox-row-actions']}
                     onClick={e => e.stopPropagation()}
+                    // Mirrors the click guard above: without this, Enter/Space on a nested action
+                    // button would bubble to the row's own onKeyDown and ALSO fire onOpen.
+                    onKeyDown={e => e.stopPropagation()}
                 >
+
                     <For each={props.page.actions}>
                         {a => (
                             <TextButton

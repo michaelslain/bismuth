@@ -24,6 +24,8 @@
     gap: var(--sp-3);
     height: var(--row-h, 18px);
     padding: 0 var(--sp-4);
+    width: 100%;
+    text-align: start;
     cursor: pointer;
     font-size: var(--fs-ui);
     border-radius: var(--r-0);
