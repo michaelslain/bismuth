@@ -220,6 +220,9 @@
   background: var(--surface-1); border: var(--rule); border-top-width: 2px;
   border-radius: var(--r-0); padding: var(--sp-5) var(--sp-4) var(--sp-5); cursor: pointer; position: relative;
   font-family: var(--ui-font-stack); color: var(--fg); transition: background 0.14s, border-color 0.14s;
+  /* PlainButton's reset sets text-align: inherit (was the native <button>'s UA-default
+     `center`) — restore it explicitly now that the element is no longer a bare <button>. */
+  text-align: center;
 }
 .grade .g-name { font-size: var(--fs-ui); text-transform: uppercase; font-weight: 500; }
 .grade:hover { background: var(--hover-bg); }
