@@ -40,7 +40,7 @@ function Line(props: { ln: TermLine }): JSX.Element {
     const ln = props.ln
     if ('p' in ln)
         return (
-            <>
+            <Text as="span" size="inherit" tone="inherit" weight="inherit">
                 <Text
                     as="span"
                     size="inherit"
@@ -59,11 +59,11 @@ function Line(props: { ln: TermLine }): JSX.Element {
                 >
                     {ln.c}
                 </Text>
-            </>
+            </Text>
         )
     if ('user' in ln)
         return (
-            <>
+            <Text as="span" size="inherit" tone="inherit" weight="inherit">
                 <Text
                     as="span"
                     size="inherit"
@@ -82,11 +82,11 @@ function Line(props: { ln: TermLine }): JSX.Element {
                 >
                     {ln.user}
                 </Text>
-            </>
+            </Text>
         )
     if ('status' in ln)
         return (
-            <>
+            <Text as="span" size="inherit" tone="inherit" weight="inherit">
                 <Text
                     as="span"
                     size="inherit"
@@ -96,23 +96,18 @@ function Line(props: { ln: TermLine }): JSX.Element {
                 >
                     ●
                 </Text>{' '}
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="muted"
-                    weight="inherit"
-                >
+                <Text as="span" size="inherit" tone="muted" weight="inherit">
                     {ln.status}
                 </Text>
-            </>
+            </Text>
         )
     return (
-        <>
+        <Text as="span" size="inherit" tone="inherit" weight="inherit">
             <Text as="span" size="inherit" tone="faint" weight="inherit">
                 {ln.d}
             </Text>
             {ln.accent && (
-                <>
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
                     {' '}
                     <Text
                         as="span"
@@ -123,7 +118,7 @@ function Line(props: { ln: TermLine }): JSX.Element {
                     >
                         {ln.accent}
                     </Text>
-                </>
+                </Text>
             )}
             {ln.dd && (
                 <Text as="span" size="inherit" tone="faint" weight="inherit">
@@ -148,7 +143,7 @@ function Line(props: { ln: TermLine }): JSX.Element {
                     {ln.ok}
                 </Text>
             )}
-        </>
+        </Text>
     )
 }
 

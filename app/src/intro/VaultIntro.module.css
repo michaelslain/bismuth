@@ -366,6 +366,10 @@
   border: none;
   /* var(--border) alone is a hairline colour, too weak to carry a standalone 8px mark. */
   background: color-mix(in srgb, var(--fg) 32%, transparent);
+  /* No text content, so this never paints — pinned explicitly (rather than left to
+     PlainButton's `color: inherit` reset) so the computed value is a real token, not an
+     inherited chain a reader would have to trace. */
+  color: var(--fg);
   cursor: pointer;
   padding: 0;
   transition: 0.22s;
