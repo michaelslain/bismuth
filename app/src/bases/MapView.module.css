@@ -52,7 +52,6 @@
   border-radius: var(--r-0);
   border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--pop-bg);
-  color: var(--fg);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);
   line-height: 1.3;
@@ -66,7 +65,6 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-lead);
   line-height: 1;
-  font-weight: var(--fw-bold, 600);
   color: var(--accent);
   text-shadow: var(--glow-accent);
 }
@@ -134,7 +132,6 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);
   line-height: 1;
-  color: var(--text-muted);
 }
 /* Offline-vector attribution badge, bottom-left. */
 .mapAttribution {
@@ -160,7 +157,6 @@
   background: var(--surface-2);
   color: var(--green);
 }
-.mapAttrCount { color: var(--faint); }
 .mapEmpty {
   position: absolute;
   inset: 0;

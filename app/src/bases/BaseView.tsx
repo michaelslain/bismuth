@@ -72,6 +72,7 @@ import ViewBar, { Crumb, VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
+import TextInput from '../ui/TextInput'
 import styles from './BaseView.module.css'
 
 /** A minimal FileMeta for the host note, exposed to an embedded base as `this.file`
@@ -162,11 +163,13 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                     >
                         <Index each={lines()}>{n => <div>{n()}</div>}</Index>
                     </div>
-                    <textarea
+                    <TextInput
+                        multiline
+                        plain
                         class={styles.sourceArea}
                         value={text()!}
                         spellcheck={false}
-                        onInput={e => setText(e.currentTarget.value)}
+                        onInput={setText}
                         onScroll={e => {
                             if (gutter)
                                 gutter.scrollTop = e.currentTarget.scrollTop

@@ -11,6 +11,8 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { plainLabel } from './renderValue'
 import { settings } from '../settings'
+import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
 import styles from './MapView.module.css'
 
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
@@ -478,17 +480,27 @@ export function MapView(props: {
                                         props.onOpen?.(m.row.file.path)
                                     }}
                                 >
-                                    <span class={styles.mapPinChip}>
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="default"
+                                        weight="inherit"
+                                        class={styles.mapPinChip}
+                                    >
                                         {title}
-                                    </span>
+                                    </Text>
                                     {/* Accent glyph marker — no drawn teardrop shape, per bases-map.card.html
                       ("@ a record"). */}
-                                    <span
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="bold"
                                         class={styles.mapPinGlyph}
                                         aria-hidden="true"
                                     >
                                         @
-                                    </span>
+                                    </Text>
                                 </div>
                             )
                         }}
@@ -498,58 +510,80 @@ export function MapView(props: {
                 {/* Floating controls, top-right — bracket buttons, typed glyphs (no SVG icons). */}
                 <div class={styles.mapControls}>
                     <div class={styles.mapZoomStack}>
-                        <button
-                            type="button"
+                        <PlainButton
                             class={styles.mapCtrlBtn}
                             title="Zoom in"
                             onClick={() => zoomBy(1)}
                         >
                             +
-                        </button>
-                        <button
-                            type="button"
+                        </PlainButton>
+                        <PlainButton
                             class={styles.mapCtrlBtn}
                             title="Zoom out"
                             onClick={() => zoomBy(-1)}
                         >
                             &minus;
-                        </button>
+                        </PlainButton>
                     </div>
-                    <button
-                        type="button"
+                    <PlainButton
                         class={`${styles.mapCtrlBtn} ${styles.mapCtrlSolo}`}
                         title="Reset view"
                         onClick={resetView}
                     >
                         =
-                    </button>
-                    <button
-                        type="button"
+                    </PlainButton>
+                    <PlainButton
                         class={`${styles.mapCtrlBtn} ${styles.mapCtrlSolo}`}
                         title="Locate notes"
                         onClick={locate}
                     >
                         @
-                    </button>
+                    </PlainButton>
                 </div>
 
                 {/* Scale bar. */}
                 <div class={styles.mapScale}>
-                    <span
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         class={styles.mapScaleBar}
                         style={{ width: `${scaleBar().widthPx}px` }}
                     />
-                    <span class={styles.mapScaleLabel}>{scaleBar().label}</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="muted"
+                        weight="inherit"
+                        class={styles.mapScaleLabel}
+                    >
+                        {scaleBar().label}
+                    </Text>
                 </div>
 
                 {/* Offline-vector attribution badge. */}
                 <div class={styles.mapAttribution}>
-                    <span class={styles.mapOfflineBadge}>offline vector</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.mapOfflineBadge}
+                    >
+                        offline vector
+                    </Text>
                     <Show when={markers().length > 0}>
-                        <span class={styles.mapAttrCount}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="faint"
+                            weight="inherit"
+                            class={styles.mapAttrCount}
+                        >
                             {markers().length}{' '}
                             {markers().length === 1 ? 'place' : 'places'}
-                        </span>
+                        </Text>
                     </Show>
                 </div>
 

@@ -15,6 +15,7 @@ import { checkStatus, isOverdue } from './taskDisplay'
 import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -238,7 +239,13 @@ export function TableView(props: {
                                     {columnLabel(c, props.config)}
                                 </Label>
                                 <Show when={props.onWidthsChange}>
-                                    <span class={styles.thResize} />
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles.thResize}
+                                    />
                                 </Show>
                             </th>
                         )}
