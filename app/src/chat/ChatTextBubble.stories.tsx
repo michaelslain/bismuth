@@ -74,11 +74,16 @@ export const CommandOutput: Story = {
     },
 }
 
-/** Blank text (e.g. an image-only turn) renders nothing at all — no empty bubble shell. */
+/** Blank text (e.g. an image-only turn) renders nothing at all — no empty bubble shell. The
+ *  caption is the story's own marker (so the canvas isn't literally blank pixels), not part of
+ *  ChatTextBubble; the assertion below is what actually proves the component renders nothing. */
 export const Empty: Story = {
     render: () => (
-        <div style={{ width: '600px' }} data-testid="empty-host">
-            <ChatTextBubble text="   " role="user" />
+        <div style={{ width: '600px' }}>
+            <p>blank text below renders no bubble:</p>
+            <div data-testid="empty-host">
+                <ChatTextBubble text="   " role="user" />
+            </div>
         </div>
     ),
     play: async ({ canvasElement }) => {
