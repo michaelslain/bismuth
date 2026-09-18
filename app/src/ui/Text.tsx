@@ -6,7 +6,7 @@ import './ui.css'
 export type TextTag = 'p' | 'span' | 'div'
 export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'inherit'
 export type TextTone = 'default' | 'muted' | 'faint' | 'inherit'
-export type TextWeight = 'regular' | 'medium' | 'bold'
+export type TextWeight = 'regular' | 'medium' | 'bold' | 'inherit'
 
 export type TextProps = {
     /** Tag to render. 'p' (default) for a paragraph, 'span' for an inline run, 'div' for a
@@ -21,7 +21,7 @@ export type TextProps = {
     tone?: TextTone
     /** Font weight (--fw-*). 'regular' (400) is the default; it still emits its own class
      *  (font-weight inherits, so an unset weight would otherwise pick up a bold/medium
-     *  ancestor's weight instead of resetting to 400). */
+     *  ancestor's weight instead of resetting to 400). 'inherit' emits no font-weight, for a Text replacing a bare span whose weight comes from its parent. */
     weight?: TextWeight
     /** The uppercase, tracked "section label" register (--ls-eyebrow) already hand-rolled
      *  per call site as DaemonList.module.css's .daemon-section-head and
@@ -41,7 +41,7 @@ function textClass(props: TextProps): string {
         styles.text,
         size !== 'inherit' ? styles[`text--${size}`] : '',
         tone !== 'inherit' ? styles[`text--${tone}`] : '',
-        styles[`text--${weight}`],
+        weight !== 'inherit' ? styles[`text--${weight}`] : '',
         props.eyebrow ? styles['text--eyebrow'] : '',
         props.class,
     ]

@@ -158,11 +158,16 @@ export const LongWordWrapping: Story = {
  *  behavior (overflow-wrap, margin reset). */
 export const Inherit: Story = {
     render: () => (
-        <div style={{ 'font-size': '22px', color: 'var(--accent)' }}>
-            <Text size="inherit" tone="inherit">
-                Inherits the ambient 22px size and accent color from its parent.
-            </Text>
-        </div>
+        <Stack>
+            <div style={{ 'font-size': '22px', color: 'var(--accent)' }}>
+                <Text size="inherit" tone="inherit">
+                    Inherits the ambient 22px size and accent color from its parent.
+                </Text>
+            </div>
+            <div style={{ 'font-weight': 'var(--fw-bold)' }}>
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">inherits bold</Text>
+            </div>
+        </Stack>
     ),
 }
 
