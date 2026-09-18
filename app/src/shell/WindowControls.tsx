@@ -19,6 +19,13 @@
 // integration, not chrome — and keeping them out here is what lets the component mount in Storybook
 // with no Tauri runtime present. macOS runs a transparent Overlay titlebar with native traffic
 // lights instead, so on that platform these buttons never render at all.
+//
+// These render as `PlainButton` (app/src/ui/PlainButton.tsx), not a bare `<button>` or `ui/Button`:
+// PlainButton is a real `<button>` with its native chrome reset to nothing, so `.win-btn`/
+// `.win-btn--close` below stay the only thing that paint it — `ui/Button`'s `.btn` family would add
+// a border, padding and a size no toolbar-height titlebar control wants. shell/InboxIndicator.tsx
+// uses the same primitive for the same reason.
+import PlainButton from '../ui/PlainButton'
 import styles from './WindowControls.module.css'
 
 export function WindowControls(props: {
@@ -28,30 +35,27 @@ export function WindowControls(props: {
 }) {
     return (
         <div class={styles['win-controls']}>
-            <button
-                type="button"
+            <PlainButton
                 class={styles['win-btn']}
                 title="Minimize"
                 onClick={props.onMinimize}
             >
                 [-]
-            </button>
-            <button
-                type="button"
+            </PlainButton>
+            <PlainButton
                 class={styles['win-btn']}
                 title="Maximize"
                 onClick={props.onToggleMaximize}
             >
                 [+]
-            </button>
-            <button
-                type="button"
+            </PlainButton>
+            <PlainButton
                 class={`${styles['win-btn']} ${styles['win-btn--close']}`}
                 title="Close"
                 onClick={props.onClose}
             >
                 [x]
-            </button>
+            </PlainButton>
         </div>
     )
 }

@@ -7,6 +7,7 @@
 //
 // GHOST_MAX_W clamp arithmetic stays in App.tsx — it reads the live drag state (grabDX/grabDY,
 // the descriptor's width); this component receives already-resolved pixel numbers and only draws.
+import Text from '../ui/Text'
 import styles from './DragGhost.module.css'
 
 export function DragGhost(props: {
@@ -26,7 +27,15 @@ export function DragGhost(props: {
                 width: `${props.width}px`,
             }}
         >
-            <span class={styles['drag-ghost-label']}>{props.label}</span>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['drag-ghost-label']}
+            >
+                {props.label}
+            </Text>
         </div>
     )
 }
