@@ -1,0 +1,266 @@
+/* FlashcardsView.module.css — the flashcard review UI (bases/FlashcardsView.tsx), split out of
+   bases/Flashcards.module.css (Task 4 of the design-system conformance pass) once that file had
+   two importers (this + EditCardsModal.tsx). The modal SHELL (panel sizing + title bar + close
+   button) both files drew moved to bases/CardsModal.tsx/.module.css, which this file's own
+   single-card edit modal now composes instead of duplicating.
+
+   OWNS: .flashcards-host, .count/.card-dir/.tally (what the deck contributes to the HOST's view
+   bar — see below), .fcmeter/.stage/.grade-row/.cardwrap/.card-actions/.flip-family/
+   .card-appear (+its @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/
+   .g-name/.done/.good-text/.inline-bolt (review stage — .fcmeter is the restored session-progress
+   AsciiMeter, on the deck's own surface, NOT inside the bar), and the single-card edit modal
+   (.card-edit-one/-body/-labeled/-field/-one-actions — the card's own ✎ action; its title-bar +
+   panel-sizing chrome now comes from <CardsModal>, not from classes owned here).
+
+   DELETED, NOT MIGRATED (confirmed zero consumers before the original 2026-08 modularization
+   commit; carried over from Flashcards.module.css's own header, unchanged by this split):
+     .deck-list/.deck-list h2/.deck-empty/.deck-row(+:hover+:disabled)/.deck-counts/.deck-due/
+       .deck-total — a standalone deck-picker screen; FlashcardsView.tsx now embeds review
+       directly in a base's flashcards view and never renders this markup. (`.deckctrls`, spelled
+       without a hyphen, was always a DIFFERENT class from these and is not part of this entry. It
+       survived the original move and was deleted later, when the deck's header strip went up into
+       the host's view bar — see the "What the deck contributes" block below.)
+     .srs-panel/.srs-panel h3/.srs-grid/.srs-field(+input+select) — BaseSettings' flashcards
+       config now goes through ui/Field.tsx's shared `.ui-field`.
+     .vs-section/.vs-col/.vs-mini(+:disabled+:hover)/.vs-check — a record-view column
+       visibility/order list with no consumer anywhere in app/src.
+   ui/EmptyState.tsx's mention of "review-done"/"deck-empty" is a JSDoc code EXAMPLE inside a
+   comment, not real usage — grepping for it as a live consumer is a false positive.
+
+   :global() — classes this file's selectors reach that are OWNED by ui/ui.css, so hashing them
+   here would make the selector match nothing in the real (unhashed) DOM:
+     .card-actions :global(.btn--icon)
+     .flashcards-host :global(.ui-empty-block) (+ its `h2`)
+     .flashcards-host :global(.ui-empty) (+ its `strong`/`code`, and `.inline-bolt` which IS ours
+       and stays local) — the "done" (deck/cram complete) state also routes through this now that
+       it renders via <EmptyState> instead of hand-rolled `.big`/`.sub` markup (this task's
+       intentional-drift swap; the story showing it is named in this task's report).
+   `.asc-kbd`/`.asc-key`/`.asc-modal` are referenced only as bare JSX literals in the consumer
+   (never combined into a selector in this file), so they need no :global() here.
+
+   BARE LITERAL (no rule anywhere — hashing it would resolve to `class="undefined"`):
+     .flip-front — `.flip-face.flip-front` has no dedicated rule; only `.flip-back` overrides the
+     shared `.flip-face`. Left as a plain string in FlashcardsView.tsx's JSX.
+
+   STATE CLASSES riding on a base class (become locals, not just the base): .flipped (on
+   .flip-card), .hard/.good/.easy (on .grade — .good happens to share a token with the unrelated
+   top-level `.good-text`; module scoping keeps them distinct).
+
+   :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest):
+   .flip-card:hover .card-actions, .flip-card:hover .flip-face, .grade:hover and its
+   .hard/.good/.easy :hover variants (incl. the :hover .g-name color changes). */
+
+/* ── Flashcards ─────────────────────────────────────────────── */
+.flashcards-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px var(--sp-7);
+  color: var(--fg);
+}
+
+/* ── Flashcard review (FlashcardsView) — "claude-design" handoff ──────────────
+   A centered stage with the flip card and a per-grade-accented grade row. All color comes
+   from theme vars so the deck re-tints per theme. */
+.flashcards-host { padding: 0; gap: 0; position: relative; }
+
+/* ── What the deck contributes to the HOST's view bar ─────────────────────────────────────────
+   These four are the ONLY rules here that style something outside this component's own DOM: the
+   count, the tally and the progress rule are built by `flashcardsSlots()` (FlashcardsView.tsx)
+   and mounted inside the base's `<ViewBar>` regions. Everything below this block is the stage.
+
+   THEY REPLACE `.revhead`/`.progress`/`.fcbar`/`.deckctrls`, a second full header this view used
+   to draw directly under the base's own 36px bar. Measured at a 1100px pane before the change:
+   36 + 94 = 130px of chrome above the card, the worst in the app. `.revhead` carried
+   `padding: 18px 26px var(--sp-3)` and `align-items: flex-start` with no height rule at all, so it
+   was content-sized and grew with whatever it held. The calendar had already solved exactly this
+   by going inline (calendar/components/Toolbar.tsx); this is that fix generalized.
+
+   `.count`'s rules were `.progress .count` — re-anchored, not just re-indented. Leaving the
+   descendant selector when its ancestor is deleted matches nothing, silently. */
+.count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
+.count b { color: var(--fg); }
+.count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
+.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; }
+.tally b { font-weight: 600; }
+.tally .a b { color: var(--violet); }
+.tally .g b { color: var(--blue); }
+.tally .e b { color: var(--green); }
+
+/* The restored AsciiMeter's slot (queue item 16 dies with the `.fcprogress` hairline this
+   replaces — restored 2026-09-02 at the user's request: "i liked that flashcards ascii meter").
+   NOT `max-width: <n>vw` — the rule this replaces used 42vw, and `vw` is the WINDOW while this
+   view lives in a PANE, so in a split pane or beside the sidebar it sized against a viewport far
+   wider than its container. See .grade-row below, which carries the same correction for the same
+   reason. The meter sizes itself in CELLS from the measured width of this box (fitMeterWidth in
+   ui/ascii/asciiMeterMath.ts, driven from FlashcardsView.tsx), so this rule only has to define
+   the box.
+
+   Unlike the 1px rule it replaces, this takes a REAL flex line in `.flashcards-host` (display:
+   flex; flex-direction: column) rather than sitting out of flow — see the stage comment below for
+   why that costs nothing: `.stage` is the flexible sibling that shrinks first. */
+.fcmeter {
+  flex: 0 0 auto; width: 100%; min-width: 0;
+  font-size: var(--fs-ui); line-height: var(--lh-grid);
+  padding: var(--sp-4) var(--sp-5) 0;
+}
+
+/* Stage — fills the full pane height. The card area (.cardwrap) is the ONLY flexible/scrolling
+   piece (flex: 1 1 auto, min-height: 0) so it shrinks-then-scrolls at a short window height; the
+   grade row is flex: 0 0 auto so it always claims its full natural size and is never squeezed
+   off the bottom (it used to be a `justify-content: center` sibling of the card, which let a
+   short window push it past the fold with no way to scroll it into view — `center`, unlike
+   `safe center`, doesn't extend the scrollable area to cover its own overflow). */
+.stage {
+  /* No `height: 100%`. The stage is now the host's ONLY child (the header went up into the base's
+     view bar), so `flex: 1 1 auto` + `min-height: 0` claims exactly the pane. `height: 100%` would
+     be equivalent today and wrong the moment anything else is a sibling again, which is how the
+     grade row got pushed off the fold the last time. */
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 26px; padding: 26px; overflow: hidden;
+}
+/* 100% of the STAGE, not 92vw. `vw` is the window, but this view lives in a pane — in a split
+   pane or beside the sidebar the card was sized against a viewport far wider than its own
+   container and overhung it. .stage's 26px padding is the breathing room `92vw` was standing in for. */
+.grade-row { flex: 0 0 auto; display: flex; gap: var(--sp-5); width: min(680px, 100%); }
+
+/* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
+   Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
+   hard 420px min-height floor — scrolls (safely centered, so the overflow stays reachable, same
+   idiom as .flip-face's "safe center" below) once the pane is shorter than the card. */
+.cardwrap {
+  perspective: 1800px; width: min(680px, 100%);   /* pane-relative, not 92vw — see .grade-row */
+  flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
+  overflow-y: auto;
+}
+/* Per-card actions pinned to each face's top-right — rendered on BOTH faces so they
+   flip with the card. Faint at rest, firm on card hover. */
+.card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; display: flex; gap: var(--sp-1); opacity: 0.4; transition: opacity 0.15s; }
+.flip-card:hover .card-actions { opacity: 1; }
+.card-actions :global(.btn--icon) { width: 28px; height: 28px; padding: 0; border-radius: var(--r-0); }
+.flip-card { width: 100%; min-height: 420px; perspective: 1200px; cursor: pointer; }
+.flip-inner { position: relative; width: 100%; min-height: 420px; transition: transform 0.5s; transform-style: preserve-3d; }
+.flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+/* Entrance: a NEW card remounts (keyed by row index+dir) and plays a crisp scale+fade in.
+   The flip (rotateY) is a separate transition on the persistent element, so switching cards
+   never flips backward — it just appears. */
+.card-appear { animation: card-appear 180ms var(--ease) both; }
+@keyframes card-appear {
+  from { opacity: 0; transform: translateX(40px) scale(0.97); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-appear { animation: none; }
+  .flip-inner { transition: none; }
+}
+.flip-face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  /* `safe center` centers content that fits but falls back to start-alignment when
+     it overflows — without `safe`, a tall card (e.g. a long numbered list) is pushed
+     above the scroll origin by the centering and its top is clipped/unreachable. */
+  display: flex; flex-direction: column; align-items: stretch; justify-content: safe center; gap: 0;
+  padding: 44px 46px 40px; box-sizing: border-box; overflow-y: auto;
+  /* .asc-card, in-flow: flat surface + hairline, no elevation shadow. */
+  background: var(--surface-1);
+  border: var(--rule); border-radius: var(--r-0);
+}
+.flip-card:hover .flip-face { border-color: var(--accent); }
+.flip-back { transform: rotateY(180deg); justify-content: flex-start; }
+
+/* Flip hint: the shared asc-kbd/asc-key keycap, pinned to the bottom of the front face. */
+.fliphint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--faint); display: flex; align-items: center; gap: var(--sp-4);
+}
+
+/* Answer face: italic prompt echo, hairline divider, then the answer body. */
+.qcaption { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: var(--sp-6); }
+.qcaption p { margin: 0; }
+.qcaption img { max-width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--r-0); }
+.fcdiv { width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent); margin-bottom: 18px; flex: 0 0 auto; }
+.abody { overflow-y: auto; max-height: 100%; padding-right: var(--sp-2); }
+
+/* Card prose: the UI/mono font (--ui-font-stack, a Monaspace variant) by default; the same
+   stack for `code`/```fences```. Markdown-rendered. */
+.card-md { font-family: var(--ui-font-stack); font-size: var(--fs-display); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css).
+   THIS BLOCK IS NEW and it is the whole reason the ramp was centralized. `.card-md` set NO heading
+   sizes at all, so a card's h1-h3 fell through to the BROWSER's default h1/h2/h3 multipliers —
+   computed against .card-md's own 22px base, that is roughly 44/33/25.7px. A fourth heading scale
+   that nobody chose, that matched neither editor, and that no stylesheet in this repo mentioned.
+   Setting nothing is not neutral; it is opting into someone else's ramp. */
+.card-md :global(h1) { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); }
+.card-md :global(h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); }
+.card-md :global(h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); }
+.card-md :global(h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); }
+.card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); }
+.card-md :global(h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); }
+.card-md.abody { font-size: var(--fs-title); line-height: 1.62; color: color-mix(in srgb, var(--fg) 86%, var(--text-muted)); text-align: left; width: 100%; }
+.card-md p { margin: 0 0 var(--sp-5); }
+.card-md p:last-child { margin-bottom: 0; }
+.card-md ul, .card-md ol { text-align: left; margin: var(--sp-3) 0; padding-left: 22px; display: flex; flex-direction: column; gap: var(--sp-5); }
+.card-md li { margin: 0; }
+.card-md li::marker { color: var(--faint); }
+.card-md h1, .card-md h2, .card-md h3 { font-family: var(--ui-font-stack); margin: var(--sp-2) 0 var(--sp-4); }
+.card-md strong { font-weight: 600; color: var(--fg); }
+.card-md em { font-style: italic; }
+.card-md a { color: var(--accent); }
+.card-md img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--r-0); }
+.card-md code { font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 0.85)); background: color-mix(in srgb, var(--fg) 11%, transparent); padding: 1px var(--sp-2); border-radius: var(--r-0); }
+.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 0.85)); background: var(--surface-2); padding: var(--sp-5) var(--sp-5); border-radius: var(--r-0); overflow-x: auto; }
+.card-md pre code { background: none; padding: 0; }
+
+/* Grade row: one bespoke button per grade — a colored top edge + name + the shared
+   asc-kbd/asc-key digit badge (1/2/3). (Deliberately not a ui/ Button — it's a
+   two-line accented control unique to this view.) */
+.grade {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  background: var(--surface-1); border: var(--rule); border-top-width: 2px;
+  border-radius: var(--r-0); padding: var(--sp-5) var(--sp-4) var(--sp-5); cursor: pointer; position: relative;
+  font-family: var(--ui-font-stack); color: var(--fg); transition: background 0.14s, border-color 0.14s;
+}
+.grade .g-name { font-size: var(--fs-ui); text-transform: uppercase; font-weight: 500; }
+.grade:hover { background: var(--hover-bg); }
+.grade.hard { border-top-color: var(--violet); }
+.grade.good { border-top-color: var(--blue); }
+.grade.easy { border-top-color: var(--teal); }
+.grade.hard:hover { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
+.grade.good:hover { border-color: color-mix(in srgb, var(--blue) 55%, transparent); }
+.grade.easy:hover { border-color: color-mix(in srgb, var(--teal) 55%, transparent); }
+.grade.hard:hover .g-name { color: var(--violet); }
+.grade.good:hover .g-name { color: var(--blue); }
+.grade.easy:hover .g-name { color: var(--teal); }
+
+/* Done state (deck/cram complete). Layout wrapper only — the title + message now render through
+   <EmptyState> (this task's intentional judgment-finding swap), so `.big`/`.sub` no longer have
+   rules here; EmptyState's own `h2`/`p.ui-empty` pick up matching italic prose styling from the
+   `.flashcards-host :global(.ui-empty-block)`/`:global(.ui-empty)` block below, same as the
+   queue-empty state already did. */
+.done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-6); text-align: center; margin: auto; }
+.good-text { color: var(--blue); }
+
+/* Empty/all-done states: faint prose italic, matching the card prose tone (not the
+   default mono EmptyState). Scoped to the review so other empty states are untouched. */
+.flashcards-host :global(.ui-empty-block) { gap: var(--sp-2); }
+.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--faint); }
+.flashcards-host :global(.ui-empty) { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--faint); }
+.flashcards-host :global(.ui-empty) strong { font-style: italic; font-weight: 600; color: var(--text-muted); }
+.flashcards-host :global(.ui-empty) .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
+.flashcards-host :global(.ui-empty) code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
+
+/* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. Narrower than the
+   shared CardsModal default — `.card-edit-one` overrides `.panel`'s width/height; doubled
+   (.card-edit-one.card-edit-one) because that override lives in a DIFFERENT stylesheet from
+   `.panel` (bases/CardsModal.module.css) now, so cross-file cascade order can't be trusted to pick
+   it — only higher specificity can (same idiom as `.cards-draft.cards-draft` in
+   EditCardsModal.module.css). */
+.card-edit-one.card-edit-one { width: min(560px, 92vw); height: auto; }
+.card-edit-one-body { display: flex; flex-direction: column; gap: var(--sp-5); padding: 18px var(--sp-7) 20px; }
+.card-edit-labeled { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-ui); color: var(--text-muted); }
+/* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + min-height. */
+.card-edit-labeled textarea.card-edit-field {
+  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); line-height: 1.5; min-height: 64px; resize: vertical;
+}
+.card-edit-one-actions { display: flex; justify-content: flex-end; gap: var(--sp-5); margin-top: var(--sp-1); }

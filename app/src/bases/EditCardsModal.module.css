@@ -1,0 +1,172 @@
+/* EditCardsModal.module.css — the deck-wide card manager (bases/EditCardsModal.tsx), split out
+   of bases/Flashcards.module.css (Task 4 of the design-system conformance pass) once that file
+   had two importers (EditCardsModal.tsx + FlashcardsView.tsx). The modal SHELL (panel sizing +
+   title bar + close button) moved to bases/CardsModal.tsx/.module.css, which both files now
+   compose instead of each drawing its own — that shell was the actual class both used.
+
+   OWNS: .cards-meta/.dot (this modal's own header addendum — the deck-name meta CardsModal
+   renders via its `meta` slot), .cards-modebar/.cards-hint/.key, the Cards-list family
+   (.cards-listwrap/.cards-collbl/.cards-row(+.dragging+.dropbefore)/.cards-num(+-add)/.cards-del/
+   .cards-addrow/.cards-lefthint), the Front/Back cell + draft row
+   (.cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft — folded in by Task 11 of the
+   original 2026-08 CSS modularization; see the "innerHTML/closest/querySelector trap" paragraph
+   below, carried over verbatim from Flashcards.module.css's own header), the Bulk-add family
+   (.cards-bulkwrap/.cards-bulk-toolbar/.cards-lab/.cards-chiprow/.cards-bulk-grid/
+   .cards-bulk-input(+textarea)/.cards-bulk-preview/.cards-pvhead/.cards-cnt/.cards-pvlist/
+   .cards-pvcard(+.bad)/.cards-pi/.cards-pf/.cards-pb(+::before)/.cards-warn-em/.cards-warn/
+   .cards-pvempty), the Footer (.cards-foot/.cards-count), and a local `.sp` spacer (flex: 1) for
+   the two flex-spacer usages that are NOT the header's — the modebar hint gap and the bulk
+   toolbar's trailing gap. (CardsModal.module.css owns its OWN, separate `.sp` for the header.)
+
+   THE INNERHTML/CLOSEST/QUERYSELECTOR TRAP (Task 11, unchanged by this split). `.cell-*`/
+   `.cards-draft` were held back from Task 8's original App.css move because
+   `bases/EditCardsModal.tsx` hit all three of that plan's dangerous shapes:
+     - `class="cell-ph"` inside a raw `innerHTML` template string (the empty-front placeholder) —
+       rewritten to interpolate `styles['cell-ph']` into the template literal, the same idiom
+       `.cards-warn-em` below already uses for its own runtime string.
+     - `e.currentTarget.closest('.cards-draft')!.querySelector('.cell-back textarea')` — this was
+       ALREADY fixed in an earlier session, before Task 11 started: EditCardsModal.tsx now uses a
+       direct Solid ref (`draftBackRef`) to move focus from the draft row's Front field to its Back
+       field on Enter, not a DOM class-selector walk. Nothing left to rewrite in the component.
+     - EditCardsModal.stories.tsx's `DraftEnterMovesFocusToBack` play function still queries
+       `document.querySelector('.cards-draft')` / `.querySelector('.cell-front textarea')` /
+       `.cell-back textarea')` directly — a STORY, not app code — and now reads this module's
+       `styles` (updated import path, same idiom).
+
+   DELETED, NOT MIGRATED (already confirmed zero consumers before the original 2026-08 move; see
+   Flashcards.module.css's git history for the full list — .deck-list/.srs-panel/.vs-section
+   families never lived in this file's half).
+
+   :global() — classes this file's selectors reach that are OWNED by ui/ui.css, so hashing them
+   here would make the selector match nothing in the real (unhashed) DOM:
+     .cards-modebar :global(.segmented) :global(.btn)
+     .cards-del :global(.btn--icon), .cards-row:hover .cards-del :global(.btn--icon)
+
+   BARE LITERAL (no rule anywhere — hashing it would resolve to `class="undefined"`):
+     .cell-front — no dedicated rule; only `.cell-back` overrides the shared `.cell-md`. Left as
+     a plain string in EditCardsModal.tsx's JSX (see CardCell's `fieldClass` comment there).
+
+   RUNTIME STRING: EditCardsModal.tsx's bulk-preview builds one `<em class="...">` via a raw HTML
+   string passed to Solid's `innerHTML` (not a JSX class attribute), for the "empty front" warning.
+   That markup is authored by this component itself (not vault content), so it was rewritten to
+   interpolate `styles['cards-warn-em']` into the template literal rather than left as a bare
+   literal — see EditCardsModal.tsx's CardRow preview render.
+
+   STATE CLASSES riding on a base class: .dragging/.dropbefore (on .cards-row), .bad (on
+   .cards-pvcard).
+
+   :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest): .cards-num,
+   .cards-row:hover .cards-del .btn--icon. */
+
+.cards-meta { color: var(--text-muted); font-size: var(--fs-body); display: flex; align-items: center; gap: var(--sp-4); }
+.cards-meta .dot { color: var(--faint); }
+
+.cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-7); }
+.cards-modebar :global(.segmented) :global(.btn) { gap: var(--sp-4); }
+.cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
+.cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: var(--r-0); padding: 1px var(--sp-2); color: var(--text-muted); font-size: var(--fs-micro); }
+.sp { flex: 1; }
+
+/* ── Cards list ── */
+.cards-listwrap { flex: 1 1 auto; overflow-y: auto; padding: 0 var(--sp-7) var(--sp-4); }
+.cards-collbl {
+  display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: var(--sp-5); align-items: center;
+  padding: var(--sp-3) var(--sp-2) var(--sp-4); position: sticky; top: 0; z-index: 2;
+  background: linear-gradient(180deg, var(--surface-1) 70%, transparent);
+  font-size: var(--fs-micro); letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
+}
+.cards-collbl span:first-child { text-align: center; }
+.cards-row { display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: var(--sp-5); align-items: stretch; padding: var(--sp-4) var(--sp-2); border-top: 1px solid var(--border-soft); position: relative; }
+.cards-row:first-of-type { border-top: 0; }
+.cards-row.dragging { opacity: 0.4; }
+.cards-row.dropbefore::before { content: ""; position: absolute; left: 30px; right: 34px; top: -1px; height: 2px; background: var(--accent); border-radius: var(--r-0); }
+
+/* Markdown-overlay cell (each `.cards-row`'s Front/Back pair, plus the trailing draft row). The
+   rendered .cell-md sits in normal flow and DRIVES the cell height (so it auto-grows with content,
+   with no fragile JS / font-load race); a transparent textarea overlays it and reveals the raw
+   monospace text on focus. Chrome matches the standard .ui-input (surface fill, soft border, accent
+   focus ring). */
+.cell { position: relative; }
+.cell-md {
+  min-height: 44px; padding: var(--sp-4) var(--sp-5); box-sizing: border-box; overflow: hidden;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); line-height: 1.5; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0);
+  white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
+}
+.cell:hover .cell-md { border-color: var(--border); }
+.cell-back .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
+.cell-md strong { color: var(--fg); font-weight: 600; }
+.cell-md em { font-style: italic; }
+.cell-md code { font-size: var(--fs-rel-code); background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px var(--sp-2); border-radius: var(--r-0); }
+.cell-md img { max-width: 100%; max-height: 140px; object-fit: contain; border-radius: var(--r-0); display: block; }
+.cell-ph { color: var(--text-muted); }
+.cell textarea {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); line-height: 1.5;
+  color: transparent; caret-color: transparent;
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-0);
+  padding: var(--sp-4) var(--sp-5); outline: none; box-sizing: border-box;
+}
+.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); background: var(--surface-2); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cell:focus-within .cell-md { visibility: hidden; }
+.cell textarea::placeholder { color: transparent; }
+.cell:focus-within textarea::placeholder { color: var(--text-muted); }
+.cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 var(--sp-2); background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
+.cell:focus-within .cell-tag { opacity: 1; }
+/* Draft row: plain monospace inputs (no markdown overlay), dashed until focused. */
+.cards-draft .cell textarea {
+  position: relative; height: auto; min-height: 44px; display: block; overflow: hidden;
+  color: var(--fg); caret-color: var(--accent); background: transparent; border: 1px dashed var(--border);
+}
+.cards-draft .cell textarea:focus { background: var(--surface-2); border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cards-draft .cell textarea::placeholder { color: var(--text-muted); }
+
+/* Doubling is unconditionally correct (higher specificity always wins, regardless of declaration
+   order) — kept even though `.cards-draft`/`.cards-row` are both local to this one module now. */
+.cards-draft.cards-draft { border-top: 1px dashed var(--border); margin-top: var(--sp-3); padding-top: var(--sp-5); }
+
+.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-5); color: var(--faint); font-size: var(--fs-ui); cursor: grab; user-select: none; }
+.cards-num:hover { color: var(--text-muted); }
+.cards-num:active { cursor: grabbing; }
+.cards-num-add { color: var(--accent); cursor: default; font-size: var(--fs-lead); }
+
+.cards-del { display: flex; align-items: flex-start; padding-top: var(--sp-4); }
+.cards-del :global(.btn--icon) { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
+.cards-row:hover .cards-del :global(.btn--icon) { opacity: 1; }
+.cards-addrow { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-4) var(--sp-2) var(--sp-3); }
+.cards-lefthint { color: var(--faint); font-size: var(--fs-ui); }
+
+/* ── Bulk add ── */
+.cards-bulkwrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: var(--sp-2) var(--sp-7) 0; }
+.cards-bulk-toolbar { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; padding: var(--sp-3) 0 var(--sp-5); }
+.cards-lab { color: var(--faint); font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; }
+.cards-chiprow { display: inline-flex; gap: var(--sp-3); flex-wrap: wrap; }
+.cards-bulk-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: var(--sp-6); min-height: 0; padding-bottom: var(--sp-6); }
+.cards-bulk-input { display: flex; flex-direction: column; min-height: 0; }
+.cards-bulk-input label { color: var(--faint); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: var(--sp-4); }
+/* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + sizing. */
+.cards-bulk-input textarea.cards-bulk-textarea {
+  flex: 1; min-height: 240px; resize: none;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.7;
+}
+.cards-bulk-preview { display: flex; flex-direction: column; min-height: 0; }
+.cards-pvhead { display: flex; align-items: baseline; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+.cards-cnt { color: var(--accent); font-size: var(--fs-ui); }
+.cards-pvlist { flex: 1; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--r-0); background: var(--bg); padding: var(--sp-3); }
+.cards-pvcard { display: grid; grid-template-columns: 18px 1fr; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); border-radius: var(--r-0); }
+.cards-pvcard:nth-child(odd) { background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.cards-pi { color: var(--faint); font-size: var(--fs-micro); font-family: var(--ui-font-stack); padding-top: var(--sp-2); text-align: right; }
+.cards-pf { font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); line-height: 1.45; }
+.cards-pb { font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--text-muted); line-height: 1.45; margin-top: var(--sp-2); }
+.cards-pb::before { content: "→ "; color: var(--blue); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.cards-pvcard.bad .cards-pf { color: var(--accent-purple); }
+.cards-warn-em { color: var(--accent-purple); font-style: italic; }
+.cards-warn { color: var(--accent-purple); font-family: var(--ui-font-stack); font-size: var(--fs-micro); margin-top: var(--sp-2); }
+.cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: var(--fs-ui); text-align: center; padding: 30px; }
+
+/* ── Footer ── */
+.cards-foot { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-6) var(--sp-7); border-top: 1px solid var(--border-soft); }
+/* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); font-size (12px, not on
+   the fixed --fs-* scale) stays here, and the class stays for the nested `b` override below. */
+.cards-count { font-size: var(--fs-ui); }
+.cards-count b { color: var(--fg); font-weight: 600; }

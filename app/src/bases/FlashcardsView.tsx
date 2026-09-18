@@ -13,7 +13,6 @@ import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { Icon } from '../icons/Icon'
 import EmptyState from '../ui/EmptyState'
-import { Modal } from '../ui/Modal'
 import { TextInput } from '../ui/TextInput'
 import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
@@ -22,8 +21,8 @@ import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
 import Kbd from '../ui/ascii/Kbd'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
-import Heading from '../ui/Heading'
-import styles from './Flashcards.module.css'
+import CardsModal from './CardsModal'
+import styles from './FlashcardsView.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { todayISO } from '../../../core/src/dates'
@@ -703,10 +702,13 @@ export function FlashcardsView(props: {
                         when={current() !== null}
                         fallback={
                             <div class={styles['done']}>
-                                <div class={styles['big']}>
-                                    {cram() ? 'Cram complete' : 'Deck complete'}
-                                </div>
-                                <div class={styles['sub']}>
+                                <EmptyState
+                                    title={
+                                        cram()
+                                            ? 'Cram complete'
+                                            : 'Deck complete'
+                                    }
+                                >
                                     <Show
                                         when={cram()}
                                         fallback={
@@ -740,7 +742,7 @@ export function FlashcardsView(props: {
                                         <b>{graded()}</b>{' '}
                                         {graded() === 1 ? 'review' : 'reviews'}.
                                     </Show>
-                                </div>
+                                </EmptyState>
                                 <TextButton size="lg" onClick={restart}>
                                     REVIEW AGAIN
                                 </TextButton>
@@ -845,21 +847,11 @@ export function FlashcardsView(props: {
             </div>
 
             <Show when={editingCard() && props.basePath}>
-                <Modal
+                <CardsModal
+                    title="Edit card"
                     onClose={() => setEditingCard(false)}
-                    class={`${styles['cards-modal']} ${styles['card-edit-one']}`}
+                    class={styles['card-edit-one']}
                 >
-                    <div class={styles['cards-head']}>
-                        <Heading level={2} class={styles['cards-title']}>
-                            Edit card
-                        </Heading>
-                        <div class={styles['sp']} />
-                        <IconButton
-                            icon="X"
-                            label="Close"
-                            onClick={() => setEditingCard(false)}
-                        />
-                    </div>
                     <div class={styles['card-edit-one-body']}>
                         <label class={styles['card-edit-labeled']}>
                             <span>Front</span>
@@ -893,7 +885,7 @@ export function FlashcardsView(props: {
                             </TextButton>
                         </div>
                     </div>
-                </Modal>
+                </CardsModal>
             </Show>
         </div>
     )

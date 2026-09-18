@@ -1,5 +1,4 @@
 import { createSignal, createMemo, For, Show } from 'solid-js'
-import { Modal } from '../ui/Modal'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -8,8 +7,8 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
-import Heading from '../ui/Heading'
-import styles from './Flashcards.module.css'
+import CardsModal from './CardsModal'
+import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
 import { escapeHtml } from '../htmlEscape'
@@ -237,20 +236,17 @@ export function EditCardsModal(props: {
     }
 
     return (
-        <Modal onClose={close} class={styles['cards-modal']}>
-            <div class={styles['cards-head']}>
-                <Heading level={2} class={styles['cards-title']}>
-                    Edit cards
-                </Heading>
+        <CardsModal
+            title="Edit cards"
+            onClose={close}
+            meta={
                 <Show when={props.deckName}>
                     <span class={styles['cards-meta']}>
                         <span class={styles['dot']}>//</span> {props.deckName}
                     </span>
                 </Show>
-                <div class={styles['sp']} />
-                <IconButton icon="X" label="Close" onClick={close} />
-            </div>
-
+            }
+        >
             <div class={styles['cards-modebar']}>
                 <SegmentedToggle
                     value={mode()}
@@ -571,6 +567,6 @@ export function EditCardsModal(props: {
                     </TextButton>
                 </Show>
             </div>
-        </Modal>
+        </CardsModal>
     )
 }
