@@ -1,8 +1,10 @@
-import { For, Show, createMemo } from 'solid-js'
+import { For, createMemo } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
 import { buildLinePlot } from './asciiLine'
-import styles from './Charts.module.css'
+import Text from '../ui/Text'
+import ChartFrame from './ChartFrame'
+import styles from './LineView.module.css'
 
 /** A value over time, plotted on the character grid — no SVG (bases-line.card.html). */
 export function LineView(props: { result: ViewResult; config: BaseConfig }) {
@@ -13,36 +15,40 @@ export function LineView(props: { result: ViewResult; config: BaseConfig }) {
     const plot = createMemo(() => buildLinePlot(data().points))
 
     return (
-        <div class={styles.chart}>
-            <Show
-                when={plot().rows.length > 0}
-                fallback={<div class={styles.empty}>No data to chart.</div>}
-            >
-                <pre class={styles.linePlot}>
-                    <For each={plot().rows}>
-                        {row => (
-                            <>
-                                {row.tick}
-                                <For each={row.segments}>
-                                    {seg =>
-                                        seg.accent ? (
-                                            <span class={styles.glyph}>
-                                                {seg.text}
-                                            </span>
-                                        ) : (
-                                            seg.text
-                                        )
-                                    }
-                                </For>
-                                {'\n'}
-                            </>
-                        )}
-                    </For>
-                    {plot().axisRule}
-                    {'\n'}
-                    {plot().axisLabels}
-                </pre>
-            </Show>
-        </div>
+        <ChartFrame
+            empty={plot().rows.length === 0}
+            emptyMessage="No data to chart."
+        >
+            <pre class={styles.linePlot}>
+                <For each={plot().rows}>
+                    {row => (
+                        <>
+                            {row.tick}
+                            <For each={row.segments}>
+                                {seg =>
+                                    seg.accent ? (
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles.glyph}
+                                        >
+                                            {seg.text}
+                                        </Text>
+                                    ) : (
+                                        seg.text
+                                    )
+                                }
+                            </For>
+                            {'\n'}
+                        </>
+                    )}
+                </For>
+                {plot().axisRule}
+                {'\n'}
+                {plot().axisLabels}
+            </pre>
+        </ChartFrame>
     )
 }

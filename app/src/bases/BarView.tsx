@@ -1,8 +1,9 @@
-import { Show, createMemo } from 'solid-js'
+import { createMemo } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
 import { AsciiChart } from '../ui/ascii/AsciiMeter'
-import styles from './Charts.module.css'
+import ChartFrame from './ChartFrame'
+import styles from './BarView.module.css'
 
 // Per-bar palette cycles through the graph color ramp (--graph-0..--graph-4),
 // sourced from the theme tokens so bars re-tint when the user switches themes.
@@ -29,15 +30,13 @@ export function BarView(props: { result: ViewResult; config: BaseConfig }) {
     )
 
     return (
-        <div class={styles.chart}>
-            <Show
-                when={data().points.length > 0}
-                fallback={<div class={styles.empty}>No data to chart.</div>}
-            >
-                <div class={styles.barChart}>
-                    <AsciiChart series={series()} width={32} />
-                </div>
-            </Show>
-        </div>
+        <ChartFrame
+            empty={data().points.length === 0}
+            emptyMessage="No data to chart."
+        >
+            <div class={styles.barChart}>
+                <AsciiChart series={series()} width={32} />
+            </div>
+        </ChartFrame>
     )
 }
