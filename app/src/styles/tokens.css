@@ -42,6 +42,9 @@
   --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
   --accent-soft: rgba(147,189,176,0.12);
   --on-accent: #15161A;
+  /* Foreground over an arbitrary-photo scrim (--scrim-bg) — always white, every theme. See
+     settingsCssVars.ts's --on-scrim projection for why this isn't a light/dark derivation. */
+  --on-scrim: #fff;
   --glow-accent: 0 0 0 1px rgba(147,189,176,0.14);
   --glow-text: none;
   /* Named chrome accents + iridescent gradient (derived from the graph ramp at runtime). */
@@ -172,6 +175,11 @@
      a later wave's edit, not this one's. Nothing reads this token yet. */
   --fs-hero: 40px;
 
+  /* ── Relative sizing — NEW (task 1, token literals sweep). Steps expressed in `em`, meant for a
+     size that scales WITH its inherited context rather than to an absolute px step in the scale
+     above (inline `code` inside prose that itself resizes per --editor-font-size/prose ramp). */
+  --fs-rel-code: 0.9em;   /* inline code, slightly under its surrounding text */
+
   /* ── Font weight — unchanged, moved verbatim from ui.css:41-43. */
   --fw-regular: 400;
   --fw-medium: 500;
@@ -202,6 +210,12 @@
   --r-control: 3px;
   --r-card: 4px;
   --r-panel: 5px;
+  /* NEW (task 1, token literals sweep). The PDF text-highlight mark's own corner radius —
+     NOT a step in the 0/50% UI radius scale above (§9.2): it renders a physical highlighter
+     mark (preview/HighlightLayer.module.css), whose softened corner is part of the mark
+     itself, not chrome. Kept at its pre-existing 1px value; cssBaseline showed real drift
+     at --r-0 so this stays a distinct token rather than aliasing to it. */
+  --r-mark: 1px;
 
   /* ── Rule / border — --rule/--rule-soft moved verbatim from ui.css:56-57 (values unchanged:
      both already read var(--border)/var(--border-soft), so nothing about how a hairline renders

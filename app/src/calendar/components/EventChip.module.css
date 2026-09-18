@@ -33,6 +33,6 @@
 /* Short events: time + title on one line so the title stays visible in the
    limited height (a back-to-back 30-min slot is only ~22px tall). */
 .event-chip.in-grid.compact { flex-direction: row; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-4); }
-.event-chip.in-grid.compact .event-chip-title { flex: 1; min-width: 0; font-size: 1em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-chip.in-grid.compact .event-chip-title { flex: 1; min-width: 0; font-size: inherit; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-chip.in-grid.compact .event-chip-time { line-height: 1.25; }
 .event-chip.in-grid.compact .event-chip-meta { display: none; }
