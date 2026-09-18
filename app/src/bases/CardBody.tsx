@@ -10,6 +10,7 @@ import {
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import CardTitle from './CardTitle'
 import styles from './CardBody.module.css'
 
@@ -127,27 +128,45 @@ export function CardBody(props: {
             </Show>
             <Show when={hasMeta()}>
                 <div class={styles.cardMeta}>
-                    <span class={styles.cardMetaLeft}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.cardMetaLeft}
+                    >
                         <Show when={status()}>
                             {s => <StatusText status={s()} />}
                         </Show>
-                    </span>
-                    <span class={styles.cardMetaRight}>
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.cardMetaRight}
+                    >
                         <Show
                             when={rating()}
                             fallback={
                                 <Show when={pages()}>
                                     {p => (
-                                        <span class={styles.cardPages}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="muted"
+                                            weight="inherit"
+                                            class={styles.cardPages}
+                                        >
                                             {p()} pages
-                                        </span>
+                                        </Text>
                                     )}
                                 </Show>
                             }
                         >
                             {r => <Stars value={r()} />}
                         </Show>
-                    </span>
+                    </Text>
                 </div>
             </Show>
         </>
