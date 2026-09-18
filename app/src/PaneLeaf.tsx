@@ -6,11 +6,15 @@
 // header chrome split into `PaneHeader.tsx` and its two drop affordances split into
 // `PaneDropZone.tsx` — see those files for why.
 //
-// Class names are reached through the shared `PaneTree.module.css` (folded in from App.css AND
-// PaneTree.css) — `.pane-leaf.focused .pane-header` crosses into PaneHeader.tsx, which is why the
-// module is shared rather than colocated per-file.
+// Class names are reached through this component's own colocated `PaneLeaf.module.css`. Focus
+// state used to brighten PaneHeader via the class-based ancestor selector `.pane-leaf.focused
+// .pane-header`, which required sharing one module across both components (CSS Modules hash per
+// file, so a selector spanning two components' classes cannot resolve once they hash separately).
+// Now this component sets a `data-pane-focused` RUNTIME HOOK (data-* attribute, never hashed) on
+// its own root, and PaneHeader.module.css's rule reads `[data-pane-focused] .pane-header` — no
+// class from this module involved, so each component keeps its own stylesheet.
 import { Show, type Accessor } from 'solid-js'
-import styles from './PaneTree.module.css'
+import styles from './PaneLeaf.module.css'
 import type { PaneNode, Leaf } from './panes'
 import { PaneContent } from './PaneContent'
 import { PaneHeader } from './PaneHeader'
@@ -99,15 +103,17 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
     return (
         <div
             class={styles['pane-leaf']}
-            classList={{
-                [styles['focused']]: props.node.id === props.focusId,
-            }}
             data-pane-leaf={props.node.id}
             // Runtime hook read by dnd/viewDrag.ts's resolveTarget, so it can decide the reference
             // geometry without reaching into App's model. An attribute, not a class: a module class
             // is hashed at build time, so a string-literal class selector would compile and match
             // nothing.
             data-pane-content={props.node.content}
+            // Runtime hook read by PaneHeader.module.css's `[data-pane-focused] .pane-header`
+            // rule, so the focus brightening can cross the file boundary without a shared module.
+            data-pane-focused={
+                props.node.id === props.focusId ? true : undefined
+            }
             onMouseDown={() => props.onFocus(props.node.id)}
             onContextMenu={e => {
                 e.preventDefault()
