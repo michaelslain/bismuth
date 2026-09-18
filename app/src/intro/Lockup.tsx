@@ -6,7 +6,7 @@
 // component file that did not look like one, and four components that could not be found by their
 // own names. Its story file exported only two of the four, so two rendered in no story at all.
 import { type Component } from 'solid-js'
-import styles from './VaultIntro.module.css'
+import styles from './Lockup.module.css'
 
 export type LockupProps = {
     /** Logo mark basename, resolved to /logos/<icon>.svg. */

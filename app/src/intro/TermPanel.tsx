@@ -12,7 +12,7 @@
 // The lines are exported as data instead, and the call site passes them. That also makes the panel
 // storyable with arbitrary content rather than only in its two shipped configurations.
 import { For, type Component, type JSX } from 'solid-js'
-import styles from './VaultIntro.module.css'
+import styles from './TermPanel.module.css'
 
 export type TermLine =
     | { p: string; c: string }

@@ -7,21 +7,20 @@
    Moved out of the global VaultIntro.css verbatim (2026-08 CSS modularization) except for
    the `:global()` wrapping documented below.
 
-   SHARED ON PURPOSE by the slideshow shell (VaultIntro.tsx) and the per-slide hero marks
-   that were split out of the old intro/marks.tsx — Lockup.tsx, WordmarkHero.tsx and
-   TermPanel.tsx. All of them import THIS module as `styles`, same reason as
-   PaneTree.module.css: `.vi-term`'s family and `.vi-lockup`/`.vi-wordmark-hero` are defined
-   here but written by those components, so every one must resolve the same hashed names.
+   OWNED SOLELY BY VaultIntro.tsx now (design-system conformance task 5, one-stylesheet-one-
+   importer): the per-slide hero marks that used to share this file — Lockup.tsx,
+   WordmarkHero.tsx and TermPanel.tsx — each got their own colocated module
+   (Lockup.module.css, WordmarkHero.module.css, TermPanel.module.css) and no longer import
+   this one.
 
    `.vi-powerup` is passed as `<Card class={...}>`'s own `class` prop (ui/Card.tsx, the shared
    flat-surface card primitive — moved out of ui.css's bare `.asc-card` global 2026-08-27,
    visual-unification audit §7 wave 1) — this rule only adds the power-up row's own
    width/flex/gap on top of Card's own background/border/radius.
 
-   `.asc-wordmark`/`.asc-caret` are referenced only in COMMENTS below (and combined as bare
-   literals in these components' `class` strings, e.g. `class="asc-wordmark
-   vi-wordmark-text"`) — never defined here, so nothing needed `:global()` for them; they
-   stay ordinary global classes the JSX composes alongside this module's hashed names.
+   `.asc-wordmark`/`.asc-caret` are referenced only in COMMENTS below — never defined here, so
+   nothing needed `:global()` for them; they are ordinary global classes composed alongside
+   this module's hashed names in WordmarkHero.tsx/TermPanel.tsx now.
    `.asc-eyebrow` USED to appear here too, as a section label above each slide's heading.
    It is gone: a kicker over a heading is a pattern the heading does not need, and on three
    of the seven slides the label simply restated it ("POWER-UPS" over "Optional power-ups.").
@@ -30,7 +29,7 @@
    `classList`: `selected` on `.vi-theme-card`, `locked` on `.vi-powerup`, `on` on `.vi-dot`,
    `active` on `.vi-graph3d`. NONE of these is the app-wide bare `selected` convention (see
    SearchResultRows.module.css's header for that family) — nothing outside this
-   VaultIntro.tsx/marks.tsx pair reads any of them generically. */
+   VaultIntro.tsx reads any of them generically. */
 
 .vi-root {
   position: fixed;
@@ -69,17 +68,6 @@
 }
 .vi-top > * {
   pointer-events: auto;
-}
-.vi-lockup {
-  display: flex;
-  align-items: center;
-}
-.vi-lockup-mark {
-  display: grid;
-  place-items: center;
-}
-.vi-lockup-mark img {
-  display: block;
 }
 
 /* ---- centered stage ---- */
@@ -391,85 +379,6 @@
   background: var(--accent);
 }
 
-/* ---- wordmark hero (welcome / begin) — the logo mark + the system's ONE decorative
-   flourish (.asc-wordmark's gradient sheen, ui.css/App.css), replacing the old bespoke
-   glow/ring/spin crystal treatment. No extra glow layered around it — the sheen IS the
-   flourish. ---- */
-.vi-wordmark-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-}
-.vi-wordmark-hero img {
-  display: block;
-}
-.vi-wordmark-text {
-  font-size: var(--fs-hero);
-  letter-spacing: 0.04em;
-}
-
-/* ---- terminal hero (daemon / claude) — flat register: hairline border, square corners,
-   a bracket session tab instead of macOS traffic-light dots (see TermPanel.tsx /
-   bismuth-design/ascii-extended's terminal chrome vocabulary). ---- */
-.vi-term {
-  width: 510px;
-  max-width: 100%;
-  background: var(--term-bg, #08090e);
-  border: 1px solid var(--border);
-  text-align: left;
-  color: var(--term-fg, var(--fg));
-}
-.vi-term-bar {
-  display: flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 var(--sp-5);
-  background: var(--rail);
-  border-bottom: 1px solid var(--border-soft, var(--border));
-}
-.vi-term-tab {
-  font-size: var(--fs-micro);
-  letter-spacing: 0.04em;
-  color: var(--accent);
-}
-.vi-term-body {
-  padding: var(--sp-6) 20px 18px;
-  font-size: var(--fs-body);
-  line-height: 1.85;
-  white-space: nowrap;
-}
-/* Same derived-ANSI vocabulary as Terminal.tsx's real palette (bismuth-design/ascii-extended
-   PORTING.md §1a): prompt = accent, success = green, the reply arrow = violet — a token,
-   not a hand-picked color, and no glow on the status dot (flat register). */
-.t-pmt {
-  color: var(--accent);
-}
-.t-cmd {
-  color: var(--term-fg, var(--fg));
-}
-.t-dim {
-  color: var(--faint);
-}
-.t-accent {
-  color: var(--accent);
-}
-.t-dots {
-  color: var(--faint);
-}
-.t-ok {
-  color: var(--green);
-}
-.t-prompt {
-  color: var(--violet);
-}
-.t-on {
-  color: var(--green);
-}
-.t-status {
-  color: var(--text-muted);
-}
-
 /* ---- responsiveness ---- */
 @media (max-width: 980px) {
   .vi-title.vi-title {
@@ -478,16 +387,6 @@
 }
 
 /* ---- motion (enhancement only; resting state above is fully visible) ---- */
-@keyframes vi-line {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 /* Slide-in (horizontal) for the per-slide content — reads as a slide, not a fade. */
 @keyframes vi-slidein {
   from {
@@ -509,10 +408,4 @@
   .vi-hero-overlay {
     animation: vi-slidein 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
-  .vi-term-line {
-    opacity: 0;
-    animation: vi-line 0.5s ease both;
-  }
-  /* The terminal cursor is .asc-caret (ui.css) — its blink comes from the shared
-     asc-blink keyframe + --blink var, not a local one. */
 }
