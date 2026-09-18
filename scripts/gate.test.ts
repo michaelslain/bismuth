@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { affectedWorkspaces, sanitizeGitEnv } from './gate'
+import { affectedWorkspaces, sanitizeGitEnv, touchesDesignSystem } from './gate'
 
 test('a single-workspace edit tests only that workspace', () => {
     expect(affectedWorkspaces(['app/src/App.tsx'])).toEqual(['app'])
@@ -58,6 +58,35 @@ test('a workspace name appearing mid-path does not count as that workspace', () 
 
 test('nothing staged yields nothing to test', () => {
     expect(affectedWorkspaces([])).toEqual([])
+})
+
+// --- design-system gate routing ---------------------------------------------------------------
+
+test('touchesDesignSystem fires on app/src changes', () => {
+    expect(touchesDesignSystem(['app/src/ui/Text.tsx'])).toBe(true)
+    expect(touchesDesignSystem(['app/src/ui/Text.module.css'])).toBe(true)
+})
+
+test('touchesDesignSystem fires on the manifest, the baseline and the copied gate scripts', () => {
+    expect(touchesDesignSystem(['DESIGN.md'])).toBe(true)
+    expect(touchesDesignSystem(['design-system.baseline.json'])).toBe(true)
+    expect(touchesDesignSystem(['scripts/designSystem/checks.mjs'])).toBe(true)
+    expect(touchesDesignSystem(['scripts/designSystem/lib/yamlSubset.mjs'])).toBe(true)
+})
+
+test('touchesDesignSystem stays out of the way for everything else', () => {
+    expect(touchesDesignSystem(['core/src/server.ts'])).toBe(false)
+    expect(touchesDesignSystem(['docs/README.md'])).toBe(false)
+    // a workspace name appearing mid-path is not a match — same discipline as affectedWorkspaces
+    expect(touchesDesignSystem(['scripts/gate.ts'])).toBe(false)
+    expect(touchesDesignSystem(['app/package.json'])).toBe(false)
+})
+
+test('a workspace change alone with no design-system trigger still tests only that workspace', () => {
+    // DESIGN.md is a root file with no workspace prefix, so affectedWorkspaces alone would miss
+    // it entirely -- the gate has to OR the two signals, not just widen affectedWorkspaces.
+    expect(affectedWorkspaces(['DESIGN.md'])).toEqual([])
+    expect(touchesDesignSystem(['DESIGN.md'])).toBe(true)
 })
 
 // --- git hook-environment isolation ---------------------------------------------------------

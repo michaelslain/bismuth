@@ -137,7 +137,6 @@ governance:
     - app/src/graph/asciiGraph.css # canvas character-grid metrics
     - app/src/palette/switcher.css # switcher rows written as HTML strings
     - "app/src/sheet/univer-*.css" # Univer theming, a third-party widget
-    - "app/src/icons/specimen/**"  # dev-only icon decision record, not product UI (deletion pending)
   primitives:
     dir: app/src/ui
     elements:
