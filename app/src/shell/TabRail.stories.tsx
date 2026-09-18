@@ -10,8 +10,11 @@
 // RECIPE for why the recording order is load-bearing. The `play` below now queries through `styles`
 // rather than bare class-name selectors, for the same reason the component itself does.
 //
-// SHARES ITS MODULE WITH `TabRailRow.stories.tsx` — see TabRail.tsx's header for why (eight
-// hover/focus selectors span both components).
+// TWO MODULES NOW (task 11 of ds-conformance split the formerly-shared `TabRail.module.css`):
+// `.tab-rail-inner`/`.tab-rail-actions` still come from `styles` (`TabRail.module.css`); `.tab-x`
+// moved to `TabRailRow.module.css`, imported below as `rowStyles` — querying it through the OLD
+// `styles` object would silently resolve to `undefined` and match nothing (the exact hashing trap
+// this comment used to warn about one level up).
 //
 // TWO STORIES: `Collapsed` — resting, `.tab-rail-inner` at 46px, `.tab-rail-label` at
 // `opacity: 0`. `Expanded` — a `play` that calls `.focus()` on the first row's close button, so
@@ -45,6 +48,7 @@ import { TabRail } from './TabRail'
 import { TabRailRow } from './TabRailRow'
 import { CommandButton } from './CommandButton'
 import styles from './TabRail.module.css'
+import rowStyles from './TabRailRow.module.css'
 
 const noop = () => {}
 
@@ -152,7 +156,7 @@ export const Expanded: Story = {
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector(`.${styles['tab-x']}`)
+        const closeBtn = canvasElement.querySelector(`.${rowStyles['tab-x']}`)
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.focus()

@@ -3,12 +3,11 @@
 // action toolbar + tab icons; expanded (232px, via :hover / :focus-within) it widens leftward over
 // the editor without reflowing it. Lifted out of App.tsx verbatim.
 //
-// SHARES `TabRail.module.css` WITH `TabRailRow.tsx` — do not give TabRailRow its own module. Hashes
-// are per-file, and eight hover/focus selectors span both components (`.tab-rail:hover
-// .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`, …); splitting the module
-// would silently break every one of them behind a green build (Trap 4). See TabRail.module.css's
-// header for the full account, including the `docked`/`pane`/`dragging`-shaped traps this file does
-// NOT have (no co-riding state classes live on this component's own elements).
+// TabRailRow.tsx now has its OWN module (TabRailRow.module.css, task 11 of ds-conformance). This
+// component's root carries `data-tab-rail` + `data-rail-pinned` — stable, UNHASHED attributes that
+// let TabRailRow.module.css's rules reach "the rail is hovered/pinned" without needing this file's
+// hashed `.tab-rail`/`.rail-pinned` class names, which a rule in a different module could never
+// match. See TabRail.module.css's header and TabRailRow.module.css's header for the full account.
 //
 // `data-tabstrip="vertical"` is a real attribute `dnd/viewDrag.ts:92` reads via
 // `closest('[data-tabstrip="vertical"]')` — an ATTRIBUTE selector, not a class, so it is untouched
@@ -26,6 +25,8 @@ export function TabRail(props: {
         <div
             class={styles['tab-rail']}
             classList={{ [styles['rail-pinned']]: props.pinned }}
+            data-tab-rail="true"
+            data-rail-pinned={props.pinned ? 'true' : undefined}
         >
             <div class={styles['tab-rail-inner']}>
                 <div class={styles['tab-rail-actions']}>{props.actions}</div>
