@@ -28,6 +28,7 @@ import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
 import Label from '../ui/Label'
+import { isDismissKey, isConfirmKey } from '../ui/widgetKeys'
 import styles from './TabRail.module.css'
 
 export function TabRailRow(props: {
@@ -110,10 +111,10 @@ export function TabRailRow(props: {
                     onPointerDown={e => e.stopPropagation()}
                     onBlur={e => props.onCommitRename(e.currentTarget.value)}
                     onKeyDown={e => {
-                        if (e.key === 'Enter') {
+                        if (isConfirmKey(e)) {
                             e.preventDefault()
                             props.onCommitRename(e.currentTarget.value)
-                        } else if (e.key === 'Escape') {
+                        } else if (isDismissKey(e)) {
                             e.preventDefault()
                             props.onCancelRename()
                         }

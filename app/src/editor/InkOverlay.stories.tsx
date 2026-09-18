@@ -32,6 +32,7 @@ import {
 import { encodeStrokes } from '../../../core/src/drawing/inkCodec'
 import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import type { Stroke } from '../../../core/src/drawing/model'
+import { settings, setSettings } from '../settings'
 
 const meta = {
     title: 'Editor/InkOverlay',
@@ -2198,5 +2199,164 @@ export const EraseSurvivesAPayloadRewrite: Story = {
         expect(strokes).toEqual([INTRUDER, ANNOTATION[0]])
 
         pickTool(canvasElement, 'Pen')
+    },
+}
+
+// ── Task 10: onHostKey reads the catalog, not literals ─────────────────────────────────────
+// `exit-draw-mode` / `ink-undo` / `ink-redo` are `KEYBINDING_CATALOG` ids, not hardcoded
+// combos — onHostKey must read `settings.keybindings[id]` fresh on every keydown, the same
+// contract FileTree.stories.tsx's `RebindingUndoDeleteMovesIt` proves for `undo-delete`. A
+// rebind MOVES the shortcut: the shipped default stops firing and the new combo takes over.
+
+let inkKeyExits = 0
+
+/** Task 10: rebinding `ink-undo`/`ink-redo`/`exit-draw-mode` moves all three shortcuts, proven
+ *  against real effects (an actual painted stroke for undo/redo, an actual onExit call for
+ *  exit-draw-mode) rather than a call count that could pass against a hardcoded handler that
+ *  merely happens to match the shipped defaults. */
+export const RebindingInkKeysMovesThem: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={() => {
+                            inkKeyExits++
+                        }}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        inkKeyExits = 0
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const host = live.parentElement as HTMLElement
+        expect(host).not.toBeNull()
+
+        const restoreUndo = settings.keybindings['ink-undo']
+        const restoreRedo = settings.keybindings['ink-redo']
+        const restoreExit = settings.keybindings['exit-draw-mode']
+        try {
+            setSettings('keybindings', 'ink-undo', 'Mod+Shift+U')
+            setSettings('keybindings', 'ink-redo', 'Mod+Shift+R')
+            setSettings('keybindings', 'exit-draw-mode', 'Mod+Shift+X')
+
+            // Draw one stroke across the "Annotate this paragraph" line, same technique as
+            // DrawCommitsAFence — this is a real committed op (onUp pushes it onto `ops`
+            // synchronously), not a stand-in for one.
+            const target = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(el => el.textContent?.startsWith('Annotate this paragraph'))
+            expect(target).toBeDefined()
+            const r = target!.getBoundingClientRect()
+            const y = r.top + r.height / 2
+            const send = (type: string, x: number) =>
+                live.dispatchEvent(
+                    new PointerEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: x,
+                        clientY: y,
+                        pointerId: 1,
+                        pointerType: 'pen',
+                        isPrimary: true,
+                        pressure: 0.6,
+                    }),
+                )
+            send('pointerdown', r.left + 20)
+            for (let x = r.left + 40; x < r.left + 220; x += 20) send('pointermove', x)
+            send('pointerup', r.left + 220)
+
+            const inkBand = band(view, committed, 0, 680)
+            const ink = () => inkExtent(committed, inkBand)
+            await waitFor(() => expect(ink()).not.toBeNull(), { timeout: 3000 })
+
+            // The OLD default Mod+Z no longer undoes — ink-undo moved to Mod+Shift+U.
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'z',
+                    code: 'KeyZ',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            await new Promise(res => setTimeout(res, 100))
+            expect(ink()).not.toBeNull()
+
+            // The NEW combo does — a real shifted U reports an uppercase `key`, faithfully
+            // reproduced rather than typed as a stand-in for "shift held".
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'U',
+                    code: 'KeyU',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            await waitFor(() => expect(ink()).toBeNull(), { timeout: 3000 })
+
+            // ink-redo, the same proof: the OLD default Mod+Shift+Z does nothing…
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Z',
+                    code: 'KeyZ',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            await new Promise(res => setTimeout(res, 100))
+            expect(ink()).toBeNull()
+            // …the NEW combo (Mod+Shift+R) restores the stroke.
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'R',
+                    code: 'KeyR',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            await waitFor(() => expect(ink()).not.toBeNull(), { timeout: 3000 })
+
+            // exit-draw-mode: the OLD default Escape no longer calls onExit…
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Escape',
+                    code: 'Escape',
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            await new Promise(res => setTimeout(res, 50))
+            expect(inkKeyExits).toBe(0)
+            // …the NEW combo (Mod+Shift+X) does.
+            host.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'X',
+                    code: 'KeyX',
+                    metaKey: true,
+                    shiftKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+            expect(inkKeyExits).toBe(1)
+        } finally {
+            setSettings('keybindings', 'ink-undo', restoreUndo)
+            setSettings('keybindings', 'ink-redo', restoreRedo)
+            setSettings('keybindings', 'exit-draw-mode', restoreExit)
+        }
     },
 }

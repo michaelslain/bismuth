@@ -1,6 +1,6 @@
 # Keybindings
 
-Bismuth's global keyboard shortcuts are configured entirely from the `keybindings:` section of `.settings` — **nothing is hardcoded in the app**. This is the reference for anyone rebinding a shortcut, debugging why a combo won't fire, or wiring up a new keyboard-triggered action: it documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
+Bismuth's global keyboard shortcuts are configured from the `keybindings:` section of `.settings` — all 49 catalog actions are read from that section at match time, never from a literal in a handler. What stays hardcoded is enumerated with a reason per file in `app/src/keybindingCoverage.test.ts`: a menu's or grid's own arrow-key navigation, a dialog's `Tab` focus trap, a find bar's Enter-steps-to-next-match — plus a set of per-widget Enter/Escape handlers still marked `PENDING SWEEP` that have not yet been migrated to `ui-confirm`/`ui-dismiss`. This is the reference for anyone rebinding a shortcut, debugging why a combo won't fire, or wiring up a new keyboard-triggered action: it documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
 
 Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts`'s `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`.
 
@@ -36,7 +36,7 @@ keybindings:
   zoom-reset: Mod+0
 ```
 
-Each value above is the action's **default** — defaults equal the combos that were previously hardcoded in `App.tsx`, so writing the schema's defaults into a file is a behavioral no-op. To rebind an action, change the string. To remove a shortcut, set it to an empty string (an empty/nullish setting matches nothing — `matchesKeybinding(e, "")` and `matchesKeybinding(e, undefined)`/`null` all return `false`).
+The block above is a **representative sample** — the real `keybindings:` section a fresh vault generates has all 49 ids; see [the full catalog](#the-full-keybinding_catalog) below for every id and its default. Each value is the action's **default** — defaults equal the combos that were previously hardcoded across `App.tsx` and the editor/chat/graph/flashcard/ink surfaces, so writing the schema's defaults into a file is a behavioral no-op. To rebind an action, change the string. To remove a shortcut, set it to an empty string — an empty/nullish setting matches nothing (`matchesKeybinding(e, "")` and `matchesKeybinding(e, undefined)`/`null` all return `false`), **with one exception**: `ui-dismiss` treats an empty setting as `Escape` rather than "unbound", so a user can never rebind themselves out of a way to close a modal (see [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm) below).
 
 Settings are persisted by PATCHing only the changed leaf via `POST /set-setting` (the backend merges that one key in place, preserving comments/order); see [the settings overview](./overview.md).
 
@@ -54,23 +54,36 @@ A combo is a `"+"`-joined list of tokens. All tokens except the last are modifie
 
 ### Modifier tokens
 
-The matcher folds several spellings into three modifier flags (`mod`, `alt`, `shift`):
+The matcher parses tokens into **five** modifier flags: the portable `mod`, plus `ctrl` and `meta`, which are now EXACT and independent of `mod`, plus `alt` and `shift`:
 
-| Flag    | Accepted tokens (case-insensitive)                          |
-|---------|------------------------------------------------------------|
-| `mod`   | `Mod`, `Cmd`, `Command`, `Ctrl`, `Control`, `Meta`, `Super` |
-| `alt`   | `Alt`, `Option`, `Opt`                                      |
-| `shift` | `Shift`                                                     |
+| Flag    | Accepted tokens (case-insensitive)      | Behavior                                                         |
+|---------|------------------------------------------|--------------------------------------------------------------------|
+| `mod`   | `Mod`                                    | Portable: matches `event.metaKey` OR `event.ctrlKey` (either satisfies it) |
+| `ctrl`  | `Ctrl`, `Control`                        | **Exact**: requires the physical Ctrl key (`event.ctrlKey`), independent of `Mod` |
+| `meta`  | `Cmd`, `Command`, `Meta`, `Super`         | **Exact**: requires the physical Cmd/Meta key (`event.metaKey`), independent of `Mod` |
+| `alt`   | `Alt`, `Option`, `Opt`                   | `event.altKey`                                                     |
+| `shift` | `Shift`                                  | `event.shiftKey`                                                   |
 
-`"Mod"` is the portable, recommended modifier: it matches **Cmd on macOS / Ctrl elsewhere** — internally it matches when *either* `event.metaKey` OR `event.ctrlKey` is held (mirroring CodeMirror's convention). So `Cmd+P`, `Ctrl+P`, and `Meta+P` all parse to the same `mod: true` combo, and a literal `Mod+P` setting fires under both Cmd and Ctrl:
+`"Mod"` is the portable, recommended modifier: it matches **Cmd on macOS / Ctrl elsewhere** — internally it matches when *either* `event.metaKey` OR `event.ctrlKey` is held (mirroring CodeMirror's convention). A literal `Mod+P` setting fires under both Cmd and Ctrl:
 
 ```
 matchesCombo(<key p, meta>, "Mod+P")   // true
 matchesCombo(<key p, ctrl>, "Mod+P")   // true
-parseCombo("Cmd+P").mod === true
-parseCombo("Ctrl+P").mod === true
-parseCombo("Meta+P").mod === true
+parseCombo("Mod+P").mod === true
 ```
+
+**`Ctrl` and `Cmd`/`Meta` are separate tokens from `Mod`, not aliases for it**, and they match *exactly* — the combo must be typed with the specific token and only that physical key satisfies it:
+
+```
+matchesCombo(<key p, ctrl>, "Ctrl+P")   // true
+matchesCombo(<key p, meta>, "Ctrl+P")   // false — Cmd held, not Ctrl
+matchesCombo(<key p, meta>, "Cmd+P")    // true
+matchesCombo(<key p, ctrl>, "Cmd+P")    // false — Ctrl held, not Cmd
+```
+
+When a combo names neither `Ctrl` nor `Meta` explicitly, that physical key may still be held **only if `Mod` is present** (Mod's portable fold covers it via either); otherwise it is an unrequested extra modifier and the combo is rejected, same as `Alt`/`Shift`.
+
+**Why this exists:** it is what lets a binding be pinned to one physical key instead of the portable `Mod` fold — the motivating case is a macOS input-source collision. `open-completion`'s default is `Ctrl+Space, Mod+Shift+Space`: on a Mac with a second input source enabled, macOS's own "Select the previous input source" hotkey (System Settings → Keyboard → Input Sources) eats `Ctrl+Space` at the OS level before the app ever sees the event, so autocomplete silently stops opening. Because `Ctrl` is now its own exact token — not folded into `Mod` — a user hitting this can either disable the OS shortcut, or **rebind `open-completion`** off the exact `Ctrl+Space` entirely (e.g. to just `Mod+Shift+Space`) without touching every other `Mod`-based binding in the app.
 
 A token counts as a modifier **only when it is not the final (key) token**. This means `Shift` typed *last* is treated as a literal key (a degenerate edge case), not a modifier.
 
@@ -119,8 +132,10 @@ matchesCombo(<t, alt+meta>,    "Alt+T")         // false  (extra Mod rejected)
 matchesCombo(<p>,              "Mod+P")         // false  (missing Mod)
 ```
 
-Concretely, `matchesCombo` requires all three to hold:
-- `combo.mod === (event.metaKey || event.ctrlKey)`
+Concretely, `matchesCombo` requires all of the following:
+- if the combo names `Ctrl`: `event.ctrlKey` must be held; if it doesn't, `event.ctrlKey` may only be held when `Mod` is present
+- if the combo names `Cmd`/`Meta`: `event.metaKey` must be held; if it doesn't, `event.metaKey` may only be held when `Mod` is present
+- if the combo names bare `Mod` (and neither `Ctrl` nor `Meta`): at least one of `event.metaKey`/`event.ctrlKey` must be held
 - `combo.alt === event.altKey`
 - `combo.shift === event.shiftKey`
 
@@ -193,6 +208,31 @@ matchesKeybinding(<k, meta>, "Mod+`, Mod+J")   // false
 
 > Note: combos are split on `,` at the **setting** level. A literal comma key still works because `parseCombo` splits a single combo on `+` (not `,`). To bind the comma key, just use `,` as the final token in one combo, e.g. `Mod+,` — only top-level commas separate alternatives.
 
+## The spelling trap: a bare shifted character is not `Shift+<key>`
+
+Because modifier matching is **exact** (see above), typing the character a Shift combo *produces* instead of the combo itself silently binds nothing useful:
+
+- `"+"` alone parses as **no modifiers, key `+`** — not `Shift+=`. Worse, `parseCombo` splits on `+`, so a bare `"+"` combo is a single empty part after the split and **fails to parse at all** (`parseCombo("+") === null`), i.e. it binds nothing.
+- `"_"` alone parses as **no modifiers, key `_`** — it will never fire for a physical Shift+`-` press, because the event reports `shiftKey: true` and the combo has no `Shift` token, so exact matching rejects it.
+- `"Z"` (bare, no `Shift` token) matches a **plain `z`** keypress — Shift is uppercased by the browser into `event.key === "Z"` but the matcher lowercases both sides before comparing, so a bare `Z` combo and a bare `z` combo are identical, and *neither* matches a physical Shift+Z. This is exactly the bug this plan's own `graph-focus-node` default carried: the code it replaced was `e.key === 'z' || e.key === 'Z'` (which caught the shifted key too), and its first catalog default of plain `'Z'` silently dropped that — the fixed default is `'Z, Shift+Z'`.
+
+Write the modifier explicitly instead: `Shift+=`, `Shift+-`, `Shift+Z` — or use the `Plus` alias (`Plus` → key `+`) if you want to spell out "the plus key" without the shift. The same trap applies to any punctuation key whose shifted glyph looks like a different character (`!`, `@`, `#`, `$`, `%`, `^`, `&`, `*`, `(`, `)`, `{`, `}`, `:`, `"`, `<`, `>`, `?`, `~`) — none of those glyphs are valid key tokens; bind the unshifted key plus an explicit `Shift+` instead.
+
+## Shared widget ids: ui-dismiss and ui-confirm
+
+Most transient UI — modals, popovers, context menus, inline rename fields, the switcher, kanban card editors, drawing tool pickers, and dozens more — doesn't get its own catalog id. Instead **two ids stand in for all of them**: `ui-dismiss` (default `Escape`) and `ui-confirm` (default `Enter`), read through `app/src/ui/widgetKeys.ts`'s `isDismissKey(e)`/`isConfirmKey(e)` rather than a hardcoded `e.key === 'Escape'`/`'Enter'` inside each widget. Rebinding either id in `.settings` retargets every widget that calls through it, in one place.
+
+- **`ui-dismiss` is the one exception to "empty unbinds"**: `isDismissKey` reads `matchesKeybinding(e, settings.keybindings['ui-dismiss'] || 'Escape')`, so an *empty* setting falls back to `Escape` rather than disabling dismiss entirely — a user can never rebind themselves into a modal with no way out. A real rebinding (e.g. `Mod+.`) replaces `Escape` outright; only emptying the setting keeps the safety net.
+- **`ui-confirm` has no such fallback** — an empty setting genuinely disables keyboard-confirm for every widget that reads it (there is always a pointer alternative), matching the general empty-unbinds rule.
+
+### What stays hardcoded on purpose
+
+**Arrow-key navigation inside a list, menu, gallery or pager is not in the catalog, and is not meant to be.** Moving the highlight up/down a `Select`, across a `ContextMenu` submenu, through a symbol gallery's grid, or paging the vault intro is a **spatial contract of the surface** — "up/down/left/right move the selection" has no name a user would look for in `.settings`, and there are dozens of these across the app. The table-cell grid's own `Tab`/`Enter`/`Escape` (`editor/cellEditor.ts`: move to the next cell, commit the cell, cancel the cell) is the same kind of contract, as are CodeMirror's own upstream keymaps (`defaultKeymap`, `historyKeymap`, `closeBracketsKeymap`, `markdownKeymap`, `searchKeymap`, and the completion popup's own navigation) — roughly a hundred editing primitives that belong to the editor, not to Bismuth. `app/src/keybindingCoverage.test.ts` enforces the boundary: any `e.key ===`/`e.code ===`/`!==` literal, a `case '...':` inside a `switch (e.key)`/`switch (e.code)`, or a hardcoded `keymap.of([...])` binding in `app/src` outside its typed allow-list fails CI with a message naming the file and pointing back at `KEYBINDING_CATALOG`.
+
+### Known gaps
+
+Not everything in the allow-list is a design decision. These surfaces have their own local Enter-to-commit / Escape-to-cancel / F2-to-rename handling that was never migrated to `ui-confirm`/`ui-dismiss`, tagged `PENDING SWEEP` in `app/src/keybindingCoverage.test.ts` (see the task-12 report for why they were left): `editor/drawBlock.ts`, `calendar/components/GcalSyncPanel.tsx`, `calendar/components/EventModal.tsx`, `calendar/components/CategoryPanel.tsx`, `chat/ChatQuestionCard.tsx`, `graph/EmbeddedGraph.tsx`, `bases/BaseSettings.tsx`, `bases/EditCardsModal.tsx`, `bases/CardsView.tsx`, `preview/BookmarkRow.tsx`, `ExportView.tsx`. One more, `ui/ToggleRow.tsx`, is tagged `KNOWN GAP` rather than `PENDING SWEEP` — its Enter/Space toggle-activation looks like a genuine `ui-confirm` candidate, not a spatial contract, flagged for a follow-up task rather than fixed in place. If rebinding doesn't seem to work somewhere, check this list before assuming the catalog is wrong.
+
 ## The full `KEYBINDING_CATALOG`
 
 Every action id, its human label, default combo, and what it does. Ids are the YAML keys under `keybindings:`. Source of truth: `core/src/keybindings.ts`.
@@ -223,6 +263,31 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `zoom-in` | `` Mod+=, Mod+Shift+= `` | Zoom in — increase the whole app's UI zoom one step (whole-app native webview zoom, not a note/editor zoom). The Shift alternative covers keyboards where the labeled "+" requires Shift. |
 | `zoom-out` | `Mod+-` | Zoom out — decrease the whole app's UI zoom one step. |
 | `zoom-reset` | `Mod+0` | Reset zoom — reset the whole app's UI zoom to 100%. |
+| `open-completion` | `` Ctrl+Space, Mod+Shift+Space `` | Open autocomplete — open the autocomplete popup (wikilinks, tags, mentions, settings keys) in the focused editor or composer. `Mod+Shift+Space` is a fallback because `Ctrl+Space` is taken by the macOS input-source switcher whenever more than one input source is enabled — see [exact `Ctrl`/`Cmd`/`Meta` tokens](#modifier-tokens) above. |
+| `accept-completion` | `Tab` | Accept autocomplete suggestion — accept the highlighted suggestion in an open autocomplete popup. |
+| `indent` | `Tab` | Indent — indent the current line or selection one level (runs only when no autocomplete popup is open to accept instead). |
+| `outdent` | `Shift+Tab` | Outdent — outdent the current line or selection one level. |
+| `toggle-bold` | `Mod+B` | Toggle bold — toggle bold on the current selection. |
+| `toggle-italic` | `Mod+I` | Toggle italic — toggle italic on the current selection. |
+| `chat-send` | `Enter` | Send chat message — send the current chat message. |
+| `chat-stop` | `Escape` | Stop chat response — stop the chat reply currently streaming. |
+| `chat-history-prev` | `ArrowUp` | Recall previous chat message — recall the previously sent message into the composer, from the first visual line of the draft. |
+| `chat-history-next` | `ArrowDown` | Recall next chat message — step forward through recalled chat messages, from the last visual line of the draft. |
+| `undo-delete` | `Mod+Z` | Undo file-tree delete — undo the most recent file-tree delete, restoring the file or folder from trash. |
+| `delete-selection` | `Delete, Backspace` | Delete selected file — delete the selected file or folder in the file tree (moves it to trash; undoable). |
+| `flashcard-flip` | `Space` | Flip flashcard — flip the current flashcard between its front and back. |
+| `flashcard-hard` | `1` | Grade flashcard hard — grade the current flashcard Hard and advance to the next one. |
+| `flashcard-good` | `2` | Grade flashcard good — grade the current flashcard Good and advance to the next one. |
+| `flashcard-easy` | `3` | Grade flashcard easy — grade the current flashcard Easy and advance to the next one. |
+| `graph-reset-view` | `Escape` | Reset graph view — reset the knowledge graph camera to its default position and zoom. |
+| `graph-focus-node` | `Z, Shift+Z` | Focus hovered graph node — focus and center the hovered graph node (resets the view instead when nothing is hovered). Bound to both `Z` and `Shift+Z` because modifier matching is exact — a bare `Z` alone matches only a plain `z` press, never a physical Shift+Z (see [the spelling trap](#the-spelling-trap-a-bare-shifted-character-is-not-shiftkey) above). |
+| `graph-zoom-in` | `=, Shift+=, Plus` | Zoom graph in — zoom the knowledge graph in one step. Three alternatives cover keyboards where the labeled "+" requires Shift, plus the `Plus` alias. |
+| `graph-zoom-out` | `-, Shift+-` | Zoom graph out — zoom the knowledge graph out one step. |
+| `ink-undo` | `Mod+Z` | Undo ink stroke — undo the last ink stroke on the current drawing surface. |
+| `ink-redo` | `Mod+Shift+Z` | Redo ink stroke — redo the last undone ink stroke on the current drawing surface. |
+| `exit-draw-mode` | `Escape` | Exit draw mode — exit ink/draw mode and return to normal editing or reading. |
+| `ui-dismiss` | `Escape` | Dismiss panel — close or cancel the focused transient panel (a modal, popover, or menu). Shared by every transient widget via `app/src/ui/widgetKeys.ts` — see [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm) above. Empty setting falls back to `Escape` rather than unbinding. |
+| `ui-confirm` | `Enter` | Confirm panel — confirm or accept the focused transient panel (a modal, popover, or menu). Shared the same way as `ui-dismiss`, but a genuinely empty setting disables it (no `Escape`-style fallback). |
 
 `KEYBINDING_CATALOG` is an ordered array (`KeybindingSpec[]`) — iterating it in order yields these ids.
 
@@ -330,17 +395,19 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 
 ## Gotchas
 
-- **`"Mod"` is platform-portable, prefer it** over literal `Cmd`/`Ctrl` unless you specifically want one platform's key. `Mod` matches `metaKey OR ctrlKey`.
+- **`"Mod"` is platform-portable, prefer it** over literal `Cmd`/`Ctrl` unless you specifically want to pin one physical key. `Mod` matches `metaKey OR ctrlKey`; `Ctrl`/`Cmd`/`Meta` are separate EXACT tokens (see [Modifier tokens](#modifier-tokens)) for when the portable fold is exactly the problem — e.g. rebinding off a `Ctrl+Space` the OS has taken.
 - **Matching is exact on modifiers** — adding an unexpected modifier (e.g. holding Shift) makes a non-Shift combo *not* fire. This is intentional (keeps `Mod+D` and `Mod+Shift+D` distinct).
+- **A bare shifted character does not work as a key token** — `+`, `_`, or a bare `Z` meaning "Shift and the key" all fail to do what they look like they do. Write the modifier explicitly (`Shift+=`, `Shift+-`, `Shift+Z`) or use the `Plus` alias. See [the spelling trap](#the-spelling-trap-a-bare-shifted-character-is-not-shiftkey) — it has bitten this catalog's own defaults three times.
 - **macOS Option composes characters** — always rely on the `event.code` fallback; the recorder and matcher both handle it, but if you hand-author an Alt combo it will still match because of `codeToKey`.
 - **`insert-template`/`toggle-sidebar`/`toggle-tab-rail` are suppressed in `INPUT`/`TEXTAREA`** but still work from a focused note (the note editor is `contentEditable`, not an input).
 - **Auto-repeat is ignored** (`e.repeat` short-circuits the handler), so holding a combo fires once, not repeatedly.
-- **An empty string disables a binding** (`matchesKeybinding` returns false for empty/nullish).
+- **An empty string disables a binding** (`matchesKeybinding` returns false for empty/nullish) — except `ui-dismiss`, which falls back to `Escape` on empty. See [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm).
 - **Comma is the alternative separator** at the setting level; `+` is the combo separator. Bind the comma key as `Mod+,` (one combo) — only top-level commas split alternatives.
+- **Arrow-key list/menu/gallery navigation and the table-cell grid's Tab/Enter/Escape stay hardcoded on purpose** — they're a spatial contract of the surface, not a named command. `app/src/keybindingCoverage.test.ts` is the guard; see [What stays hardcoded on purpose](#what-stays-hardcoded-on-purpose).
 
 ## See also
 
 - [Settings overview](./overview.md) — `.settings` lifecycle, schema, `POST /set-setting`.
 - [Commands & toolbar](./toolbar-commands.md) — the parallel split-data pattern for commands (`COMMAND_CATALOG` + `bindCommands`).
 
-Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/editor/settingsComplete.ts`, `app/src/App.tsx`, `app/src/Editor.tsx`
+Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `app/src/ui/widgetKeys.ts`, `app/src/keybindingCoverage.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/editor/settingsComplete.ts`, `app/src/App.tsx`, `app/src/Editor.tsx`

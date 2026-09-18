@@ -566,20 +566,29 @@ export function PreviewView(props: {
         }
         // Undo/redo for highlights, bookmarks and the margin toggle — the one-click edits that
         // have no OTHER way back (chunk-1 + final review). PageInk's own host `onHostKey` binds
-        // the same keys while draw mode is ON; this is the outside-draw-mode half, so the shared
-        // undo stack (createAnnotationStore.ts) is reachable no matter which control made the
-        // edit. Gated on `inkable()` (only ink kinds have a store) and `!drawMode()` (PageInk
-        // already owns these keys while drawing — handling them again here would just double up).
+        // `ink-undo`/`ink-redo` the same way while draw mode is ON; this is the
+        // outside-draw-mode half, so the shared undo stack (createAnnotationStore.ts) is
+        // reachable no matter which control made the edit. Gated on `inkable()` (only ink kinds
+        // have a store) and `!drawMode()` (PageInk already owns these keys while drawing —
+        // handling them again here would just double up).
         if (
             inkable() &&
             !drawMode() &&
-            (e.metaKey || e.ctrlKey) &&
-            (e.key === 'z' || e.key === 'Z')
+            matchesKeybinding(e, settings.keybindings['ink-undo'])
         ) {
             e.preventDefault()
             e.stopPropagation()
-            if (e.shiftKey) store()?.redo()
-            else store()?.undo()
+            store()?.undo()
+            return
+        }
+        if (
+            inkable() &&
+            !drawMode() &&
+            matchesKeybinding(e, settings.keybindings['ink-redo'])
+        ) {
+            e.preventDefault()
+            e.stopPropagation()
+            store()?.redo()
             return
         }
         if (!matchesKeybinding(e, settings.keybindings.find)) return

@@ -6,8 +6,10 @@
 // supply a representative dialog panel (styled from theme tokens) to show it in context.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
+import { expect, waitFor } from 'storybook/test'
 import { Modal } from './Modal'
 import { Button } from './Button'
+import { settings, setSettings } from '../settings'
 
 const meta = {
     title: 'UI/Modal',
@@ -99,6 +101,55 @@ export const NonDismissableBackdrop: Story = {
             </DialogPanel>
         </Modal>
     ),
+}
+
+/** `ui-dismiss` (settings.keybindings) is rebindable — proves the overlay reads through
+ *  widgetKeys.ts's isDismissKey rather than a hardcoded `e.key === 'Escape'` check. Once rebound
+ *  away from Escape, a plain Escape press no longer closes it, and only the new combo does. */
+export const RebindableDismissKey: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => {
+        const [open, setOpen] = createSignal(true)
+        return (
+            <>
+                {open() && (
+                    <Modal onClose={() => setOpen(false)}>
+                        <DialogPanel />
+                    </Modal>
+                )}
+            </>
+        )
+    },
+    play: async () => {
+        const saved = settings.keybindings['ui-dismiss']
+        try {
+            setSettings('keybindings', 'ui-dismiss', 'Mod+.')
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Escape',
+                    code: 'Escape',
+                    bubbles: true,
+                }),
+            )
+            // Still present — plain Escape no longer dismisses once rebound.
+            await expect(
+                document.querySelector('[role="dialog"]'),
+            ).not.toBeNull()
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: '.',
+                    code: 'Period',
+                    metaKey: true,
+                    bubbles: true,
+                }),
+            )
+            await waitFor(() =>
+                expect(document.querySelector('[role="dialog"]')).toBeNull(),
+            )
+        } finally {
+            setSettings('keybindings', 'ui-dismiss', saved)
+        }
+    },
 }
 
 /** Interactive: a trigger opens the modal; Escape / backdrop / a button closes it. */

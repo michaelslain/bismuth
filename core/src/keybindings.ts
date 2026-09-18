@@ -7,12 +7,19 @@
 // settings.keybindings.<id>, never a hardcoded combo.
 //
 // Combo syntax (see app/src/keybindings.ts for the matcher):
-//   "Mod"   — Cmd on macOS / Ctrl elsewhere (matches metaKey OR ctrlKey)
+//   "Mod"   — the portable default: Cmd on macOS / Ctrl elsewhere (matches metaKey OR ctrlKey)
+//   "Ctrl"/"Control" — EXACT: requires ctrlKey, independent of Mod
+//   "Cmd"/"Command"/"Meta"/"Super" — EXACT: requires metaKey, independent of Mod
 //   "Alt"   — Option/Alt;  "Shift" — Shift
 //   final token is the key, e.g. "P", "D", "=", "`", "ArrowLeft"
-//   comma-separate alternatives: "Mod+`, Mod+J"
-// Matching is EXACT on modifiers, so "Mod+D" (split-right) and "Mod+Shift+D"
-// (split-down) never collide.
+//   comma-separate alternatives (ANY one matching fires): "Mod+`, Mod+J"
+// Matching is EXACT on modifiers, so "Mod+D" (split-right) and "Mod+Shift+D" (split-down) never
+// collide — and the same exactness holds for Ctrl/Meta, which is what lets open-completion's
+// "Ctrl+Space, Mod+Shift+Space" pin the physical Ctrl key to dodge the macOS input-source
+// switcher instead of folding into the portable Mod.
+// SPELLING TRAP: a bare shifted character never fires — Shift is matched EXACTLY, so an event
+// carrying shiftKey never matches a combo whose key token is the shifted character itself. Write
+// "Shift+=", "Shift+-", "Shift+Z" (or the alias "Plus"), never a bare "+", "_", or a shifted "Z".
 
 export interface KeybindingSpec {
     /** Stable id; the YAML key under `keybindings:` and the lookup App.tsx uses. */
@@ -25,7 +32,7 @@ export interface KeybindingSpec {
     doc: string
 }
 
-export const KEYBINDING_CATALOG: KeybindingSpec[] = [
+export const KEYBINDING_CATALOG = [
     {
         id: 'find',
         label: 'Find in note',
@@ -170,4 +177,161 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
         default: 'Mod+0',
         doc: "Reset the whole app's UI zoom to 100%.",
     },
-]
+    {
+        id: 'open-completion',
+        label: 'Open autocomplete',
+        default: 'Ctrl+Space, Mod+Shift+Space',
+        doc: 'Open the autocomplete popup (wikilinks, tags, mentions, settings keys) in the focused editor or composer. Mod+Shift+Space is a fallback because Ctrl+Space is taken by the macOS input-source switcher whenever more than one input source is enabled.',
+    },
+    {
+        id: 'accept-completion',
+        label: 'Accept autocomplete suggestion',
+        default: 'Tab',
+        doc: 'Accept the highlighted suggestion in an open autocomplete popup. Tab is rebindable; Enter also accepts, and that binding is fixed rather than rebindable.',
+    },
+    {
+        id: 'indent',
+        label: 'Indent',
+        default: 'Tab',
+        doc: 'Indent the current line or selection one level (runs only when no autocomplete popup is open to accept instead).',
+    },
+    {
+        id: 'outdent',
+        label: 'Outdent',
+        default: 'Shift+Tab',
+        doc: 'Outdent the current line or selection one level.',
+    },
+    {
+        id: 'toggle-bold',
+        label: 'Toggle bold',
+        default: 'Mod+B',
+        doc: 'Toggle bold on the current selection.',
+    },
+    {
+        id: 'toggle-italic',
+        label: 'Toggle italic',
+        default: 'Mod+I',
+        doc: 'Toggle italic on the current selection.',
+    },
+    {
+        id: 'chat-send',
+        label: 'Send chat message',
+        default: 'Enter, Mod+Enter',
+        doc: 'Send the current chat message. Mod+Enter is included because it sent before this became rebindable.',
+    },
+    {
+        id: 'chat-stop',
+        label: 'Stop chat response',
+        default: 'Escape',
+        doc: 'Stop the chat reply currently streaming.',
+    },
+    {
+        id: 'chat-history-prev',
+        label: 'Recall previous chat message',
+        default: 'ArrowUp',
+        doc: 'Recall the previously sent message into the composer, from the first visual line of the draft.',
+    },
+    {
+        id: 'chat-history-next',
+        label: 'Recall next chat message',
+        default: 'ArrowDown',
+        doc: 'Step forward through recalled chat messages, from the last visual line of the draft.',
+    },
+    {
+        id: 'undo-delete',
+        label: 'Undo file-tree delete',
+        default: 'Mod+Z',
+        doc: 'Undo the most recent file-tree delete, restoring the file or folder from trash.',
+    },
+    {
+        id: 'delete-selection',
+        label: 'Delete selected file',
+        default: 'Delete, Backspace, Mod+Delete, Mod+Backspace',
+        doc: 'Delete the selected file or folder in the file tree (moves it to trash; undoable). Mod+Delete/Mod+Backspace are included because that is the platform "move to trash" gesture, and the pre-catalog handler ignored modifiers entirely.',
+    },
+    {
+        id: 'flashcard-flip',
+        label: 'Flip flashcard',
+        default: 'Space',
+        doc: 'Flip the current flashcard between its front and back.',
+    },
+    {
+        id: 'flashcard-hard',
+        label: 'Grade flashcard hard',
+        default: '1',
+        doc: 'Grade the current flashcard Hard and advance to the next one.',
+    },
+    {
+        id: 'flashcard-good',
+        label: 'Grade flashcard good',
+        default: '2',
+        doc: 'Grade the current flashcard Good and advance to the next one.',
+    },
+    {
+        id: 'flashcard-easy',
+        label: 'Grade flashcard easy',
+        default: '3',
+        doc: 'Grade the current flashcard Easy and advance to the next one.',
+    },
+    {
+        id: 'graph-reset-view',
+        label: 'Reset graph view',
+        default: 'Escape',
+        doc: 'Reset the knowledge graph camera to its default position and zoom.',
+    },
+    {
+        id: 'graph-focus-node',
+        label: 'Focus hovered graph node',
+        default: 'Z, Shift+Z',
+        doc: 'Focus and center the hovered graph node (resets the view instead when nothing is hovered).',
+    },
+    {
+        id: 'graph-zoom-in',
+        label: 'Zoom graph in',
+        default: '=, Shift+=, Plus',
+        doc: 'Zoom the knowledge graph in one step.',
+    },
+    {
+        id: 'graph-zoom-out',
+        label: 'Zoom graph out',
+        default: '-, Shift+-',
+        doc: 'Zoom the knowledge graph out one step.',
+    },
+    {
+        id: 'ink-undo',
+        label: 'Undo ink stroke',
+        default: 'Mod+Z',
+        doc: 'Undo the last ink stroke on the current drawing surface.',
+    },
+    {
+        id: 'ink-redo',
+        label: 'Redo ink stroke',
+        default: 'Mod+Shift+Z',
+        doc: 'Redo the last undone ink stroke on the current drawing surface.',
+    },
+    {
+        id: 'exit-draw-mode',
+        label: 'Exit draw mode',
+        default: 'Escape',
+        doc: 'Exit ink/draw mode and return to normal editing or reading.',
+    },
+    {
+        id: 'ui-dismiss',
+        label: 'Dismiss panel',
+        default: 'Escape',
+        doc: 'Close or cancel the focused transient panel — a modal, popover, or menu.',
+    },
+    {
+        id: 'ui-confirm',
+        label: 'Confirm panel',
+        default: 'Enter',
+        doc: 'Confirm or accept the focused transient panel — a modal, popover, or menu.',
+    },
+] as const satisfies readonly KeybindingSpec[]
+
+// The literal union of every catalog id, derived from KEYBINDING_CATALOG itself —
+// never hand-listed. This is what lets app/src/settings.ts's Settings['keybindings']
+// (and every other keybindings-indexing call site) be checked against the catalog
+// at compile time instead of through an `as` cast that would hide a typo'd or
+// deleted id as silent `undefined`.
+export type KeybindingId = (typeof KEYBINDING_CATALOG)[number]['id']

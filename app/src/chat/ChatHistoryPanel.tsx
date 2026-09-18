@@ -18,6 +18,7 @@ import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { Icon } from '../icons/Icon'
 import PlainButton from '../ui/PlainButton'
 import IconButton from '../ui/IconButton'
+import { isDismissKey } from '../ui/widgetKeys'
 
 export type ChatHistoryPanelProps = {
     history: ChatHistoryState
@@ -56,7 +57,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
               : 'No past conversations yet.'
 
     const onDocKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') props.history.close()
+        if (isDismissKey(e)) props.history.close()
     }
     onMount(() => {
         document.addEventListener('keydown', onDocKey, true)

@@ -7,6 +7,7 @@
 import type { Component } from 'solid-js'
 import { createSignal, Show } from 'solid-js'
 import { TextInput } from '../../ui/TextInput'
+import { isDismissKey, isConfirmKey } from '../../ui/widgetKeys'
 import styles from './TaskCellComposer.module.css'
 
 export type TaskCellComposerProps = {
@@ -68,13 +69,13 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         })
                     }
                     onKeyDown={e => {
-                        if (e.key === 'Escape') {
+                        if (isDismissKey(e)) {
                             e.preventDefault()
                             done = true
                             props.onCancel()
                             return
                         }
-                        if (e.key !== 'Enter') return
+                        if (!isConfirmKey(e)) return
                         e.preventDefault()
                         const trimmed = text().trim()
                         if (!trimmed) {

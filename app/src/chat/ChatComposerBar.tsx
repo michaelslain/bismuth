@@ -26,6 +26,7 @@ import { IconButton } from '../ui/IconButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import { classifyComposerKey } from '../chatComposerKeys'
+import { settings } from '../settings'
 import {
     HISTORY_BOTTOM,
     historyUp,
@@ -153,11 +154,22 @@ export default function ChatComposerBar(
         boundary: { atTop: boolean; atBottom: boolean },
     ): boolean => {
         switch (
-            classifyComposerKey(e, {
-                slashOpen: slashOpen(),
-                streaming: streaming(),
-                ...boundary,
-            })
+            classifyComposerKey(
+                e,
+                {
+                    slashOpen: slashOpen(),
+                    streaming: streaming(),
+                    ...boundary,
+                },
+                {
+                    'chat-send': settings.keybindings['chat-send'],
+                    'chat-stop': settings.keybindings['chat-stop'],
+                    'chat-history-prev':
+                        settings.keybindings['chat-history-prev'],
+                    'chat-history-next':
+                        settings.keybindings['chat-history-next'],
+                },
+            )
         ) {
             case 'slash-nav':
                 slashNav.onKeyDown(e)

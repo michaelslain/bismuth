@@ -1,5 +1,6 @@
 import type { Component, JSX } from 'solid-js'
 import BracketToggle from './BracketToggle'
+import { isConfirmKey } from './widgetKeys'
 import styles from './ToggleRow.module.css'
 
 export type ToggleRowProps = {
@@ -39,7 +40,10 @@ const ToggleRow: Component<ToggleRowProps> = props => {
             title={props.title}
             onClick={toggle}
             onKeyDown={e => {
-                if (e.key !== 'Enter' && e.key !== ' ') return
+                // ui-confirm (rebindable, default Enter) plus a hardcoded Space — Space is this
+                // control's own activation gesture per the WAI-ARIA switch pattern, not a named
+                // command, so it stays literal even though Enter now reads through the catalog.
+                if (!isConfirmKey(e) && e.key !== ' ') return
                 e.preventDefault()
                 toggle()
             }}

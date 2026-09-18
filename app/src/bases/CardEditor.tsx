@@ -1,4 +1,11 @@
-import { createSignal, onCleanup, onMount, Show } from 'solid-js'
+import {
+    createSignal,
+    getOwner,
+    onCleanup,
+    onMount,
+    runWithOwner,
+    Show,
+} from 'solid-js'
 import { TASK_LINE } from './taskLine'
 import {
     EditorView,
@@ -33,6 +40,7 @@ import { onServerChange } from '../serverVersion'
 import { readNoteCached, primeNoteCache, peekNoteCache } from '../noteCache'
 import { livePreview } from '../editor/livePreview'
 import { toggleBold, toggleItalic } from '../editor/markdownFormat'
+import { settingsKeymapCompartment } from '../editor/settingsKeymap'
 import { notePathFacet } from '../editor/tableState'
 import { codeHighlightStyle } from '../editor/codeHighlight'
 import { findBareUrls } from '../editor/urls'
@@ -360,6 +368,26 @@ export function CardEditor(props: {
     // deliberate: an empty editor whose autosave fired would overwrite the note's frontmatter.
     const [loading, setLoading] = createSignal(true)
 
+    // Captured HERE (synchronously, at component setup) because `buildView` below can run after an
+    // await (onMount's cache-miss read, or reconcile()'s disk read) — by that point Solid's ambient
+    // Owner has already reverted to whatever was current before that microtask, so a `createEffect`
+    // registered from inside `buildView` needs to be pinned back to THIS component's owner
+    // explicitly (see the `runWithOwner` call below) or it attaches unowned and is never disposed.
+    const owner = getOwner()
+    // Settings-driven: toggle-bold/toggle-italic (default Mod-B/Mod-I), open-completion (default
+    // Ctrl-Space, Mod-Shift-Space fallback), accept-completion (default Tab) and indent/outdent
+    // (default Tab/Shift-Tab) — core/src/keybindings.ts has the ids. A compartment (not
+    // buildSettingsKeymap) because this view is long-lived and a rebind must reconfigure it live,
+    // without rebuilding — `attach` is called once buildView constructs the view, below.
+    const cardKeymap = settingsKeymapCompartment([
+        { id: 'toggle-bold', run: toggleBold },
+        { id: 'toggle-italic', run: toggleItalic },
+        { id: 'open-completion', run: startCompletion },
+        { id: 'accept-completion', run: acceptCompletion },
+        { id: 'indent', run: indentMore },
+        { id: 'outdent', run: indentLess },
+    ])
+
     const save = async () => {
         if (!view) return
         const text = view.state.doc.toString()
@@ -420,19 +448,12 @@ export function CardEditor(props: {
                     // (ordered renumbering survives) and indents uniformly across bullets/numbers/text.
                     indentUnit.of('    '),
                     EditorState.tabSize.of(4),
-                    // Tab indents/dedents list items, Cmd/Ctrl-B/I toggle bold/italic — same as the
-                    // note editor; the rest is the standard editing + history keymap. Ctrl-Space opens
-                    // completion and Tab accepts an open completion (falling through to indent when the
-                    // popup is closed) so task metadata autocomplete works here like in the note editor.
-                    keymap.of([
-                        { key: 'Mod-b', run: toggleBold },
-                        { key: 'Mod-i', run: toggleItalic },
-                        { key: 'Ctrl-Space', run: startCompletion },
-                        { key: 'Tab', run: acceptCompletion },
-                        { key: 'Tab', run: indentMore, shift: indentLess },
-                        ...defaultKeymap,
-                        ...historyKeymap,
-                    ]),
+                    // Settings-driven, same as the note editor: toggle-bold/toggle-italic, open-
+                    // completion, accept-completion (falling through to indent when no popup is
+                    // open) and indent/outdent — see cardKeymap above. The rest is the standard
+                    // editing + history keymap.
+                    cardKeymap.extension,
+                    keymap.of([...defaultKeymap, ...historyKeymap]),
                     // remove IndentedCode so a 4-space-indented line stays prose, not a code block.
                     markdown({
                         codeLanguages: languages,
@@ -468,6 +489,10 @@ export function CardEditor(props: {
                 ],
             }),
         })
+        // See the `owner` comment above: this can run after an await, so the compartment's
+        // createEffect must be pinned back to this component's owner explicitly.
+        if (owner) runWithOwner(owner, () => cardKeymap.attach(view!))
+        else cardKeymap.attach(view)
         setLoading(false)
         // Persist the sunk order so the note on disk matches the card. We didn't go through the
         // editor's autosave (no docChanged fired for the initial doc), so write directly.

@@ -97,6 +97,8 @@ import {
     computeEdgeLevelWeights,
     edgeWeightBucketRange,
 } from './backbone'
+import { settings } from '../settings'
+import { matchesKeybinding } from '../keybindings'
 import type {
     CommunityCentroid,
     GraphConfig,
@@ -4519,14 +4521,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
         )
             return
         if (!this.host || this.host.offsetParent === null) return
-        if (e.key === 'Escape') this.resetView()
-        else if (e.key === 'z' || e.key === 'Z') {
+        const kb = settings.keybindings
+        if (matchesKeybinding(e, kb['graph-reset-view'])) this.resetView()
+        else if (matchesKeybinding(e, kb['graph-focus-node'])) {
             if (this.hoveredId) this.focusNode(this.hoveredId)
             else this.resetView()
-        } else if (e.key === '+' || e.key === '=') {
+        } else if (matchesKeybinding(e, kb['graph-zoom-in'])) {
             this.userTook = true
             this.zoomStepCentered(this.zoomPct - ZOOM_STEP_PCT)
-        } else if (e.key === '-' || e.key === '_') {
+        } else if (matchesKeybinding(e, kb['graph-zoom-out'])) {
             this.userTook = true
             this.zoomStepCentered(this.zoomPct + ZOOM_STEP_PCT)
         }

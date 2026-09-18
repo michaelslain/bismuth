@@ -11,6 +11,7 @@ import { TextButton } from '../ui/TextButton'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
 import { pushToast } from '../Toast'
 import { placeBelowOrAbove } from '../ui/popover/placeAnchored'
+import { isDismissKey } from '../ui/widgetKeys'
 
 export type ChatAuthPanelProps = {
     providers: { name: string; kind: string }[] | null
@@ -61,7 +62,7 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
         props.onClose()
     }
     const onDocKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') props.onClose()
+        if (isDismissKey(e)) props.onClose()
     }
     onMount(() => {
         document.addEventListener('pointerdown', onDocPointerDown, true)

@@ -19,6 +19,7 @@ import {
     DEFAULTS,
     type AppSettings as SpineSettings,
 } from '../../core/src/schema/settingsSchema'
+import type { KeybindingId } from '../../core/src/keybindings'
 import { isSettingsPath } from '../../core/src/changeClassifier'
 import { THEMES, DEFAULT_THEME } from './themes'
 
@@ -168,33 +169,13 @@ export interface Settings {
     // Global keyboard shortcuts, keyed by action id (core/src/keybindings.ts).
     // Each value is a combo like "Mod+P" (Mod = Cmd on macOS / Ctrl elsewhere);
     // comma-separate alternatives ("Mod+`, Mod+J"). App.tsx matches events
-    // against these (app/src/keybindings.ts), never a hardcoded combo.
-    keybindings: {
-        find: string
-        'toggle-draw-mode': string
-        'command-palette': string
-        'quick-switcher': string
-        terminal: string
-        'split-right': string
-        'split-down': string
-        'equalize-panes': string
-        'close-pane': string
-        'new-tab': string
-        'reopen-tab': string
-        'history-back': string
-        'history-forward': string
-        'focus-pane-left': string
-        'focus-pane-right': string
-        'focus-pane-up': string
-        'focus-pane-down': string
-        'new-claude-chat': string
-        'insert-template': string
-        'toggle-sidebar': string
-        'toggle-tab-rail': string
-        'zoom-in': string
-        'zoom-out': string
-        'zoom-reset': string
-    }
+    // against these (app/src/keybindings.ts), never a hardcoded combo. The key
+    // set is DERIVED from KEYBINDING_CATALOG (core/src/keybindings.ts) via
+    // KeybindingId — never hand-listed here again. Hand-listing this once already
+    // let the catalog grow past it silently, papered over by a cast in
+    // editor/settingsKeymap.ts; adding an id is a KEYBINDING_CATALOG-only change now
+    // and this type follows automatically.
+    keybindings: Record<KeybindingId, string>
     toolbar: Array<{
         command?: string
         commands?: string[]

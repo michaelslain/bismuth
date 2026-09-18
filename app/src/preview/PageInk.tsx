@@ -70,6 +70,8 @@ import { widthFor, isRealPressure } from '../drawing/input'
 import { Toolbar } from '../drawing/Toolbar'
 import type { ToolState } from '../drawing/DrawingCanvas'
 import { pushToast } from '../Toast'
+import { settings } from '../settings'
+import { matchesKeybinding } from '../keybindings'
 import createAnnotationStore from './createAnnotationStore'
 import type { AnnotationStore } from './annotationTypes'
 import styles from './PageInk.module.css'
@@ -492,17 +494,22 @@ function PageInk(props: PageInkProps) {
 
     const onHostKey = (e: KeyboardEvent) => {
         if (!props.active()) return
-        if (e.key === 'Escape') {
+        if (matchesKeybinding(e, settings.keybindings['exit-draw-mode'])) {
             e.preventDefault()
             e.stopPropagation()
             props.onExit()
             return
         }
-        if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (matchesKeybinding(e, settings.keybindings['ink-undo'])) {
             e.preventDefault()
             e.stopPropagation()
-            if (e.shiftKey) store.redo()
-            else store.undo()
+            store.undo()
+            return
+        }
+        if (matchesKeybinding(e, settings.keybindings['ink-redo'])) {
+            e.preventDefault()
+            e.stopPropagation()
+            store.redo()
         }
     }
 
