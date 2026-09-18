@@ -10,6 +10,7 @@ import type { Bookmark } from '../../../core/src/drawing/model'
 import IconButton from '../ui/IconButton'
 import InlineTextInput from '../ui/InlineTextInput'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import styles from './BookmarkRow.module.css'
 
 export type BookmarkRowProps = {
@@ -79,7 +80,11 @@ function BookmarkRow(props: BookmarkRowProps) {
             </Label>
             {/* The row's own gestures (jump on click, rename on double-click) must not fire from
                 its trailing controls — this region declares every one of those events its own. */}
-            <span
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={styles['bookmark-actions']}
                 onClick={e => e.stopPropagation()}
                 onDblClick={e => e.stopPropagation()}
@@ -99,7 +104,7 @@ function BookmarkRow(props: BookmarkRowProps) {
                     danger
                     onClick={() => props.onRemove(props.bookmark.id)}
                 />
-            </span>
+            </Text>
         </div>
     )
 }
