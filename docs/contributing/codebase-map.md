@@ -1272,10 +1272,7 @@ The icon registry: a static NAME → ART map. `registry-core.ts` is the pure, fr
 `iconMarkup(name, size?)` — static markup for an icon, for imperative call sites that cannot mount/dispose a reactive root (notably CodeMirror's `addToOptions` render hook, which gives no per-option teardown). Builds the markup straight from the registry rather than mounting `<Icon>` into a detached node and reading `innerHTML` back, so the box styles stay explicit and diffable instead of duplicating `Icon.tsx`'s box logic through a DOM round-trip.
 
 #### `icons/nerdGlyphs.ts`
-`NERD_GLYPHS: Record<string, number>` — canonical icon name → Nerd Font codepoint for all 140 names, `FALLBACK_CODEPOINT`. RETIRED from `<Icon>` as of the Phosphor migration (`registry.ts` no longer imports it) but kept for two reasons: `icons/specimen/` renders this era's glyphs in its Nerd-Font-vs-Phosphor comparison column via the real subset font, and it anchors `iconNames.ts`'s 140-name canonical list to what the incumbent set actually covered.
-
-#### `icons/specimen/`
-`IconSetSpecimen.tsx` + `SvgIcon.tsx` (each with a colocated `.module.css` + story) and `iconSetData.ts` — the decision record comparing icon sets side by side (Nerd Font incumbent vs. Phosphor), rendered as a Storybook story rather than kept only in a design doc so the actual glyphs are what get compared.
+`NERD_GLYPHS: Record<string, number>` — canonical icon name → Nerd Font codepoint for all 140 names, `FALLBACK_CODEPOINT`. RETIRED from `<Icon>` as of the Phosphor migration (`registry.ts` no longer imports it) but kept for two reasons: it is `app/scripts/build-icon-font.ts`'s codepoint source for the Nerd Font subset that `styles/icons.css` still loads (`--icon-font-stack`), and it anchors `iconNames.ts`'s 140-name canonical list to what the incumbent set actually covered.
 
 #### `icons/IconPicker.tsx`
 Icon picker UI (used by folder icon assignment in the file tree).

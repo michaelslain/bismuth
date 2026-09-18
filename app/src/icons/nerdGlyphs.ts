@@ -3,17 +3,16 @@
 // Canonical icon name -> Nerd Font CODEPOINT, for all 140 names in the icon registry.
 //
 // RETIRED FROM <Icon> as of the Phosphor migration (plan §10, 2026-08-27) — registry.ts no longer
-// imports this file. It survives for two reasons only: (1) icons/specimen/ (the decision record
-// for the Phosphor move) renders this era's glyphs in its "Nerd Font (incumbent)" comparison
-// column, via the real subset font in assets/fonts/, and (2) iconNames.ts's 140-name canonical
-// list was sourced from this file's key set at migration time and iconNames.test.ts cross-checks
-// the two against drift while both still exist. The live art seam is icons/iconMap.ts +
+// imports this file. It survives for two reasons only: (1) it is the codepoint source
+// `app/scripts/build-icon-font.ts` reads to build the Nerd Font subset that `styles/icons.css`
+// still loads (`--icon-font-stack`), and (2) iconNames.ts's 140-name canonical list was sourced
+// from this file's key set at migration time and iconNames.test.ts cross-checks the two against
+// drift while both still exist. The live art seam is icons/iconMap.ts +
 // assets/icons/icon-manifest.json; do not add a new icon here expecting it to reach <Icon>.
 //
 // Codepoints, not characters, on purpose. `String.fromCodePoint(0xf048a)` is a surrogate PAIR in
 // JS source, and a literal astral character in a `.ts` file is invisible to review, survives a
-// copy-paste badly, and cannot be diffed — a number can be read, sorted and compared. The specimen
-// converts at render time (see specimen/iconSetData.ts).
+// copy-paste badly, and cannot be diffed — a number can be read, sorted and compared.
 //
 // EVERY CODEPOINT HERE MUST BE IN THE SUBSET FONT. app/scripts/build-icon-font.ts reads THIS FILE
 // to decide what to subset, so adding an entry is two steps and never one: add it here, then
