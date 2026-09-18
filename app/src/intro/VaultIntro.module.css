@@ -216,7 +216,7 @@
 }
 .vi-body {
   font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
-  font-size: clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem);
+  font-size: var(--fs-intro-body);
   line-height: 1.55;
   margin: 0;
   /* ~62ch of the prose face — inside the 65-75ch measure band, and far narrower than the

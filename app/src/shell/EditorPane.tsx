@@ -10,7 +10,7 @@
 // `.graph-slot-main` (the no-active-tab fallback placeholder) is NOT rendered by this file — it
 // stays inline in App.tsx as part of the `children` slot, exactly like the PaneTree/overlay `<For>`
 // loops, and stays a global App.css page-frame class (App.tsx's own layout slot, not this
-// component's or GraphView's — see graph/Graph.module.css's header for that decision).
+// component's or GraphView's — see GraphView.module.css's header for that decision).
 //
 // `bodyRef` is the callback-ref prop for `editorBodyEl`, which App.tsx's `measureOverlayHosts` and
 // `placeFloater` read via a `ResizeObserver` — that measurement stays in App.tsx (cross-boundary,

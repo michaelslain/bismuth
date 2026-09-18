@@ -1234,7 +1234,13 @@ export function KanbanView(props: {
                                                 )
                                             }
                                         >
-                                            <span class={styles.dot} />
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles.dot}
+                                            />
                                         </PlainButton>
                                         <Text
                                             as="span"

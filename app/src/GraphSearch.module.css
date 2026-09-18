@@ -1,6 +1,6 @@
 /* app/src/GraphSearch.module.css — GraphSearch.tsx's own chrome (its ONLY importer).
 
-   Split out of graph/Graph.module.css (Task 10, ds-conformance: that file had two importers —
+   Split out of GraphView.module.css (Task 10, ds-conformance: that file had two importers —
    GraphView.tsx and GraphSearch.tsx — violating one-module-one-importer). Everything GraphSearch
    draws for itself now lives here.
 

@@ -40,7 +40,7 @@
 .text--bold { font-weight: var(--fw-bold); }
 
 /* ── eyebrow — the uppercase, tracked "section label" register already hand-rolled per call
-   site as DaemonList.module.css's .daemon-section-head and graph/Graph.module.css's
+   site as DaemonList.module.css's .daemon-section-head and GraphView.module.css's
    .graph-card-h. Structural only: it does not imply a tone or weight, because the two existing
    uses disagree (the daemon/graph heads are faint + regular; ui.css's own
    .ui-empty-block h2 eyebrow is --fg + bold) — pass tone/weight explicitly alongside it. The

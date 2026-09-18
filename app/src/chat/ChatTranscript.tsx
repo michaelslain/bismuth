@@ -211,7 +211,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                     <ChatTurnColumn class={styles['chat-row']}>
                         <ChatTurnLabel label={props.persona} />
                         <div class={styles['chat-awaiting-dots']}>
-                            working<span class="asc-caret">_</span>
+                            working<Text as="span" size="inherit" tone="inherit" weight="inherit" class="asc-caret">_</Text>
                         </div>
                     </ChatTurnColumn>
                 </Show>
