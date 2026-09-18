@@ -2399,8 +2399,9 @@ export default function App() {
         }, 2500)
     })
     // Global keyboard shortcuts. Every combo is read from settings.keybindings
-    // (defaults in core/src/keybindings.ts), matched via matchesKeybinding — none
-    // are hardcoded here. These fire even while the editor is focused (CodeMirror
+    // (defaults in core/src/keybindings.ts), matched via matchesKeybinding. Two literals
+    // remain below, both deliberate: the switcher's backup Escape and the secret reset combo.
+    // These fire even while the editor is focused (CodeMirror
     // doesn't bind these keys); preventDefault suppresses browser print/open/etc.
     const handleGlobalKeydown = (e: KeyboardEvent) => {
         if (e.repeat) return
