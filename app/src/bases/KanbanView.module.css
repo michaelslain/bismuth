@@ -67,7 +67,9 @@
    "always white, every theme" (tokens.css), so it stands in for that native white rather than a
    literal hex. The disabled dimming was likewise free UA behaviour, reproduced with color-mix. */
 .kbDotBtn { display: inline-flex; align-items: center; padding: var(--sp-1); margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; text-align: center; color: var(--on-scrim); }
-.kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
+/* rgba(), not color-mix(): color-mix's computed value serializes as color(srgb …), which
+   would drift against the plain rgba() the UA default itself produced — see csscheck. */
+.kbDotBtn:disabled { cursor: default; color: rgba(255, 255, 255, 0.3); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
 
