@@ -143,19 +143,14 @@ export function parseCombo(combo: string): ParsedCombo | null {
 export function matchesCombo(e: KeyboardEvent, combo: string): boolean {
     const p = parseCombo(combo)
     if (!p) return false
-    // Ctrl/Meta are exact when the combo names them explicitly. When it doesn't
-    // name one, that physical key may only be held if `Mod` is present — Mod's
-    // portable fold can be satisfied via either — otherwise it's an unrequested
-    // extra modifier and the combo must reject it.
-    if (p.ctrl) {
-        if (!e.ctrlKey) return false
-    } else if (!p.mod && e.ctrlKey) return false
-    if (p.meta) {
-        if (!e.metaKey) return false
-    } else if (!p.mod && e.metaKey) return false
-    // Mod's own "at least one" requirement only needs checking when neither
-    // Ctrl nor Meta already pinned an exact physical key above.
-    if (p.mod && !p.ctrl && !p.meta && !(e.metaKey || e.ctrlKey)) return false
+    // An explicit Ctrl/Cmd token pins the physical key(s) exactly and makes a co-present "Mod"
+    // redundant; otherwise Mod means "at least one of ctrl/meta", and a combo naming none of the
+    // three requires neither held.
+    if (p.ctrl || p.meta) {
+        if (p.ctrl !== e.ctrlKey || p.meta !== e.metaKey) return false
+    } else if (p.mod) {
+        if (!(e.ctrlKey || e.metaKey)) return false
+    } else if (e.ctrlKey || e.metaKey) return false
     if (p.alt !== e.altKey) return false
     if (p.shift !== e.shiftKey) return false
     // Match the produced key OR the physical key — the latter survives Option
