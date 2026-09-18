@@ -210,6 +210,12 @@
   --r-control: 3px;
   --r-card: 4px;
   --r-panel: 5px;
+  /* NEW (task 1, token literals sweep). The PDF text-highlight mark's own corner radius —
+     NOT a step in the 0/50% UI radius scale above (§9.2): it renders a physical highlighter
+     mark (preview/HighlightLayer.module.css), whose softened corner is part of the mark
+     itself, not chrome. Kept at its pre-existing 1px value; cssBaseline showed real drift
+     at --r-0 so this stays a distinct token rather than aliasing to it. */
+  --r-mark: 1px;
 
   /* ── Rule / border — --rule/--rule-soft moved verbatim from ui.css:56-57 (values unchanged:
      both already read var(--border)/var(--border-soft), so nothing about how a hairline renders
