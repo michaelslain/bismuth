@@ -1,0 +1,23 @@
+/* ---- cards silhouette ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--sp-5);
+  padding: 18px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: 0 0 var(--sp-5);
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  overflow: hidden;
+}
+.cardCover {
+  height: 72px;
+  background: color-mix(in srgb, var(--faint) 16%, transparent);
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.cardLineWide { height: 11px; margin: 0 var(--sp-5); }
+.cardLine { height: 9px; width: 55%; margin: 0 var(--sp-5); }
