@@ -9,11 +9,11 @@
 // Fixed to a direct Solid ref (`draftBackRef`) so the wiring no longer depends on any class name
 // surviving hashing.
 //
-// `.cards-draft`/`.cell-back` DID move into Flashcards.module.css (2026-08 CSS modularization,
+// `.cards-draft`/`.cell-back` DID move into EditCardsModal.module.css (2026-08 CSS modularization,
 // Task 11), so THIS FILE's own `play` below now has to reach them through the same hashed `styles`
 // object EditCardsModal.tsx uses — a plain string literal would stop matching for exactly the
 // reason the comment above describes. `.cell-front` stays a bare literal on purpose: it has no rule
-// anywhere in Flashcards.module.css (only `.cell-back` overrides the shared `.cell-md`), so it never
+// anywhere in EditCardsModal.module.css (only `.cell-back` overrides the shared `.cell-md`), so it never
 // hashes — see EditCardsModal.tsx's `fieldClass` comment.
 //
 // The `play` below is the only way to prove this at all: Solid components can't mount under
@@ -23,7 +23,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { EditCardsModal } from './EditCardsModal'
 import type { FileMeta, Row } from '../../../core/src/bases/types'
-import styles from './Flashcards.module.css'
+import styles from './EditCardsModal.module.css'
 
 const noop = () => {}
 
@@ -121,7 +121,7 @@ export const DraftEnterMovesFocusToBack: Story = {
  *  (CSS-module migration, 2026-08) since they only render in bulk mode. Two pasted lines: one
  *  with a separator (a normal preview card) and one without (the "no back" warning path, which
  *  also exercises `.cards-warn-em` — rewritten from a bare literal to interpolate the module's
- *  hashed class inside a JS template string; see Flashcards.module.css's header). */
+ *  hashed class inside a JS template string; see EditCardsModal.module.css's header). */
 export const BulkAddPreview: Story = {
     args: {
         rows: ROWS,

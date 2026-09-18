@@ -310,7 +310,7 @@ export const Revealed: Story = {
 }
 
 /** The hidden face must be inert. Both faces stay mounted for the CSS 3D flip (see
- *  Flashcards.module.css's .flip-inner), and `backface-visibility: hidden` hides the back
+ *  FlashcardsView.module.css's .flip-inner), and `backface-visibility: hidden` hides the back
  *  VISUALLY without removing it from the tab order — so the Edit/Delete buttons `cardActions()`
  *  renders on both faces used to give a keyboard user two invisible tab stops, and a screen
  *  reader four buttons where there are two. `inert` removes exactly that, and (unlike
@@ -330,7 +330,7 @@ export const HiddenFaceIsInert: Story = {
     ),
     play: async ({ canvasElement }) => {
         // `.flip-front` is a bare, un-hashed literal class kept that way on purpose — see
-        // Flashcards.module.css's header and the Revealed story's note. `.flip-back` IS a
+        // FlashcardsView.module.css's header and the Revealed story's note. `.flip-back` IS a
         // module local, so match it by prefix rather than by the hashed name.
         const front = canvasElement.querySelector('.flip-front') as HTMLElement
         await expect(front).not.toBeNull()
