@@ -49,5 +49,9 @@
        to ~3.4:1. 0.50 is the point where the fallback's text contrast (~4.25:1, vs 4.4:1 at 0.42)
        is still comfortable while the mark stays recognisably a highlighter rather than a wash. */
     opacity: 0.5;
-    border-radius: 1px;
+    /* Was a literal 1px; the design system's radius scale collapses to --r-0 (0) everywhere
+       except genuine circular dots (§9.2), and a 1px radius on a multi-line highlight rect
+       is imperceptible against that. Token literals sweep, task 1 — cssBaseline confirms no
+       visible drift. */
+    border-radius: var(--r-0);
 }

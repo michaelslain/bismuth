@@ -138,7 +138,7 @@
 .mdField :global(.bismuth-doc-milkdown em) { font-style: italic; }
 .mdField :global(.bismuth-doc-milkdown code) {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 0.9em;
+  font-size: var(--fs-rel-code);
   padding: 1px var(--sp-2);
   border-radius: var(--r-0);
   background: var(--surface-3, var(--surface-2));
