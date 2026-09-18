@@ -26,6 +26,7 @@ import type { OutlineNode } from './annotationTypes'
 import { outlinePrefix } from './outlinePrefix'
 import IconButton from '../ui/IconButton'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import styles from './OutlineTree.module.css'
 
 export type OutlineTreeProps = {
@@ -209,7 +210,11 @@ function OutlineTree(props: OutlineTreeProps) {
                                     chevron), zero width for a leaf (`--leaf`, OutlineTree.module.css)
                                     so a leaf's title sits one cell after its connector instead of
                                     three. A node's click is its own — it must not also jump. */}
-                                <span
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
                                     classList={{
                                         [styles['outline-disclosure']!]: true,
                                         [styles['outline-disclosure--leaf']!]:
@@ -245,7 +250,7 @@ function OutlineTree(props: OutlineTreeProps) {
                                             onClick={() => setOpen(o => !o)}
                                         />
                                     </Show>
-                                </span>
+                                </Text>
                                 <Label fill class={styles['outline-title']}>
                                     {node.title}
                                 </Label>

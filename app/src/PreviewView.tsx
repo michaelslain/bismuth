@@ -87,6 +87,8 @@ import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { IconTextButton } from './ui/IconTextButton'
+import SearchBar from './ui/SearchBar'
+import Text from './ui/Text'
 import EmptyState, { Loading } from './ui/EmptyState'
 import { isTauri } from './nativeMenu'
 import { openPathInDefaultApp, revealPath } from './appWindow'
@@ -688,19 +690,21 @@ export function PreviewView(props: {
                 >
                     <Switch>
                         <Match when={kind() === 'code'}>
-                            <div
-                                class={styles['preview-find']}
-                                onKeyDown={e => e.stopPropagation()}
-                            >
-                                <input
-                                    ref={inputRef}
-                                    class={styles['preview-find-input']}
+                            {/* stopPropagation on this wrapper (not SearchBar itself — its
+                                onKeyDown prop reaches only the input) is what kept the app's
+                                capture-phase global keydown handler from seeing ANY key pressed
+                                anywhere in the find bar, including the trailing buttons — restated
+                                here rather than dropped in the SearchBar swap. */}
+                            <div onKeyDown={e => e.stopPropagation()}>
+                                <SearchBar
+                                    class={styles['preview-find']}
+                                    inputClass={styles['preview-find-input']}
                                     placeholder="Find"
                                     aria-label="Find in file"
                                     value={query()}
-                                    onInput={e => {
+                                    onInput={value => {
                                         setActiveIndex(0)
-                                        setQuery(e.currentTarget.value)
+                                        setQuery(value)
                                     }}
                                     onKeyDown={e => {
                                         if (e.key === 'Enter') {
@@ -711,61 +715,67 @@ export function PreviewView(props: {
                                             closeFind()
                                         }
                                     }}
-                                />
-                                <span
-                                    class={styles['preview-find-count']}
-                                    classList={{
-                                        [styles['is-empty']]:
-                                            query() !== '' &&
-                                            matches().length === 0,
-                                    }}
+                                    inputRef={el => (inputRef = el)}
                                 >
-                                    {countLabel()}
-                                </span>
-                                <IconButton
-                                    icon="ChevronUp"
-                                    label="Previous match (Shift+Enter)"
-                                    iconSize={15}
-                                    disabled={matches().length === 0}
-                                    onClick={() => {
-                                        step(-1)
-                                        inputRef?.focus()
-                                    }}
-                                />
-                                <IconButton
-                                    icon="ChevronDown"
-                                    label="Next match (Enter)"
-                                    iconSize={15}
-                                    disabled={matches().length === 0}
-                                    onClick={() => {
-                                        step(1)
-                                        inputRef?.focus()
-                                    }}
-                                />
-                                <Button
-                                    kind="text"
-                                    state={
-                                        caseSensitive()
-                                            ? 'selected'
-                                            : 'unselected'
-                                    }
-                                    class={styles['preview-find-case']}
-                                    title="Match case"
-                                    aria-label="Match case"
-                                    aria-pressed={caseSensitive()}
-                                    onClick={() => {
-                                        setCaseSensitive(v => !v)
-                                        inputRef?.focus()
-                                    }}
-                                >
-                                    Aa
-                                </Button>
-                                <IconButton
-                                    icon="X"
-                                    label="Close (Esc)"
-                                    iconSize={15}
-                                    onClick={closeFind}
-                                />
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles['preview-find-count']}
+                                        classList={{
+                                            [styles['is-empty']]:
+                                                query() !== '' &&
+                                                matches().length === 0,
+                                        }}
+                                    >
+                                        {countLabel()}
+                                    </Text>
+                                    <IconButton
+                                        icon="ChevronUp"
+                                        label="Previous match (Shift+Enter)"
+                                        iconSize={15}
+                                        disabled={matches().length === 0}
+                                        onClick={() => {
+                                            step(-1)
+                                            inputRef?.focus()
+                                        }}
+                                    />
+                                    <IconButton
+                                        icon="ChevronDown"
+                                        label="Next match (Enter)"
+                                        iconSize={15}
+                                        disabled={matches().length === 0}
+                                        onClick={() => {
+                                            step(1)
+                                            inputRef?.focus()
+                                        }}
+                                    />
+                                    <Button
+                                        kind="text"
+                                        state={
+                                            caseSensitive()
+                                                ? 'selected'
+                                                : 'unselected'
+                                        }
+                                        class={styles['preview-find-case']}
+                                        title="Match case"
+                                        aria-label="Match case"
+                                        aria-pressed={caseSensitive()}
+                                        onClick={() => {
+                                            setCaseSensitive(v => !v)
+                                            inputRef?.focus()
+                                        }}
+                                    >
+                                        Aa
+                                    </Button>
+                                    <IconButton
+                                        icon="X"
+                                        label="Close (Esc)"
+                                        iconSize={15}
+                                        onClick={closeFind}
+                                    />
+                                </SearchBar>
                             </div>
                         </Match>
                         <Match when={kind() === 'pdf'}>
@@ -777,9 +787,15 @@ export function PreviewView(props: {
                                 onKeyDown={e => e.stopPropagation()}
                             >
                                 <Icon value="Search" size={14} />
-                                <span class={styles['preview-find-note-text']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['preview-find-note-text']}
+                                >
                                     In-app PDF search isn't available yet.
-                                </span>
+                                </Text>
                                 <IconButton
                                     icon="X"
                                     label="Dismiss"
