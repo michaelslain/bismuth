@@ -5,10 +5,11 @@
 // composer: identical box, a local draft, disabled send.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import ChatComposerBar from './ChatComposerBar'
 import { makeStubChatSession, type StubChatSession } from './_stubChatSession'
 import type { ChatSession } from './chatSession'
+import { settings, setSettings } from '../settings'
 import styles from './ChatComposerBar.module.css'
 
 const meta = {
@@ -288,5 +289,113 @@ export const SlashPopoverNarrow: Story = {
         expect(
             canvasElement.ownerDocument.querySelector('.cm-tooltip-autocomplete'),
         ).toBeNull()
+    },
+}
+
+/** THE assertion final-review C1 exists for: `chat-send` must be READ from
+ *  `.settings.keybindings` on every keystroke, not resolved once from the hardcoded catalog
+ *  defaults. Proves both halves in one story — the default combo (Enter) sends, and once rebound
+ *  to `Mod+Enter`, plain Enter stops sending (it falls through to CodeMirror's own newline
+ *  handling, proven by a second `.cm-line` appearing) while the NEW combo does send. A regression
+ *  to the old two-argument `classifyComposerKey(e, state)` call (which silently falls back to
+ *  `DEFAULT_COMPOSER_KEY_COMBOS`) fails this story at the second half: the rebind would do
+ *  nothing, plain Enter would keep sending, and no second `.cm-line` would ever appear. */
+export const RebindingChatSendMovesIt: Story = (() => {
+    let session: StubChatSession
+    return {
+        render: () => {
+            session = makeStubChatSession({ draft: 'hello' })
+            return (
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message Claude"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const content = cmContent(canvasElement)
+            await waitFor(() => expect(content.textContent).toBe('hello'))
+            await userEvent.click(content)
+
+            // Default Enter sends.
+            fireEvent.keyDown(content, {
+                key: 'Enter',
+                code: 'Enter',
+                bubbles: true,
+                cancelable: true,
+            })
+            await waitFor(() => expect(session.calls.send?.length).toBe(1))
+
+            const restore = settings.keybindings['chat-send']
+            try {
+                setSettings('keybindings', 'chat-send', 'Mod+Enter')
+
+                // Plain Enter no longer sends — it falls through to CodeMirror's own newline
+                // handling, which we prove happened by waiting for a second `.cm-line` (a real
+                // condition, not a timer) rather than merely asserting an absence.
+                fireEvent.keyDown(content, {
+                    key: 'Enter',
+                    code: 'Enter',
+                    bubbles: true,
+                    cancelable: true,
+                })
+                await waitFor(() =>
+                    expect(
+                        canvasElement.querySelectorAll('.cm-line').length,
+                    ).toBe(2),
+                )
+                expect(session.calls.send?.length).toBe(1)
+
+                // The NEW combo (Mod+Enter) does send.
+                fireEvent.keyDown(content, {
+                    key: 'Enter',
+                    code: 'Enter',
+                    metaKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                })
+                await waitFor(() => expect(session.calls.send?.length).toBe(2))
+            } finally {
+                // The settings store is module-level and shared by every story in the run.
+                setSettings('keybindings', 'chat-send', restore)
+            }
+        },
+    }
+})() satisfies Story
+
+/** Shift+Enter must keep inserting a newline no matter what `chat-send` is bound to — it is
+ *  CodeMirror's own default Enter behaviour, not a rebindable action (see chatComposerKeys.ts's
+ *  header comment: there is no distinct "newline" action, only send-vs-pass, and Shift+Enter never
+ *  matches `chat-send` since chat-send's combos never carry Shift). */
+export const ShiftEnterStillInsertsNewline: Story = {
+    render: () => {
+        const session = makeStubChatSession({ draft: 'hello' })
+        return (
+            <ChatComposerBar
+                session={session}
+                placeholder="Message Claude"
+                noteNames={noNames}
+                memoryNames={noNames}
+                tagNames={noNames}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const content = cmContent(canvasElement)
+        await waitFor(() => expect(content.textContent).toBe('hello'))
+        await userEvent.click(content)
+        fireEvent.keyDown(content, {
+            key: 'Enter',
+            code: 'Enter',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        })
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('.cm-line').length).toBe(2),
+        )
     },
 }
