@@ -32,7 +32,7 @@ import { IconTextButton } from './ui/IconTextButton'
 import Text from './ui/Text'
 import Badge from './ui/Badge'
 import type { GraphMode } from './commands'
-import styles from './graph/Graph.module.css'
+import styles from './GraphView.module.css'
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
 function mixHex(a: number, b: number, t: number): number {
@@ -57,7 +57,7 @@ function fpsColor(fps: number): string {
     return '#f85149' // red: janky
 }
 
-// Same traffic-light thresholds as fpsColor, as a Graph.module.css class name instead of a color
+// Same traffic-light thresholds as fpsColor, as a GraphView.module.css class name instead of a color
 // literal — for the bottom-bar fps readout, which renders through <Badge> and (unlike <Text>)
 // has no `style` passthrough to carry a computed inline color. The stats-footer fps readout below
 // keeps using fpsColor()+inline style directly on <Text>, which does forward style.
@@ -91,7 +91,7 @@ const setViewModePersisted = (m: '2d' | '3d') => {
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
-// if all five segments don't fit one line; see the @container rule in graph/Graph.module.css).
+// if all five segments don't fit one line; see the @container rule in GraphView.module.css).
 /** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
  *  this settles in a few ms on the main thread — the backend budget (400) exists for 2000+ nodes and
  *  would be wasted here. */
@@ -108,7 +108,7 @@ const MODE_SHORT: Record<GraphMode, string> = {
  *
  * This REVERSES an earlier decision, deliberately and at the user's request: the mode switcher was
  * specified as text-only ("2ND/3RD/BOTH/DAEMON, no glyph prefixes, ever" — see the container
- * query in graph/Graph.module.css). That still holds for the FULL-PANE graph, where there is room for words and the
+ * query in GraphView.module.css). That still holds for the FULL-PANE graph, where there is room for words and the
  * words are unambiguous. In the sidebar the same text segments wrap onto two rows and eat the
  * little field's height, which is the problem icons solve. Text stays the rule where it fits.
  *
@@ -557,7 +557,7 @@ export function GraphView(props: {
                 actions={
                     /* One span, not one slot per control: `.graph-vb-right`'s own gap and the
                        `.graph-vb-wide` hide-when-narrow rule both hang off this element, and both
-                       are Graph.module.css's to own. */
+                       are GraphView.module.css's to own. */
                     <Text
                         as="span"
                         size="inherit"

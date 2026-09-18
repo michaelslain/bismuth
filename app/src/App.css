@@ -121,7 +121,7 @@
    the empty-pane new-terminal icon and the graph-mode icons.
    The two-parent selector list that used to live here (`.empty-pane .btn--icon, .graph-mode-icons
    .btn--icon { … }`, plus its `:hover` pair) is now two COPIES, one per owning module:
-   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and graph/Graph.module.css's
+   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and GraphView.module.css's
    `.graph-mode-icons :global(.btn--icon)` — same idiom shell/Sidebar.module.css and
    shell/TabRail.module.css already used for their own copies of this same declaration
    (`.tab-rail-actions .btn--icon` / `.tabbar-actions .btn--icon` — the rail's copy lives in
@@ -174,7 +174,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    palette/switcher.css) moved into palette/Palette.module.css (Task 6). */
 
 /* Graph Find panel search (a compact sibling of .palette-search) + the Graph Find overlay itself
-   (GraphSearch.tsx): the `.graph-search*` family moved into graph/Graph.module.css with the rest
+   (GraphSearch.tsx): the `.graph-search*` family moved into GraphView.module.css with the rest
    of the graph chrome (Task 9). */
 
 /* Icon picker: a searchable grid reusing the palette overlay/panel chrome (ui/gallery/
@@ -196,7 +196,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    chrome (crumb, Find, floating legend/stats cards, in-bar 2D/3D) is gated to wide width via a
    container query; the compact bottom controls show in the narrow sidebar. The whole `.graph-*`
    family (+ the overlay rules that used to live in graph/asciiGraph.css) moved into
-   graph/Graph.module.css (Task 9) — see that module's header for the two-file merge. */
+   GraphView.module.css (Task 9) — see that module's header for the two-file merge. */
 
 /* Daemon services list: nothing here. Its rules left this file for DaemonList.module.css (Task 11),
    and DaemonList itself is now DELETED — the graph's "daemon" mode is gone (docs/graph/overview.md)

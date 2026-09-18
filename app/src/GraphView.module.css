@@ -1,4 +1,4 @@
-/* Graph.module.css — scoped chrome for GraphView.tsx, its ONLY importer (Task 10, ds-conformance:
+/* GraphView.module.css — scoped chrome for GraphView.tsx, its ONLY importer (Task 10, ds-conformance:
    GraphSearch.tsx's own classes — `.graph-search*` — moved out to GraphSearch.module.css, which it
    alone imports; this file had carried both and that second importer was the violation this task
    fixed). GraphView still styles the `.graph-find-panel` wrapper it renders GraphSearch inside, and
@@ -121,9 +121,9 @@
    scale means the same thing in every theme). Picked as a class rather than inline style because
    Badge has no `style` prop; the stats-footer fps readout (a <Text>, which does forward style)
    still calls fpsColor() directly. */
-.graph-hud-fps--good { color: #3fb950; }
-.graph-hud-fps--ok { color: #d29922; }
-.graph-hud-fps--bad { color: #f85149; }
+.graph-hud-fps--good { color: var(--hud-fps-good); }
+.graph-hud-fps--ok { color: var(--hud-fps-ok); }
+.graph-hud-fps--bad { color: var(--hud-fps-bad); }
 /* Bottom HUD row: the 2D/3D toggle cluster + fps pill (+ hover pill, non-mini only — see the
    `!props.mini` guard in GraphView), pinned along the canvas floor. */
 .graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }

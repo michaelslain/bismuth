@@ -25,7 +25,7 @@ export type TextProps = {
     weight?: TextWeight
     /** The uppercase, tracked "section label" register (--ls-eyebrow) already hand-rolled
      *  per call site as DaemonList.module.css's .daemon-section-head and
-     *  graph/Graph.module.css's .graph-card-h. Structural only — pass `size="micro"` and a
+     *  GraphView.module.css's .graph-card-h. Structural only — pass `size="micro"` and a
      *  `tone` alongside it; see Text.module.css for why eyebrow itself stays silent on
      *  tone/weight. */
     eyebrow?: boolean

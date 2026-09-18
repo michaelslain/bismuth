@@ -21,7 +21,7 @@
    plain string `class="switcher-list"` for exactly this reason, same as before the split.
 
    `.search-bar-lead` (written literally by ui/SearchBar.tsx, styled in ui/ui.css, not yet
-   converted) is wrapped in `:global()` below for the same reason Graph.module.css's
+   converted) is wrapped in `:global()` below for the same reason GraphView.module.css's
    `.graph-search-bar :global(.search-bar-lead)` and Palette.module.css's
    `.palette-search :global(.search-bar-lead)` already are. */
 

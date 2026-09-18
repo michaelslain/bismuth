@@ -174,6 +174,13 @@
      three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
      a later wave's edit, not this one's. Nothing reads this token yet. */
   --fs-hero: 40px;
+  /* The vault-intro body's fluid size; intro-only. */
+  --fs-intro-body: clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem);
+
+  /* fixed dev-HUD traffic light, deliberately theme-independent (graph fps HUD) */
+  --hud-fps-good: #3fb950;
+  --hud-fps-ok: #d29922;
+  --hud-fps-bad: #f85149;
 
   /* ── Relative sizing — NEW (task 1, token literals sweep). Steps expressed in `em`, meant for a
      size that scales WITH its inherited context rather than to an absolute px step in the scale
@@ -235,13 +242,13 @@
      already owned 6-7 call sites (App.css's sidebar/rail collapse, FileTree's row-collapse,
      PaneTree's pane-in/flex-basis, shell/TabRail's rail-expand, bases/Flashcards' card-appear,
      palette/switcher's drop-in, editor/foldBlocks.ts's fold animation) against the previously-
-     named curve's 4 (DaemonList, graph/Graph.module.css, ChatComposer.module.css, ui/ui.css
+     named curve's 4 (DaemonList, GraphView.module.css, ChatComposer.module.css, ui/ui.css
      itself) — and it is the shorter, flatter curve the terminal register argues for.
      --dur-fast/--dur retime to 80ms/120ms with it. Every literal cubic-bezier(0.22, 1, 0.36, 1)
      call site above was swept onto var(--ease) in the same commit (their own durations are
      untouched — those are each transition's own considered timing, not this generic step; only
      the CURVE they all already agreed on is now named instead of copy-pasted). The 4 sites that
-     already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, graph/Graph.module.css,
+     already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, GraphView.module.css,
      ChatComposer, ui.css) pick up the new curve/timing for free — no edit needed there, which is
      the entire point of them having been tokenized already. */
   --dur-fast: 80ms;

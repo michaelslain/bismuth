@@ -460,11 +460,15 @@ export function SwitcherBar(props: Props) {
                 <Show when={aiPhase() === 'loading'}>
                     <EmptyState
                         icon={
-                            <span
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
                                 class={`${switcherStyles['switcher-loading-spinner']} asc-caret`}
                             >
                                 _
-                            </span>
+                            </Text>
                         }
                         title="Searching your vault with Bismuth AI…"
                     >

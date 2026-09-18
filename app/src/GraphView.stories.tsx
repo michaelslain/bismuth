@@ -242,7 +242,7 @@ export const MiniLocal: Story = {
  * The `play()` is the actual assertion, and it is written to FAIL if the mini bar is ever
  * re-centred: it checks the first mode icon starts at the bar's left content edge. Centring put
  * that icon ~75px to the right in a 266px bar, so the numbers are far apart and the check is not
- * a formality. See Graph.module.css's `@container graphroot (max-width: 520px)` block, whose
+ * a formality. See GraphView.module.css's `@container graphroot (max-width: 520px)` block, whose
  * comment says the same thing from the CSS side.
  */
 let miniSwitcherOwned = false

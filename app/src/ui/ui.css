@@ -24,7 +24,7 @@
       ChatTranscript/Flashcards), `.status-dot` (reached by calendar's GcalSyncPanel, bases'
       CardBody/ListView/KanbanView/renderValue, and shell/StatusBar — all via ui/StatusDot.tsx,
       the class's one literal writer), `.search-bar-lead`/`.search-bar-input` (reached by
-      graph/Graph.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
+      GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
       (reached by palette/Palette.module.css), `.asc-popover` (written bare, 3x, by
@@ -183,7 +183,7 @@
    EmptyPane.tsx). Before 2026-08-27 (visual-unification audit §7 wave 2, §4.8 "3 incompatible
    icon-button box models") this exact declaration was copied VERBATIM into FOUR different
    modules' own `:global(.btn--icon)` overrides (Sidebar.module.css, TabRail.module.css,
-   EmptyPane.module.css, and graph/Graph.module.css's mode-icon row) because the box model lived
+   EmptyPane.module.css, and GraphView.module.css's mode-icon row) because the box model lived
    with each PARENT instead of with the button. It is now `size="sm"` on the IconButton itself —
    pass the prop once at the call site instead of re-declaring the box in a new module every time
    a new toolzone is added.
@@ -194,7 +194,7 @@
    redundantly — every current consumer is always `state="normal"`, which already gets opacity 1
    from `.btn--icon.btn--normal` above). Leaving it out means this rule never has to referee
    against `.btn--icon.btn--selected`/`.btn--unselected` if a future toolzone button DOES carry a
-   variant — which is exactly why graph/Graph.module.css's copy (whose buttons ARE
+   variant — which is exactly why GraphView.module.css's copy (whose buttons ARE
    selected/unselected) is NOT migrated onto this rule in this wave; that's a later wave's call. */
 .btn--icon.btn--sm {
   /* 14px icon + 5px collar each side = 24px, the WCAG 2.5.8 (AA) minimum target. This was a 3px
@@ -417,7 +417,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    CASCADE. These rules changed FILE, and both files are global, so they changed POSITION — which is
    the only way a pure relocation can break. Two equal-specificity ties exist:
      .viewbar vs .graph-viewbar — both set `padding` on the same element at one class. This is why
-       graph/Graph.module.css writes `:global(.viewbar).graph-viewbar` (moved there from App.css by
+       GraphView.module.css writes `:global(.viewbar).graph-viewbar` (moved there from App.css by
        the 2026-08 CSS modularization, Task 9 — same fix, same specificity, new file). The two
        surfaces disagree about file order: the app bundle loads this file BEFORE App.css (ui.css
        rides a dependency chunk), while
@@ -479,7 +479,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .viewbar .btn--icon.btn--sm { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
-   are what the collapse ladder further down queries — see graph/Graph.module.css's header for why
+   are what the collapse ladder further down queries — see GraphView.module.css's header for why
    the name had to exist there first. */
 .viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
