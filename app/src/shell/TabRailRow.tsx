@@ -4,10 +4,12 @@
 // `<Index>` itself and the per-row `createMemo` for the chat tint (`railColor`) — those read App
 // state; this component only draws one already-resolved row.
 //
-// IMPORTS `./TabRail.module.css` — GETS NO MODULE OF ITS OWN. Eight hover/focus selectors span
-// TabRail.tsx and this file (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within
-// .tab-rail-row.pinned .tab-pin`, …); per-file hashing would break every one of them silently behind
-// a green build (Trap 4). See TabRail.module.css's header for the full account.
+// IMPORTS ITS OWN `./TabRailRow.module.css` (task 11 of ds-conformance — split out of the formerly
+// shared `TabRail.module.css`). The eight hover/focus selectors that used to span TabRail.tsx and
+// this file (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned
+// .tab-pin`, …) now reach TabRail's root state through the stable, UNHASHED
+// `[data-tab-rail]`/`[data-rail-pinned]` attributes TabRail.tsx sets on itself, rather than a class
+// selector this file's module can no longer share. See TabRailRow.module.css's header.
 //
 // `active` AND `pinned` are hashed module locals, reached via `classList={{ [styles['active']]: …,
 // [styles['pinned']]: … }}`. `dragging` stays a bare string literal DELIBERATELY — no
@@ -28,8 +30,10 @@ import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
+import TextInput from '../ui/TextInput'
 import { isDismissKey, isConfirmKey } from '../ui/widgetKeys'
-import styles from './TabRail.module.css'
+import styles from './TabRailRow.module.css'
 
 export function TabRailRow(props: {
     label: string
@@ -96,9 +100,15 @@ export function TabRailRow(props: {
                     </Label>
                 }
             >
-                <input
+                <TextInput
+                    plain
                     class={styles['tab-rename']}
                     value={props.label}
+                    // No onInput handler is wired: the field's value only ever commits on
+                    // blur/Enter (below), matching the pre-migration bare <input>, which was
+                    // never a controlled field either — the DOM element is free to diverge from
+                    // `props.label` while the user types.
+                    onInput={() => {}}
                     ref={el =>
                         queueMicrotask(() => {
                             el.focus()
@@ -130,7 +140,11 @@ export function TabRailRow(props: {
         three — and doing that per-button means nine handlers across three controls, which is where
         one gets forgotten. One element saying "this region is not part of the row's gestures" also
         makes the DOM *express* the boundary, instead of the row having to ask about it. */}
-            <span
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={styles['tab-rail-controls']}
                 onClick={e => e.stopPropagation()}
                 onPointerDown={e => e.stopPropagation()}
@@ -154,7 +168,7 @@ export function TabRailRow(props: {
                         onClick={() => props.onUnpin()}
                     />
                 </Show>
-            </span>
+            </Text>
         </div>
     )
 }
