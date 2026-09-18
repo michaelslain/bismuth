@@ -1,106 +1,33 @@
-/* app/src/SearchResultRows.module.css — shared styles for the unified search surface (#8).
-   Result cards (.sresult), the AI affordances (.search-ask-ai, .search-kbd) and the zero-results
-   CTA (.search-empty). Moved out of the global searchResults.css verbatim (2026-08 CSS
-   modularization) except for the `:global()` wrapping documented below. All colors use the app's
-   canonical theme tokens.
+/* app/src/SearchResultRows.module.css — result-card styles for the unified search surface (#8).
+   Result cards only (.sresult and its descendants). Moved out of the global searchResults.css
+   verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below. All
+   colors use the app's canonical theme tokens.
 
-   SHARED BY TWO COMPONENTS ON PURPOSE, same reason as PaneTree.module.css. searchResults.tsx's
-   `SearchResultRows` renders `.sresult` cards; palette/SwitcherBar.tsx renders the
-   `.search-ask-ai`/`.search-empty`/`.search-kbd` markup around those same cards (the AI-search
-   escalation UI). Both files import THIS module — CSS Modules hash per file, so a second copy of
-   the module would hash to a different name than the first and any selector or call site
+   The AI affordances (.search-ask-ai, .search-kbd) and the zero-results CTA (.search-empty) that
+   used to live here MOVED to palette/SwitcherBar.module.css (ds-conformance Task 8 follow-up):
+   SwitcherBar.tsx was their only reader anywhere in the app, so importing this module just for
+   that markup was a second importer of a stylesheet nothing else here needs. See
+   SwitcherBar.module.css's own header for where they live now.
+
+   SHARED BY TWO COMPONENTS ON PURPOSE, same reason as PaneTree.module.css. `SearchResultRows.tsx`
+   renders `.sresult` cards; palette/SwitcherBar.tsx renders those same cards inline in its results
+   list. Both files import THIS module for `.sresult` — CSS Modules hash per file, so a second copy
+   of the module would hash to a different name than the first and any selector or call site
    expecting one name would silently stop matching the other.
 
    `.sresult:global(.selected)` — `selected` is the app-wide bare "keyboard-highlighted row"
    convention (see PaletteRow.module.css's header for the full list of consumers), and
    SwitcherBar.tsx's `scrollSelectedIntoView(..., '.selected')` queries it generically across
    `.palette-row` file rows AND `.sresult` AI-result cards in the SAME list. Hashing it here would
-   silently break that query. `classList={{ selected: … }}` in searchResults.tsx stays a bare
+   silently break that query. `classList={{ selected: … }}` in SearchResultRows.tsx stays a bare
    literal for the same reason.
 
    `:global(.switcher-list) .sresult` — FOLDED IN from palette/switcher.css, which no longer
-   defines this selector. That file's own header already explains switcher.css reuses
-   `.sresult`/`.search-empty` from this file; the margin-top override belongs beside the class it
-   adjusts, not in the file reaching in from outside. `.switcher-list` itself stays global
-   (switcher.css owns the results-column chrome), reached here via `:global()` exactly like
-   PaletteRow.module.css's own `:global(.switcher-list)` reach.
-
-   `.search-state`/`.search-state-*`/`.search-spinner`/`.search-spinner-lg` (the bespoke
-   LOADING/ERROR/EMPTY-with-icon panels) were DROPPED here (Task 8, ds-conformance) — their last
-   readers, SwitcherBar.tsx's three readonly AI-phase panels, were swapped to the canonical
-   `ui/EmptyState.tsx` primitives (`Loading`/`EmptyState`) as intentional design-system drift (see
-   that task's report: the Sparkles/TriangleAlert icon and the loading panel's hint line are
-   dropped — EmptyState has no icon slot). `search-state-error` (the bare-literal modifier class
-   SwitcherBar.tsx used to compose onto `.search-state` for the error phase) is gone with it.
-   `switcher-ask-ai` is a SEPARATE, hashed class of its own (palette/SwitcherBar.module.css) that
-   SwitcherBar.tsx still composes alongside this module's `search-ask-ai` on the persistent AI
-   affordance — switcher-owned chrome, not this module's, unaffected by the above. */
-
-/* .search-ask-ai — the persistent AI affordance (BUG #8): shown under the result rows whenever
-   the query is question-shaped, so the AI search is reachable in one obvious click even when
-   file/keyword matches exist. Also invokable via Cmd+Enter. */
-.search-ask-ai {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  width: 100%;
-  padding: var(--sp-4) var(--sp-5);
-  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
-  border-radius: var(--r-0);
-  background: color-mix(in srgb, var(--teal) 7%, transparent);
-  color: var(--teal);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-body);
-  text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.search-ask-ai:hover {
-  background: color-mix(in srgb, var(--teal) 13%, transparent);
-  border-color: color-mix(in srgb, var(--teal) 70%, var(--border));
-}
-.search-ask-ai-icon { flex: none; color: var(--teal); }
-.search-ask-ai-label { font-weight: 500; }
-.search-ask-ai-kbd { margin-left: auto; }
-
-/* .search-empty — zero-results affordance: a centered column nudging the user toward the AI
-   fallback (clickable CTA) or reporting the AI found nothing. */
-.search-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-3);
-  text-align: center;
-  padding: calc(var(--sp-7) * 2) var(--sp-7);
-  color: var(--text-muted);
-}
-/* The CTA variant is a real <button> — strip its chrome and make the whole block a hit target. */
-.search-empty-cta {
-  width: 100%;
-  border: 1px dashed color-mix(in srgb, var(--teal) 40%, var(--border));
-  border-radius: var(--r-0);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.search-empty-cta:hover {
-  background: color-mix(in srgb, var(--teal) 8%, transparent);
-  border-color: color-mix(in srgb, var(--teal) 60%, var(--border));
-}
-.search-empty-icon { color: var(--teal); opacity: 0.9; }
-.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: 500; }
-.search-empty-hint { font-size: var(--fs-ui); color: var(--text-muted); }
-.search-kbd {
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-ui);
-  padding: 1px var(--sp-3);
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: var(--r-0);
-  background: var(--surface-1);
-  color: var(--fg);
-}
+   defines this selector. That file's own header already explains switcher.css reuses `.sresult`
+   from this file; the margin-top override belongs beside the class it adjusts, not in the file
+   reaching in from outside. `.switcher-list` itself stays global (switcher.css owns the
+   results-column chrome), reached here via `:global()` exactly like PaletteRow.module.css's own
+   `:global(.switcher-list)` reach. */
 
 /* .sresult — one card per file: header (icon + title + folder) over serif snippets. */
 .sresult {

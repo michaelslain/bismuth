@@ -60,7 +60,6 @@ import {
     type ContentHits,
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
-import searchStyles from '../SearchResultRows.module.css'
 import switcherStyles from './SwitcherBar.module.css'
 import './switcher.css'
 
@@ -377,21 +376,21 @@ export function SwitcherBar(props: Props) {
               Enter commits the highlighted row, so the AI needs its own visible path. */}
                     <Show when={navCount() > 0 && shaped()}>
                         <PlainButton
-                            class={`${searchStyles['search-ask-ai']} ${switcherStyles['switcher-ask-ai']}`}
+                            class={`${switcherStyles['search-ask-ai']} ${switcherStyles['switcher-ask-ai']}`}
                             onClick={askAi}
                             title="Search your vault with Bismuth AI (natural-language)"
                         >
                             <Icon
                                 value="Sparkles"
                                 size={14}
-                                class={searchStyles['search-ask-ai-icon']}
+                                class={switcherStyles['search-ask-ai-icon']}
                             />
                             <Text
                                 as="span"
                                 size="inherit"
                                 tone="inherit"
                                 weight="inherit"
-                                class={searchStyles['search-ask-ai-label']}
+                                class={switcherStyles['search-ask-ai-label']}
                             >
                                 Ask Bismuth AI about your vault
                             </Text>
@@ -400,9 +399,9 @@ export function SwitcherBar(props: Props) {
                                 size="inherit"
                                 tone="inherit"
                                 weight="inherit"
-                                class={searchStyles['search-ask-ai-kbd']}
+                                class={switcherStyles['search-ask-ai-kbd']}
                             >
-                                <kbd class={searchStyles['search-kbd']}>⌘↵</kbd>
+                                <kbd class={switcherStyles['search-kbd']}>⌘↵</kbd>
                             </Text>
                         </PlainButton>
                     </Show>
@@ -417,21 +416,21 @@ export function SwitcherBar(props: Props) {
                         third state: empty query -> Loading files…, non-empty -> this CTA. */}
                         <Show when={offerAi()}>
                             <PlainButton
-                                class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}
+                                class={`${switcherStyles['search-empty']} ${switcherStyles['search-empty-cta']}`}
                                 data-testid="switcher-ask-ai-cta"
                                 onClick={askAi}
                             >
                                 <Icon
                                     value="Sparkles"
                                     size={22}
-                                    class={searchStyles['search-empty-icon']}
+                                    class={switcherStyles['search-empty-icon']}
                                 />
                                 <Text
                                     as="div"
                                     size="inherit"
                                     tone="inherit"
                                     weight="inherit"
-                                    class={searchStyles['search-empty-title']}
+                                    class={switcherStyles['search-empty-title']}
                                 >
                                     No matching files
                                 </Text>
@@ -440,10 +439,10 @@ export function SwitcherBar(props: Props) {
                                     size="inherit"
                                     tone="inherit"
                                     weight="inherit"
-                                    class={searchStyles['search-empty-hint']}
+                                    class={switcherStyles['search-empty-hint']}
                                 >
                                     Press{' '}
-                                    <kbd class={searchStyles['search-kbd']}>Enter</kbd> to
+                                    <kbd class={switcherStyles['search-kbd']}>Enter</kbd> to
                                     ask Bismuth AI about your vault
                                 </Text>
                             </PlainButton>
@@ -452,14 +451,37 @@ export function SwitcherBar(props: Props) {
                 </Show>
                 {/* aiPhase 'loading'/'error'/empty-'results' are readonly informational panels —
             the canonical EmptyState/Loading primitives (ui/EmptyState.tsx) replace the former
-            bespoke `.search-state`/`.search-empty` panels here. This is intentional drift from
-            the pre-migration screenshots (the Sparkles/TriangleAlert icon and the loading
-            spinner/hint line are dropped — EmptyState has no icon slot) — see the task report. */}
+            bespoke `.search-state`/`.search-empty` panels here. The loading/error panels' original
+            icons + the loading panel's hint line are RESTORED (Finding 2, ds-conformance Task 8
+            follow-up) via EmptyState's `icon` prop — see ui/EmptyState.tsx and
+            SwitcherBar.module.css's `.switcher-loading-spinner`/`.switcher-error-icon`. The
+            zero-results fallback just below (aiPhase 'results', empty) still drops its Sparkles
+            icon — out of this fix's scope, unchanged intentional drift from the task report. */}
                 <Show when={aiPhase() === 'loading'}>
-                    <Loading>Searching your vault with Bismuth AI…</Loading>
+                    <EmptyState
+                        icon={
+                            <span
+                                class={`${switcherStyles['switcher-loading-spinner']} asc-caret`}
+                            >
+                                _
+                            </span>
+                        }
+                        title="Searching your vault with Bismuth AI…"
+                    >
+                        Reading your notes to find what answers your question
+                    </EmptyState>
                 </Show>
                 <Show when={aiPhase() === 'error'}>
-                    <EmptyState title="Bismuth AI couldn’t complete the search">
+                    <EmptyState
+                        icon={
+                            <Icon
+                                value="TriangleAlert"
+                                size={24}
+                                class={switcherStyles['switcher-error-icon']}
+                            />
+                        }
+                        title="Bismuth AI couldn’t complete the search"
+                    >
                         {aiState().error}
                     </EmptyState>
                 </Show>

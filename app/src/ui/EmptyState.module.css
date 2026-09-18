@@ -5,3 +5,10 @@
    reached via `:global()` from bases/Flashcards.module.css. See
    .claude/plans/ui-css-ownership.md. */
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
+
+/* .ui-empty-icon — layout hook for EmptyState's optional `icon` prop (ds-conformance Task 8
+   follow-up, Finding 2). `.ui-empty-block` (ui.css) is already a centered flex column, so this
+   just centers the icon itself; the icon's own color/size are the caller's — see
+   palette/SwitcherBar.module.css's `.switcher-loading-spinner`/`.switcher-error-icon` for the
+   restored ask-AI panel glyphs. */
+.ui-empty-icon { display: flex; align-items: center; justify-content: center; }
