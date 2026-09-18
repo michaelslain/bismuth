@@ -15,6 +15,8 @@ import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import Label from '../ui/Label'
 import EmptyState from '../ui/EmptyState'
+import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
 import DaemonPanel from './DaemonPanel'
 import cronFrequency from './cronFrequency'
 import { cronStatus, type CronStatusKey } from './cronStatus'
@@ -49,7 +51,10 @@ function cronStatusLabel(cron: DaemonCron): string {
 
 /** Shared row shell — the click/context-menu wiring, the status dot, and a fill Label are
  *  identical between a cron row and a process row; only the dot color/glow and the trailing
- *  content differ. */
+ *  content differ. A real `<button>` (no nested interactive content here — neither `extra` nor
+ *  `status` ever renders one), so the row is keyboard-focusable/-activatable for free where it
+ *  used to be mouse-only; `.daemon-row` itself keeps the full-width/left-aligned/flex layout it
+ *  always had (PlainButton's own reset carries zero specificity — see PlainButton.module.css). */
 function DaemonRow(props: {
     label: string
     dotColor: string
@@ -61,13 +66,13 @@ function DaemonRow(props: {
     status: JSX.Element
 }) {
     return (
-        <div
+        <PlainButton
             class={styles['daemon-row']}
             onClick={props.onClick}
             onContextMenu={props.onContextMenu}
             style={{ opacity: props.faded ? 0.45 : 1 }}
         >
-            <span
+            <div
                 class={styles['daemon-row-dot']}
                 classList={{ [styles.glow]: props.glow }}
                 style={{ color: props.dotColor }}
@@ -77,7 +82,7 @@ function DaemonRow(props: {
             </Label>
             {props.extra}
             {props.status}
-        </div>
+        </PlainButton>
     )
 }
 
@@ -105,11 +110,23 @@ function CronRow(props: {
             onContextMenu={e => props.onMenu(props.cron, e)}
             extra={
                 <Show when={freq()}>
-                    <span class={styles['daemon-row-freq']}>{freq()}</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['daemon-row-freq']}
+                    >
+                        {freq()}
+                    </Text>
                 </Show>
             }
             status={
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     class={styles['daemon-row-status']}
                     classList={{
                         [styles['tone-accent']]: status() === 'running',
@@ -117,7 +134,7 @@ function CronRow(props: {
                     }}
                 >
                     {cronStatusLabel(props.cron)}
-                </span>
+                </Text>
             }
         />
     )
@@ -144,12 +161,16 @@ function ProcessRow(props: {
             }
             onContextMenu={e => props.onMenu(props.process, e)}
             status={
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     class={styles['daemon-row-status']}
                     classList={{ [styles['tone-accent']]: enabled() }}
                 >
                     {enabled() ? 'on' : 'off'}
-                </span>
+                </Text>
             }
         />
     )
