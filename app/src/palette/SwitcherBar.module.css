@@ -187,3 +187,7 @@
    their only owner. */
 .switcher-loading-spinner { color: var(--teal); font-size: var(--fs-display); }
 .switcher-error-icon { color: var(--danger); opacity: 0.9; }
+
+/* Restores the AI error message's overflow guard + danger colour, lost when the panel moved to
+   EmptyState's generic .ui-empty paragraph — a raw backend error string is unbounded. */
+.switcher-error-panel :global(.ui-empty) { color: var(--danger); max-width: 460px; line-height: 1.5; word-break: break-word; }

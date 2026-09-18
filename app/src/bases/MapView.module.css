@@ -102,6 +102,7 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-body);
   cursor: pointer;
+  text-align: center;
   transition: background 120ms ease;
 }
 .mapCtrlBtn:hover { background: var(--hover-bg); }
