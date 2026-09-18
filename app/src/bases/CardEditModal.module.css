@@ -13,24 +13,6 @@
   overflow: hidden;
 }
 
-/* Header: icon-free title bar, matching EditCardsModal/EventModal/EditDictionaryModal —
-   a real (serif) heading, not another all-caps field caption. */
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-5);
-  padding: var(--sp-6) 20px var(--sp-5);
-  border-bottom: 1px solid var(--border-soft);
-  flex: 0 0 auto;
-}
-.headTitle {
-  flex: 1;
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--fg);
-}
 .body {
   display: flex;
   flex-direction: column;
@@ -47,7 +29,11 @@
   min-width: 0;
 }
 
-.label {
+/* `.titleField > span` reaches Field's own internal label span (ui/Field.tsx renders
+   `<label><span>{label}</span>{children}</label>` with no class of its own) so the Title
+   field's caption keeps the same micro-caps register as every property's `.label`. */
+.label,
+.titleField > span {
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -164,18 +150,6 @@
   padding: var(--sp-2) 0;
 }
 
-.footer {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  padding: var(--sp-5) 20px;
-  border-top: 1px solid var(--border-soft);
-  flex: 0 0 auto;
-}
-/* Pushes DELETE to the left edge and DONE to the right, mirroring EditCardsModal's footer. */
-.footerSpacer {
-  flex: 1;
-}
 
 /* Boolean toggle. Shrink-to-fit (see CardEditModal.tsx) and sized to the COMPACT card-face scale
    its siblings use — PropertyValueEditor renders .kbMetaInput/.kbMetaSelect at 12px and
