@@ -27,6 +27,9 @@
 .win-btn {
   font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--faint);
   background: transparent; border: none; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0);
+  /* Restores the UA <button> default (text-align: center) that PlainButton's reset sets to
+     `start` — this component owns its own look, so it restates what the bare button had. */
+  text-align: center;
 }
 .win-btn:hover { color: var(--fg); background: var(--hover-bg); }
 .win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
