@@ -1,6 +1,12 @@
-/* Graph.module.css — scoped chrome for GraphView.tsx (+ GraphSearch.tsx, its Find-panel overlay).
-   Moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS modularization, Task 9) —
-   asciiGraph.css no longer defines any `.graph-*` selector.
+/* Graph.module.css — scoped chrome for GraphView.tsx, its ONLY importer (Task 10, ds-conformance:
+   GraphSearch.tsx's own classes — `.graph-search*` — moved out to GraphSearch.module.css, which it
+   alone imports; this file had carried both and that second importer was the violation this task
+   fixed). GraphView still styles the `.graph-find-panel` wrapper it renders GraphSearch inside, and
+   passes GraphSearch an `embedded` prop rather than reaching into GraphSearch's hashed classes —
+   see GraphSearch.module.css's header for the `data-embedded` hook that replaced the old
+   `.graph-find-panel .graph-search-*` cross-file selectors.
+   Originally moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS modularization,
+   Task 9) — asciiGraph.css no longer defines any `.graph-*` selector.
 
    The daemon-mode legend card this file used to carry (`.graph-legend-card`/`.daemon-legend`/
    `.graph-card-h`/`.graph-legend-rows`, and the DaemonList component + story that rendered inside
@@ -37,24 +43,11 @@
    the one place that measurement DIDN'T stay flat).
 
    `.graph-search-bar` / `.graph-search-list` / `.graph-search-row` (+ its `.selected` modifier) /
-   `.graph-search-glyph` / `.graph-search-sub` / `.graph-search-empty` do NOT collapse — a first pass
-   collapsed them (the specificity math looked identical to `.graph-card-h`'s case) and
-   `bench/probeStory.ts app-graphsearch--default`/`--no-matches` caught a real diff: GraphSearch.tsx
-   always renders inside `.graph-find-panel` in the shipped app (GraphView is its only caller), but
-   `app-graphsearch--default`/`--no-matches` (Storybook) mount `<GraphSearch>` STANDALONE, with no
-   `.graph-find-panel` ancestor at all. Collapsing removed that ancestor requirement, so the
-   find-panel's tighter ASCII-register padding/gap/color leaked into the bare rendering the stories
-   exercise. Each pair below stays TWO rules — a bare base (what App.css always had) and a
-   `.graph-find-panel`-scoped override (what asciiGraph.css always had) — folded into one FILE, not
-   one RULE. `.graph-search-glyph` has no bare base at all (there never was one in App.css); it
-   stays find-panel-scoped only.
-
-   `.graph-search-row .graph-search-sub` kept `font-size: 10.5px` (never `var(--fs-micro)`,
-   asciiGraph.css's old override value) when the two files collapsed — `bench/probeStory.ts
-   app-graphsearch--default` measured which one actually won. The `.graph-find-panel
-   .graph-search-sub` override that used to sit beside it is gone now (2026-08, ui/Label.tsx
-   migration): it only ever redeclared the same `color: var(--faint)` Label's `tone="faint"` now
-   always supplies, so once color left this file the override had nothing left to say.
+   `.graph-search-glyph` / `.graph-search-sub` / `.graph-search-empty`: this history is now
+   GraphSearch.module.css's to carry (Task 10 moved these rules there, gated on `data-embedded`
+   instead of a `.graph-find-panel` ancestor selector) — see that file's header for the current
+   shape, including the `10.5px` literal that Task 10 finally turned into `var(--fs-micro)` (a
+   token swap with no visible effect: the two were already numerically identical).
 
    `.graph-stats` collapses cleanly: both files declared a bare `.graph-stats` at equal specificity,
    but on entirely DISJOINT properties (App.css: position/layout; asciiGraph.css: font-size/color/
@@ -116,9 +109,21 @@
 .graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
-/* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
-   color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
+/* Shared pill recipe for the hover / fps HUD readouts (theme-aware). Both readouts render through
+   ui/Badge, which has no `style` passthrough — so unlike the old bare `<span style={...}>`, every
+   declaration (including the per-pill ones below) has to be a real class, not an inline value. */
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
+/* Hover pill only (the fps pill's own sizing is `.graph-bottom-fps` below). Was inline style on
+   the bare span this replaced; the values are unchanged, just moved into a class Badge can take. */
+.graph-hud-hover { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: var(--fs-ui); padding: 2px 8px; }
+/* fps pill traffic-light color bands — same three hex values and thresholds as GraphView's
+   fpsColor()/fpsColorClass(), deliberately NOT theme tokens (see fpsColor's own comment: this
+   scale means the same thing in every theme). Picked as a class rather than inline style because
+   Badge has no `style` prop; the stats-footer fps readout (a <Text>, which does forward style)
+   still calls fpsColor() directly. */
+.graph-hud-fps--good { color: #3fb950; }
+.graph-hud-fps--ok { color: #d29922; }
+.graph-hud-fps--bad { color: #f85149; }
 /* Bottom HUD row: the 2D/3D toggle cluster + fps pill (+ hover pill, non-mini only — see the
    `!props.mini` guard in GraphView), pinned along the canvas floor. */
 .graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }
@@ -153,55 +158,13 @@
    patch just the blur, so the surface is 100% the shared popover treatment, with nothing left here
    to drift out of sync with it again. */
 .graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; z-index: 5; overflow: hidden; }
-/* Graph Find search bar — a compact sibling of palette/Palette.module.css's `.palette-search`
-   (same anatomy: leading icon + transparent input + border-bottom divider above the result list).
-   BASE geometry (bare `.graph-search-bar`) + an ASCII-register OVERRIDE scoped under
-   `.graph-find-panel`, kept as TWO rules rather than collapsed into one. GraphSearch.tsx renders
-   inside `.graph-find-panel` in the real app (GraphView is the only caller), but
-   `app-graphsearch--default`/`--no-matches` (Storybook) mount `<GraphSearch>` STANDALONE with no
-   such ancestor — collapsing the two into one unconditional rule was tried and reverted;
-   `bench/probeStory.ts app-graphsearch--default` caught the diff (the find-panel's tighter
-   padding/gap leaking into the bare-standalone rendering). Same reasoning for every
-   `.graph-find-panel .graph-search-*` pair below. */
-.graph-search-bar { padding: var(--sp-5) var(--sp-5); gap: var(--sp-4); }
-.graph-search-bar :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
-.graph-search-bar :global(.search-bar-input) { font-size: var(--fs-body); }
-.graph-find-panel .graph-search-bar { padding: var(--sp-3) var(--sp-4); gap: var(--sp-4); }
-.graph-find-panel .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-ui); }
-/* Divider rides the list's top so it only shows alongside results (no empty sliver). */
-.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: var(--sp-2); }
-.graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: var(--sp-2); }
-/* Graph Find overlay (GraphSearch.tsx): a search bar over a keyboard-navigable result list. */
-.graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
-.graph-search-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-0); cursor: pointer; white-space: nowrap; background: transparent; }
-.graph-find-panel .graph-search-row { border-radius: var(--r-0); padding: 1px var(--sp-2); gap: var(--sp-3); color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.graph-find-panel .graph-search-row:hover { background: var(--hover-bg); }
-/* `.selected` is the app-wide bare state-class convention — see this file's header. The base rule's
-   `background` here is the SAME value the find-panel override below also sets — no behavioural
-   difference in the real app (the override always wins where both could apply), but the base rule
-   still has to exist standalone for the Storybook story that never gains a `.graph-find-panel`
-   ancestor. */
-.graph-search-row:global(.selected) { background: var(--accent-soft); }
-.graph-find-panel .graph-search-row:global(.selected) { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
-/* .graph-search-label's flex/min-width/overflow/ellipsis/color(--fg) moved to ui/Label.tsx
-   (`<Label fill tone="default">`) — this selector stays ONLY for the :global(.selected) override
-   below, which must keep reaching the element by this exact class name. */
-.graph-find-panel .graph-search-row:global(.selected) .graph-search-label { color: var(--accent); }
-/* Each result carries the same node glyph the field draws it with, so a row and its node read as
-   the same object — find-panel-scoped only, there is no bare base rule (there never was one). */
-.graph-find-panel .graph-search-glyph { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); width: var(--cell-w); flex: 0 0 auto; text-align: center; }
-.graph-find-panel .graph-search-row:global(.selected) .graph-search-glyph { color: var(--accent); }
-/* Placement only — overflow/ellipsis/white-space(nowrap)/color(--faint) moved to ui/Label.tsx
-   (`<Label tone="faint">`). The old .graph-find-panel .graph-search-sub override is gone too: it
-   only ever redeclared the same --faint color Label now always applies, a genuine tie that never
-   changed anything (see the removed comment's `bench/probeStory.ts app-graphsearch--default`
-   measurement) — so once color left this file, the override had nothing left to say. */
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: var(--sp-5); max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; /* LITERAL ON PURPOSE — never var(--fs-micro); see the note above, measured with bench/probeStory.ts. */ }
-.graph-search-empty { padding: var(--sp-4) var(--sp-4); color: var(--faint); font-size: var(--fs-micro); }
-.graph-find-panel .graph-search-empty { padding: var(--sp-3) var(--sp-4); font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
+/* GraphSearch's own chrome (search bar / result rows / glyph / empty state) now lives entirely in
+   GraphSearch.module.css — see this file's header. GraphView only owns the `.graph-find-panel`
+   wrapper above and passes GraphSearch the `embedded` prop that switches its internal register. */
 
 .graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
-/* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
+/* Bottom-bar fps readout (paired with .graph-hud-pill; traffic-light color comes from whichever
+   .graph-hud-fps--good/--ok/--bad class GraphView's fpsColorClass() picks — see above). */
 .graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: var(--sp-1) var(--sp-4); }
 /* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
    button (an icon-only version read as a mystery button). `margin-left: auto`
