@@ -654,16 +654,9 @@
     "max": null,
     "required": false
   },
-  "keybindings.chat-newline": {
-    "type": "keybind",
-    "default": "Shift+Enter",
-    "min": null,
-    "max": null,
-    "required": false
-  },
   "keybindings.chat-send": {
     "type": "keybind",
-    "default": "Enter",
+    "default": "Enter, Mod+Enter",
     "min": null,
     "max": null,
     "required": false
@@ -691,7 +684,7 @@
   },
   "keybindings.delete-selection": {
     "type": "keybind",
-    "default": "Delete, Backspace",
+    "default": "Delete, Backspace, Mod+Delete, Mod+Backspace",
     "min": null,
     "max": null,
     "required": false

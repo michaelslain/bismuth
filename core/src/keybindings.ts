@@ -7,12 +7,19 @@
 // settings.keybindings.<id>, never a hardcoded combo.
 //
 // Combo syntax (see app/src/keybindings.ts for the matcher):
-//   "Mod"   — Cmd on macOS / Ctrl elsewhere (matches metaKey OR ctrlKey)
+//   "Mod"   — the portable default: Cmd on macOS / Ctrl elsewhere (matches metaKey OR ctrlKey)
+//   "Ctrl"/"Control" — EXACT: requires ctrlKey, independent of Mod
+//   "Cmd"/"Command"/"Meta"/"Super" — EXACT: requires metaKey, independent of Mod
 //   "Alt"   — Option/Alt;  "Shift" — Shift
 //   final token is the key, e.g. "P", "D", "=", "`", "ArrowLeft"
-//   comma-separate alternatives: "Mod+`, Mod+J"
-// Matching is EXACT on modifiers, so "Mod+D" (split-right) and "Mod+Shift+D"
-// (split-down) never collide.
+//   comma-separate alternatives (ANY one matching fires): "Mod+`, Mod+J"
+// Matching is EXACT on modifiers, so "Mod+D" (split-right) and "Mod+Shift+D" (split-down) never
+// collide — and the same exactness holds for Ctrl/Meta, which is what lets open-completion's
+// "Ctrl+Space, Mod+Shift+Space" pin the physical Ctrl key to dodge the macOS input-source
+// switcher instead of folding into the portable Mod.
+// SPELLING TRAP: a bare shifted character never fires — Shift is matched EXACTLY, so an event
+// carrying shiftKey never matches a combo whose key token is the shifted character itself. Write
+// "Shift+=", "Shift+-", "Shift+Z" (or the alias "Plus"), never a bare "+", "_", or a shifted "Z".
 
 export interface KeybindingSpec {
     /** Stable id; the YAML key under `keybindings:` and the lookup App.tsx uses. */
@@ -180,7 +187,7 @@ export const KEYBINDING_CATALOG = [
         id: 'accept-completion',
         label: 'Accept autocomplete suggestion',
         default: 'Tab',
-        doc: 'Accept the highlighted suggestion in an open autocomplete popup.',
+        doc: 'Accept the highlighted suggestion in an open autocomplete popup. Tab is rebindable; Enter also accepts, and that binding is fixed rather than rebindable.',
     },
     {
         id: 'indent',
@@ -209,14 +216,8 @@ export const KEYBINDING_CATALOG = [
     {
         id: 'chat-send',
         label: 'Send chat message',
-        default: 'Enter',
-        doc: 'Send the current chat message.',
-    },
-    {
-        id: 'chat-newline',
-        label: 'Insert chat newline',
-        default: 'Shift+Enter',
-        doc: 'Insert a newline in the chat composer without sending the message.',
+        default: 'Enter, Mod+Enter',
+        doc: 'Send the current chat message. Mod+Enter is included because it sent before this became rebindable.',
     },
     {
         id: 'chat-stop',
@@ -245,8 +246,8 @@ export const KEYBINDING_CATALOG = [
     {
         id: 'delete-selection',
         label: 'Delete selected file',
-        default: 'Delete, Backspace',
-        doc: 'Delete the selected file or folder in the file tree (moves it to trash; undoable).',
+        default: 'Delete, Backspace, Mod+Delete, Mod+Backspace',
+        doc: 'Delete the selected file or folder in the file tree (moves it to trash; undoable). Mod+Delete/Mod+Backspace are included because that is the platform "move to trash" gesture, and the pre-catalog handler ignored modifiers entirely.',
     },
     {
         id: 'flashcard-flip',

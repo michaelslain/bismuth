@@ -227,10 +227,10 @@ test('DEFAULTS.keybindings materializes every catalog combo', () => {
     }
 })
 
-// --- Task 2: the 26 new rebindable-keys ids, on top of the original 24. ---
+// --- Task 2: the 25 new rebindable-keys ids, on top of the original 24. ---
 
-test('KEYBINDING_CATALOG has exactly 50 entries (24 original + 26 rebindable-keys)', () => {
-    expect(KEYBINDING_CATALOG.length).toBe(50)
+test('KEYBINDING_CATALOG has exactly 49 entries (24 original + 25 rebindable-keys)', () => {
+    expect(KEYBINDING_CATALOG.length).toBe(49)
 })
 
 test('every KEYBINDING_CATALOG id is unique', () => {
@@ -279,7 +279,7 @@ test('every KEYBINDING_CATALOG default is syntactically parseable', () => {
     }
 })
 
-test('the 26 new ids are present with their exact specified defaults', () => {
+test('the 25 new ids are present with their exact specified defaults', () => {
     const kb = objectFields(SETTINGS_SCHEMA.keybindings)
     const expected: Record<string, string> = {
         'open-completion': 'Ctrl+Space, Mod+Shift+Space',
@@ -288,13 +288,12 @@ test('the 26 new ids are present with their exact specified defaults', () => {
         outdent: 'Shift+Tab',
         'toggle-bold': 'Mod+B',
         'toggle-italic': 'Mod+I',
-        'chat-send': 'Enter',
-        'chat-newline': 'Shift+Enter',
+        'chat-send': 'Enter, Mod+Enter',
         'chat-stop': 'Escape',
         'chat-history-prev': 'ArrowUp',
         'chat-history-next': 'ArrowDown',
         'undo-delete': 'Mod+Z',
-        'delete-selection': 'Delete, Backspace',
+        'delete-selection': 'Delete, Backspace, Mod+Delete, Mod+Backspace',
         'flashcard-flip': 'Space',
         'flashcard-hard': '1',
         'flashcard-good': '2',
@@ -309,7 +308,7 @@ test('the 26 new ids are present with their exact specified defaults', () => {
         'ui-dismiss': 'Escape',
         'ui-confirm': 'Enter',
     }
-    expect(Object.keys(expected).length).toBe(26)
+    expect(Object.keys(expected).length).toBe(25)
     for (const [id, combo] of Object.entries(expected)) {
         expect(kb[id]).toBeDefined()
         expect(kb[id].default).toBe(combo)
@@ -339,7 +338,6 @@ test('new keybinding defaults collide only where the plan says they deliberately
         'toggle-bold': ['card editor', 'cell editor', 'note editor'],
         'toggle-italic': ['card editor', 'cell editor', 'note editor'],
         'chat-send': ['chat composer'],
-        'chat-newline': ['chat composer'],
         'chat-stop': ['chat composer'],
         'chat-history-prev': ['chat composer'],
         'chat-history-next': ['chat composer'],

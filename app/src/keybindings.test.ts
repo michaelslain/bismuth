@@ -207,6 +207,13 @@ describe('matchesCombo — Ctrl/Meta exact, independent of Mod', () => {
         ).toBe(false)
     })
 
+    it('an explicit Ctrl token stays exact even alongside Mod', () => {
+        expect(matchesCombo(ev('k', { ctrl: true }), 'Mod+Ctrl+K')).toBe(true)
+        expect(
+            matchesCombo(ev('k', { ctrl: true, meta: true }), 'Mod+Ctrl+K'),
+        ).toBe(false)
+    })
+
     it('a combo naming none of Mod/Ctrl/Meta requires neither modifier held', () => {
         expect(matchesCombo(ev('t', { alt: true }), 'Alt+T')).toBe(true)
         expect(
@@ -303,8 +310,8 @@ describe('eventToCombo — recording a shortcut', () => {
     })
 })
 
-describe('KEYBINDING_CATALOG back-compat', () => {
-    // The catalog now has 50 entries, and unlike the original 24 it uses literal
+describe('KEYBINDING_CATALOG defaults — modifier truth table', () => {
+    // The catalog now has 49 entries, and unlike the original 24 it uses literal
     // Ctrl/Cmd/Meta tokens (open-completion: "Ctrl+Space, Mod+Shift+Space") and
     // shifted-punctuation alternatives (graph-zoom-in: "=, Shift+=, Plus") on top
     // of the plain Mod/Alt/Shift combos. A synthetic KeyboardEvent built from a
@@ -315,6 +322,10 @@ describe('KEYBINDING_CATALOG back-compat', () => {
     // Mod / exact-Ctrl / exact-Meta / none truth table plus Alt/Shift requiredness.
     // Still iterates the catalog — never hand-lists ids — so a new default gets
     // this coverage for free.
+    //
+    // This does NOT compare against the pre-catalog hardcoded predicates —
+    // a default that narrows or widens one (e.g. dropping a modifier-agnostic Cmd+Backspace) passes
+    // here. Behaviour preservation is a review question, not something this block measures.
 
     // Reverse of `codeToKey`: probe every code it knows how to resolve and record
     // the first one that resolves to each normalized key, so the physical `code`
@@ -382,7 +393,7 @@ describe('KEYBINDING_CATALOG back-compat', () => {
     ])
 
     KEYBINDING_CATALOG.forEach(spec => {
-        it(`${spec.id}: "${spec.default}" still matches what it matched before`, () => {
+        it(`${spec.id}: "${spec.default}" obeys the Mod/Ctrl/Meta/Alt/Shift truth table`, () => {
             spec.default.split(',').forEach(rawCombo => {
                 const combo = rawCombo.trim()
                 const parsed = parseCombo(combo)
