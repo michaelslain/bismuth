@@ -472,7 +472,7 @@ dailyNotes:
 
 ### `keybindings`
 
-A nested object (not a list), one string key per app-level action — **50 of them**, spanning global app shortcuts, the note/card/chat editors, the file tree, flashcards, the graph renderer, and ink; two ids (`ui-dismiss`/`ui-confirm`) are shared across every transient modal/menu/inline input via `app/src/ui/widgetKeys.ts`. Values are combo strings using the portable `Mod` (= Cmd on macOS, Ctrl elsewhere), or the exact `Ctrl`/`Cmd`/`Meta` tokens for pinning a combo to one physical key independent of `Mod`. Comma-separate alternatives. Defaults are derived from `KEYBINDING_CATALOG` in `core/src/keybindings.ts`. Full reference, including every id's default and the combo grammar: [keybindings.md](./keybindings.md).
+A nested object (not a list), one string key per app-level action — **49 of them**, spanning global app shortcuts, the note/card/chat editors, the file tree, flashcards, the graph renderer, and ink; two ids (`ui-dismiss`/`ui-confirm`) are shared across every transient modal/menu/inline input via `app/src/ui/widgetKeys.ts`. Values are combo strings using the portable `Mod` (= Cmd on macOS, Ctrl elsewhere), or the exact `Ctrl`/`Cmd`/`Meta` tokens for pinning a combo to one physical key independent of `Mod`. Comma-separate alternatives. Defaults are derived from `KEYBINDING_CATALOG` in `core/src/keybindings.ts`. Full reference, including every id's default and the combo grammar: [keybindings.md](./keybindings.md).
 
 ```yaml
 keybindings:

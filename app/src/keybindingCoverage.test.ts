@@ -144,11 +144,35 @@ const ALLOWED_FILES: AllowEntry[] = [
     },
     {
         file: 'editor/settingsComplete.ts',
-        reason: 'PENDING SWEEP — Escape closes the .settings autocomplete popup; not yet migrated to ui-dismiss (see task-12 report)',
+        reason: "the .settings \"Record shortcut…\" capture (recordShortcut): Escape there cancels an in-progress raw-keystroke recording, not a popup dismiss — routing it through isDismissKey would be circular, reading the keybinding config while the user is recording a new value for it. Permanent exception, not pending.",
     },
     {
         file: 'ExportView.tsx',
         reason: 'PENDING SWEEP — a local path field\'s own Enter-to-commit, not yet migrated (see task-12 report)',
+    },
+    {
+        file: 'ui/popover/createMenuNav.ts',
+        reason: 'the shared menu-nav primitive (ContextMenu, SwitcherBar, the palette) — Up/Down/Enter/Escape here ARE the implementation of every navigable list, not an app shortcut',
+    },
+    {
+        file: 'FileTree.tsx',
+        reason: "the tree's own Up/Down/Left/Right/Enter/Space row navigation — a tree widget's spatial contract; this file's undo-delete + delete-selection are already catalog-driven",
+    },
+    {
+        file: 'GraphSearch.tsx',
+        reason: 'graph search result list Up/Down/Enter/Escape — the same list-navigation contract as ui/popover/createMenuNav.ts',
+    },
+    {
+        file: 'preview/OutlineTree.tsx',
+        reason: "the outline tree's own arrow/Enter navigation — identical spatial contract to FileTree.tsx",
+    },
+    {
+        file: 'ui/Modal.tsx',
+        reason: 'the Tab/Shift+Tab focus trap — a WAI-ARIA dialog requirement, never a rebindable command (this file\'s dismiss already reads ui-dismiss)',
+    },
+    {
+        file: 'ui/ToggleRow.tsx',
+        reason: 'KNOWN GAP, not a design decision — Enter/Space activates the toggle like a native checkbox, but Enter is a bare e.key literal rather than isConfirmKey-driven, making it a genuine ui-confirm migration candidate. Not fixed here: this file belongs to another task in this plan (flagged in fix-C-report.md, not fixed)',
     },
 ]
 
@@ -166,18 +190,30 @@ function walk(dir: string): string[] {
     return out
 }
 
-// `e.key === '...'` / `ev.key === '...'` / `e.code === '...'` / `ev.code === '...'` — restricted
-// to the `e`/`ev` identifiers, the only two names a KeyboardEvent parameter is given anywhere in
-// this codebase (confirmed by surveying every `(x: KeyboardEvent)` signature and `onKeyDown={x =>`
-// arrow param in app/src while building this test). This deliberately does NOT match e.g.
-// `frame.code === 'no-claude'` (a chat protocol field) or `g.key`/`mv.key` (Bases grouping keys) —
-// those aren't keyboard events and don't share this identifier.
-const EVENT_LITERAL = /\b(?:e|ev)\.(key|code)\s*===\s*(['"])(?:(?!\2).)*\2/g
+// `e.key === '...'` / `ev.key === '...'` / `e.code === '...'` / `ev.code === '...'`, plus the
+// `!==` and `==` variants — restricted to the `e`/`ev` identifiers, the only two names a
+// KeyboardEvent parameter is given anywhere in this codebase (confirmed by surveying every
+// `(x: KeyboardEvent)` signature and `onKeyDown={x =>` arrow param in app/src while building this
+// test). This deliberately does NOT match e.g. `frame.code === 'no-claude'` (a chat protocol
+// field) or `g.key`/`mv.key` (Bases grouping keys) — those aren't keyboard events and don't share
+// this identifier.
+// NOTE: this only holds because every non-keyboard `(e|ev)` in this codebase compares a NUMERIC
+// code (Terminal.tsx's `ev.code === 1000`, a WebSocket close code), never a quoted string. A
+// future string comparison on a non-KeyboardEvent e/ev would be a false positive — add the file
+// to ALLOWED_FILES rather than widening the regex's escape hatch.
+const EVENT_LITERAL =
+    /\b(?:e|ev)\.(key|code)\s*(?:={2,3}|!==)\s*(['"])(?:(?!\2).)*\2/g
 
 // `key: '...'` — a CodeMirror KeyBinding literal. Only checked in files that actually build a
 // keymap (`keymap.of(` appears somewhere in the file), so an unrelated object literal with a
 // `key` field elsewhere is never a false positive.
 const KEYMAP_LITERAL = /\bkey:\s*(['"])(?:(?!\1).)*\1/g
+
+// `case '...':` inside a `switch (e.key)` / `switch (e.code)` — the third shape a hardcoded
+// shortcut takes. Gated on the file actually switching on a KeyboardEvent field, so an
+// unrelated switch elsewhere in the file is never a false positive.
+const SWITCH_ON_EVENT = /\bswitch\s*\(\s*(?:e|ev)\.(?:key|code)\s*\)/
+const SWITCH_CASE_LITERAL = /\bcase\s+(['"])(?:(?!\1).)*\1\s*:/g
 
 describe('keybindingCoverage', () => {
     test('every hardcoded key literal in app/src is either catalog-driven or allow-listed', () => {
@@ -193,6 +229,9 @@ describe('keybindingCoverage', () => {
             for (const m of text.matchAll(EVENT_LITERAL)) hits.push(m[0])
             if (/\bkeymap\.of\(/.test(text)) {
                 for (const m of text.matchAll(KEYMAP_LITERAL)) hits.push(m[0])
+            }
+            if (SWITCH_ON_EVENT.test(text)) {
+                for (const m of text.matchAll(SWITCH_CASE_LITERAL)) hits.push(m[0])
             }
             if (hits.length > 0) {
                 violations.push(
