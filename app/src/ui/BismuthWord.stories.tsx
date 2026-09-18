@@ -26,7 +26,7 @@ import '../App.css'
 const Prose = (props: { children: any }) => (
     <p
         style={{
-            font: 'var(--fs-read, 15px)/1.6 var(--editor-font)',
+            font: 'var(--fs-read, 15px)/1.6 var(--ui-font-stack)',
             color: 'var(--fg)',
             'max-width': '46ch',
             margin: '0',
@@ -132,7 +132,7 @@ export const Sizes: Story = {
                         class="bismuth-word"
                         style={{
                             'font-size': size,
-                            'font-family': 'var(--editor-font)',
+                            'font-family': 'var(--ui-font-stack)',
                         }}
                     >
                         bismuth
@@ -190,7 +190,7 @@ export const AcrossThemes: Story = {
                             class="bismuth-word"
                             style={{
                                 'font-size': 'var(--fs-read, 15px)',
-                                'font-family': 'var(--editor-font)',
+                                'font-family': 'var(--ui-font-stack)',
                             }}
                         >
                             bismuth

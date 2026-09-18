@@ -18,11 +18,11 @@
 /* title field */
 .panel .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
 .panel .evm-titlein { font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
-.panel .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--editor-font); }
+.panel .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--ui-font-stack); }
 .panel .evm-titlein:focus { border-bottom-color: var(--accent); }
 
 /* labels + field shells */
-.panel .evm-lab { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-3); }
+.panel .evm-lab { font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-3); }
 /* invisible spacer label: occupies a label's height to align the all-day toggle
    with the dated field beside it, without showing any text. */
 .panel .evm-lab-spacer { visibility: hidden; }

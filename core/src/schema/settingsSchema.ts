@@ -23,15 +23,19 @@ const DAEMON_BACKEND_IDS = BACKEND_LIST.filter(b => b.capabilities.daemon).map(
     b => b.id,
 )
 
-// Kept in lockstep with app/src/settings.ts FONT_STACKS. One family does the whole
-// interface: all five Monaspace variants, no serif/system-ui.
-const EDITOR_FONTS = [
+// Kept in lockstep with app/src/settings.ts MONO_FONTS/PROSE_FONTS/FONT_STACKS.
+// The five Monaspace variants — chrome + in-note mono constructs (uiFont), and an
+// all-mono-editor option on proseFont too.
+const MONO_FONTS = [
     'Monaspace Xenon',
     'Monaspace Neon',
     'Monaspace Argon',
     'Monaspace Krypton',
     'Monaspace Radon',
 ]
+// proseFont's valid values: Lora (the proportional default) plus the same five Monaspace
+// variants, for a user who wants an all-mono editor.
+const PROSE_FONTS = ['Lora', ...MONO_FONTS]
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE]
@@ -95,15 +99,15 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 'hopper-crystal',
             doc: 'App logo mark: hopper-crystal // node-b // square-funnel // nested-diamonds // pinwheel // node-crystal // lattice // diamond-bloom // node-diamond // octagon-bloom // spin-cross // tri-bloom // radial-graph // node-rings.',
         },
-        editorFont: {
-            type: enumType(EDITOR_FONTS),
-            default: 'Monaspace Xenon',
-            doc: 'Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (--prose-font, CMU Serif).',
-        },
         uiFont: {
-            type: enumType(EDITOR_FONTS),
+            type: enumType(MONO_FONTS),
             default: 'Monaspace Xenon',
-            doc: 'UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.',
+            doc: 'UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND for the mono constructs inside a note: code blocks, inline code, frontmatter, math and in-note tags. Config buffers (.settings, *.yaml) render entirely in it.',
+        },
+        proseFont: {
+            type: enumType(PROSE_FONTS),
+            default: 'Lora',
+            doc: "PROSE font — the proportional face for everything that is the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. Lora // the five Monaspace variants. Set it to a Monaspace variant for an all-mono editor.",
         },
         editorFontSize: {
             type: 'number',
@@ -300,18 +304,19 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         lineHeight: {
             type: 'number',
-            // 1.5 -> 27px at the 18px row unit. Prose is the proportional serif now
-            // (--prose-font) at ~16.9px, and 18px of leading on that is a 1.07 ratio — visibly
-            // cramped, because the old default was tuned for 13.5px MONO. 27px gives a 1.6 ratio,
-            // the normal range for serif body text.
-            // Still a RATIONAL multiple of the row unit, deliberately: 1.5 means two prose lines
-            // span exactly three tree rows, so the "prose lands on the app's grid" property this
-            // token exists to protect survives — it is now a 2:3 relationship instead of 1:1,
-            // rather than an arbitrary one.
-            default: 1.5,
+            // 1.25 -> 22.5px at the 18px row unit. Prose is Lora now (--prose-font) at
+            // 13.5 * 1.04 = 14.04px, so 22.5px of leading is a 1.60 ratio — the normal range
+            // for serif body text. The old default of 1.5 (27px) was tuned for the previous
+            // CMU Serif measurement (--prose-scale 1.28, ~17.28px prose) and was never
+            // re-derived when the scale dropped to 1.04.
+            // Still a RATIONAL multiple of the row unit, deliberately: 1.25 means four prose
+            // lines span exactly five 18px rows, so the "prose lands on the app's grid"
+            // property this token exists to protect survives — it is now a 4:5 relationship
+            // instead of 1:1, rather than an arbitrary one.
+            default: 1.25,
             min: 0.8,
             max: 1.8,
-            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1.5 -> 27px. Prose is the proportional serif (--prose-font) at ~16.9px, where 18px of leading is a cramped 1.07 ratio; 27px gives ~1.6, the normal range for serif body text. Still a rational multiple of the row unit, so two prose lines span exactly three tree rows.",
+            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1.25 -> 22.5px. Prose is Lora (--prose-font) at 14.04px (13.5 * --prose-scale 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows.",
         },
         mathMacros: {
             type: 'string',

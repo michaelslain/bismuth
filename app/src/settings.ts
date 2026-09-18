@@ -34,8 +34,8 @@ export interface Settings {
         // is dark-only. There are no per-color override keys in the initial release.
         theme: string
         icon: string // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
-        editorFont: string // key into FONT_STACKS
-        uiFont: string // key into FONT_STACKS — UI chrome (rail, tabs, tables, buttons, menus)
+        uiFont: string // key into FONT_STACKS, MONO_FONTS only — chrome + in-note mono constructs
+        proseFont: string // key into FONT_STACKS, PROSE_FONTS — note prose + chat message bodies
         editorFontSize: number // px
         sidebarWidth: number // px
         sidebarGraphHeight: number // px
@@ -230,9 +230,27 @@ export { SETTINGS_DEFAULTS as DEFAULTS }
 const _DEFAULTS: Settings = SETTINGS_DEFAULTS
 void (DEFAULTS satisfies SpineSettings)
 
-// Editor/UI font choices → full CSS font stacks. One family does the whole interface:
-// all five Monaspace variants ship via @fontsource; no serif, no system-ui.
+// The five Monaspace variants — the only valid values for `uiFont` (chrome + in-note mono
+// constructs: code blocks, inline code, frontmatter, math, tags).
+export const MONO_FONTS = [
+    'Monaspace Xenon',
+    'Monaspace Neon',
+    'Monaspace Argon',
+    'Monaspace Krypton',
+    'Monaspace Radon',
+] as const
+
+// The valid values for `proseFont` — Lora (the default proportional face) plus the same five
+// Monaspace variants, for an all-mono editor.
+export const PROSE_FONTS = ['Lora', ...MONO_FONTS] as const
+
+// Font choices → full CSS font stacks. Lora is the proportional face for note prose + chat
+// bodies; the five Monaspace variants cover both `uiFont` (chrome + in-note mono) and, as an
+// alternative, `proseFont` (an all-mono editor). 'Lora Variable' is the family
+// @fontsource-variable/lora actually declares — NOT 'Lora' (that resolves nothing and falls
+// silently through to Georgia; see tokens.css's own warning on the same trap with CMU).
 export const FONT_STACKS: Record<string, string> = {
+    Lora: "'Lora Variable', Lora, Georgia, serif",
     'Monaspace Xenon': "'Monaspace Xenon', ui-monospace, monospace",
     'Monaspace Neon': "'Monaspace Neon', ui-monospace, monospace",
     'Monaspace Argon': "'Monaspace Argon', ui-monospace, monospace",

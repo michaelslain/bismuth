@@ -43,7 +43,7 @@
    already match there:
      - .cm-wikilink / .cm-link → color var(--accent); text-decoration none;
        border-bottom 1px solid var(--accent-soft)  (soft underline)
-     - .cm-h1 → inherits var(--prose-font) (CMU Serif) + var(--fg); weight 600; tight tracking
+     - .cm-h1 → inherits var(--prose-font) (Lora) + var(--fg); weight 600; tight tracking
      - .cm-h2 → inherits var(--prose-font); weight 600; letter-spacing -0.01em
    The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.module.css.
    Body `#tags` have NO decoration class in live-preview (only headings consume `#`),
@@ -297,7 +297,7 @@
    Milkdown chip, so a tag does not change size depending on whether it sits inside a table. */
 .cm-editor .cm-td .bismuth-tag {
   color: var(--gold);
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--editor-font-size);
 }
 
@@ -326,7 +326,7 @@
    the rule count small. The alternative — tagging every prose line — would need a decoration on
    every line in the document.
 
-   --editor-font (not a literal) so the user's appearance.editorFont setting still governs the mono
+   --ui-font-stack (not a literal) so the user's appearance.uiFont setting still governs the mono
    half of the editor; it just no longer governs prose, which is the point of the decision. */
 /* HEADINGS ARE PROSE and are deliberately absent from this list. They used to be pulled back to
    the mono face with everything else, on the reading of the token scope that a heading is chrome.
@@ -351,12 +351,12 @@
 .cm-editor .cm-math,
 .cm-editor .cm-math-src,
 .cm-editor .cm-inline-math {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
 }
 
 /* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
-   optically compensated prose size (--prose-font-size, ~15% up), and mono does not need that
-   compensation — inheriting it would render every code span too large.
+   optically compensated prose size (--prose-font-size, scaled up by --prose-scale), and mono does
+   not need that compensation — inheriting it would render every code span too large.
    HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own absolute sizes
    off the fixed type scale (--fs-h1..--fs-h6), so resetting them here would flatten the whole
    heading ramp to body size. They take the family reset and nothing else.
@@ -365,9 +365,9 @@
    would flatten it back to mono size after the family reset already moved it to serif.
    .cm-list-marker / .cm-syntax-mark / .cm-tag set their font-family INLINE in livePreview.ts's
    EditorView.theme() rather than going through the family list above, and were never added here
-   either — so all three silently inherited --prose-font-size (17.28px against a 13.5px editor
-   size, exactly the 1.28 --prose-scale). Any class that sets font-family inline in livePreview.ts
-   needs a matching entry in THIS list too, or it optically renders 28% too large. */
+   either — so all three silently inherited --prose-font-size against the 13.5px editor size,
+   exactly the --prose-scale compensation. Any class that sets font-family inline in livePreview.ts
+   needs a matching entry in THIS list too, or it optically renders too large next to the mono size. */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
@@ -390,7 +390,7 @@
    cursor-reveal to build. Same token pair as .cm-tag so a field and a #tag read as one
    family, and the editor face at the editor size so nothing is scaled out of prose. */
 .cm-editor .cm-task-field {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--editor-font-size);
   color: var(--text-muted);
   background: var(--surface-2);

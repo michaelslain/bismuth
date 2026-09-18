@@ -134,7 +134,7 @@ export const latexHighlightTheme = EditorView.theme({
     // `--mono-scale` size offset every other mono region uses (.cm-inline-code / .cm-codeblock
     // in livePreview.ts) so the Monaspace face doesn't render larger than fenced code.
     '.cm-math-src': {
-        fontFamily: "'Monaspace Xenon', ui-monospace, monospace",
+        fontFamily: 'var(--ui-font-stack)',
         fontSize: 'calc(1em * var(--mono-scale, 0.85))',
     },
 })

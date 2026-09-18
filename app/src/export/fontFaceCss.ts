@@ -8,18 +8,20 @@
 export interface DocFace {
     family: string
     style: 'normal' | 'italic'
-    weight: number
+    /** A single weight, or a variable font axis range like '400 700'. */
+    weight: number | string
     /** An already-inlined `data:` URI, never a path. */
     src: string
 }
 
 /** Which faces an exported note document ships, mirroring the app's own declarations:
- *  styles/cmu.css for the prose serif and index.tsx's @fontsource imports for the mono. */
+ *  index.tsx's @fontsource-variable/lora imports for the prose serif and its @fontsource
+ *  imports for the mono. Lora ships as two VARIABLE files (one normal, one italic, each
+ *  covering the whole 400-700 weight axis) rather than four static cuts — hence two faces
+ *  here instead of the four static serif faces this replaced. */
 export const DOC_FACES: Omit<DocFace, 'src'>[] = [
-    { family: 'CMU Serif', style: 'normal', weight: 400 },
-    { family: 'CMU Serif', style: 'italic', weight: 400 },
-    { family: 'CMU Serif', style: 'normal', weight: 700 },
-    { family: 'CMU Serif', style: 'italic', weight: 700 },
+    { family: 'Lora Variable', style: 'normal', weight: '400 700' },
+    { family: 'Lora Variable', style: 'italic', weight: '400 700' },
     { family: 'Monaspace Xenon', style: 'normal', weight: 400 },
     { family: 'Monaspace Xenon', style: 'italic', weight: 400 },
     { family: 'Monaspace Xenon', style: 'normal', weight: 700 },

@@ -321,47 +321,38 @@ const LEGACY_THEMES = new Set<string>([
     ...LEGACY_THEME_BASES,
     ...LEGACY_THEME_BASES.map(n => `${n}-light`),
 ])
-// The pre-redesign editorFont options (serif Lora/Georgia + system-ui); the redesign's
-// EDITOR_FONTS enum is Monaspace-only.
-const LEGACY_EDITOR_FONTS = new Set(['Lora', 'Georgia', 'system-ui'])
-
 /**
  * One-time migration for a `.settings` file saved under the pre-ASCII-redesign theme
- * system + type scale. Both `appearance.theme` and `appearance.editorFont` already
- * degrade to schema defaults at READ time (serializeSettingsForFrontend: an unknown
- * enum value never overlays DEFAULTS) — but the FILE keeps the stale value, and the
- * redesign's new type-scale numbers (font sizes, mono scale, sidebar width, line
- * height) are all still schema-VALID, so they'd keep winning over the new defaults
- * forever without an explicit rewrite. The redesign is a clean break, so those keys
- * are reset outright rather than best-effort translated.
+ * system + type scale. `appearance.theme` already degrades to a schema default at READ
+ * time (serializeSettingsForFrontend: an unknown enum value never overlays DEFAULTS) —
+ * but the FILE keeps the stale value, and the redesign's new type-scale numbers (font
+ * sizes, mono scale, sidebar width, line height) are all still schema-VALID, so they'd
+ * keep winning over the new defaults forever without an explicit rewrite. The redesign
+ * is a clean break, so those keys are reset outright rather than best-effort translated.
  *
- * Trigger: `appearance.theme` is one of the 12 legacy names, OR `appearance.editorFont`
- * is one of the legacy serif/system fonts. Naturally fires only once — migration always
- * rewrites both to CURRENT valid values, so the trigger can never match again on a file
- * this has already touched.
+ * Trigger: `appearance.theme` is one of the 12 legacy names. (This used to also trigger
+ * on a legacy serif/system `appearance.editorFont` value and rewrite it to a Monaspace
+ * variant — that branch is gone now that `editorFont` itself is retired: RETIRED_KEYS /
+ * pruneRetiredKeys below deletes the key outright, for EVERY saved value, not just the
+ * old serif/system ones. Translating it into `uiFont` here would silently override an
+ * explicit `uiFont` the same file already sets, and "Lora" is a valid choice again
+ * anyway — just on `proseFont`, which is never written by this migration and resolves
+ * from its own schema default like any other absent key.)
  */
 function migrateLegacyAppearance(doc: Document): boolean {
     const appearance = doc.getIn(['appearance'])
     if (!isMap(appearance)) return false
     const theme = doc.getIn(['appearance', 'theme'])
-    const editorFont = doc.getIn(['appearance', 'editorFont'])
     const legacyTheme =
         typeof theme === 'string' && LEGACY_THEMES.has(theme)
             ? theme
             : undefined
-    const legacyFont =
-        typeof editorFont === 'string' && LEGACY_EDITOR_FONTS.has(editorFont)
-    if (!legacyTheme && !legacyFont) return false
+    if (!legacyTheme) return false
 
-    if (legacyTheme) {
-        doc.setIn(
-            ['appearance', 'theme'],
-            legacyTheme.endsWith('-light') ? 'paper' : 'ink',
-        )
-    }
-    if (legacyFont) {
-        doc.setIn(['appearance', 'editorFont'], 'Monaspace Xenon')
-    }
+    doc.setIn(
+        ['appearance', 'theme'],
+        legacyTheme.endsWith('-light') ? 'paper' : 'ink',
+    )
     // The redesign's clean type-scale break: reset regardless of the saved value.
     const RESET_PATHS: Array<[string, string]> = [
         ['appearance', 'editorFontSize'],
@@ -387,8 +378,13 @@ function migrateLegacyAppearance(doc: Document): boolean {
 // Schema keys removed from SETTINGS_SCHEMA that a persisted `.settings` may still carry from an
 // older Bismuth. Each entry is a full path (section, ..., leaf key); pruneRetiredKeys below deletes
 // whichever of these are still present on reconcile, so a retired key doesn't linger forever once
-// nothing reads it.
-const RETIRED_KEYS: readonly (readonly string[])[] = [['editor', 'defaultMode']]
+// nothing reads it. `appearance.editorFont` is deleted outright here, for every saved value —
+// never translated into `uiFont`, since the two have always defaulted to the same thing and every
+// shipped value was already a Monaspace variant (see migrateLegacyAppearance's doc comment above).
+const RETIRED_KEYS: readonly (readonly string[])[] = [
+    ['editor', 'defaultMode'],
+    ['appearance', 'editorFont'],
+]
 
 /** The pair for `key` in `map`, or undefined. */
 function findPair(map: YAMLMap, key: string) {

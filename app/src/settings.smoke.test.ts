@@ -30,7 +30,7 @@ describe('settings.yaml boot states (must not brick)', () => {
     })
 
     it('3. syntactically broken line -> full defaults, no throw', () => {
-        const broken = "appearance:\n  editorFont: 'Xenon\n  theme: : : dark\n"
+        const broken = "appearance:\n  uiFont: 'Xenon\n  theme: : : dark\n"
         expect(() => bootFromYaml(broken)).not.toThrow()
         expect(bootFromYaml(broken)).toEqual(DEFAULTS)
     })
@@ -53,10 +53,10 @@ describe('settings.yaml boot states (must not brick)', () => {
 
     it('first-launch import is a no-op once the file has user values', () => {
         const legacy = JSON.stringify({
-            appearance: { editorFont: 'Monaspace Radon' },
+            appearance: { uiFont: 'Monaspace Radon' },
         })
         const serverWithUserValues = {
-            appearance: { editorFont: 'Monaspace Radon' },
+            appearance: { uiFont: 'Monaspace Radon' },
         }
         expect(firstLaunchImport(legacy, serverWithUserValues)).toBeNull()
     })

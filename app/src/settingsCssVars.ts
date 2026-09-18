@@ -191,10 +191,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         // ShadowTokens.hard's doc comment in core/src/theme/tokens.ts for why it isn't
         // just a fifth blurred shadow.
         '--shadow-hard': shadow.hard,
-        '--editor-font':
-            FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
         '--ui-font-stack':
             FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS['Monaspace Xenon'],
+        '--prose-font':
+            FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['Lora'],
         '--editor-font-size': s.appearance.editorFontSize + 'px',
         '--sidebar-width': s.appearance.sidebarWidth + 'px',
         '--sidebar-graph-height': s.appearance.sidebarGraphHeight + 'px',

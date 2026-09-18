@@ -100,22 +100,14 @@ test('appearance.icon is the 14-mark enum defaulting to hopper-crystal', () => {
     expect(appearance.icon.doc).toBeTruthy()
 })
 
-test('editorFont enum carries the EDITOR_FONTS list', () => {
+test('appearance has exactly two font-family settings: uiFont and proseFont (editorFont is gone)', () => {
     const appearance = objectFields(SETTINGS_SCHEMA.appearance)
-    expect(appearance.editorFont.type).toEqual({
-        kind: 'enum',
-        values: [
-            'Monaspace Xenon',
-            'Monaspace Neon',
-            'Monaspace Argon',
-            'Monaspace Krypton',
-            'Monaspace Radon',
-        ],
-    })
-    expect(appearance.editorFont.default).toBe('Monaspace Xenon')
+    expect(appearance.editorFont).toBeUndefined()
+    expect(appearance.uiFont).toBeDefined()
+    expect(appearance.proseFont).toBeDefined()
 })
 
-test('uiFont enum carries the EDITOR_FONTS list', () => {
+test('uiFont enum carries the MONO_FONTS list', () => {
     const appearance = objectFields(SETTINGS_SCHEMA.appearance)
     expect(appearance.uiFont.type).toEqual({
         kind: 'enum',
@@ -128,6 +120,22 @@ test('uiFont enum carries the EDITOR_FONTS list', () => {
         ],
     })
     expect(appearance.uiFont.default).toBe('Monaspace Xenon')
+})
+
+test('proseFont enum carries Lora plus the MONO_FONTS list', () => {
+    const appearance = objectFields(SETTINGS_SCHEMA.appearance)
+    expect(appearance.proseFont.type).toEqual({
+        kind: 'enum',
+        values: [
+            'Lora',
+            'Monaspace Xenon',
+            'Monaspace Neon',
+            'Monaspace Argon',
+            'Monaspace Krypton',
+            'Monaspace Radon',
+        ],
+    })
+    expect(appearance.proseFont.default).toBe('Lora')
 })
 
 test('graph.repulsion is a number with the old slider bounds and default', () => {

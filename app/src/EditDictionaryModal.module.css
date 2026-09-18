@@ -7,7 +7,7 @@
    every <Modal> panel carries (ui/Modal.tsx) — this rule only supplies content
    sizing/layout, so it doesn't fight `.asc-modal`'s `--pop-bg-strong` + blur chrome. */
 .dict-modal {
-  --dict-font: var(--editor-font, 'Monaspace Xenon', monospace);
+  --dict-font: var(--ui-font-stack);
   --mono: "Monaspace Xenon", ui-monospace, monospace;
 
   position: relative;

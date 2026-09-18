@@ -9,4 +9,4 @@
 .modal-foot-leading { display: flex; align-items: center; gap: var(--sp-5); }
 .modal-foot-leading:not(:first-child) { margin-left: var(--sp-5); }
 .modal-hint { font-size: var(--fs-micro); color: var(--faint); display: flex; align-items: center; gap: var(--sp-3); }
-.modal-hint b { font-family: var(--editor-font); background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); color: var(--text-muted); font-weight: 400; }
+.modal-hint b { font-family: var(--ui-font-stack); background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); color: var(--text-muted); font-weight: 400; }

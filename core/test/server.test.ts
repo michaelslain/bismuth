@@ -2032,14 +2032,14 @@ test('POST /set-setting merges one key and preserves the rest of settings.yaml',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                path: ['appearance', 'editorFont'],
+                path: ['appearance', 'uiFont'],
                 value: 'Monaspace Neon',
             }),
         })
         expect(res.status).toBe(200)
 
         const settings = await (await fetch(`${base}/settings`)).json()
-        expect(settings.appearance.editorFont).toBe('Monaspace Neon') // changed key
+        expect(settings.appearance.uiFont).toBe('Monaspace Neon') // changed key
         expect(settings.appearance.theme).toBe('ink') // reconciled default present
 
         const raw = await readNote(vault, '.settings')
@@ -2305,7 +2305,7 @@ test('POST /set-setting serializes concurrent requests without clobbering change
     await writeNote(
         vault,
         '.settings',
-        'appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n',
+        'appearance:\n  theme: ink\n  uiFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n',
     )
     const server = createServer({ vault, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -2324,7 +2324,7 @@ test('POST /set-setting serializes concurrent requests without clobbering change
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    path: ['appearance', 'editorFont'],
+                    path: ['appearance', 'uiFont'],
                     value: 'Monaspace Neon',
                 }),
             }),
@@ -2344,7 +2344,7 @@ test('POST /set-setting serializes concurrent requests without clobbering change
         // Verify all three changes were persisted (none clobbered)
         const settings = await (await fetch(`${base}/settings`)).json()
         expect(settings.appearance.theme).toBe('cathode')
-        expect(settings.appearance.editorFont).toBe('Monaspace Neon')
+        expect(settings.appearance.uiFont).toBe('Monaspace Neon')
         expect(settings.graph.nodeSize).toBe(10)
     } finally {
         server.stop(true)

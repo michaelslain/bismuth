@@ -21,15 +21,13 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
-// The one proportional face in the app: CMU Serif (Computer Modern, Knuth's LaTeX face), for note
-// prose and chat message bodies only — everything else stays on the Monaspace grid. Chosen
-// 2026-08-29 from a 21-candidate comparison; Newsreader was the previous pick and is uninstalled.
-// Local @font-face rather than the package's own stylesheet: `computer-modern` ships
-// `font-style: roman`, which is not a valid CSS value. Browsers recover by ignoring the invalid
-// descriptor and defaulting to `normal`, so it happens to work — but that is error recovery, not
-// correctness, and its regular face is declared at weight 500 rather than 400. styles/cmu.css
-// re-declares the same four faces with valid descriptors so nothing depends on that recovery.
-import './styles/cmu.css'
+// The one proportional face in the app: Lora, for note prose and chat message bodies only —
+// everything else stays on the Monaspace grid. Repoints CMU Serif (Computer Modern), which is
+// uninstalled; CMU itself replaced Newsreader 2026-08-29 from a 21-candidate comparison. The
+// package declares `font-family: 'Lora Variable'` (not bare `'Lora'`) — see the --prose-font
+// comment in styles/tokens.css for why that string is load-bearing.
+import '@fontsource-variable/lora/wght.css'
+import '@fontsource-variable/lora/wght-italic.css'
 import { isTauri } from './nativeMenu'
 
 // First-run takeover: when the bundled app launches with no vault yet, lib.rs injects

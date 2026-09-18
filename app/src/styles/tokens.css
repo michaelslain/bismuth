@@ -54,10 +54,9 @@
   --green: #A3BE8C;
   --gold: #CBB27E;
   --rose: #C98CA8;
-  --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
   --editor-font-size: var(--fs-lead);
   /* The icon family, and the ONE stack <Icon> may use. Not derived from a theme and not
-     user-choosable, so unlike --editor-font and --ui-font-stack it is defined only here and
+     user-choosable, so unlike --ui-font-stack and --prose-font it is defined only here and
      settingsCssVars.ts never overwrites it.
      Icons must NOT ride appearance.uiFont: that setting picks among five Monaspace variants and
      none of them has a single Nerd Font symbol, so an icon inheriting the user's text font is an
@@ -181,7 +180,7 @@
   /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
   --lh-tight: 1.4;
   --lh-ui: 1.7;
-  --lh-prose: 1.9;
+  --lh-prose: 1.6;
   --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
 
   /* ── Letter spacing — unchanged, moved verbatim from ui.css:46-48. Eyebrows/labels are
@@ -315,7 +314,7 @@
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
      and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
      and chat message bodies INCLUDING the composer you type them into — never code (blocks and
-     spans), frontmatter or math, which are pulled back to --editor-font in Editor.css and
+     spans), frontmatter or math, which are pulled back to --ui-font-stack in Editor.css and
      chat/ChatTextBubble.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
@@ -330,26 +329,32 @@
      reset in Editor.css (headings keep it, because livePreview.ts gives them their own absolute
      scale; a table has none, so leaving the size reset on would flatten it back to mono size).
 
-     CMU Serif (Computer Modern, Knuth's LaTeX face), chosen 2026-08-29 from a 21-candidate
-     comparison; Newsreader was the previous pick and is uninstalled. The family is declared in
-     styles/cmu.css with valid descriptors rather than through the `computer-modern` package's own
-     stylesheet, which ships `font-style: roman` — not a CSS value — and a weight-500 "regular".
-     The family string must match that file verbatim: a name that does not resolve falls silently
-     through to the Georgia fallback with no error anywhere. */
-  --prose-font: 'CMU Serif', Georgia, serif;
+     Lora (via @fontsource-variable/lora), repointed here from CMU Serif (Computer Modern), which
+     is uninstalled; CMU itself replaced Newsreader 2026-08-29 from a 21-candidate comparison. The
+     package declares `font-family: 'Lora Variable'` — NOT bare `'Lora'` — so the family string
+     leads with that exact string, with bare `Lora` kept only as a second-line fallback for a
+     system install. A name that does not resolve falls silently through to the Georgia fallback
+     with no error anywhere — this is the trap that let the CMU-era stack go unnoticed for weeks;
+     see index.tsx / preview.ts for where the two Lora stylesheets are actually loaded. */
+  --prose-font: 'Lora Variable', Lora, Georgia, serif;
 
   /* Optical-size compensation. A serif and a mono at the same NOMINAL px do not read at the same
      size, so switching prose to a proportional face without this silently shrinks every note.
-     Measured in-browser at 100px em:
-       x-height  — mono 51.75, CMU 43.10, Newsreader 44.05
-       n advance — mono 62.00, CMU 55.50, Newsreader 57.25
-     x-height parity for CMU is 1.20 and advance parity 1.12 — they disagree, and in the OPPOSITE
-     direction from Newsreader (1.15 / 1.24), which is why this number is re-derived per face
-     rather than inherited. 1.28 = 1.25 x (44.05 / 43.10): the scale that holds the APPARENT size
-     steady across the Newsreader -> CMU swap, so the change compared faces rather than sizes.
+     Measured in-browser at 100px em (bench/chromeSession.ts driving the FontSpecimen story,
+     confirmed loaded by measuring the pangram against a deliberately nonexistent family, not by
+     `document.fonts.check`, which cannot tell a loaded face from a missing one — see
+     `ui/_fontFace.ts`):
+       x-height  — mono 51.75, Lora 50.00
+       n advance — mono 62.00, Lora 60.70
+     x-height parity is 51.75 / 50.00 = 1.04; advance parity is 62.00 / 60.70 = 1.02 — they
+     disagree, same as every face measured here before, so this number is re-derived per face
+     rather than inherited. x-height parity governs apparent size, so 1.04 is the constant, NOT a
+     value close to the previous 1.28: CMU Serif had an unusually small x-height (43.10 against
+     mono's 51.75); Lora's x-height is close to mono's, so the two faces need barely any
+     compensation at all.
      DERIVED, never a literal font-size: --prose-font-size tracks appearance.editorFontSize, so the
      user's editor size still moves prose with it. */
-  --prose-scale: 1.28;
+  --prose-scale: 1.04;
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 }
 

@@ -25,7 +25,7 @@ import { katexInlineCss } from '../katexCss'
 import { docFontInlineCss } from '../docFontCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
-import { DEFAULT_PALETTE } from '../../../app/src/export/exportTheme'
+import { DEFAULT_PALETTE, PROSE_SCALE } from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
 import { FONT_STACKS } from '../../../app/src/settings'
 import type {
@@ -37,12 +37,12 @@ import type {
     ThemePalette,
 } from '../../../app/src/export/types'
 
-// The app's row unit (--row-h, ui.css :root) and --prose-scale (styles/tokens.css) — the two
-// fixed constants the app's own live probe (resolvePalette.ts) divides through when it turns
-// editor.lineHeight into a leading RATIO. Mirrored here, not re-derived, so a change to either
-// token in the app is the only place this can drift from.
+// The app's row unit (--row-h, ui.css :root) — the fixed constant the app's own live probe
+// (resolvePalette.ts) divides through when it turns editor.lineHeight into a leading RATIO.
+// Mirrored here, not re-derived, so a change to the token in the app is the only place this
+// can drift from. --prose-scale itself is imported above as PROSE_SCALE, not mirrored, so
+// there is exactly one place that constant is written.
 const ROW_H_PX = 18
-const PROSE_SCALE = 1.28
 
 // Schema defaults (core/src/schema/settingsSchema.ts) for a vault with no .settings, or with
 // these two keys unset. Not imported from DEFAULTS there: it's derived as a generic
@@ -65,7 +65,6 @@ async function buildPaletteOverride(
         editor?: { lineHeight?: number }
         appearance?: {
             editorFontSize?: number
-            editorFont?: string
             uiFont?: string
         }
     }
@@ -75,9 +74,9 @@ async function buildPaletteOverride(
     const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
     // The vault's own FACES, resolved the same way settingsCssVars.ts resolves them for the app:
     // a name out of FONT_STACKS, or the raw string when the user named a face the map does not
-    // carry. appearance.editorFont is the mono face everything outside prose returns to;
-    // appearance.uiFont is the chrome face a base/calendar export uses. Reading these is the point
-    // of the exercise — an export should follow the vault rather than a constant chosen here.
+    // carry. appearance.uiFont is the one mono face — both the chrome face a base/calendar
+    // export uses and the face everything outside prose returns to. Reading it is the point of
+    // the exercise — an export should follow the vault rather than a constant chosen here.
     const stack = (name: string | undefined, dflt: string): string =>
         name ? (FONT_STACKS[name] ?? name) : dflt
     // The heading SCALE needs no vault input: it is the app's fixed design steps, and the ramp is
@@ -86,7 +85,7 @@ async function buildPaletteOverride(
         ...DEFAULT_PALETTE[theme],
         proseLeading,
         monoFont: stack(
-            data.appearance?.editorFont,
+            data.appearance?.uiFont,
             DEFAULT_PALETTE[theme].monoFont,
         ),
         font: stack(data.appearance?.uiFont, DEFAULT_PALETTE[theme].font),
@@ -157,7 +156,7 @@ async function run(args: string[]): Promise<void> {
         // module's header for why require.resolve() cannot work here).
         katexCss: katexInlineCss,
         // The note faces themselves, inlined — without these the headless Chrome that rasterises
-        // the pdf has no CMU Serif or Monaspace and silently falls through to Georgia.
+        // the pdf has no Lora Variable or Monaspace and silently falls through to Georgia.
         docFontCss: docFontInlineCss,
         // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
         // transparent ground, for compositing over the exported page's own text; without it

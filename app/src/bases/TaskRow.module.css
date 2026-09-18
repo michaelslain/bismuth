@@ -18,7 +18,7 @@
   /* --fs-ui in the list view's own gutter; a `card` (bullets/cards/kanban) drops to
      --fs-micro below, TaskChip's own size, since it already sits inside a tighter frame. */
   font-size: var(--fs-ui);
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   line-height: 1.45;
   color: var(--fg);
   cursor: text;
@@ -26,7 +26,7 @@
 .taskBody { flex: 1; min-width: 0; word-break: break-word; }
 .taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
 .taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-.taskTag { color: var(--teal); font-family: var(--editor-font); }
+.taskTag { color: var(--teal); font-family: var(--ui-font-stack); }
 /* Unboxed inline muted text, matching TaskChip's field register — no border, no chip frame.
    Fields flow after the description and wrap as whole units via `white-space: nowrap`. */
 .taskField {

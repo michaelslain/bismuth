@@ -1,7 +1,7 @@
 // cli/src/docFontCss.ts
 //
-// The headless twin of app/src/export/docFontCss.ts: the same document faces (note prose CMU
-// Serif, mono Monaspace Xenon) inlined as base64, but through Bun's import-attribute asset
+// The headless twin of app/src/export/docFontCss.ts: the same document faces (note prose Lora
+// Variable, mono Monaspace Xenon) inlined as base64, but through Bun's import-attribute asset
 // embedding instead of Vite's `?inline`, because this module ships inside a `bun build --compile`
 // binary that runs on a machine with no `node_modules` anywhere near it.
 //
@@ -12,10 +12,8 @@
 //
 // The face LIST is shared with the browser build via faceCss(), so the two paths cannot drift in
 // which weights they ship — only in how the bytes are obtained.
-import cmuSerifRoman from 'computer-modern/fonts/cmu-serif-500-roman.woff2' with { type: 'file' }
-import cmuSerifItalic from 'computer-modern/fonts/cmu-serif-500-italic.woff2' with { type: 'file' }
-import cmuSerifBold from 'computer-modern/fonts/cmu-serif-700-roman.woff2' with { type: 'file' }
-import cmuSerifBoldItalic from 'computer-modern/fonts/cmu-serif-700-italic.woff2' with { type: 'file' }
+import loraNormal from '@fontsource-variable/lora/files/lora-latin-wght-normal.woff2' with { type: 'file' }
+import loraItalic from '@fontsource-variable/lora/files/lora-latin-wght-italic.woff2' with { type: 'file' }
 import monaspace400 from '@fontsource/monaspace-xenon/files/monaspace-xenon-latin-400-normal.woff2' with { type: 'file' }
 import monaspace400i from '@fontsource/monaspace-xenon/files/monaspace-xenon-latin-400-italic.woff2' with { type: 'file' }
 import monaspace700 from '@fontsource/monaspace-xenon/files/monaspace-xenon-latin-700-normal.woff2' with { type: 'file' }
@@ -24,17 +22,20 @@ import { faceCss } from '../../app/src/export/fontFaceCss'
 const FACES: {
     family: string
     style: 'normal' | 'italic'
-    weight: number
+    weight: number | string
     path: string
 }[] = [
-    { family: 'CMU Serif', style: 'normal', weight: 400, path: cmuSerifRoman },
-    { family: 'CMU Serif', style: 'italic', weight: 400, path: cmuSerifItalic },
-    { family: 'CMU Serif', style: 'normal', weight: 700, path: cmuSerifBold },
     {
-        family: 'CMU Serif',
+        family: 'Lora Variable',
+        style: 'normal',
+        weight: '400 700',
+        path: loraNormal,
+    },
+    {
+        family: 'Lora Variable',
         style: 'italic',
-        weight: 700,
-        path: cmuSerifBoldItalic,
+        weight: '400 700',
+        path: loraItalic,
     },
     {
         family: 'Monaspace Xenon',

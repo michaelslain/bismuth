@@ -10,7 +10,7 @@
    module is the house rule's definition of a component nobody extracted. */
 .taskCheck {
   flex: 0 0 auto;
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   white-space: nowrap;
   color: var(--text-muted);
   cursor: pointer;

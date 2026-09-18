@@ -202,7 +202,8 @@
    bases/Flashcards.module.css's `.cards-draft.cards-draft` already
    uses for the identical reason. */
 /* THE INTRO'S PROSE IS PROSE, so it is set in the prose face — not the editor mono.
-   Both of these used to read `var(--editor-font)`, which made the one surface in the app
+   Both of these used to read the --editor-font var directly (since retired, now
+   var(--ui-font-stack)), which made the one surface in the app
    that is pure running prose the only one refusing the app's proportional face. CLAUDE.md's
    typography rule is explicit: one mono family for the whole interface, with ONE
    proportional exception — note prose and chat message bodies use --prose-font. A marketing
@@ -212,7 +213,7 @@
    The eyebrow, theme names, power-up rows, terminal panels and buttons all STAY mono —
    those are chrome, labels and terminal output, where the mono is doing real work. */
 .vi-title.vi-title {
-  font-family: var(--prose-font, 'CMU Serif', Georgia, serif);
+  font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
   font-weight: 400;
   /* Serif at the hero step wants a touch more size than the mono did and much tighter
      leading; --fs-hero (40px) stays the anchor so the type scale still owns the value. */
@@ -226,7 +227,7 @@
   text-wrap: balance;
 }
 .vi-body {
-  font-family: var(--prose-font, 'CMU Serif', Georgia, serif);
+  font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
   font-size: clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem);
   line-height: 1.55;
   margin: 0;
@@ -329,7 +330,7 @@
   flex: 1;
 }
 .vi-powerup-desc {
-  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body);
   line-height: 1.45;
   color: color-mix(in srgb, var(--fg) 60%, var(--text-muted));

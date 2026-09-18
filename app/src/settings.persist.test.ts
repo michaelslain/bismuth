@@ -10,21 +10,21 @@ describe('firstLaunchImport', () => {
 
     it('returns null when the server already has non-default settings', () => {
         const legacy = JSON.stringify({
-            appearance: { editorFont: 'Monaspace Radon' },
+            appearance: { uiFont: 'Monaspace Radon' },
         })
         // server differs from defaults -> user already migrated; don't clobber
-        const serverData = { appearance: { editorFont: 'Monaspace Neon' } }
+        const serverData = { appearance: { uiFont: 'Monaspace Neon' } }
         expect(firstLaunchImport(legacy, serverData)).toBeNull()
     })
 
     it('returns the merged settings to seed when legacy exists and server is bare defaults', () => {
         const legacy = JSON.stringify({
-            appearance: { editorFont: 'Monaspace Radon' },
+            appearance: { uiFont: 'Monaspace Radon' },
         })
         // server == defaults (freshly initialized settings.yaml)
         const out = firstLaunchImport(legacy, structuredClone(DEFAULTS))
         expect(out).not.toBeNull()
-        expect(out!.appearance.editorFont).toBe('Monaspace Radon')
+        expect(out!.appearance.uiFont).toBe('Monaspace Radon')
     })
 
     it('round-trips through yaml.stringify without throwing', () => {

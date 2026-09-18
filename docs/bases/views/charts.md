@@ -210,7 +210,7 @@ Renders a summary statistics view. The display mode switches between a single bi
 ### Single-bucket mode (≤ 1 point)
 
 When `data().points.length <= 1`, the view shows:
-- A large serif number (52px, font `var(--editor-font)`): the **total** of all point values (sum of the single bucket, or 0 when empty).
+- A large number in the mono face (`"Monaspace Xenon"`, `var(--fs-display)` = 24px, `.statValue` in `Charts.module.css`): the **total** of all point values (sum of the single bucket, or 0 when empty).
 - A subtitle line: `"total <valueLabel> · avg <avg>/bucket"`.
 - A sparkline SVG (200 × 36 px) drawn as a `<polyline>` in `var(--blue)`.
 

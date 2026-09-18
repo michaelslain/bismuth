@@ -25,7 +25,7 @@
 }
 .headTitle {
   flex: 1;
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -66,7 +66,7 @@
 }
 
 .readonly {
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body-lg);
   color: var(--text-muted);
   padding: var(--sp-3) 0;
@@ -109,7 +109,7 @@
    createDocEditor sets ("bismuth-doc-milkdown") lands on the contenteditable itself. */
 .mdField :global(.bismuth-doc-milkdown) {
   outline: none;
-  font-family: var(--editor-font);
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-body-lg);
   line-height: 1.55;
   color: var(--fg);
