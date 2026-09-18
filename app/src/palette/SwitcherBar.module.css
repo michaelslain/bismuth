@@ -3,6 +3,15 @@
    Wave 2 Task 9). The three cross-boundary rules that reach OTHER components' DOM via
    `[data-*]` attributes stayed behind in switcher.css — see that file's header for why.
 
+   `.search-ask-ai*`/`.search-empty*`/`.search-kbd` (below, "moved from SearchResultRows.module.css")
+   MOVED IN from ../SearchResultRows.module.css (ds-conformance Task 8 follow-up): SwitcherBar.tsx
+   was the only reader of that markup anywhere in the app, so importing SearchResultRows.module.css
+   here just for these classes was a second importer of a stylesheet `SearchResultRows.tsx` alone
+   owns (its own classes are `.sresult` and descendants only). Moved byte-for-byte; nothing else
+   changed. `switcher-ask-ai` (this file's own pre-existing class) still composes alongside
+   `search-ask-ai` on the persistent AI affordance — same two classes on one element as before,
+   just both local to this module now.
+
    `.switcher-list` below is the one exception in THIS file: it stays a bare `:global()` literal
    rather than a hashed local, even though it physically lives here. Palette.module.css
    (`:global(.switcher-list) .palette-row`/`.palette-match`) and SearchResultRows.module.css
@@ -79,12 +88,14 @@
   border-top: 1px solid var(--border-soft);
 }
 
-/* #8 (unified search): content-match + AI result cards reuse the shared .sresult/.search-state/
-   .search-empty markup (SearchResultRows, ../SearchResultRows.tsx + SearchResultRows.module.css) so the
-   switcher never forks a lookalike. The `.switcher-list .sresult { margin-top: var(--sp-4) }` stacking
+/* #8 (unified search): content-match + AI result cards reuse the shared .sresult markup
+   (SearchResultRows, ../SearchResultRows.tsx + SearchResultRows.module.css) so the switcher
+   never forks a lookalike. The `.switcher-list .sresult { margin-top: var(--sp-4) }` stacking
    override that used to live here lives in SearchResultRows.module.css instead (as
    `:global(.switcher-list) .sresult`) — kept there rather than here so the override sits beside
-   the class it adjusts. */
+   the class it adjusts. `.search-ask-ai`/`.search-empty`/`.search-kbd` below are this module's
+   own now (moved in — see this file's header); the readonly loading/error panels use
+   `ui/EmptyState.tsx` (`Loading`/`EmptyState`) instead of bespoke markup. */
 
 /* Tiny section label above the keyword content matches (under the file-name rows) —
    --fs-micro uppercase, the group-label register every overlay list uses. */
@@ -101,3 +112,78 @@
 /* The persistent "Ask Bismuth AI" footer affordance under the unified list (question-shaped
    queries that DO have rows — Enter commits a row, so the AI keeps its own visible path). */
 .switcher-ask-ai { margin-top: var(--sp-5); }
+
+/* .search-ask-ai — MOVED IN from ../SearchResultRows.module.css (see this file's header) — the
+   persistent AI affordance (BUG #8): shown under the result rows whenever the query is
+   question-shaped, so the AI search is reachable in one obvious click even when file/keyword
+   matches exist. Also invokable via Cmd+Enter. */
+.search-ask-ai {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
+  border-radius: var(--r-0);
+  background: color-mix(in srgb, var(--teal) 7%, transparent);
+  color: var(--teal);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.search-ask-ai:hover {
+  background: color-mix(in srgb, var(--teal) 13%, transparent);
+  border-color: color-mix(in srgb, var(--teal) 70%, var(--border));
+}
+.search-ask-ai-icon { flex: none; color: var(--teal); }
+.search-ask-ai-label { font-weight: 500; }
+.search-ask-ai-kbd { margin-left: auto; }
+
+/* .search-empty — zero-results affordance: a centered column nudging the user toward the AI
+   fallback (clickable CTA) or reporting the AI found nothing. */
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: center;
+  padding: calc(var(--sp-7) * 2) var(--sp-7);
+  color: var(--text-muted);
+}
+/* The CTA variant is a real <button> — strip its chrome and make the whole block a hit target. */
+.search-empty-cta {
+  width: 100%;
+  border: 1px dashed color-mix(in srgb, var(--teal) 40%, var(--border));
+  border-radius: var(--r-0);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.search-empty-cta:hover {
+  background: color-mix(in srgb, var(--teal) 8%, transparent);
+  border-color: color-mix(in srgb, var(--teal) 60%, var(--border));
+}
+.search-empty-icon { color: var(--teal); opacity: 0.9; }
+.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: 500; }
+.search-empty-hint { font-size: var(--fs-ui); color: var(--text-muted); }
+.search-kbd {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  padding: 1px var(--sp-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--r-0);
+  background: var(--surface-1);
+  color: var(--fg);
+}
+
+/* Restores the readonly ask-AI loading/error panels' original icons (Finding 2, ds-conformance
+   Task 8 follow-up) via ui/EmptyState.tsx's new `icon` prop. Same glyphs the pre-migration
+   `.search-state`/`.search-spinner*` markup used (see SearchResultRows.module.css's git history)
+   — recreated here rather than restoring the dropped shared classes, since the switcher is now
+   their only owner. */
+.switcher-loading-spinner { color: var(--teal); font-size: var(--fs-display); }
+.switcher-error-icon { color: var(--danger); opacity: 0.9; }
