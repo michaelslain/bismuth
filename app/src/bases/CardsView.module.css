@@ -1,0 +1,76 @@
+/* ---------- cards view ---------- */
+.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: 18px; }
+/* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
+   ui.cardGridMinWidth setting), each column stretching to share the leftover space.
+   Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
+   top-to-bottom DOWN each column first, which scrambles the reading order of sorted/
+   grouped cards (the #96 regression this replaces). `align-items: start` lets every
+   card keep its natural height instead of stretching to the tallest card in its row. */
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: var(--sp-5); align-items: start; }
+/* Stable hook on the rendered <CardFrame> for the nth-child cover-tint rules below — the
+   card's own background/border/hover styling now lives on CardFrame itself (its `card`
+   class is CardFrame.module.css's own, not reachable from here under CSS-module hashing). */
+.cardSlot {}
+
+/* Tasks-mode cards: the TaskChip register, not the book-cover card frame — one task per card,
+   no cover, no click-to-open (TaskRow's own wikilinks are what navigate), so no hover wash
+   either. A narrower min column than .cardGrid's 220px: a task line is a lot shorter than a
+   note preview, so more of them fit per row. */
+.taskCardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-3); align-items: start; }
+/* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline.
+   The seven generated covers below were 150deg linear-gradients fading a category tint into --bg.
+   FLATTENED 2026-08-28 to solid tints (visual-unification audit §9.6) — they were one of only two
+   gradients left in the app, and a soft directional fade is off-register beside a flat, hairline,
+   square-cornered grid. The seven-colour rotation is kept: it is what makes an untitled card
+   identifiable at a glance, and it costs nothing now that each is a single flat colour. */
+.cardCoverImg {
+  width: 100%;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  background: var(--surface-2, var(--bg));
+  overflow: hidden;
+}
+.cardCoverImg img { width: 100%; height: 100%; display: block; }
+/* Plain (non-body) card: a generated book cover + a body row of fields. */
+.cardCover {
+  height: 96px;
+  position: relative;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) 18px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--teal) 18%, transparent);
+}
+/* Per-index cover tint + spine color cycles through the accent palette. */
+.cardGrid > .cardSlot:nth-child(7n+1) .cardCover { background: color-mix(in srgb, var(--teal) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+2) .cardCover { background: color-mix(in srgb, var(--violet) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+3) .cardCover { background: color-mix(in srgb, var(--blue) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+4) .cardCover { background: color-mix(in srgb, var(--graph-1, var(--blue)) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+5) .cardCover { background: color-mix(in srgb, var(--graph-4, var(--violet)) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+6) .cardCover { background: color-mix(in srgb, var(--green) 18%, transparent); }
+.cardGrid > .cardSlot:nth-child(7n+7) .cardCover { background: color-mix(in srgb, var(--gold) 18%, transparent); }
+/* Subtle paper texture over the cover. */
+.cardCover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--fg) 2%, transparent) 6px 7px);
+  pointer-events: none;
+}
+/* color(--fg)/overflow/ellipsis/the two-line clamp trio moved to ui/Label.tsx
+   (`<Label tone="default" lines={2}>`); font-family/size/weight/letter-spacing/line-height and
+   the card-cover positioning stay here — not on the app's fixed type scale, so not something
+   Label should own. */
+.coverTitle { position: relative; z-index: 1; font-family: var(--ui-font-stack); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+/* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
+   (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
+   positioning stay here. */
+.coverAuthor { position: relative; z-index: 1; font-size: var(--fs-ui); margin-top: var(--sp-2); }
+
+/* Google-Keep/Pinterest MASONRY container for `body`/`tasks`-content cards (BodyCard owns its
+   own masonry-item rules — it renders only inside this grid). */
+.bodyGrid { column-width: 240px; column-gap: var(--sp-5); }
+
+/* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
+.groupHeader { font-weight: 500; margin: var(--sp-4) 18px var(--sp-2); font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }

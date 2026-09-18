@@ -21,7 +21,7 @@ import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
 import Chip from '../ui/Chip'
-import styles from './BaseView.module.css'
+import styles from './KanbanCard.module.css'
 import EmptyValue from '../ui/EmptyValue'
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */
@@ -295,7 +295,7 @@ export function KanbanCard(props: {
                                         </span>
                                     )
                                 }
-                                return renderCell(id, displayRow())
+                                return renderCell(id, displayRow(), true)
                             }
                             return (
                                 <div

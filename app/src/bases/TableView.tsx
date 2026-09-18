@@ -15,7 +15,7 @@ import { checkStatus, isOverdue } from './taskDisplay'
 import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
 const RESIZE_GRAB_PX = 10

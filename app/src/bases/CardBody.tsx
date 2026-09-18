@@ -10,7 +10,8 @@ import {
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import CardTitle from './CardTitle'
+import styles from './CardBody.module.css'
 
 /** Heuristic: which column is a page count (rendered as "N pages" on the right). */
 function isPagesColumn(id: string): boolean {
@@ -112,11 +113,11 @@ export function CardBody(props: {
         <>
             {/* Cards already shows the title on the cover; Kanban stacks its own. */}
             <Show when={!props.titleAsField}>
-                <div class={styles.cardTitle}>
+                <CardTitle>
                     {props.plainTitle
                         ? titleText()
                         : renderTitle(titleCol(), props.row)}
-                </div>
+                </CardTitle>
             </Show>
             {/* Cards shows the author on the cover; Kanban stacks its own faint line. */}
             <Show when={!props.titleAsField && author()}>

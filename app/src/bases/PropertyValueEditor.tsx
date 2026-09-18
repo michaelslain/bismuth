@@ -31,7 +31,7 @@ import {
 } from './propertyEdit'
 import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
-import styles from './BaseView.module.css'
+import styles from './PropertyValueEditor.module.css'
 
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
  *  carried an identical copy, but its version was deleted along with the rest of the dead

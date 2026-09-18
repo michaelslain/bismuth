@@ -1,0 +1,10 @@
+/* The seamless inline editor inside a body card (CardEditor + livePreview). Transparent,
+   gutterless, auto-height so it reads exactly like the card's old read-only preview — but a
+   click places the cursor and a drag selects. The heading/task/link styling comes from
+   livePreview's own theme, so it matches the note editor. */
+.cardEditor { margin-top: var(--sp-3); }
+.cardEditor :global(.cm-editor) { background: transparent; }
+.cardEditor :global(.cm-editor.cm-focused) { outline: none; }
+.cardEditor :global(.cm-scroller) { font-family: var(--prose-font); font-size: var(--prose-font-size); }
+/* Retained for BodyCard's "Loading…" placeholder. */
+.cardKey { color: var(--text-muted); }

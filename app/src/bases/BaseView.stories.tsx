@@ -21,9 +21,10 @@ import { taskToRow } from '../../../core/src/bases/taskRow'
 import type { Task } from '../../../core/src/tasks'
 import { saveSession } from './flashcardsQueue'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
-import baseStyles from './BaseView.module.css'
 import { toasts } from '../toastStore'
 import taskRowStyles from './TaskRow.module.css'
+import tableViewStyles from './TableView.module.css'
+import cardsViewStyles from './CardsView.module.css'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { currentView } from '../calendar/state'
 import { taskRow } from '../ui/_calendarAssertions'
@@ -971,7 +972,7 @@ export const TasksTableStored: Story = {
     render: () => storedBase('table'),
     play: async ({ canvasElement }) => {
         const overdueCells = canvasElement.querySelectorAll(
-            `td.${baseStyles.cellOverdue}`,
+            `td.${tableViewStyles.cellOverdue}`,
         )
         expect(overdueCells.length).toBe(1)
         expect(overdueCells[0].textContent).toContain(TASK_DATES.overdue)
@@ -1088,7 +1089,7 @@ export const TaskShapedRowsInNormalMode: Story = {
         // The cards renderer, untouched: a cover per row and a click-to-open card…
         await waitFor(() => {
             expect(
-                canvasElement.querySelectorAll(`.${baseStyles.cardCover}`)
+                canvasElement.querySelectorAll(`.${cardsViewStyles.cardCover}`)
                     .length,
             ).toBe(2)
         })

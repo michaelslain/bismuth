@@ -2,7 +2,8 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { renderValue } from './renderValue'
 import { CardEditor } from './CardEditor'
-import styles from './BaseView.module.css'
+import CardTitle from './CardTitle'
+import styles from './BodyCard.module.css'
 
 /**
  * A body/tasks card: a title chip over a SEAMLESS inline editor of the note (`CardEditor`). Clicking
@@ -29,9 +30,9 @@ export function BodyCard(props: {
 
     return (
         <div class={styles.bodyCard}>
-            <div class={styles.cardTitle}>
+            <CardTitle>
                 {renderValue(firstCol(), props.row)}
-            </div>
+            </CardTitle>
             <CardEditor
                 path={props.row.file.path}
                 title={titleText()}

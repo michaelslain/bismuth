@@ -1,0 +1,17 @@
+/* Google-Keep/Pinterest MASONRY via CSS multicol (CardsView's `.bodyGrid` container):
+   variable-height cards pack tightly into responsive columns. `break-inside: avoid` + full-
+   width `inline-block` keep each card WHOLE within one column, so the embedded CodeMirror
+   editor is never fragmented across a column boundary (which would wreck caret placement /
+   drag-select). BodyCard renders ONLY inside that masonry grid, so this is unconditional
+   rather than a `.bodyGrid > .bodyCard` descendant selector reaching into a class CardsView
+   doesn't own. */
+.bodyCard {
+  display: inline-block;
+  break-inside: avoid;
+  margin: 0 0 var(--sp-5);
+  width: 100%;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  padding: var(--sp-5) var(--sp-5);
+  background: var(--surface-1, var(--panel));
+}
