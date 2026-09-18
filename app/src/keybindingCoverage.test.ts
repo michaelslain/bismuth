@@ -150,6 +150,10 @@ const ALLOWED_FILES: AllowEntry[] = [
         file: 'ExportView.tsx',
         reason: 'PENDING SWEEP — a local path field\'s own Enter-to-commit, not yet migrated (see task-12 report)',
     },
+    {
+        file: 'ui/ToggleRow.tsx',
+        reason: 'Enter now reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — it is this control\'s own activation gesture under the WAI-ARIA switch pattern (role="switch"), not an independently rebindable command',
+    },
 ]
 
 const ALLOWED_SET = new Set(ALLOWED_FILES.map(e => e.file))

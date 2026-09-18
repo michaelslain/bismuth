@@ -1451,6 +1451,7 @@ export function InkOverlay(props: {
             e.preventDefault()
             e.stopPropagation()
             redo()
+            return
         }
     }
 

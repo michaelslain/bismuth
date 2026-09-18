@@ -86,6 +86,14 @@ export function markdownEditingExtensions(
         // this pair — a caller that needs a rebind to take effect on an already-mounted, long-lived
         // view without rebuilding it would need its own `settingsKeymapCompartment` layered in front
         // of this, the same way it already owns its own Tab/indent bindings (see MarkdownField.tsx).
+        // KNOWN ASYMMETRY: unlike every other rebindable editor key (open-completion,
+        // accept-completion, indent, outdent, plus everything MarkdownField/CardEditor wire through
+        // their own compartments), a rebind of toggle-bold/toggle-italic on Editor.tsx's note editor
+        // or on MarkdownField.tsx does NOT take effect until that view remounts (a file switch or
+        // reload) — because both spread this shared, once-built array rather than reconfiguring it
+        // live. Converting this pair to a compartment is a real change (touches every caller) and is
+        // deliberately out of scope here; this comment exists so the next reader does not have to
+        // rediscover the gap by testing a rebind and finding it silently does nothing.
         buildSettingsKeymap([
             { id: 'toggle-bold', run: toggleBold },
             { id: 'toggle-italic', run: toggleItalic },
