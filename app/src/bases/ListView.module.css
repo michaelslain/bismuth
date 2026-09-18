@@ -28,4 +28,4 @@
    bespoke remained, so the rule and the `class` merge onto the element are both gone. */
 /* Faint author suffix after a list row's title. */
 /* The optional right-aligned third column (dates / counts). */
-.lrowRight { flex: 0 0 auto; }
+.lrowRight { font-size: var(--fs-ui); flex: 0 0 auto; }

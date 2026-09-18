@@ -129,7 +129,7 @@ export function ListView(props: {
                                         <Show when={rightCol()}>
                                             <Text
                                                 as="span"
-                                                size="ui"
+                                                size="inherit"
                                                 tone="muted"
                                                 weight="inherit"
                                                 class={styles.lrowRight}
