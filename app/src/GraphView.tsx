@@ -29,6 +29,8 @@ import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
+import Text from './ui/Text'
+import Badge from './ui/Badge'
 import type { GraphMode } from './commands'
 import styles from './graph/Graph.module.css'
 
@@ -53,6 +55,16 @@ function fpsColor(fps: number): string {
     if (fps >= 50) return '#3fb950' // green: smooth
     if (fps >= 30) return '#d29922' // yellow: usable
     return '#f85149' // red: janky
+}
+
+// Same traffic-light thresholds as fpsColor, as a Graph.module.css class name instead of a color
+// literal — for the bottom-bar fps readout, which renders through <Badge> and (unlike <Text>)
+// has no `style` passthrough to carry a computed inline color. The stats-footer fps readout below
+// keeps using fpsColor()+inline style directly on <Text>, which does forward style.
+function fpsColorClass(fps: number): string {
+    if (fps >= 50) return 'graph-hud-fps--good'
+    if (fps >= 30) return 'graph-hud-fps--ok'
+    return 'graph-hud-fps--bad'
 }
 
 // Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
@@ -477,9 +489,15 @@ export function GraphView(props: {
             <ViewBar
                 class={styles['graph-viewbar']}
                 identity={
-                    <span class={styles['graph-vb-wide']}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['graph-vb-wide']}
+                    >
                         <Crumb icon="Share2">Knowledge Graph</Crumb>
-                    </span>
+                    </Text>
                 }
                 facet={
                     <>
@@ -540,7 +558,11 @@ export function GraphView(props: {
                     /* One span, not one slot per control: `.graph-vb-right`'s own gap and the
                        `.graph-vb-wide` hide-when-narrow rule both hang off this element, and both
                        are Graph.module.css's to own. */
-                    <span
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
                         <SegmentedToggle
@@ -564,7 +586,7 @@ export function GraphView(props: {
                                 FIND
                             </IconTextButton>
                         </Show>
-                    </span>
+                    </Text>
                 }
             />
             <div
@@ -590,16 +612,30 @@ export function GraphView(props: {
                 {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
             panel, because all three float over the same field and must read as one material. */}
                 <div class={`${styles['graph-stats']} asc-popover`}>
-                    <span>
+                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
                         {plural(nodeCount(), 'node')} //{' '}
                         {plural(edgeCount(), 'edge')} // {modeLabel()}
-                    </span>
+                    </Text>
                     {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-                    <span class={styles['graph-zoom-pct']}>{zoomPct()}%</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['graph-zoom-pct']}
+                    >
+                        {zoomPct()}%
+                    </Text>
                     <Show when={settings.graph.showFps && fps() !== null}>
-                        <span style={{ color: fpsColor(fps()!) }}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            style={{ color: fpsColor(fps()!) }}
+                        >
                             {fps()} fps
-                        </span>
+                        </Text>
                     </Show>
                 </div>
                 {/* Find panel: search only. Clusters live in the floating legend card; there's no
@@ -607,6 +643,7 @@ export function GraphView(props: {
                 <Show when={props.fill && menuOpen()}>
                     <div class={`${styles['graph-find-panel']} asc-popover`}>
                         <GraphSearch
+                            embedded
                             items={searchItems()}
                             onPreview={id =>
                                 renderer.setSearchMatches(new Set([id]))
@@ -694,29 +731,19 @@ export function GraphView(props: {
                     </Show>
                     <Show when={!props.mini && hovered()}>
                         {node => (
-                            <span
-                                class={styles['graph-hud-pill']}
-                                style={{
-                                    'min-width': 0,
-                                    'white-space': 'nowrap',
-                                    overflow: 'hidden',
-                                    'text-overflow': 'ellipsis',
-                                    color: 'var(--fg)',
-                                    'font-size': 'var(--fs-ui)',
-                                    padding: '2px 8px',
-                                }}
+                            <Badge
+                                class={`${styles['graph-hud-pill']} ${styles['graph-hud-hover']}`}
                             >
                                 {hoverLabel(node())}
-                            </span>
+                            </Badge>
                         )}
                     </Show>
                     <Show when={settings.graph.showFps && fps() !== null}>
-                        <span
-                            class={`${styles['graph-hud-pill']} ${styles['graph-bottom-fps']}`}
-                            style={{ color: fpsColor(fps()!) }}
+                        <Badge
+                            class={`${styles['graph-hud-pill']} ${styles['graph-bottom-fps']} ${styles[fpsColorClass(fps()!)]}`}
                         >
                             {fps()} fps
-                        </span>
+                        </Badge>
                     </Show>
                 </div>
             </div>
