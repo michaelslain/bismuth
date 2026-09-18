@@ -2,6 +2,7 @@ import { For, Show, type Component } from 'solid-js'
 import { toDateStr } from '../../dates'
 import DayGutter from './DayGutter'
 import DayNumber from '../DayNumber'
+import Text from '../../../ui/Text'
 import styles from './DayHeaderRow.module.css'
 
 export type DayHeaderRowProps = {
@@ -29,13 +30,19 @@ const DayHeaderRow: Component<DayHeaderRowProps> = props => (
                         class={[styles.header, isToday() ? styles.today : ''].filter(Boolean).join(' ')}
                         data-testid="day-header"
                     >
-                        <span class={styles.weekday}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles.weekday}
+                        >
                             {d.toLocaleString('default', { weekday: 'short' })}
-                        </span>{' '}
-                        <span>
+                        </Text>{' '}
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
                             {d.toLocaleString('default', { month: 'numeric' })}/
                             <DayNumber day={d.getDate()} today={isToday()} inline />
-                        </span>
+                        </Text>
                     </div>
                 )
             }}
