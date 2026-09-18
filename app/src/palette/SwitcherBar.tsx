@@ -473,6 +473,7 @@ export function SwitcherBar(props: Props) {
                 </Show>
                 <Show when={aiPhase() === 'error'}>
                     <EmptyState
+                        class={switcherStyles['switcher-error-panel']}
                         icon={
                             <Icon
                                 value="TriangleAlert"
