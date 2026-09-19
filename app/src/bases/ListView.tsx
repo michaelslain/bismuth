@@ -67,7 +67,6 @@ export function ListView(props: {
                                     size="inherit"
                                     tone="faint"
                                     weight="inherit"
-                                    class={styles.count}
                                 >
                                     // {group().rows.length}
                                 </Text>
@@ -119,7 +118,6 @@ export function ListView(props: {
                                                     size="inherit"
                                                     tone="faint"
                                                     weight="inherit"
-                                                    class={styles.lrowAuthor}
                                                 >
                                                     {' '}
                                                     — {String(author)}
