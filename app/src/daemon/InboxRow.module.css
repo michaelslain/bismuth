@@ -16,6 +16,12 @@
 .inbox-row:hover {
     background: var(--hover-bg);
 }
+/* role="button" div, not a PlainButton, so it needs its own ring (finding 4, ds-conformance
+   design pass) rather than inheriting PlainButton.module.css's. */
+.inbox-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
 /* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
    style (STATUS_COLOR, daemonInboxLogic.ts), not a hardcoded fill. */
 .inbox-row-dot {
