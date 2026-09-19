@@ -24,7 +24,6 @@
 import { type JSX, Show, splitProps } from 'solid-js'
 import ViewBar, { Crumb, VBtn } from '../ui/ViewBar'
 import Label from '../ui/Label'
-import Text from '../ui/Text'
 import PageReadout from './PageReadout'
 import styles from './PreviewBar.module.css'
 
@@ -97,40 +96,22 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     {/* The least essential thing in the trail: a reading position is worth less
                         than the controls that edit the page. The wrapper carries the tag because
                         PageReadout's props are its interface, not a pass-through. */}
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.group}
-                        data-bar-drop="2"
-                    >
+                    <div class={styles.group} data-bar-drop="2">
                         <PageReadout
                             current={() => props.currentPage?.() ?? 0}
                             count={() => props.pageCount?.() ?? 0}
                             onGo={i => props.onGoToPage?.(i)}
                         />
-                    </Text>
+                    </div>
                 </Show>
             }
             config={
                 <Show when={inkable()}>
                     <Show when={pdf()}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles.group}
-                            data-testid="pdf-zoom-cluster"
-                        >
+                        <div class={styles.group} data-testid="pdf-zoom-cluster">
                             {/* Only the steps drop — ctrl/cmd+wheel still zooms there, and FIT stays
                                 as the one-click way back to fit width. */}
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                            <div
                                 class={styles.group}
                                 data-bar-drop="4"
                                 data-testid="pdf-zoom-steps"
@@ -150,7 +131,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                     title="Zoom in"
                                     onClick={() => props.onZoomBy?.(1.2)}
                                 />
-                            </Text>
+                            </div>
                             <VBtn
                                 class={styles.fit}
                                 title="Fit width"
@@ -159,13 +140,9 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             >
                                 FIT
                             </VBtn>
-                        </Text>
+                        </div>
                     </Show>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                    <div
                         class={`${styles.group} ${styles.annotate}`}
                         data-testid="preview-annotate"
                     >
@@ -207,7 +184,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 onClick={() => props.onToggleScratch?.()}
                             />
                         </Show>
-                    </Text>
+                    </div>
                 </Show>
             }
             actions={
@@ -215,13 +192,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     <Show when={pdf()}>
                         {/* PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the LEFT —
                             mirrored so it reads as the right-hand panel this control opens. */}
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles.group}
-                        >
+                        <div class={styles.group}>
                             <IconVBtn
                                 icon="PanelRight"
                                 label="Bookmarks"
@@ -231,17 +202,13 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 aria-pressed={props.panelOpen?.() ?? false}
                                 onClick={() => props.onTogglePanel?.()}
                             />
-                        </Text>
+                        </div>
                     </Show>
                     {/* The first thing to go: "open externally" always has another path (the file
                         tree, the OS itself). Icon-only and muted like every other glyph — they are
                         the least used controls in the bar and must not be its loudest. */}
                     <Show when={props.nativeActions()}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                        <div
                             class={styles.group}
                             data-bar-drop="4"
                             data-testid="preview-file-actions"
@@ -258,7 +225,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 title="Reveal in file manager"
                                 onClick={() => props.onOpenExternal(true)}
                             />
-                        </Text>
+                        </div>
                     </Show>
                 </>
             }

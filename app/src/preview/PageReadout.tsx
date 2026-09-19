@@ -12,7 +12,6 @@ import { createSignal, Show } from 'solid-js'
 import Button from '../ui/Button'
 import InlineTextInput from '../ui/InlineTextInput'
 import Label from '../ui/Label'
-import Text from '../ui/Text'
 import styles from './PageReadout.module.css'
 
 export type PageReadoutProps = {
@@ -52,11 +51,7 @@ function PageReadout(props: PageReadoutProps) {
     }
 
     return (
-        <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
+        <div
             class={`${styles['page-readout']} ${props.class ?? ''}`}
             data-testid="page-readout"
         >
@@ -89,7 +84,7 @@ function PageReadout(props: PageReadoutProps) {
                     {`/ ${props.count()}`}
                 </Label>
             </Show>
-        </Text>
+        </div>
     )
 }
 

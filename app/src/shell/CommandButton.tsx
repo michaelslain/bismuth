@@ -1,7 +1,6 @@
 import { Show } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import Badge from '../ui/Badge'
-import Text from '../ui/Text'
 import styles from './CommandButton.module.css'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
@@ -40,13 +39,7 @@ export function CommandButton(props: {
     onClick?: (e: MouseEvent) => void
 }) {
     return (
-        <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
-            class={styles['toolbar-btn-wrap']}
-        >
+        <div class={styles['toolbar-btn-wrap']}>
             <IconButton
                 icon={props.icon}
                 iconSize={props.iconSize}
@@ -60,6 +53,6 @@ export function CommandButton(props: {
                     {props.badge}
                 </Badge>
             </Show>
-        </Text>
+        </div>
     )
 }

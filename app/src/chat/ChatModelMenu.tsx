@@ -99,11 +99,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
     const items = () => buildItems(props.session)
 
     return (
-        <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
+        <div
             class={styles['model-menu']}
             data-chat-model
             data-testid="chat-model"
@@ -141,6 +137,6 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                     )}
                 </Show>
             </Show>
-        </Text>
+        </div>
     )
 }
