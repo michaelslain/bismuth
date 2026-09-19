@@ -85,15 +85,23 @@
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
-/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class layers
-   DISPLAY on top of that opacity fade, not opacity alone. Collapsed, the row's content box (~15px
-   — see the icon-centring comment's 5px/10px arithmetic above) is narrower than the icon it must
-   fit beside, so `flex: 1; min-width: 0` alone squeezed the label down to a ~1px flex remainder
-   rather than 0 — `opacity: 0` still left that sliver rendered and in the DOM, the defect this
-   fixes. `display: none` removes it from flow entirely while collapsed; every reveal selector
-   below restores `display` alongside `opacity` the moment the rail expands or is pinned, so the
-   fade-in target exists again exactly when it needs to. */
-.tab-rail-label { display: none; opacity: 0; transition: opacity 0.16s ease; }
+/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class layers a
+   WIDTH collapse on top of that opacity fade, not opacity alone. Collapsed, the row's content box
+   (~15px — see the icon-centring comment's 5px/10px arithmetic above) is narrower than the icon it
+   must fit beside, so `flex: 1; min-width: 0` alone (from `.label--fill`) squeezed the label down
+   to a ~1px flex remainder rather than 0 — `opacity: 0` still left that sliver rendered and in the
+   DOM, the defect this fixes. `flex-grow: 0` overrides `.label--fill`'s `flex: 1` (which is
+   `flex-basis: 0%`), so with no grow the label stays at its 0% basis instead of claiming space —
+   width 0 without removing it from flow. `visibility: hidden` (not `display: none`) is what keeps
+   it removable WITHOUT killing the transition: a `display: none` rule can never transition out of
+   itself — no `@starting-style`/`allow-discrete` here, since the app ships in WKWebView on older
+   macOS/iPadOS where that pair isn't safe — so `opacity` faded but `display` popped instantly,
+   landing a label at full opacity mid width-animation. `visibility` DOES transition (it is an
+   animatable keyword property), and the `visibility 0s linear 0.16s` delay holds it hidden until
+   the opacity fade finishes, so hiding never outraces the fade. Every reveal selector below
+   restores `opacity`/`visibility` the moment the rail expands or is pinned, with the delay flipped
+   to the reveal side instead, so the label is visible-for-hit-testing before its fade-in starts. */
+.tab-rail-label { flex-grow: 0; visibility: hidden; opacity: 0; transition: opacity 0.16s ease, visibility 0s linear 0.16s; }
 /* A PINNED RAIL MUST REVEAL EVERYTHING A HOVERED ONE DOES. Widening to 232px is only half of
    expanding — the labels, close buttons and pin buttons all fade in off `:hover`/`:focus-within`,
    so a pinned rail that only got the width was 232px of blank space with bare icons in it. Every
@@ -101,7 +109,7 @@
    ANCESTOR REACHED VIA `[data-tab-rail]` (see this file's header) — was `.tab-rail` before the
    module split. */
 [data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
-[data-tab-rail][data-rail-pinned] .tab-rail-label { display: inline; opacity: 1; }
+[data-tab-rail][data-rail-pinned] .tab-rail-label { flex-grow: 1; visibility: visible; opacity: 1; transition: opacity 0.16s ease, visibility 0s; }
 /* Restores the row's real gap the moment the rail is expanded — every row gets this, not just a
    hovered one, exactly like the label reveal above (an expanded rail is never short on width, so
    there is nothing left to protect by keeping this at 0). */
