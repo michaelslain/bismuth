@@ -459,6 +459,7 @@ export function SwitcherBar(props: Props) {
             icon — out of this fix's scope, unchanged intentional drift from the task report. */}
                 <Show when={aiPhase() === 'loading'}>
                     <EmptyState
+                        class={switcherStyles['switcher-ai-panel']}
                         icon={
                             <Text
                                 as="span"
@@ -477,7 +478,7 @@ export function SwitcherBar(props: Props) {
                 </Show>
                 <Show when={aiPhase() === 'error'}>
                     <EmptyState
-                        class={switcherStyles['switcher-error-panel']}
+                        class={`${switcherStyles['switcher-ai-panel']} ${switcherStyles['switcher-error-panel']}`}
                         icon={
                             <Icon
                                 value="TriangleAlert"

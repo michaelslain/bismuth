@@ -247,9 +247,9 @@
 /* Empty/all-done states: faint prose italic, matching the card prose tone (not the
    default mono EmptyState). Scoped to the review so other empty states are untouched. */
 .flashcards-host :global(.ui-empty-block) { gap: var(--sp-2); }
-.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--faint); }
-.flashcards-host :global(.ui-empty) { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--faint); }
-.flashcards-host :global(.ui-empty) strong { font-style: italic; font-weight: 600; color: var(--text-muted); }
+.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
+.flashcards-host :global(.ui-empty) { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--text-muted); }
+.flashcards-host :global(.ui-empty) :is(strong, b) { font-style: italic; font-weight: 600; color: var(--fg); }
 .flashcards-host :global(.ui-empty) .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
 .flashcards-host :global(.ui-empty) code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
 

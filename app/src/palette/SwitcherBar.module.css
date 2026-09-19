@@ -180,6 +180,14 @@
   color: var(--fg);
 }
 
+/* Restores the ask-AI loading/error panels' padding + gap (Finding 3, ds-conformance design pass):
+   main gave `.search-state` `padding: calc(var(--sp-7) * 2) var(--sp-7)` and `gap: var(--sp-4)`;
+   the bare EmptyState swap dropped both, so the panel hung from the top edge with the title-to-
+   message gap blown out by the UA default `<p>` margin. Composed onto both the loading and error
+   EmptyState via `class=`, alongside `.switcher-error-panel` on the error one. */
+.switcher-ai-panel { padding: calc(var(--sp-7) * 2) var(--sp-7); }
+.switcher-ai-panel :global(.ui-empty) { margin: 0; }
+
 /* Restores the readonly ask-AI loading/error panels' original icons (Finding 2, ds-conformance
    Task 8 follow-up) via ui/EmptyState.tsx's new `icon` prop. Same glyphs the pre-migration
    `.search-state`/`.search-spinner*` markup used (see SearchResultRows.module.css's git history)
