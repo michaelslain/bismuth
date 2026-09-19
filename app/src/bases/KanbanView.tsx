@@ -22,6 +22,8 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
 import TaskRow from './TaskRow'
+import CardFrame from './CardFrame'
+import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import {
@@ -55,7 +57,13 @@ import { STATUS_COLOR } from '../ui/StatusDot'
 import { pushToast } from '../Toast'
 import { suppressCardContextMenu } from './kanbanCardMenu'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
-import styles from './BaseView.module.css'
+import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import TextInput from '../ui/TextInput'
+import Swatch from '../ui/Swatch'
+import Callout from '../ui/Callout'
+import InlineCode from '../ui/InlineCode'
+import styles from './KanbanView.module.css'
 
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = 'order'
@@ -71,6 +79,11 @@ const PALETTE = [
     'var(--graph-3)',
     'var(--graph-4)',
 ]
+
+// Human names for the PALETTE swatches above, parallel by index — every theme's --graph-0..4
+// ramp is rose/violet/blue/teal/green in that order. Used as each Swatch's accessible name +
+// title (a color, not a token name, reads better to a keyboard/screen-reader user).
+const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
 
 // Module-level stash for the dragged row's identity (rowId — see rowIdentity.ts).
 let draggedId: string | null = null
@@ -1161,10 +1174,11 @@ export function KanbanView(props: {
         <Show
             when={groupBy()}
             fallback={
-                <div class={styles.kanbanHint}>
-                    This kanban view needs a "groupBy" property. Add e.g.
-                    groupBy: note.status to the view.
-                </div>
+                <Callout class={styles.kanbanHint}>
+                    This kanban view needs a "groupBy" property. Add e.g.{' '}
+                    <InlineCode>groupBy: note.status</InlineCode> to the
+                    view.
+                </Callout>
             }
         >
             <div
@@ -1181,6 +1195,9 @@ export function KanbanView(props: {
                     {key => {
                         const group = () => groupByKey(key)
                         const color = () => colColor(key)
+                        // Exactly one control is ever marked: a swatch when an override is set
+                        // (and it matches the current color), else Auto — never both at once.
+                        const hasOverride = () => !!groupColors()[key]
                         return (
                             <>
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
@@ -1205,80 +1222,120 @@ export function KanbanView(props: {
                                     }}
                                     style={{ '--kb-col-color': color() }}
                                 >
-                                    <div
-                                        class={styles.kanbanColHeader}
-                                        onPointerDown={e =>
-                                            startColDrag(e, key)
-                                        }
-                                    >
-                                        <button
-                                            type="button"
-                                            class={styles.kbDotBtn}
-                                            title={
-                                                editable()
-                                                    ? 'Column color'
-                                                    : undefined
-                                            }
-                                            disabled={!editable()}
-                                            onClick={() =>
-                                                setPickerCol(
-                                                    pickerCol() === group().key
-                                                        ? null
-                                                        : group().key,
-                                                )
+                                    <div class={styles.kbColorAnchor}>
+                                        <div
+                                            class={styles.kanbanColHeader}
+                                            onPointerDown={e =>
+                                                startColDrag(e, key)
                                             }
                                         >
-                                            <span class={styles.dot} />
-                                        </button>
-                                        <span class={styles.kanbanColTitle}>
-                                            {group().key === ''
-                                                ? '(empty)'
-                                                : group().key}
-                                        </span>
-                                        <span class={styles.kanbanCount}>
-                                            {group().rows.length}
-                                        </span>
-                                    </div>
-
-                                    {/* Color picker popover */}
-                                    <Show when={pickerCol() === group().key}>
-                                        <div
-                                            class={styles.kbColorBackdrop}
-                                            onClick={() => setPickerCol(null)}
-                                        />
-                                        <div class={styles.kbColorPop}>
-                                            <For each={PALETTE}>
-                                                {c => (
-                                                    <button
-                                                        type="button"
-                                                        class={styles.kbSwatch}
-                                                        style={{
-                                                            background: c,
-                                                        }}
-                                                        onClick={() =>
-                                                            void setColColor(
-                                                                group().key,
-                                                                c,
-                                                            )
-                                                        }
-                                                    />
-                                                )}
-                                            </For>
-                                            <button
-                                                type="button"
-                                                class={styles.kbSwatchAuto}
-                                                title="Auto"
+                                            <PlainButton
+                                                class={styles.kbDotBtn}
+                                                title={
+                                                    editable()
+                                                        ? 'Column color'
+                                                        : undefined
+                                                }
+                                                disabled={!editable()}
                                                 onClick={() =>
-                                                    void setColColor(
-                                                        group().key,
-                                                        null,
+                                                    setPickerCol(
+                                                        pickerCol() ===
+                                                            group().key
+                                                            ? null
+                                                            : group().key,
                                                     )
                                                 }
                                             >
-                                                Auto
-                                            </button>
+                                                <Text
+                                                    as="span"
+                                                    size="inherit"
+                                                    tone="inherit"
+                                                    weight="inherit"
+                                                    class={styles.dot}
+                                                />
+                                            </PlainButton>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles.kanbanColTitle}
+                                            >
+                                                {group().key === ''
+                                                    ? '(empty)'
+                                                    : group().key}
+                                            </Text>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles.kanbanCount}
+                                            >
+                                                {group().rows.length}
+                                            </Text>
                                         </div>
-                                    </Show>
+
+                                        {/* Color picker popover */}
+                                        <Show
+                                            when={pickerCol() === group().key}
+                                        >
+                                            <div
+                                                class={styles.kbColorBackdrop}
+                                                onClick={() =>
+                                                    setPickerCol(null)
+                                                }
+                                            />
+                                            <div class={styles.kbColorPop}>
+                                                <For each={PALETTE}>
+                                                    {(c, i) => (
+                                                        <Swatch
+                                                            size="sm"
+                                                            color={c}
+                                                            selected={
+                                                                hasOverride() &&
+                                                                color() === c
+                                                            }
+                                                            label={
+                                                                PALETTE_NAMES[
+                                                                    i()
+                                                                ]!
+                                                            }
+                                                            onClick={() =>
+                                                                void setColColor(
+                                                                    group()
+                                                                        .key,
+                                                                    c,
+                                                                )
+                                                            }
+                                                        />
+                                                    )}
+                                                </For>
+                                                <PlainButton
+                                                    class={styles.kbSwatchAuto}
+                                                    classList={{
+                                                        [styles.kbSwatchAutoActive]:
+                                                            !hasOverride(),
+                                                    }}
+                                                    title="Auto"
+                                                    aria-label="Auto"
+                                                    aria-pressed={
+                                                        hasOverride()
+                                                            ? undefined
+                                                            : 'true'
+                                                    }
+                                                    onClick={() =>
+                                                        void setColColor(
+                                                            group().key,
+                                                            null,
+                                                        )
+                                                    }
+                                                >
+                                                    Auto
+                                                </PlainButton>
+                                            </div>
+                                        </Show>
+                                    </div>
 
                                     <div class={styles.kanbanCards}>
                                         <For each={visibleIds(group())}>
@@ -1302,17 +1359,17 @@ export function KanbanView(props: {
                                                         />
                                                         <Show when={row()}>
                                                             {r => (
-                                                                <div
-                                                                    class={
+                                                                <CardFrame
+                                                                    kind={
                                                                         isTasks()
-                                                                            ? styles.taskCard
-                                                                            : styles.card
+                                                                            ? 'task'
+                                                                            : 'note'
                                                                     }
-                                                                    classList={{
-                                                                        [styles.kbCardDropTarget]:
-                                                                            dropCardId() ===
-                                                                            id,
-                                                                    }}
+                                                                    draggable
+                                                                    dropTarget={
+                                                                        dropCardId() ===
+                                                                        id
+                                                                    }
                                                                     data-kbcard=""
                                                                     data-path={
                                                                         id
@@ -1360,10 +1417,8 @@ export function KanbanView(props: {
                                                                     <Show
                                                                         when={isTasks()}
                                                                         fallback={
-                                                                            <div
-                                                                                class={
-                                                                                    styles.cardBodyInner
-                                                                                }
+                                                                            <CardBodyInner
+                                                                                looseGap
                                                                             >
                                                                                 <KanbanCard
                                                                                     row={r()}
@@ -1407,7 +1462,7 @@ export function KanbanView(props: {
                                                                                         siblingValuesFor
                                                                                     }
                                                                                 />
-                                                                            </div>
+                                                                            </CardBodyInner>
                                                                         }
                                                                     >
                                                                         <TaskRow
@@ -1433,7 +1488,7 @@ export function KanbanView(props: {
                                                                             }
                                                                         />
                                                                     </Show>
-                                                                </div>
+                                                                </CardFrame>
                                                             )}
                                                         </Show>
                                                     </>
@@ -1458,8 +1513,7 @@ export function KanbanView(props: {
                                                     group().key
                                                 }
                                                 fallback={
-                                                    <button
-                                                        type="button"
+                                                    <PlainButton
                                                         class={styles.kbAddBtn}
                                                         title="Add a card"
                                                         aria-label="Add a card"
@@ -1474,24 +1528,22 @@ export function KanbanView(props: {
                                                             value="Plus"
                                                             size={16}
                                                         />
-                                                    </button>
+                                                    </PlainButton>
                                                 }
                                             >
-                                                <textarea
+                                                <TextInput
+                                                    multiline
+                                                    plain
                                                     class={styles.kbComposer}
                                                     value={draft()}
-                                                    rows={2}
                                                     placeholder="Card title…  (⏎ to add, Esc to close)"
                                                     ref={el =>
                                                         queueMicrotask(() =>
                                                             el.focus(),
                                                         )
                                                     }
-                                                    onInput={e =>
-                                                        setDraft(
-                                                            e.currentTarget
-                                                                .value,
-                                                        )
+                                                    onInput={value =>
+                                                        setDraft(value)
                                                     }
                                                     onKeyDown={e => {
                                                         if (isConfirmKey(e)) {

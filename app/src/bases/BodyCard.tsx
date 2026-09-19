@@ -2,7 +2,8 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { renderValue } from './renderValue'
 import { CardEditor } from './CardEditor'
-import styles from './BaseView.module.css'
+import CardTitle from './CardTitle'
+import styles from './BodyCard.module.css'
 
 /**
  * A body/tasks card: a title chip over a SEAMLESS inline editor of the note (`CardEditor`). Clicking
@@ -17,6 +18,7 @@ export function BodyCard(props: {
     result: ViewResult
     config: BaseConfig
     mode?: 'body' | 'tasks'
+    class?: string
 }) {
     const firstCol = () => props.result.columns[0] ?? 'file.name'
     // Plain-string title used both as the chip and to detect+strip a duplicate `# Title` heading.
@@ -28,10 +30,10 @@ export function BodyCard(props: {
     }
 
     return (
-        <div class={styles.bodyCard}>
-            <div class={styles.cardTitle}>
+        <div class={`${styles.bodyCard} ${props.class ?? ''}`}>
+            <CardTitle>
                 {renderValue(firstCol(), props.row)}
-            </div>
+            </CardTitle>
             <CardEditor
                 path={props.row.file.path}
                 title={titleText()}

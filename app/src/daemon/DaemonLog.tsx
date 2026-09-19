@@ -7,6 +7,7 @@ import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import activityLine from './activityLine'
 import DaemonPanel from './DaemonPanel'
 import EmptyState from '../ui/EmptyState'
+import Text from '../ui/Text'
 import styles from './DaemonLog.module.css'
 
 export type DaemonLogProps = {
@@ -40,21 +41,43 @@ function DaemonLog(props: DaemonLogProps) {
                                     [styles['tone-ok']]: line.tone === 'ok',
                                 }}
                             >
-                                <span class={styles['log-time']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['log-time']}
+                                >
                                     {line.time}
-                                </span>
-                                <span class={styles['log-who']}>
+                                </Text>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['log-who']}
+                                >
                                     {line.who}
-                                </span>
-                                <span
+                                </Text>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
                                     class={styles['log-what']}
                                     title={line.what}
                                 >
                                     {line.what}
-                                </span>
-                                <span class={styles['log-duration']}>
+                                </Text>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['log-duration']}
+                                >
                                     {line.duration ?? ''}
-                                </span>
+                                </Text>
                             </div>
                         )
                     }}

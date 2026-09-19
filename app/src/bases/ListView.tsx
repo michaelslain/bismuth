@@ -5,7 +5,9 @@ import { renderValue, isTaskRow } from './renderValue'
 import { groupColor } from '../ui/StatusDot'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import styles from './ListView.module.css'
 
 export function ListView(props: {
     result: ViewResult
@@ -52,11 +54,22 @@ export function ListView(props: {
                                 class={styles.lghead}
                                 style={{ color: groupColor(group().key) }}
                             >
-                                <span class={styles.dot} />
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles.dot}
+                                />
                                 {group().key}
-                                <span class={styles.count}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="faint"
+                                    weight="inherit"
+                                >
                                     // {group().rows.length}
-                                </span>
+                                </Text>
                             </div>
                         </Show>
                         <For each={group().rows}>
@@ -76,16 +89,20 @@ export function ListView(props: {
                                     ? resolveProperty(authorCol()!, row)
                                     : null
                                 return (
-                                    <div
+                                    <PlainButton
                                         class={styles.lrow}
                                         onClick={() => open(row)}
                                     >
-                                        <span
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
                                             class={styles.ltextGlyph}
                                             aria-hidden="true"
                                         >
                                             ✎
-                                        </span>
+                                        </Text>
                                         <Label fill>
                                             {title == null
                                                 ? row.file.name
@@ -96,18 +113,29 @@ export function ListView(props: {
                                                     typeof author !== 'object'
                                                 }
                                             >
-                                                <span class={styles.lrowAuthor}>
+                                                <Text
+                                                    as="span"
+                                                    size="inherit"
+                                                    tone="faint"
+                                                    weight="inherit"
+                                                >
                                                     {' '}
                                                     — {String(author)}
-                                                </span>
+                                                </Text>
                                             </Show>
                                         </Label>
                                         <Show when={rightCol()}>
-                                            <span class={styles.lrowRight}>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="muted"
+                                                weight="inherit"
+                                                class={styles.lrowRight}
+                                            >
                                                 {renderValue(rightCol()!, row)}
-                                            </span>
+                                            </Text>
                                         </Show>
-                                    </div>
+                                    </PlainButton>
                                 )
                             }}
                         </For>

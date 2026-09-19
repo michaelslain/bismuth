@@ -99,7 +99,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
     const items = () => buildItems(props.session)
 
     return (
-        <span
+        <div
             class={styles['model-menu']}
             data-chat-model
             data-testid="chat-model"
@@ -137,6 +137,6 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                     )}
                 </Show>
             </Show>
-        </span>
+        </div>
     )
 }

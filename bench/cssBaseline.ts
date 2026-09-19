@@ -38,7 +38,8 @@
 // chromeSession.ts.
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { launchChrome } from './chromeSession'
+import { launchChrome, type Cdp } from './chromeSession'
+import { poolSize } from './poolSize'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -47,6 +48,14 @@ const arg = (n: string, d = '') => {
 const has = (n: string) => process.argv.includes(`--${n}`)
 const BASE = arg('base', 'http://localhost:6006')
 const ONLY = arg('story', '')
+/* DERIVED, not a hardcoded constant — see bench/poolSize.ts. 8, matching invariants.ts/playCheck.ts
+   rather than storyAudit.ts's 12: this tool shares their risk, not storyAudit's. storyAudit's higher
+   ceiling is safe specifically BECAUSE a late, CPU-starved mount just costs it another screenshot
+   iteration; this harness instead needs every element's COMPUTED STYLE to be byte-identical across
+   probes, and font/layout timing is exactly what heavier contention perturbs — see the KNOWN
+   NONDETERMINISTIC STORIES note below (a small inline element's height flipping 16<->18 / 10<->12
+   under parallel load). Keeping the ceiling at 8 rather than 12 is a deliberate hedge against that. */
+const CONCURRENCY = Number(arg('concurrency', String(poolSize(8))))
 // SETTLE is only the head start before convergence takes over, not the thing being relied on. Raising
 // a fixed sleep was tried first and does not work: 700ms missed Univer's async toolbar theming,
 // 1500ms still let one story flake under full-suite CPU load, and 2000ms still caught Milkdown
@@ -124,6 +133,17 @@ const DRIFT = join(import.meta.dir, 'css-baseline.drift.txt')
 const W = 1280,
     H = 900
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+/** QUIESCENCE, NOT A COUNTER — see the full reasoning where this used to live, just above the old
+ *  browser-level `Network.enable` listener. Moved up here (was declared after PROBE) because POOLING
+ *  means quiescence can no longer be read off ONE shared CDP socket: `newPage()`'s events all arrive
+ *  on the SAME `session.ws`, undifferentiated by which page they belong to, so a browser-level
+ *  `Network.*` listener would attribute one tab's in-flight request to every OTHER tab's convergence
+ *  loop the instant a second page exists (see bench/chromeSession.ts's own note on this). Tracking it
+ *  IN THE PAGE instead — a `PerformanceObserver` the NET_WATCH script below installs before any story
+ *  code runs — sidesteps the multiplexing problem entirely: each page's `window` is its own isolated
+ *  world, so `performance.now() - window.__cssbNet.last` measured inside PROBE is automatically
+ *  scoped to that one target. NET_QUIET itself (500ms of silence) is unchanged from before pooling. */
+const NET_QUIET = 500
 
 /** The properties worth tracking. Deliberately NOT every property: the full computed set is ~340
  *  properties per element, which makes the baseline enormous and full of values no CSS in this repo
@@ -173,6 +193,8 @@ const PROPS = [
     'text-decoration-line',
     'white-space',
     'text-overflow',
+    'overflow-wrap',
+    'word-break',
     'font-variant-numeric',
     'color',
     'background-color',
@@ -303,7 +325,26 @@ const PROBE = `(async () => {
       out[path(el, rootEl, prefix)] = rec;
     }
   }
-  return JSON.stringify({ count: count, ref: defaults, els: out });
+  // See NET_WATCH below for what populates window.__cssbNet — this is the per-PAGE quiescence read
+  // that replaces the old browser-level Network.* listener (see the NET_QUIET comment for why).
+  const netLast = (window.__cssbNet && window.__cssbNet.last) || -1e12;
+  const netQuiet = (performance.now() - netLast) > ${NET_QUIET};
+  return JSON.stringify({ count: count, ref: defaults, els: out, netQuiet: netQuiet });
+})()`
+
+/** Installed via Page.addScriptToEvaluateOnNewDocument, so it observes every resource load from the
+ *  very first byte of the document — including the one a dynamic import fires before any story code
+ *  has run. PerformanceObserver, not the old CDP Network domain: a \`resource\` timing entry is scoped
+ *  to the page's OWN window, so it is automatically per-target under pooling with no session-id
+ *  filtering required (see the NET_QUIET comment above). performance.now(), not Date.now(): FREEZE
+ *  below replaces window.Date, and a frozen clock would make every reading of "how long since the
+ *  last request" permanently 0 or permanently huge depending on load order. */
+const NET_WATCH = `(() => {
+  window.__cssbNet = { last: performance.now() };
+  try {
+    const po = new PerformanceObserver(() => { window.__cssbNet.last = performance.now(); });
+    po.observe({ type: 'resource', buffered: true });
+  } catch {}
 })()`
 
 /** Installed via Page.addScriptToEvaluateOnNewDocument, so it runs before ANY story code — including
@@ -367,7 +408,17 @@ const index = await (await fetch(`${BASE}/index.json`)).json()
  * budget exceeds it, and confirm the component renders when invoked directly. "I already fixed three
  * things in the harness" is not evidence; fixes are not measurements.
  */
-const UNSTABLE: string[] = ['app-sheetview--default', 'app-sheetview--empty']
+// `app-terminal--drop-affordance-before-font-load` deliberately monkeypatches `document.fonts.load`
+// to stay pending forever (see Terminal.stories.tsx's `installPendingFontLoad`) — the story only
+// resolves it from inside its own `play()`, which this harness never runs (`bun run play` is the
+// only tool that does). So every capture here is frozen in Terminal's pre-mount state, at the mercy
+// of whatever that DOM happens to be mid-render — not a rendering result any component author
+// controls, and not something a css-baseline diff can usefully assert about.
+const UNSTABLE: string[] = [
+    'app-sheetview--default',
+    'app-sheetview--empty',
+    'app-terminal--drop-affordance-before-font-load',
+]
 
 const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
 /** An excluded story is skipped unless it is named EXACTLY.
@@ -403,102 +454,18 @@ if (ONLY)
 // NOT have it, because its readiness loop waits for animation to settle.
 // SESSION IS MUTABLE so a dead browser can be REPLACED mid-sweep rather than ending the run.
 // Chrome's renderer gets killed under memory pressure — the CDP call then rejects with "Session with
-// given id not found" — and this sweep is 404 stories long. Aborting was the original behaviour and
+// given id not found" — and this sweep is 600+ stories long. Aborting was the original behaviour and
 // it is defensible (a half-finished run must never be mistaken for a pass), but in practice it threw
 // away 20+ minutes of work three times in one session for a fault that has nothing to do with the
 // code under test. Relaunching and retrying the story preserves the real invariant — the run still
 // covers every story or fails loudly — while surviving something outside its control.
-let session = await launchChrome({
+const LAUNCH_OPTS = {
     label: 'cssbase',
     width: W,
     height: H,
     flags: ['--force-prefers-reduced-motion'],
-})
-let page = session.page
-let lastNetAt = Date.now()
-
-// NETWORK-IDLE GATING. The failure this closes: app-sheetview settles on THREE elements — the shell
-// that renders before `sheet/univerSheet.ts`'s dynamic import resolves. Three elements holding
-// perfectly still is indistinguishable from an ordinary static story, so neither the identical-capture
-// test nor the growth escalation fires; the harness records a spreadsheet that never loaded. Observed
-// as 0, 0, 1156, 1156 changed across four isolated checks of unmodified code, where 1156 is exactly
-// the 578 elements Univer would have added, twice.
-//
-// Element counts cannot see this. A pending module request can, so the settle condition becomes
-// "stopped changing AND has nothing left to fetch". This generalises past Univer to every code-split
-// surface in the app (Milkdown, the drawing canvas, the graph renderer), which is the point — the
-// alternative was a hand-maintained list of slow stories that the next code-split component silently
-// falls off.
-const attachNetworkWatch = () => {
-    session.ws.addEventListener('message', e => {
-        let m: any
-        try {
-            m = JSON.parse(String((e as MessageEvent).data))
-        } catch {
-            return
-        }
-        if (typeof m.method === 'string' && m.method.indexOf('Network.') === 0)
-            lastNetAt = Date.now()
-    })
 }
-
-await page('Network.enable')
-// QUIESCENCE, NOT A COUNTER. An in-flight counter was tried first and is the wrong shape: any request
-// that never emits a terminal event (a cancelled fetch, a redirect chain, an EventSource) pins it
-// permanently above zero, and the story can then NEVER satisfy the settle condition. That is not a
-// theoretical objection — the counter version pushed app-inboxpageview--* and editor-editor--* from
-// converging normally to "never converged in 20 probes", i.e. it manufactured arbitrary recordings for
-// four stories that had been fine. Timestamping the last network event instead cannot leak: the worst
-// a lost event can do is let the page look idle slightly early, which is the pre-existing behaviour
-// rather than a new failure mode.
-const NET_QUIET = 500
-attachNetworkWatch()
-const netQuiet = () => Date.now() - lastNetAt > NET_QUIET
-
-// PER-TOOL, deliberately not in the helper: this harness needs a fixed viewport at scale 1, a pinned
-// timezone and a frozen clock (see DETERMINISM above). visual.ts renders at scale 2 and needs real
-// time, so none of the three can be a shared default.
-const configurePage = async () => {
-    await page('Network.enable')
-    await page('Emulation.setDeviceMetricsOverride', {
-        width: W,
-        height: H,
-        deviceScaleFactor: 1,
-        mobile: false,
-    })
-    // UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
-    await page('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
-    await page('Page.addScriptToEvaluateOnNewDocument', { source: FREEZE })
-}
-await configurePage()
-
-/** Replace a dead browser and restore every per-session setting.
- *
- *  EVERY setting has to be re-applied, and forgetting one would be silent: a fresh Chrome has the
- *  host timezone and a live clock, so stories recorded after an un-configured recovery would drift
- *  against ones recorded before it, and the diff would point at the CALENDAR rather than at the
- *  recovery. That is why setup lives in configurePage() and is called from exactly two places rather
- *  than being written out twice. */
-const recoverBrowser = async (why: string) => {
-    process.stderr.write(
-        `\n  browser died (${why}) — relaunching and retrying\n`,
-    )
-    try {
-        session.close()
-    } catch {
-        /* already gone; the point is to not leak the profile */
-    }
-    session = await launchChrome({
-        label: 'cssbase',
-        width: W,
-        height: H,
-        flags: ['--force-prefers-reduced-motion'],
-    })
-    page = session.page
-    lastNetAt = Date.now()
-    attachNetworkWatch()
-    await configurePage()
-}
+let session = await launchChrome(LAUNCH_OPTS)
 
 /** True for the two ways a browser announces it is gone. Anything else is a real protocol error and
  *  must NOT be swallowed as a transient — retrying a genuine bug forever would turn a loud failure
@@ -512,15 +479,89 @@ const isDeadSession = (e: unknown) => {
     )
 }
 
+/** One fully-configured target: fixed viewport at scale 1, pinned timezone, frozen clock (see
+ *  DETERMINISM above) and the NET_WATCH quiescence probe. PER-TOOL, deliberately not folded into
+ *  chromeSession.ts's helper — visual.ts renders at scale 2 and needs real time, so none of the
+ *  style-reading tools' setup can be a shared default there.
+ *
+ *  ONE CALL PER POOL SLOT, not once per browser: every setting below is target-scoped (CDP methods
+ *  attach to a session, not the browser as a whole), which is exactly what makes pooling possible —
+ *  each of the CONCURRENCY pages gets its own independently-configured target. `newPage()` itself
+ *  already applies the two subtler per-target fixes a pooled tab needs to paint at all
+ *  (`Page.setWebLifecycleState` + `Emulation.setFocusEmulationEnabled` — see chromeSession.ts) so
+ *  this harness gets those for free. */
+const preparePage = async (): Promise<Cdp> => {
+    const p = await session.newPage()
+    await p('Emulation.setDeviceMetricsOverride', {
+        width: W,
+        height: H,
+        deviceScaleFactor: 1,
+        mobile: false,
+    })
+    // UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
+    await p('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
+    await p('Page.addScriptToEvaluateOnNewDocument', { source: FREEZE })
+    await p('Page.addScriptToEvaluateOnNewDocument', { source: NET_WATCH })
+    return p
+}
+
+/** Replace the whole browser — used only when the browser itself, not just one target, is gone
+ *  (`session.newPage()` rejects). SHARED across every worker via one cached promise: with
+ *  CONCURRENCY pages on a single browser process, a real crash takes all of them out in the same
+ *  tick, and without this cache every worker would independently relaunch its own Chrome —
+ *  CONCURRENCY browsers doing the work of one, and every relaunch after the first leaking a profile
+ *  the SIGKILL-then-retry teardown never gets a clean chance to run for. */
+let relaunching: Promise<void> | null = null
+const relaunchBrowser = (why: string): Promise<void> => {
+    if (!relaunching) {
+        process.stderr.write(`\n  browser died (${why}) — relaunching\n`)
+        relaunching = (async () => {
+            try {
+                session.close()
+            } catch {
+                /* already gone; the point is to not leak the profile */
+            }
+            session = await launchChrome(LAUNCH_OPTS)
+        })().finally(() => {
+            relaunching = null
+        })
+    }
+    return relaunching
+}
+
+/** A worker's target died (isDeadSession). Try the cheap recovery first — a fresh target on the SAME
+ *  browser, which is all a single crashed renderer needs — and only fall back to replacing the whole
+ *  browser when that itself fails, meaning the browser process is the thing that is actually gone.
+ *  `id` is the story in flight when the target died, threaded through solely so a DOUBLE failure
+ *  (browser relaunches and the fresh target still won't come up) rethrows with the same story-id
+ *  prefix every other fatal error in this file uses (see the `CDP died on "${id}"` throw below) —
+ *  without it this was the one failure path in the sweep that surfaced as a bare, unattributed
+ *  protocol error. */
+const recoverPage = async (id: string): Promise<Cdp> => {
+    try {
+        return await preparePage()
+    } catch (e) {
+        await relaunchBrowser((e as Error).message.slice(0, 60))
+        try {
+            return await preparePage()
+        } catch (e2) {
+            throw new Error(
+                `${id}: recoverPage failed twice — browser relaunch did not recover a working target: ${(e2 as Error).message}`,
+            )
+        }
+    }
+}
+
 const captured: Record<string, any> = {}
 const empty: string[] = []
 // Progress goes to stderr every story. A full run holds the terminal for minutes with nothing to
 // show, which reads as a hang — and any supervisor watching the stream (a subagent watchdog, CI's
 // no-output timeout) will kill it on exactly that silence. \r keeps it to one line interactively.
 const unstable: string[] = []
-/** Stories whose browser had to be replaced mid-run. Reported at the end: a sweep that survived three
- *  renderer deaths is still a valid sweep, but the reader should know the machine was struggling
- *  rather than be shown an unqualified green. */
+/** Stories whose target had to be replaced mid-run — a single crashed renderer or a whole dead
+ *  browser, reported the same way. Reported at the end: a sweep that survived some renderer deaths is
+ *  still a valid sweep, but the reader should know the machine was struggling rather than be shown an
+ *  unqualified green. */
 const recovered: string[] = []
 
 /** Probe the CURRENTLY-LOADED page until it stops changing, then return the capture.
@@ -532,7 +573,12 @@ const recovered: string[] = []
  *  stories with no warning, while re-checking each in isolation gave `0 changed`. Hence the
  *  drift-retry pass below: a plateau is broken by re-loading the story on its own, and a real
  *  regression survives that. */
-const captureOne = async (id: string, settle: number, wait: number) => {
+const captureOne = async (
+    p: Cdp,
+    id: string,
+    settle: number,
+    wait: number,
+) => {
     await sleep(settle)
     // `grew` escalates the stability requirement for staged mounters ONLY, so the ~250 stories that
     // render in one shot pay nothing for Univer's benefit. See the growth note at the break below.
@@ -543,7 +589,7 @@ const captureOne = async (id: string, settle: number, wait: number) => {
         grew = false,
         need = STABLE
     for (let i = 0; i < MAX_TRIES; i++) {
-        const r = await page('Runtime.evaluate', {
+        const r = await p('Runtime.evaluate', {
             expression: PROBE,
             returnByValue: true,
             awaitPromise: true,
@@ -587,9 +633,15 @@ const captureOne = async (id: string, settle: number, wait: number) => {
         if (i > 0 && count > maxCount) grew = true
         if (count > maxCount) maxCount = count
         need = grew ? STABLE + 3 : STABLE
+        // `netQuiet` now travels INSIDE `value` (see PROBE/NET_WATCH above) rather than through a
+        // browser-level listener — pooling means quiescence has to be read per-PAGE, not per-browser
+        // (see the NET_QUIET comment). Pulled out with a regex before JSON.parse, the same way `count`
+        // already is: a network blip that changes nothing else in `value` still needs to break the
+        // identical-capture streak, exactly as it did before pooling.
+        const netQuiet = /"netQuiet":(true|false)/.exec(value)?.[1] === 'true'
         // `inflight <= 0` is part of the settle condition, not a separate wait: a story can be visually
         // still purely because the thing that will change it has not been delivered yet.
-        same = value === last && count > 0 && netQuiet() ? same + 1 : 0
+        same = value === last && count > 0 && netQuiet ? same + 1 : 0
         last = value
         if (same >= need - 1) break
         await sleep(wait)
@@ -617,46 +669,72 @@ const beacon = (label: string, n: number, total: number) => {
     }
 }
 
+/* Index-based pool, the same shape playCheck.ts and storyAudit.ts already use: CONCURRENCY prepared
+   targets, each pulling the next index until the list is exhausted. `pages[i]` is kept up to date by
+   its own worker (not just read once at pool-creation time) so that after a per-target recovery the
+   DRIFT-RETRY PASS below — which runs after every worker has finished — can reuse a page that is
+   actually still alive, rather than the possibly-dead one the pool started with. */
+const pages: Cdp[] = await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, storyIds.length) }, preparePage),
+)
+let next = 0
 let done = 0
-for (const id of storyIds) {
-    process.stderr.write(
-        `\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`,
-    )
-    beacon(UPDATE ? 'record' : 'gate', done, storyIds.length)
-    // A CDP call can reject outright — "Session with given id not found" when the renderer falls over,
-    // which happened once at story 185 of 247 under memory pressure from a second browser. Left
-    // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO
-    // indication of which story was in flight, which is the least useful possible failure. Name the
-    // story, then rethrow: a half-finished run must not be mistaken for a pass.
-    let got: Awaited<ReturnType<typeof captureOne>> = null
-    // One retry, after replacing the browser. Not a loop: if a FRESH Chrome dies on the same story
-    // immediately, the story itself is killing the renderer and retrying forever would hide that
-    // behind an eternally-running sweep.
-    for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-            await page('Page.navigate', {
-                url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
-            })
-            got = await captureOne(id, SETTLE, CONVERGE_WAIT)
-            break
-        } catch (e) {
-            if (attempt === 0 && isDeadSession(e)) {
-                recovered.push(id)
-                await recoverBrowser((e as Error).message.slice(0, 60))
-                continue
+/* A genuine (non-dead-session) CDP error is fatal — "a half-finished run must not be mistaken for a
+   pass" — but with several workers in flight, throwing straight out of one would leave the others
+   running unobserved and their rejections unhandled. Instead a worker records the error and returns;
+   every worker checks it before claiming its next story, so the pool drains promptly, and it is
+   rethrown once after `Promise.all` settles. */
+let fatalError: Error | null = null
+const worker = async (idx: number) => {
+    let p = pages[idx]!
+    for (;;) {
+        if (fatalError) return
+        const i = next++
+        if (i >= storyIds.length) return
+        const id = storyIds[i]!
+        let got: Awaited<ReturnType<typeof captureOne>> = null
+        // One retry, after replacing this worker's target. Not a loop: if a FRESH target dies on the
+        // same story immediately, the story itself is killing the renderer and retrying forever would
+        // hide that behind an eternally-running sweep.
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                await p('Page.navigate', {
+                    url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+                })
+                got = await captureOne(p, id, SETTLE, CONVERGE_WAIT)
+                break
+            } catch (e) {
+                if (attempt === 0 && isDeadSession(e)) {
+                    recovered.push(id)
+                    p = await recoverPage(id)
+                    pages[idx] = p
+                    continue
+                }
+                // A CDP call can reject outright — "Session with given id not found" when the renderer
+                // falls over, which happened once at story 185 of 247 under memory pressure from a
+                // second browser. Left unhandled that surfaces as a raw protocol error with a stack
+                // pointing at the RPC helper and NO indication of which story was in flight, which is
+                // the least useful possible failure. Name the story, then fail the whole sweep.
+                fatalError = new Error(
+                    `CDP died on "${id}" (story ${done + 1}/${storyIds.length}): ${(e as Error).message}`,
+                )
+                return
             }
-            process.stderr.write('\n')
-            throw new Error(
-                `CDP died on "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`,
-            )
         }
+        done++
+        beacon(UPDATE ? 'record' : 'gate', done, storyIds.length)
+        process.stderr.write(
+            `\r[${done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`,
+        )
+        if (!got) continue
+        if (!got.settled) unstable.push(id)
+        if (got.count === 0) empty.push(id)
+        captured[id] = { ref: got.ref, els: got.els }
     }
-    if (!got) continue
-    if (!got.settled) unstable.push(id)
-    if (got.count === 0) empty.push(id)
-    captured[id] = { ref: got.ref, els: got.els }
 }
+await Promise.all(pages.map((_, idx) => worker(idx)))
 process.stderr.write('\n')
+if (fatalError) throw fatalError
 // The browser is NOT released here. It was, until the drift-retry pass below needed to re-load a
 // story — and closing first turned every retry into a dead-session catch that silently kept the
 // first-pass verdict. close() is idempotent and registered on process exit; the explicit call now sits
@@ -705,7 +783,14 @@ if (UPDATE) {
             next = { ...carried, ...captured }
         }
     }
-    writeFileSync(OUT, JSON.stringify(next, null, 1))
+    // SORTED BY STORY ID, not insertion order. `captured`'s own keys land in whatever order the pool
+    // happened to finish each story in — nondeterministic run to run now that stories complete out of
+    // order — and `JSON.stringify` on a plain object walks keys in insertion order, so writing `next`
+    // as-is would reorder the file on every re-record with no value actually different. A reordered
+    // baseline is a diff nobody asked for and a `git blame` that lies about what changed.
+    const sortedNext: Record<string, unknown> = {}
+    for (const id of Object.keys(next).sort()) sortedNext[id] = next[id]
+    writeFileSync(OUT, JSON.stringify(sortedNext, null, 1))
     console.log(
         `recorded ${Object.keys(captured).length} stories -> ${OUT} (${Object.keys(next).length} total)`,
     )
@@ -770,8 +855,10 @@ const diffStory = (
 }
 
 const perStory = new Map<string, string[]>()
-for (const id of Object.keys(captured))
-    perStory.set(id, diffStory(id, captured[id]))
+// storyIds, not Object.keys(captured): the pool completes stories out of order, so captured's own
+// key order is nondeterministic run to run — walking storyIds (sorted at definition) keeps the
+// printed diff and the drift file in a stable, reviewable order regardless of completion order.
+for (const id of storyIds) if (id in captured) perStory.set(id, diffStory(id, captured[id]))
 
 // RETRY the drifted stories, one at a time, with a fresh load and more patience.
 //
@@ -795,9 +882,14 @@ if (drifted.length > RETRY_CAP && !UPDATE) {
     process.stderr.write(
         `re-checking ${drifted.length} drifted story(s) in isolation before reporting…\n`,
     )
+    // ONE page, not the whole pool — mirrors storyAudit.ts's serial empty-render recheck. `pages[0]`
+    // rather than a freshly-captured `session.page`: it is kept live by `worker()` writing back into
+    // `pages` on every per-target recovery, so this reuses whichever target is actually still alive
+    // rather than the one the pool started with.
+    const retryPage = pages[0]!
     for (const id of drifted) {
         try {
-            await page('Page.navigate', {
+            await retryPage('Page.navigate', {
                 url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
             })
         } catch {
@@ -809,7 +901,7 @@ if (drifted.length > RETRY_CAP && !UPDATE) {
             )
             break
         }
-        const again = await captureOne(id, SETTLE * 2, CONVERGE_WAIT * 2)
+        const again = await captureOne(retryPage, id, SETTLE * 2, CONVERGE_WAIT * 2)
         if (!again) continue
         const d2 = diffStory(id, again)
         // ALWAYS report the outcome, not just an improvement. Printing only when the retry helped

@@ -10,19 +10,15 @@
 //     133 of these, each verified present (`!!data.icons[slug]`) before this file was written.
 //   - { kind: 'custom' } — a hand-authored inline SVG body, for the two names Phosphor genuinely
 //     has no concept for but the app cannot leave blank: Regex ('.*') and WholeWord ('[W]'), both
-//     visible controls in the editor find panel. Same monospace-text-mark approach as the
-//     specimen's CUSTOM_SVGS, at Phosphor's native 0-256 viewBox so they sit at the same visual
-//     weight as their mapped neighbours.
+//     visible controls in the editor find panel. A monospace-text-mark approach, at Phosphor's
+//     native 0-256 viewBox so they sit at the same visual weight as their mapped neighbours.
 //   - absent from this file entirely — see KNOWN_MISSING below. A GENUINE gap, never invented art.
 //
-// PROVENANCE. Copied from (not imported from) app/src/icons/specimen/iconSetData.ts's
-// ICON_MAP + CUSTOM_SVGS, which is the record of how each slug was chosen — kebab-case the
-// canonical name, and where that missed, grep the real @iconify-json/ph key list by hand for a
-// semantic equivalent, verifying with `!!data.icons[slug]` before it went in the table. Copied
-// rather than imported because the specimen is a historical record of the DECISION and must not
-// become a runtime dependency of the shipped app (plan: "do not delete app/src/icons/specimen/").
-// See the specimen and plan §10.2 for the full per-name reasoning, including the ten names that
-// looked like gaps and turned out to be mapping misses (BrainCircuit -> head-circuit, etc).
+// PROVENANCE. Each slug was chosen by kebab-casing the canonical name, and where that missed,
+// grepping the real @iconify-json/ph key list by hand for a semantic equivalent, verifying with
+// `!!data.icons[slug]` before it went in the table. See plan §10.2 (the Phosphor migration) for
+// the full per-name reasoning, including the ten names that looked like gaps and turned out to be
+// mapping misses (BrainCircuit -> head-circuit, etc).
 export type PhosphorEntry =
     | { kind: 'slug'; slug: string }
     | { kind: 'custom'; body: string; viewBox: string }

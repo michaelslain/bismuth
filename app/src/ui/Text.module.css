@@ -7,35 +7,41 @@
    (App.css's `.app-shell { font: … "Monaspace Xenon" … }`), and every descendant — including
    the existing markdown prose in styles/content.css — inherits it rather than re-declaring it.
    `.storybook/preview.ts` reproduces that same root rule on `body` for exactly this reason, so
-   Text renders in the real interface font in Storybook too without this file naming it again. */
+   Text renders in the real interface font in Storybook too without this file naming it again.
+
+   `.text` itself carries ONLY the one rule every variant shares — every size/tone step,
+   INCLUDING the defaults ('body'/'default'), is its own class below, so `size="inherit"` /
+   `tone="inherit"` can genuinely emit neither font-size+line-height nor color. The
+   `overflow-wrap: anywhere` guard against a long unbroken token (url, id, filename) blowing
+   out its container — the same rule NoteTitle.module.css and bases/BaseView.module.css's
+   .cardTitle already lean on — lives on each SIZE step instead, so 'inherit' mode is a true
+   pass-through and emits no line-breaking change either. */
 
 .text {
   margin: 0;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-regular);
-  line-height: var(--lh-prose);
-  color: var(--fg);
-  /* A long unbroken token (url, id, filename) must not blow out its container — the same
-     rule NoteTitle.module.css and bases/BaseView.module.css's .cardTitle already lean on. */
-  overflow-wrap: anywhere;
 }
 
-/* ── size (ui/ui.css --fs-*) — 'body' is the rule above and adds no class ── */
-.text--micro { font-size: var(--fs-micro); line-height: var(--lh-ui); }
-.text--ui { font-size: var(--fs-ui); line-height: var(--lh-ui); }
-.text--body-lg { font-size: var(--fs-body-lg); }
-.text--lead { font-size: var(--fs-lead); line-height: var(--lh-tight); }
+/* ── size (ui/ui.css --fs-*) — 'inherit' emits none of these ── */
+.text--micro { font-size: var(--fs-micro); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.text--ui { font-size: var(--fs-ui); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.text--body { font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; }
+.text--body-lg { font-size: var(--fs-body-lg); line-height: var(--lh-prose); overflow-wrap: anywhere; }
+.text--lead { font-size: var(--fs-lead); line-height: var(--lh-tight); overflow-wrap: anywhere; }
 
-/* ── tone — 'default' (--fg) is the rule above and adds no class ── */
+/* ── tone — 'inherit' emits none of these ── */
+.text--default { color: var(--fg); }
 .text--muted { color: var(--text-muted); }
 .text--faint { color: var(--faint); }
 
-/* ── weight (--fw-*) — 'regular' is the rule above and adds no class ── */
+/* ── weight (--fw-*) — font-weight INHERITS, so a Text rendered inside a bold/medium ancestor
+   (a button label, a heading row, a th) needs its own default pinned just like size/tone;
+   leaving 'regular' unset let it silently inherit the ancestor's weight instead of 400. ── */
+.text--regular { font-weight: var(--fw-regular); }
 .text--medium { font-weight: var(--fw-medium); }
 .text--bold { font-weight: var(--fw-bold); }
 
 /* ── eyebrow — the uppercase, tracked "section label" register already hand-rolled per call
-   site as DaemonList.module.css's .daemon-section-head and graph/Graph.module.css's
+   site as DaemonList.module.css's .daemon-section-head and GraphView.module.css's
    .graph-card-h. Structural only: it does not imply a tone or weight, because the two existing
    uses disagree (the daemon/graph heads are faint + regular; ui.css's own
    .ui-empty-block h2 eyebrow is --fg + bold) — pass tone/weight explicitly alongside it. The

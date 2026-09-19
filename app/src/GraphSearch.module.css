@@ -1,0 +1,62 @@
+/* app/src/GraphSearch.module.css — GraphSearch.tsx's own chrome (its ONLY importer).
+
+   Split out of GraphView.module.css (Task 10, ds-conformance: that file had two importers —
+   GraphView.tsx and GraphSearch.tsx — violating one-module-one-importer). Everything GraphSearch
+   draws for itself now lives here.
+
+   TWO REGISTERS, one file, picked by a `data-embedded` attribute GraphSearch.tsx sets on its own
+   root from an `embedded` prop — not by a foreign class name. The real app renders GraphSearch
+   ONLY inside GraphView's `.graph-find-panel` (GraphView is its one caller) and always passes
+   `embedded`, which is why the tighter, ASCII-register rules below exist. The Storybook stories
+   (`app-graphsearch--default`/`--no-matches`) mount `<GraphSearch>` standalone with no such
+   ancestor and no `embedded` prop, which is exactly the case the bare (non-embedded) rules below
+   are for — `bench/probeStory.ts app-graphsearch--default` caught the diff the last time this was
+   collapsed into one unconditional rule, so the two stay separate registers, just co-located in
+   one file instead of split across a cross-module class reach. See
+   `one-module-one-importer`/`unreacty-dom`-style rules: a parent that needs to change a child's
+   look across a component boundary sets a runtime hook (`data-*`) on the child, rather than the
+   child's own module getting a second importer or the parent reaching into the child's hashed
+   classes.
+
+   `.graph-search-row .graph-search-sub`'s font-size is now `var(--fs-micro)` (was a literal
+   `10.5px`) — the token the value always equalled; nothing renders differently. */
+
+.graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
+
+/* Graph Find search bar — a compact sibling of palette/Palette.module.css's `.palette-search`
+   (same anatomy: leading icon + transparent input + border-bottom divider above the result list). */
+.graph-search-bar { padding: var(--sp-5) var(--sp-5); gap: var(--sp-4); }
+.graph-search-bar :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
+.graph-search-bar :global(.search-bar-input) { font-size: var(--fs-body); }
+.graph-search[data-embedded] .graph-search-bar { padding: var(--sp-3) var(--sp-4); gap: var(--sp-4); }
+.graph-search[data-embedded] .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-ui); }
+
+/* Divider rides the list's top so it only shows alongside results (no empty sliver). */
+.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: var(--sp-2); }
+.graph-search[data-embedded] .graph-search-list { font-size: var(--fs-ui); padding: var(--sp-2); }
+
+.graph-search-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-0); cursor: pointer; white-space: nowrap; background: transparent; }
+.graph-search[data-embedded] .graph-search-row { border-radius: var(--r-0); padding: 1px var(--sp-2); gap: var(--sp-3); color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.graph-search[data-embedded] .graph-search-row:hover { background: var(--hover-bg); }
+/* `.selected` is the app-wide bare state-class convention (see palette/Palette.module.css's
+   header). The base rule's `background` here is the SAME value the embedded override below also
+   sets — no behavioural difference in the real app (the override always wins where both could
+   apply), but the base rule still has to exist standalone for the non-embedded Storybook story. */
+.graph-search-row:global(.selected) { background: var(--accent-soft); }
+.graph-search[data-embedded] .graph-search-row:global(.selected) { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
+/* `.graph-search-label`'s flex/min-width/overflow/ellipsis/color(--fg) live on ui/Label.tsx
+   (`<Label fill tone="default">`) — this selector stays ONLY for the `:global(.selected)`
+   override below, which must keep reaching the element by this exact class name. */
+.graph-search[data-embedded] .graph-search-row:global(.selected) .graph-search-label { color: var(--accent); }
+
+/* Each result carries the same node glyph the field draws it with, so a row and its node read as
+   the same object — embedded-only, there is no bare-register version (there never was one). */
+.graph-search[data-embedded] .graph-search-glyph { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); width: var(--cell-w); flex: 0 0 auto; text-align: center; }
+.graph-search[data-embedded] .graph-search-row:global(.selected) .graph-search-glyph { color: var(--accent); }
+
+/* Placement only — overflow/ellipsis/white-space(nowrap)/color(--faint) live on ui/Label.tsx
+   (`<Label tone="faint">`). */
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: var(--sp-5); max-width: 42%; flex-shrink: 0; text-align: right; font-size: var(--fs-micro); }
+
+.graph-search-empty { padding: var(--sp-4) var(--sp-4); color: var(--faint); font-size: var(--fs-micro); }
+.graph-search[data-embedded] .graph-search-empty { padding: var(--sp-3) var(--sp-4); font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }

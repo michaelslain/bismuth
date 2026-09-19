@@ -17,11 +17,20 @@
 // Typecheck always runs across ALL workspaces regardless: it is ~12s and it is the only thing that
 // catches a change in one workspace breaking another's types.
 //
+// A THIRD, INDEPENDENT step guards the design system: whenever a staged path touches app/src/,
+// DESIGN.md, design-system.baseline.json or scripts/designSystem/ (see touchesDesignSystem below),
+// this also runs the design-system gate (scripts/designSystem/gate.mjs — component/story/token
+// conformance against DESIGN.md's governance block, ratcheted by design-system.baseline.json) and
+// bench/tokenLint.ts (the literal-px/blurred-shadow/backdrop-filter sweep tokenLint still owns —
+// see that file's header for the split of responsibility) as one combined step, so there is one
+// design-system gate in pre-commit and no check runs twice.
+//
 // Escape hatches, in order of preference:
 //   BISMUTH_SKIP_GATE=1 git commit …   — skip the gate, on purpose, visibly
 //   git commit --no-verify             — skip every hook (blunter)
 // Both are legitimate for a WIP commit on a branch. Neither should be how you land on main.
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 
 const WORKSPACES = [
     'core',
@@ -57,6 +66,50 @@ export function affectedWorkspaces(staged: string[]): Workspace[] {
         if (ws) hit.add(ws)
     }
     return WORKSPACES.filter(w => hit.has(w))
+}
+
+/**
+ * Does this staged-file set touch anything the design-system gate + tokenLint care about?
+ * Exported (and pure) so gate.test.ts can pin the routing without touching git or the filesystem.
+ *
+ * Covers: any app/src/** file (what both checks scan), DESIGN.md (the governance manifest both
+ * checks parse), design-system.baseline.json (the debt ratchet), and scripts/designSystem/**
+ * (the copied checks themselves — a change there should prove itself against the repo it gates).
+ */
+export function touchesDesignSystem(staged: string[]): boolean {
+    return staged.some(
+        f =>
+            f.startsWith('app/src/') ||
+            f === 'DESIGN.md' ||
+            f === 'design-system.baseline.json' ||
+            f.startsWith('scripts/designSystem/'),
+    )
+}
+
+export type GatePlan = {
+    /** Run `bun run typecheck` across every workspace. */
+    typecheck: boolean
+    /** Which workspaces' fast test suites to run (empty = none). */
+    tests: Workspace[]
+    /** Run the design-system gate + tokenLint as the combined third step. */
+    designSystem: boolean
+}
+
+/**
+ * What a run of the gate would DO for this staged-file set, decided but not executed — the pure
+ * core `main()` below consumes, so a regression in the decision (e.g. the design-system step
+ * silently stopping tests) is a plain pinned-input/output test, not something only a live git
+ * commit would exercise. Typecheck and the fast test suites always travel together: typecheck is
+ * "did ANY workspace change enough to need testing at all", so it only runs when `tests` is
+ * non-empty.
+ */
+export function plan(staged: string[]): GatePlan {
+    const tests = affectedWorkspaces(staged)
+    return {
+        typecheck: tests.length > 0,
+        tests,
+        designSystem: touchesDesignSystem(staged),
+    }
 }
 
 /** Staged files, relative to the repo root. Added/copied/modified/renamed only — a pure deletion
@@ -151,9 +204,10 @@ function main(): void {
         process.exit(0)
     }
 
-    const targets = affectedWorkspaces(staged)
-    if (targets.length === 0) {
-        // Docs, design assets, .gitignore — nothing a test or the typechecker covers.
+    const { typecheck, tests, designSystem } = plan(staged)
+    if (tests.length === 0 && !designSystem) {
+        // Docs, design assets, .gitignore — nothing a test, the typechecker or the design-system
+        // gate covers.
         process.stdout.write(
             '\x1b[2m[gate] no source workspace touched — skipping tests\x1b[0m\n',
         )
@@ -161,23 +215,36 @@ function main(): void {
     }
 
     process.stdout.write(
-        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${targets.join(', ')}\x1b[0m\n`,
+        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${tests.join(', ') || '(none)'}${designSystem ? ' + design system' : ''}\x1b[0m\n`,
     )
 
-    let ok = run('typecheck (all workspaces)', 'bun', ['run', 'typecheck'])
-    // Pass `cli/` not `cli`: `bun test <arg>` is a SUBSTRING match on the whole path, not a
-    // workspace selector. Bare `cli` also matches core/test/chatProviders/clineMocked.test.ts
-    // ("cli" is in "clineMocked"), so the gate silently ran 7 unrelated tests and reported a
-    // count nobody could reconcile. The trailing slash scopes it to the directory.
-    if (ok) {
-        ok = run(
-            `tests (fast) — ${targets.join(', ')}`,
-            'bun',
-            ['test', ...targets.map(t => `${t}/`)],
-            {
-                BISMUTH_FAST_TESTS: '1',
-            },
-        )
+    let ok = true
+    if (typecheck) {
+        ok = run('typecheck (all workspaces)', 'bun', ['run', 'typecheck'])
+        // Pass `cli/` not `cli`: `bun test <arg>` is a SUBSTRING match on the whole path, not a
+        // workspace selector. Bare `cli` also matches core/test/chatProviders/clineMocked.test.ts
+        // ("cli" is in "clineMocked"), so the gate silently ran 7 unrelated tests and reported a
+        // count nobody could reconcile. The trailing slash scopes it to the directory.
+        if (ok) {
+            ok = run(
+                `tests (fast) — ${tests.join(', ')}`,
+                'bun',
+                ['test', ...tests.map(t => `${t}/`)],
+                {
+                    BISMUTH_FAST_TESTS: '1',
+                },
+            )
+        }
+    }
+
+    // One combined design-system step: the manifest/story/token gate AND tokenLint's literal-px/
+    // shadow/backdrop-filter sweep, so there is one design-system gate in pre-commit, not two.
+    if (ok && designSystem) {
+        const baselinePath = 'design-system.baseline.json'
+        const gateArgs = ['scripts/designSystem/gate.mjs', '--root', '.']
+        if (existsSync(baselinePath)) gateArgs.push('--baseline', baselinePath)
+        ok = run('design system (manifest + stories + tokens)', process.execPath, gateArgs)
+        if (ok) ok = run('design system (tokenLint)', 'bun', ['bench/tokenLint.ts'])
     }
 
     if (!ok) {

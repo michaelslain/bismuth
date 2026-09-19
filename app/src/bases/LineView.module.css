@@ -1,0 +1,12 @@
+/* ---------- line chart (bases-line.card.html) ----------
+   A value over time, plotted on the character grid: a <pre> block built by
+   LineView's pure ascii-plot helper (asciiLine.ts). */
+.linePlot {
+  margin: 0;
+  white-space: pre;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: 15px;
+  color: var(--faint);
+}
+.linePlot .glyph { color: var(--accent); }

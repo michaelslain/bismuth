@@ -58,6 +58,7 @@ export interface ColorTokens {
     glowText?: string // --glow-text
     accentSoft?: string // --accent-soft
     onAccent?: string // --on-accent
+    onScrim?: string // --on-scrim (always-legible foreground over an arbitrary-photo scrim)
 
     // Category hues (Bases statuses, calendar event categories, map pins, chart series).
     // CATEGORICAL, not semantic — distinct from --success/--danger so destructive/success
@@ -178,6 +179,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         glowText: 'none',
         accentSoft: 'rgba(147,189,176,0.12)',
         onAccent: '#15161A',
+        onScrim: '#fff',
         categoryTeal: CATEGORY_SWATCHES.teal,
         categoryBlue: CATEGORY_SWATCHES.blue,
         categoryViolet: CATEGORY_SWATCHES.violet,
@@ -220,6 +222,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         glowText: 'none',
         accentSoft: 'rgba(67,109,99,0.12)',
         onAccent: '#F2F0EB',
+        onScrim: '#fff',
         categoryTeal: '#4E8079',
         categoryBlue: '#5A6E9E',
         categoryViolet: '#7A6AA0',
@@ -262,6 +265,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         glowText: '0 0 8px rgba(53,240,224,.28)',
         accentSoft: 'rgba(53,240,224,0.12)',
         onAccent: '#05070A',
+        onScrim: '#fff',
         categoryTeal: '#35E8E0',
         categoryBlue: '#5A82F5',
         categoryViolet: '#A96BFF',
@@ -304,6 +308,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         glowText: 'none',
         accentSoft: 'rgba(46,54,168,0.12)',
         onAccent: '#F1ECDF',
+        onScrim: '#fff',
         categoryTeal: '#2F7F86',
         categoryBlue: '#2E36A8',
         categoryViolet: '#6B4FA8',

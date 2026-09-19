@@ -1,0 +1,89 @@
+/* app/src/palette/PaletteRow.module.css — one row's anatomy (icon + label/desc + sublabel +
+   shortcut), shared by the command/template palette (PaletteModal.tsx) and the in-window Cmd+O
+   switcher's file rows (SwitcherBar.tsx) via the PaletteRow component below — extracted so
+   neither ever needs to import Palette.module.css itself (one stylesheet, one importer; see
+   PaletteFrame.module.css for the other half of what used to live there).
+
+   `selected` STAYS A BARE GLOBAL LITERAL, not hashed — the app-wide "keyboard-highlighted row"
+   convention (SearchResultRows.module.css's `.sresult.selected`, ui/ui.css's
+   `.chip-toggle.selected`, graph/asciiGraph.css's `.cluster-row.selected`). SwitcherBar.tsx's
+   `scrollSelectedIntoView(..., '.selected')` queries it generically across `.palette-row` rows
+   AND `.sresult` AI-result cards in the SAME list, so hashing it here would silently break that
+   query for rows this module does not own.
+
+   `:global(.switcher-list)` reaches into SwitcherBar's own results column
+   (SwitcherBar.module.css, switcher-owned chrome, not part of this module) to give the switcher's
+   rows the same finish the Cmd+P palette gets. The values below are the FINAL consolidated
+   result of what were two rules in the original Palette.module.css — a base `.palette-row` rule
+   plus a `.palette-list .palette-row` / `:global(.switcher-list) .palette-row` override at higher
+   specificity (the base rule "normally shadowed", per that file's own comment, since every real
+   row renders inside one of those two containers). Moving `.palette-list` itself out to
+   PaletteModal's own module (only PaletteModal renders that scroll container) made the compound
+   `.palette-list .palette-row` selector cross a module boundary, which CSS Modules classes can't
+   do — so the override's WINNING values are folded straight into the base rule instead of
+   redeclared under two different container selectors; every consumer still gets the identical
+   computed style. */
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-5);
+  min-height: var(--h-row);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  line-height: var(--h-row);
+  color: var(--fg);
+  border-radius: 0;
+}
+.palette-row .palette-icon { color: var(--text-muted); }
+.palette-row:global(.selected) {
+  background: var(--state-selected-bg);
+  color: var(--accent);
+}
+.palette-row:global(.selected) .palette-icon { color: var(--accent); }
+.palette-row:hover { background: var(--state-hover-bg); }
+/* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
+   leaves it sitting a few px high against the label) is vertically centered in the
+   row; works for emoji text fallbacks too. */
+.palette-icon { opacity: 1; width: 1.2em; height: 1.2em; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+/* Column wrapper around label + optional description so the description sits on a second line.
+   .palette-label's flex/min-width/overflow/ellipsis live on ui/Label.tsx (`<Label fill>`); this
+   class stays for the `.palette-text .palette-label` flex override just below. */
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.palette-text .palette-label { flex: 0 1 auto; font-family: var(--popover-font); }
+/* Faint description second line (template descriptions, etc.). */
+.palette-desc {
+  font-family: var(--popover-font);
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis; min-width: 0;
+  white-space: nowrap;
+}
+/* .palette-sub's color(--faint)/overflow/ellipsis live on ui/Label.tsx (`<Label tone="faint">`);
+   this class stays for its own placement (margin-left: auto pushes it to the row's far edge). */
+.palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: var(--sp-5); }
+/* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
+.palette-match { color: var(--accent); font-weight: var(--fw-regular); }
+/* Shortcut caps: a layout slot only — the Kbd primitive (`.asc-kbd`/`.asc-key`) supplies the
+   chip look, and `.row-kbd` (ui/ui.css) makes the caps recede to --faint the way a menu row's
+   caps do everywhere else in the system. */
+.palette-shortcut {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+/* When a sublabel is also present, the shortcut keeps its own right-edge spot and
+   the sublabel should not push to the far right via its own auto-margin. */
+.palette-shortcut + .palette-shortcut,
+.palette-sub + .palette-shortcut {
+  margin-left: var(--sp-5);
+}

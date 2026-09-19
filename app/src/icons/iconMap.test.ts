@@ -69,8 +69,8 @@ test('no two names share a slug by copy-paste accident, except the deliberate pa
     // at the same MDI glyph before it was caught). Some sharing here IS deliberate — Columns2 and
     // Columns3 both use Phosphor's one 3-column glyph, Power/PowerOff share one power glyph,
     // PanelLeft/PanelRight share one sidebar glyph, Undo2/RotateCcw share one counter-clockwise
-    // arrow — each pair a case where Phosphor has no distinct art and the specimen (iconSetData.ts)
-    // made the same choice. Anything beyond that allow-list is a real regression.
+    // arrow — each pair a case where Phosphor has no distinct art and the deliberate choice was to
+    // share it. Anything beyond that allow-list is a real regression.
     const bySlug = new Map<string, string[]>()
     for (const [name, entry] of Object.entries(ICON_MAP)) {
         if (entry.kind !== 'slug') continue

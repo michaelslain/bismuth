@@ -1,4 +1,4 @@
-import type { Component, JSX } from 'solid-js'
+import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Label.module.css'
 import './ui.css'
@@ -32,7 +32,7 @@ export type LabelProps = {
     inline?: boolean
     class?: string
     children?: JSX.Element
-}
+} & Omit<JSX.HTMLAttributes<HTMLElement>, 'class' | 'children'>
 
 function labelClass(props: LabelProps): string {
     const tone = props.tone
@@ -56,12 +56,22 @@ function labelClass(props: LabelProps): string {
  * text becomes an anonymous flex item whose min-width defaults to its content width) — this
  * component always sets `min-width: 0` alongside `overflow: hidden` so truncation actually
  * fires; see Label.module.css and shell/DragGhost.module.css's header for the fuller trap
- * writeup. Variants are props (fill/tone/lines/inline), not separate components.
+ * writeup. Variants are props (fill/tone/lines/inline), not separate components. Every other
+ * HTML attribute and `ref` pass through untouched onto the rendered element.
  */
 const Label: Component<LabelProps> = props => {
+    const [local, rest] = splitProps(props, [
+        'as',
+        'fill',
+        'tone',
+        'lines',
+        'inline',
+        'class',
+        'children',
+    ])
     return (
-        <Dynamic component={props.as ?? 'span'} class={labelClass(props)}>
-            {props.children}
+        <Dynamic component={local.as ?? 'span'} class={labelClass(props)} {...rest}>
+            {local.children}
         </Dynamic>
     )
 }

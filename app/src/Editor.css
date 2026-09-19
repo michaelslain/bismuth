@@ -276,6 +276,7 @@
 }
 .cm-editor .cm-td h1, .cm-editor .cm-td h2, .cm-editor .cm-td h3,
 .cm-editor .cm-td h4, .cm-editor .cm-td h5, .cm-editor .cm-td h6 {
+  /* design-system-ignore hardcodedFontSize: heading inside a table cell */
   font-size: 1.05em; /* a heading in a cell reads as emphasis, not a page title */
 }
 /* The reader's wikilink/tag chips (a.bismuth-wikilink / span.bismuth-tag) styled to match the

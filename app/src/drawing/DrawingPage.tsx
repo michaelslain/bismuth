@@ -17,6 +17,7 @@ import { DrawingCanvas, type ToolState } from './DrawingCanvas'
 import { Toolbar } from './Toolbar'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Loading } from '../ui/EmptyState'
+import FilePicker from '../ui/FilePicker'
 import { pushToast } from '../Toast'
 import styles from './DrawingPage.module.css'
 
@@ -122,10 +123,8 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
     const importFiles = (files: File[], pageIndex: number) => {
         for (const f of files) if (isImageFile(f)) void importOne(f, pageIndex)
     }
-    const onPickFile = (e: Event) => {
-        const input = e.currentTarget as HTMLInputElement
-        importFiles(input.files ? [...input.files] : [], 0)
-        input.value = '' // let the same file be re-imported later
+    const onPickFile = (files: FileList) => {
+        importFiles([...files], 0)
     }
     // Which page an event landed on (drop), else page 0 (paste / toolbar button).
     const pageIndexFromTarget = (target: EventTarget | null): number => {
@@ -250,12 +249,10 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
                 </IconTextButton>
             </div>
             {/* Hidden picker backing the toolbar's Import-image button. */}
-            <input
-                ref={fileInput}
-                type="file"
+            <FilePicker
+                ref={el => (fileInput = el)}
                 accept="image/*"
-                class={styles['draw-fileinput']}
-                onChange={onPickFile}
+                onPick={onPickFile}
             />
         </div>
     )

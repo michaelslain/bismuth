@@ -27,7 +27,17 @@
 .panel .propset-name-txt { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel .propset-name-txt.empty { color: var(--faint); font-style: italic; }
 .panel .propset-kind { flex: 0 0 auto; font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
-.panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+/* padding/font-size/line-height/justify-content/gap pinned to the pre-IconButton computed
+   values: `.btn`/`.btn--icon` (ui.css) would otherwise leak their own --sp-2 padding +
+   --fs-body-lg font-size onto this fixed 26×var(--h-control) box through the cascade (this
+   class only ever set width/height/display, so nothing here previously overrode them). The
+   `1px 6px` padding is not a new value — it is the bare `<button>`'s Chromium/WebKit UA-default
+   padding (reset.css only ever sets `button { font: inherit }`, never touches padding), so this
+   pins the swap to IconButton computed-style-identical to the bare button it replaced. Its
+   actual visual effect is nil either way (`place-items: center` centers the fixed-size icon
+   regardless of padding, since the padding stays symmetric under every candidate value), but
+   the design-system gate compares computed style, not pixels. */
+.panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px var(--sp-3); font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .panel .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .panel .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -40,7 +50,8 @@
 .panel .propset-numrow :global(.ui-input) { flex: 1; }
 .panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
 .panel .propset-foot .sp { flex: 1; }
-.panel .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+/* Same IconButton cascade pin as .propset-eye above. */
+.panel .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px var(--sp-3); font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .panel .propset-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .panel .propset-btn:disabled { opacity: .3; cursor: default; }
 .panel .propset-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

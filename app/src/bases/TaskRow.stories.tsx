@@ -67,10 +67,15 @@ const DATES = (() => {
     }
 })()
 
-const Rows = (props: { rows: Row[] }) => (
+const Rows = (props: { rows: Row[]; variant?: 'list' | 'card' }) => (
     <div>
         {props.rows.map(r => (
-            <TaskRow row={r} onToggle={noop} onSetStatus={noop} />
+            <TaskRow
+                row={r}
+                onToggle={noop}
+                onSetStatus={noop}
+                variant={props.variant}
+            />
         ))}
     </div>
 )
@@ -119,6 +124,50 @@ export const EveryStatus: Story = {
                 .getByText('cancelled — decided against')
                 .classList.contains(styles.done),
         ).toBe(false)
+    },
+}
+
+/** The same four statuses as `EveryStatus`, but `variant="card"` — the register a kanban or
+ *  masonry card renders in: no 18px list gutter, `--fs-micro` instead of `--fs-ui`. Proves the
+ *  variant prop actually reaches the row (via `.inCard`, not just visually) rather than only
+ *  ever being exercised implicitly by KanbanView/EditCardsModal call sites. */
+export const Card: Story = {
+    render: () => (
+        <Rows
+            variant="card"
+            rows={[
+                scanned({ description: 'todo — nothing done yet' }),
+                scanned({
+                    description: 'in progress — half written',
+                    status: 'in-progress',
+                    statusChar: '/',
+                }),
+                scanned({
+                    description: 'done — shipped',
+                    status: 'done',
+                    statusChar: 'x',
+                    done: DATES.today,
+                }),
+                scanned({
+                    description: 'cancelled — decided against',
+                    status: 'cancelled',
+                    statusChar: '-',
+                }),
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        expect(
+            canvas
+                .getAllByTitle('Toggle task — right-click to set status')
+                .map(b => b.getAttribute('data-status')),
+        ).toEqual(['todo', 'doing', 'done', 'cancelled'])
+        // Every row carries the card register's class, not the list one.
+        const rows = canvasElement.querySelectorAll(`.${styles.taskItem}`)
+        expect(rows.length).toBe(4)
+        for (const row of rows)
+            expect(row.classList.contains(styles.inCard)).toBe(true)
     },
 }
 

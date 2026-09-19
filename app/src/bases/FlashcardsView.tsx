@@ -11,19 +11,21 @@ import {
 import { api } from '../api'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
+import PlainButton from '../ui/PlainButton'
 import { Icon } from '../icons/Icon'
 import EmptyState from '../ui/EmptyState'
-import { Modal } from '../ui/Modal'
 import { TextInput } from '../ui/TextInput'
+import Text from '../ui/Text'
+import Field from '../ui/Field'
 import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
-import Kbd from '../ui/ascii/Kbd'
+import Kbd, { Key } from '../ui/ascii/Kbd'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
-import Heading from '../ui/Heading'
-import styles from './Flashcards.module.css'
+import CardsModal from './CardsModal'
+import styles from './FlashcardsView.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { todayISO } from '../../../core/src/dates'
@@ -114,7 +116,15 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                     {d => (
                         <>
                             {' // '}
-                            <span class={styles['card-dir']}>{d()}</span>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['card-dir']}
+                            >
+                                {d()}
+                            </Text>
                         </>
                     )}
                 </Show>
@@ -142,15 +152,33 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                clears 465 by 55px — so the shared ladder absorbs this bar with no near-duplicate
                tier bolted on 4px from an existing one. */
             <div class={styles['tally']} data-bar-drop="1" data-testid="fc-tally">
-                <span class={styles['a']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['a']}
+                >
                     <BarLabel long="HARD" short="H" /> <b>{state.hard()}</b>
-                </span>
-                <span class={styles['g']}>
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['g']}
+                >
                     <BarLabel long="GOOD" short="G" /> <b>{state.good()}</b>
-                </span>
-                <span class={styles['e']}>
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['e']}
+                >
                     <BarLabel long="EASY" short="E" /> <b>{state.easy()}</b>
-                </span>
+                </Text>
             </div>
         ),
         config: (
@@ -564,7 +592,7 @@ export function FlashcardsView(props: {
 
     // The restored ASCII meter's cell count — a fixed character count that cannot reflow, so it
     // has to be picked against the MEASURED width of its own slot rather than a fraction of the
-    // viewport (see the `.fcmeter` comment in Flashcards.module.css for why `vw` is wrong here).
+    // viewport (see the `.fcmeter` comment in FlashcardsView.module.css for why `vw` is wrong here).
     // Character width comes from a `ch`-unit probe rather than an approximated ratio: `ch` is the
     // CSS spec's own measure of the current font's advance width (the width of "0"), read by the
     // browser's real font metrics — the mono font is settings-driven (appearance.uiFont ->
@@ -636,14 +664,18 @@ export function FlashcardsView(props: {
                 aria-valuenow={Math.round(progressPct())}
                 data-testid="fc-progress"
             >
-                <span aria-hidden="true">
+                <Text as="span" size="inherit" tone="inherit" weight="inherit" aria-hidden="true">
                     <AsciiMeter value={progressPct() / 100} width={meterCells()} />
-                </span>
+                </Text>
                 {/* Invisible ch-unit probe — see the onMount above for what it measures.
                     `font-family` is set EXPLICITLY, not inherited: `.fcmeter` declares none, so
                     without this the probe would measure App.css's hardcoded shell font instead of
                     the settings-driven one `.asc-meter` (ui.css) actually renders with. */}
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     ref={el => (probeEl = el)}
                     aria-hidden="true"
                     style={{
@@ -691,9 +723,15 @@ export function FlashcardsView(props: {
                                 }
                             >
                                 Hit the{' '}
-                                <span class={styles['inline-bolt']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['inline-bolt']}
+                                >
                                     <Icon value="Zap" size={14} />
-                                </span>{' '}
+                                </Text>{' '}
                                 button to review everything anyway.
                             </Show>
                         </EmptyState>
@@ -703,10 +741,13 @@ export function FlashcardsView(props: {
                         when={current() !== null}
                         fallback={
                             <div class={styles['done']}>
-                                <div class={styles['big']}>
-                                    {cram() ? 'Cram complete' : 'Deck complete'}
-                                </div>
-                                <div class={styles['sub']}>
+                                <EmptyState
+                                    title={
+                                        cram()
+                                            ? 'Cram complete'
+                                            : 'Deck complete'
+                                    }
+                                >
                                     <Show
                                         when={cram()}
                                         fallback={
@@ -718,13 +759,17 @@ export function FlashcardsView(props: {
                                                 <Show when={goodCount() > 0}>
                                                     {' '}
                                                     //{' '}
-                                                    <span
+                                                    <Text
+                                                        as="span"
+                                                        size="inherit"
+                                                        tone="inherit"
+                                                        weight="inherit"
                                                         class={
                                                             styles['good-text']
                                                         }
                                                     >
                                                         good
-                                                    </span>{' '}
+                                                    </Text>{' '}
                                                     on most
                                                 </Show>
                                                 .
@@ -732,15 +777,21 @@ export function FlashcardsView(props: {
                                         }
                                     >
                                         Every card is{' '}
-                                        <span class={styles['good-text']}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles['good-text']}
+                                        >
                                             easy
-                                        </span>{' '}
+                                        </Text>{' '}
                                         — you mastered <b>{total()}</b>{' '}
                                         {total() === 1 ? 'card' : 'cards'} in{' '}
                                         <b>{graded()}</b>{' '}
                                         {graded() === 1 ? 'review' : 'reviews'}.
                                     </Show>
-                                </div>
+                                </EmptyState>
                                 <TextButton size="lg" onClick={restart}>
                                     REVIEW AGAIN
                                 </TextButton>
@@ -769,7 +820,7 @@ export function FlashcardsView(props: {
                                     >
                                         <div class={styles['flip-inner']}>
                                             {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
-                                            shared .flip-face) — left as a bare literal per Flashcards.module.css's header. */}
+                                            shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
                                             <div
                                                 class={`${styles['flip-face']} flip-front`}
                                                 inert={revealed() || undefined}
@@ -784,11 +835,9 @@ export function FlashcardsView(props: {
                                                     )}
                                                 />
                                                 <div class={styles['fliphint']}>
-                                                    <span class="asc-kbd">
-                                                        <span class="asc-key">
-                                                            SPACE
-                                                        </span>
-                                                    </span>{' '}
+                                                    <Kbd>
+                                                        <Key>SPACE</Key>
+                                                    </Kbd>{' '}
                                                     to reveal answer
                                                 </div>
                                             </div>
@@ -823,19 +872,25 @@ export function FlashcardsView(props: {
                             <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
-                                        <button
+                                        <PlainButton
                                             class={`${styles['grade']} ${styles[g.cls]}`}
                                             onClick={() => grade(g.response)}
                                         >
-                                            <span class={styles['g-name']}>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles['g-name']}
+                                            >
                                                 {g.response}
-                                            </span>
+                                            </Text>
                                             <Kbd
                                                 combo={
                                                     settings.keybindings[g.id]
                                                 }
                                             />
-                                        </button>
+                                        </PlainButton>
                                     )}
                                 </For>
                             </div>
@@ -845,24 +900,16 @@ export function FlashcardsView(props: {
             </div>
 
             <Show when={editingCard() && props.basePath}>
-                <Modal
+                <CardsModal
+                    title="Edit card"
                     onClose={() => setEditingCard(false)}
-                    class={`${styles['cards-modal']} ${styles['card-edit-one']}`}
+                    class={styles['card-edit-one']}
                 >
-                    <div class={styles['cards-head']}>
-                        <Heading level={2} class={styles['cards-title']}>
-                            Edit card
-                        </Heading>
-                        <div class={styles['sp']} />
-                        <IconButton
-                            icon="X"
-                            label="Close"
-                            onClick={() => setEditingCard(false)}
-                        />
-                    </div>
                     <div class={styles['card-edit-one-body']}>
-                        <label class={styles['card-edit-labeled']}>
-                            <span>Front</span>
+                        <Field
+                            label="Front"
+                            class={styles['card-edit-labeled']}
+                        >
                             <TextInput
                                 multiline
                                 class={styles['card-edit-field']}
@@ -870,9 +917,11 @@ export function FlashcardsView(props: {
                                 placeholder="Front / prompt…"
                                 onInput={setCardFront}
                             />
-                        </label>
-                        <label class={styles['card-edit-labeled']}>
-                            <span>Back</span>
+                        </Field>
+                        <Field
+                            label="Back"
+                            class={styles['card-edit-labeled']}
+                        >
                             <TextInput
                                 multiline
                                 class={styles['card-edit-field']}
@@ -880,7 +929,7 @@ export function FlashcardsView(props: {
                                 placeholder="Back / answer…"
                                 onInput={setCardBack}
                             />
-                        </label>
+                        </Field>
                         <div class={styles['card-edit-one-actions']}>
                             <TextButton onClick={() => setEditingCard(false)}>
                                 CANCEL
@@ -893,7 +942,7 @@ export function FlashcardsView(props: {
                             </TextButton>
                         </div>
                     </div>
-                </Modal>
+                </CardsModal>
             </Show>
         </div>
     )

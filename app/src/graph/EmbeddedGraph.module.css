@@ -45,13 +45,6 @@
   flex-wrap: wrap;
 }
 
-.graph-block-edit-label {
-  font-size: var(--fs-micro);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .graph-block-input {
   height: 24px;
   font-size: var(--fs-ui);
@@ -71,7 +64,7 @@
 
 .graph-block-errors {
   padding: var(--sp-4) var(--sp-5);
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   color: var(--danger);
   border-bottom: 1px solid var(--border-soft);

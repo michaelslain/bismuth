@@ -2,7 +2,7 @@
    near-identical rules that each hand-rolled the same truncation trio (DaemonList.module.css's
    .daemon-row-label, PaneTree.module.css's .pane-header-label, shell/TabRail.module.css's
    .tab-rail-label, palette/Palette.module.css's .palette-label/.palette-sub,
-   graph/Graph.module.css's .graph-search-label/.graph-search-sub, shell/StatusBar.module.css's
+   GraphView.module.css's .graph-search-label/.graph-search-sub, shell/StatusBar.module.css's
    .status-path, bases/BaseView.module.css's .coverTitle/.coverAuthor/.cardAuthor/.thLabel,
    bases/ListView's .ltext).
 

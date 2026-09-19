@@ -3,7 +3,7 @@
 // with a `groupBy`, rendered by the real KanbanView component. `onChange` is a required prop
 // (fired after a write); a no-op here since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import { KanbanView } from './KanbanView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { runView } from '../../../core/src/bases/query'
@@ -67,6 +67,110 @@ export const EditableWithPinnedColumns: Story = {
                 onChange={noop}
             />
         )
+    },
+}
+
+/** No `groupBy` on the view — the board falls back to a `Callout` hint instead of columns.
+ *  Asserted rather than left to a screenshot: the hint's copy renders, proving the fallback path
+ *  is the real `Callout` component (its module class) and not a bare div. */
+export const NoGroupBy: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const hint = await canvas.findByText(/needs a "groupBy" property/)
+        expect(hint.closest('[class*="callout"]')).not.toBeNull()
+    },
+}
+
+// Every swatch's accessible name + title — parallel to KanbanView's PALETTE_NAMES.
+const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
+
+/** The column colour picker open — clicking a column's colour dot reveals the palette `Swatch`es
+ *  (each aria-labelled by its colour name, e.g. "rose") plus the "Auto" option that clears an
+ *  override. Needs `basePath` (`editable()`) for the dot button to be enabled at all. The first
+ *  column ("Todo") has no override set, so no swatch shows the `selected` ring — only Auto reads
+ *  pressed, exactly one control marked at a time. */
+export const ColorPickerOpen: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const dot = canvas.getAllByTitle('Column color')[0]!
+        await userEvent.click(dot)
+        const auto = await canvas.findByRole('button', { name: 'Auto' })
+        expect(auto).toBeVisible()
+        expect(auto).toHaveAttribute('aria-pressed', 'true')
+        const swatches = PALETTE_NAMES.map(name => {
+            const el = canvas.getByRole('button', { name })
+            expect(el).toBeVisible()
+            expect(el).toHaveAttribute('title', name)
+            return el
+        })
+        expect(swatches.length).toBe(5)
+    },
+}
+
+/** Same board, opened on the THIRD column ("Done") instead of the first — proves the popover
+ *  anchors to the column it belongs to, not always the leftmost one. "Done" also matches a
+ *  known status color (STATUS_COLOR), so no override is set yet none of the five swatches is
+ *  "selected" either — that color didn't come from this palette. */
+export const ColorPickerOpenThirdColumn: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+                groupOrder: ['Todo', 'Doing', 'Done'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const dots = canvas.getAllByTitle('Column color')
+        expect(dots.length).toBeGreaterThanOrEqual(3)
+        await userEvent.click(dots[2]!)
+        const auto = await canvas.findByRole('button', { name: 'Auto' })
+        expect(auto).toBeVisible()
     },
 }
 

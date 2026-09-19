@@ -5,7 +5,7 @@ import { isLink, type Link } from '../../../core/src/bases/values'
 import { renderInline, hasInlineMarkup } from './markdown'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
-import styles from './BaseView.module.css'
+import styles from './renderValue.module.css'
 import EmptyValue from '../ui/EmptyValue'
 import NoteLink from '../ui/NoteLink'
 
@@ -59,12 +59,15 @@ export function renderStatus(s: string): JSX.Element {
     return <StatusText status={s} />
 }
 
-/** Plain mono #tag list in teal — no chips. */
-export function renderTags(v: unknown): JSX.Element {
+/** Plain mono #tag list in teal — no chips. `dense` is KanbanCard's compact meta-row sizing
+ *  (tighter gap, chrome type size) — a flag rather than KanbanCard reaching into this
+ *  module's `.tagRow` class, which would break under CSS-module hashing (each module's
+ *  classes are local to it). */
+export function renderTags(v: unknown, dense?: boolean): JSX.Element {
     const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
     if (tags.length === 0) return <EmptyValue />
     return (
-        <span class={styles.tagRow}>
+        <span class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
             <For each={tags}>
                 {t => <span>{t.startsWith('#') ? t : `#${t}`}</span>}
             </For>
@@ -141,11 +144,11 @@ export function renderTitle(id: string, row: Row): JSX.Element {
 /** Smart cell: routes status / tags / rating columns to their themed renderers,
  * everything else to the generic renderValue. The first/title column is handled
  * separately by renderTitle. */
-export function renderCell(id: string, row: Row): JSX.Element {
+export function renderCell(id: string, row: Row, dense?: boolean): JSX.Element {
     const v = resolveProperty(id, row)
     if (isStatusColumn(id) && v != null && typeof v !== 'object')
         return renderStatus(String(v))
-    if (isTagColumn(id)) return renderTags(v)
+    if (isTagColumn(id)) return renderTags(v, dense)
     if (isRatingColumn(id) && typeof v === 'number') return renderStars(v)
     return renderValue(id, row)
 }

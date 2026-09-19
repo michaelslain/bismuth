@@ -686,7 +686,7 @@ Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content
 Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, `DAEMON_TAB = "::daemon"` (the daemon page; its docked chat is `CHAT_PREFIX + DAEMON_CHAT_ID`, i.e. `::chat:daemon`), plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids; a plain file path routed to the read-only `PreviewView` (via `previewKind()`, see `preview/`) gets its label/icon from there too. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore, and persisted `::inbox` tabs (the old daemon inbox tab) to `::daemon` (`LEGACY_CONTENT_IDS` in `panes.ts`).
 
 #### `PaneTree.tsx`
-Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions. `PaneLeaf` (one pane's own content + focus/right-click reporting + view-drag drop target (tab/pane/tree-row POINTER drags via dnd/viewDrag.ts — the old HTML5 `application/x-bismuth-path` drag-to-split path is gone; nothing ever set that MIME)) was promoted out of this file into its own `PaneLeaf.tsx`, which in turn delegates its mini view-bar breadcrumb to `PaneHeader.tsx` and its split/chat-reference drop affordances to `PaneDropZone.tsx` — `PaneTree.tsx` itself is now just the tree walk. All four share `PaneTree.module.css` (not one module apiece — `.pane-leaf.focused .pane-header` and similar rules cross the file boundaries).
+Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions. `PaneLeaf` (one pane's own content + focus/right-click reporting + view-drag drop target (tab/pane/tree-row POINTER drags via dnd/viewDrag.ts — the old HTML5 `application/x-bismuth-path` drag-to-split path is gone; nothing ever set that MIME)) was promoted out of this file into its own `PaneLeaf.tsx`, which in turn delegates its mini view-bar breadcrumb to `PaneHeader.tsx` and its split/chat-reference drop affordances to `PaneDropZone.tsx` — `PaneTree.tsx` itself is now just the tree walk. Each of the four now has its own colocated module (`PaneTree.module.css`, `PaneLeaf.module.css`, `PaneHeader.module.css`, `PaneDropZone.module.css`); a rule that used to cross the file boundary now reads a `data-*` hook instead — `PaneLeaf.tsx` sets `data-pane-focused` on its own root when its leaf is focused, and `PaneHeader.module.css`'s `[data-pane-focused] .pane-header` rule reads it, since a data attribute is never hashed the way a class is.
 
 #### `PaneContent.tsx`
 Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `::daemon` → `daemon/DaemonPageHost` (lazy); the retired `::annotate:<file>` (a restored old tab) → that file's `PreviewView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
@@ -713,7 +713,7 @@ Vault-name eyebrow, toolbar row, file tree, and the docked graph mini-square. `t
 The main editor column: optional update banner, the Cmd+O switcher bar overlay, and the scrollable body hosting the active tab's pane tree plus the always-mounted terminal/chat overlays.
 
 #### `TabRail.tsx` / `TabRailRow.tsx`
-The app's only tab presentation — a right-edge vertical rail, collapsed to 48px and expanding to 232px on hover/focus-within. `TabRail` is the rail shell (actions + rows as slots); `TabRailRow` is one row (icon, label or inline rename input, close-X/pin). They deliberately **share one `TabRail.module.css`** rather than each getting its own — eight hover/focus selectors span both components' elements, and per-file hashing would silently break the ones that cross the boundary.
+The app's only tab presentation — a right-edge vertical rail, collapsed to 48px and expanding to 232px on hover/focus-within. `TabRail` is the rail shell (actions + rows as slots); `TabRailRow` is one row (icon, label or inline rename input, close-X/pin). Each now owns its own module (`TabRail.module.css`, `TabRailRow.module.css`) — the selectors that used to cross the file boundary reach the ancestor through the stable, unhashed `[data-tab-rail]`/`[data-rail-pinned]` attributes `TabRail.tsx` sets on its own root, rather than a class.
 
 #### `CommandButton.tsx`
 The purely-presentational half of the configurable toolbar button (shared by the sidebar header bar, the tab strip, and the tab rail): an icon button plus an optional numeric `Badge`. Resolving a `{command}`/`{commands: […]}` config to a live `Command`, and computing the inbox badge's live due-count, stays in `App.tsx`'s local `ToolbarButton` wrapper.
@@ -933,6 +933,12 @@ Host component. Resolves source rows (from `POST /rows` or inline), runs `runVie
 #### `bases/TableView.tsx` / `CardsView.tsx` / `ListView.tsx` / `BulletsView.tsx` / `KanbanView.tsx` / `MapView.tsx` / `HeatmapView.tsx` / `BarView.tsx` / `LineView.tsx` / `StatView.tsx`
 One renderer per view kind. All receive `ViewResult` from `BaseView`.
 
+#### `bases/ChartFrame.tsx`
+Shared chart chrome — fixed outer padding/scroll plus one consistent empty-state message — reused by `BarView`/`HeatmapView`/`LineView`/`StatView` (a chart view passes its own `emptyMessage`). Extracted out of the former `bases/Charts.module.css`, which all four views imported directly.
+
+#### `bases/StatTiles.tsx`
+The plain "stat tile" grid (big number, muted label, faint delta, no card chrome) shared by `StatView`'s aggregate summary and `HeatmapView`'s streak stats. Extracted out of the same former `bases/Charts.module.css` both views imported directly.
+
 #### `bases/CalendarView.tsx`
 Calendar view renderer. Delegates to `app/src/calendar/` components.
 
@@ -954,8 +960,14 @@ Per-base settings panel (view type switcher, field mapping, bidirectional toggle
 #### `bases/BaseSkeleton.tsx`
 Skeleton loading placeholder shown only on cold (never-cached) base loads.
 
+#### `bases/SkeletonBar.tsx`
+A single placeholder bar — the shared unit `BaseSkeleton`'s table/card skeleton silhouettes are composed from. `class` layers on the caller's own sizing (height/width/flex/margin).
+
 #### `bases/EditCardsModal.tsx`
 Deck editor: list existing cards, add cards in bulk, drag-reorder, delete. Uses `POST /row/{update,delete,reorder}`.
+
+#### `bases/CardsModal.tsx`
+Shared modal shell (panel sizing + title bar + close button) composed by both `EditCardsModal.tsx` (the deck-wide card manager) and `FlashcardsView.tsx`'s single-card edit modal — extracted once both drew this identically from what used to be one shared stylesheet.
 
 #### `bases/calendarBase.ts` + `bases/calendarSerialize.ts`
 Calendar event serialization helpers (convert calendar events to/from base row format). Tested.
@@ -965,6 +977,15 @@ Derives human-readable column labels from property ids (e.g. `"note.myField"` �
 
 #### `bases/BodyCard.tsx` / `bases/CardBody.tsx`
 Shared card body renderers used by `CardsView` and `FlashcardsView`.
+
+#### `bases/CardFrame.tsx`
+The shared card frame (background/border/radius/overflow) reused by `CardsView`'s book-cover grid and `KanbanView`'s board, with the context-specific look (click-to-open, draggable, drop-target) as props rather than a descendant selector reaching into a class the caller doesn't own.
+
+#### `bases/CardBodyInner.tsx`
+The padded body wrapper under a card's cover/face, shared by `CardsView` (around `BodyCard`) and `KanbanView` (around its kanban card).
+
+#### `bases/CardTitle.tsx`
+A card's title line, shared by `BodyCard` and `CardBody`.
 
 ---
 
@@ -1183,6 +1204,12 @@ Template picker palette.
 #### `palette/PaletteModal.tsx`
 Shared modal wrapper for all palettes (keyboard nav, backdrop, input focus).
 
+#### `palette/PaletteFrame.tsx`
+The shared overlay shell every palette-family surface renders — a `Modal` panel plus a search box on top — composed by `PaletteModal.tsx` and `ui/gallery/SymbolGallery.tsx` instead of each importing the former `Palette.module.css` directly.
+
+#### `palette/PaletteRow.tsx`
+One row's anatomy (icon, fuzzy-highlighted label, optional description/sublabel/shortcut), shared by the command/template palette (`PaletteModal.tsx`) and the Cmd+O switcher's file rows (`SwitcherBar.tsx`). Also exports `Highlight`, the fuzzy-match-highlighting renderer both use.
+
 ---
 
 ### Terminal
@@ -1271,12 +1298,6 @@ The icon registry: a static NAME → ART map. `registry-core.ts` is the pure, fr
 #### `icons/iconMarkup.ts`
 `iconMarkup(name, size?)` — static markup for an icon, for imperative call sites that cannot mount/dispose a reactive root (notably CodeMirror's `addToOptions` render hook, which gives no per-option teardown). Builds the markup straight from the registry rather than mounting `<Icon>` into a detached node and reading `innerHTML` back, so the box styles stay explicit and diffable instead of duplicating `Icon.tsx`'s box logic through a DOM round-trip.
 
-#### `icons/nerdGlyphs.ts`
-`NERD_GLYPHS: Record<string, number>` — canonical icon name → Nerd Font codepoint for all 140 names, `FALLBACK_CODEPOINT`. RETIRED from `<Icon>` as of the Phosphor migration (`registry.ts` no longer imports it) but kept for two reasons: `icons/specimen/` renders this era's glyphs in its Nerd-Font-vs-Phosphor comparison column via the real subset font, and it anchors `iconNames.ts`'s 140-name canonical list to what the incumbent set actually covered.
-
-#### `icons/specimen/`
-`IconSetSpecimen.tsx` + `SvgIcon.tsx` (each with a colocated `.module.css` + story) and `iconSetData.ts` — the decision record comparing icon sets side by side (Nerd Font incumbent vs. Phosphor), rendered as a Storybook story rather than kept only in a design doc so the actual glyphs are what get compared.
-
 #### `icons/IconPicker.tsx`
 Icon picker UI (used by folder icon assignment in the file tree).
 
@@ -1313,6 +1334,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `TextInput.tsx` | Styled text input |
 | `Select.tsx` | Styled select dropdown |
 | `Field.tsx` | Label + input field wrapper |
+| `FilePicker.tsx` | Visually-hidden native `<input type="file">` backing a visible trigger button elsewhere in the tree — the caller keeps a `ref` and calls `.click()` from its own button |
 | `EmptyState.tsx` | Empty/loading placeholder |
 | `Modal.tsx` | Modal dialog wrapper |
 | `FormModal.tsx` | The settings/editor modal shape: a `Modal` panel sized as a column of header/body/footer, with a `width` prop (px) capped by `max-width: calc(100vw - 32px)`. Replaces a class six modals (event, categories, recurrence, calendar settings, base settings, query builder) used to share before each had its own module |
@@ -1475,8 +1497,8 @@ The one dev entry point, in two flavours: `bun run dev:browser` (root `package.j
 #### `build-core-sidecar.ts` / `build-daemon-sidecar.ts` / `build-bismuth-tools.ts`
 Compile `core/src/server.ts` / the daemon runtime / the `cli`+`mcp` pair to standalone binaries bundled into the Tauri app (see CLAUDE.md's "Desktop app & core sidecar").
 
-#### `build-icon-font.ts` / `build-pixel-icons.ts` / `iconFontTables.ts` / `gen-dock-icons.ts` / `gen-logos.ts` / `logoMarks.ts`
-Icon/logo asset generation — the icon font build, pixel-icon rasterization, platform dock icons, and the wordmark logo marks (`logoMarks.ts` tested via `logoMarks.test.ts`).
+#### `build-pixel-icons.ts` / `gen-dock-icons.ts` / `gen-logos.ts` / `logoMarks.ts`
+Icon/logo asset generation — retired pixel-icon rasterization (kept only as a historical record, not wired to any script), platform dock icons, and the wordmark logo marks (`logoMarks.ts` tested via `logoMarks.test.ts`). `build-icon-font.ts` (the Nerd Font subset generator) and its helper `iconFontTables.ts` were deleted in ds-conformance Task 8 alongside the rest of that retired icon system — see `docs/overview/third-party-notices.md`.
 
 #### `bundle-relay.ts`
 Bundles the `relay/` Claude Code plugin (`BISMUTH_RELAY_BUNDLE`) for injection into app terminals.
@@ -1531,9 +1553,6 @@ A one-story microscope: computed styles for a single named story in ~5 seconds, 
 
 #### `templateDiff.ts`
 Did a refactor change the emitted MARKUP? Compiles both sides of a diff through the repo's own `babel-preset-solid` and byte-compares the static `_$template(...)` strings it emits — immune to reindentation, renamed handlers, and how props are threaded. Two modes: default (templates must be exactly equal — the extraction half of a migration) and `--modulo-class` (equal after stripping `class=…` attributes — the CSS half, where a static class legitimately becomes a dynamic expression and drops out of the template).
-
-#### `iconFontProbe.ts`
-Does the icon font actually load and draw in a real, running Storybook (`cd app && bun run storybook`, then `bun bench/iconFontProbe.ts`)? Complements `app/src/icons/iconFont.test.ts` (which proves every codepoint maps to a glyph in the committed woff2 file, but can't see the browser: bundling, `@font-face` resolution, family-name match). Draws each character twice — once in the icon family, once in a nonexistent family — and compares rasters, since Symbols Nerd Font Mono's `.notdef` is the same width as every real glyph.
 
 #### `layoutmetrics.ts` / `layoutquality.ts`
 Pure, unit-testable graph-layout quality metrics (`layoutmetrics.ts`: neighbor-preservation ratio, edge-crossing rate, seeded/deterministic sampling) and the harness that runs them over a real vault through the production `layout-cache.ts` cold path (`layoutquality.ts`, read-only, never point at a real user vault). Non-finite metrics are never silently `JSON.stringify`'d to `null` — they're serialized as strings, named in a `nanFields` list, and force a nonzero exit code.

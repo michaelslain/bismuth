@@ -25,8 +25,12 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
 import { Modal } from '../ui/Modal'
 import Chip from '../ui/Chip'
-import { IconButton } from '../ui/IconButton'
 import { TextButton } from '../ui/TextButton'
+import Text from '../ui/Text'
+import Field from '../ui/Field'
+import { TextInput } from '../ui/TextInput'
+import ModalHeader from '../ui/ModalHeader'
+import ModalFooter from '../ui/ModalFooter'
 import MilkdownField from '../ui/MilkdownField'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
@@ -276,9 +280,15 @@ export function CardEditModal(props: {
         if (!writable(id)) {
             const v = untrack(() => value(id))
             return (
-                <span class={styles.readonly}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles.readonly}
+                >
                     {v == null || v === '' ? '—' : String(v)}
-                </span>
+                </Text>
             )
         }
         const k = untrack(() => kindOf(id))
@@ -317,7 +327,13 @@ export function CardEditModal(props: {
             // (an inline-flex <button>) gets blockified and cross-stretched to the full ~420px body width
             // — a wide bar instead of a pill. The wrapper absorbs the stretch and keeps it shrink-to-fit.
             return (
-                <span class={styles.boolChip}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles.boolChip}
+                >
                     <Chip
                         selected={value(id) === true}
                         icon={value(id) === true ? 'Check' : 'Square'}
@@ -328,7 +344,7 @@ export function CardEditModal(props: {
                     >
                         {value(id) === true ? 'Yes' : 'No'}
                     </Chip>
-                </span>
+                </Text>
             )
         }
         return (
@@ -344,21 +360,17 @@ export function CardEditModal(props: {
 
     return (
         <Modal onClose={close} class={styles.panel}>
-            <div class={styles.header}>
-                <div class={styles.headTitle}>Edit card</div>
-                <IconButton icon="X" label="Close" onClick={close} />
-            </div>
+            <ModalHeader icon="Pencil" title="Edit card" compact onClose={close} />
 
             <div class={styles.body}>
                 <Show when={props.hasFileIdentity ?? true}>
-                    <label class={styles.titleField}>
-                        <span class={styles.label}>Title</span>
-                        <input
+                    <Field label="Title" class={styles.titleField} labelClass={styles.label}>
+                        <TextInput
                             ref={titleRef}
-                            class={`ui-input ${styles.titleInput}`}
+                            class={styles.titleInput}
                             value={titleDraft()}
                             placeholder="Untitled"
-                            onInput={e => setTitleDraft(e.currentTarget.value)}
+                            onInput={setTitleDraft}
                             onBlur={commitTitle}
                             onKeyDown={e => {
                                 if (isConfirmKey(e)) {
@@ -372,7 +384,7 @@ export function CardEditModal(props: {
                                 }
                             }}
                         />
-                    </label>
+                    </Field>
                 </Show>
 
                 <For each={cols()}>
@@ -381,9 +393,15 @@ export function CardEditModal(props: {
                             class={styles.field}
                             ref={el => fieldRefs.set(id, el)}
                         >
-                            <span class={styles.label}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles.label}
+                            >
                                 {columnLabel(id, props.config)}
-                            </span>
+                            </Text>
                             {renderControl(id)}
                         </div>
                     )}
@@ -396,17 +414,19 @@ export function CardEditModal(props: {
                 </Show>
             </div>
 
-            <div class={styles.footer}>
-                <Show when={props.hasFileIdentity ?? true}>
-                    <TextButton danger onClick={props.onDelete}>
-                        DELETE
-                    </TextButton>
-                </Show>
-                <div class={styles.footerSpacer} />
+            <ModalFooter
+                leading={
+                    <Show when={props.hasFileIdentity ?? true}>
+                        <TextButton danger onClick={props.onDelete}>
+                            DELETE
+                        </TextButton>
+                    </Show>
+                }
+            >
                 <TextButton variant="selected" onClick={close}>
                     DONE
                 </TextButton>
-            </div>
+            </ModalFooter>
         </Modal>
     )
 }

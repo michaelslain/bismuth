@@ -18,32 +18,70 @@
 //      column-gap / inset) with a literal non-zero PX value. `var(--sp-N)` is not a literal and
 //      never matches; a raw px number is flagged even when it happens to equal a scale step,
 //      because the point is CONSUMING THE TOKEN, not merely rendering the same pixel by luck.
-//   3. font-size with a literal PX value (em/rem/%/var() are not this check's business).
-//   4. box-shadow whose blur radius (the third length in `x y blur spread color`) is non-zero.
+//   3. box-shadow whose blur radius (the third length in `x y blur spread color`) is non-zero.
 //      `--lift: 2px 2px 0 var(--shadow-hard)` — zero blur — is the sanctioned shape (§9.3); the
 //      four deleted `--shadow-menu/-popup/-card/-modal` tokens are the target, not this check's
 //      business directly (they are core/src/theme/tokens.ts + custom-property VALUES, not a
 //      `box-shadow:` declaration — see `checksCustomProps` on the `Rule` type below for why
-//      custom properties are exempt from checks 1-5).
-//   5. backdrop-filter at all (any value other than literally `none`) — the audit calls for ALL
+//      custom properties are exempt from checks 1-4).
+//   4. backdrop-filter at all (any value other than literally `none`) — the audit calls for ALL
 //      five sites deleted, not tuned, so there is no "acceptable" blur radius to allow.
-//   6. literal hex (#abc / #aabbcc / #aabbccdd) or rgb()/rgba() with numeric (not var()) channels,
+//   5. literal hex (#abc / #aabbcc / #aabbccdd) or rgb()/rgba() with numeric (not var()) channels,
 //      in ANY declaration's value, standard property or custom property alike — this is the one
 //      check that DOES look inside custom-property definitions, because a component inventing its
 //      own hardcoded color (ExportView.css's `--paper-bg: #f7f6f2`) is exactly the drift the color
 //      system is otherwise free of.
 //
-// WHY CUSTOM PROPERTIES (`--foo: …`) ARE EXEMPT FROM CHECKS 1-5 BUT NOT CHECK 6. A custom property
+// font-size is deliberately NOT a rule here (see RECONCILED WITH THE DESIGN-SYSTEM GATE below) —
+// that check now lives only in the design-system gate, which is strictly broader for it.
+//
+// WHY CUSTOM PROPERTIES (`--foo: …`) ARE EXEMPT FROM CHECKS 1-4 BUT NOT CHECK 5. A custom property
 // declaration is the TOKEN LAYER ITSELF — `styles/tokens.css` is who is ALLOWED to write
 // `--shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)`, because that literal only
 // becomes a violation at the moment some component's `box-shadow:` reads it, and by design every
 // component here reads it through `var(--shadow-card)` (checked: no component-level box-shadow
 // in this repo currently ships a literal blurred shadow — the blur lives entirely in the token
 // file, which is core/src/theme/tokens.ts's problem, outside app/src, and the token file's own
-// custom-property value, which check 6 does NOT re-flag as a shadow violation but WOULD flag if it
+// custom-property value, which check 5 does NOT re-flag as a shadow violation but WOULD flag if it
 // contained a bare hex it didn't already carry a documented exemption for). Colour is the one axis
 // where a token file hardcoding a value and a component hardcoding a value are the SAME mistake
-// (drift), so check 6 applies uniformly.
+// (drift), so check 5 applies uniformly.
+//
+// RECONCILED WITH THE DESIGN-SYSTEM GATE (2026-09-18, task 24 of the ds-conformance plan; updated
+// 2026-09-18 after task 2 widened checks.mjs — see its own report for the exact deltas). The
+// design-system gate (scripts/designSystem/gate.mjs, installed from ~/.claude/skills/design-system's
+// checks.mjs) ALSO flags hardcoded colour, border-radius and font-size — but it is not a superset
+// of this file, and this file is not a superset of it. Concretely, checks.mjs now:
+//   - scans the global layer too (governance.global files — ui/ui.css, App.css, styles/**,
+//     popover.css, Editor.css, Terminal.css, datePicker.css, asciiGraph.css, switcher.css); only
+//     the token files themselves (where a literal belongs) stay excepted.
+//   - checks colour on border-top/-right/-bottom/-left (not just their -color longhands),
+//     background-image (gradients) and any custom property, on top of the base allowlist — but
+//     it is STILL a fixed allowlist, so mask-image (ui/ui.css:709), column-rule and other
+//     gradient-bearing properties outside that list stay invisible to it; tokenLint's hex-color
+//     rule (check 5) reads ANY property's value and is the only one of the two catching those.
+//   - strips every balanced `var(--x, <fallback>)` call from a value before testing for a literal,
+//     so a literal SIBLING to a var() call (`box-shadow: 0 0 0 1px var(--border), 0 2px 4px
+//     rgba(0,0,0,.3)`) is now caught — but a literal INSIDE that var()'s own fallback
+//     (`color: var(--danger, #c00)`) is still deliberately excused, on the reasoning that the
+//     fallback only fires when the token itself is missing. tokenLint's regex has no var()-
+//     awareness and flags a fallback literal regardless, so it remains the only one of the two
+//     catching those (4 live cases as of 2026-09-18: SheetView.module.css:6, Terminal.css:13,
+//     TermPanel.module.css:19, GraphAtmosphere.module.css:22).
+//   - checks border-radius plus all four border-(top|bottom)-(left|right)-radius longhand
+//     corners, matching tokenLint's RADIUS_PROP exactly — this axis is now a real, not
+//     coincidental, equivalence between the two tools.
+//   - owns font-size for .module.css files with a check that is strictly broader there (it also
+//      reasons about the type scale, not just "is this a literal px"), which is why
+//      font-size-literal was removed from this file rather than kept in parallel.
+// So both gates still run: the design-system gate is the primary, DESIGN.md-governance-aware check
+// for component stylesheets; tokenLint stays as a safety net that is narrower on some properties
+// and broader on others — it uniquely owns spacing-literal (padding/margin/gap), shadow-blur and
+// backdrop-filter (checks.mjs has nothing like any of the three), and it uniquely catches a
+// var()-fallback literal and a literal on a property outside checks.mjs's colour allowlist
+// (mask-image, column-rule). A plain `color: #fff` inside a component module, on a property BOTH
+// tools list, is reported by BOTH — that overlap is intentional, not redundant, because the two
+// gates disagree about what to skip, not about what a violation is.
 //
 // THE BASELINE, AND WHY IT IS PER (file, rule, exact-literal-value) RATHER THAN PER (file, rule).
 // This repo is starting from ~40 unswept stylesheets and will be for nine more waves (see the
@@ -51,7 +89,7 @@
 // into irrelevance — the same lesson bench/cssBaseline.ts already paid for. So known-current
 // violations are recorded once, as a committed baseline (token-lint-baseline.json), and a run only
 // FAILS on a violation with no matching baseline entry — a genuinely NEW magic number, not the
-// ~700 that already exist.
+// ones that already exist.
 //
 // The key is (file, rule, exact declaration text) with a COUNT, not just (file, rule): fixing 4 of
 // FileTree's 6 `padding: 8px` literals should never mask a 7th, DIFFERENT literal (`padding: 5px`)
@@ -73,11 +111,9 @@
 // regression back toward the old number is caught too. Nothing here auto-shrinks the committed
 // file; a run that merely improves things still exits 0 without being blessed.
 //
-// NOT WIRED INTO THE PRE-COMMIT GATE THIS WAVE. See `bun run gate` / `.githooks/pre-commit` — this
-// check is deliberately left OUT of both hooks for now: work-in-progress waves need to touch files
-// this check watches without every commit failing mid-sweep. Wave 9 (the componentization/backlog
-// wave, the last one in the plan) is the right point to promote it into `scripts/gate.ts` — by then
-// every surface has had its own wave and the baseline should be at or near zero.
+// WIRED INTO THE PRE-COMMIT GATE. `scripts/gate.ts` runs this (alongside the design-system gate,
+// as one combined step) whenever a staged path touches app/src/, DESIGN.md,
+// design-system.baseline.json or scripts/designSystem/ — see `touchesDesignSystem` there.
 //
 // Usage:
 //   bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
@@ -122,7 +158,7 @@ const SKIP_FILES = new Set<string>([
 ])
 
 /** Files where a literal colour is a DOCUMENTED, sanctioned exception — not drift to eventually
- *  fix, so check 6 does not run on them at all (a permanent skip, unlike the baseline's per-value
+ *  fix, so check 5 does not run on them at all (a permanent skip, unlike the baseline's per-value
  *  entries which are always implicitly "fix this eventually"). */
 const COLOR_EXEMPT_FILES = new Set<string>([
     // styles/tokens.css's own header: this file's hex/rgba literals are the deliberate first-paint
@@ -195,9 +231,6 @@ function checkSpacing(value: string): string | null {
     const bad = value.split(/\s+/).filter(nonZeroPx)
     return bad.length ? value : null
 }
-function checkFontSize(value: string): string | null {
-    return nonZeroPx(value.trim()) ? value : null
-}
 /** True if this box-shadow VALUE has a non-zero blur radius in any of its comma-separated layers.
  *  Reads only the LEADING run of plain length tokens in each layer (offset-x offset-y blur
  *  spread), stopping at the first token that is not a bare length — which is always where the
@@ -257,7 +290,8 @@ type Rule = {
     /** Does this declaration's PROPERTY belong to this rule at all? */
     props: (prop: string) => boolean
     /** Custom-property (`--x`) declarations are the token layer itself — see the header comment —
-     *  so structural rules (1-5) skip them; only the colour rule (6) reads inside them. */
+     *  so structural rules (radius/spacing/shadow/backdrop-filter) skip them; only the colour rule
+     *  reads inside them. */
     checksCustomProps: boolean
     check: (value: string) => string | null
 }
@@ -275,13 +309,6 @@ const RULES: Rule[] = [
         props: p => SPACING_PROP.test(p),
         checksCustomProps: false,
         check: checkSpacing,
-    },
-    {
-        id: 'font-size-literal',
-        label: 'font-size: literal px (want the type scale)',
-        props: p => p === 'font-size',
-        checksCustomProps: false,
-        check: checkFontSize,
     },
     {
         id: 'shadow-blur',

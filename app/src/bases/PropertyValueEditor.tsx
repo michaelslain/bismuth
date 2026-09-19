@@ -31,7 +31,8 @@ import {
 } from './propertyEdit'
 import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
-import styles from './BaseView.module.css'
+import TextInput from '../ui/TextInput'
+import styles from './PropertyValueEditor.module.css'
 
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
  *  carried an identical copy, but its version was deleted along with the rest of the dead
@@ -79,6 +80,9 @@ export function PropertyValueEditor(props: {
         return String(props.value)
     }
     const [draft, setDraft] = createSignal(toDraft())
+    // Captured by the markdown textarea's ref so onInput's autoGrow can reach the raw
+    // element — TextInput's onInput only hands back the string value.
+    let markdownAreaEl: HTMLTextAreaElement | undefined
 
     function commit(): void {
         const k = props.kind
@@ -137,7 +141,8 @@ export function PropertyValueEditor(props: {
                         <Show
                             when={props.kind.kind === 'markdown'}
                             fallback={
-                                <input
+                                <TextInput
+                                    plain
                                     class={styles.kbMetaInput}
                                     type={
                                         props.kind.kind === 'number'
@@ -150,9 +155,7 @@ export function PropertyValueEditor(props: {
                                     }
                                     value={draft()}
                                     autofocus={autofocus()}
-                                    onInput={e =>
-                                        setDraft(e.currentTarget.value)
-                                    }
+                                    onInput={setDraft}
                                     onBlur={commit}
                                     onKeyDown={e => {
                                         if (isConfirmKey(e)) {
@@ -167,20 +170,22 @@ export function PropertyValueEditor(props: {
                                 />
                             }
                         >
-                            <textarea
+                            <TextInput
+                                multiline
+                                plain
                                 class={styles.kbMetaMarkdownArea}
                                 value={draft()}
-                                rows={1}
                                 autofocus={autofocus()}
-                                ref={el =>
+                                ref={el => {
+                                    markdownAreaEl = el
                                     queueMicrotask(() => {
                                         if (autofocus()) el.focus()
                                         autoGrow(el)
                                     })
-                                }
-                                onInput={e => {
-                                    setDraft(e.currentTarget.value)
-                                    autoGrow(e.currentTarget)
+                                }}
+                                onInput={v => {
+                                    setDraft(v)
+                                    if (markdownAreaEl) autoGrow(markdownAreaEl)
                                 }}
                                 onBlur={commit}
                                 onKeyDown={e => {

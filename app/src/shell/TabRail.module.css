@@ -1,34 +1,20 @@
-/* TabRail.module.css — scoped chrome for shell/TabRail.tsx AND shell/TabRailRow.tsx (moved out of
-   the global App.css, 2026-08). Class names here are HASHED at build time: they are reachable only
-   through the imported `styles` object, never as a string literal. Nothing outside these two files
+/* TabRail.module.css — scoped chrome for shell/TabRail.tsx ONLY (split from a shared file, task
+   11 of the ds-conformance plan). Class names here are HASHED at build time: they are reachable
+   only through the imported `styles` object, never as a string literal. Nothing outside this file
    may target them.
 
-   SHARED BY TWO COMPONENTS, DELIBERATELY. Hashes are per-file, and eight hover/focus selectors span
-   both (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`,
-   …) — splitting this into a module per file would leave every one of those matching nothing behind
-   a green build. `TabRail.tsx` owns `.tab-rail`/`.tab-rail-inner`/`.tab-rail-actions`/
-   `.tab-rail-list`; `TabRailRow.tsx` owns `.tab-rail-row`/`.tab-rail-icon`/`.tab-rail-label`/
-   `.tab-x`/`.tab-pin`/`.tab-rename` and imports this same file, getting no module of its own. Two
-   files importing one module is correct and already precedented by `palette/Palette.module.css`.
-
-   `active` AND `pinned` HASH TOO, as co-riding state classes on `.tab-rail-row`. TabRailRow.tsx
-   reaches them via `classList={{ [styles.active]: …, [styles.pinned]: … }}` — bare literals would
-   compile and match nothing.
-
-   `dragging` is a DELIBERATE bare string literal, not an oversight. TabRailRow.tsx has always
-   carried a `dragging` class candidate in its `classList`, but no `.tab-rail-row.dragging` rule
-   exists anywhere in this stylesheet (only the unrelated, dead `.tab.dragging` on the removed
-   horizontal strip — Task 8's problem, not this one's). Giving it a module lookup here would resolve
-   to `undefined` and land a literal `class="undefined"` on the row, so it stays bare. The
-   `TabRailRow` `Dragging` story exists to document this: it renders `dragging: true` and looks
-   identical to `Default`, on purpose, so a future `.tab-rail-row.dragging` rule cannot land
-   unmeasured against a story that never noticed the change.
-
-   THREE IMPERATIVE `.closest()` REFERENCES used to reach `.tab-x`/`.tab-pin`/`.tab-rename` as bare
-   strings (TabRailRow.tsx, moved from App.tsx). They are rewritten against this module's `styles`
-   object in the same commit that hashes these names — see TabRailRow.tsx. Note the third guard
-   (dblclick -> rename) deliberately tests only `.tab-x`/`.tab-pin`, NOT `.tab-rename` — that
-   asymmetry is preserved verbatim from the pre-migration source, not "fixed" into consistency.
+   TabRailRow.tsx now has its OWN module, TabRailRow.module.css — the two used to share this file
+   because eight hover/focus selectors span both components' classes (`.tab-rail:hover
+   .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`, …). Splitting a
+   hashed class straight down the middle of a compound selector would break it silently behind a
+   green build, so every selector that used to pair a TabRail-owned ancestor class
+   (`.tab-rail`/`.rail-pinned`) with a TabRailRow-owned descendant class now reaches the ancestor
+   through a stable, UNHASHED `data-*` attribute instead: `[data-tab-rail]` mirrors `.tab-rail`,
+   `[data-rail-pinned]` mirrors `.rail-pinned`. Both are set on the root `<div>` in TabRail.tsx.
+   `:hover`/`:focus-within` are plain CSS pseudo-classes and work identically on an attribute
+   selector as on a class selector — this changes NOTHING about when the rail expands, only how
+   the selector spells "the rail root". Those moved rules now live in TabRailRow.module.css, next
+   to the classes they actually affect; see that file for the full list.
 
    `.tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }` — MOVED, not copied, from the
    verbatim "Top action toolbar" block above, but with `:global(...)` ADDED around `.btn--icon`.
@@ -42,27 +28,18 @@
 
    THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.tab-rail-actions
    :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
-   copied into Sidebar.module.css/EmptyPane.module.css/graph/Graph.module.css — that box is now
+   copied into Sidebar.module.css/EmptyPane.module.css/GraphView.module.css — that box is now
    `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
    shell/CommandButton.tsx, which every button in this toolbar renders through. The `flex: 0 0
    auto` rule right above this comment is UNRELATED (it stops the buttons shrinking in the
    wrapped toolbar layout) and stays.
 
-   WHAT THE BASELINE CANNOT REACH: `bench/cssBaseline.ts` records the resting state of every
-   Storybook story; CSS `:hover` follows the real pointer and `userEvent.hover` only dispatches
-   events without moving it, so no story can pose it. `:focus-within` DOES follow real focus, and the
-   `shell-tabrail--expanded` story's `play` calls `.focus()` on a close button to reach it — covering
-   five of the eight hover/focus rules below. The remaining three rest on `bench/moduleClassCheck.ts`
-   alone (proves the class name still reaches the DOM, not the hovered appearance):
-   `.tab-rail-row:hover`, `.tab-rail:hover .tab-rail-row:hover .tab-x`,
-   `.tab-rail:hover .tab-rail-row:hover .tab-pin`.
-
    `rail-pinned` IS A SEPARATE NAME FROM `pinned` ON PURPOSE, even though both mean "pinned".
-   `pinned` already means A PINNED TAB, on `.tab-rail-row`; the rail held open by Alt+Shift+S is a
-   different thing on a different element. Reusing one name gave selectors like
-   `.tab-rail.pinned .tab-rail-row.pinned .tab-pin`, where the same token means two things two
-   compounds apart — readable only if you already knew. `rail-pinned` also hashes, and TabRail.tsx
-   reaches it as `[styles['rail-pinned']]`.
+   `pinned` already means A PINNED TAB, on `.tab-rail-row` (now in TabRailRow.module.css); the rail
+   held open by Alt+Shift+S is a different thing on a different element. Reusing one name gave
+   selectors like `.tab-rail.pinned .tab-rail-row.pinned .tab-pin`, where the same token means two
+   things two compounds apart — readable only if you already knew. `rail-pinned` also hashes, and
+   TabRail.tsx reaches it as `[styles['rail-pinned']]`.
 
    The `@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }` block
    moved here with `.tab-rail-inner` — its animation-affecting sibling, per the parent plan's Trap 6
@@ -172,86 +149,3 @@
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-
-/* A tab row: icon + (revealed) label + close/pin.
-   THE 5px/10px ARE LOAD-BEARING AND MUST NOT BE ROUNDED ONTO --sp-*. The rail is 46px with a 1px
-   left border, so its visible centre is x=23. margin 5 + padding 10 = 15, plus that border, puts
-   the 14px icon's left edge at 16 and its centre at exactly 23. They HAD been rounded to
-   --sp-2/--sp-5 (4+12=16), which shifted every collapsed icon 1px right — the drift this comment
-   already warned about, made visible once the icons shrank to 18px boxes.
-   `justify-content: center` is NOT the fix and was tried: the label is only CLIPPED by the inner's
-   overflow:hidden, not removed from layout, so centring the flex line centres icon+label together
-   and pushes the icon off the left edge of the collapsed rail.
-      height is the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. Radius is
-   --r-0 (visual-unification §9.2 — 0 everywhere except genuine circles); it used to read
-   --r-card (4px) with a comment claiming "nothing in the ASCII register is pill-round," which was
-   true of the rest of the app but not, until now, of this rule. */
-.tab-rail-row {
-  display: flex; align-items: center; gap: var(--sp-5);
-  height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
-  margin: 0 5px; padding: 0 10px; border-radius: var(--r-0);
-  color: var(--text-muted); cursor: pointer; user-select: none;
-  white-space: nowrap; position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
-/* Active tab: accent-soft fill + accent text, plus a 2px left bar marking the active row.
-   THE BAR IS A FLAT --accent, not --grad. It used to paint the wordmark's gradient, on the
-   reasoning that the gradient was the design vocabulary's one flourish and this was its second
-   use. In a 2px sliver a three-stop gradient cannot read AS a gradient — it reads as a bar whose
-   colour is slightly wrong, and it disagreed with the accent text and accent-soft fill on the very
-   same row. Removed on request; the flourish stays where it is legible, on the wordmark. */
-.tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
-.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--accent); }
-.tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
-.tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
-.tab-rail-row.active .tab-rail-icon { color: var(--accent); }
-/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for
-   the reveal-with-the-rail opacity fade below (it takes flex space always, via Label's `fill`, so
-   the collapsed row still sizes the same, but only fades in once expanded). */
-.tab-rail-label { opacity: 0; transition: opacity 0.16s ease; }
-/* A PINNED RAIL MUST REVEAL EVERYTHING A HOVERED ONE DOES. Widening to 232px is only half of
-   expanding — the labels, close buttons and pin buttons all fade in off `:hover`/`:focus-within`,
-   so a pinned rail that only got the width was 232px of blank space with bare icons in it. Every
-   reveal selector below therefore carries a `.rail-pinned` twin. */
-.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label,
-.tab-rail.rail-pinned .tab-rail-label { opacity: 1; }
-
-/* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
-   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
-.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: var(--sp-1); opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
-.tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
-.tab-rail:hover .tab-rail-row.pinned .tab-pin,
-.tab-rail.rail-pinned .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
-.tab-rail:hover .tab-rail-row:hover .tab-x,
-.tab-rail:hover .tab-rail-row:hover .tab-pin,
-.tab-rail.rail-pinned .tab-rail-row:hover .tab-x,
-.tab-rail.rail-pinned .tab-rail-row:hover .tab-pin,
-.tab-rail:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
-/* The inline rename input sits in place of the label; give it room within the expanded row. */
-.tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
-
-/* `.tab-rename` — the inline rename input, styled once here and then narrowed by
-   `.tab-rail-row .tab-rename` above for placement inside the expanded row. Collocated at the end of
-   this file (rather than retyped inline above) so the moved text stays byte-identical to its
-   App.css source; nothing about its declared rules changed. */
-.tab-rename {
-  font: inherit;
-  color: var(--fg);
-  background: var(--surface-1, var(--bg));
-  border: 1px solid var(--accent, var(--border-soft));
-  border-radius: var(--r-0);
-  padding: 1px var(--sp-2);
-  margin: -2px 0;
-  width: 11ch;
-  min-width: 4ch;
-  outline: none;
-}
-
-
-/* TabRailRow's trailing controls, wrapped so ONE element stops click + pointerdown + dblclick for
-   all of them (see TabRailRow.tsx's header). `display: contents` on purpose: the wrapper exists
-   only as a GESTURE boundary and must generate no box, or it would insert itself into the row's
-   flex layout and shift the buttons. It still receives events — `display: contents` removes the
-   box, not the node, so handlers on it fire exactly as before. */
-.tab-rail-controls { display: contents; }

@@ -6,7 +6,9 @@ import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import CardFrame from './CardFrame'
+import CardBodyInner from './CardBodyInner'
+import styles from './CardsView.module.css'
 
 /** A value is already a usable image src (remote URL or inline data) vs a vault path. */
 function isDirectUrl(s: string): boolean {
@@ -113,8 +115,9 @@ export function CardsView(props: {
                                             <Show
                                                 when={isBody()}
                                                 fallback={
-                                                    <div
-                                                        class={styles.card}
+                                                    <CardFrame
+                                                        class={styles.cardSlot}
+                                                        interactive
                                                         role="button"
                                                         tabindex={0}
                                                         onClick={() => openCard(row)}
@@ -198,9 +201,7 @@ export function CardsView(props: {
                                                                 </div>
                                                             )}
                                                         </Show>
-                                                        <div
-                                                            class={styles.cardBodyInner}
-                                                        >
+                                                        <CardBodyInner>
                                                             {/* With an image cover the title/author aren't on the cover, so show
                                       them as fields; with the text cover they already appear there. */}
                                                             <CardBody
@@ -212,11 +213,12 @@ export function CardsView(props: {
                                                                 }
                                                                 plainTitle
                                                             />
-                                                        </div>
-                                                    </div>
+                                                        </CardBodyInner>
+                                                    </CardFrame>
                                                 }
                                             >
                                                 <BodyCard
+                                                    class={styles.bodyGridCard}
                                                     row={row}
                                                     result={props.result}
                                                     config={props.config}
@@ -233,14 +235,14 @@ export function CardsView(props: {
                                             description is the whole card, and TaskRow's own wikilinks
                                             are what open a note from it. The TaskChip register
                                             (.taskCard), not the book-cover .card frame. */}
-                                        <div class={styles.taskCard}>
+                                        <CardFrame kind="task">
                                             <TaskRow
                                                 row={row}
                                                 variant="card"
                                                 onToggle={toggle}
                                                 onSetStatus={setStatus}
                                             />
-                                        </div>
+                                        </CardFrame>
                                     </Show>
                                 )}
                             </For>

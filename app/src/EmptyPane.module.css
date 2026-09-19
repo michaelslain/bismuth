@@ -13,7 +13,7 @@
 
    THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.empty-pane
    :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
-   copied into Sidebar.module.css/TabRail.module.css/graph/Graph.module.css — that box is now
+   copied into Sidebar.module.css/TabRail.module.css/GraphView.module.css — that box is now
    `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), passed directly at the
    one call site in EmptyPane.tsx. Nothing about this component reaches into `:global(.btn--icon)`
    any more. */

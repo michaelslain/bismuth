@@ -9,6 +9,8 @@ import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
+import PlainButton from '../ui/PlainButton'
+import Text from '../ui/Text'
 import styles from './InboxRow.module.css'
 
 export type InboxRowProps = {
@@ -46,37 +48,61 @@ function InboxRow(props: InboxRowProps) {
     }
 
     return (
-        <div
-            class={`${styles['inbox-row']} ${props.class ?? ''}`}
-            onClick={() => props.onOpen(props.page.path)}
-        >
-            <span
-                class={styles['inbox-row-dot']}
-                style={{ color: STATUS_COLOR[props.page.status] }}
-            />
-            <div class={styles['inbox-row-main']}>
-                <div class={styles['inbox-row-head']}>
-                    <span class={styles['inbox-row-title']}>
-                        {props.page.title}
-                    </span>
-                    <Show when={props.page.source}>
-                        <span class={styles['inbox-row-source']}>
-                            {props.page.source}
-                        </span>
-                    </Show>
-                    <span class={styles['inbox-row-time']}>
-                        {relTimeISO(props.page.createdAt)}
-                    </span>
+        <div class={`${styles['inbox-row']} ${props.class ?? ''}`}>
+            {/* A real button element around only the non-interactive part (dot + main text).
+                ARIA's button role is Children Presentational — wrapping the actions below too
+                would hide approve/dismiss from assistive tech, so those stay a sibling instead. */}
+            <PlainButton
+                class={styles['inbox-row-open']}
+                onClick={() => props.onOpen(props.page.path)}
+            >
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['inbox-row-dot']}
+                    style={{ color: STATUS_COLOR[props.page.status] }}
+                />
+                <div class={styles['inbox-row-main']}>
+                    <div class={styles['inbox-row-head']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['inbox-row-title']}
+                        >
+                            {props.page.title}
+                        </Text>
+                        <Show when={props.page.source}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['inbox-row-source']}
+                            >
+                                {props.page.source}
+                            </Text>
+                        </Show>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['inbox-row-time']}
+                        >
+                            {relTimeISO(props.page.createdAt)}
+                        </Text>
+                    </div>
+                    <div class={styles['inbox-row-snippet']}>
+                        {snippet(props.page.body)}
+                    </div>
                 </div>
-                <div class={styles['inbox-row-snippet']}>
-                    {snippet(props.page.body)}
-                </div>
-            </div>
+            </PlainButton>
             <Show when={props.showActions}>
-                <div
-                    class={styles['inbox-row-actions']}
-                    onClick={e => e.stopPropagation()}
-                >
+                <div class={styles['inbox-row-actions']}>
                     <For each={props.page.actions}>
                         {a => (
                             <TextButton

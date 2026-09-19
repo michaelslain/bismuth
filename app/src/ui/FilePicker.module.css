@@ -1,0 +1,4 @@
+/* FilePicker.module.css — the hidden native file input (ui/FilePicker.tsx). No visible chrome
+   to theme: the caller's own trigger button is what's on screen, so this rule only needs to
+   take the native control out of layout/paint entirely. */
+.file-picker { display: none; }

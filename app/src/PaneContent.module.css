@@ -1,0 +1,12 @@
+/* app/src/PaneContent.module.css
+   The ExportView Suspense fallback needs the SAME paper-cream grid shape ExportView.tsx's root
+   `.exp` renders (app/src/ExportView.module.css), so the pane doesn't flash a collapsed box
+   while the lazy chunk loads. It's declared here — not imported from ExportView.module.css — so
+   each stylesheet keeps exactly one importer (see "one stylesheet, one importer" in the design
+   system rules). Keep this in sync with `.exp` by hand if that rule ever changes. */
+.export-fallback {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    height: 100%;
+    min-height: 0;
+}

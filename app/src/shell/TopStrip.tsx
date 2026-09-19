@@ -1,4 +1,5 @@
 import type { JSX } from 'solid-js'
+import Text from '../ui/Text'
 import styles from './TopStrip.module.css'
 
 // The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (bismuth-design/ascii/README.md
@@ -47,10 +48,32 @@ export function TopStrip(props: {
                 status bar's daemon readout already uses. `--wordmark-tracking` is overridden per
                 instance in TopStrip.module.css: the ASCII art needed glyphs to overlap, a real word
                 must not. */}
-            <span class={styles['top-strip-mark']}>
-                <span class="asc-wordmark">bismuth</span>
-                <span class="asc-caret">_</span>
-            </span>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['top-strip-mark']}
+            >
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class="asc-wordmark"
+                >
+                    bismuth
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class="asc-caret"
+                >
+                    _
+                </Text>
+            </Text>
             <div class={styles['top-strip-spacer']} />
             {props.children}
         </div>
