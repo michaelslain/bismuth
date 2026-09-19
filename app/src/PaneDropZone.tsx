@@ -8,13 +8,14 @@
 // shapes to draw, via the discriminated `zone` | `reference` prop.
 //
 // `.pane-dropzone` + its five position variants (`left`/`right`/`up`/`down`/`center`) and
-// `.pane-drop-reference`/`.pane-drop-reference-cue` all live in the shared `PaneTree.module.css`,
-// reached via index lookup (`class={`${styles["pane-dropzone"]} ${styles[props.zone]}`}` — a
-// build-time CONSTANT per render for a given zone, so it stays a plain `class` rather than
-// `classList`).
+// `.pane-drop-reference`/`.pane-drop-reference-cue` live in this component's own colocated
+// `PaneDropZone.module.css`, reached via index lookup (`class={`${styles["pane-dropzone"]}
+// ${styles[props.zone]}`}` — a build-time CONSTANT per render for a given zone, so it stays a
+// plain `class` rather than `classList`).
 import { Show } from 'solid-js'
-import styles from './PaneTree.module.css'
+import styles from './PaneDropZone.module.css'
 import { Icon } from './icons/Icon'
+import Text from './ui/Text'
 import type { Zone } from './dnd/geometry'
 
 type PaneDropZoneProps =
@@ -40,9 +41,15 @@ export function PaneDropZone(props: PaneDropZoneProps) {
             }
         >
             <div class={styles['pane-drop-reference']}>
-                <span class={styles['pane-drop-reference-cue']}>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['pane-drop-reference-cue']}
+                >
                     <Icon value="AtSign" size={14} /> Drop to reference
-                </span>
+                </Text>
             </div>
         </Show>
     )

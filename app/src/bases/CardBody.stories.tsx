@@ -79,3 +79,87 @@ export const WithRating: Story = {
         )
     },
 }
+
+/** `titleAsField` suppresses the title/author (Cards shows them on the cover) — only the
+ *  meta row renders. */
+export const TitleAsField: Story = {
+    render: () => (
+        <div
+            style={{
+                width: '220px',
+                padding: '14px',
+                border: '1px solid var(--border-soft)',
+                'border-radius': '8px',
+            }}
+        >
+            <CardBody
+                cols={cols}
+                row={SAMPLE_ROWS[1]}
+                config={config}
+                titleAsField
+            />
+        </div>
+    ),
+}
+
+/** `plainTitle` renders the title as plain text — used when the whole card is already a click
+ *  target (CardsView), so the title isn't a competing inner link. */
+export const PlainTitle: Story = {
+    render: () => (
+        <div
+            style={{
+                width: '220px',
+                padding: '14px',
+                border: '1px solid var(--border-soft)',
+                'border-radius': '8px',
+            }}
+        >
+            <CardBody
+                cols={cols}
+                row={SAMPLE_ROWS[1]}
+                config={config}
+                plainTitle
+            />
+        </div>
+    ),
+}
+
+/** A `pages` column (bare name "pages"/"pagecount"/"page_count") renders "N pages" on the meta
+ *  row's right side when there is no rating column. */
+export const PagesColumnMeta: Story = {
+    render: () => {
+        const pagesConfig = sampleBaseConfig({
+            properties: {
+                pages: { type: { kind: 'number', number: 'plain' } },
+            },
+            declaredProperties: [
+                'status',
+                'priority',
+                'done',
+                'due',
+                'tags',
+                'pages',
+            ],
+        })
+        const pagesRow = {
+            ...SAMPLE_ROWS[2],
+            note: { ...SAMPLE_ROWS[2].note, pages: 312 },
+        }
+        return (
+            <div
+                style={{
+                    width: '220px',
+                    padding: '14px',
+                    border: '1px solid var(--border-soft)',
+                    'border-radius': '8px',
+                }}
+            >
+                <CardBody
+                    cols={['file.name', 'status', 'pages']}
+                    row={pagesRow}
+                    config={pagesConfig}
+                />
+            </div>
+        )
+    },
+}

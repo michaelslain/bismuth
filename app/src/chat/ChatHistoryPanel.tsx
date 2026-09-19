@@ -93,7 +93,9 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                 />
             </div>
             <div class={styles.title}>
-                <span>{searching() ? 'Results' : 'Resume a conversation'}</span>
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    {searching() ? 'Results' : 'Resume a conversation'}
+                </Text>
                 <Show when={props.onNewChat}>
                     {onNewChat => (
                         <TextButton

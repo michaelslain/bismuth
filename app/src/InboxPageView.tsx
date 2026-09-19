@@ -21,6 +21,7 @@ import { relTimeISO } from './relTime'
 import { inboxPages, refreshDaemonPages } from './daemonInbox'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
+import Text from './ui/Text'
 import styles from './InboxPageView.module.css'
 
 // A page reading "working" for longer than this is presumed stuck (the daemon process itself
@@ -105,20 +106,32 @@ export function InboxPageView(props: {
                                     page()?.status === 'working')
                             }
                         >
-                            <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}
+                            >
                                 This device isn't the daemon owner — approving
                                 here won't fire.
-                            </span>
+                            </Text>
                         </Show>
                         <Show when={page()} keyed>
                             {p => (
                                 <Switch>
                                     <Match when={stuck()}>
-                                        <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}
+                                        >
                                             {notOwner()
                                                 ? "This device isn't the daemon owner — the approval never fired. Approve from the owner device."
                                                 : 'No response — daemon may be offline.'}
-                                        </span>
+                                        </Text>
                                         <TextButton onClick={markFailed}>
                                             MARK FAILED
                                         </TextButton>
@@ -154,20 +167,32 @@ export function InboxPageView(props: {
                                         </For>
                                     </Match>
                                     <Match when={p.status === 'done'}>
-                                        <span class={styles['inbox-page-note']}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles['inbox-page-note']}
+                                        >
                                             Done
                                             {p.daemonNote
                                                 ? ` — ${p.daemonNote}`
                                                 : ''}
-                                        </span>
+                                        </Text>
                                     </Match>
                                     <Match when={p.status === 'failed'}>
-                                        <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-failed']}`}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={`${styles['inbox-page-note']} ${styles['inbox-page-note-failed']}`}
+                                        >
                                             Failed
                                             {p.daemonNote
                                                 ? `: ${p.daemonNote}`
                                                 : ''}
-                                        </span>
+                                        </Text>
                                         {/* A failed page keeps its buttons live — pressing again re-runs the round-trip. */}
                                         <For each={p.actions}>
                                             {a => (
@@ -186,12 +211,18 @@ export function InboxPageView(props: {
                                         </For>
                                     </Match>
                                     <Match when={p.status === 'dismissed'}>
-                                        <span class={styles['inbox-page-note']}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={styles['inbox-page-note']}
+                                        >
                                             Dismissed
                                             {p.pressedAt
                                                 ? ` — ${relTimeISO(p.pressedAt)}`
                                                 : ''}
-                                        </span>
+                                        </Text>
                                     </Match>
                                 </Switch>
                             )}

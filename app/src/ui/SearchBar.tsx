@@ -18,6 +18,9 @@ export type SearchBarProps = {
     leadingIcon?: string
     autofocus?: boolean
     inputRef?: (el: HTMLInputElement) => void
+    /** Accessible name for the input, when the placeholder alone isn't enough (e.g. a find-in-file
+     *  bar whose placeholder is the terse "Find"). Passed straight through to the `<input>`. */
+    'aria-label'?: string
     /** Trailing adornments (toggles, buttons) rendered after the input. */
     children?: JSX.Element
     /** Class on the outer `.search-bar` wrapper. */
@@ -38,6 +41,7 @@ function SearchBar(props: SearchBarProps) {
         'leadingIcon',
         'autofocus',
         'inputRef',
+        'aria-label',
         'children',
         'class',
         'inputClass',
@@ -62,6 +66,7 @@ function SearchBar(props: SearchBarProps) {
                 class={searchBarInputClass(local.inputClass)}
                 style={local.inputStyle}
                 placeholder={local.placeholder}
+                aria-label={local['aria-label']}
                 value={local.value}
                 autofocus={local.autofocus}
                 onInput={e => local.onInput(e.currentTarget.value)}

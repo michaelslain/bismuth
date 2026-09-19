@@ -1,0 +1,2 @@
+.chart { padding: 18px var(--sp-7); height: 100%; overflow: auto; }
+.empty { color: var(--text-muted); font-size: var(--fs-body); padding: var(--sp-7); text-align: center; }

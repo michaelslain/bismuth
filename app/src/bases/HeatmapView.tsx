@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from 'solid-js'
+import { For, createMemo } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import {
     buildChartData,
@@ -6,7 +6,10 @@ import {
     type HeatCell,
 } from '../../../core/src/bases/chart'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
-import styles from './Charts.module.css'
+import Text from '../ui/Text'
+import ChartFrame from './ChartFrame'
+import StatTiles, { type StatTile } from './StatTiles'
+import styles from './HeatmapView.module.css'
 
 const MONTH_NAMES = [
     'Jan',
@@ -119,106 +122,134 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
         return { entries, current, longest }
     })
 
-    const streakCards = createMemo(() => {
+    const streakCards = createMemo<StatTile[]>(() => {
         const s = streaks()
+        const valueStyle = { 'font-size': '22px' } as const
         return [
-            { label: 'entries', value: String(s.entries) },
+            { label: 'entries', value: String(s.entries), valueStyle },
             {
                 label: 'current streak',
                 value: `${s.current} ${s.current === 1 ? 'day' : 'days'}`,
+                valueStyle,
             },
             {
                 label: 'longest streak',
                 value: `${s.longest} ${s.longest === 1 ? 'day' : 'days'}`,
+                valueStyle,
             },
         ]
     })
 
     return (
-        <div class={styles.chart}>
-            <Show
-                when={grid().weeks.length > 0}
-                fallback={
-                    <div class={styles.empty}>
-                        No dated rows to chart. Set an x date column in view
-                        settings.
-                    </div>
-                }
-            >
-                <div class={styles.heatmap}>
-                    <div class={styles.heatMonths}>
-                        <span style={{ width: '14px', flex: 'none' }} />
-                        <For each={monthLabels()}>
-                            {label => (
-                                <span class={styles.heatMonthCol}>{label}</span>
-                            )}
-                        </For>
-                    </div>
-                    <div class={styles.heatGrid}>
-                        <For each={dowRows()}>
-                            {(weekRow, i) => (
-                                <div class={styles.heatRow}>
-                                    <span class={styles.heatDow}>
-                                        {DOW[i()]}
-                                    </span>
-                                    <For each={weekRow}>
-                                        {cell => {
-                                            const lv = level(cell)
-                                            return (
-                                                <span
-                                                    class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]}`}
-                                                    title={
-                                                        cell
-                                                            ? `${cell.date}: ${cell.value ?? 0}`
-                                                            : ''
-                                                    }
-                                                >
-                                                    {glyphOf(lv)}
-                                                </span>
-                                            )
-                                        }}
-                                    </For>
-                                </div>
-                            )}
-                        </For>
-                    </div>
-                    <div class={styles.legend}>
-                        <span>less</span>
-                        <span class={`${styles.legendGlyph} ${styles.lv0}`}>
-                            .
-                        </span>
-                        <span class={`${styles.legendGlyph} ${styles.lv1}`}>
-                            -
-                        </span>
-                        <span class={`${styles.legendGlyph} ${styles.lv2}`}>
-                            +
-                        </span>
-                        <span class={`${styles.legendGlyph} ${styles.lv3}`}>
-                            #
-                        </span>
-                        <span>more</span>
-                        <div class={styles.legendSpacer} />
-                        <span>intensity is the glyph, never the cell size</span>
-                    </div>
-                    <div class={`${styles.statgrid} ${styles.streakStats}`}>
-                        <For each={streakCards()}>
-                            {card => (
-                                <div class={styles.statTile}>
-                                    <div
-                                        class={styles.statValue}
-                                        style={{ 'font-size': '22px' }}
-                                    >
-                                        {card.value}
-                                    </div>
-                                    <div class={styles.statLabel}>
-                                        {card.label}
-                                    </div>
-                                </div>
-                            )}
-                        </For>
-                    </div>
+        <ChartFrame
+            empty={grid().weeks.length === 0}
+            emptyMessage="No dated rows to chart. Set an x date column in view settings."
+        >
+            <div class={styles.heatmap}>
+                <div class={styles.heatMonths}>
+                    <div style={{ width: '14px', flex: 'none' }} />
+                    <For each={monthLabels()}>
+                        {label => (
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles.heatMonthCol}
+                            >
+                                {label}
+                            </Text>
+                        )}
+                    </For>
                 </div>
-            </Show>
-        </div>
+                <div class={styles.heatGrid}>
+                    <For each={dowRows()}>
+                        {(weekRow, i) => (
+                            <div class={styles.heatRow}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles.heatDow}
+                                >
+                                    {DOW[i()]}
+                                </Text>
+                                <For each={weekRow}>
+                                    {cell => {
+                                        const lv = level(cell)
+                                        return (
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]}`}
+                                                title={
+                                                    cell
+                                                        ? `${cell.date}: ${cell.value ?? 0}`
+                                                        : ''
+                                                }
+                                            >
+                                                {glyphOf(lv)}
+                                            </Text>
+                                        )
+                                    }}
+                                </For>
+                            </div>
+                        )}
+                    </For>
+                </div>
+                <div class={styles.legend}>
+                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        less
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={`${styles.legendGlyph} ${styles.lv0}`}
+                    >
+                        .
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={`${styles.legendGlyph} ${styles.lv1}`}
+                    >
+                        -
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={`${styles.legendGlyph} ${styles.lv2}`}
+                    >
+                        +
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={`${styles.legendGlyph} ${styles.lv3}`}
+                    >
+                        #
+                    </Text>
+                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        more
+                    </Text>
+                    <div class={styles.legendSpacer} />
+                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        intensity is the glyph, never the cell size
+                    </Text>
+                </div>
+                <StatTiles tiles={streakCards()} class={styles.streakStats} />
+            </div>
+        </ChartFrame>
     )
 }

@@ -1,5 +1,6 @@
 import { For } from 'solid-js'
-import styles from './BaseSkeleton.module.css'
+import { SkeletonBar } from './SkeletonBar'
+import styles from './CardsSkeleton.module.css'
 
 /** A grid of card outlines (cover bar + a couple of text lines). */
 export function CardsSkeleton() {
@@ -9,8 +10,8 @@ export function CardsSkeleton() {
                 {() => (
                     <div class={styles.card}>
                         <div class={styles.cardCover} />
-                        <div class={styles.cardLineWide} />
-                        <div class={styles.cardLine} />
+                        <SkeletonBar class={styles.cardLineWide} />
+                        <SkeletonBar class={styles.cardLine} />
                     </div>
                 )}
             </For>

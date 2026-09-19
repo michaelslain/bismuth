@@ -1,0 +1,6 @@
+/* The shared placeholder look every skeleton silhouette (table cells, card lines) is built
+   from. Sizing (height/width/flex/margin) is layered on by the caller via `class`. */
+.block {
+  background: color-mix(in srgb, var(--faint) 22%, transparent);
+  border-radius: var(--r-0);
+}

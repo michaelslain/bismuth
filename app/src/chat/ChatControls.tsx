@@ -23,6 +23,7 @@ import type { ChatSession } from './chatSession'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
 import { Button } from '../ui/Button'
+import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
 import { opencodeAuthSummary, providerCan, sanitizeChatProvider } from '../chatProvider'
@@ -72,17 +73,25 @@ function Readouts(props: { session: ChatSession }) {
             {m => (
                 <>
                     <Show when={m().tools.length > 0}>
-                        <span
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
                             class={styles.stat}
                             data-bar-drop="4"
                             data-testid="chat-tools"
                             title={`${m().tools.length} tools available`}
                         >
                             <Icon value="Wrench" size={13} /> {m().tools.length}
-                        </span>
+                        </Text>
                     </Show>
                     <Show when={m().mcpServers.length > 0}>
-                        <span
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
                             class={styles.stat}
                             data-bar-drop="4"
                             data-testid="chat-mcp"
@@ -90,11 +99,15 @@ function Readouts(props: { session: ChatSession }) {
                         >
                             <Icon value="Server" size={13} />{' '}
                             {props.session.mcpConnected()}/{m().mcpServers.length}
-                        </span>
+                        </Text>
                     </Show>
                     <Show when={props.session.context()}>
                         {c => (
-                            <span
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
                                 class={styles.stat}
                                 classList={{
                                     [styles.warn]: c().percentage >= 80,
@@ -104,7 +117,7 @@ function Readouts(props: { session: ChatSession }) {
                             >
                                 <Icon value="Gauge" size={13} />{' '}
                                 {Math.round(c().percentage)}%
-                            </span>
+                            </Text>
                         )}
                     </Show>
                 </>
@@ -126,7 +139,14 @@ function Config(props: { session: ChatSession }) {
                 header is populated the instant the chat opens (BUG #14). Seeded to the app
                 default and updated live. NEVER DROPPED — its armed tint is the only signal that
                 the agent is writing to the vault unconfirmed. */}
-            <span class={styles['bar-item']} data-testid="chat-perm-mode">
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['bar-item']}
+                data-testid="chat-perm-mode"
+            >
                 <Select
                     class={
                         styles['mode-select'] +
@@ -147,7 +167,7 @@ function Config(props: { session: ChatSession }) {
                     options={PERMISSION_MODE_OPTIONS}
                     onChange={props.session.setPermissionMode}
                 />
-            </span>
+            </Text>
         </Show>
     )
 }

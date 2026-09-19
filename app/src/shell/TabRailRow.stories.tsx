@@ -1,11 +1,12 @@
 // Visual spec for <TabRailRow> — one row of the vertical tab rail: icon, label (or an inline
 // rename input), and a trailing close-X / pin.
 //
-// WHY THIS FILE EXISTS: recorded BEFORE `.tab-rail-row`/`.tab-rail-icon`/`.tab-rail-label`/
-// `.tab-x`/`.tab-pin`/`.tab-rename` moved from the global App.css into the module TabRail.tsx and
-// this file share. See TabRail.stories.tsx and TabRail.tsx's headers for why they share one module
-// (Trap 4: descendant selectors span both components). The `Wrap` below reaches its ancestry classes
-// (`.tab-rail`/`.tab-rail-inner`/`.tab-rail-list`) through `styles` for the same reason.
+// `.tab-rail-row`/`.tab-rail-icon`/`.tab-rail-label`/`.tab-x`/`.tab-pin`/`.tab-rename` live in this
+// component's own `TabRailRow.module.css` (task 11 of ds-conformance split TabRail.module.css in
+// two). The `Wrap` below still reaches `.tab-rail`/`.tab-rail-inner`/`.tab-rail-list` through
+// `TabRail.module.css`'s `styles`, since those three stay TabRail's, and mirrors the real
+// `data-tab-rail` attribute TabRail.tsx sets on its root — the cross-module hover/focus/pinned
+// reveal rules in `TabRailRow.module.css` key off that attribute, not a class.
 //
 // SEVEN STORIES: `Default` (rest). `Active` — `.active` + its `::before` gradient bar. `Pinned` —
 // the pin glyph replaces the close X. `Dragging` — `.dragging`. `Renaming` — the `.tab-rename`
@@ -36,7 +37,11 @@ const Wrap = (props: { children: unknown }) => (
             background: 'var(--rail)',
         }}
     >
-        <div class={styles['tab-rail']} style={{ position: 'static' }}>
+        <div
+            class={styles['tab-rail']}
+            style={{ position: 'static' }}
+            data-tab-rail="true"
+        >
             <div
                 class={styles['tab-rail-inner']}
                 style={{ position: 'static', width: '100%' }}

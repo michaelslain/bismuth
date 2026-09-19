@@ -26,34 +26,38 @@ editor find panel; and 5 (`ArchiveX`, `Blend`, `FolderInput`, `Map`, `Vote`) are
 its own hand-authored `FALLBACK_ART` rather than an empty icon. `icon-manifest.json`'s own
 `source`/`counts` fields record the package version and this breakdown at generation time.
 
-## Symbols Nerd Font Mono (retired)
+## Symbols Nerd Font Mono (retired, removed)
 
-**No longer shipped or referenced by `<Icon>`.** Bismuth's interface icons used a subset of the
-Nerd Fonts symbols-only font from mid-2026 until the Phosphor migration above retired it —
-`app/src/icons/nerdGlyphs.ts` (the codepoint table this section describes) says so in its own
-header: *"registry.ts no longer imports this file."* It survives in the tree only because
-`app/src/icons/specimen/` — the decision record for the Phosphor move — still renders this era's
-glyphs in a side-by-side comparison column, via the real subset font below.
+**No longer shipped.** Bismuth's interface icons used a subset of the Nerd Fonts symbols-only font
+from mid-2026 until the 2026-08-27 Phosphor migration above retired it from `<Icon>` — at which
+point nothing read `var(--icon-font-stack)` any more. The subsystem behind it (the codepoint table
+`app/src/icons/nerdGlyphs.ts` + its tests, the generator `app/scripts/build-icon-font.ts` +
+`app/scripts/iconFontTables.ts`, the `icons:font` script, `app/src/icons/iconFont.test.ts`,
+`bench/iconFontProbe.ts`, `app/src/styles/icons.css` and its `@font-face`, the `--icon-font-stack`
+token, and the committed `symbols-nerd-font-mono.woff2`/`.json` themselves) was fully deleted in
+ds-conformance Task 8, once every one of those was confirmed to have no remaining reference outside
+itself. This notice, and the license text below, are kept as the historical attribution record for
+the period the font was actually bundled — no asset governed by it ships any more.
 
 - **Source**: <https://github.com/ryanoasis/nerd-fonts> (release `v3.5.0`, asset
   `NerdFontsSymbolsOnly.zip`, member `SymbolsNerdFontMono-Regular.ttf`)
 - **Copyright**: © 2014 Ryan L McIntyre
-- **License**: MIT — the full text is vendored alongside the font at
-  `app/src/assets/fonts/LICENSE-nerd-fonts.txt`
+- **License**: MIT — the full text remains vendored at
+  `app/src/assets/fonts/LICENSE-nerd-fonts.txt`, kept alongside this notice even though the font
+  file it accompanied is gone
 
 The Nerd Fonts project itself is MIT, and it aggregates glyphs from icon sets that carry their own
 licenses — Material Design Icons (Apache 2.0), Font Awesome Free (CC BY 4.0 for the artwork),
 Octicons (MIT), Devicons and Codicons (MIT) among them. Upstream's own LICENSE and README are the
 authority on the per-set terms; see the release asset.
 
-**Changes made (historical).** The 2.5 MB upstream TTF was subset to the ~124 codepoints this app
-referenced and converted to WOFF2 (`app/scripts/build-icon-font.ts`, using `subset-font`/harfbuzz),
-producing `app/src/assets/fonts/symbols-nerd-font-mono.woff2` at ~11 KB. The outlines themselves
-were unmodified — subsetting removes glyphs, it does not redraw them. The **Mono** variant was used
-so every glyph advanced exactly one cell. `app/src/assets/fonts/symbols-nerd-font-mono.json`
-records which release and which codepoints the committed file was built from. The font asset and
-`build-icon-font.ts` remain in the tree to serve the specimen comparison above; this notice is kept
-because that font file is still bundled and its attribution requirement still applies.
+**Changes made (historical, no longer applicable).** The 2.5 MB upstream TTF was subset to the
+~124 codepoints this app referenced and converted to WOFF2 (`app/scripts/build-icon-font.ts`, using
+`subset-font`/harfbuzz), producing `app/src/assets/fonts/symbols-nerd-font-mono.woff2` at ~11 KB.
+The outlines themselves were unmodified — subsetting removes glyphs, it does not redraw them. The
+**Mono** variant was used so every glyph advanced exactly one cell. That woff2 and its provenance
+sidecar (`symbols-nerd-font-mono.json`) are both deleted now; the generator that produced them is
+too — see above.
 
 ## HackerNoon Pixel Icon Library (retired)
 
@@ -63,17 +67,21 @@ Library, before the Nerd Font era above. The artwork itself — the flattened SV
 currently applies to anything Bismuth ships.
 
 **The generator survives, marked retired.** `app/scripts/build-pixel-icons.ts` is still in the tree
-as the record of how the pixel set was produced, the same way `app/src/icons/nerdGlyphs.ts` outlives
-its own era. It is no longer wired to any `package.json` script: it used to own `icons:build`, which
-meant the most obvious-looking name in the icons group regenerated a dead module that nothing
-imports. That entry has been removed, and the script's header now says so.
+as the record of how the pixel set was produced — the Nerd Font era's own codepoint table,
+`app/src/icons/nerdGlyphs.ts`, no longer survives the same way; it was deleted once its generator
+and every consumer of it were (see [Symbols Nerd Font Mono](#symbols-nerd-font-mono-retired-removed)
+above). `build-pixel-icons.ts` is no longer wired to any `package.json` script: it used to own
+`icons:build`, which meant the most obvious-looking name in the icons group regenerated a dead
+module that nothing imports. That entry has been removed, and the script's header now says so.
 
-The two live icon scripts each name their output:
+The one live icon-generating script names its output:
 
 | Script | Builds | Status |
 | --- | --- | --- |
 | `bun run icons:svg` | Phosphor SVG art + `icon-manifest.json` (`app/scripts/build-icon-svgs.ts`) | current, see [Phosphor Icons](#phosphor-icons) |
-| `bun run icons:font` | the Nerd Font subset woff2 (`app/scripts/build-icon-font.ts`) | still used by `app/src/styles/icons.css` and `icons/specimen/` |
+
+(`icons:font`, the Nerd Font subset generator, was removed alongside the rest of that subsystem —
+see above.)
 
 This notice is kept as a historical record in case a reader is looking for why this era's assets no
 longer exist.

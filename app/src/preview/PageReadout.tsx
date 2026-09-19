@@ -51,7 +51,7 @@ function PageReadout(props: PageReadoutProps) {
     }
 
     return (
-        <span
+        <div
             class={`${styles['page-readout']} ${props.class ?? ''}`}
             data-testid="page-readout"
         >
@@ -84,7 +84,7 @@ function PageReadout(props: PageReadoutProps) {
                     {`/ ${props.count()}`}
                 </Label>
             </Show>
-        </span>
+        </div>
     )
 }
 

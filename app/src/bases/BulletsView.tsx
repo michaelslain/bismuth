@@ -2,7 +2,7 @@ import { For, Index, Show } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderValue } from './renderValue'
 import TaskRow from './TaskRow'
-import styles from './BaseView.module.css'
+import styles from './BulletsView.module.css'
 
 /**
  * Plain markdown-style bullet list: one <li> per row (the first column, rendered as a

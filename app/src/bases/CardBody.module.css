@@ -1,0 +1,9 @@
+/* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
+/* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
+   (`<Label tone="muted">`); font-size (11.5px, not on the fixed --fs-* scale) stays here. */
+.cardAuthor { font-size: var(--fs-ui); }
+/* The single meta row: status word on the left, stars / page count on the right. */
+.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); font-size: var(--fs-ui); }
+.cardMetaLeft { display: inline-flex; align-items: center; min-width: 0; }
+.cardMetaRight { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.cardPages { font-variant-numeric: tabular-nums; }

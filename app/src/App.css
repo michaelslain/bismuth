@@ -3,12 +3,14 @@
    CANNOT be scoped: design tokens, the element reset, and classes written into runtime-generated
    HTML strings (see styles/content.css and cssLayering.test.ts).
 
-   CSS `@import` HOISTS. Regardless of where the four lines below sit in this file, the browser
+   CSS `@import` HOISTS. Regardless of where the three lines below sit in this file, the browser
    emits those stylesheets AHEAD of every rule here — so any rule still in App.css now outranks an
    imported one of equal specificity, whatever their original line numbers were. Check that pair
    before moving the next group out: relocation flips precedence, and a flip is invisible in review.
-   (styles/icons.css is the exception to the precedence worry: it holds a single @font-face, which
-   is not a rule and cannot be out-ordered by one.)
+   (styles/icons.css used to be the exception to the precedence worry — it held a single @font-face,
+   not a rule, so it could never be out-ordered by one. It and its @import here were deleted
+   (ds-conformance Task 8) once the Nerd Font icon subset it fed was fully retired — see
+   docs/overview/third-party-notices.md.)
 
    Everything below the imports is component chrome that has not been given a home yet; the later
    tasks of the CSS modularization move it out group by group. cssLayering.test.ts holds a
@@ -16,7 +18,6 @@
 @import "./styles/tokens.css";
 @import "./styles/reset.css";
 @import "./styles/content.css";
-@import "./styles/icons.css";
 
 /* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
    `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL
@@ -121,7 +122,7 @@
    the empty-pane new-terminal icon and the graph-mode icons.
    The two-parent selector list that used to live here (`.empty-pane .btn--icon, .graph-mode-icons
    .btn--icon { … }`, plus its `:hover` pair) is now two COPIES, one per owning module:
-   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and graph/Graph.module.css's
+   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and GraphView.module.css's
    `.graph-mode-icons :global(.btn--icon)` — same idiom shell/Sidebar.module.css and
    shell/TabRail.module.css already used for their own copies of this same declaration
    (`.tab-rail-actions .btn--icon` / `.tabbar-actions .btn--icon` — the rail's copy lives in
@@ -174,7 +175,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    palette/switcher.css) moved into palette/Palette.module.css (Task 6). */
 
 /* Graph Find panel search (a compact sibling of .palette-search) + the Graph Find overlay itself
-   (GraphSearch.tsx): the `.graph-search*` family moved into graph/Graph.module.css with the rest
+   (GraphSearch.tsx): the `.graph-search*` family moved into GraphView.module.css with the rest
    of the graph chrome (Task 9). */
 
 /* Icon picker: a searchable grid reusing the palette overlay/panel chrome (ui/gallery/
@@ -182,21 +183,29 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    (Task 11 — single owner). */
 
 /* The flashcard review UI (FlashcardsView.tsx), its deck-wide edit modal (EditCardsModal.tsx)
-   and single-card edit modal moved into bases/Flashcards.module.css: one owner, no runtime-
-   generated names. `.cell-*` and `.cards-draft`, held back from that move (Task 8) by the
-   innerHTML/closest/querySelector trap, joined them in Task 11 — see that module's header for how
-   each hit was resolved. `.deck-*`/`.srs-*`/`.vs-*` (dead, zero consumers) were deleted rather than
-   migrated; the module header records that too. */
+   and single-card edit modal (CardsModal.tsx/CardEditModal.tsx) moved out of App.css into
+   bases/Flashcards.module.css: one owner, no runtime-generated names. `.cell-*` and
+   `.cards-draft`, held back from that move (Task 8) by the innerHTML/closest/querySelector trap,
+   joined them in Task 11. `.deck-*`/`.srs-*`/`.vs-*` (dead, zero consumers) were deleted rather
+   than migrated. That single Flashcards.module.css has since been split further: each component
+   now owns its own module — FlashcardsView.module.css, EditCardsModal.module.css,
+   CardsModal.module.css, CardEditModal.module.css and the extracted CardFrame/CardBodyInner/
+   CardTitle/SkeletonBar all carry `.cell-*`/`.cards-draft`/etc. by their own name; there is no
+   longer a single `bases/Flashcards.module.css` file. */
 
 /* The `.pane-*` family (splits, leaves, headers, dropzones, dividers) and its `@keyframes pane-in`
-   now live in PaneTree.module.css, shared by PaneTree/PaneLeaf/PaneHeader/PaneDropZone. The old
-   separate PaneTree.css was folded into it at the same time. */
+   moved out of App.css into what was then PaneTree.module.css, shared by PaneTree/PaneLeaf/
+   PaneHeader/PaneDropZone. The old separate PaneTree.css was folded into it at the same time.
+   Each of the four has since been split into its own module (PaneTree.module.css,
+   PaneLeaf.module.css, PaneHeader.module.css, PaneDropZone.module.css); the selectors that used
+   to cross the file boundary now reach the ancestor through the unhashed `data-pane-focused`
+   attribute PaneLeaf.tsx sets on its own root. */
 /* ── Knowledge-graph chrome ──────────────────────────────────────────────────
    GraphView is ONE component used full-pane AND in the narrow sidebar mini-panel, so the full
    chrome (crumb, Find, floating legend/stats cards, in-bar 2D/3D) is gated to wide width via a
    container query; the compact bottom controls show in the narrow sidebar. The whole `.graph-*`
    family (+ the overlay rules that used to live in graph/asciiGraph.css) moved into
-   graph/Graph.module.css (Task 9) — see that module's header for the two-file merge. */
+   GraphView.module.css (Task 9) — see that module's header for the two-file merge. */
 
 /* Daemon services list: nothing here. Its rules left this file for DaemonList.module.css (Task 11),
    and DaemonList itself is now DELETED — the graph's "daemon" mode is gone (docs/graph/overview.md)

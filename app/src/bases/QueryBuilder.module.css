@@ -42,9 +42,12 @@
 
 .panel .qb-rm {
   width: 28px; height: 28px; flex: 0 0 auto;
-  display: grid; place-items: center;
+  display: grid; place-items: center; justify-content: normal; gap: normal;
   border-radius: var(--r-0); color: var(--faint);
   background: none; border: none; cursor: pointer; padding: 0;
+  /* font-size/line-height reset — see BaseSettings.module.css's `.propset-eye` comment: the
+     IconButton swap otherwise leaks `.btn--icon`'s --fs-body-lg font-size onto this box. */
+  font-size: inherit; line-height: inherit;
   transition: background .14s, color .14s;
 }
 /* --danger, not --rose: "Remove filter" is a destructive control, and --rose is one of the six

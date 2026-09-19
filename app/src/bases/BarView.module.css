@@ -1,0 +1,4 @@
+/* ---------- bar chart (bases-bar.card.html) ----------
+   A row of typed `#` per record — the system draws no SVG. Wraps <AsciiChart>'s own
+   layout (label column + bar + trailing value), just adding the chart's outer padding. */
+.barChart { font-size: var(--fs-ui); line-height: 17px; }

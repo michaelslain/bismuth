@@ -1,0 +1,22 @@
+/* app/src/intro/WordmarkHero.module.css — the wordmark hero (welcome / begin slides): the
+   logo mark + the system's ONE decorative flourish (.asc-wordmark's gradient sheen,
+   ui.css/App.css), replacing the old bespoke glow/ring/spin crystal treatment. No extra glow
+   layered around it — the sheen IS the flourish.
+
+   Split out of VaultIntro.module.css (design-system conformance, one-stylesheet-one-importer):
+   `.vi-wordmark-hero`/`.vi-wordmark-text` were only ever written by WordmarkHero.tsx, so they
+   move here with their sole importer. Rules moved verbatim, no changes. */
+
+.vi-wordmark-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.vi-wordmark-hero img {
+  display: block;
+}
+.vi-wordmark-text {
+  font-size: var(--fs-hero);
+  letter-spacing: 0.04em;
+}

@@ -1,4 +1,6 @@
 import { Show } from 'solid-js'
+import PlainButton from '../ui/PlainButton'
+import Text from '../ui/Text'
 import styles from './InboxIndicator.module.css'
 
 // The status bar's daemon-inbox NOTIFICATION indicator.
@@ -26,14 +28,15 @@ import styles from './InboxIndicator.module.css'
 // whole inbox surface is gated behind `settings.daemon.enabled` (see CLAUDE.md, "Daemon
 // Integration") and a count of 0 pages in a vault with no daemon is meaningless rather than calm.
 //
-// WHY A BARE <button> AND NOT ui/Button. The house rule is "never a bare <button> where a ui/
-// primitive exists", and the exemption it names is "if no primitive fits". None does: ui/Button
-// composes the `.btn` family via buttonClass.ts, which brings a border, padding and one of three
-// sizes — chrome sized for a real button, not for a run of text inside an 18px --fs-micro field
-// log. Adopting it would mean overriding most of what it applies, which is the shape of fighting a
-// primitive rather than using one. shell/WindowControls.tsx is the established precedent for
-// exactly this case (a bare <button> plus a module class, for chrome that is clickable without
-// being button-shaped), and this follows it deliberately — do not "fix" it into a ui/Button.
+// WHY PlainButton AND NOT ui/Button. The house rule is "never a bare <button> where a ui/
+// primitive exists" — and one does here, just not the one it sounds like. ui/Button composes
+// the `.btn` family via buttonClass.ts, which brings a border, padding and one of three sizes —
+// chrome sized for a real button, not for a run of text inside an 18px --fs-micro field log.
+// Adopting it would mean overriding most of what it applies, which is the shape of fighting a
+// primitive rather than using one. PlainButton (app/src/ui/PlainButton.tsx) is the other
+// primitive: a real `<button>` with its native chrome reset to nothing, so `.status-inbox` below
+// stays the only thing that paints it — exactly "chrome that is clickable without being
+// button-shaped". shell/WindowControls.tsx uses the same primitive for the same reason.
 // It IS a real <button>, not the clickable <span> that `.status-vault` uses beside it, because
 // this one is reachable and operable from the keyboard; `.status-vault`'s copy-to-clipboard is
 // not, which is a pre-existing gap this component does not inherit.
@@ -53,8 +56,7 @@ export function InboxIndicator(props: { count: number; onOpen: () => void }) {
             ? `Inbox: ${props.count} page${props.count === 1 ? '' : 's'} awaiting review. Open inbox.`
             : 'Inbox: nothing awaiting review. Open inbox.'
     return (
-        <button
-            type="button"
+        <PlainButton
             class={styles['status-inbox']}
             classList={{ [styles['status-inbox--pending']]: pending() }}
             aria-label={label()}
@@ -62,9 +64,15 @@ export function InboxIndicator(props: { count: number; onOpen: () => void }) {
             onClick={props.onOpen}
         >
             <Show when={pending()}>
-                <span class={styles['status-inbox-dot']} />
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['status-inbox-dot']}
+                />
             </Show>
             inbox: {props.count}
-        </button>
+        </PlainButton>
     )
 }

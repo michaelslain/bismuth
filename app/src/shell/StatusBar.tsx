@@ -1,5 +1,6 @@
 import { Show } from 'solid-js'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import { InboxIndicator } from './InboxIndicator'
 import styles from './StatusBar.module.css'
 
@@ -54,14 +55,26 @@ export function StatusBar(props: {
 }) {
     return (
         <div class={styles['status-bar']}>
-            <span
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={styles['status-vault']}
                 title={props.vaultPath || undefined}
                 onClick={props.onCopyVault}
             >
                 {props.vaultName || 'vault'}
-            </span>
-            <span class={styles['status-sep']}>//</span>
+            </Text>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['status-sep']}
+            >
+                //
+            </Text>
             {/* No layout class of its own, deliberately: this is the one item in the row that can
                 shrink to zero (Label pairs `min-width: 0` with `overflow: hidden`), so it absorbs
                 every shortfall and yields entirely on a narrow bar. That is the intended
@@ -75,9 +88,16 @@ export function StatusBar(props: {
                 the highest-stakes message on screen. See StatusBar.module.css for the matching
                 visual promotion. */}
             <Show when={!props.connected}>
-                <span class={styles['status-conn']} role="status">
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['status-conn']}
+                    role="status"
+                >
                     connection lost — polling
-                </span>
+                </Text>
             </Show>
             <div class={styles['status-spacer']} />
             {/* INBOX SITS BEFORE THE DAEMON, so the daemon status can be the last thing on the
@@ -113,9 +133,19 @@ export function StatusBar(props: {
                 `styles['status-daemon-state--' + props.daemon]`: a runtime-built key is invisible
                 to bench/moduleClassCheck.ts, which then downgrades this whole module to
                 "reachability UNCHECKED" — literal keys keep every one of the three verifiable. */}
-            <span class={styles['status-daemon']}>
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['status-daemon']}
+            >
                 daemon:{' '}
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     classList={{
                         [styles['status-daemon-state--off']]:
                             props.daemon === 'off',
@@ -126,9 +156,17 @@ export function StatusBar(props: {
                     }}
                 >
                     {DAEMON_TEXT[props.daemon]}
-                </span>
-                <span class={`asc-caret ${styles['status-caret']}`}>_</span>
-            </span>
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={`asc-caret ${styles['status-caret']}`}
+                >
+                    _
+                </Text>
+            </Text>
         </div>
     )
 }

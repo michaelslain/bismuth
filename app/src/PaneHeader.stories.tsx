@@ -1,9 +1,9 @@
 // Visual spec for <PaneHeader> — the mini view-bar breadcrumb shown atop a pane leaf when its
 // tab's tree has more than one pane (a split). A faint content icon, then the title; the whole
-// header brightens to --fg when its pane is focused, via the ANCESTOR class `.pane-leaf.focused`
-// (PaneTree.css's `.pane-leaf.focused .pane-header .pane-header-label` rule) — not anything this
-// component controls itself, hence the `Focused` story below wrapping it in that ancestor class
-// rather than passing a prop.
+// header brightens to --fg when its pane is focused, via a `data-pane-focused` RUNTIME HOOK set
+// on the ancestor pane leaf (PaneHeader.module.css's `[data-pane-focused] .pane-header
+// .pane-header-label` rule) — not anything this component controls itself, hence the `Focused`
+// story below wrapping it in that ancestor attribute rather than passing a prop.
 //
 // WHY THIS FILE EXISTS: recorded BEFORE `.pane-header`/`.pane-header-icon`/`.pane-header-label`/
 // `.pane-header-x` move from the global App.css + colocated PaneTree.css into the shared
@@ -14,7 +14,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect } from 'storybook/test'
 import { PaneHeader } from './PaneHeader'
-import styles from './PaneTree.module.css'
+import styles from './PaneHeader.module.css'
 
 const noop = () => {}
 
@@ -37,13 +37,14 @@ export const Default: Story = {
     },
 }
 
-/** Wrapped in the ancestor class `.pane-leaf.focused` — the only story reaching
- *  `.pane-leaf.focused .pane-header .pane-header-label` (PaneTree.css), which brightens the
- *  title to --fg. PaneHeader itself has no `focused` prop; the brightening is entirely a
- *  cross-file descendant selector, so this story exists specifically to keep that rule covered. */
+/** Wrapped in the ancestor `data-pane-focused` attribute — the only story reaching
+ *  `[data-pane-focused] .pane-header .pane-header-label` (PaneHeader.module.css), which brightens
+ *  the title to --fg. PaneHeader itself has no `focused` prop; the brightening is entirely a
+ *  cross-file descendant selector keyed off a data attribute, so this story exists specifically
+ *  to keep that rule covered. */
 export const Focused: Story = {
     render: () => (
-        <div class="pane-leaf focused" style={{ display: 'inline-block' }}>
+        <div data-pane-focused style={{ display: 'inline-block' }}>
             <PaneHeader
                 icon="File"
                 label="design-notes.md"

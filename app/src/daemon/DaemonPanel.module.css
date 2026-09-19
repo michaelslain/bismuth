@@ -61,7 +61,7 @@
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
    a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
    is EmptyState's global root class (ui/ui.css), the same reach
-   bases/Flashcards.module.css already makes. EmptyState has no compact variant to ask for instead. */
+   bases/FlashcardsView.module.css already makes. EmptyState has no compact variant to ask for instead. */
 .daemon-panel-body > :global(.ui-empty-block) {
     padding: var(--sp-6) var(--sp-4);
     font-size: var(--fs-ui);

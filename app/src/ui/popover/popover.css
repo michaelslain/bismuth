@@ -111,6 +111,10 @@
   background: transparent;
   color: var(--fg);
   cursor: pointer;
+  /* PlainButton's reset sets text-align: start; restore the UA <button> default this rail
+     relied on (its icon is centered by the flex align/justify above regardless, but keep the
+     computed style unchanged — a bare <button>'s was text-align: center). */
+  text-align: center;
 }
 /* A plain hover, not a selection — this rail has no keyboard-active concept, so it reads at the
    hover weight rather than borrowing the row list's --popover-selected-bg (audit §7 wave 3). */

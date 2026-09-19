@@ -1,4 +1,4 @@
-import type { Component, JSX } from 'solid-js'
+import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Heading.module.css'
 import './ui.css'
@@ -21,7 +21,7 @@ export type HeadingProps = {
     level?: HeadingLevel
     class?: string
     children?: JSX.Element
-}
+} & Omit<JSX.HTMLAttributes<HTMLHeadingElement>, 'class' | 'children'>
 
 function headingClass(props: HeadingProps): string {
     const level = props.level ?? 2
@@ -33,13 +33,14 @@ function headingClass(props: HeadingProps): string {
 /**
  * Section-title primitive. Takes `level` and picks the tag from it — never ship
  * `Heading1`..`Heading6` as separate files; the level is a prop. Pages should never write a
- * raw `<h1>`..`<h6>` — this is what those become.
+ * raw `<h1>`..`<h6>` — this is what those become. Every other HTML attribute and `ref` pass
+ * through untouched onto the rendered element.
  */
 const Heading: Component<HeadingProps> = props => {
-    const level = () => props.level ?? 2
+    const [local, rest] = splitProps(props, ['level', 'class', 'children'])
     return (
-        <Dynamic component={TAG[level()]} class={headingClass(props)}>
-            {props.children}
+        <Dynamic component={TAG[local.level ?? 2]} class={headingClass(props)} {...rest}>
+            {local.children}
         </Dynamic>
     )
 }

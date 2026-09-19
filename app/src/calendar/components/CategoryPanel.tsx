@@ -11,6 +11,7 @@ import { EventStore } from '../EventStore'
 import { settings } from '../../settings'
 import FormModal from '../../ui/FormModal'
 import ModalBody from '../../ui/ModalBody'
+import Text from '../../ui/Text'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
@@ -132,7 +133,11 @@ export function CategoryPanel(props: { store: EventStore }) {
                                         <Show
                                             when={editName() === c.name}
                                             fallback={
-                                                <span
+                                                <Text
+                                                    as="span"
+                                                    size="inherit"
+                                                    tone="inherit"
+                                                    weight="inherit"
                                                     class={styles['cat-name']}
                                                     title="Double-click to rename"
                                                     onDblClick={() => {
@@ -141,7 +146,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                                     }}
                                                 >
                                                     {c.name}
-                                                </span>
+                                                </Text>
                                             }
                                         >
                                             <TextInput

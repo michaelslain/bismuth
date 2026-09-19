@@ -126,7 +126,11 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                         disabled={done()}
                                         onClick={() => onOption(qi(), opt.label)}
                                     >
-                                        <span
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
                                             class={
                                                 styles['chat-question-option-main']
                                             }
@@ -156,7 +160,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                             >
                                                 {opt.label}
                                             </Text>
-                                        </span>
+                                        </Text>
                                         <Show when={opt.description}>
                                             <Text
                                                 as="span"
@@ -218,7 +222,11 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                             >
                                                 <Icon value="Check" size={13} />
                                                 <Show when={q.header}>
-                                                    <span
+                                                    <Text
+                                                        as="span"
+                                                        size="inherit"
+                                                        tone="inherit"
+                                                        weight="inherit"
                                                         class={
                                                             styles[
                                                                 'chat-question-chip'
@@ -226,9 +234,16 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                         }
                                                     >
                                                         {q.header?.toLowerCase()}
-                                                    </span>
+                                                    </Text>
                                                 </Show>
-                                                <span>{ans()[q.question]}</span>
+                                                <Text
+                                                    as="span"
+                                                    size="inherit"
+                                                    tone="inherit"
+                                                    weight="inherit"
+                                                >
+                                                    {ans()[q.question]}
+                                                </Text>
                                             </div>
                                         </Show>
                                     )}

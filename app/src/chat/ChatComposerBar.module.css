@@ -97,11 +97,12 @@
 /* --scrim-bg (styles/tokens.css), not a hardcoded rgba(0,0,0,.55) (final-findings Group 2 #7) — the
    one token in the palette meant for exactly this: a dark scrim sitting on top of arbitrary photo
    content, distinct in NAME (if not currently in value) from --overlay-bg's modal-backdrop use.
-   `color` stays a literal `#fff`: the design system has no "always-legible-on-a-photo" foreground
-   token, and the icon has to read against whatever colors the attachment thumbnail happens to be in
-   every theme, not against the app's own --fg (which goes DARK in the light themes and would sit
-   invisible on this same dark scrim). Darkened further on hover via color-mix on the token itself,
-   rather than a second hardcoded rgba, so a theme's own scrim tone still drives the hover state. */
+   `color` reads --on-scrim (styles/tokens.css), added for exactly this case — an
+   "always-legible-on-a-photo" foreground, since the icon has to read against whatever colors the
+   attachment thumbnail happens to be in every theme, not against the app's own --fg (which goes
+   DARK in the light themes and would sit invisible on this same dark scrim). Darkened further on
+   hover via color-mix on the background token itself, rather than a hardcoded rgba, so a theme's
+   own scrim tone still drives the hover state. */
 .attachment :global(.btn--icon).attachment-remove {
     position: absolute;
     top: 3px;
@@ -111,12 +112,12 @@
     padding: 0;
     border-radius: 50%;
     background: var(--scrim-bg);
-    color: #fff;
+    color: var(--on-scrim);
     opacity: 1;
 }
 .attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
     background: color-mix(in srgb, var(--scrim-bg), black 25%);
-    color: #fff;
+    color: var(--on-scrim);
 }
 
 /* The slash-command autocomplete popover — anchored to the bar (see the header comment in

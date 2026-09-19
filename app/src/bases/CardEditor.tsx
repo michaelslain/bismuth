@@ -48,7 +48,7 @@ import { openExternalUrl } from '../appWindow'
 import { settings } from '../settings'
 import { reorderTaskBlocks } from '../../../core/src/taskReorder'
 import { splitCard, type CardMode } from './cardBodySplit'
-import styles from './BaseView.module.css'
+import styles from './CardEditor.module.css'
 
 // A disk-pulled reload is annotated so the autosave listener skips it — otherwise reloading an
 // external change would write the file back to itself, looping against any external writer.

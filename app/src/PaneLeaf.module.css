@@ -1,0 +1,13 @@
+/* PaneLeaf.module.css — the leaf container PaneLeaf.tsx owns.
+ *
+ * Split out of the old family stylesheet shared by four components (PaneTree/PaneLeaf/PaneHeader/
+ * PaneDropZone). `.pane-leaf.focused .pane-header` used to be a cross-file descendant selector that
+ * forced PaneLeaf and PaneHeader to share one module (CSS Modules hash per FILE, so a selector
+ * spanning two components' classes can't resolve once they hash differently). Solved instead with a
+ * `data-pane-focused` RUNTIME HOOK (a data-* attribute, never hashed) set on this element by
+ * PaneLeaf.tsx — PaneHeader.module.css's rule reads `[data-pane-focused] .pane-header`, an attribute
+ * selector that needs no class from this module at all. See PaneHeader.module.css for that rule.
+ */
+
+.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.pane-body { flex: 1; min-height: 0; overflow: auto; }

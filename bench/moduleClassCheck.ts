@@ -113,23 +113,14 @@ const SKIP_MODULES = new Set<string>([
     // renders it). Confirmed via `grep -rl FontSpecimen app/src` — the only hits are the component,
     // its module, and its story.
     'ui/gallery/FontSpecimen.module.css',
-    // Same class of exemption, same reasoning: the icon-set specimen is a Storybook-only page that
-    // records which icon library was chosen and why (see .claude/plans §10). Nothing in app/
-    // renders it, so its classes structurally CANNOT appear in the `vite build` output this
-    // checker reads — the "emitted nothing" finding is a false positive, not dead CSS.
-    // Confirmed the same way as above: `grep -rl IconSetSpecimen app/src` hits only the component,
-    // its module, and its story.
-    'icons/specimen/IconSetSpecimen.module.css',
-    'icons/specimen/SvgIcon.module.css',
     // ui/Callout.tsx + ui/Frontmatter.tsx (visual-unification audit §7 wave 1, §9.8): new
     // primitives wrapping the formerly-bare `.asc-callout`/`.asc-frontmatter` global classes.
     // Both had ZERO JSX consumers before this move (the editor's live-preview callout/
     // frontmatter widgets mirror the same visual recipe independently as CodeMirror decoration
     // themes, which cannot import a Solid component) and still have none outside their own
     // .stories.tsx — confirmed via `grep -rl Callout app/src` / `grep -rl Frontmatter app/src`.
-    // Same exemption as FontSpecimen/IconSetSpecimen above: a real component that exists to be
-    // reached for later, visible today only in Storybook, structurally cannot appear in a
-    // `vite build` of the app.
+    // Same exemption as FontSpecimen above: a real component that exists to be reached for later,
+    // visible today only in Storybook, structurally cannot appear in a `vite build` of the app.
     'ui/Callout.module.css',
     'ui/Frontmatter.module.css',
 ])

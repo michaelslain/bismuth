@@ -3221,7 +3221,7 @@ export default function App() {
                     }}
                 >
                     {/* Inline style, not `class={graphStyles['graph-root']}`: importing
-                    graph/Graph.module.css here (App's EAGER chunk) alongside GraphView's own LAZY
+                    GraphView.module.css here (App's EAGER chunk) alongside GraphView's own LAZY
                     import of the same file made Rollup hoist the shared class-name map into App's
                     chunk, so GraphView's chunk reads it via a cross-chunk binding instead of
                     declaring it — correct at runtime, but bench/moduleClassCheck.ts's reachability

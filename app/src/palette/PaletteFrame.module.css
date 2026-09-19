@@ -1,0 +1,30 @@
+/* app/src/palette/PaletteFrame.module.css — the overlay shell shared by PaletteModal.tsx (the
+   command/template palette) and ui/gallery/SymbolGallery.tsx (the icon/emoji picker) via the
+   PaletteFrame component below — extracted so neither imports Palette.module.css itself (one
+   stylesheet, one importer; see PaletteRow.module.css for the row anatomy half of what used to
+   live there). Moved verbatim from the former Palette.module.css.
+
+   `.palette-panel`'s SIZE AND FONT ONLY. The surface itself — background, border, corner,
+   shadow — comes from `.asc-modal`, which <Modal> puts on this same element. */
+.palette-panel {
+  width: 90%;
+  max-width: 600px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--popover-font);
+}
+/* Modal.tsx stamps every modal panel `.asc-modal` (pop-bg-strong, a hairline border, radius 0,
+   no blur, no shadow) — this only cancels the plain pill-radius/plain-surface `.palette-panel`
+   finish above so `.asc-modal`'s wins. */
+.palette-panel:global(.asc-modal) {
+  background: var(--pop-bg-strong);
+  border: var(--rule);
+  border-radius: var(--r-0);
+}
+.palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: var(--sp-5); }
+.palette-search :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
+.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
+.palette-input::placeholder { color: var(--fg); opacity: 0.4; }
+.palette-empty { padding: var(--sp-5) var(--sp-6); opacity: 0.5; font-size: var(--fs-ui); }

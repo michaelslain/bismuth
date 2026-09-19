@@ -11,6 +11,7 @@ import { api, summarizeSync } from '../../api'
 import Select from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { TextInput } from '../../ui/TextInput'
+import Text from '../../ui/Text'
 import { IconTextButton } from '../../ui/IconTextButton'
 import StatusDot from '../../ui/StatusDot'
 import SettingsSection from '../../ui/SettingsSection'
@@ -134,7 +135,15 @@ export function GcalSyncPanel(props: { basePath: string }) {
             >
                 <div class={styles['gcal-status']}>
                     <StatusDot color="var(--green)" />
-                    <span class={styles['gcal-acct']}>{status()!.account}</span>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['gcal-acct']}
+                    >
+                        {status()!.account}
+                    </Text>
                     <TextButton
                         size="sm"
                         danger

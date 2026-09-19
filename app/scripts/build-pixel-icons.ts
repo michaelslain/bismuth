@@ -8,11 +8,13 @@
 // app/scripts/build-icon-svgs.ts). Running this script would re-create a dead 30KB module that no
 // call site reads, which is exactly what happened when it still owned the `icons:build` script
 // name — the most obvious-looking name in the icons group pointed at the deadest generator in it.
-// That entry has been removed; the live names are `icons:svg` (Phosphor art, current) and
-// `icons:font` (the Nerd Font subset, still used by `styles/icons.css` and `icons/specimen/`).
+// That entry has been removed; the only live icon-generating script name now is `icons:svg`
+// (Phosphor art, current) — `icons:font` (the Nerd Font subset) and the whole retired subsystem
+// behind it (`icons/nerdGlyphs.ts`, `build-icon-font.ts`, `styles/icons.css`, the woff2) were
+// deleted in ds-conformance Task 8, once nothing read the CSS custom property that named the font.
 //
-// It is kept, rather than deleted, as the record of how the pixel set was produced — the same
-// reason `icons/nerdGlyphs.ts` survives its own era. See docs/overview/third-party-notices.md.
+// This script is kept, rather than deleted, as the record of how the pixel set was produced. See
+// docs/overview/third-party-notices.md.
 //
 // ── Original header ────────────────────────────────────────────────────────────────────────────
 // Generates `app/src/icons/pixelPaths.ts` — the static NAME -> SVG-path-data map behind the

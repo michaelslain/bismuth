@@ -4,6 +4,7 @@
 // (the time-grid header's "Sun 9/5" shape) instead of standing alone as a block (the month
 // cell's own header).
 import type { Component } from 'solid-js'
+import Text from '../../ui/Text'
 import styles from './DayNumber.module.css'
 
 export type DayNumberProps = {
@@ -15,7 +16,11 @@ export type DayNumberProps = {
 
 const DayNumber: Component<DayNumberProps> = props => {
     return (
-        <span
+        <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            weight="inherit"
             class={[
                 styles.root,
                 props.today ? styles.today : '',
@@ -26,7 +31,7 @@ const DayNumber: Component<DayNumberProps> = props => {
                 .join(' ')}
         >
             {props.day}
-        </span>
+        </Text>
     )
 }
 

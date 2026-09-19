@@ -39,7 +39,7 @@ export function CommandButton(props: {
     onClick?: (e: MouseEvent) => void
 }) {
     return (
-        <span class={styles['toolbar-btn-wrap']}>
+        <div class={styles['toolbar-btn-wrap']}>
             <IconButton
                 icon={props.icon}
                 iconSize={props.iconSize}
@@ -53,6 +53,6 @@ export function CommandButton(props: {
                     {props.badge}
                 </Badge>
             </Show>
-        </span>
+        </div>
     )
 }

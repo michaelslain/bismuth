@@ -1,0 +1,265 @@
+/* GraphView.module.css — scoped chrome for GraphView.tsx, its ONLY importer (Task 10, ds-conformance:
+   GraphSearch.tsx's own classes — `.graph-search*` — moved out to GraphSearch.module.css, which it
+   alone imports; this file had carried both and that second importer was the violation this task
+   fixed). GraphView still styles the `.graph-find-panel` wrapper it renders GraphSearch inside, and
+   passes GraphSearch an `embedded` prop rather than reaching into GraphSearch's hashed classes —
+   see GraphSearch.module.css's header for the `data-embedded` hook that replaced the old
+   `.graph-find-panel .graph-search-*` cross-file selectors.
+   Originally moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS modularization,
+   Task 9) — asciiGraph.css no longer defines any `.graph-*` selector.
+
+   The daemon-mode legend card this file used to carry (`.graph-legend-card`/`.daemon-legend`/
+   `.graph-card-h`/`.graph-legend-rows`, and the DaemonList component + story that rendered inside
+   it) is GONE (Task 5, daemon-page plan) — the graph's daemon mode was removed in Task 2, and the
+   services list moved onto the daemon's own page. The migration history below (Task 9, 2026-08)
+   still documents how that card's rules were merged out of asciiGraph.css at the time; read it as
+   history, not as a description of anything still present in this file.
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside this module's consumers may target them.
+
+   `.card-*` (Task 9's other named family): EMPTY. An earlier session already folded every
+   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` was the only
+   graph-owned "card" name, `.graph-*` prefixed, since deleted with the daemon legend card); the
+   flashcard/editor `.card-*` families belong to bases/FlashcardsView.module.css, not here. Nothing
+   to move.
+
+   `.graph-slot-main` STAYS GLOBAL in App.css despite the prefix — it is App.tsx's own top-level
+   layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.
+   shell/EditorPane.tsx's file header documents this explicitly. Page-frame, not a component.
+
+   THE TWO-LAYER MERGE (asciiGraph.css). Before this move, App.css held GEOMETRY (position/size)
+   and asciiGraph.css held SURFACE/TYPE (border/color/font) via selectors asciiGraph.css's own
+   header called "deliberately heavier... than the App.css rules it lands on top of" — a defence
+   against import order once the two lived in separate stylesheets.
+
+   `.graph-card-h` COLLAPSES into one rule: `.graph-legend-card .graph-card-h` (asciiGraph.css) is
+   STRICTLY higher specificity than the bare `.graph-card-h` (App.css) — a genuine specificity
+   difference, not a tie — and `.graph-card-h` has exactly one render context (always a direct child
+   of `.graph-legend-card`, in both GraphView.tsx and DaemonList.stories.tsx's InGraphCard), so the
+   override's properties always applied regardless of file order. Collapsing was safe and verified:
+   `bench/probeStory.ts app-daemonlist--in-graph-card` before/after matched once the merge included
+   this rule everywhere `.graph-legend-card` is genuinely present (see the padding note below for
+   the one place that measurement DIDN'T stay flat).
+
+   `.graph-search-bar` / `.graph-search-list` / `.graph-search-row` (+ its `.selected` modifier) /
+   `.graph-search-glyph` / `.graph-search-sub` / `.graph-search-empty`: this history is now
+   GraphSearch.module.css's to carry (Task 10 moved these rules there, gated on `data-embedded`
+   instead of a `.graph-find-panel` ancestor selector) — see that file's header for the current
+   shape, including the `10.5px` literal that Task 10 finally turned into `var(--fs-micro)` (a
+   token swap with no visible effect: the two were already numerically identical).
+
+   `.graph-stats` collapses cleanly: both files declared a bare `.graph-stats` at equal specificity,
+   but on entirely DISJOINT properties (App.css: position/layout; asciiGraph.css: font-size/color/
+   font-variant-numeric) — no property ever competed, so combining them changes nothing regardless
+   of prior order, unlike the `.graph-search-sub` tie above.
+
+   THE ONE MEASURED SIDE EFFECT THIS MERGE CANNOT AVOID: `app-daemonlist--in-graph-card` gains
+   `.graph-legend-card:global(.asc-popover)`'s `padding: var(--sp-4) var(--sp-5)` it never had before, because that
+   story imports THIS module directly (for `.graph-legend-card`/`.graph-card-h`/`.graph-legend-rows`)
+   without ever having imported asciiGraph.css — which the pre-migration story genuinely didn't,
+   unlike the real app (GraphView always pulls asciiGraph.css in transitively via
+   AsciiGraphRenderer.ts). Once the surface rule lives in the SAME file the story already imports for
+   geometry, it becomes reachable there too — CSS has no way to scope a rule to "only when reached via
+   this OTHER import path." The story's own doc comment states its purpose as proving "the panel
+   hairline and 5px corner" the shipped surface has; the border/radius half of that was already
+   correct before this move (ui/ui.css's own bare `.asc-popover` rule supplies those, independent of
+   asciiGraph.css) — only the padding was silently missing, which this merge now supplies. Treated as
+   an unavoidable, understood, and net-correct consequence of solving the cross-file-hash problem
+   Task 9 exists for, not a dropped rule to chase down; flagged here and in the task's own report
+   rather than blessed silently.
+
+   DEAD CODE DROPPED, NOT MIGRATED: asciiGraph.css's `.graph-legend-card .cluster-legend` /
+   `.cluster-row` (+`:hover`/`.selected`) / `.cluster-glyph` / `.cluster-count`. GraphView.tsx's own
+   comment ("No floating cluster-legend card — cluster names are drawn IN the field itself") and a
+   repo-wide grep for `cluster-legend`/`cluster-row`/`cluster-glyph`/`cluster-count` in every `.tsx`
+   confirm zero consumers — the cluster-legend UI these rules styled was removed and nothing has
+   written those classes since. `.graph-legend-card` itself is gone too now (see this file's
+   header) — it once rendered ONLY the daemon-mode list.
+
+   `:global()` — classes this file's selectors reach that are owned elsewhere and must NOT hash:
+     `.asc-popover` (ui/ui.css design-system surface, stamped by GraphView.tsx alongside the local
+       `graph-find-panel`/`graph-stats` classes)
+     `.viewbar` (ui/ui.css) in the narrow-container `.viewbar.graph-viewbar` override — see below
+     `.segmented` (ui/ui.css) in the narrow-container segmented-wrap rules
+     `.search-bar-input` (ui/SearchBar.tsx) in the Find-panel search bar's type override
+     `.btn--icon` (ui/buttonClass.ts) in the mini-graph mode-icons copy, see next paragraph
+     `.selected` — the app-wide bare state-class convention (see palette/Palette.module.css's
+       header for the fuller rationale); `.graph-search-row`'s selected state reaches it this way
+
+   `.graph-mode-icons :global(.btn--icon)` (+ its `:hover`) IS A COPY, NOT A MOVE — same idiom
+   shell/Sidebar.module.css already established for its own `.sidebar-icons :global(.btn--icon)`
+   copy. The two-parent selector list `.empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }`
+   that used to live in App.css is split one copy per owning module (`.empty-pane`'s copy is in
+   EmptyPane.module.css); both copies keep the original (0,2,0) specificity verbatim.
+
+   `.viewbar.graph-viewbar` (narrow `@container` block below) keeps the SAME two-class specificity
+   fix ui/ui.css's own header already documents for this exact pair (`.viewbar` vs `.graph-viewbar`
+   both set `padding` at one class) — that note now points here instead of App.css. Specificity,
+   not file position, is still what decides it; nothing about moving it into a module changes that. */
+
+.graph-root { container-type: inline-size; container-name: graphroot; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
+/* .graph-bloom + .graph-vignette live in graph/GraphAtmosphere.module.css — mounted by <GraphAtmosphere>;
+   the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
+   emitBloom). */
+/* The graph toolbar is a PLAIN :global(.viewbar) — same height, gap, padding and hairline as the
+   base rule, so it reads as the same control strip as every other view's (notes, bases, calendar,
+   chat). The class is kept only as the hook for the narrow-container rules below. */
+.graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-4); }
+.graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
+/* Fills the graph area; the renderer mounts its <canvas> here. */
+.graph-canvas-host { width: 100%; height: 100%; }
+/* Shared pill recipe for the hover HUD readout (theme-aware). ui/Badge now forwards `style` and
+   arbitrary attributes onto its root (splitProps, never destructure — see Badge.tsx), which is
+   what lets the hover pill below take this class as its only one. The fps pill has its own class,
+   `.graph-bottom-fps` below, carrying the identical static pill look (background/border/radius/
+   font-family/etc) plus its own position — only the traffic-light colour, which is computed per
+   frame, stays as an inline `style`. */
+.graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
+/* Hover pill only. Was inline style on the bare span this replaced; the values are unchanged, just
+   moved into a class Badge can take. */
+.graph-hud-hover { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: var(--fs-ui); padding: var(--sp-1) var(--sp-4); align-self: flex-end; }
+/* `align-self: flex-end` (this rule + `.graph-stats` below), not the bar's own `align-items:
+   center`: the hover pill (Badge padding+border) and the readout (fixed `--row-h`) are different
+   heights, so centering each independently in the flex line offsets their bottoms by half that
+   height difference — measured 3px, caught by GraphView.stories.tsx's HudBadges "bottoms aligned"
+   assertion. Pinning both to the line's cross-end reproduces what `.graph-stats` alone being
+   `position: absolute; bottom: 6px` gave it for free before fix-2-4 — the hover pill was always a
+   flex child of the bar, never a second absolute box — regardless of which sibling ends up tallest. */
+/* Bottom HUD row: the 2D/3D toggle cluster + fps pill (+ hover pill, non-mini only — see the
+   `!props.mini` guard in GraphView), pinned along the canvas floor. */
+.graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }
+/* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
+   `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
+   with the second renderer — nothing has written those classes since. */
+
+/* `.graph-legend-card` / `.daemon-legend` / `.graph-card-h` / `.graph-legend-rows` — the daemon-
+   mode legend card — DELETED (Task 5, daemon-page plan): the graph's daemon mode is gone (Task
+   2) and the DaemonList that rendered inside this card is deleted too, moved onto the daemon's
+   own page (app/src/daemon/DaemonServices.tsx, composed there by DaemonPanel.tsx instead). Zero
+   remaining readers confirmed by `bun bench/moduleClassCheck.ts` before removal.
+
+   GEOMETRY — surface from `:global(.asc-popover)` above (same split every other floating card in
+   this file uses — see `.graph-find-panel` below). A fixed --row-h box with horizontal-only
+   padding, the `.ft-row` idiom (this app's row-grid convention), so the readout sits on the
+   app's row grid instead of inventing its own height out of vertical padding.
+   Also carries the ASCII register's type (font-size/color/font-variant-numeric) — collapsed from
+   two same-specificity `.graph-stats` rules (App.css + asciiGraph.css) with disjoint properties;
+   see this file's header for why that merge is safe regardless of the old file order.
+
+   Task 3 (ds-polish): font-size lifted from --fs-micro to --fs-ui so this pill's text size matches
+   `.graph-hud-hover` (the hover pill) below — same font-size gives the same line-height for free
+   (neither sets one explicitly, and both share the UI font stack). The old flex `gap` is gone too:
+   the separators between segments are now literal `//` text (GraphView.tsx), not gap-injected
+   space, so a gap alongside them would double up the spacing.
+
+   Task 4 (ds-polish): no longer `position: absolute` — GraphView.tsx now renders this `<div>` as
+   the LAST CHILD of `.graph-bottom-bar` instead of a sibling floating independently over it. Above
+   520px nothing bounded the hover pill's width, so a hover label longer than ~35 chars painted
+   over this readout; putting both in the same flex row fixes that structurally; `margin-left: auto`
+   (+ `flex-shrink: 0`, so this box never gives up its own width) pins it to the bar's trailing
+   edge exactly where `right: 18px` used to, and this rule's own `align-self: flex-end` (matching
+   `.graph-hud-hover`'s, see that rule's comment above) gives the vertical alignment `bottom: 6px`
+   used to. `.graph-hud-hover`'s existing `min-width: 0` +
+   ellipsis is what actually resolves the overlap: as a real flex sibling it now shrinks against
+   this box's `margin-right: var(--sp-5)` instead of painting underneath it. */
+.graph-stats { margin-left: auto; margin-right: var(--sp-5); flex-shrink: 0; align-self: flex-end; display: flex; align-items: center; height: var(--row-h, 18px); padding: 0 var(--sp-5); font-size: var(--fs-ui); color: var(--faint); font-variant-numeric: tabular-nums; }
+.graph-stats .graph-zoom-pct { color: var(--faint); }
+
+/* GEOMETRY only — SURFACE comes from `:global(.asc-popover)` above, same split as
+   `.graph-stats` above. Until 2026-08-27 this carried its own
+   `background`/`border`/`border-radius: 11px`/`backdrop-filter: blur(10px)`/`box-shadow`, a leftover
+   from before the shared `.graph-find-panel:global(.asc-popover)` rule existed: that higher-specificity
+   rule already won on border/radius/shadow, but it sets no `backdrop-filter`, so the bespoke
+   `blur(10px)` was the one declaration that actually rendered — nearly double the `blur(6px)` every
+   other `.asc-popover` gets from ui.css, contradicting this file's own header comment ("the same
+   material as the find panel and the stats footer"). Dropped the whole bespoke block rather than
+   patch just the blur, so the surface is 100% the shared popover treatment, with nothing left here
+   to drift out of sync with it again. */
+.graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; z-index: 5; overflow: hidden; }
+/* GraphSearch's own chrome (search bar / result rows / glyph / empty state) now lives entirely in
+   GraphSearch.module.css — see this file's header. GraphView only owns the `.graph-find-panel`
+   wrapper above and passes GraphSearch the `embedded` prop that switches its internal register. */
+
+.graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
+/* Bottom-bar fps readout — the ONE class on this <Badge> (Badge.module.css's own `.badge` plus
+   this). Holds the static pill look (background/border/radius/font-family/white-space/tabular
+   numerals/font-size/padding) and its position (`margin-left: auto`, pushing it to the bar's
+   trailing edge) — everything that doesn't change per frame. Only the traffic-light colour, from
+   GraphView's fpsColor(), is computed and stays a `style` prop straight on the <Badge> (Badge
+   forwards style/attributes onto its root). This class is also the hook the narrow-container rule
+   below hides it by. */
+.graph-bottom-fps {
+    margin-left: auto;
+    background: var(--pop-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+    font-family: inherit;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-ui);
+    padding: var(--sp-1) var(--sp-4);
+}
+/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
+   button (an icon-only version read as a mystery button). `margin-left: auto`
+   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are
+   re-enabled because the bar itself is click-through. */
+
+/* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
+   radius and hover come from the `:global(.btn--icon)` copy directly below — only the row layout
+   lives here. */
+.graph-mode-icons { display: flex; align-items: center; gap: var(--sp-2); }
+/* COPY, NOT MOVE — see this file's header. Identical (0,2,0) specificity to the original combined
+   selector list this was split from. */
+.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
+.graph-mode-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
+/* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
+   props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
+   Five text segments wrapped onto two rows here and ate the little field's height, which is exactly
+   what icons fix; words stay the rule wherever they fit. Everything needing real width (the
+   "Knowledge Graph" crumb, the legend/stats cards) hides; the mini-graph is too small for them. */
+/* NAMED CONTAINERS, and the split is load-bearing. These queries used to be unnamed, so each rule
+   resolved against its own nearest container: the two view-bar descendants below against
+   .graph-root, the HUD rules against .graph-area. That worked only because the two are the same
+   width. ui/ui.css now gives every .viewbar `container-type: inline-size`, which would have made
+   the bar itself the nearest container for the first two — silently re-binding them to a box the
+   width of the bar and stopping the sidebar mini-graph collapsing, with no error anywhere.
+   Naming both containers pins each rule to the box it has always measured. */
+@container graphroot (max-width: 520px) {
+  .graph-vb-wide { display: none; }
+  /* Keeps the base .viewbar height (36px = 2x --row-h) and its hairline: in the sidebar this bar sits
+     directly under .sidebar-icons, which has the same 2-row band and the same bottom border, so dropping
+     either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
+     The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
+     mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
+  /* TWO-CLASS on purpose — see this file's header. `:global(.viewbar)` and `.graph-viewbar` both set
+     `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
+     this now exactly as it did before the move. */
+  :global(.viewbar).graph-viewbar { padding: 0 var(--sp-5); }
+  /* THE MINI BAR IS LEFT-ALIGNED, and that is a DELIBERATE REVERSAL of the centring this block
+     carried until now — do not "fix" it back. The mode switcher is the sidebar's control strip, and
+     it sits directly under `.sidebar-icons`, whose own icons start hard against the left padding.
+     Centring made the graph the one band in that column whose controls floated to the middle,
+     reading as a different, unrelated widget rather than the next row of the same rail.
+     Nothing here needs to say `justify-content` at all: the base `.viewbar` is `space-between` and
+     `.vb-lead` is `flex: 1 1 auto`, so the lead group starts at the padding edge and the trail group
+     pins right — exactly the alignment every other view's bar already has. The old rule needed
+     `flex: 0 0 auto` on BOTH groups purely so centring had something to move; with the centring gone
+     it is dead weight that costs something, so it goes too — the base `.vb-lead` is `flex: 1 1 auto`
+     with `min-width: 0`, which is what lets an over-long lead group shrink and ellipsize instead of
+     overflowing a 266px bar.
+     `gap: 0` STAYS, and is the one line here that is not about alignment. `.vb-lead`'s gap separates
+     the crumb from the switcher, and `.graph-vb-wide { display: none }` above has already removed
+     the crumb at this width — leaving `.vb-identity` a zero-width flex item whose gap survives it
+     and indents the icons by half of --bar-crumb-gap for no visible reason. */
+  .graph-viewbar :global(.vb-lead), .graph-viewbar :global(.vb-trail) { gap: 0; }
+  /* flex-start, not center: a segmented control that wraps to a second row keeps both rows on the
+     same left edge as the row above, rather than centring the orphan row under it. */
+  .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: flex-start; gap: var(--sp-2); row-gap: var(--sp-2); }
+}
+@container grapharea (max-width: 520px) {
+  .graph-stats { display: none; }
+  .graph-bottom-narrow :global(.segmented) { gap: var(--sp-2); }
+}
+@container grapharea (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

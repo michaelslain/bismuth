@@ -29,8 +29,10 @@ import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
+import Text from './ui/Text'
+import Badge from './ui/Badge'
 import type { GraphMode } from './commands'
-import styles from './graph/Graph.module.css'
+import styles from './GraphView.module.css'
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
 function mixHex(a: number, b: number, t: number): number {
@@ -49,10 +51,11 @@ function hoverLabel(node: HoverNode): string {
 
 // FPS readout color is a fixed traffic-light scale (green/yellow/red), NOT derived
 // from the theme's palette CSS vars — it should mean the same thing in every theme.
+// The scale itself lives as --hud-fps-* tokens in styles/tokens.css.
 function fpsColor(fps: number): string {
-    if (fps >= 50) return '#3fb950' // green: smooth
-    if (fps >= 30) return '#d29922' // yellow: usable
-    return '#f85149' // red: janky
+    if (fps >= 50) return 'var(--hud-fps-good)' // green: smooth
+    if (fps >= 30) return 'var(--hud-fps-ok)' // yellow: usable
+    return 'var(--hud-fps-bad)' // red: janky
 }
 
 // Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
@@ -79,7 +82,7 @@ const setViewModePersisted = (m: '2d' | '3d') => {
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
-// if all five segments don't fit one line; see the @container rule in graph/Graph.module.css).
+// if all five segments don't fit one line; see the @container rule in GraphView.module.css).
 /** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
  *  this settles in a few ms on the main thread — the backend budget (400) exists for 2000+ nodes and
  *  would be wasted here. */
@@ -96,7 +99,7 @@ const MODE_SHORT: Record<GraphMode, string> = {
  *
  * This REVERSES an earlier decision, deliberately and at the user's request: the mode switcher was
  * specified as text-only ("2ND/3RD/BOTH/DAEMON, no glyph prefixes, ever" — see the container
- * query in graph/Graph.module.css). That still holds for the FULL-PANE graph, where there is room for words and the
+ * query in GraphView.module.css). That still holds for the FULL-PANE graph, where there is room for words and the
  * words are unambiguous. In the sidebar the same text segments wrap onto two rows and eat the
  * little field's height, which is the problem icons solve. Text stays the rule where it fits.
  *
@@ -477,9 +480,15 @@ export function GraphView(props: {
             <ViewBar
                 class={styles['graph-viewbar']}
                 identity={
-                    <span class={styles['graph-vb-wide']}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['graph-vb-wide']}
+                    >
                         <Crumb icon="Share2">Knowledge Graph</Crumb>
-                    </span>
+                    </Text>
                 }
                 facet={
                     <>
@@ -539,8 +548,12 @@ export function GraphView(props: {
                 actions={
                     /* One span, not one slot per control: `.graph-vb-right`'s own gap and the
                        `.graph-vb-wide` hide-when-narrow rule both hang off this element, and both
-                       are Graph.module.css's to own. */
-                    <span
+                       are GraphView.module.css's to own. */
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
                         <SegmentedToggle
@@ -564,7 +577,7 @@ export function GraphView(props: {
                                 FIND
                             </IconTextButton>
                         </Show>
-                    </span>
+                    </Text>
                 }
             />
             <div
@@ -587,26 +600,12 @@ export function GraphView(props: {
                 {/* No floating cluster-legend card — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. */}
-                {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
-            panel, because all three float over the same field and must read as one material. */}
-                <div class={`${styles['graph-stats']} asc-popover`}>
-                    <span>
-                        {plural(nodeCount(), 'node')} //{' '}
-                        {plural(edgeCount(), 'edge')} // {modeLabel()}
-                    </span>
-                    {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-                    <span class={styles['graph-zoom-pct']}>{zoomPct()}%</span>
-                    <Show when={settings.graph.showFps && fps() !== null}>
-                        <span style={{ color: fpsColor(fps()!) }}>
-                            {fps()} fps
-                        </span>
-                    </Show>
-                </div>
                 {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
                 <Show when={props.fill && menuOpen()}>
                     <div class={`${styles['graph-find-panel']} asc-popover`}>
                         <GraphSearch
+                            embedded
                             items={searchItems()}
                             onPreview={id =>
                                 renderer.setSearchMatches(new Set([id]))
@@ -694,30 +693,64 @@ export function GraphView(props: {
                     </Show>
                     <Show when={!props.mini && hovered()}>
                         {node => (
-                            <span
-                                class={styles['graph-hud-pill']}
-                                style={{
-                                    'min-width': 0,
-                                    'white-space': 'nowrap',
-                                    overflow: 'hidden',
-                                    'text-overflow': 'ellipsis',
-                                    color: 'var(--fg)',
-                                    'font-size': 'var(--fs-ui)',
-                                    padding: '2px 8px',
-                                }}
+                            <Badge
+                                class={`${styles['graph-hud-pill']} ${styles['graph-hud-hover']}`}
                             >
                                 {hoverLabel(node())}
-                            </span>
+                            </Badge>
                         )}
                     </Show>
                     <Show when={settings.graph.showFps && fps() !== null}>
-                        <span
-                            class={`${styles['graph-hud-pill']} ${styles['graph-bottom-fps']}`}
+                        <Badge
+                            class={styles['graph-bottom-fps']}
                             style={{ color: fpsColor(fps()!) }}
                         >
                             {fps()} fps
-                        </span>
+                        </Badge>
                     </Show>
+                    {/* Readout — last child of `.graph-bottom-bar` (moved off `position: absolute`
+                so it can no longer be painted over by a long hover pill; see this file's header
+                and GraphView.module.css). Same .asc-popover surface as the legend card and the
+                find panel, because all three float over the same field and must read as one
+                material.
+                    Task 3 (ds-polish): one running `//`-joined line — nodes // edges // mode // zoom%
+                    (// fps only while the fps segment shows) — same font-size (--fs-ui) and
+                    `bottom` as `.graph-hud-hover` below, so the two pills read as one HUD register.
+                    ONE `<Text>`, not several: `.graph-stats` is `display: flex`, and a flex ITEM's
+                    own leading/trailing whitespace gets trimmed by the browser's line-box edge
+                    rules (each flex item is its own isolated line) — splitting the zoom%/fps
+                    segments into sibling flex items silently ate the spaces around their `//`
+                    separators ("brain //100%//60 fps"). Nesting them INSIDE the one flex item's
+                    content keeps them in normal inline flow, where interior whitespace is not an
+                    edge and survives. */}
+                    <div class={`${styles['graph-stats']} asc-popover`}>
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            {plural(nodeCount(), 'node')} //{' '}
+                            {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
+                            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['graph-zoom-pct']}
+                            >
+                                {zoomPct()}%
+                            </Text>
+                            <Show when={settings.graph.showFps && fps() !== null}>
+                                {' '}//{' '}
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    style={{ color: fpsColor(fps()!) }}
+                                >
+                                    {fps()} fps
+                                </Text>
+                            </Show>
+                        </Text>
+                    </div>
                 </div>
             </div>
         </div>

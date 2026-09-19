@@ -1,0 +1,15 @@
+/* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
+   medium-weight label — no SVG icon. */
+.cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: 500; }
+.titleGlyph { color: var(--accent); flex: 0 0 auto; font-family: var(--ui-font-stack); }
+/* Dates render mono at the chrome type size (not the inherited prose size). */
+.dateCell { font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+/* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
+.boolCell { font-family: var(--ui-font-stack); color: var(--fg); }
+/* Plain mono #tag list in teal — no chips. */
+.tagRow { display: inline-flex; gap: var(--sp-5); flex-wrap: wrap; color: var(--teal); font-family: var(--ui-font-stack); }
+/* Kanban meta chip's compact tag row (KanbanCard's `.kbMeta` context): tighter gap, chrome
+   type size. A `dense` flag on renderTags/renderCell rather than KanbanCard reaching into
+   this module's `.tagRow` — the descendant selector `.kbMeta .tagRow` that used to do this
+   depended on a class KanbanCard doesn't own, which breaks under CSS-module hashing. */
+.tagRowDense { font-size: var(--fs-ui); gap: var(--sp-4); }

@@ -1,16 +1,8 @@
-import { For, Show, createMemo } from 'solid-js'
+import { createMemo } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
-import styles from './Charts.module.css'
-
-interface StatTile {
-    label: string
-    value: string
-    delta?: string
-    /** Value color: plain fg by default; the standout metric reads accent, a
-     *  near-empty one reads faint — per bases-stat.card.html's four tiles. */
-    tone?: 'accent' | 'faint'
-}
+import ChartFrame from './ChartFrame'
+import StatTiles, { type StatTile } from './StatTiles'
 
 /** A single aggregate per tile — plain numbers, no chart (bases-stat.card.html:
  *  the largest type in the system, and the one view with no ASCII chart at all). */
@@ -64,31 +56,11 @@ export function StatView(props: { result: ViewResult; config: BaseConfig }) {
     })
 
     return (
-        <div class={styles.chart}>
-            <Show
-                when={tiles().length > 0}
-                fallback={<div class={styles.empty}>No data to chart.</div>}
-            >
-                <div class={styles.statgrid}>
-                    <For each={tiles()}>
-                        {tile => (
-                            <div class={styles.statTile}>
-                                <div
-                                    class={`${styles.statValue} ${tile.tone ? styles[tile.tone] : ''}`}
-                                >
-                                    {tile.value}
-                                </div>
-                                <div class={styles.statLabel}>{tile.label}</div>
-                                <Show when={tile.delta}>
-                                    <div class={styles.statDelta}>
-                                        {tile.delta}
-                                    </div>
-                                </Show>
-                            </div>
-                        )}
-                    </For>
-                </div>
-            </Show>
-        </div>
+        <ChartFrame
+            empty={tiles().length === 0}
+            emptyMessage="No data to chart."
+        >
+            <StatTiles tiles={tiles()} />
+        </ChartFrame>
     )
 }

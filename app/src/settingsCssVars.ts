@@ -145,6 +145,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         // mid-tone accents, so white reads where the dark themes' near-black ink does
         // (matches the design's --on-accent: #fff on light / #08101F on dark).
         '--on-accent': a.onAccent ?? (light ? '#fff' : '#08101F'),
+        // Foreground over an arbitrary-photo scrim (--scrim-bg): always white, in every theme —
+        // there's no "always-legible-on-a-photo" semantic to derive from light/dark, since the
+        // photo content it sits on isn't theme-tinted either.
+        '--on-scrim': a.onScrim ?? '#fff',
         // Named chrome accents + iridescent gradient (built from the graph ramp, unless the
         // theme pins its own category hues).
         '--teal': a.categoryTeal ?? teal,

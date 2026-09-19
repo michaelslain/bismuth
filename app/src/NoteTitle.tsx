@@ -15,6 +15,8 @@ import { pushToast } from './Toast'
 import { deriveTitle, renamedPath } from './noteTitleOps'
 import { flushEditorByPath } from './editorRegistry'
 import { isDismissKey, isConfirmKey } from './ui/widgetKeys'
+import Text from './ui/Text'
+import { TextInput } from './ui/TextInput'
 import styles from './NoteTitle.module.css'
 
 export function NoteTitle(props: {
@@ -148,11 +150,20 @@ export function NoteTitle(props: {
         >
             {/* Non-editable heading glyph — separate DOM from the field. Hidden until
           the field is focused (see CSS), then revealed in mono accent. */}
-            <span class={styles['note-title-hash']} aria-hidden="true">
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['note-title-hash']}
+                aria-hidden="true"
+            >
                 #
-            </span>
-            <textarea
+            </Text>
+            <TextInput
                 ref={el => (inputRef = el)}
+                multiline
+                plain
                 class={styles['note-title-input']}
                 rows={1}
                 value={draft()}
@@ -161,7 +172,7 @@ export function NoteTitle(props: {
                 // Out of the tab order when display-only: a field that cannot be changed should
                 // not take a keyboard stop on the way to the body.
                 tabIndex={props.readOnly ? -1 : undefined}
-                onInput={e => setDraft(e.currentTarget.value)}
+                onInput={setDraft}
                 onFocus={() => {
                     done = false
                     setFocused(true)

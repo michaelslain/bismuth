@@ -1,4 +1,4 @@
-import type { Component, JSX } from 'solid-js'
+import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Badge.module.css'
 import './ui.css'
@@ -24,11 +24,9 @@ export type BadgeProps = {
      *  need the caller's own opacity dimming, not a color of their own. Ignored by 'solid', which
      *  is always --bg on --accent. */
     tone?: BadgeTone
-    /** Native tooltip — the visibility badge names who a file is hidden from. */
-    title?: string
     class?: string
     children?: JSX.Element
-}
+} & Omit<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'children'>
 
 function badgeClass(props: BadgeProps): string {
     const variant = props.variant ?? 'inline'
@@ -46,16 +44,15 @@ function badgeClass(props: BadgeProps): string {
  * The small count/indicator primitive: a de-emphasized number or status glyph riding alongside
  * a label — a section head's row count, a search result's match count, a file tree's visibility
  * glyph, a toolbar button's live-count pill. Variants are props (variant/tone), not separate
- * components; see Badge.module.css for where each token comes from.
+ * components; see Badge.module.css for where each token comes from. Every other HTML attribute
+ * (title, style, classList, onClick, aria-*, data-*, id, role) and `ref` pass through untouched
+ * onto the rendered element.
  */
 const Badge: Component<BadgeProps> = props => {
+    const [local, rest] = splitProps(props, ['as', 'variant', 'tone', 'class', 'children'])
     return (
-        <Dynamic
-            component={props.as ?? 'span'}
-            class={badgeClass(props)}
-            title={props.title}
-        >
-            {props.children}
+        <Dynamic component={local.as ?? 'span'} class={badgeClass(props)} {...rest}>
+            {local.children}
         </Dynamic>
     )
 }

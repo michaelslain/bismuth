@@ -7,6 +7,7 @@
 import type { Component } from 'solid-js'
 import { createSignal, Show } from 'solid-js'
 import { TextInput } from '../../ui/TextInput'
+import Text from '../../ui/Text'
 import { isDismissKey, isConfirmKey } from '../../ui/widgetKeys'
 import styles from './TaskCellComposer.module.css'
 
@@ -48,13 +49,17 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             onDblClick={e => e.stopPropagation()}
         >
             <div class={styles.row}>
-                <span
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
                     class={styles.marker}
                     data-testid="task-cell-composer-marker"
                     style={props.color ? { color: props.color } : undefined}
                 >
                     [ ]
-                </span>
+                </Text>
                 <TextInput
                     plain
                     class={styles.input}
@@ -109,9 +114,15 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                 <Show
                     when={props.destination}
                     fallback={
-                        <span class={styles.unset}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles.unset}
+                        >
                             → no destination note // set one in settings
-                        </span>
+                        </Text>
                     }
                 >
                     → {props.destination}

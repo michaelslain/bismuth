@@ -67,6 +67,9 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Icon } from '../icons/Icon'
+import Text from '../ui/Text'
+import Field from '../ui/Field'
+import { TextInput } from '../ui/TextInput'
 import styles from './EmbeddedGraph.module.css'
 
 type Tool = 'select' | 'connect' | 'erase'
@@ -216,7 +219,15 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Pencil" />
-                                        <span class="btn-label">SELECT</span>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class="btn-label"
+                                        >
+                                            SELECT
+                                        </Text>
                                     </>
                                 ),
                             },
@@ -226,7 +237,15 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Link" />
-                                        <span class="btn-label">CONNECT</span>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class="btn-label"
+                                        >
+                                            CONNECT
+                                        </Text>
                                     </>
                                 ),
                             },
@@ -236,7 +255,15 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Eraser" />
-                                        <span class="btn-label">ERASE</span>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class="btn-label"
+                                        >
+                                            ERASE
+                                        </Text>
                                     </>
                                 ),
                             },
@@ -269,7 +296,7 @@ export function EmbeddedGraph(props: {
                         NODE
                     </IconTextButton>
                 </Show>
-                <span class={styles['graph-block-spacer']} />
+                <div class={styles['graph-block-spacer']} />
                 <SegmentedToggle<'2d' | '3d'>
                     value={dim()}
                     onChange={setDim}
@@ -308,43 +335,32 @@ export function EmbeddedGraph(props: {
             <div class={styles['graph-block-canvas']} ref={host} />
             <Show when={!hasErrors && tool() === 'select' && selected()}>
                 <div class={styles['graph-block-edit']}>
-                    {/* `for`/`id` pairing, not just visual adjacency. These two labels sat NEXT TO
-                        their inputs with no programmatic association at all, so a screen reader
-                        announced "edit text" twice with no name — a clean WCAG 1.3.1 / 4.1.2
-                        failure, and the only one of its kind in the app where a real <label>
-                        element was already present and simply not wired up. The ids are static
-                        because this block renders at most once per editor selection. */}
-                    <label
-                        class={styles['graph-block-edit-label']}
-                        for="graph-block-edit-id"
-                    >
-                        id
-                    </label>
-                    <input
-                        id="graph-block-edit-id"
-                        class={`ui-input ${styles['graph-block-input']}`}
-                        value={editId()}
-                        onInput={e => setEditId(e.currentTarget.value)}
-                        onKeyDown={e => {
-                            if (e.key === 'Enter') applyEdit()
-                        }}
-                    />
-                    <label
-                        class={styles['graph-block-edit-label']}
-                        for="graph-block-edit-label"
-                    >
-                        label
-                    </label>
-                    <input
-                        id="graph-block-edit-label"
-                        class={`ui-input ${styles['graph-block-input']}`}
-                        value={editLabel()}
-                        placeholder={selected() ?? ''}
-                        onInput={e => setEditLabel(e.currentTarget.value)}
-                        onKeyDown={e => {
-                            if (e.key === 'Enter') applyEdit()
-                        }}
-                    />
+                    {/* Field wraps label > control (label > span + control), so the accessible
+                        name comes from the wrapping element itself — no more `for`/`id` pairing
+                        to keep in sync by hand. These two used to be a bare <label>+<input> with
+                        no programmatic association at all (a WCAG 1.3.1 / 4.1.2 failure); Field
+                        fixes that structurally. */}
+                    <Field label="id">
+                        <TextInput
+                            class={styles['graph-block-input']}
+                            value={editId()}
+                            onInput={setEditId}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') applyEdit()
+                            }}
+                        />
+                    </Field>
+                    <Field label="label">
+                        <TextInput
+                            class={styles['graph-block-input']}
+                            value={editLabel()}
+                            placeholder={selected() ?? ''}
+                            onInput={setEditLabel}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') applyEdit()
+                            }}
+                        />
+                    </Field>
                     <IconTextButton icon="Check" size="sm" onClick={applyEdit}>
                         APPLY
                     </IconTextButton>
@@ -359,11 +375,13 @@ export function EmbeddedGraph(props: {
                 </div>
             </Show>
             <div class={styles['graph-block-footer']}>
-                <span>{hint()}</span>
-                <span class={styles['graph-block-spacer']} />
-                <span>
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    {hint()}
+                </Text>
+                <div class={styles['graph-block-spacer']} />
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
                     {spec.nodes.length} nodes // {spec.edges.length} edges
-                </span>
+                </Text>
             </div>
         </div>
     )

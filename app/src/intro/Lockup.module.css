@@ -1,0 +1,19 @@
+/* app/src/intro/Lockup.module.css — the first-run intro's small persistent brand lockup
+   (top-left corner mark on every slide except welcome/begin, which show the big centered
+   wordmark instead).
+
+   Split out of VaultIntro.module.css (design-system conformance, one-stylesheet-one-importer):
+   `.vi-lockup`/`.vi-lockup-mark` were only ever written by Lockup.tsx, so they move here with
+   their sole importer. Rules moved verbatim, no changes. */
+
+.vi-lockup {
+  display: flex;
+  align-items: center;
+}
+.vi-lockup-mark {
+  display: grid;
+  place-items: center;
+}
+.vi-lockup-mark img {
+  display: block;
+}

@@ -90,7 +90,7 @@ export const Default: Story = {
 }
 
 /** A split pane — `showHeader` true renders the <PaneHeader> breadcrumb, and this leaf is the
- *  tree's focused one, so `.pane-leaf.focused` applies. */
+ *  tree's focused one, so `data-pane-focused` applies. */
 export const WithHeaderFocused: Story = {
     render: () => (
         <Wrap>

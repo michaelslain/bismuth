@@ -11,6 +11,7 @@ import BracketToggle from '../../ui/BracketToggle'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
+import Text from '../../ui/Text'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
 import ModalHeader from '../../ui/ModalHeader'
@@ -286,7 +287,15 @@ export function EventModal(props: { store: EventStore }) {
                                 value={startTime()}
                                 onInput={setStartTime}
                             />
-                            <span class={styles['dash']}>→</span>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['dash']}
+                            >
+                                →
+                            </Text>
                             <TextInput
                                 type="time"
                                 value={endTime()}
@@ -330,7 +339,16 @@ export function EventModal(props: { store: EventStore }) {
                             size={12}
                             strokeWidth={2}
                         />
-                        Description <span class={styles['opt']}>// markdown</span>
+                        Description{' '}
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['opt']}
+                        >
+                            // markdown
+                        </Text>
                     </div>
                     <MarkdownField
                         class={styles['evm-mdedit']}
@@ -344,7 +362,16 @@ export function EventModal(props: { store: EventStore }) {
                 <div class={styles['evm-field']}>
                     <div class={styles['evm-lab']}>
                         <Icon value="tag" size={12} strokeWidth={2} />
-                        Category <span class={styles['opt']}>// pick one or more</span>
+                        Category{' '}
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['opt']}
+                        >
+                            // pick one or more
+                        </Text>
                     </div>
                     <div class={styles['evm-cats']}>
                         <div
@@ -353,7 +380,13 @@ export function EventModal(props: { store: EventStore }) {
                             style={{ '--cc': 'var(--faint)' }}
                             onClick={() => setSelCats([])}
                         >
-                            <span class={styles['dot']} />
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['dot']}
+                            />
                             None
                         </div>
                         <For each={categories.value}>
@@ -366,7 +399,13 @@ export function EventModal(props: { store: EventStore }) {
                                     }}
                                     onClick={() => toggleCat(c.name)}
                                 >
-                                    <span class={styles['dot']} />
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles['dot']}
+                                    />
                                     {c.name}
                                 </div>
                             )}
@@ -422,7 +461,16 @@ export function EventModal(props: { store: EventStore }) {
                                     size={12}
                                     strokeWidth={2}
                                 />
-                                Ends <span class={styles['opt']}>// optional</span>
+                                Ends{' '}
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['opt']}
+                                >
+                                    // optional
+                                </Text>
                             </div>
                             <TextInput
                                 type="date"

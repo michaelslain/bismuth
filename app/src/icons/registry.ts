@@ -5,9 +5,10 @@
 // that name to real art.
 //
 // ONE ICON SYSTEM, drawn from ONE generated manifest. This used to hold two other systems in turn:
-// 112 hand-authored 24x24 pixel-art SVG paths, then a single Nerd Font character per name (still
-// present in nerdGlyphs.ts, but RETIRED from this file — see that module's header). Both replaced
-// wholesale rather than patched, because both eras hit the same wall: a hand-maintained per-icon
+// 112 hand-authored 24x24 pixel-art SVG paths, then a single Nerd Font character per name (the
+// codepoint table that backed it, nerdGlyphs.ts, was deleted in ds-conformance Task 8 once nothing
+// — including this file, which had already dropped it — referenced the font it described). Both
+// replaced wholesale rather than patched, because both eras hit the same wall: a hand-maintained per-icon
 // asset (a path, a hand-picked codepoint) does not scale and does not swap cheaply. This era is
 // generated: icons/iconNames.ts declares the 140 canonical names (set-independent), icons/
 // iconMap.ts maps each to a Phosphor Regular identifier or a hand-authored custom mark, and

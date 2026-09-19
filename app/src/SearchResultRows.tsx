@@ -9,6 +9,8 @@ import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
 import Badge from './ui/Badge'
+import PlainButton from './ui/PlainButton'
+import Text from './ui/Text'
 import styles from './SearchResultRows.module.css'
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
@@ -53,7 +55,7 @@ export function SearchResultRows(props: {
                         {/* The whole header opens the file too (not just the snippet rows) — AI results
                 carry one byte-exact snippet, but making the title row a hit target keeps every
                 result openable even if a row ever comes back without a snippet. */}
-                        <div
+                        <PlainButton
                             class={`${styles['sresult-head']} ${styles['sresult-head-open']}`}
                             onClick={open}
                         >
@@ -62,29 +64,71 @@ export function SearchResultRows(props: {
                                 size={15}
                                 class={styles['sresult-icon']}
                             />
-                            <b class={styles['sresult-title']}>{parts.name}</b>
+                            {/* weight="inherit": .sresult-title's own font-weight:500 already governs
+                    this (it overrode the bare <b>'s native 700 before this swap) — weight="bold"
+                    here would re-add a 700 class fighting that 500, not reproduce it. */}
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['sresult-title']}
+                            >
+                                {parts.name}
+                            </Text>
                             <Show when={parts.folder}>
-                                <span class={styles['sresult-path']}>
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    class={styles['sresult-path']}
+                                >
                                     // {parts.folder}/
-                                </span>
+                                </Text>
                             </Show>
                             <Badge tone="muted" class={styles['sresult-count']}>
                                 {r.matchCount}
                             </Badge>
-                        </div>
+                        </PlainButton>
                         <Show when={r.reason}>
-                            <div class={styles['sresult-reason']}>{r.reason}</div>
+                            <Text
+                                as="div"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['sresult-reason']}
+                            >
+                                {r.reason}
+                            </Text>
                         </Show>
                         <For each={r.snippets}>
                             {s => (
-                                <div class={styles['sresult-snip']} onClick={open}>
-                                    <span class={styles['sresult-line']}>{s.line}</span>
-                                    <span class={styles['sresult-text']}>
+                                <PlainButton
+                                    class={styles['sresult-snip']}
+                                    onClick={open}
+                                >
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles['sresult-line']}
+                                    >
+                                        {s.line}
+                                    </Text>
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                        class={styles['sresult-text']}
+                                    >
                                         {s.before}
                                         <mark>{s.match}</mark>
                                         {s.after}
-                                    </span>
-                                </div>
+                                    </Text>
+                                </PlainButton>
                             )}
                         </For>
                     </div>

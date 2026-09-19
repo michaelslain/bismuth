@@ -1,10 +1,11 @@
 // Visual spec for <EmptyState> + <Loading> — the "nothing here" / "all done" message
 // block and the plain loading placeholder.
 //
-// Props (EmptyState): title? (optional heading), class?, children (the message body,
-// rendered only when present). Loading takes just optional children (defaults to
-// "Loading…").
+// Props (EmptyState): icon? (optional element rendered above the title), title?
+// (optional heading), class?, children (the message body, rendered only when
+// present). Loading takes just optional children (defaults to "Loading…").
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { Icon } from '../icons/Icon'
 import EmptyState, { Loading } from './EmptyState'
 
 const meta = {
@@ -44,6 +45,19 @@ export const MessageOnly: Story = {
 /** Title only — no children means no `<p>` is rendered at all. */
 export const TitleOnly: Story = {
     render: () => <EmptyState title="Nothing here" />,
+}
+
+/** With an icon above the title — the switcher's ask-AI error panel shape
+ *  (palette/SwitcherBar.tsx), restored via the `icon` prop. */
+export const WithIcon: Story = {
+    render: () => (
+        <EmptyState
+            icon={<Icon value="TriangleAlert" size={24} />}
+            title="Bismuth AI couldn’t complete the search"
+        >
+            Something went wrong talking to the model.
+        </EmptyState>
+    ),
 }
 
 /** The sibling <Loading> placeholder. */

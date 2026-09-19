@@ -1,0 +1,88 @@
+/* ---------- table view ---------- */
+/* --fs-ui cells, per bases-table.card.html; hairline row/header rules. */
+.table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: var(--rule);
+  white-space: nowrap;
+  /* Column headers are chrome (like the view tabs / query label): an uppercase,
+     widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow, 0.14em);
+  vertical-align: bottom;
+}
+.table td {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: var(--rule-soft, 1px solid var(--border-soft));
+  color: var(--fg);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.table tbody tr:hover td { background: var(--hover-bg); }
+.thDrag { cursor: grab; user-select: none; position: relative; }
+.thDrag:active { cursor: grabbing; }
+.thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
+/* display/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label inline>`); this class
+   stays for placement inside the <th> (max-width/vertical-align). */
+.thLabel { max-width: 100%; vertical-align: bottom; }
+
+/* Muted value cells (author / dates / counts).
+   `td.` IS LOAD-BEARING — the same cascade defeat documented on `td.cellOverdue` below.
+   `.table td` above sets `color: var(--fg)` at specificity (0,1,1); a bare `.cellMuted` is
+   (0,1,0) and loses to it, so this rule landed on the cell and painted nothing for as long
+   as it has existed. Qualifying by tag ties the specificity, and this rule's later position
+   decides it. */
+td.cellMuted { color: var(--text-muted); }
+/* A resizable header is always relatively-positioned so the edge handle can anchor. */
+.thResizable { position: relative; }
+/* When the pointer is in the right-edge grab zone, the whole cell shows col-resize
+   (overrides the .thDrag grab cursor) so the affordance is obvious. */
+.thAtEdge, .thAtEdge:active { cursor: col-resize !important; }
+/* Visible resize handle pinned to the right edge. A 12px grab strip; a 2px line
+   inside it lights up on hover so users can see where to grab. */
+.thResize {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  /* Center a thin separator line inside the strip. */
+  display: flex;
+  justify-content: center;
+}
+.thResize::after {
+  content: "";
+  width: 2px;
+  height: 60%;
+  align-self: center;
+  background: var(--border);
+  border-radius: var(--r-0);
+  transition: background 120ms ease;
+}
+.thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+.thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
+.table td { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.groupRow td { font-family: var(--ui-font-stack); font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow, 0.14em); text-transform: uppercase; }
+.summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
+
+/* A `due` cell on an unresolved, past-due task. Same colour and same predicate as <TaskRow>'s
+   overdue chip (bases/taskDisplay.ts's `isOverdue` is shared by both), but its own rule: a
+   table cell is not a chip, and reaching into TaskRow's module from TableView would be two
+   components sharing one stylesheet.
+
+   `td.` IS LOAD-BEARING, not decoration. `.table td` above already sets `color: var(--fg)` at
+   specificity (0,1,1); a bare `.cellOverdue` is (0,1,0) and loses to it, so the class landed on
+   the cell and painted nothing — the class binding was correct and the colour was still white.
+   Qualifying by tag ties the specificity, and this rule's later position decides it. Measured:
+   without the `td.` the story's overdue cell rendered in --fg. */
+td.cellOverdue { color: var(--danger); }

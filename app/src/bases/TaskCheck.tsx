@@ -1,5 +1,6 @@
 import { type Component } from 'solid-js'
 import { chipKeyAction } from '../calendar/taskChipKeys'
+import Text from '../ui/Text'
 import styles from './TaskCheck.module.css'
 
 /** The four glyph states the box can paint. `doing` rather than `in-progress` because it is a
@@ -60,7 +61,11 @@ const MARK: Record<TaskCheckStatus, string> = {
  * native checkbox-in-a-form user would expect; the chip's Alt+arrow reschedule is ignored.
  */
 const TaskCheck: Component<TaskCheckProps> = props => (
-    <span
+    <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        weight="inherit"
         class={`${styles.taskCheck} ${props.variant === 'cell' ? styles.cell : ''} ${props.class ?? ''}`}
         data-status={props.status}
         title="Toggle task — right-click to set status"
@@ -98,7 +103,7 @@ const TaskCheck: Component<TaskCheckProps> = props => (
         onPointerUp={e => e.stopPropagation()}
     >
         {MARK[props.status]}
-    </span>
+    </Text>
 )
 
 export default TaskCheck

@@ -10,7 +10,9 @@ import {
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
-import styles from './BaseView.module.css'
+import Text from '../ui/Text'
+import CardTitle from './CardTitle'
+import styles from './CardBody.module.css'
 
 /** Heuristic: which column is a page count (rendered as "N pages" on the right). */
 function isPagesColumn(id: string): boolean {
@@ -112,11 +114,11 @@ export function CardBody(props: {
         <>
             {/* Cards already shows the title on the cover; Kanban stacks its own. */}
             <Show when={!props.titleAsField}>
-                <div class={styles.cardTitle}>
+                <CardTitle>
                     {props.plainTitle
                         ? titleText()
                         : renderTitle(titleCol(), props.row)}
-                </div>
+                </CardTitle>
             </Show>
             {/* Cards shows the author on the cover; Kanban stacks its own faint line. */}
             <Show when={!props.titleAsField && author()}>
@@ -126,27 +128,45 @@ export function CardBody(props: {
             </Show>
             <Show when={hasMeta()}>
                 <div class={styles.cardMeta}>
-                    <span class={styles.cardMetaLeft}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.cardMetaLeft}
+                    >
                         <Show when={status()}>
                             {s => <StatusText status={s()} />}
                         </Show>
-                    </span>
-                    <span class={styles.cardMetaRight}>
+                    </Text>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles.cardMetaRight}
+                    >
                         <Show
                             when={rating()}
                             fallback={
                                 <Show when={pages()}>
                                     {p => (
-                                        <span class={styles.cardPages}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="muted"
+                                            weight="inherit"
+                                            class={styles.cardPages}
+                                        >
                                             {p()} pages
-                                        </span>
+                                        </Text>
                                     )}
                                 </Show>
                             }
                         >
                             {r => <Stars value={r()} />}
                         </Show>
-                    </span>
+                    </Text>
                 </div>
             </Show>
         </>

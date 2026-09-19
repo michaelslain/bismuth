@@ -5,8 +5,6 @@ import styles from './TextInput.module.css'
 export type TextInputProps = {
     value: string
     onInput: (value: string) => void
-    /** Render a multi-line `<textarea>` instead of a single-line `<input>`. */
-    multiline?: boolean
     /** Drop the `.ui-input` chrome entirely — not just the border. This strips the surface
      *  fill, the padding/box-sizing, AND the shared accent focus ring; the call site owns its
      *  own focus treatment (e.g. `.evm-titlein:focus { border-bottom-color: var(--accent) }`).
@@ -15,10 +13,24 @@ export type TextInputProps = {
      *  `class`. */
     plain?: boolean
     class?: string
-} & Omit<
-    JSX.InputHTMLAttributes<HTMLInputElement>,
-    'value' | 'onInput' | 'class'
->
+} & (
+    | ({
+          /** Render a multi-line `<textarea>` instead of a single-line `<input>`. A literal
+           *  `true` (not a plain `boolean`) so this discriminates the union below: `multiline`
+           *  gets `<textarea>`-shaped attrs (`ref: (el: HTMLTextAreaElement) => void`, `rows`,
+           *  `cols`, …); the other branch gets `<input>`-shaped attrs. A call site that needs to
+           *  pick the mode at runtime branches in JSX rather than passing a computed boolean —
+           *  see TextInput.stories.tsx's `Controlled` helper. */
+          multiline: true
+      } & Omit<
+          JSX.TextareaHTMLAttributes<HTMLTextAreaElement>,
+          'value' | 'onInput' | 'class'
+      >)
+    | ({ multiline?: false } & Omit<
+          JSX.InputHTMLAttributes<HTMLInputElement>,
+          'value' | 'onInput' | 'class'
+      >)
+)
 
 /**
  * The standard single- or multi-line text field. Shares the `.ui-input` chrome
@@ -50,7 +62,7 @@ function TextInput(props: TextInputProps) {
             class={cls()}
             value={local.value}
             onInput={e => local.onInput(e.currentTarget.value)}
-            {...rest}
+            {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)}
         />
     )
 }

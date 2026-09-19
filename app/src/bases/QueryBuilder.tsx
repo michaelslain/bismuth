@@ -29,9 +29,10 @@ import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import { capitalize } from './renderValue'
 import { columnLabel } from './columnLabel'
-import { Icon } from '../icons/Icon'
 import Select, { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
+import Text from '../ui/Text'
+import { IconButton } from '../ui/IconButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -474,7 +475,15 @@ export function QueryBuilder(props: {
                             <>
                                 <Show when={state.notes.rows.length > 1}>
                                     <div class={qbStyles['qb-connective']}>
-                                        <span class={qbStyles['qb-conn-lab']}>Match</span>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={qbStyles['qb-conn-lab']}
+                                        >
+                                            Match
+                                        </Text>
                                         <SegmentedToggle
                                             options={[
                                                 { id: 'and', label: 'All' },
@@ -490,9 +499,15 @@ export function QueryBuilder(props: {
                                             }
                                             size="sm"
                                         />
-                                        <span class={qbStyles['qb-conn-lab']}>
+                                        <Text
+                                            as="span"
+                                            size="inherit"
+                                            tone="inherit"
+                                            weight="inherit"
+                                            class={qbStyles['qb-conn-lab']}
+                                        >
                                             of these
-                                        </span>
+                                        </Text>
                                     </div>
                                 </Show>
                                 <div class={qbStyles['qb-rows']}>
@@ -524,16 +539,15 @@ export function QueryBuilder(props: {
                                                 <div class={qbStyles['qb-val']}>
                                                     {valueEditor(row, i())}
                                                 </div>
-                                                <button
+                                                <IconButton
+                                                    icon="x"
+                                                    label="Remove filter"
+                                                    iconSize={14}
                                                     class={qbStyles['qb-rm']}
-                                                    type="button"
-                                                    aria-label="Remove filter"
                                                     onClick={() =>
                                                         removeRow(i())
                                                     }
-                                                >
-                                                    <Icon value="x" size={14} />
-                                                </button>
+                                                />
                                             </div>
                                         )}
                                     </For>

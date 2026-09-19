@@ -5,6 +5,8 @@ import { settings } from './settings'
 import { Icon } from './icons/Icon'
 import Chip from './ui/Chip'
 import Label from './ui/Label'
+import Swatch from './ui/Swatch'
+import Text from './ui/Text'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
 import { pushToast } from './Toast'
@@ -596,13 +598,11 @@ export function ExportView(props: { path: string }) {
                     <div class={styles.field}>
                         <Label class={styles.flab}>Start day</Label>
                         <div class={styles['path-row']}>
-                            <input
+                            <TextInput
                                 type="date"
                                 class={`${styles['path-input']} ${styles['exp-date']}`}
                                 value={calStart()}
-                                onInput={e =>
-                                    setCalStart(e.currentTarget.value)
-                                }
+                                onInput={setCalStart}
                             />
                             <Show when={calStart()}>
                                 <IconTextButton
@@ -662,10 +662,16 @@ export function ExportView(props: { path: string }) {
                     {/* PNG can't hold more than one page, so a page-broken note exports as N separate
               files (note-1.png, note-2.png, …) instead of one — flag that up front. */}
                     <Show when={format() === 'png' && (pageCount() ?? 1) > 1}>
-                        <span class={styles['exp-hint']}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['exp-hint']}
+                        >
                             {pageCount()} pages (page breaks) → exports as{' '}
                             {pageCount()} separate PNG files
-                        </span>
+                        </Text>
                     </Show>
                 </div>
 
@@ -697,9 +703,10 @@ export function ExportView(props: { path: string }) {
                                     selected={theme() === t}
                                     onClick={() => setTheme(t)}
                                 >
-                                    <span
+                                    <Swatch
+                                        static
+                                        color={THEME_SWATCH[t]}
                                         class={styles['theme-swatch']}
-                                        style={{ background: THEME_SWATCH[t] }}
                                     />
                                     {THEME_LABEL[t]}
                                 </Chip>

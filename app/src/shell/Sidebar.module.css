@@ -27,7 +27,7 @@
 
    THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.sidebar-icons
    :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
-   copied into TabRail.module.css/EmptyPane.module.css/graph/Graph.module.css — that box is now
+   copied into TabRail.module.css/EmptyPane.module.css/GraphView.module.css — that box is now
    `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
    shell/CommandButton.tsx, which every button in this toolbar renders through. What remains below
    is the one override that genuinely belongs to THIS parent: the settings-driven font-size.

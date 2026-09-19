@@ -24,8 +24,10 @@ import {
 } from './basePropertiesForm'
 import { Icon } from '../icons/Icon'
 import Select from '../ui/Select'
+import Text from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
+import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
@@ -654,20 +656,33 @@ export function BaseSettings(props: {
                                                 size={13}
                                                 strokeWidth={2}
                                             />
-                                            <span
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
                                                 class={styles['propset-name-txt']}
                                                 classList={{ [styles['empty']]: !row.name }}
                                             >
                                                 {row.name ||
                                                     'Untitled property'}
-                                            </span>
-                                            <span class={styles['propset-kind']}>
+                                            </Text>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="inherit"
+                                                weight="inherit"
+                                                class={styles['propset-kind']}
+                                            >
                                                 {row.kind}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                class={styles['propset-eye']}
-                                                aria-label={
+                                            </Text>
+                                            <IconButton
+                                                icon={
+                                                    row.hidden
+                                                        ? 'eye-off'
+                                                        : 'eye'
+                                                }
+                                                label={
                                                     row.hidden
                                                         ? `Show ${row.name || 'property'} on cards/table`
                                                         : `Hide ${row.name || 'property'} from cards/table`
@@ -677,23 +692,15 @@ export function BaseSettings(props: {
                                                         ? 'Hidden from cards/table — click to show'
                                                         : 'Visible on cards/table — click to hide'
                                                 }
+                                                iconSize={15}
+                                                class={styles['propset-eye']}
                                                 onClick={e => {
                                                     e.stopPropagation()
                                                     updateRow(i(), {
                                                         hidden: !row.hidden,
                                                     })
                                                 }}
-                                            >
-                                                <Icon
-                                                    value={
-                                                        row.hidden
-                                                            ? 'eye-off'
-                                                            : 'eye'
-                                                    }
-                                                    size={15}
-                                                    strokeWidth={1.75}
-                                                />
-                                            </button>
+                                            />
                                         </div>
 
                                         <Show when={open()}>
@@ -820,38 +827,30 @@ export function BaseSettings(props: {
                                                 </Show>
 
                                                 <div class={styles['propset-foot']}>
-                                                    <button
-                                                        type="button"
+                                                    <IconButton
+                                                        icon="ArrowUp"
+                                                        label="Move up"
+                                                        iconSize={13}
                                                         class={styles['propset-btn']}
                                                         disabled={i() === 0}
-                                                        aria-label="Move up"
                                                         onClick={() =>
                                                             moveRowAt(i(), -1)
                                                         }
-                                                    >
-                                                        <Icon
-                                                            value="ArrowUp"
-                                                            size={13}
-                                                        />
-                                                    </button>
-                                                    <button
-                                                        type="button"
+                                                    />
+                                                    <IconButton
+                                                        icon="ArrowDown"
+                                                        label="Move down"
+                                                        iconSize={13}
                                                         class={styles['propset-btn']}
                                                         disabled={
                                                             i() ===
                                                             propRows().length -
                                                                 1
                                                         }
-                                                        aria-label="Move down"
                                                         onClick={() =>
                                                             moveRowAt(i(), 1)
                                                         }
-                                                    >
-                                                        <Icon
-                                                            value="ArrowDown"
-                                                            size={13}
-                                                        />
-                                                    </button>
+                                                    />
                                                     <div class={styles['sp']} />
                                                     <IconTextButton
                                                         icon="Trash2"

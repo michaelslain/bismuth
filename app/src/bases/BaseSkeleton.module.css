@@ -1,6 +1,7 @@
 /* Shaped loading placeholder for a BaseView. Mirrors the table / cards silhouettes
    (see BaseView.module.css) closely enough that the pane reads as "this view, loading"
-   rather than a bare spinner. Blocks are plain static --faint placeholders — no pulse. */
+   rather than a bare spinner. The table/cards silhouette rules live in TableSkeleton.module.css
+   and CardsSkeleton.module.css; the shared placeholder-bar look lives in SkeletonBar.module.css. */
 
 .skeleton {
   flex: 1;
@@ -8,58 +9,3 @@
   overflow: hidden;
   padding: 0;
 }
-
-.block {
-  background: color-mix(in srgb, var(--faint) 22%, transparent);
-  border-radius: var(--r-0);
-}
-
-/* ---- table silhouette ---- */
-.table { display: flex; flex-direction: column; }
-.head {
-  display: flex;
-  gap: var(--sp-7);
-  padding: var(--sp-5) var(--sp-5);
-  border-bottom: 1px solid var(--border);
-}
-.headCell {
-  composes: block;
-  height: 9px;
-  flex: 1;
-  max-width: 120px;
-  background: color-mix(in srgb, var(--faint) 34%, transparent);
-}
-.row {
-  display: flex;
-  gap: var(--sp-7);
-  padding: var(--sp-5) var(--sp-5);
-  border-bottom: 1px solid var(--border-soft, var(--border));
-}
-.cell { composes: block; height: 11px; flex: 1; max-width: 160px; }
-/* Stagger the row widths a touch so the placeholder doesn't read as a perfect grid. */
-.row:nth-child(odd) .cell:last-child { max-width: 90px; }
-.row:nth-child(even) .cell:first-child { max-width: 130px; }
-
-/* ---- cards silhouette ---- */
-.cards {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--sp-5);
-  padding: 18px;
-}
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  padding: 0 0 var(--sp-5);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-0);
-  overflow: hidden;
-}
-.cardCover {
-  height: 72px;
-  background: color-mix(in srgb, var(--faint) 16%, transparent);
-  border-bottom: 1px solid var(--border-soft, var(--border));
-}
-.cardLineWide { composes: block; height: 11px; margin: 0 var(--sp-5); }
-.cardLine { composes: block; height: 9px; width: 55%; margin: 0 var(--sp-5); }

@@ -6,14 +6,16 @@
 // toolbar, palette, command catalog...) stable across a set swap. Only the MAPPING from these
 // names to a set's own identifiers changes — see iconMap.ts for the current one.
 //
-// Deliberately its own module rather than reading nerdGlyphs.ts's keys at runtime: nerdGlyphs.ts
-// is now a RETIRED subsystem (kept only for icons/specimen/ and its own historical tests — see
-// nerdGlyphs.ts's header), and a live seam should not depend on a dead one. iconNames.test.ts
-// cross-checks this list against nerdGlyphs.ts's key set so the two cannot silently drift apart
-// while both still exist in the tree.
+// Deliberately its own module rather than reading a set's own identifiers at runtime: a live seam
+// should not depend on any one set's internals, so this list is hand-maintained and each set
+// (formerly the Nerd Font codepoint table, now iconMap.ts's Phosphor mapping) is checked against
+// it instead of the other way round.
 //
-// Sourced from nerdGlyphs.ts's key set at the time of the Phosphor migration (2026-08-27) — see
-// .claude/plans/2026-08-27-visual-unification-audit.md §10.
+// Sourced from the retired Nerd Font era's codepoint table's key set at the time of the Phosphor
+// migration (2026-08-27) — see .claude/plans/2026-08-27-visual-unification-audit.md §10. That
+// table (icons/nerdGlyphs.ts) and its cross-check test were deleted (ds-conformance Task 8) once
+// nothing referenced the font it described; this list is unaffected — it was already
+// set-independent and needed no replacement source.
 export const ICON_NAMES: string[] = [
     'AppWindow',
     'Archive',

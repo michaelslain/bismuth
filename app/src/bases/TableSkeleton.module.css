@@ -1,0 +1,24 @@
+/* ---- table silhouette ---- */
+.table { display: flex; flex-direction: column; }
+.head {
+  display: flex;
+  gap: var(--sp-7);
+  padding: var(--sp-5) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+.headCell {
+  height: 9px;
+  flex: 1;
+  max-width: 120px;
+  background: color-mix(in srgb, var(--faint) 34%, transparent);
+}
+.row {
+  display: flex;
+  gap: var(--sp-7);
+  padding: var(--sp-5) var(--sp-5);
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.cell { height: 11px; flex: 1; max-width: 160px; }
+/* Stagger the row widths a touch so the placeholder doesn't read as a perfect grid. */
+.row:nth-child(odd) .cell:last-child { max-width: 90px; }
+.row:nth-child(even) .cell:first-child { max-width: 130px; }

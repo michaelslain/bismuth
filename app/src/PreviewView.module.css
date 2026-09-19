@@ -154,6 +154,11 @@
 /* ── Find bar (Cmd/Ctrl+F over a code/text or PDF preview) ─────────────────────────────
    Overlaid top-right of the scrolling body; visual twin of the editor's `.bismuth-find`
    (Editor.css) but self-contained so PreviewView never depends on the editor being loaded. */
+/* `.preview-find` is now this component's own `class` on `ui/SearchBar`, so it composes with
+   (and, at equal single-class specificity, loads after — see GraphSearch.module.css's
+   `.graph-search-bar` for the same idiom) ui.css's global `.search-bar`. `height: auto` undoes
+   that base rule's fixed `--h-control` row height — this bar's own content (icon buttons, the
+   "Aa" toggle) drove its height before the swap and still should. */
 .preview-find {
   position: absolute;
   top: 8px;
@@ -162,6 +167,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  height: auto;
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
   background: var(--pop-bg-strong, var(--bg));
 
@@ -169,17 +175,20 @@
   border: 1px solid var(--border);
   border-radius: var(--r-0);
   box-shadow: var(--lift);
-  font-family: var(--ui-font, system-ui, -apple-system, sans-serif);
+  font-family: var(--ui-font-stack);
   color: var(--fg);
 }
 
+/* Composes with ui.css's global `.search-bar-input`, whose `flex: 1` (flex-basis 0%) would
+   otherwise ignore this rule's `width` entirely and stretch the field to fill the bar — `flex:
+   none` restores the fixed 168px this field always had. */
 .preview-find-input {
   width: 168px;
+  flex: none;
   border: none;
   outline: none;
   background: transparent;
   color: var(--fg);
-  font: inherit;
   font-size: var(--fs-body);
   padding: var(--sp-1);
 }

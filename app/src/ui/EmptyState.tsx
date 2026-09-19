@@ -3,6 +3,8 @@ import './ui.css'
 import styles from './EmptyState.module.css'
 
 export type EmptyStateProps = {
+    /** Optional icon rendered above the title. */
+    icon?: JSX.Element
     /** Optional heading shown above the message. */
     title?: string
     class?: string
@@ -17,6 +19,9 @@ export type EmptyStateProps = {
 function EmptyState(props: EmptyStateProps) {
     return (
         <div class={`ui-empty-block ${props.class ?? ''}`}>
+            <Show when={props.icon}>
+                <div class={styles['ui-empty-icon']}>{props.icon}</div>
+            </Show>
             <Show when={props.title}>{t => <h2>{t()}</h2>}</Show>
             <Show when={props.children}>
                 <p class="ui-empty">{props.children}</p>

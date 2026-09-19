@@ -10,10 +10,10 @@
 // pre-existing `current` value from the app library. Arrows move the selection in the
 // grid; Enter commits the active cell.
 //
-// Uses the SAME shell as the command palette: the shared <Modal> (darkening
-// `.ui-overlay` backdrop + Escape/backdrop-close) and the `palette-panel` /
-// `palette-search` styling from palette/Palette.module.css — so it looks and
-// behaves identically, not like a separate, lighter overlay. Reused by the
+// Uses the SAME shell as the command palette: <PaletteFrame> (palette/PaletteFrame.tsx), the
+// shared Modal (darkening `.ui-overlay` backdrop + Escape/backdrop-close) with the
+// `palette-panel` / `palette-search` styling — so it looks and behaves identically, not like a
+// separate, lighter overlay. Reused by the
 // file-tree "Set icon" picker and the editor's icon-field / `:`-emoji
 // autocomplete galleries (via galleryStore).
 import {
@@ -25,14 +25,12 @@ import {
     onMount,
     onCleanup,
 } from 'solid-js'
-import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TextButton } from '../TextButton'
 import { Icon } from '../../icons/Icon'
-import SearchBar from '../SearchBar'
 import { defaultActiveIndex, moveActive } from './activeItem'
 import type { GallerySource } from './types'
-import paletteStyles from '../../palette/Palette.module.css'
+import PaletteFrame, { PaletteEmpty } from '../../palette/PaletteFrame'
 import styles from './SymbolGallery.module.css'
 
 type Props = {
@@ -178,24 +176,21 @@ function SymbolGallery(props: Props) {
     }
 
     return (
-        <Modal
+        <PaletteFrame
             onClose={props.onClose}
-            class={`${paletteStyles['palette-panel']} ${styles['icon-picker-panel']}`}
+            label={props.title ?? props.source.placeholder}
+            class={styles['icon-picker-panel']}
             panelRef={el => {
                 panelEl = el
             }}
+            inputRef={el => {
+                inputRef = el
+            }}
+            placeholder={props.title ?? props.source.placeholder}
+            value={query()}
+            onInput={setQuery}
+            onKeyDown={onKeyDown}
         >
-            <SearchBar
-                class={paletteStyles['palette-search']}
-                inputClass={paletteStyles['palette-input']}
-                inputRef={el => {
-                    inputRef = el
-                }}
-                placeholder={props.title ?? props.source.placeholder}
-                value={query()}
-                onInput={setQuery}
-                onKeyDown={onKeyDown}
-            />
             <Show when={props.onClear}>
                 <TextButton
                     class={styles['icon-picker-clear']}
@@ -233,7 +228,7 @@ function SymbolGallery(props: Props) {
                     )}
                 </For>
                 <Show when={results().items.length === 0}>
-                    <div class={paletteStyles['palette-empty']}>No matches</div>
+                    <PaletteEmpty>No matches</PaletteEmpty>
                 </Show>
             </div>
             <Show when={results().total > results().items.length}>
@@ -242,7 +237,7 @@ function SymbolGallery(props: Props) {
                     typing to narrow.
                 </div>
             </Show>
-        </Modal>
+        </PaletteFrame>
     )
 }
 

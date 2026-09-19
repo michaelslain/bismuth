@@ -140,9 +140,15 @@ function DaemonInbox(props: DaemonInboxProps) {
                             {resolved().length}
                         </Badge>
                     </Text>
-                    <span class={styles['inbox-section-toggle']}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                        class={styles['inbox-section-toggle']}
+                    >
                         {resolvedOpen() ? 'hide' : 'show'}
-                    </span>
+                    </Text>
                 </div>
                 <Show when={resolvedOpen()}>
                     <For each={resolved()}>

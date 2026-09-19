@@ -124,7 +124,7 @@ test('the ramp has ONE definition — no surface hardcodes heading sizes', () =>
         ['editor/livePreview.ts', read('editor/livePreview.ts')],
         ['chat/ChatTextBubble.module.css', read('chat/ChatTextBubble.module.css')],
         ['bases/CardEditModal.module.css', read('bases/CardEditModal.module.css')],
-        ['bases/Flashcards.module.css', read('bases/Flashcards.module.css')],
+        ['bases/FlashcardsView.module.css', read('bases/FlashcardsView.module.css')],
     ]
     for (const [name, src] of surfaces) {
         expect(src, `${name} must read the shared ramp (--fs-h1..h6)`).toMatch(
@@ -141,7 +141,7 @@ test('no markdown surface sizes a heading with an em multiplier', () => {
     for (const file of [
         'chat/ChatTextBubble.module.css',
         'bases/CardEditModal.module.css',
-        'bases/Flashcards.module.css',
+        'bases/FlashcardsView.module.css',
     ]) {
         const src = read(file)
         for (const line of src.split('\n')) {

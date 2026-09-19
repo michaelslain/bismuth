@@ -219,3 +219,57 @@ export const WithNativeActions: Story = {
         await expect(getComputedStyle(open).color).toBe(getComputedStyle(draw).color)
     },
 }
+
+/** Code/text: not `inkable()`, so `config` renders nothing at all — no zoom, no annotate, no
+ *  readout. Only identity + (when native) file actions. Zero group boundaries: the file-actions
+ *  group is the only thing in the trail, so there is no OTHER group for its leading edge to
+ *  read as a crumb-gap against. */
+export const Code: Story = {
+    render: () => <Harness width={1000} kind="code" name="server.ts" native />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const canvas = within(bar)
+        const p = expectCalm(bar, 0, 0)
+        await expect(p.frames).toBe(0)
+        await expect(canvas.getByLabelText('Open in default app')).toBeInTheDocument()
+        await expect(canvas.getByLabelText('Reveal in file manager')).toBeInTheDocument()
+        for (const label of [
+            'Draw',
+            'Zoom in',
+            'Zoom out',
+            'Fit width',
+            'Highlight text',
+            'Scratch paper',
+            'Bookmarks',
+        ]) {
+            await expect(canvas.queryByLabelText(label)).toBeNull()
+        }
+        await expect(bar.querySelector('[data-testid="page-readout"]')).toBeNull()
+    },
+}
+
+/** External (an unrecognised binary — a zip, say): the exact same shape as Code. Neither kind is
+ *  `inkable()`, so there is nothing view-specific for either to render; only Code and External
+ *  differ in which files reach them, never in what the bar shows. */
+export const External: Story = {
+    render: () => <Harness width={1000} kind="external" name="archive.zip" native />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const canvas = within(bar)
+        const p = expectCalm(bar, 0, 0)
+        await expect(p.frames).toBe(0)
+        await expect(canvas.getByLabelText('Open in default app')).toBeInTheDocument()
+        await expect(canvas.getByLabelText('Reveal in file manager')).toBeInTheDocument()
+        for (const label of [
+            'Draw',
+            'Zoom in',
+            'Zoom out',
+            'Fit width',
+            'Highlight text',
+            'Scratch paper',
+            'Bookmarks',
+        ]) {
+            await expect(canvas.queryByLabelText(label)).toBeNull()
+        }
+    },
+}

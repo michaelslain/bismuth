@@ -8,6 +8,7 @@ import { api } from './api'
 import type { GraphData } from '../../core/src/graph'
 import { deriveBacklinks, pathToNoteId } from './backlinkGraph'
 import AsciiTree from './ui/ascii/AsciiTree'
+import Text from './ui/Text'
 import styles from './Backlinks.module.css'
 
 const EMPTY_GRAPH: GraphData = { nodes: [], edges: [] }
@@ -30,7 +31,15 @@ export function Backlinks(props: {
     return (
         <Show when={entries().length > 0}>
             <div class={styles.backlinks}>
-                <span class={styles.eyebrow}>BACKLINKS {entries().length}</span>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles.eyebrow}
+                >
+                    BACKLINKS {entries().length}
+                </Text>
                 <AsciiTree
                     class={styles['backlinks-tree']}
                     rows={entries().map(e => ({ id: e.id, label: e.label }))}

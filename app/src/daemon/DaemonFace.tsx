@@ -169,18 +169,30 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                 onClick={wink}
             >
                 <Index each={cells()}>
-                    {(c, i) => <span class={cellClass(i)}>{c()}</span>}
+                    {(c, i) => (
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={cellClass(i)}
+                        >
+                            {c()}
+                        </Text>
+                    )}
                 </Index>
             </div>
             <Show when={props.caption}>
-                {/* Text (ui/Text.tsx) does not forward unknown props to its rendered element, so
-                    `data-testid` on <Text> itself is silently dropped — a bare test-only wrapper
-                    is the seam instead. */}
-                <span data-testid="daemon-face-caption">
-                    <Text size="ui" tone="muted" class={styles.caption}>
-                        {props.caption}
-                    </Text>
-                </span>
+                {/* Text (ui/Text.tsx) now forwards every other HTML attribute, incl. data-*, so
+                    `data-testid` lands directly on it — no bare wrapper span needed. */}
+                <Text
+                    data-testid="daemon-face-caption"
+                    size="ui"
+                    tone="muted"
+                    class={styles.caption}
+                >
+                    {props.caption}
+                </Text>
             </Show>
         </div>
     )

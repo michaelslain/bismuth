@@ -17,9 +17,10 @@ import {
 import SearchBar from './ui/SearchBar'
 import { IconButton } from './ui/IconButton'
 import Label from './ui/Label'
+import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import './graph/asciiGraph.css'
-import styles from './graph/Graph.module.css'
+import styles from './GraphSearch.module.css'
 
 export interface SearchItem {
     id: string
@@ -35,6 +36,11 @@ export function GraphSearch(props: {
     onPreview?: (id: string) => void // arrow-nav / hover → highlight (force label), no camera move
     onFly: (id: string) => void // Enter / click → commit: fly the camera to the node
     onClose: () => void
+    // True in the real app (GraphView's find panel is the only caller): switches the panel's
+    // own stylesheet to its tighter, ASCII-register look via `data-embedded` on the root — see
+    // GraphSearch.module.css's header. Omit (or leave false) for the bare standalone register the
+    // Storybook stories exercise.
+    embedded?: boolean
 }) {
     const [query, setQuery] = createSignal('')
     const [selected, setSelected] = createSignal(0)
@@ -111,7 +117,10 @@ export function GraphSearch(props: {
     }
 
     return (
-        <div class={styles['graph-search']}>
+        <div
+            class={styles['graph-search']}
+            data-embedded={props.embedded ? '' : undefined}
+        >
             <SearchBar
                 leadingIcon="Search"
                 placeholder="Search graph..."
@@ -153,12 +162,16 @@ export function GraphSearch(props: {
                             >
                                 {/* The node glyph from the field's degree ramp, so a row and its node read as
                   the same object (bismuth-design/ascii tokens/ascii.css --node-linked). */}
-                                <span
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
                                     class={styles['graph-search-glyph']}
                                     aria-hidden="true"
                                 >
                                     o
-                                </span>
+                                </Text>
                                 <Label
                                     fill
                                     tone="default"

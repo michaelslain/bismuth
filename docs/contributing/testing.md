@@ -863,8 +863,8 @@ measured it.
 
 ### `bench/poolSize.ts` — how many concurrent Chrome targets a sweep should run
 
-The one place that answers this for every pooled sweep in the directory (`invariants.ts` and
-`playCheck.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
+The one place that answers this for every pooled sweep in the directory (`invariants.ts`,
+`playCheck.ts` and `cssBaseline.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
 the three hardcoded a `6` and one didn't pool at all — a constant tuned for whichever machine the
 author had, which starves a big machine and thrashes a small one. `poolSize(max)` takes the
 **minimum** of two budgets and floors it at 2:
@@ -894,9 +894,10 @@ another iteration instead of a wrong capture.
 | `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (759 stories as of 2026-09-14, up from an older ~737 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 | `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
-| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px/hex) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Not wired into either git hook yet — see below. |
+| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px `border-radius`/padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`, a hardcoded hex/`rgb()` colour) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below; the two gates' colour/radius checks overlap deliberately rather than duplicating, detail below. |
 | `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
 | `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
+| `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props), ratcheted by `design-system.baseline.json`. Wired into `scripts/gate.ts` pre-commit — see below. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
 
@@ -929,6 +930,83 @@ render relative to `Date.now()`, so the clock and timezone are frozen before any
 actually advancing); and async component settling (a fixed sleep loses under load — e.g.
 MilkdownField's dynamic `import()` was still in its loading state at 2000ms in one run and fully
 mounted in the next — so the harness re-probes until stable instead of guessing a delay).
+
+**Now POOLED** (`bench/poolSize.ts`, see above) — one Chrome (`bench/chromeSession.ts`), with
+`poolSize(8)` concurrent targets opened via `newPage()`, overridable with `--concurrency`
+(matching `invariants.ts`/`playCheck.ts` rather than `storyAudit.ts`'s 12 — this harness needs
+every element's computed style to be byte-identical across probes, and heavier contention is
+exactly what perturbs font/layout timing, so the ceiling stays lower as a deliberate hedge). Network
+quiescence — one of the signals convergence watches for — is tracked **in-page, per target**
+(`NET_WATCH`, read off `window.__cssbNet`) rather than off one shared browser-level listener, since
+pooling means several stories are in flight on the same CDP socket at once and a browser-scoped
+network event can no longer be attributed to the story that caused it. Output is sorted by story id
+before being written, so a pooled run (whose captures complete out of order) still produces a
+diffable, deterministically-ordered baseline file.
+
+**Known non-deterministic stories.** `app-chatview`, `editor-*`, `app-panecontent`,
+`chat-chatcomposer*`, `daemon-daemonchat`, `preview-*`, and `app-previewview` each carry one element
+that legitimately drifts between check runs: a height flip of 16↔18, 10↔12, 14↔16, or 15↔17 px with
+`top` ±1, always on the DOM suffix `…>div[1]>div[1]>div[0]` — CodeMirror's `.cm-cursor` caret overlay
+(root cause documented just below). Drift of only that shape, on only that DOM suffix, in one of those
+prefixes is this known flake, not a regression; any other drift is.
+
+**Two more cross-run flakes found chasing pooling's own contention (2026-09-18), on top of the known
+list above**: `app-terminal--drop-affordance-before-font-load` flips an xterm glyph `<span>`'s height
+21px↔22px (with sibling cells' width/letter-spacing shifting together) — the story is named for and
+deliberately captures a pre-font-load state (`app/src/Terminal.stories.tsx:279`), so it has no reason
+to converge on one value across separate loads; and `app-panecontent--chat-sentinel` flips a `<span>`
+width 108.95px↔94.70px, cause not yet root-caused.
+
+**A worker's target recovery is now attributed on double failure.** `recoverPage(id)` retries once on
+a fresh target after a dead-session error, and if that fresh target *also* fails to attach, the thrown
+error is prefixed with the in-flight story's id — before this it was the one failure path in the sweep
+that surfaced as a bare, unattributed CDP protocol error (see `recoverPage`'s own comment in
+`bench/cssBaseline.ts` for the full reasoning).
+
+**Root-caused (2026-09-18, not fixed): the "hint-row" element flip is CodeMirror's own cursor overlay,
+not a harness settle gap.** Two full pooled check runs on an unchanged tree independently reported a
+2px height flip (16↔18, 10↔12, 14↔16, 15↔17) with `top` ±1, always on the same relative DOM suffix
+`…>div[1]>div[1]>div[0]`, scattered across whichever stories happened to be running alongside heavy
+concurrent load that run (`app-chatview`, `chat-chatcomposer(bar)`, `app-panecontent`, `preview-*`,
+`app-previewview`, `editor-*`, `daemon-daemonchat`) — see **Known non-deterministic stories** above,
+which these prefixes are carried in). A CDP probe of the element (`editor-inkoverlay--attached-ink`,
+confirmed identically on `app-chatview--default`'s chat bubble) identifies it precisely:
+`<div class="cm-cursor cm-cursor-primary" style="top:…px; height:…px">`. CodeMirror's `EditorView`
+constructor (`app/node_modules/@codemirror/view/dist/index.js:7877`, third-party, not this repo's
+code) registers a **one-shot** `document.fonts.ready.then(() => { this.viewState.mustMeasureContent =
+"refresh"; this.requestMeasure() })`, and `requestMeasure()` (`dist/index.js:8272-8273`) schedules
+exactly one `requestAnimationFrame` to re-measure and rewrite the cursor's inline `top`/`height` from
+the line box's *actual* font metrics. Those two numbers are literal px written by CM's own JS, not a
+CSS rule, so they do **not** auto-correct when the browser silently swaps a loaded webface in for a
+fallback — nothing but that one callback ever moves them again for a given `EditorView` in a story
+that never updates the view after mount. Under light or
+homogeneous load (a single story cloned across many tabs) the relevant font is already warm from a
+previous load, so CM's callback fires and its rAF lands well inside `cssBaseline.ts`'s 1500ms `SETTLE`
+head start, and the recorded value is always the correct, post-swap one. Under heterogeneous pooled
+load (many *different* stories competing for one shared renderer's main thread and network stack) a
+font fetch — or CM's own rAF — can land late enough that the harness's convergence loop (four
+byte-identical captures 400ms apart) locks onto four consecutive **stale** captures and exits clean
+before CM's correction ever lands; the existing "growth escalation" safeguard doesn't see it because a
+cursor's height/top change never changes element `count`, the only signal that heuristic watches.
+
+**The fix attempted and rejected**: `PROBE`'s font wait (`document.fonts.ready` + two nested `rAF`s)
+was extended with a second `await document.fonts.ready` and two more `rAF`s, on the theory that the
+harness's own wait was one frame short of CM's callback under contention. Measured with
+`bun bench/cssBaseline.ts --base http://localhost:6261 --story editor-` (Storybook on a scratch port,
+not the shared 6006): two runs *before* the change drifted `editor-editor--settings-yaml` +
+`editor-inkoverlay--attached-ink` (run 1) and `editor-inkoverlay--attached-ink` alone (run 2), both
+the same 14px↔16px / 10px↔9px shape; two runs *after* the change drifted the identical two stories
+with the identical values (run 1), then zero (run 2) — no measurable reduction, so the change was
+reverted rather than shipped. The gap isn't "the harness looks too early" (it already re-checks
+`document.fonts.ready` fresh on every convergence probe); it's that a promise resolving inside the
+harness's own probe says nothing about whether CodeMirror's *separate*, one-shot internal callback —
+bound to a font-loading state captured back at `EditorView` construction — has already fired and
+finished its own independently-scheduled `requestAnimationFrame` write. No amount of additional
+waiting inside one `Runtime.evaluate` call can force a rewrite that has to come from CM's own code.
+**Not acted on further**: this is real CodeMirror-internal nondeterminism under contention, already
+covered by **Known non-deterministic stories** above (a small inline element flipping height 16↔18 or
+10↔12, top ±1, under parallel load) — treat drift of only that shape, on only that suffix, in one of
+those prefixes, as this known flake rather than a regression.
 
 ### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
 
@@ -1097,30 +1175,83 @@ focused, or interacted with, and nothing the story doesn't itself render.
 ### `bench/tokenLint.ts` — literal-value lint for stylesheets, checked against a committed baseline
 
 Greps every `app/src/**/*.css`/`*.module.css` declaration for a magic value that should have been a
-design token instead: a non-zero px `border-radius`, a literal non-zero px `padding`/`margin`/`gap`
-(and their longhands), a px `font-size`, a `box-shadow` with a non-zero blur radius, any
-`backdrop-filter` other than `none`, or a literal hex/`rgb()`/`rgba()` color — the last one is the
-only check that also looks inside custom-property (`--foo: …`) declarations, since a component
-inventing its own hardcoded color is exactly the drift the token system is otherwise free of; the
-other checks exempt custom properties, because the token layer itself (`styles/tokens.css`) is who
-is allowed to write the literal a component later reads via `var(...)`.
+design token instead: a literal non-zero px `border-radius` (any longhand corner too, `50%`
+excepted), `padding`/`margin`/`gap` (and their longhands), a `box-shadow` with a non-zero blur
+radius, any `backdrop-filter` other than `none`, or a hardcoded hex/`rgb()`/`rgba()` colour. Only
+the colour rule reads inside custom-property (`--foo: …`) declarations — the rest exempt them,
+because the token layer itself (`styles/tokens.css`) is who is allowed to write the literal a
+component later reads via `var(...)`.
+
+**The design-system gate below ALSO flags hardcoded colour, border-radius and font-size, and the
+two do not fully overlap** (reconciled 2026-09-18, ds-conformance final review Important #1, after
+task 24 first removed these rules on the false claim they were now redundant; updated again after
+task 2 the same day widened the design-system gate's own checks — see `checks.mjs`'s change log for
+the exact deltas). The design-system gate now scans the global layer too (`governance.global` files —
+`ui/ui.css`, `App.css`, `styles/**`, and friends — with only the token files themselves excepted),
+checks colour on the `border-top`/`-right`/`-bottom`/`-left` shorthands, `background-image` and any
+custom property in addition to its base allowlist, strips `var(--x, <fallback>)` calls before
+testing for a literal (so a literal *sibling* to a `var()` call is caught, though a literal *inside*
+that `var()`'s own fallback is still deliberately excused), and checks `border-radius` plus all four
+longhand corners. Even widened, it is still a fixed property allowlist — `mask-image` (`ui/ui.css:709`)
+and `column-rule` stay outside it — and it still excuses a `var()` fallback literal on purpose.
+`tokenLint.ts` has neither gap for the rules it kept (radius, colour, spacing): it scans every
+property, custom properties included, has no `var()`-awareness (so it also flags a fallback literal
+the design-system gate now excuses), and covers every stylesheet including the global layer — but its
+baseline-ratchet model means a *pre-existing* literal stays silently green until someone sweeps that
+file, where the design-system gate's DESIGN.md-governance model does not. Both run: they disagree
+about what to skip, not about what a violation is, so a plain `color: #fff` in a component module, on
+a property both check, is reported by both, while a `mask-image` gradient, a `column-rule` colour, or
+a literal inside a `var()` fallback is caught by `tokenLint.ts` alone. **font-size is the one check
+that stayed removed here** — the design-system gate's font-size check is strictly broader for
+`.module.css` files, so keeping a second, narrower one would only produce a duplicate finding with
+no coverage of its own.
 
 **Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
 `(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
 file's 6 `padding: 8px` literals can never mask a 7th, *different* literal in the same file/rule.
 A run only fails on a violation with no matching baseline entry, i.e. a genuinely NEW magic number;
-the ~700 pre-existing ones (this repo started the visual-unification audit with ~40 unswept
+the pre-existing ones (this repo started the visual-unification audit with ~40 unswept
 stylesheets) stay green until their surface's own sweep wave lands and blesses a lower count.
-**Deliberately NOT wired into `scripts/gate.ts` or `.githooks/` yet** — work-in-progress sweep waves
-need to touch watched files without every commit failing mid-sweep; promoting it into the gate is
-planned for the last wave, once every surface has had its own pass.
+**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside the design-system gate,
+whenever a staged path touches `app/src/`, `DESIGN.md`, `design-system.baseline.json` or
+`scripts/designSystem/` (`touchesDesignSystem` in `scripts/gate.ts`).
 
 ```bash
 bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
 bun bench/tokenLint.ts --list          # every CURRENT violation, grouped by file
-bun bench/tokenLint.ts --rule hex-color  # scope either mode to one rule
+bun bench/tokenLint.ts --rule spacing-literal  # scope either mode to one rule
 bun bench/tokenLint.ts --bless         # overwrite the baseline with the CURRENT violation set
 ```
+
+### The design-system gate — `scripts/designSystem/gate.mjs`, tested by `scripts/designSystem.test.ts`
+
+Installed by the `design-system` skill's `install-gate` (`checks.mjs`, `gate.mjs` and `lib/` are
+**copies**, not an import from `~/.claude`, so the repo stays self-contained on any machine — each
+copy's first line records the skill-scripts version it was copied from). It parses `DESIGN.md`'s
+`governance:` frontmatter block (source roots, the component/stylesheet glob, the primitive-element
+map, the token file list, story-coverage rules and any `global`/exempt paths) and scans
+`app/src/**` for what it describes: a bare `<p>`/`<span>`/`<h1>`–`<h6>`/`<button>`/`<input>`/
+`<textarea>`/`<select>`/`<label>` where a primitive from `primitives.elements` should be used
+instead, a `.module.css` with more than one importer, a component with no sibling
+`{name}.stories.tsx`, a Solid component that destructures its props, and — narrower but overlapping
+`tokenLint.ts` above, not a replacement for it (see that section for exactly where they differ) — a
+literal hardcoded colour, border-radius or font-size instead of a token from `tokens.files`.
+
+**Ratcheted by `design-system.baseline.json`** at the repo root (`{ "accepted": [{ "check",
+"path" }] }`, matched by `check`+`path`, ignoring line) — the same debt-not-exemption model as
+`tokenLint.ts`'s own baseline: a genuine, permanent exception belongs in `DESIGN.md`'s `governance`
+block instead (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE rather
+than a whole file or check, a `design-system-ignore <check-id>: <reason>` comment (in `//`, `/* */`,
+or `{/* */}`) on that line or the line directly above it exempts just that one finding; a directive
+with no reason is itself a finding (`ignoreReason`).
+
+```bash
+node scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json
+bun test scripts/designSystem.test.ts    # the same check as a bun test (pre-push full suite); pre-commit calls gate.mjs directly
+```
+
+**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside `tokenLint.ts`, on the
+same trigger (see above) — so a change under `app/src/` runs both checks once each, never twice.
 
 ### `bench/moduleClassCheck.ts` — emitted-CSS ↔ emitted-JS cross-check
 
@@ -1142,16 +1273,6 @@ byte-equal (the markup-extraction half of a migration); `--modulo-class` require
 stripping every `class=…` attribute from both sides (the CSS half, where a static `class` that
 becomes a dynamic expression legitimately drops out of the template). Proves nothing about CSS
 itself or about the dynamic half of the tree outside the template string.
-
-### `bench/iconFontProbe.ts` — does the icon font actually load and draw?
-
-Reads `:6006` (Storybook must already be running) and draws every codepoint twice — once in the
-real icon-font family, once in a family that doesn't exist — comparing the two rasters, because the
-obvious approach (compare glyph widths against `.notdef`) doesn't work for this font: Symbols Nerd
-Font Mono advances every glyph, including `.notdef`, by exactly one em, so a missing glyph and a
-real one measure identically. Complements (does not replace) `app/src/icons/iconFont.test.ts`, which
-proves the committed `.woff2` file itself maps every codepoint to a real glyph but says nothing
-about whether the `@font-face` actually loaded and drew in a real browser.
 
 ### `bench/layoutmetrics.ts` + `bench/layoutquality.ts` — graph layout quality
 
@@ -1205,4 +1326,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design-system.baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`

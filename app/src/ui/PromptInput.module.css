@@ -10,7 +10,7 @@
  * here; TextInput's `.ui-input` also adds a box-shadow accent-soft ring and a hover state).
  * Left as a distinct component; candidate composition debt for the follow-up plan. */
 .prompt-input {
-    font-family: "Monaspace Xenon", ui-monospace, monospace;
+    font-family: var(--ui-font-stack);
     font-size: var(--fs-body);
     color: var(--fg);
     background: var(--surface-1);

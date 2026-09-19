@@ -90,6 +90,7 @@ const REQUIRED_PROJECTED = [
     '--overlay-bg',
     '--glow-accent',
     '--glow-text',
+    '--on-scrim',
 ]
 
 /** CSS vars intentionally left unprojected (documented escape hatches). */

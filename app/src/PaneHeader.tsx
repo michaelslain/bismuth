@@ -2,9 +2,11 @@
 // The mini view-bar breadcrumb shown atop a pane when a tab's tree has more than one leaf —
 // lifted out of PaneLeaf (PaneTree.tsx) so the header chrome can be posed and gated on its own.
 //
-// Class names are reached through the shared `PaneTree.module.css` (folded in from App.css AND
-// PaneTree.css) — `.pane-leaf.focused .pane-header` crosses the PaneLeaf/PaneHeader boundary, which
-// is why the module is shared rather than colocated per-file.
+// Class names are reached through this component's own colocated `PaneHeader.module.css`. The
+// "focused" brightening used to be a class-based descendant selector (`.pane-leaf.focused
+// .pane-header`) that forced this module to be shared with PaneLeaf — now it reads a
+// `data-pane-focused` attribute PaneLeaf.tsx sets on its root instead (see PaneHeader.module.css),
+// so each component owns its own stylesheet.
 //
 // The header's own `onPointerDown` starts a pane drag (see PaneLeaf's `onStartPaneDrag`). The
 // close button used to guard against that by having the PARENT interrogate `e.target`'s class
@@ -14,7 +16,7 @@
 // sees it. Note `stopPropagation` on `onClick`/`onMouseDown` would NOT have covered this — pointerdown
 // is its own event and bubbles independently.
 import { Show } from 'solid-js'
-import styles from './PaneTree.module.css'
+import styles from './PaneHeader.module.css'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 import Label from './ui/Label'

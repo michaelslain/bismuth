@@ -137,7 +137,6 @@ governance:
     - app/src/graph/asciiGraph.css # canvas character-grid metrics
     - app/src/palette/switcher.css # switcher rows written as HTML strings
     - "app/src/sheet/univer-*.css" # Univer theming, a third-party widget
-    - "app/src/icons/specimen/**"  # dev-only icon decision record, not product UI (deletion pending)
   primitives:
     dir: app/src/ui
     elements:
@@ -248,6 +247,7 @@ five metric-compatible Monaspace variants (`appearance.uiFont`), so the grid nev
 person actually wrote. The two never mix within one register.
 
 ### Hierarchy
+- **Hero** (40px `--fs-hero`, 48px `--fs-intro-title`): the vault intro and the wordmark only; never in app chrome.
 - **Display** (600, 24px `--fs-display`): note titles; the one big size in chrome.
 - **Title** (600, 19px `--fs-title`): panel titles.
 - **Lead** (15px `--fs-lead`): section heads in chrome; also the editor's first-paint size.
@@ -398,7 +398,7 @@ under every edge and label.
 - **Don't** use `--faint` for content a user must read.
 - **Don't** put more than one accent or one `primary` button in a view.
 - **Don't** use emoji in chrome, or add photography, illustration or hand-drawn SVG.
-- **Don't** retype the Monaspace stack; read `--ui-font-stack` (or `--prose-font`, `--icon-font-stack`).
+- **Don't** retype the Monaspace stack; read `--ui-font-stack` (or `--prose-font`).
 - **Don't** set anything smaller than 10.5px, or track body text.
 - **Don't** import another component's stylesheet. A second importer means a component nobody
   extracted: extract it, and never copy the stylesheet.
