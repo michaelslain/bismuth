@@ -408,7 +408,17 @@ const index = await (await fetch(`${BASE}/index.json`)).json()
  * budget exceeds it, and confirm the component renders when invoked directly. "I already fixed three
  * things in the harness" is not evidence; fixes are not measurements.
  */
-const UNSTABLE: string[] = ['app-sheetview--default', 'app-sheetview--empty']
+// `app-terminal--drop-affordance-before-font-load` deliberately monkeypatches `document.fonts.load`
+// to stay pending forever (see Terminal.stories.tsx's `installPendingFontLoad`) — the story only
+// resolves it from inside its own `play()`, which this harness never runs (`bun run play` is the
+// only tool that does). So every capture here is frozen in Terminal's pre-mount state, at the mercy
+// of whatever that DOM happens to be mid-render — not a rendering result any component author
+// controls, and not something a css-baseline diff can usefully assert about.
+const UNSTABLE: string[] = [
+    'app-sheetview--default',
+    'app-sheetview--empty',
+    'app-terminal--drop-affordance-before-font-load',
+]
 
 const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
 /** An excluded story is skipped unless it is named EXACTLY.
@@ -521,13 +531,24 @@ const relaunchBrowser = (why: string): Promise<void> => {
 
 /** A worker's target died (isDeadSession). Try the cheap recovery first — a fresh target on the SAME
  *  browser, which is all a single crashed renderer needs — and only fall back to replacing the whole
- *  browser when that itself fails, meaning the browser process is the thing that is actually gone. */
-const recoverPage = async (): Promise<Cdp> => {
+ *  browser when that itself fails, meaning the browser process is the thing that is actually gone.
+ *  `id` is the story in flight when the target died, threaded through solely so a DOUBLE failure
+ *  (browser relaunches and the fresh target still won't come up) rethrows with the same story-id
+ *  prefix every other fatal error in this file uses (see the `CDP died on "${id}"` throw below) —
+ *  without it this was the one failure path in the sweep that surfaced as a bare, unattributed
+ *  protocol error. */
+const recoverPage = async (id: string): Promise<Cdp> => {
     try {
         return await preparePage()
     } catch (e) {
         await relaunchBrowser((e as Error).message.slice(0, 60))
-        return await preparePage()
+        try {
+            return await preparePage()
+        } catch (e2) {
+            throw new Error(
+                `${id}: recoverPage failed twice — browser relaunch did not recover a working target: ${(e2 as Error).message}`,
+            )
+        }
     }
 }
 
@@ -685,7 +706,7 @@ const worker = async (idx: number) => {
             } catch (e) {
                 if (attempt === 0 && isDeadSession(e)) {
                     recovered.push(id)
-                    p = await recoverPage()
+                    p = await recoverPage(id)
                     pages[idx] = p
                     continue
                 }
