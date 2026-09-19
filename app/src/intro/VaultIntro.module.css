@@ -203,15 +203,14 @@
 .vi-title.vi-title {
   font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
   font-weight: 400;
-  /* Fixed at 48px, not the old fluid clamp(2rem, 1.4rem + 2.2vw, calc(var(--fs-hero) * 1.35)) —
-     bench/invariants.ts's font-size-off-scale check tests membership in the type scale
-     (tokens.css's --fs-hero comment already names "intro/VaultIntro's own three hero literals
-     (48/40/38px)" as this file's sanctioned exemption), and a vw-derived value only lands on a
-     scale step at one specific viewport width. The old clamp rendered 50.56px at the audited
-     width — off the scale — and would land on a different off-scale number at every other width
-     too. 48px is the scale step directly above --fs-hero (40px), which the < 980px rule below
-     still drops to. */
-  font-size: 48px;
+  /* Fixed at var(--fs-intro-title) (48px), not the old fluid
+     clamp(2rem, 1.4rem + 2.2vw, calc(var(--fs-hero) * 1.35)) — bench/invariants.ts's
+     font-size-off-scale check tests membership in the type scale, and a vw-derived value only
+     lands on a scale step at one specific viewport width. The old clamp rendered 50.56px at the
+     audited width — off the scale — and would land on a different off-scale number at every
+     other width too. --fs-intro-title is the scale step directly above --fs-hero (40px), which
+     the < 980px rule below still drops to. */
+  font-size: var(--fs-intro-title);
   line-height: 1.02;
   /* Normal tracking: the negative -0.02em was compensating for mono's wide sidebearings and
      visibly pinches a serif at display size. */
@@ -222,12 +221,11 @@
 }
 .vi-body {
   font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
-  /* Fixed at 19px, not the fluid --fs-intro-body token (tokens.css:
-     clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem)) — that clamp rendered 19.2px at the audited width,
-     0.2px off bench/invariants.ts's type scale (its own 19px step), and would land on a different
-     off-scale number at other widths too. 19px is that nearest step. --fs-intro-body itself is
-     untouched (tokens.css is out of this task's file scope) and has no other consumer left. */
-  font-size: 19px;
+  /* var(--fs-intro-body) is now a fixed 19px, not the fluid
+     clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem) it used to be — that clamp rendered 19.2px at the
+     audited viewport, 0.2px off bench/invariants.ts's type scale (its own 19px step), and would
+     land on a different off-scale number at other widths too. 19px is that nearest step. */
+  font-size: var(--fs-intro-body);
   line-height: 1.55;
   margin: 0;
   /* ~62ch of the prose face — inside the 65-75ch measure band, and far narrower than the
