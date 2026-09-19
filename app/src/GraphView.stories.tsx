@@ -339,20 +339,41 @@ export const MiniModeSwitcher: Story = {
  * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
  *   `display: none` badge still has DOM text, so text alone doesn't prove it's visible (this is
  *   exactly how the fps pill's invisibility at full width went unnoticed before).
- * - The trailing assertion checks the ruling's own "bottoms aligned" claim directly: the hover
- *   pill and the `.graph-stats` box share the same CSS `bottom` (6px), which pins both boxes'
- *   bottom edges to the same Y regardless of their differing heights/padding.
+ * - The trailing assertions check the ruling's own claims directly: "bottoms aligned" — the hover
+ *   pill and the `.graph-stats` box share the same CSS `bottom` (6px) / flex `align-items: center`,
+ *   which pins both boxes' bottom edges to the same Y regardless of their differing heights/padding
+ *   — and "never overlaps" (fix-2-4, ds-polish): the SELF node's label is overridden to 61 chars,
+ *   a length nothing bounded the hover pill's width against before `.graph-stats` moved off
+ *   `position: absolute` to become the bottom bar's last flex child (GraphView.module.css). A
+ *   local fixture override, not a change to `sampleGraphData` itself, which every other story here
+ *   also uses — `hoverLabel()` (GraphView.tsx) returns a 'self' node's `label` verbatim, so
+ *   overriding it is the deterministic way to grow the hover pill's text without disturbing which
+ *   node the centered pointermove below lands on (still the self node, still at the canvas center,
+ *   same guarantee the doc comment above already established).
  */
+const LONG_HOVER_LABEL =
+    'Quarterly North American Expansion Planning And Budget Review'
+
 export const HudBadges: Story = {
     render: () => {
         const previousShowFps = settings.graph.showFps
         setSettings('graph', 'showFps', true)
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
 
+        const graph = sampleGraphData(8)
+        const longLabelGraph = {
+            ...graph,
+            nodes: graph.nodes.map(node =>
+                node.kind === 'self'
+                    ? { ...node, label: LONG_HOVER_LABEL }
+                    : node,
+            ),
+        }
+
         return (
             <div style={{ height: STORY_H, width: '700px' }}>
                 <GraphView
-                    graph={sampleGraphData(8)}
+                    graph={longLabelGraph}
                     onOpen={noop}
                     mode="2nd"
                     setMode={noop}
@@ -422,5 +443,14 @@ export const HudBadges: Story = {
                     stats.getBoundingClientRect().bottom,
             ),
         ).toBeLessThanOrEqual(1)
+
+        // Never overlaps (fix-2-4): confirms this IS the long-label render, then proves the hover
+        // pill's right edge stays clear of the readout's left edge — the regression this story
+        // exists to catch. Before the readout moved off `position: absolute`, nothing bounded the
+        // pill's width above 520px and a label this long painted straight over the readout text.
+        expect(hoverPill.textContent).toBe(LONG_HOVER_LABEL)
+        expect(hoverPill.getBoundingClientRect().right).toBeLessThanOrEqual(
+            stats.getBoundingClientRect().left,
+        )
     },
 }

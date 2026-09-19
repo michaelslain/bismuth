@@ -600,46 +600,6 @@ export function GraphView(props: {
                 {/* No floating cluster-legend card — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. */}
-                {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
-            panel, because all three float over the same field and must read as one material. */}
-                {/* Task 3 (ds-polish): one running `//`-joined line — nodes // edges // mode // zoom%
-                    (// fps only while the fps segment shows) — same font-size (--fs-ui) and
-                    `bottom` as `.graph-hud-hover` below, so the two pills read as one HUD register.
-                    ONE `<Text>`, not several: `.graph-stats` is `display: flex`, and a flex ITEM's
-                    own leading/trailing whitespace gets trimmed by the browser's line-box edge
-                    rules (each flex item is its own isolated line) — splitting the zoom%/fps
-                    segments into sibling flex items silently ate the spaces around their `//`
-                    separators ("brain //100%//60 fps"). Nesting them INSIDE the one flex item's
-                    content keeps them in normal inline flow, where interior whitespace is not an
-                    edge and survives. */}
-                <div class={`${styles['graph-stats']} asc-popover`}>
-                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                        {plural(nodeCount(), 'node')} //{' '}
-                        {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
-                        {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['graph-zoom-pct']}
-                        >
-                            {zoomPct()}%
-                        </Text>
-                        <Show when={settings.graph.showFps && fps() !== null}>
-                            {' '}//{' '}
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                style={{ color: fpsColor(fps()!) }}
-                            >
-                                {fps()} fps
-                            </Text>
-                        </Show>
-                    </Text>
-                </div>
                 {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
                 <Show when={props.fill && menuOpen()}>
@@ -748,6 +708,49 @@ export function GraphView(props: {
                             {fps()} fps
                         </Badge>
                     </Show>
+                    {/* Readout — last child of `.graph-bottom-bar` (moved off `position: absolute`
+                so it can no longer be painted over by a long hover pill; see this file's header
+                and GraphView.module.css). Same .asc-popover surface as the legend card and the
+                find panel, because all three float over the same field and must read as one
+                material.
+                    Task 3 (ds-polish): one running `//`-joined line — nodes // edges // mode // zoom%
+                    (// fps only while the fps segment shows) — same font-size (--fs-ui) and
+                    `bottom` as `.graph-hud-hover` below, so the two pills read as one HUD register.
+                    ONE `<Text>`, not several: `.graph-stats` is `display: flex`, and a flex ITEM's
+                    own leading/trailing whitespace gets trimmed by the browser's line-box edge
+                    rules (each flex item is its own isolated line) — splitting the zoom%/fps
+                    segments into sibling flex items silently ate the spaces around their `//`
+                    separators ("brain //100%//60 fps"). Nesting them INSIDE the one flex item's
+                    content keeps them in normal inline flow, where interior whitespace is not an
+                    edge and survives. */}
+                    <div class={`${styles['graph-stats']} asc-popover`}>
+                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            {plural(nodeCount(), 'node')} //{' '}
+                            {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
+                            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['graph-zoom-pct']}
+                            >
+                                {zoomPct()}%
+                            </Text>
+                            <Show when={settings.graph.showFps && fps() !== null}>
+                                {' '}//{' '}
+                                <Text
+                                    as="span"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                    style={{ color: fpsColor(fps()!) }}
+                                >
+                                    {fps()} fps
+                                </Text>
+                            </Show>
+                        </Text>
+                    </div>
                 </div>
             </div>
         </div>
