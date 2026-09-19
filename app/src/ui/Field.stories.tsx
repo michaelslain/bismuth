@@ -42,6 +42,27 @@ export const WithTextInput: Story = {
     },
 }
 
+/** A field whose label carries an extra class, merged onto the caption span (e.g.
+ *  CardEditModal's Title field, whose caption matches the micro-caps register every
+ *  other property label uses there). */
+export const WithLabelClass: Story = {
+    render: () => {
+        const [v, setV] = createSignal('Untitled')
+        return (
+            <div style={{ width: '280px' }}>
+                <style>
+                    {
+                        '.storyMicroLabel { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }'
+                    }
+                </style>
+                <Field label="Title" labelClass="storyMicroLabel">
+                    <TextInput value={v()} onInput={setV} />
+                </Field>
+            </div>
+        )
+    },
+}
+
 /** A field wrapping a Select (e.g. EventModal's category picker). */
 export const WithSelect: Story = {
     render: () => {

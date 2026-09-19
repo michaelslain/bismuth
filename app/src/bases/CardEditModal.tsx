@@ -364,7 +364,7 @@ export function CardEditModal(props: {
 
             <div class={styles.body}>
                 <Show when={props.hasFileIdentity ?? true}>
-                    <Field label="Title" class={styles.titleField}>
+                    <Field label="Title" class={styles.titleField} labelClass={styles.label}>
                         <TextInput
                             ref={titleRef}
                             class={styles.titleInput}
