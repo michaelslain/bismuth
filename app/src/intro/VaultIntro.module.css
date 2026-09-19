@@ -179,17 +179,29 @@
   /* The halo alone isn't enough once a dense glyph cluster sits directly behind a letter
      (baseline: intro-vaultintro--graph.png, the "@/o" field under "Three brains, one mind."
      and its body copy) — a soft radial scrim from --bg gives the text an actual backing
-     instead of just a rim-light. Solid near the centre (where the letters sit) fading to
-     fully transparent past the copy's own padding, so the graph stays visible around it
-     rather than behind a hard tile. color-mix keeps this on the real --bg token per theme,
-     never a hardcoded stand-in. */
-  padding: var(--sp-5) var(--sp-6);
+     instead of just a rim-light. Positioned via a ::before below (not this rule's own
+     background/padding) because a percentage-sized radial-gradient is a percentage of THIS
+     BOX, so `transparent 100%` always lands exactly at the box edge — the paint never
+     actually fades, it's cut off still ~94% opaque, reading as a hard rectangle around the
+     copy (graph slide: the glyph sphere sliced flat above the title; theme slide: a visible
+     band). The ::before is oversized past the copy's own bounds so the gradient's fade
+     happens entirely INSIDE the painted area, with nothing left to clip. color-mix keeps
+     this on the real --bg token per theme, never a hardcoded stand-in. */
+  position: relative;
+  isolation: isolate;
+}
+.vi-center[data-slide="theme"] .vi-copy::before,
+.vi-center[data-slide="graph"] .vi-copy::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc(-1 * var(--sp-7)) calc(-3 * var(--sp-7));
   background: radial-gradient(
-    ellipse 68% 80% at 50% 50%,
-    color-mix(in srgb, var(--bg) 94%, transparent) 0%,
-    color-mix(in srgb, var(--bg) 94%, transparent) 62%,
+    closest-side,
+    color-mix(in srgb, var(--bg) 94%, transparent) 55%,
     transparent 100%
   );
+  pointer-events: none;
 }
 /* The nav rides over the graph on the same two slides, where a var(--border) dot against the
    bloom is very close to invisible — the row read as three dots, not seven. */
