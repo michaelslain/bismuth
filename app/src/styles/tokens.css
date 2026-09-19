@@ -59,8 +59,8 @@
   --rose: #C98CA8;
   --editor-font-size: var(--fs-lead);
   /* --icon-font-stack (the Nerd Font subset's family, with a --ui-font-stack fallback) was DELETED
-     here (ds-conformance Task 8) alongside the rest of that retired icon system — nothing read
-     var(--icon-font-stack) by the time it was removed. Icon art is Phosphor SVG now (icons/registry.ts),
+     here (ds-conformance Task 8) alongside the rest of that retired icon system — nothing read the
+     var() reference to it by the time it was removed. Icon art is Phosphor SVG now (icons/registry.ts),
      rendered as inline `<svg>` with `fill="currentColor"`, so `<Icon>` needs no font stack of its
      own at all. See docs/overview/third-party-notices.md for the removal record. */
   /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
