@@ -85,10 +85,15 @@
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
-/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for
-   the reveal-with-the-rail opacity fade below (it takes flex space always, via Label's `fill`, so
-   the collapsed row still sizes the same, but only fades in once expanded). */
-.tab-rail-label { opacity: 0; transition: opacity 0.16s ease; }
+/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class layers
+   DISPLAY on top of that opacity fade, not opacity alone. Collapsed, the row's content box (~15px
+   — see the icon-centring comment's 5px/10px arithmetic above) is narrower than the icon it must
+   fit beside, so `flex: 1; min-width: 0` alone squeezed the label down to a ~1px flex remainder
+   rather than 0 — `opacity: 0` still left that sliver rendered and in the DOM, the defect this
+   fixes. `display: none` removes it from flow entirely while collapsed; every reveal selector
+   below restores `display` alongside `opacity` the moment the rail expands or is pinned, so the
+   fade-in target exists again exactly when it needs to. */
+.tab-rail-label { display: none; opacity: 0; transition: opacity 0.16s ease; }
 /* A PINNED RAIL MUST REVEAL EVERYTHING A HOVERED ONE DOES. Widening to 232px is only half of
    expanding — the labels, close buttons and pin buttons all fade in off `:hover`/`:focus-within`,
    so a pinned rail that only got the width was 232px of blank space with bare icons in it. Every
@@ -96,7 +101,7 @@
    ANCESTOR REACHED VIA `[data-tab-rail]` (see this file's header) — was `.tab-rail` before the
    module split. */
 [data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
-[data-tab-rail][data-rail-pinned] .tab-rail-label { opacity: 1; }
+[data-tab-rail][data-rail-pinned] .tab-rail-label { display: inline; opacity: 1; }
 /* Restores the row's real gap the moment the rail is expanded — every row gets this, not just a
    hovered one, exactly like the label reveal above (an expanded rail is never short on width, so
    there is nothing left to protect by keeping this at 0). */

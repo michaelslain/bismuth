@@ -52,7 +52,7 @@ export const WithLabelClass: Story = {
             <div style={{ width: '280px' }}>
                 <style>
                     {
-                        '.storyMicroLabel { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }'
+                        '.storyMicroLabel { font-size: var(--fs-micro); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }'
                     }
                 </style>
                 <Field label="Title" labelClass="storyMicroLabel">
