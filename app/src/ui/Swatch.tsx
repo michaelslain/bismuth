@@ -3,27 +3,22 @@
 // hand-roll as two bare <button>s (.cat-sw / .cat-chip) differing only in size.
 //
 // `label` is the accessible name: a swatch has no text, so without it a screen reader announces
-// a bare "button" and a keyboard user cannot tell the colours apart. It stays required in
-// practice for the interactive default; a `static` swatch (a decorative colour dot with no
-// action of its own — e.g. ExportView's theme indicator) may omit it and renders `aria-hidden`
-// instead.
+// a bare "button" and a keyboard user cannot tell the colours apart. The type enforces it: an
+// interactive swatch (the default, `static` unset/false) REQUIRES both `label` and `onClick`; a
+// `static` swatch (a decorative colour dot with no action of its own — e.g. ExportView's theme
+// indicator) may omit both and renders `aria-hidden` unless `label` is given.
 import { type Component, Show } from 'solid-js'
 import styles from './Swatch.module.css'
 
-export type SwatchProps = {
+export type SwatchProps = (
+    | { static?: false; label: string; onClick: () => void }
+    | { static: true; label?: string; onClick?: never }
+) & {
     /** Any CSS colour — a resolved value, or a `var(--token)` reference. */
     color: string
     selected?: boolean
-    /** Accessible name (the colour's name) — sets aria-label and title. Required unless
-     *  `static` is set. */
-    label?: string
     /** "md" (22px, a picker option, default) | "sm" (20px, the row's current-colour chip). */
     size?: 'sm' | 'md'
-    /** Non-interactive variant: renders a plain, non-focusable `<div>` instead of a `<button>` —
-     *  no onClick, no aria-pressed. `aria-hidden` unless `label` is given (a decorative swatch
-     *  has no accessible name of its own). */
-    static?: boolean
-    onClick?: () => void
     class?: string
 }
 
