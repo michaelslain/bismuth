@@ -3,7 +3,7 @@
 // with a `groupBy`, rendered by the real KanbanView component. `onChange` is a required prop
 // (fired after a write); a no-op here since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import { KanbanView } from './KanbanView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { runView } from '../../../core/src/bases/query'
@@ -70,7 +70,9 @@ export const EditableWithPinnedColumns: Story = {
     },
 }
 
-/** No `groupBy` on the view — the board falls back to a Callout hint instead of columns. */
+/** No `groupBy` on the view — the board falls back to a `Callout` hint instead of columns.
+ *  Asserted rather than left to a screenshot: the hint's copy renders, proving the fallback path
+ *  is the real `Callout` component (its module class) and not a bare div. */
 export const NoGroupBy: Story = {
     render: () => {
         const views = [
@@ -86,6 +88,47 @@ export const NoGroupBy: Story = {
                 onChange={noop}
             />
         )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const hint = await canvas.findByText(/needs a "groupBy" property/)
+        expect(hint.closest('[class*="callout"]')).not.toBeNull()
+    },
+}
+
+/** The column colour picker open — clicking a column's colour dot reveals the palette `Swatch`es
+ *  (each aria-labelled by its token name, e.g. "graph-0") plus the "Auto" option that clears an
+ *  override. Needs `basePath` (`editable()`) for the dot button to be enabled at all. */
+export const ColorPickerOpen: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const dot = canvas.getAllByTitle('Column color')[0]!
+        await userEvent.click(dot)
+        const auto = await canvas.findByRole('button', { name: 'Auto' })
+        expect(auto).toBeVisible()
+        const swatches = canvasElement.querySelectorAll(
+            'button[aria-label^="graph-"]',
+        )
+        expect(swatches.length).toBe(5)
+        swatches.forEach(s => expect(s).toBeVisible())
     },
 }
 
