@@ -54,7 +54,19 @@
    --r-card (4px) with a comment claiming "nothing in the ASCII register is pill-round," which was
    true of the rest of the app but not, until now, of this rule. */
 .tab-rail-row {
-  display: flex; align-items: center; gap: var(--sp-5);
+  display: flex; align-items: center;
+  /* GAP IS 0 BY DEFAULT, not --sp-5, restored only where the rail is expanded (below, beside the
+     label/tab-x/tab-pin reveal rules). A flex `gap` reserves its space between every pair of items
+     regardless of how narrow either one renders — so even with the label shrunk to 0 width
+     (min-width:0, flex:1) and the trailing tab-x/tab-pin's own width now zeroed while collapsed
+     (see below), the two gaps flanking them still demanded 24px the collapsed row's 15px content
+     box never had. That was the real cause of bench/verify.ts's shell-tabrail--collapsed clip-x
+     lead (`.tab-rail-list`'s own scrollWidth measured 71px against its 45px collapsed box) — none
+     of the excess ever painted (the label is opacity:0, the button now collapses to 0 width too),
+     but the flex layout still reserved the space, and `.tab-rail-list`'s overflow-x:hidden turned
+     that into a scrollWidth/clientWidth mismatch the invariant catches. Zeroing the gap alongside
+     the button's width (below) removes the overflow at its source instead of only hiding it. */
+  gap: 0;
   height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
   margin: 0 5px; padding: 0 10px; border-radius: var(--r-0);
   color: var(--text-muted); cursor: pointer; user-select: none;
@@ -85,10 +97,27 @@
    module split. */
 [data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
 [data-tab-rail][data-rail-pinned] .tab-rail-label { opacity: 1; }
+/* Restores the row's real gap the moment the rail is expanded — every row gets this, not just a
+   hovered one, exactly like the label reveal above (an expanded rail is never short on width, so
+   there is nothing left to protect by keeping this at 0). */
+[data-tab-rail]:hover .tab-rail-row, [data-tab-rail]:focus-within .tab-rail-row,
+[data-tab-rail][data-rail-pinned] .tab-rail-row { gap: var(--sp-5); }
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
-   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
-.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: var(--sp-1); opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
+   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip).
+   ABSOLUTE, not a flex item, while collapsed — taking the button OUT of the row's flex flow is
+   what keeps it from contributing to the overflow at all (see the .tab-rail-row gap comment
+   above). `width: 0; overflow: hidden` was tried first and only moved the same clip-x problem
+   onto the button itself: its child glyph still wants its natural width, so a TabRailRow story
+   with no `[data-tab-rail]` ancestor to ever reveal it stayed permanently self-clipped, a NEW
+   lead bench/verify.ts hadn't shown before. `right: 10px` matches the row's own padding-right,
+   landing it roughly where flex flow put it anyway — invisible (opacity: 0) either way while
+   collapsed, so the approximation is never seen. */
+.tab-rail-row .tab-x, .tab-rail-row .tab-pin {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  padding: var(--sp-1); opacity: 0; color: var(--text-muted);
+  transition: opacity 0.12s ease;
+}
 .tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
 /* ANCESTOR REACHED VIA `[data-tab-rail]`/`[data-rail-pinned]` — see this file's header. */
 [data-tab-rail]:hover .tab-rail-row.pinned .tab-pin,
@@ -98,6 +127,12 @@
 [data-tab-rail][data-rail-pinned] .tab-rail-row:hover .tab-x,
 [data-tab-rail][data-rail-pinned] .tab-rail-row:hover .tab-pin,
 [data-tab-rail]:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
+/* Rejoins the row's flex flow the moment the rail is expanded, the same "every row, not just the
+   hovered one" rule as the gap restore above — an expanded rail has the room, whether or not this
+   particular row is being hovered. */
+[data-tab-rail]:hover .tab-x, [data-tab-rail]:hover .tab-pin,
+[data-tab-rail]:focus-within .tab-x, [data-tab-rail]:focus-within .tab-pin,
+[data-tab-rail][data-rail-pinned] .tab-x, [data-tab-rail][data-rail-pinned] .tab-pin { position: static; transform: none; flex: 0 0 auto; }
 /* The inline rename input sits in place of the label; give it room within the expanded row. */
 .tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
 
