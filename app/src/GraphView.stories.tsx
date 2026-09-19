@@ -307,16 +307,22 @@ export const MiniModeSwitcher: Story = {
 }
 
 /**
- * THE HUD BADGES — the hover-label pill and the fps pill, GraphView's only two `<Badge>` usages,
- * both forced on for one shot. Neither has a prop to force it, so each is forced the way this
- * file's other stateful stories already do (see MiniModeSwitcher above), never with a
- * `setTimeout`-and-hope:
+ * THE HUD BADGES — the hover-label pill and the `.graph-stats` readout, shown together (Task 3,
+ * ds-polish: "one size, one baseline, full separators" — both at `--fs-ui`, bottoms aligned).
+ * Neither has a prop to force it on, so each is forced the way this file's other stateful stories
+ * already do (see MiniModeSwitcher above), never with a `setTimeout`-and-hope:
  *
- * - The frame is a fixed 480px wide, not `STORY_H`'s usual `width: '100%'`: the fps pill is
- *   `display: none` past `@container grapharea (min-width: 521px)` (GraphView.module.css), so a
- *   full-width render shows only the hover pill and this story would pass without ever proving
- *   the fps one visible. 480px sits under that breakpoint on both badges.
- * - The fps pill only renders while `settings.graph.showFps` is on (default off) AND the
+ * - The frame is a fixed 700px wide, not `STORY_H`'s usual `width: '100%'` — and NOT the narrow
+ *   480px this story used before Task 3. `.graph-stats` is `display: none` under
+ *   `@container grapharea (max-width: 520px)` (GraphView.module.css), so a narrow render — the
+ *   old choice — showed the hover pill and the bottom bar's OWN separate fps badge
+ *   (`.graph-bottom-fps`) but never `.graph-stats` itself, which is exactly the gap this task's
+ *   ruling calls out ("currently shows the hover badge and the fps pill but no node/edge
+ *   readout"). 700px sits comfortably past the 521px breakpoint, so `.graph-stats` renders (with
+ *   its own embedded fps segment) and the narrow bottom-bar's `.graph-bottom-narrow`/
+ *   `.graph-bottom-fps` correctly hide instead — the same responsive split every other width
+ *   already gets, not a new rule.
+ * - The fps segment only renders while `settings.graph.showFps` is on (default off) AND the
  *   renderer has measured a real frame rate — its own accumulator only calls back once ~500ms of
  *   REAL rAF time has elapsed (AsciiGraphRenderer's fpsAccum). `showFps` is flipped the same way
  *   MiniModeSwitcher flips `daemon.enabled`: captured, set, restored in `onCleanup`. The `waitFor`
@@ -324,14 +330,18 @@ export const MiniModeSwitcher: Story = {
  * - The hover pill only renders while the mouse is genuinely over a node (`hovered()`, set by the
  *   renderer's own `pointermove` listener on `window` — see AsciiGraphRenderer.ts). There is no
  *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
- *   the canvas. That lands on a node deterministically, not by luck: `sampleGraphData(8)` and its
- *   layout (`computeLayout`) are pure functions of fixed inputs, so this exact story (same graph,
- *   same STORY_H, same fixed 480px width, same `fill`) resolves to the same on-screen arrangement
- *   every run — verified empirically by sweeping the whole canvas and finding the center point
- *   always inside a node's cell, never in empty space.
+ *   the canvas. That lands on the self ("You") node deterministically, not by luck:
+ *   `sampleGraphData(8)` and its layout (`computeLayout`) are pure functions of fixed inputs, and
+ *   the self node sits at the layout's centroid (it links to every other node) — the renderer
+ *   fits+centers the world in the canvas regardless of aspect ratio, so the self node's cell stays
+ *   under the canvas's own center point at this width just as it did at the old 480px one
+ *   (verified empirically the same way: the center always lands inside a node's cell).
  * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
  *   `display: none` badge still has DOM text, so text alone doesn't prove it's visible (this is
  *   exactly how the fps pill's invisibility at full width went unnoticed before).
+ * - The trailing assertion checks the ruling's own "bottoms aligned" claim directly: the hover
+ *   pill and the `.graph-stats` box share the same CSS `bottom` (6px), which pins both boxes'
+ *   bottom edges to the same Y regardless of their differing heights/padding.
  */
 export const HudBadges: Story = {
     render: () => {
@@ -340,7 +350,7 @@ export const HudBadges: Story = {
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
 
         return (
-            <div style={{ height: STORY_H, width: '480px' }}>
+            <div style={{ height: STORY_H, width: '700px' }}>
                 <GraphView
                     graph={sampleGraphData(8)}
                     onOpen={noop}
@@ -380,19 +390,37 @@ export const HudBadges: Story = {
         )
 
         // Waits on the renderer's OWN real fps callback (500ms of accumulated frame time), not a
-        // fixed sleep — see this story's doc comment.
+        // fixed sleep — see this story's doc comment. The fps segment now lives INSIDE the wide
+        // `.graph-stats` readout (Task 3), not the narrow bottom-bar's own fps badge, which this
+        // width hides on purpose.
         await waitFor(
             () => {
-                const pill = canvasElement.querySelector(
-                    '[class*="graph-bottom-fps"]',
+                const stats = canvasElement.querySelector(
+                    '[class*="graph-stats"]',
                 )
-                expect(pill).not.toBeNull()
-                expect(pill!.textContent ?? '').toMatch(/^\d+ fps$/)
-                const box = pill!.getBoundingClientRect()
+                expect(stats).not.toBeNull()
+                expect(stats!.textContent ?? '').toMatch(
+                    // `[^/]+` (not `.+`) for the mode segment: it cannot swallow a `/`, so a
+                    // missing space beside any `//` (the flex-item edge-trimming bug this task's
+                    // JSX works around — see GraphView.tsx's note) fails this instead of silently
+                    // matching via backtracking.
+                    /^\d+ nodes? \/\/ \d+ edges? \/\/ [^/]+ \/\/ \d+% \/\/ \d+ fps$/,
+                )
+                const box = stats!.getBoundingClientRect()
                 expect(box.width).toBeGreaterThan(0)
                 expect(box.height).toBeGreaterThan(0)
             },
             { timeout: 5000 },
         )
+
+        // Bottoms aligned — the ruling's own acceptance check, not just "both visible".
+        const hoverPill = canvasElement.querySelector('[class*="graph-hud-hover"]')!
+        const stats = canvasElement.querySelector('[class*="graph-stats"]')!
+        expect(
+            Math.abs(
+                hoverPill.getBoundingClientRect().bottom -
+                    stats.getBoundingClientRect().bottom,
+            ),
+        ).toBeLessThanOrEqual(1)
     },
 }
