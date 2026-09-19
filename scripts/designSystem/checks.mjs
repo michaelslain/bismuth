@@ -207,6 +207,24 @@ function prevNonWhitespace(content, i) {
     return j >= 0 ? content[j] : ''
 }
 
+// Returns the identifier/keyword run ending right before index `i` (skipping whitespace first),
+// or '' if the preceding character isn't a word character. Used by blankJsCode to tell "a keyword
+// that opens a string" (`return`, `case`) from "a word ending in an apostrophe" (`don't`) — both
+// end in `[\w]`, so the single-character lookback in prevNonWhitespace can't tell them apart.
+function prevWord(content, i) {
+    let j = i - 1
+    while (j >= 0 && /\s/.test(content[j])) j--
+    const end = j + 1
+    while (j >= 0 && /\w/.test(content[j])) j--
+    return content.slice(j + 1, end)
+}
+
+// Keywords after which a quote can ONLY be opening a new string, never closing a contraction —
+// `return '<span>'` and `case '<span>':` are the two shapes item 9 exists for (a tag-shaped
+// string literal used as a plain VALUE, not JSX). Deliberately narrow: only the two keywords the
+// check is proven against, not a general JS tokenizer.
+const STRING_OPENING_KEYWORDS = new Set(['return', 'case'])
+
 // Same shape as blankJsComments, but ALSO blanks the CONTENTS of string and template literals
 // (comments AND strings become spaces, length and line breaks preserved). Real JSX is never
 // written inside a JS string, so a component that builds markup as text — an `innerHTML`
@@ -251,7 +269,9 @@ function blankJsCode(content) {
         if (c === '/' && c2 === '*') { inBlock = true; out += '  '; i += 2; continue }
         if (c === '`') { inStr = c; out += ' '; i++; continue }
         if (c === '"' || c === "'") {
-            if (!/[\w)\]]/.test(prevNonWhitespace(content, i))) { inStr = c; out += ' '; i++; continue }
+            const opensString = !/[\w)\]]/.test(prevNonWhitespace(content, i))
+                || STRING_OPENING_KEYWORDS.has(prevWord(content, i))
+            if (opensString) { inStr = c; out += ' '; i++; continue }
         }
         out += c
         i++
@@ -324,8 +344,9 @@ function checkOneImporter(g, files, isStylesheetFile, isGlobal, isImporterExempt
 //  - `border-(top|right|bottom|left)-color` (existing longhand) AND the bare directional
 //    shorthand `border-(top|right|bottom|left)` (`border-left: 1px solid #fff` hides a literal
 //    behind a shorthand just as easily as the `-color` longhand does).
-//  - `background-image`, which is where a gradient (`linear-gradient(…, #fff, …)`) most often
-//    hides a literal colour as one of its stops.
+//  - `background-image` and `mask-image`, which is where a gradient (`linear-gradient(…, #fff,
+//    …)`) most often hides a literal colour as one of its stops — a mask's colour channel is
+//    alpha-only, but the literal is still not a token, so the same check applies.
 //  - any custom property (`--foo: …`) — components routinely stash a colour in a local custom
 //    property instead of a real token; the value test still requires the value to actually look
 //    like a colour, so `--radius-local: 8px` is never touched by this.
@@ -333,7 +354,7 @@ const COLOR_PROP_NAMES = new Set([
     'color', 'background', 'background-color', 'background-image', 'border', 'border-color',
     'border-top', 'border-right', 'border-bottom', 'border-left',
     'outline', 'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow',
-    'text-decoration-color', 'caret-color', 'accent-color',
+    'text-decoration-color', 'caret-color', 'accent-color', 'mask-image',
 ])
 function isColorProp(name) {
     if (COLOR_PROP_NAMES.has(name)) return true
@@ -419,7 +440,11 @@ function hasHardcodedRadius(value, tokensUse) {
 
 // property name must not be preceded by a word char, `$`, `@` or `-` — keeps SCSS/LESS
 // variable declarations ($accent-color: …) and mid-identifier fragments from matching.
-const DECL_RE = /(?<![\w$@-])([a-zA-Z-]+)\s*:\s*([^;{}]+);?/g
+// The name itself allows digits (`[a-zA-Z0-9-]+`), not just letters and hyphens — a custom
+// property can legitimately contain one (`--fs-h1`, `--icon-2x-tint`), and without this the whole
+// declaration was invisible to DECL_RE: the name capture stopped at the digit, so the required
+// `\s*:\s*` right after it never matched and the line was silently skipped by every check.
+const DECL_RE = /(?<![\w$@-])([a-zA-Z0-9-]+)\s*:\s*([^;{}]+);?/g
 
 // Blank out /* ... */ comments (replace non-newline chars with spaces) so DECL_RE can never
 // match prose inside a comment — a real stylesheet in the wild had a comment quoting
@@ -516,7 +541,12 @@ function checkPropsDestructure(g, files, isComponentFile) {
 // Per-line exemption: `design-system-ignore <check-id>: <reason>`, in `//`, `/* */` or
 // `{/* */}`, on the same line as the finding or the line directly above it. A directive with no
 // reason after the colon (or no colon at all) exempts nothing and is itself a finding
-// (`ignoreReason`), so a bare "ignore" comment can never silently swallow debt.
+// (`ignoreReason`), so a bare "ignore" comment can never silently swallow debt. So is an unknown
+// check-id (not one of CHECK_NAMES) — a typo'd check name would otherwise exempt nothing and look
+// exempt to a human skimming the file, so it earns the same `ignoreReason` finding.
+// A directive is read ONLY inside an actual comment span — see commentSpansOnly below — so the
+// same text sitting in a JS string or template literal (documentation, a test fixture, prose
+// about the directive itself) is never mistaken for a real exemption.
 // ---------------------------------------------------------------------------
 
 const IGNORE_TOKEN_RE = /design-system-ignore\s+([A-Za-z]+)/g
@@ -527,12 +557,52 @@ function stripCommentTail(s) {
     return s.replace(/\s*\*\/\s*\}?\s*$/, '').trim()
 }
 
-function parseIgnoreDirectivesForFile(content) {
+// The inverse of blankJsComments/blankCssComments: everything OUTSIDE a `//` or `/* */` comment
+// (including string/template-literal contents) is replaced with a space, length and line breaks
+// preserved, so IGNORE_TOKEN_RE can only match text actually written inside a real comment.
+// `hasLineComments` is false for CSS/SCSS, which has no `//` syntax.
+function commentSpansOnly(content, hasLineComments) {
+    let out = ''
+    let i = 0
+    const n = content.length
+    let inLine = false
+    let inBlock = false
+    let inStr = null
+    while (i < n) {
+        const c = content[i]
+        const c2 = i + 1 < n ? content[i + 1] : ''
+        if (inLine) {
+            if (c === '\n') { inLine = false; out += c } else { out += c }
+            i++; continue
+        }
+        if (inBlock) {
+            if (c === '*' && c2 === '/') { out += '*/'; inBlock = false; i += 2; continue }
+            out += c
+            i++; continue
+        }
+        if (inStr) {
+            if (c === '\n' && inStr !== '`') { inStr = null; out += c; i++; continue }
+            if (c === '\\') { out += '  '; i += 2; continue }
+            if (c === inStr) inStr = null
+            out += c === '\n' ? '\n' : ' '
+            i++; continue
+        }
+        if (hasLineComments && c === '/' && c2 === '/') { inLine = true; out += '//'; i += 2; continue }
+        if (c === '/' && c2 === '*') { inBlock = true; out += '/*'; i += 2; continue }
+        if (c === '"' || c === "'" || c === '`') { inStr = c; out += ' '; i++; continue }
+        out += c === '\n' ? '\n' : ' '
+        i++
+    }
+    return out
+}
+
+function parseIgnoreDirectivesForFile(content, hasLineComments) {
     const find = makeLineFinder(content)
+    const spans = commentSpansOnly(content, hasLineComments)
     const byLine = new Map() // line -> Map(checkId -> reasonOk boolean)
     IGNORE_TOKEN_RE.lastIndex = 0
     let m
-    while ((m = IGNORE_TOKEN_RE.exec(content))) {
+    while ((m = IGNORE_TOKEN_RE.exec(spans))) {
         const checkId = m[1]
         const line = find(m.index)
         const afterMatch = m.index + m[0].length
@@ -552,7 +622,7 @@ function parseIgnoreDirectivesForFile(content) {
 function buildIgnoreIndex(files) {
     const index = new Map()
     for (const f of files) {
-        const byLine = parseIgnoreDirectivesForFile(f.content)
+        const byLine = parseIgnoreDirectivesForFile(f.content, SOURCE_EXTS.has(extname(f.path)))
         if (byLine.size) index.set(f.path, byLine)
     }
     return index
@@ -580,6 +650,14 @@ function checkIgnoreReasons(files, ignoreIndex) {
         if (!byLine) continue
         for (const [line, checks] of byLine) {
             for (const [checkId, reasonOk] of checks) {
+                if (!CHECK_NAMES.includes(checkId)) {
+                    findings.push({
+                        check: 'ignoreReason', path: f.path, line,
+                        message: `design-system-ignore ${checkId} is not a known check`,
+                        suggestion: `use one of: ${CHECK_NAMES.join(', ')}`,
+                    })
+                    continue
+                }
                 if (reasonOk) continue
                 findings.push({
                     check: 'ignoreReason', path: f.path, line,

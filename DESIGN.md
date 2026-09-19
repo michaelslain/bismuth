@@ -247,6 +247,7 @@ five metric-compatible Monaspace variants (`appearance.uiFont`), so the grid nev
 person actually wrote. The two never mix within one register.
 
 ### Hierarchy
+- **Hero** (40px `--fs-hero`, 48px `--fs-intro-title`): the vault intro and the wordmark only; never in app chrome.
 - **Display** (600, 24px `--fs-display`): note titles; the one big size in chrome.
 - **Title** (600, 19px `--fs-title`): panel titles.
 - **Lead** (15px `--fs-lead`): section heads in chrome; also the editor's first-paint size.

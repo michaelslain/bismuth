@@ -10,6 +10,7 @@
      cream (never a UI theme color), dark tracks the app's OWN active scope (--bg), fixed
      reactively from ExportView.tsx's theme() signal via an inline custom-property override
      on .exp-paper (see THEME_SWATCH.dark's identical fix, §3c2). */
+  /* design-system-ignore hardcodedColor: print paper colour */
   --paper-bg: #f7f6f2;
   display: grid;
   grid-template-columns: 1fr 360px; /* PORTING §3a: keep — the card's narrower demo column is only its own viewport */
