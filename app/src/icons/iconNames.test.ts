@@ -1,11 +1,13 @@
 // app/src/icons/iconNames.test.ts
 //
-// Pins the exact canonical-name count and guards against the two ways this list can silently rot:
-// a duplicate name (two entries collapsing to one registry key) and drift away from nerdGlyphs.ts
-// while that module still exists in the tree as the icon font's codepoint source.
+// Pins the exact canonical-name count and guards against the way this list can silently rot: a
+// duplicate name (two entries collapsing to one registry key). It used to also cross-check against
+// nerdGlyphs.ts's key set while that retired module still existed in the tree as the icon font's
+// codepoint source — that module and its own cross-check test were deleted (ds-conformance Task 8)
+// once nothing referenced the font it described; this list needed no replacement source, since it
+// was already set-independent (see iconNames.ts's header).
 import { test, expect } from 'bun:test'
 import { ICON_NAMES } from './iconNames'
-import { NERD_GLYPHS } from './nerdGlyphs'
 
 test('exactly 140 canonical names', () => {
     // Absolute, not a lower bound — plan §10's whole coverage table (133/140, 135/140 etc.) is
@@ -23,17 +25,6 @@ test('every name is PascalCase-shaped', () => {
         expect(`${name}: ${/^[A-Z][A-Za-z0-9]*$/.test(name)}`).toBe(
             `${name}: true`,
         )
-})
-
-test('matches nerdGlyphs.ts key set exactly (no drift between the retired and live name lists)', () => {
-    const fromNerd = new Set(Object.keys(NERD_GLYPHS))
-    const fromIconNames = new Set(ICON_NAMES)
-    const onlyInNerd = [...fromNerd].filter(n => !fromIconNames.has(n))
-    const onlyInIconNames = [...fromIconNames].filter(n => !fromNerd.has(n))
-    expect({ onlyInNerd, onlyInIconNames }).toEqual({
-        onlyInNerd: [],
-        onlyInIconNames: [],
-    })
 })
 
 test('includes both the ordinary and the awkward/technical names', () => {

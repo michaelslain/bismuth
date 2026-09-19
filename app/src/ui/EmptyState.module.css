@@ -2,8 +2,8 @@
    Task 7). ui/EmptyState.tsx's `Loading` export was the sole reader anywhere in the app.
 
    `.ui-empty-block` and `.ui-empty` (EmptyState's OTHER two classes) STAY in ui.css: both are
-   reached via `:global()` from bases/Flashcards.module.css. See
-   .claude/plans/ui-css-ownership.md. */
+   reached via `:global()` from bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
+   palette/SwitcherBar.module.css. See .claude/plans/ui-css-ownership.md. */
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
 
 /* .ui-empty-icon — layout hook for EmptyState's optional `icon` prop (ds-conformance Task 8

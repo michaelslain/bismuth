@@ -302,7 +302,7 @@ function FlashcardsPane(props: { w: string; path: string }) {
  *  a story can log it.
  *
  *  THE BUDGET WAS REWORKED 2026-09-02, when the flashcards deck's AsciiMeter came back (queue item
- *  16's replacement — see Flashcards.module.css's `.fcmeter`). The gap between the pane's top and
+ *  16's replacement — see FlashcardsView.module.css's `.fcmeter`). The gap between the pane's top and
  *  `.stage`'s top now has TWO legitimate occupants instead of one: the bar (`--h-band`, a fixed
  *  36px — ui.css:474) and the restored session-progress meter (one line of `--fs-ui` text plus its
  *  own `--sp-4` top padding, ~19.5px measured live, total chrome ~55.5px). Bumping the old flat
@@ -462,7 +462,7 @@ export const Flashcards: Story = {
         // 2 added `role=progressbar` for, and is more robust than the ratio it replaces: the
         // original ratio check existed because a PERCENTAGE WIDTH could resolve against the wrong
         // containing block and still land in a plausible-looking band by coincidence (see the
-        // history above this file's `.fcmeter` predecessor in Flashcards.module.css). A count of
+        // history above this file's `.fcmeter` predecessor in FlashcardsView.module.css). A count of
         // literal `#` glyphs can't drift the same way, and `aria-valuenow` is the value a screen
         // reader actually hears, so it is the more honest thing to pin.
         const pane = canvasElement.querySelector(
@@ -546,7 +546,7 @@ export const FlashcardsTight: Story = {
  *  hide an empty one — including a slot holding only text.)
  *
  *  The progress meter is not that second child and never was — it lives outside the bar entirely,
- *  as FlashcardsView's own first child (`.fcmeter` in Flashcards.module.css, restored 2026-09-02
+ *  as FlashcardsView's own first child (`.fcmeter` in FlashcardsView.module.css, restored 2026-09-02
  *  in place of the `.fcprogress` hairline that used to hold this spot), so it neither participates
  *  in this rule nor sheds with the tally. That is the whole point of the deviation.
  *

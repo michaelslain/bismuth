@@ -3,12 +3,14 @@
    CANNOT be scoped: design tokens, the element reset, and classes written into runtime-generated
    HTML strings (see styles/content.css and cssLayering.test.ts).
 
-   CSS `@import` HOISTS. Regardless of where the four lines below sit in this file, the browser
+   CSS `@import` HOISTS. Regardless of where the three lines below sit in this file, the browser
    emits those stylesheets AHEAD of every rule here — so any rule still in App.css now outranks an
    imported one of equal specificity, whatever their original line numbers were. Check that pair
    before moving the next group out: relocation flips precedence, and a flip is invisible in review.
-   (styles/icons.css is the exception to the precedence worry: it holds a single @font-face, which
-   is not a rule and cannot be out-ordered by one.)
+   (styles/icons.css used to be the exception to the precedence worry — it held a single @font-face,
+   not a rule, so it could never be out-ordered by one. It and its @import here were deleted
+   (ds-conformance Task 8) once the Nerd Font icon subset it fed was fully retired — see
+   docs/overview/third-party-notices.md.)
 
    Everything below the imports is component chrome that has not been given a home yet; the later
    tasks of the CSS modularization move it out group by group. cssLayering.test.ts holds a
@@ -16,7 +18,6 @@
 @import "./styles/tokens.css";
 @import "./styles/reset.css";
 @import "./styles/content.css";
-@import "./styles/icons.css";
 
 /* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
    `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL

@@ -31,8 +31,8 @@
 //     cssBaseline.ts's determinism requirements. visual.ts deliberately does NOT freeze the clock
 //     (its readiness loop waits for animation to settle, which needs time to actually advance), so
 //     forcing that on it would change its screenshots.
-//   * `--force-prefers-reduced-motion` — passed by the four style-reading tools (probeStory.ts,
-//     cssBaseline.ts x2, storyAudit.ts, iconFontProbe.ts), NOT by visual.ts, for the same reason.
+//   * `--force-prefers-reduced-motion` — passed by the three style-reading tools (probeStory.ts,
+//     cssBaseline.ts x2, storyAudit.ts), NOT by visual.ts, for the same reason.
 //     It is a caller-supplied flag, never a default. It is also deliberately NOT passed by
 //     playCheck.ts, which is the one tool this flag actually matters for: playCheck runs
 //     INTERACTION assertions (play() functions), and forcing reduced motion there would make the

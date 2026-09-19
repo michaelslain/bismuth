@@ -863,8 +863,8 @@ measured it.
 
 ### `bench/poolSize.ts` — how many concurrent Chrome targets a sweep should run
 
-The one place that answers this for every pooled sweep in the directory (`invariants.ts` and
-`playCheck.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
+The one place that answers this for every pooled sweep in the directory (`invariants.ts`,
+`playCheck.ts` and `cssBaseline.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
 the three hardcoded a `6` and one didn't pool at all — a constant tuned for whichever machine the
 author had, which starves a big machine and thrashes a small one. `poolSize(max)` takes the
 **minimum** of two budgets and floors it at 2:
@@ -930,6 +930,18 @@ render relative to `Date.now()`, so the clock and timezone are frozen before any
 actually advancing); and async component settling (a fixed sleep loses under load — e.g.
 MilkdownField's dynamic `import()` was still in its loading state at 2000ms in one run and fully
 mounted in the next — so the harness re-probes until stable instead of guessing a delay).
+
+**Now POOLED** (`bench/poolSize.ts`, see above) — one Chrome (`bench/chromeSession.ts`), with
+`poolSize(8)` concurrent targets opened via `newPage()`, overridable with `--concurrency`
+(matching `invariants.ts`/`playCheck.ts` rather than `storyAudit.ts`'s 12 — this harness needs
+every element's computed style to be byte-identical across probes, and heavier contention is
+exactly what perturbs font/layout timing, so the ceiling stays lower as a deliberate hedge). Network
+quiescence — one of the signals convergence watches for — is tracked **in-page, per target**
+(`NET_WATCH`, read off `window.__cssbNet`) rather than off one shared browser-level listener, since
+pooling means several stories are in flight on the same CDP socket at once and a browser-scoped
+network event can no longer be attributed to the story that caused it. Output is sorted by story id
+before being written, so a pooled run (whose captures complete out of order) still produces a
+diffable, deterministically-ordered baseline file.
 
 ### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
 
@@ -1188,16 +1200,6 @@ stripping every `class=…` attribute from both sides (the CSS half, where a sta
 becomes a dynamic expression legitimately drops out of the template). Proves nothing about CSS
 itself or about the dynamic half of the tree outside the template string.
 
-### `bench/iconFontProbe.ts` — does the icon font actually load and draw?
-
-Reads `:6006` (Storybook must already be running) and draws every codepoint twice — once in the
-real icon-font family, once in a family that doesn't exist — comparing the two rasters, because the
-obvious approach (compare glyph widths against `.notdef`) doesn't work for this font: Symbols Nerd
-Font Mono advances every glyph, including `.notdef`, by exactly one em, so a missing glyph and a
-real one measure identically. Complements (does not replace) `app/src/icons/iconFont.test.ts`, which
-proves the committed `.woff2` file itself maps every codepoint to a real glyph but says nothing
-about whether the `@font-face` actually loaded and drew in a real browser.
-
 ### `bench/layoutmetrics.ts` + `bench/layoutquality.ts` — graph layout quality
 
 `layoutmetrics.ts` is pure, unit-testable layout-quality math (no vault, no I/O) shared by the bench
@@ -1250,4 +1252,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design-system.baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design-system.baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`
