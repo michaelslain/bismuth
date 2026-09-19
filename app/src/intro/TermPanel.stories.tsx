@@ -26,7 +26,7 @@ const Frame = (props: { children: any }) => (
 export const Daemon: Story = {
     render: () => (
         <Frame>
-            <TermPanel name="DAEMON // live" lines={DAEMON_LINES} />
+            <TermPanel name="daemon // live" lines={DAEMON_LINES} />
         </Frame>
     ),
 }

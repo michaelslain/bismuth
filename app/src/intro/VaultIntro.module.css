@@ -171,11 +171,25 @@
   max-width: 640px;
 }
 /* The theme + graph slides have the full-bleed graph directly behind the copy, so give the
-   text a soft dark halo there for legibility (no scrim, so the graph stays fully visible).
-   The other slides have the copy clear of the graph, so no shadow needed. */
+   text a soft dark halo there for legibility. The other slides have the copy clear of the
+   graph, so neither rule below applies there. */
 .vi-center[data-slide="theme"] .vi-copy,
 .vi-center[data-slide="graph"] .vi-copy {
   text-shadow: 0 1px 2px var(--bg), 0 0 18px color-mix(in srgb, var(--bg) 78%, transparent);
+  /* The halo alone isn't enough once a dense glyph cluster sits directly behind a letter
+     (baseline: intro-vaultintro--graph.png, the "@/o" field under "Three brains, one mind."
+     and its body copy) — a soft radial scrim from --bg gives the text an actual backing
+     instead of just a rim-light. Solid near the centre (where the letters sit) fading to
+     fully transparent past the copy's own padding, so the graph stays visible around it
+     rather than behind a hard tile. color-mix keeps this on the real --bg token per theme,
+     never a hardcoded stand-in. */
+  padding: var(--sp-5) var(--sp-6);
+  background: radial-gradient(
+    ellipse 68% 80% at 50% 50%,
+    color-mix(in srgb, var(--bg) 94%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 94%, transparent) 62%,
+    transparent 100%
+  );
 }
 /* The nav rides over the graph on the same two slides, where a var(--border) dot against the
    bloom is very close to invisible — the row read as three dots, not seven. */
