@@ -123,8 +123,9 @@
    center`: the hover pill (Badge padding+border) and the readout (fixed `--row-h`) are different
    heights, so centering each independently in the flex line offsets their bottoms by half that
    height difference — measured 3px, caught by GraphView.stories.tsx's HudBadges "bottoms aligned"
-   assertion. Pinning both to the line's cross-end reproduces what two independent `bottom: 6px`
-   absolute boxes gave for free before fix-2-4, regardless of which sibling ends up tallest. */
+   assertion. Pinning both to the line's cross-end reproduces what `.graph-stats` alone being
+   `position: absolute; bottom: 6px` gave it for free before fix-2-4 — the hover pill was always a
+   flex child of the bar, never a second absolute box — regardless of which sibling ends up tallest. */
 /* Bottom HUD row: the 2D/3D toggle cluster + fps pill (+ hover pill, non-mini only — see the
    `!props.mini` guard in GraphView), pinned along the canvas floor. */
 .graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }
@@ -157,8 +158,9 @@
    520px nothing bounded the hover pill's width, so a hover label longer than ~35 chars painted
    over this readout; putting both in the same flex row fixes that structurally; `margin-left: auto`
    (+ `flex-shrink: 0`, so this box never gives up its own width) pins it to the bar's trailing
-   edge exactly where `right: 18px` used to, and `.graph-bottom-bar`'s `align-items: center` gives
-   the vertical alignment `bottom: 6px` used to. `.graph-hud-hover`'s existing `min-width: 0` +
+   edge exactly where `right: 18px` used to, and this rule's own `align-self: flex-end` (matching
+   `.graph-hud-hover`'s, see that rule's comment above) gives the vertical alignment `bottom: 6px`
+   used to. `.graph-hud-hover`'s existing `min-width: 0` +
    ellipsis is what actually resolves the overlap: as a real flex sibling it now shrinks against
    this box's `margin-right: var(--sp-5)` instead of painting underneath it. */
 .graph-stats { margin-left: auto; margin-right: var(--sp-5); flex-shrink: 0; align-self: flex-end; display: flex; align-items: center; height: var(--row-h, 18px); padding: 0 var(--sp-5); font-size: var(--fs-ui); color: var(--faint); font-variant-numeric: tabular-nums; }
