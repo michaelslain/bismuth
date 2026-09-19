@@ -23,7 +23,6 @@
 .kanbanColumn {
   display: flex;
   flex-direction: column;
-  position: relative;
   min-width: var(--kanban-col-min, 248px);
   max-width: var(--kanban-col-max, 288px);
   max-height: 100%;

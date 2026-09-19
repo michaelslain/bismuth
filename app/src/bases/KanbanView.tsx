@@ -1195,15 +1195,9 @@ export function KanbanView(props: {
                     {key => {
                         const group = () => groupByKey(key)
                         const color = () => colColor(key)
-                        // An override always came from a picker click; with no override, the
-                        // resolved color is only "from the palette" (eligible to light up a
-                        // swatch) when it did NOT fall back to a known-status color instead —
-                        // colColor() prefers STATUS_COLOR over the palette hash, and that color
-                        // isn't one of the five choices this picker offers.
+                        // Exactly one control is ever marked: a swatch when an override is set
+                        // (and it matches the current color), else Auto — never both at once.
                         const hasOverride = () => !!groupColors()[key]
-                        const fromPalette = () =>
-                            hasOverride() ||
-                            !STATUS_COLOR[key.trim().toLowerCase()]
                         return (
                             <>
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
@@ -1299,7 +1293,7 @@ export function KanbanView(props: {
                                                             size="sm"
                                                             color={c}
                                                             selected={
-                                                                fromPalette() &&
+                                                                hasOverride() &&
                                                                 color() === c
                                                             }
                                                             label={
