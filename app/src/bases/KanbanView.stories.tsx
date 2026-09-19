@@ -102,9 +102,8 @@ const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
 /** The column colour picker open — clicking a column's colour dot reveals the palette `Swatch`es
  *  (each aria-labelled by its colour name, e.g. "rose") plus the "Auto" option that clears an
  *  override. Needs `basePath` (`editable()`) for the dot button to be enabled at all. The first
- *  column ("Todo") has no status-color match, so its swatch resolves through the hash-based
- *  palette fallback and IS eligible to show the `selected` ring; Auto reads pressed since there's
- *  no override. */
+ *  column ("Todo") has no override set, so no swatch shows the `selected` ring — only Auto reads
+ *  pressed, exactly one control marked at a time. */
 export const ColorPickerOpen: Story = {
     render: () => {
         const views = [
