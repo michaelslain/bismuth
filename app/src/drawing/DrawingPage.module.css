@@ -17,5 +17,3 @@
    zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
    divides by getBoundingClientRect().width, so pointer mapping stays correct. */
 .draw-page-zoom { margin: 0 auto; }
-/* Hidden picker backing the toolbar's Import-image button. */
-.draw-fileinput { display: none; }

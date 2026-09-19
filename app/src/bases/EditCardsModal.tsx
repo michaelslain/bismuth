@@ -12,7 +12,7 @@ import CardsModal from './CardsModal'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
-import { escapeHtml } from '../htmlEscape'
+import cardCellPlaceholder from './cardCellPlaceholder'
 
 type Note = Record<string, unknown>
 type Mode = 'list' | 'bulk'
@@ -78,7 +78,7 @@ function CardCell(props: {
 }) {
     const [val, setVal] = createSignal(props.value)
     // `cell-front` is a BARE LITERAL, not `styles['cell-front']` — no rule anywhere in
-    // Flashcards.module.css styles it (only `.cell-back` overrides the shared `.cell-md`), the
+    // EditCardsModal.module.css styles it (only `.cell-back` overrides the shared `.cell-md`), the
     // same "no rule = undefined" trap that module's header already documents for `.flip-front`.
     // EditCardsModal.stories.tsx's play function also queries `.cell-front textarea` directly, so
     // it must stay a real, matchable literal in the DOM.
@@ -90,7 +90,10 @@ function CardCell(props: {
                 class={styles['cell-md']}
                 innerHTML={
                     renderMarkdown(val()) ||
-                    `<span class="${styles['cell-ph']}">${escapeHtml(props.placeholder)}</span>`
+                    cardCellPlaceholder(
+                        styles['cell-ph'],
+                        props.placeholder,
+                    )
                 }
             />
             <TextInput
@@ -387,7 +390,7 @@ export function EditCardsModal(props: {
                     </For>
 
                     {/* draft add row — `cards-draft`/`cell-front` are BARE LITERALS by design; see
-                    CardCell's `fieldClass` comment above and Flashcards.module.css's header
+                    CardCell's `fieldClass` comment above and EditCardsModal.module.css's header
                     ("`.cards-draft` and `.cards-row` are now BOTH local...") for `cards-draft`
                     specifically: it needs `styles['cards-draft']` since it DOES have a rule, unlike
                     `cell-front`. */}
@@ -419,12 +422,7 @@ export function EditCardsModal(props: {
                                 multiline
                                 plain
                                 ref={el => {
-                                    // TextInput's `ref` is typed for HTMLInputElement even in
-                                    // `multiline` mode, since TextInputProps always derives from
-                                    // JSX.InputHTMLAttributes<HTMLInputElement> — see this task's
-                                    // report, "Primitive gaps". The element IS a textarea at
-                                    // runtime because `multiline` is set.
-                                    draftBackRef = el as unknown as HTMLTextAreaElement
+                                    draftBackRef = el
                                 }}
                                 value={draftBack()}
                                 placeholder="Back…"
@@ -596,7 +594,7 @@ export function EditCardsModal(props: {
                                                                       c.front,
                                                                   )
                                                                 : /* Authored by this component, not vault content, so the hashed
-                                                                  local can be interpolated safely — see Flashcards.module.css's
+                                                                  local can be interpolated safely — see EditCardsModal.module.css's
                                                                   header ("RUNTIME STRING"). */
                                                                   `<em class="${styles['cards-warn-em']}">empty</em>`
                                                         }
