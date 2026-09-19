@@ -2,8 +2,10 @@
 // (`.cat-chip` the 20px current-colour chip, `.cat-sw` the 22px picker option). See Swatch.tsx's
 // header comment.
 //
-// Props: color (required, any CSS colour), selected, label (required a11y name), size
-// ("md" default | "sm"), onClick (required), class.
+// Props: color (required, any CSS colour), selected, label (a11y name — required in practice
+// for the interactive default), size ("md" default | "sm"), static (renders a non-focusable
+// `<div>` instead of a `<button>`, no onClick — aria-hidden unless label is given), onClick,
+// class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { For, createSignal } from 'solid-js'
 import { expect } from 'storybook/test'
@@ -119,5 +121,37 @@ export const Selected: Story = {
         const selShadow = getComputedStyle(sel).boxShadow
         expect(selShadow).not.toBe('none')
         expect(selShadow).not.toBe(plainShadow)
+    },
+}
+
+/** The non-interactive variant (`static`, e.g. ExportView's theme dot) — a decorative colour
+ *  square with no click affordance of its own: no `<button>`, no `onClick`, not keyboard-
+ *  reachable. `play` proves the rendered element is a plain `<div>` (`tabIndex` -1, i.e. not
+ *  tab-reachable), that it is `aria-hidden` when no label is given, and that a label suppresses
+ *  aria-hidden and becomes the accessible name instead — Swatch.tsx's `static` contract. */
+export const Static: Story = {
+    render: () => (
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <Swatch color="var(--accent)" static />
+            <Swatch color="var(--rose)" label="Rose" static />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.querySelectorAll('button').length).toBe(0)
+
+        const dots = [...canvasElement.querySelectorAll('div')].filter(
+            d => !!d.style.background,
+        )
+        expect(dots.length).toBe(2)
+
+        const [plain, labelled] = dots
+        expect(plain!.tagName).toBe('DIV')
+        expect(plain!.tabIndex).toBe(-1)
+        expect(plain!.getAttribute('aria-hidden')).toBe('true')
+        expect(plain!.hasAttribute('aria-label')).toBe(false)
+
+        expect(labelled!.tabIndex).toBe(-1)
+        expect(labelled!.getAttribute('aria-label')).toBe('Rose')
+        expect(labelled!.hasAttribute('aria-hidden')).toBe(false)
     },
 }
