@@ -199,12 +199,29 @@ function blankJsComments(content) {
     return out
 }
 
+// Returns the previous non-whitespace character in `content` before index `i`, or '' if none.
+// Used by blankJsCode's string-open heuristic below.
+function prevNonWhitespace(content, i) {
+    let j = i - 1
+    while (j >= 0 && /\s/.test(content[j])) j--
+    return j >= 0 ? content[j] : ''
+}
+
 // Same shape as blankJsComments, but ALSO blanks the CONTENTS of string and template literals
 // (comments AND strings become spaces, length and line breaks preserved). Real JSX is never
 // written inside a JS string, so a component that builds markup as text — an `innerHTML`
 // template literal, a string handed to a DOM library — must not have its tag-shaped text read as
 // JSX. Used only by checkBareElement, which has no need to see inside a string the way the import
 // scanner does.
+//
+// A `'`/`"` only OPENS a string when the previous non-whitespace character does not look like
+// the end of a word, a `)`, or a `]` — that shape is a contraction or possessive apostrophe in
+// JSX prose ("don't", "base's own fields"), not real code, and treating it as a string opener
+// blanks everything up to the next matching quote, hiding real JSX possibly lines later. An open
+// `'`/`"` string that hits a newline before its closing quote is likewise not a real string (JS
+// string literals cannot contain a raw line break) — it is closed at the newline instead of
+// continuing to blank subsequent lines. Backticks are unaffected: a template literal legitimately
+// spans multiple lines, so it keeps opening unconditionally and closing only on its own backtick.
 function blankJsCode(content) {
     let out = ''
     let i = 0
@@ -225,13 +242,17 @@ function blankJsCode(content) {
             i++; continue
         }
         if (inStr) {
+            if (c === '\n' && inStr !== '`') { inStr = null; out += c; i++; continue }
             if (c === '\\') { out += '  '; i += 2; continue }
             if (c === inStr) { inStr = null; out += ' ' } else { out += c === '\n' ? '\n' : ' ' }
             i++; continue
         }
         if (c === '/' && c2 === '/') { inLine = true; out += '  '; i += 2; continue }
         if (c === '/' && c2 === '*') { inBlock = true; out += '  '; i += 2; continue }
-        if (c === '"' || c === "'" || c === '`') { inStr = c; out += ' '; i++; continue }
+        if (c === '`') { inStr = c; out += ' '; i++; continue }
+        if (c === '"' || c === "'") {
+            if (!/[\w)\]]/.test(prevNonWhitespace(content, i))) { inStr = c; out += ' '; i++; continue }
+        }
         out += c
         i++
     }
