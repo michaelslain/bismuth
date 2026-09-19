@@ -182,15 +182,23 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    (Task 11 — single owner). */
 
 /* The flashcard review UI (FlashcardsView.tsx), its deck-wide edit modal (EditCardsModal.tsx)
-   and single-card edit modal moved into bases/Flashcards.module.css: one owner, no runtime-
-   generated names. `.cell-*` and `.cards-draft`, held back from that move (Task 8) by the
-   innerHTML/closest/querySelector trap, joined them in Task 11 — see that module's header for how
-   each hit was resolved. `.deck-*`/`.srs-*`/`.vs-*` (dead, zero consumers) were deleted rather than
-   migrated; the module header records that too. */
+   and single-card edit modal (CardsModal.tsx/CardEditModal.tsx) moved out of App.css into
+   bases/Flashcards.module.css: one owner, no runtime-generated names. `.cell-*` and
+   `.cards-draft`, held back from that move (Task 8) by the innerHTML/closest/querySelector trap,
+   joined them in Task 11. `.deck-*`/`.srs-*`/`.vs-*` (dead, zero consumers) were deleted rather
+   than migrated. That single Flashcards.module.css has since been split further: each component
+   now owns its own module — FlashcardsView.module.css, EditCardsModal.module.css,
+   CardsModal.module.css, CardEditModal.module.css and the extracted CardFrame/CardBodyInner/
+   CardTitle/SkeletonBar all carry `.cell-*`/`.cards-draft`/etc. by their own name; there is no
+   longer a single `bases/Flashcards.module.css` file. */
 
 /* The `.pane-*` family (splits, leaves, headers, dropzones, dividers) and its `@keyframes pane-in`
-   now live in PaneTree.module.css, shared by PaneTree/PaneLeaf/PaneHeader/PaneDropZone. The old
-   separate PaneTree.css was folded into it at the same time. */
+   moved out of App.css into what was then PaneTree.module.css, shared by PaneTree/PaneLeaf/
+   PaneHeader/PaneDropZone. The old separate PaneTree.css was folded into it at the same time.
+   Each of the four has since been split into its own module (PaneTree.module.css,
+   PaneLeaf.module.css, PaneHeader.module.css, PaneDropZone.module.css); the selectors that used
+   to cross the file boundary now reach the ancestor through the unhashed `data-pane-focused`
+   attribute PaneLeaf.tsx sets on its own root. */
 /* ── Knowledge-graph chrome ──────────────────────────────────────────────────
    GraphView is ONE component used full-pane AND in the narrow sidebar mini-panel, so the full
    chrome (crumb, Find, floating legend/stats cards, in-bar 2D/3D) is gated to wide width via a
