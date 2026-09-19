@@ -23,7 +23,7 @@
    neither. */
 .inbox-row-open {
     display: flex;
-    flex: 1;
+    flex: 1 1 160px;
     min-width: 0;
     align-items: flex-start;
     gap: var(--sp-2) var(--sp-5);
@@ -40,7 +40,7 @@
     background: currentColor;
 }
 .inbox-row-main {
-    flex: 1 1 160px;
+    flex: 1;
     min-width: 0;
 }
 /* WRAPS, deliberately — DaemonInbox.tsx composes this row inside a DaemonPanel column (a few
