@@ -950,6 +950,56 @@ deliberately captures a pre-font-load state (`app/src/Terminal.stories.tsx:279`)
 to converge on one value across separate loads; and `app-panecontent--chat-sentinel` flips a `<span>`
 width 108.95px↔94.70px, cause not yet root-caused.
 
+**A worker's target recovery is now attributed on double failure.** `recoverPage(id)` retries once on
+a fresh target after a dead-session error, and if that fresh target *also* fails to attach, the thrown
+error is prefixed with the in-flight story's id — before this it was the one failure path in the sweep
+that surfaced as a bare, unattributed CDP protocol error (see `recoverPage`'s own comment in
+`bench/cssBaseline.ts` for the full reasoning).
+
+**Root-caused (2026-09-18, not fixed): the "hint-row" element flip is CodeMirror's own cursor overlay,
+not a harness settle gap.** Two full pooled check runs on an unchanged tree independently reported a
+2px height flip (16↔18, 10↔12, 14↔16, 15↔17) with `top` ±1, always on the same relative DOM suffix
+`…>div[1]>div[1]>div[0]`, scattered across whichever stories happened to be running alongside heavy
+concurrent load that run (`app-chatview`, `chat-chatcomposer(bar)`, `app-panecontent`, `preview-*`,
+`app-previewview`, `editor-*`, `daemon-daemonchat`) — see the "Known non-deterministic stories" list
+these prefixes are carried in). A CDP probe of the element (`editor-inkoverlay--attached-ink`,
+confirmed identically on `app-chatview--default`'s chat bubble) identifies it precisely:
+`<div class="cm-cursor cm-cursor-primary" style="top:…px; height:…px">`. CodeMirror's `EditorView`
+constructor (`app/node_modules/@codemirror/view/dist/index.js:7877`, third-party, not this repo's
+code) registers a **one-shot** `document.fonts.ready.then(() => { this.viewState.mustMeasureContent =
+"refresh"; this.requestMeasure() })`, and `requestMeasure()` (`dist/index.js:8272-8273`) schedules
+exactly one `requestAnimationFrame` to re-measure and rewrite the cursor's inline `top`/`height` from
+the line box's *actual* font metrics. Those two numbers are literal px written by CM's own JS, not a
+CSS rule, so they do **not** auto-correct when the browser silently swaps a loaded webface in for a
+fallback — nothing but that one callback ever moves them again for a given `EditorView`. Under light or
+homogeneous load (a single story cloned across many tabs) the relevant font is already warm from a
+previous load, so CM's callback fires and its rAF lands well inside `cssBaseline.ts`'s 1500ms `SETTLE`
+head start, and the recorded value is always the correct, post-swap one. Under heterogeneous pooled
+load (many *different* stories competing for one shared renderer's main thread and network stack) a
+font fetch — or CM's own rAF — can land late enough that the harness's convergence loop (four
+byte-identical captures 400ms apart) locks onto four consecutive **stale** captures and exits clean
+before CM's correction ever lands; the existing "growth escalation" safeguard doesn't see it because a
+cursor's height/top change never changes element `count`, the only signal that heuristic watches.
+
+**The fix attempted and rejected**: `PROBE`'s font wait (`document.fonts.ready` + two nested `rAF`s)
+was extended with a second `await document.fonts.ready` and two more `rAF`s, on the theory that the
+harness's own wait was one frame short of CM's callback under contention. Measured with
+`bun bench/cssBaseline.ts --base http://localhost:6261 --story editor-` (Storybook on a scratch port,
+not the shared 6006): two runs *before* the change drifted `editor-editor--settings-yaml` +
+`editor-inkoverlay--attached-ink` (run 1) and `editor-inkoverlay--attached-ink` alone (run 2), both
+the same 14px↔16px / 10px↔9px shape; two runs *after* the change drifted the identical two stories
+with the identical values (run 1), then zero (run 2) — no measurable reduction, so the change was
+reverted rather than shipped. The gap isn't "the harness looks too early" (it already re-checks
+`document.fonts.ready` fresh on every convergence probe); it's that a promise resolving inside the
+harness's own probe says nothing about whether CodeMirror's *separate*, one-shot internal callback —
+bound to a font-loading state captured back at `EditorView` construction — has already fired and
+finished its own independently-scheduled `requestAnimationFrame` write. No amount of additional
+waiting inside one `Runtime.evaluate` call can force a rewrite that has to come from CM's own code.
+**Not acted on further**: this is real CodeMirror-internal nondeterminism under contention, already
+covered by the "Known non-deterministic stories" note (a small inline element flipping height 16↔18 or
+10↔12, top ±1, under parallel load) — treat drift of only that shape, on only that suffix, in one of
+those prefixes, as this known flake rather than a regression.
+
 ### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
 
 Not a regression gate and has no history: it screenshots every story and flags what a component can
