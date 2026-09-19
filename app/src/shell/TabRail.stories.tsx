@@ -17,9 +17,11 @@
 // this comment used to warn about one level up).
 //
 // THREE STORIES: `Collapsed` — resting, `.tab-rail-inner` at 46px, `.tab-rail-label` at
-// `display: none` (not merely `opacity: 0` — see TabRailRow.module.css's header for why a flex-
-// shrunk label needed removing from layout, not just fading, to stop a ~1px sliver rendering).
-// Its own `play` proves that: zero labels with a nonzero `offsetWidth`, icons unaffected.
+// `visibility: hidden` + zero width (not merely `opacity: 0` — see TabRailRow.module.css's header
+// for why a flex-shrunk label needed zeroing out and hiding, not just fading, to stop a ~1px
+// sliver rendering, and why `visibility` rather than `display: none` is what keeps the opacity
+// transition able to run on reveal). Its own `play` proves that: zero labels with a nonzero
+// `offsetWidth`, icons unaffected.
 // `Expanded` — a `play` that calls `.focus()` on the first row's close button, so
 // `:focus-within` fires and `.tab-rail-inner` resolves to 232px with labels at `opacity: 1`. This
 // is the ONLY way five of the eight reveal rules get any coverage at all — `:hover` cannot be
@@ -141,9 +143,10 @@ const actions = (
 )
 
 /** Resting state: collapsed to 46px, labels hidden — not squeezed. `play` proves each row's
- *  `.tab-rail-label` is removed from layout (`display: none`, `offsetWidth` 0) rather than merely
- *  faded to `opacity: 0`, which a flex-shrunk label still rendered as a ~1px-wide sliver in the
- *  DOM (TabRailRow.module.css's header). The icon stays a real, non-zero box either way. */
+ *  `.tab-rail-label` is both invisible (`visibility: hidden`) and zero-width (`offsetWidth` 0)
+ *  rather than merely faded to `opacity: 0`, which a flex-shrunk label still rendered as a
+ *  ~1px-wide sliver in the DOM (TabRailRow.module.css's header). The icon stays a real, non-zero
+ *  box either way. */
 export const Collapsed: Story = {
     render: () => (
         <Wrap>
@@ -158,7 +161,7 @@ export const Collapsed: Story = {
         for (const label of labels) {
             if (!(label instanceof HTMLElement))
                 throw new Error('.tab-rail-label not an HTMLElement')
-            expect(getComputedStyle(label).display).toBe('none')
+            expect(getComputedStyle(label).visibility).toBe('hidden')
             expect(label.offsetWidth).toBe(0)
         }
         const icons = canvasElement.querySelectorAll(
@@ -195,6 +198,16 @@ export const Expanded: Story = {
         // `:focus-within` matches immediately; the 0.22s width transition it triggers does not.
         // Poll for the finished 232px rather than sampling the animation's 46px start value.
         await waitFor(() => expect(getComputedStyle(inner).width).toBe('232px'))
+        const labels = canvasElement.querySelectorAll(
+            `.${rowStyles['tab-rail-label']}`,
+        )
+        expect(labels.length).toBe(2)
+        for (const label of labels) {
+            if (!(label instanceof HTMLElement))
+                throw new Error('.tab-rail-label not an HTMLElement')
+            expect(label.offsetWidth).toBeGreaterThan(0)
+            expect(getComputedStyle(label).opacity).toBe('1')
+        }
     },
 }
 
@@ -226,5 +239,15 @@ export const Pinned: Story = {
         if (!(bar instanceof HTMLElement))
             throw new Error('.tab-rail-actions not found')
         await expect(getComputedStyle(bar).justifyContent).toBe('flex-start')
+        const labels = canvasElement.querySelectorAll(
+            `.${rowStyles['tab-rail-label']}`,
+        )
+        expect(labels.length).toBe(2)
+        for (const label of labels) {
+            if (!(label instanceof HTMLElement))
+                throw new Error('.tab-rail-label not an HTMLElement')
+            expect(label.offsetWidth).toBeGreaterThan(0)
+            expect(getComputedStyle(label).opacity).toBe('1')
+        }
     },
 }
