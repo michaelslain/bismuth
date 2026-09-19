@@ -6,7 +6,7 @@
 
 .inline-code {
     font-family: var(--ui-font-stack);
-    font-size: 0.95em;
+    font-size: inherit;
     background: var(--surface-2);
     padding: 0 var(--sp-2);
     border-radius: var(--r-0);
