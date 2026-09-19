@@ -1,0 +1,7 @@
+{
+  "accepted": [
+    { "check": "hardcodedColor", "path": "app/src/chat/ChatComposerBar.module.css" },
+    { "check": "hardcodedColor", "path": "app/src/ExportView.module.css" },
+    { "check": "hardcodedFontSize", "path": "app/src/Editor.css" }
+  ]
+}

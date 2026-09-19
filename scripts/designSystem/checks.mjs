@@ -1,4 +1,4 @@
-// design-system skill scripts v1 (2026-09-17) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v2 (2026-09-18) — copied into repos by install-gate; compare this line to detect a stale copy
 // Pure logic for the design-system skill. No filesystem access — every input arrives as a
 // string or an array of { path, content }. This file is copied into user repos alongside its
 // lib/ siblings, so it (and they) must stay dependency-free (plain Node ESM, node:path/posix
@@ -21,6 +21,7 @@ export function parseGovernance(designMdText) {
 export const CHECK_NAMES = [
     'storyCoverage', 'oneImporter', 'hardcodedColor', 'hardcodedFont',
     'hardcodedFontSize', 'hardcodedRadius', 'bareElement', 'propsDestructure',
+    'ignoreReason',
 ]
 
 const DEFAULT_COMPONENTS_MATCH = '**/[A-Z]*.tsx'
@@ -128,6 +129,7 @@ function globToRegExp(glob) {
 // ---------------------------------------------------------------------------
 
 const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte', '.astro'])
+const CSS_EXTS = new Set(['.css', '.scss'])
 
 function makeLineFinder(content) {
     const offsets = [0]
@@ -159,6 +161,10 @@ function posixJoin(dir, spec) {
 // This codebase's comments routinely quote tag names and import paths in prose
 // (`// a <textarea> can't carry per-line ::before`, `// PaneTree.module.css (Task 12's …)`) —
 // without this, bareElement and the import scanner both "read" prose as code.
+//
+// String/template-literal CONTENTS are preserved (not blanked) here, because the import scanner
+// that shares this helper (checkOneImporter) needs to read the quoted specifier inside
+// `import styles from './Foo.module.css'`.
 function blankJsComments(content) {
     let out = ''
     let i = 0
@@ -187,6 +193,45 @@ function blankJsComments(content) {
         if (c === '/' && c2 === '/') { inLine = true; out += '  '; i += 2; continue }
         if (c === '/' && c2 === '*') { inBlock = true; out += '  '; i += 2; continue }
         if (c === '"' || c === "'" || c === '`') { inStr = c; out += c; i++; continue }
+        out += c
+        i++
+    }
+    return out
+}
+
+// Same shape as blankJsComments, but ALSO blanks the CONTENTS of string and template literals
+// (comments AND strings become spaces, length and line breaks preserved). Real JSX is never
+// written inside a JS string, so a component that builds markup as text — an `innerHTML`
+// template literal, a string handed to a DOM library — must not have its tag-shaped text read as
+// JSX. Used only by checkBareElement, which has no need to see inside a string the way the import
+// scanner does.
+function blankJsCode(content) {
+    let out = ''
+    let i = 0
+    const n = content.length
+    let inLine = false
+    let inBlock = false
+    let inStr = null
+    while (i < n) {
+        const c = content[i]
+        const c2 = i + 1 < n ? content[i + 1] : ''
+        if (inLine) {
+            if (c === '\n') { inLine = false; out += c } else { out += ' ' }
+            i++; continue
+        }
+        if (inBlock) {
+            if (c === '*' && c2 === '/') { out += '  '; inBlock = false; i += 2; continue }
+            out += c === '\n' ? '\n' : ' '
+            i++; continue
+        }
+        if (inStr) {
+            if (c === '\\') { out += '  '; i += 2; continue }
+            if (c === inStr) { inStr = null; out += ' ' } else { out += c === '\n' ? '\n' : ' ' }
+            i++; continue
+        }
+        if (c === '/' && c2 === '/') { inLine = true; out += '  '; i += 2; continue }
+        if (c === '/' && c2 === '*') { inBlock = true; out += '  '; i += 2; continue }
+        if (c === '"' || c === "'" || c === '`') { inStr = c; out += ' '; i++; continue }
         out += c
         i++
     }
@@ -254,13 +299,32 @@ function checkOneImporter(g, files, isStylesheetFile, isGlobal, isImporterExempt
     return findings
 }
 
+// Colour properties. Beyond the exact names, three widened families:
+//  - `border-(top|right|bottom|left)-color` (existing longhand) AND the bare directional
+//    shorthand `border-(top|right|bottom|left)` (`border-left: 1px solid #fff` hides a literal
+//    behind a shorthand just as easily as the `-color` longhand does).
+//  - `background-image`, which is where a gradient (`linear-gradient(…, #fff, …)`) most often
+//    hides a literal colour as one of its stops.
+//  - any custom property (`--foo: …`) — components routinely stash a colour in a local custom
+//    property instead of a real token; the value test still requires the value to actually look
+//    like a colour, so `--radius-local: 8px` is never touched by this.
 const COLOR_PROP_NAMES = new Set([
-    'color', 'background', 'background-color', 'border', 'border-color', 'outline',
-    'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow',
+    'color', 'background', 'background-color', 'background-image', 'border', 'border-color',
+    'border-top', 'border-right', 'border-bottom', 'border-left',
+    'outline', 'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow',
     'text-decoration-color', 'caret-color', 'accent-color',
 ])
 function isColorProp(name) {
-    return COLOR_PROP_NAMES.has(name) || /^border-(top|right|bottom|left)-color$/.test(name)
+    if (COLOR_PROP_NAMES.has(name)) return true
+    if (/^border-(top|right|bottom|left)-color$/.test(name)) return true
+    if (name.startsWith('--')) return true
+    return false
+}
+
+// border-radius, plus every longhand corner (`border-top-left-radius` etc) — a component can
+// hardcode one corner while leaving the shorthand alone entirely.
+function isRadiusProp(name) {
+    return name === 'border-radius' || /^border-(top|bottom)-(left|right)-radius$/.test(name)
 }
 
 // CSS-wide keywords that defer to the cascade rather than hardcoding anything. None of these
@@ -270,14 +334,45 @@ function isCascadeKeyword(value) {
     return s === 'inherit' || s === 'initial' || s === 'unset' || s === 'revert'
 }
 
+// Remove every `tokensUse(...)` call from a value, balancing parens so a fallback holding its
+// own nested token call (`var(--a, var(--b, #fff))`) is removed whole. `tokensUse` already ends
+// in the call's own opening paren (default `"var(--"`), so the scan starts at depth 1.
+function stripTokenCalls(value, tokensUse) {
+    const openParen = tokensUse.includes('(')
+    if (!openParen) return value.split(tokensUse).join(' ')
+    let out = ''
+    let i = 0
+    while (i < value.length) {
+        if (value.startsWith(tokensUse, i)) {
+            let depth = 1
+            let j = i + tokensUse.length
+            while (j < value.length && depth > 0) {
+                if (value[j] === '(') depth++
+                else if (value[j] === ')') depth--
+                j++
+            }
+            i = j
+            continue
+        }
+        out += value[i]
+        i++
+    }
+    return out
+}
+
+// A value "hardcodes" a colour when, after removing every token-reference call (fallback and
+// all — a literal INSIDE a var() fallback is accepted, only a literal OUTSIDE any token call is
+// a finding), what remains still looks like a colour: a hex triplet, a colour function, or a
+// bare named-colour keyword.
 function hasHardcodedColor(value, tokensUse) {
-    if (value.includes(tokensUse) || isCascadeKeyword(value)) return false
-    const v = value.trim().toLowerCase()
-    if (v === 'transparent' || v === 'currentcolor' || v === 'none') return false
-    if (/url\(/i.test(value)) return false // avoid flagging color-ish words inside asset filenames
-    if (/#[0-9a-f]{3,8}\b/i.test(value)) return true
-    if (/\b(rgba?|hsla?|oklch|oklab|lab|lch|color)\(/i.test(value)) return true
-    const words = value.toLowerCase().match(/[a-z]+/g) || []
+    if (isCascadeKeyword(value)) return false
+    const stripped = stripTokenCalls(value, tokensUse)
+    const v = stripped.trim().toLowerCase()
+    if (v === '' || v === 'transparent' || v === 'currentcolor' || v === 'none') return false
+    if (/url\(/i.test(stripped)) return false // avoid flagging color-ish words inside asset filenames
+    if (/#[0-9a-f]{3,8}\b/i.test(stripped)) return true
+    if (/\b(rgba?|hsla?|oklch|oklab|lab|lch|color)\(/i.test(stripped)) return true
+    const words = stripped.toLowerCase().match(/[a-z]+/g) || []
     return words.some(w => NAMED_COLORS.has(w))
 }
 
@@ -314,10 +409,10 @@ function blankCssComments(content) {
     return content.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
 }
 
-function scanCssLiterals(checkName, g, files, isStylesheetFile, isGlobal, isTokenFile, propTest, valueTest) {
+function scanCssLiterals(checkName, g, files, isStyleScanTarget, isTokenFile, propTest, valueTest) {
     const findings = []
     for (const f of files) {
-        if (!isStylesheetFile(f.path) || isGlobal(f.path) || isTokenFile(f.path)) continue
+        if (!isStyleScanTarget(f.path) || isTokenFile(f.path)) continue
         const find = makeLineFinder(f.content)
         const clean = blankCssComments(f.content)
         DECL_RE.lastIndex = 0
@@ -345,7 +440,7 @@ function checkBareElement(g, files, isComponentFile, isInPrimitivesDir) {
     for (const f of files) {
         if (!isComponentFile(f.path) || isInPrimitivesDir(f.path)) continue
         const find = makeLineFinder(f.content)
-        const clean = blankJsComments(f.content)
+        const clean = blankJsCode(f.content)
         tagRe.lastIndex = 0
         let m
         while ((m = tagRe.exec(clean))) {
@@ -396,6 +491,86 @@ function checkPropsDestructure(g, files, isComponentFile) {
     return findings
 }
 
+// ---------------------------------------------------------------------------
+// Per-line exemption: `design-system-ignore <check-id>: <reason>`, in `//`, `/* */` or
+// `{/* */}`, on the same line as the finding or the line directly above it. A directive with no
+// reason after the colon (or no colon at all) exempts nothing and is itself a finding
+// (`ignoreReason`), so a bare "ignore" comment can never silently swallow debt.
+// ---------------------------------------------------------------------------
+
+const IGNORE_TOKEN_RE = /design-system-ignore\s+([A-Za-z]+)/g
+
+// Strip a trailing comment closer (`*/`, or `*/}` for a JSX `{/* ... */}`) plus surrounding
+// whitespace, so what's left is just the human-written reason text.
+function stripCommentTail(s) {
+    return s.replace(/\s*\*\/\s*\}?\s*$/, '').trim()
+}
+
+function parseIgnoreDirectivesForFile(content) {
+    const find = makeLineFinder(content)
+    const byLine = new Map() // line -> Map(checkId -> reasonOk boolean)
+    IGNORE_TOKEN_RE.lastIndex = 0
+    let m
+    while ((m = IGNORE_TOKEN_RE.exec(content))) {
+        const checkId = m[1]
+        const line = find(m.index)
+        const afterMatch = m.index + m[0].length
+        const nlIdx = content.indexOf('\n', afterMatch)
+        const restOfLine = content.slice(afterMatch, nlIdx === -1 ? content.length : nlIdx)
+        const colonIdx = restOfLine.indexOf(':')
+        let reasonOk = false
+        if (colonIdx !== -1 && restOfLine.slice(0, colonIdx).trim() === '') {
+            reasonOk = stripCommentTail(restOfLine.slice(colonIdx + 1)).length > 0
+        }
+        if (!byLine.has(line)) byLine.set(line, new Map())
+        byLine.get(line).set(checkId, reasonOk)
+    }
+    return byLine
+}
+
+function buildIgnoreIndex(files) {
+    const index = new Map()
+    for (const f of files) {
+        const byLine = parseIgnoreDirectivesForFile(f.content)
+        if (byLine.size) index.set(f.path, byLine)
+    }
+    return index
+}
+
+// A finding is exempt only when its own check id has a VALID (reasoned) directive on its own
+// line or the line directly above. An invalid directive (see checkIgnoreReasons) exempts nothing
+// — it earns its own finding instead of a free pass.
+function filterExempt(findings, ignoreIndex) {
+    return findings.filter(f => {
+        if (f.line <= 0) return true
+        const byLine = ignoreIndex.get(f.path)
+        if (!byLine) return true
+        const same = byLine.get(f.line)
+        const above = byLine.get(f.line - 1)
+        const exempt = (same && same.get(f.check) === true) || (above && above.get(f.check) === true)
+        return !exempt
+    })
+}
+
+function checkIgnoreReasons(files, ignoreIndex) {
+    const findings = []
+    for (const f of files) {
+        const byLine = ignoreIndex.get(f.path)
+        if (!byLine) continue
+        for (const [line, checks] of byLine) {
+            for (const [checkId, reasonOk] of checks) {
+                if (reasonOk) continue
+                findings.push({
+                    check: 'ignoreReason', path: f.path, line,
+                    message: `design-system-ignore ${checkId} has no reason`,
+                    suggestion: `design-system-ignore ${checkId}: <why this line is exempt>`,
+                })
+            }
+        }
+    }
+    return findings
+}
+
 export function runChecks(manifest, files) {
     const g = withDefaults(manifest)
     const fileSet = new Set(files.map(f => f.path))
@@ -412,17 +587,26 @@ export function runChecks(manifest, files) {
     const isTokenFile = p => g.tokens.files.includes(p)
     const isStoryExempt = p => matchesAny(g.stories.exempt, p)
     const isInPrimitivesDir = p => !!g.primitives.dir && (p === g.primitives.dir || p.startsWith(g.primitives.dir + '/'))
+    // Literal-scanning checks (colour/font/fontSize/radius) now also read the GLOBAL layer, not
+    // just component stylesheets — a token definition is where a literal belongs, so token files
+    // stay excepted via isTokenFile below, but the reset/content/icon CSS that used to be waved
+    // through by isGlobal alone is not.
+    const isStyleScanTarget = p => (isStylesheetFile(p) || isGlobal(p)) && CSS_EXTS.has(extname(p))
 
     const findings = []
     if (g.checks.storyCoverage) findings.push(...checkStoryCoverage(g, files, fileSet, isComponentFile, isStoryExempt))
     if (g.checks.oneImporter) findings.push(...checkOneImporter(g, files, isStylesheetFile, isGlobal, isImporterExempt))
-    if (g.checks.hardcodedColor) findings.push(...scanCssLiterals('hardcodedColor', g, files, isStylesheetFile, isGlobal, isTokenFile, isColorProp, hasHardcodedColor))
-    if (g.checks.hardcodedFont) findings.push(...scanCssLiterals('hardcodedFont', g, files, isStylesheetFile, isGlobal, isTokenFile, p => p === 'font-family', hasHardcodedFont))
-    if (g.checks.hardcodedFontSize) findings.push(...scanCssLiterals('hardcodedFontSize', g, files, isStylesheetFile, isGlobal, isTokenFile, p => p === 'font-size', hasHardcodedFontSize))
-    if (g.checks.hardcodedRadius) findings.push(...scanCssLiterals('hardcodedRadius', g, files, isStylesheetFile, isGlobal, isTokenFile, p => p === 'border-radius', hasHardcodedRadius))
+    if (g.checks.hardcodedColor) findings.push(...scanCssLiterals('hardcodedColor', g, files, isStyleScanTarget, isTokenFile, isColorProp, hasHardcodedColor))
+    if (g.checks.hardcodedFont) findings.push(...scanCssLiterals('hardcodedFont', g, files, isStyleScanTarget, isTokenFile, p => p === 'font-family', hasHardcodedFont))
+    if (g.checks.hardcodedFontSize) findings.push(...scanCssLiterals('hardcodedFontSize', g, files, isStyleScanTarget, isTokenFile, p => p === 'font-size', hasHardcodedFontSize))
+    if (g.checks.hardcodedRadius) findings.push(...scanCssLiterals('hardcodedRadius', g, files, isStyleScanTarget, isTokenFile, isRadiusProp, hasHardcodedRadius))
     if (g.checks.bareElement) findings.push(...checkBareElement(g, files, isComponentFile, isInPrimitivesDir))
     if (g.checks.propsDestructure) findings.push(...checkPropsDestructure(g, files, isComponentFile))
 
-    findings.sort((a, b) => a.check.localeCompare(b.check) || a.path.localeCompare(b.path) || a.line - b.line)
-    return findings
+    const ignoreIndex = buildIgnoreIndex(files)
+    let out = filterExempt(findings, ignoreIndex)
+    if (g.checks.ignoreReason) out = out.concat(checkIgnoreReasons(files, ignoreIndex))
+
+    out.sort((a, b) => a.check.localeCompare(b.check) || a.path.localeCompare(b.path) || a.line - b.line)
+    return out
 }
