@@ -177,14 +177,10 @@ export function PropertyValueEditor(props: {
                                 value={draft()}
                                 autofocus={autofocus()}
                                 ref={el => {
-                                    // TextInput's declared props are always <input>-shaped
-                                    // (see Primitive gaps in the report) — the underlying
-                                    // element is a real <textarea> whenever `multiline` is set.
-                                    const ta = el as unknown as HTMLTextAreaElement
-                                    markdownAreaEl = ta
+                                    markdownAreaEl = el
                                     queueMicrotask(() => {
-                                        if (autofocus()) ta.focus()
-                                        autoGrow(ta)
+                                        if (autofocus()) el.focus()
+                                        autoGrow(el)
                                     })
                                 }}
                                 onInput={v => {

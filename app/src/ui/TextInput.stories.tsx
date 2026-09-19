@@ -93,13 +93,15 @@ export const Multiline: Story = {
 
 /** Multiline with an explicit `rows` + a `ref` — the shape NoteTitle needs (a `<textarea>`-typed
  *  ref and `rows` only typecheck once `multiline` discriminates the union in TextInput.tsx). */
+let mrRef: HTMLTextAreaElement | undefined
+
 export const MultilineRows: Story = {
     render: () => {
         const [v, setV] = createSignal('First line\nSecond line')
         return (
             <div style={{ width: '320px' }}>
                 <TextInput
-                    ref={(el: HTMLTextAreaElement) => el.focus}
+                    ref={el => (mrRef = el)}
                     multiline
                     rows={3}
                     value={v()}
@@ -116,6 +118,9 @@ export const MultilineRows: Story = {
         expect(el).not.toBeNull()
         expect(el!.tagName).toBe('TEXTAREA')
         expect(el!.rows).toBe(3)
+        // proves the ref TextInput passes back is genuinely the rendered textarea, not just
+        // an HTMLTextAreaElement-shaped value the multiline branch happened to typecheck as.
+        expect(mrRef).toBe(el)
     },
 }
 
