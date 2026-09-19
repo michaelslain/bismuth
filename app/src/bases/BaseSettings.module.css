@@ -37,7 +37,7 @@
    actual visual effect is nil either way (`place-items: center` centers the fixed-size icon
    regardless of padding, since the padding stays symmetric under every candidate value), but
    the design-system gate compares computed style, not pixels. */
-.panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px 6px; font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px var(--sp-3); font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .panel .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .panel .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -51,7 +51,7 @@
 .panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
 .panel .propset-foot .sp { flex: 1; }
 /* Same IconButton cascade pin as .propset-eye above. */
-.panel .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px 6px; font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.panel .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; justify-content: normal; gap: normal; padding: 1px var(--sp-3); font-size: inherit; line-height: inherit; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .panel .propset-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .panel .propset-btn:disabled { opacity: .3; cursor: default; }
 .panel .propset-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

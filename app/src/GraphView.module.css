@@ -115,7 +115,7 @@
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
 /* Hover pill only (the fps pill's own sizing is `.graph-bottom-fps` below). Was inline style on
    the bare span this replaced; the values are unchanged, just moved into a class Badge can take. */
-.graph-hud-hover { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: var(--fs-ui); padding: 2px 8px; }
+.graph-hud-hover { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: var(--fs-ui); padding: var(--sp-1) var(--sp-4); }
 /* fps pill traffic-light color bands — same three hex values and thresholds as GraphView's
    fpsColor()/fpsColorClass(), deliberately NOT theme tokens (see fpsColor's own comment: this
    scale means the same thing in every theme). Picked as a class rather than inline style because
