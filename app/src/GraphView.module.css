@@ -138,8 +138,16 @@
    app's row grid instead of inventing its own height out of vertical padding.
    Also carries the ASCII register's type (font-size/color/font-variant-numeric) — collapsed from
    two same-specificity `.graph-stats` rules (App.css + asciiGraph.css) with disjoint properties;
-   see this file's header for why that merge is safe regardless of the old file order. */
-.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: var(--sp-5); height: var(--row-h, 18px); padding: 0 var(--sp-5); font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums; }
+   see this file's header for why that merge is safe regardless of the old file order.
+
+   Task 3 (ds-polish): font-size lifted from --fs-micro to --fs-ui and `bottom` moved from 16px to
+   6px so this pill's text size and bottom edge match `.graph-hud-hover` (the hover pill) below —
+   same font-size gives the same line-height for free (neither sets one explicitly, and both share
+   the UI font stack), and an equal `bottom` on two absolutely-positioned boxes pins their bottom
+   edges to the same Y regardless of the boxes' own heights. The old flex `gap` is gone too: the
+   separators between segments are now literal `//` text (GraphView.tsx), not gap-injected space,
+   so a gap alongside them would double up the spacing. */
+.graph-stats { position: absolute; right: 18px; bottom: 6px; z-index: 4; display: flex; align-items: center; height: var(--row-h, 18px); padding: 0 var(--sp-5); font-size: var(--fs-ui); color: var(--faint); font-variant-numeric: tabular-nums; }
 .graph-stats .graph-zoom-pct { color: var(--faint); }
 
 /* GEOMETRY only — SURFACE comes from `:global(.asc-popover)` above, same split as
