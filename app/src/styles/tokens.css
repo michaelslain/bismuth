@@ -166,8 +166,16 @@
      three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
      a later wave's edit, not this one's. Nothing reads this token yet. */
   --fs-hero: 40px;
-  /* The vault-intro body's fluid size; intro-only. */
-  --fs-intro-body: clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem);
+  /* VaultIntro's hero headline (.vi-title), fixed — not fluid. bench/invariants.ts's
+     font-size-off-scale check only accepts a flat SCALE/SCALE_EXEMPT membership (48 is in
+     SCALE_EXEMPT) or a live-resolved prose size, and a vw-derived clamp only lands on a scale
+     step at one specific viewport width. 48px is the scale step directly above --fs-hero
+     (40px), which VaultIntro's own <980px rule still drops to. */
+  --fs-intro-title: 48px;
+  /* VaultIntro's body copy (.vi-body), fixed at the type scale's 19px step for the same reason
+     --fs-intro-title is fixed above — was a fluid clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem)
+     that rendered 19.2px at the audited viewport, 0.2px off this exact step. */
+  --fs-intro-body: 19px;
 
   /* fixed dev-HUD traffic light, deliberately theme-independent (graph fps HUD) */
   --hud-fps-good: #3fb950;
