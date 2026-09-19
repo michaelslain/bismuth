@@ -1,0 +1,13 @@
+/* app/src/ui/InlineCode.module.css — the inline-code primitive (see InlineCode.tsx). A short
+   code run sitting inside prose (a hint, an error message quoting a property path) — mono chrome
+   font, sized relative to the surrounding text, on a quiet surface one step off its container's
+   background (Callout.module.css's .callout sits on --surface-1; this uses --surface-2 so the
+   two are visibly distinct rather than one bleeding into the other). */
+
+.inline-code {
+    font-family: var(--ui-font-stack);
+    font-size: 0.95em;
+    background: var(--surface-2);
+    padding: 0 var(--sp-2);
+    border-radius: var(--r-0);
+}
