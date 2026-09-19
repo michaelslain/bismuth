@@ -110,12 +110,11 @@
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
 /* Shared pill recipe for the hover HUD readout (theme-aware). ui/Badge now forwards `style` and
-   arbitrary attributes onto its root (splitProps, never destructure — see Badge.tsx), so the fps
-   pill below no longer needs this class: it carries the identical background/border/radius/
-   font-family as an inline `style` instead, keeping only `.graph-bottom-fps` for its own position
-   (margin-left: auto) and the narrow-container hide rule. This class is now the hover pill's own —
-   kept as a class rather than moved to `style` too, since nothing about the hover pill forces it
-   off Badge.module.css's usual shared-class shape. */
+   arbitrary attributes onto its root (splitProps, never destructure — see Badge.tsx), which is
+   what lets the hover pill below take this class as its only one. The fps pill has its own class,
+   `.graph-bottom-fps` below, carrying the identical static pill look (background/border/radius/
+   font-family/etc) plus its own position — only the traffic-light colour, which is computed per
+   frame, stays as an inline `style`. */
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
 /* Hover pill only. Was inline style on the bare span this replaced; the values are unchanged, just
    moved into a class Badge can take. */
@@ -159,12 +158,24 @@
    wrapper above and passes GraphSearch the `embedded` prop that switches its internal register. */
 
 .graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
-/* Bottom-bar fps readout POSITION ONLY — everything else (background/border/radius/font-family,
-   the traffic-light color from GraphView's fpsColor()) is now a `style` prop straight on the
-   <Badge>, since Badge forwards style/attributes onto its root. This class stays only for
-   `margin-left: auto` (pushing it to the bar's trailing edge) and as the hook the narrow-container
-   rule below hides it by. */
-.graph-bottom-fps { margin-left: auto; }
+/* Bottom-bar fps readout — the ONE class on this <Badge> (Badge.module.css's own `.badge` plus
+   this). Holds the static pill look (background/border/radius/font-family/white-space/tabular
+   numerals/font-size/padding) and its position (`margin-left: auto`, pushing it to the bar's
+   trailing edge) — everything that doesn't change per frame. Only the traffic-light colour, from
+   GraphView's fpsColor(), is computed and stays a `style` prop straight on the <Badge> (Badge
+   forwards style/attributes onto its root). This class is also the hook the narrow-container rule
+   below hides it by. */
+.graph-bottom-fps {
+    margin-left: auto;
+    background: var(--pop-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+    font-family: inherit;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-micro);
+    padding: var(--sp-1) var(--sp-4);
+}
 /* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
    button (an icon-only version read as a mystery button). `margin-left: auto`
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are

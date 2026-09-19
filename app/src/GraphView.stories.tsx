@@ -312,6 +312,10 @@ export const MiniModeSwitcher: Story = {
  * file's other stateful stories already do (see MiniModeSwitcher above), never with a
  * `setTimeout`-and-hope:
  *
+ * - The frame is a fixed 480px wide, not `STORY_H`'s usual `width: '100%'`: the fps pill is
+ *   `display: none` past `@container grapharea (min-width: 521px)` (GraphView.module.css), so a
+ *   full-width render shows only the hover pill and this story would pass without ever proving
+ *   the fps one visible. 480px sits under that breakpoint on both badges.
  * - The fps pill only renders while `settings.graph.showFps` is on (default off) AND the
  *   renderer has measured a real frame rate — its own accumulator only calls back once ~500ms of
  *   REAL rAF time has elapsed (AsciiGraphRenderer's fpsAccum). `showFps` is flipped the same way
@@ -322,9 +326,12 @@ export const MiniModeSwitcher: Story = {
  *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
  *   the canvas. That lands on a node deterministically, not by luck: `sampleGraphData(8)` and its
  *   layout (`computeLayout`) are pure functions of fixed inputs, so this exact story (same graph,
- *   same STORY_H, same `fill`) resolves to the same on-screen arrangement every run — verified
- *   empirically by sweeping the whole canvas and finding the center point always inside a node's
- *   cell, never in empty space.
+ *   same STORY_H, same fixed 480px width, same `fill`) resolves to the same on-screen arrangement
+ *   every run — verified empirically by sweeping the whole canvas and finding the center point
+ *   always inside a node's cell, never in empty space.
+ * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
+ *   `display: none` badge still has DOM text, so text alone doesn't prove it's visible (this is
+ *   exactly how the fps pill's invisibility at full width went unnoticed before).
  */
 export const HudBadges: Story = {
     render: () => {
@@ -333,7 +340,7 @@ export const HudBadges: Story = {
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
 
         return (
-            <div style={{ height: STORY_H, width: '100%' }}>
+            <div style={{ height: STORY_H, width: '480px' }}>
                 <GraphView
                     graph={sampleGraphData(8)}
                     onOpen={noop}
@@ -365,6 +372,9 @@ export const HudBadges: Story = {
                 )
                 expect(pill).not.toBeNull()
                 expect(pill!.textContent).not.toBe('')
+                const box = pill!.getBoundingClientRect()
+                expect(box.width).toBeGreaterThan(0)
+                expect(box.height).toBeGreaterThan(0)
             },
             { timeout: 3000 },
         )
@@ -378,6 +388,9 @@ export const HudBadges: Story = {
                 )
                 expect(pill).not.toBeNull()
                 expect(pill!.textContent ?? '').toMatch(/^\d+ fps$/)
+                const box = pill!.getBoundingClientRect()
+                expect(box.width).toBeGreaterThan(0)
+                expect(box.height).toBeGreaterThan(0)
             },
             { timeout: 5000 },
         )
