@@ -4,6 +4,10 @@ import styles from './Field.module.css'
 export type FieldProps = {
     label: JSX.Element
     class?: string
+    /** Extra class merged onto the label's caption span, for a site that needs the label
+     *  itself restyled (e.g. CardEditModal's micro-caps Title caption) without reaching
+     *  into Field's internal DOM from outside. */
+    labelClass?: string
     children: JSX.Element
 }
 
@@ -15,7 +19,7 @@ export type FieldProps = {
 function Field(props: FieldProps) {
     return (
         <label class={`${styles['ui-field']} ${props.class ?? ''}`}>
-            <span>{props.label}</span>
+            <span class={props.labelClass}>{props.label}</span>
             {props.children}
         </label>
     )

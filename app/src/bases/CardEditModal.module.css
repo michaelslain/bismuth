@@ -29,11 +29,12 @@
   min-width: 0;
 }
 
-/* `.titleField > span` reaches Field's own internal label span (ui/Field.tsx renders
-   `<label><span>{label}</span>{children}</label>` with no class of its own) so the Title
-   field's caption keeps the same micro-caps register as every property's `.label`. */
+/* `.titleField > .label` (not `> span`) out-specifies Field's own default
+   `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
+   through to that span) so the Title caption keeps the same micro-caps register as every
+   other property's `.label`, via the public labelClass prop rather than Field's DOM shape. */
 .label,
-.titleField > span {
+.titleField > .label {
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
