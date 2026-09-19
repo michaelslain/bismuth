@@ -47,29 +47,41 @@
 // where a token file hardcoding a value and a component hardcoding a value are the SAME mistake
 // (drift), so check 5 applies uniformly.
 //
-// RECONCILED WITH THE DESIGN-SYSTEM GATE (2026-09-18, task 24 of the ds-conformance plan, corrected
-// 2026-09-18 final review Important #1). The design-system gate (scripts/designSystem/gate.mjs,
-// installed from ~/.claude/skills/design-system's checks.mjs) ALSO flags hardcoded colour,
-// border-radius and font-size — but it is not a superset of this file, and this file is not a
-// superset of it. Concretely, checks.mjs:
-//   - skips every `governance.global` file entirely (ui/ui.css, App.css, styles/**, popover.css,
-//     Editor.css, Terminal.css, datePicker.css, asciiGraph.css, switcher.css) — tokenLint does not.
-//   - checks colour only on a fixed property allowlist, which excludes border-left/border-top
-//     shorthands, background-image, column-rule, mask-image and custom properties — tokenLint's
-//     hex-color rule (check 5) reads ANY property's value, custom properties included.
-//   - treats any value containing `var(--` anywhere (including inside a fallback or a
-//     `color-mix(…, #000)`) as clean — tokenLint's regex finds the literal hex/rgb() regardless.
-//   - checks only the border-radius SHORTHAND, not the four longhand corners — tokenLint's
-//     RADIUS_PROP matches both.
+// RECONCILED WITH THE DESIGN-SYSTEM GATE (2026-09-18, task 24 of the ds-conformance plan; updated
+// 2026-09-18 after task 2 widened checks.mjs — see its own report for the exact deltas). The
+// design-system gate (scripts/designSystem/gate.mjs, installed from ~/.claude/skills/design-system's
+// checks.mjs) ALSO flags hardcoded colour, border-radius and font-size — but it is not a superset
+// of this file, and this file is not a superset of it. Concretely, checks.mjs now:
+//   - scans the global layer too (governance.global files — ui/ui.css, App.css, styles/**,
+//     popover.css, Editor.css, Terminal.css, datePicker.css, asciiGraph.css, switcher.css); only
+//     the token files themselves (where a literal belongs) stay excepted.
+//   - checks colour on border-top/-right/-bottom/-left (not just their -color longhands),
+//     background-image (gradients) and any custom property, on top of the base allowlist — but
+//     it is STILL a fixed allowlist, so mask-image (ui/ui.css:709), column-rule and other
+//     gradient-bearing properties outside that list stay invisible to it; tokenLint's hex-color
+//     rule (check 5) reads ANY property's value and is the only one of the two catching those.
+//   - strips every balanced `var(--x, <fallback>)` call from a value before testing for a literal,
+//     so a literal SIBLING to a var() call (`box-shadow: 0 0 0 1px var(--border), 0 2px 4px
+//     rgba(0,0,0,.3)`) is now caught — but a literal INSIDE that var()'s own fallback
+//     (`color: var(--danger, #c00)`) is still deliberately excused, on the reasoning that the
+//     fallback only fires when the token itself is missing. tokenLint's regex has no var()-
+//     awareness and flags a fallback literal regardless, so it remains the only one of the two
+//     catching those (4 live cases as of 2026-09-18: SheetView.module.css:6, Terminal.css:13,
+//     TermPanel.module.css:19, GraphAtmosphere.module.css:22).
+//   - checks border-radius plus all four border-(top|bottom)-(left|right)-radius longhand
+//     corners, matching tokenLint's RADIUS_PROP exactly — this axis is now a real, not
+//     coincidental, equivalence between the two tools.
 //   - owns font-size for .module.css files with a check that is strictly broader there (it also
 //      reasons about the type scale, not just "is this a literal px"), which is why
 //      font-size-literal was removed from this file rather than kept in parallel.
-// So both gates run: the design-system gate is the primary, DESIGN.md-governance-aware check for
-// component stylesheets; tokenLint stays as a broader, coarser safety net (any property, custom
-// properties, the global stylesheets checks.mjs skips). A plain `color: #fff` inside a component
-// module is reported by BOTH — that overlap is intentional, not redundant, because the two gates
-// disagree about what to skip, not about what a violation is. A literal outside what checks.mjs
-// scans (border-left, a global stylesheet, a custom property) is caught by tokenLint alone.
+// So both gates still run: the design-system gate is the primary, DESIGN.md-governance-aware check
+// for component stylesheets; tokenLint stays as a safety net that is narrower on some properties
+// and broader on others — it uniquely owns spacing-literal (padding/margin/gap), shadow-blur and
+// backdrop-filter (checks.mjs has nothing like any of the three), and it uniquely catches a
+// var()-fallback literal and a literal on a property outside checks.mjs's colour allowlist
+// (mask-image, column-rule). A plain `color: #fff` inside a component module, on a property BOTH
+// tools list, is reported by BOTH — that overlap is intentional, not redundant, because the two
+// gates disagree about what to skip, not about what a violation is.
 //
 // THE BASELINE, AND WHY IT IS PER (file, rule, exact-literal-value) RATHER THAN PER (file, rule).
 // This repo is starting from ~40 unswept stylesheets and will be for nine more waves (see the

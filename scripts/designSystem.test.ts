@@ -1,7 +1,9 @@
 // design-system gate — installed by ~/.claude/skills/design-system (install-gate)
 // Fails when a component stylesheet uses a literal instead of a token, a stylesheet has more
 // than one importer, a component has no story, or (solid) props are destructured. Accepted
-// debt lives in design-system.baseline.json; exemptions live in DESIGN.md's governance block.
+// debt lives in design-system.baseline.json; permanent exemptions live in DESIGN.md's governance
+// block, and a one-off exemption for a single line is a `design-system-ignore <check-id>: <reason>`
+// comment on that line or the line directly above it.
 import { describe, it, expect } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'

@@ -943,6 +943,13 @@ network event can no longer be attributed to the story that caused it. Output is
 before being written, so a pooled run (whose captures complete out of order) still produces a
 diffable, deterministically-ordered baseline file.
 
+**Two more cross-run flakes found chasing pooling's own contention (2026-09-18), on top of the known
+list above**: `app-terminal--drop-affordance-before-font-load` flips an xterm glyph `<span>`'s height
+21px↔22px (with sibling cells' width/letter-spacing shifting together) — the story is named for and
+deliberately captures a pre-font-load state (`app/src/Terminal.stories.tsx:279`), so it has no reason
+to converge on one value across separate loads; and `app-panecontent--chat-sentinel` flips a `<span>`
+width 108.95px↔94.70px, cause not yet root-caused.
+
 ### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
 
 Not a regression gate and has no history: it screenshots every story and flags what a component can
@@ -1119,21 +1126,27 @@ component later reads via `var(...)`.
 
 **The design-system gate below ALSO flags hardcoded colour, border-radius and font-size, and the
 two do not fully overlap** (reconciled 2026-09-18, ds-conformance final review Important #1, after
-task 24 first removed these rules on the false claim they were now redundant). The design-system
-gate skips every `governance.global` file (`ui/ui.css`, `App.css`, `styles/**`, and friends),
-checks colour only on a fixed property allowlist (missing `border-left`/`border-top`,
-`background-image`, `column-rule`, `mask-image` and custom properties), treats any value containing
-`var(--` anywhere — including inside a fallback — as clean, and checks only the `border-radius`
-shorthand, not its four longhand corners. `tokenLint.ts` has none of those gaps for the three rules
-it kept (radius, colour, spacing) — it scans every property, custom properties included, and every
-stylesheet — but its baseline-ratchet model means a *pre-existing* literal stays silently green
-until someone sweeps that file, where the design-system gate's DESIGN.md-governance model does not.
-Both run: they disagree about what to skip, not about what a violation is, so a plain `color: #fff`
-in a component module is (deliberately) reported by both, while a `border-left: 2px solid #f00` or
-a literal inside a `governance.global` file is caught by `tokenLint.ts` alone. **font-size is the
-one check that stayed removed here** — the design-system gate's font-size check is strictly broader
-for `.module.css` files, so keeping a second, narrower one would only produce a duplicate finding
-with no coverage of its own.
+task 24 first removed these rules on the false claim they were now redundant; updated again after
+task 2 the same day widened the design-system gate's own checks — see `checks.mjs`'s change log for
+the exact deltas). The design-system gate now scans the global layer too (`governance.global` files —
+`ui/ui.css`, `App.css`, `styles/**`, and friends — with only the token files themselves excepted),
+checks colour on the `border-top`/`-right`/`-bottom`/`-left` shorthands, `background-image` and any
+custom property in addition to its base allowlist, strips `var(--x, <fallback>)` calls before
+testing for a literal (so a literal *sibling* to a `var()` call is caught, though a literal *inside*
+that `var()`'s own fallback is still deliberately excused), and checks `border-radius` plus all four
+longhand corners. Even widened, it is still a fixed property allowlist — `mask-image` (`ui/ui.css:709`)
+and `column-rule` stay outside it — and it still excuses a `var()` fallback literal on purpose.
+`tokenLint.ts` has neither gap for the rules it kept (radius, colour, spacing): it scans every
+property, custom properties included, has no `var()`-awareness (so it also flags a fallback literal
+the design-system gate now excuses), and covers every stylesheet including the global layer — but its
+baseline-ratchet model means a *pre-existing* literal stays silently green until someone sweeps that
+file, where the design-system gate's DESIGN.md-governance model does not. Both run: they disagree
+about what to skip, not about what a violation is, so a plain `color: #fff` in a component module, on
+a property both check, is reported by both, while a `mask-image` gradient, a `column-rule` colour, or
+a literal inside a `var()` fallback is caught by `tokenLint.ts` alone. **font-size is the one check
+that stayed removed here** — the design-system gate's font-size check is strictly broader for
+`.module.css` files, so keeping a second, narrower one would only produce a duplicate finding with
+no coverage of its own.
 
 **Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
 `(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
@@ -1169,7 +1182,10 @@ literal hardcoded colour, border-radius or font-size instead of a token from `to
 **Ratcheted by `design-system.baseline.json`** at the repo root (`{ "accepted": [{ "check",
 "path" }] }`, matched by `check`+`path`, ignoring line) — the same debt-not-exemption model as
 `tokenLint.ts`'s own baseline: a genuine, permanent exception belongs in `DESIGN.md`'s `governance`
-block instead (`stories.exempt`, `global`, or a documented `checks` change).
+block instead (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE rather
+than a whole file or check, a `design-system-ignore <check-id>: <reason>` comment (in `//`, `/* */`,
+or `{/* */}`) on that line or the line directly above it exempts just that one finding; a directive
+with no reason is itself a finding (`ignoreReason`).
 
 ```bash
 node scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json

@@ -397,7 +397,7 @@ under every edge and label.
 - **Don't** use `--faint` for content a user must read.
 - **Don't** put more than one accent or one `primary` button in a view.
 - **Don't** use emoji in chrome, or add photography, illustration or hand-drawn SVG.
-- **Don't** retype the Monaspace stack; read `--ui-font-stack` (or `--prose-font`, `--icon-font-stack`).
+- **Don't** retype the Monaspace stack; read `--ui-font-stack` (or `--prose-font`).
 - **Don't** set anything smaller than 10.5px, or track body text.
 - **Don't** import another component's stylesheet. A second importer means a component nobody
   extracted: extract it, and never copy the stylesheet.
