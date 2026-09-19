@@ -4,10 +4,20 @@
    brightens on hover. Keep these un-merged — a shared base + one override each is what let the
    two get swapped once already (a running probe caught it: every 22px swatch was rendering
    .cat-chip's border). */
-.swatch { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, box-shadow .12s; }
+/* The base box rule is wrapped in :where() so its specificity is ZERO — a caller that overrides
+   size/border through its own single class passed via `class` (e.g. ExportView's
+   `.theme-swatch`, sized 10px for the theme dot) always wins, instead of depending on which
+   stylesheet the bundler happens to emit second. `.sm`/`.selected`/`.static` stay ordinary
+   compound selectors, so they still override the base exactly as before. */
+:where(.swatch) { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, box-shadow .12s; }
 .swatch:hover { transform: translateY(-1px); }
 .swatch.sm { width: 20px; height: 20px; border: var(--rule-soft, 1px solid var(--border-soft)); transition: filter .12s, box-shadow .12s; }
 .swatch.sm:hover { filter: brightness(1.1); }
 /* `.cat-chip.open` and `.cat-sw.on` were both EMPTY rules, so the selected swatch was
    indistinguishable from the rest. An accent rim reads at this size where a border would not. */
 .swatch.selected { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 3px var(--accent); }
+/* Non-interactive variant (Swatch.tsx's `static` prop) — a decorative colour dot with no click
+   affordance of its own. Same box; no pointer cursor or hover motion. */
+.swatch.static { cursor: default; }
+.swatch.static:hover { transform: none; }
+.swatch.static.sm:hover { filter: none; }

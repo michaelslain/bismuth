@@ -5,6 +5,7 @@ import { settings } from './settings'
 import { Icon } from './icons/Icon'
 import Chip from './ui/Chip'
 import Label from './ui/Label'
+import Swatch from './ui/Swatch'
 import Text from './ui/Text'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
@@ -702,13 +703,10 @@ export function ExportView(props: { path: string }) {
                                     selected={theme() === t}
                                     onClick={() => setTheme(t)}
                                 >
-                                    <Text
-                                        as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                    <Swatch
+                                        static
+                                        color={THEME_SWATCH[t]}
                                         class={styles['theme-swatch']}
-                                        style={{ background: THEME_SWATCH[t] }}
                                     />
                                     {THEME_LABEL[t]}
                                 </Chip>
