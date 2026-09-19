@@ -592,7 +592,7 @@ export function FlashcardsView(props: {
 
     // The restored ASCII meter's cell count — a fixed character count that cannot reflow, so it
     // has to be picked against the MEASURED width of its own slot rather than a fraction of the
-    // viewport (see the `.fcmeter` comment in Flashcards.module.css for why `vw` is wrong here).
+    // viewport (see the `.fcmeter` comment in FlashcardsView.module.css for why `vw` is wrong here).
     // Character width comes from a `ch`-unit probe rather than an approximated ratio: `ch` is the
     // CSS spec's own measure of the current font's advance width (the width of "0"), read by the
     // browser's real font metrics — the mono font is settings-driven (appearance.uiFont ->
@@ -820,7 +820,7 @@ export function FlashcardsView(props: {
                                     >
                                         <div class={styles['flip-inner']}>
                                             {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
-                                            shared .flip-face) — left as a bare literal per Flashcards.module.css's header. */}
+                                            shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
                                             <div
                                                 class={`${styles['flip-face']} flip-front`}
                                                 inert={revealed() || undefined}

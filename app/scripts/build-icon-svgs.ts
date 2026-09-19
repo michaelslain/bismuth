@@ -7,11 +7,12 @@
 //
 //   cd app && bun run icons:svg
 //
-// MIRRORS build-icon-font.ts'S SHAPE ON PURPOSE: a small, committed, hand-edited mapping resolved
-// against a big upstream source into a small committed artifact nothing else regenerates by hand.
-// There the big source was a downloaded font release; here it's a devDependency already in
-// node_modules, so there's no network fetch — but the self-check-before-write discipline is the
-// same, and for the same reason.
+// THE SHAPE: a small, committed, hand-edited mapping resolved against a big upstream source into a
+// small committed artifact nothing else regenerates by hand. The big source is a devDependency
+// already in node_modules, so there's no network fetch — but the self-check-before-write
+// discipline still applies for the same reason it always does with a generated artifact. (This
+// used to mirror build-icon-font.ts's shape on purpose, when that Nerd Font subset generator was
+// still in the tree; it was deleted in ds-conformance Task 8 once the font it fed was retired.)
 //
 // WHY NOT IMPORT @iconify-json/ph DIRECTLY FROM registry.ts. Its icons.json is ~9161 icons worth
 // of SVG path data as one JS object literal. A bundler cannot tree-shake property lookups into a
