@@ -72,7 +72,11 @@ function DaemonRow(props: {
             onContextMenu={props.onContextMenu}
             style={{ opacity: props.faded ? 0.45 : 1 }}
         >
-            <div
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
                 class={styles['daemon-row-dot']}
                 classList={{ [styles.glow]: props.glow }}
                 style={{ color: props.dotColor }}

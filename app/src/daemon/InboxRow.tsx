@@ -9,8 +9,8 @@ import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
+import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
-import { isConfirmKey } from '../ui/widgetKeys'
 import styles from './InboxRow.module.css'
 
 export type InboxRowProps = {
@@ -48,70 +48,61 @@ function InboxRow(props: InboxRowProps) {
     }
 
     return (
-        // Not a PlainButton: `showActions` can nest real buttons (below) inside this row, and a
-        // button element can never contain another one — invalid HTML, and the browser would
-        // hoist the inner one out, breaking the layout and the a11y tree. `role="button"` +
-        // `tabindex` + a matching onKeyDown give it the same keyboard reachability instead.
-        <div
-            class={`${styles['inbox-row']} ${props.class ?? ''}`}
-            role="button"
-            tabindex={0}
-            onClick={() => props.onOpen(props.page.path)}
-            onKeyDown={e => {
-                if (!isConfirmKey(e)) return
-                e.preventDefault()
-                props.onOpen(props.page.path)
-            }}
-        >
-            <div
-                class={styles['inbox-row-dot']}
-                style={{ color: STATUS_COLOR[props.page.status] }}
-            />
-            <div class={styles['inbox-row-main']}>
-                <div class={styles['inbox-row-head']}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['inbox-row-title']}
-                    >
-                        {props.page.title}
-                    </Text>
-                    <Show when={props.page.source}>
+        <div class={`${styles['inbox-row']} ${props.class ?? ''}`}>
+            {/* A real button element around only the non-interactive part (dot + main text).
+                ARIA's button role is Children Presentational — wrapping the actions below too
+                would hide approve/dismiss from assistive tech, so those stay a sibling instead. */}
+            <PlainButton
+                class={styles['inbox-row-open']}
+                onClick={() => props.onOpen(props.page.path)}
+            >
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={styles['inbox-row-dot']}
+                    style={{ color: STATUS_COLOR[props.page.status] }}
+                />
+                <div class={styles['inbox-row-main']}>
+                    <div class={styles['inbox-row-head']}>
                         <Text
                             as="span"
                             size="inherit"
                             tone="inherit"
                             weight="inherit"
-                            class={styles['inbox-row-source']}
+                            class={styles['inbox-row-title']}
                         >
-                            {props.page.source}
+                            {props.page.title}
                         </Text>
-                    </Show>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['inbox-row-time']}
-                    >
-                        {relTimeISO(props.page.createdAt)}
-                    </Text>
+                        <Show when={props.page.source}>
+                            <Text
+                                as="span"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['inbox-row-source']}
+                            >
+                                {props.page.source}
+                            </Text>
+                        </Show>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['inbox-row-time']}
+                        >
+                            {relTimeISO(props.page.createdAt)}
+                        </Text>
+                    </div>
+                    <div class={styles['inbox-row-snippet']}>
+                        {snippet(props.page.body)}
+                    </div>
                 </div>
-                <div class={styles['inbox-row-snippet']}>
-                    {snippet(props.page.body)}
-                </div>
-            </div>
+            </PlainButton>
             <Show when={props.showActions}>
-                <div
-                    class={styles['inbox-row-actions']}
-                    onClick={e => e.stopPropagation()}
-                    // Mirrors the click guard above: without this, Enter/Space on a nested action
-                    // button would bubble to the row's own onKeyDown and ALSO fire onOpen.
-                    onKeyDown={e => e.stopPropagation()}
-                >
-
+                <div class={styles['inbox-row-actions']}>
                     <For each={props.page.actions}>
                         {a => (
                             <TextButton
