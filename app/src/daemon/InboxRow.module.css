@@ -16,11 +16,18 @@
 .inbox-row:hover {
     background: var(--hover-bg);
 }
-/* role="button" div, not a PlainButton, so it needs its own ring (finding 4, ds-conformance
-   design pass) rather than inheriting PlainButton.module.css's. */
-.inbox-row:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: -2px;
+/* Wraps only the dot + main text — the real <button> that opens the page (the actions column
+   stays a sibling, see InboxRow.tsx). Mirrors .inbox-row's own flex settings so grouping the two
+   under a button changes nothing visually; PlainButton already supplies the pointer cursor and
+   the focus ring at the same --focus-ring-offset this row used to hand-roll, so this rule adds
+   neither. */
+.inbox-row-open {
+    display: flex;
+    flex: 1 1 160px;
+    min-width: 0;
+    align-items: flex-start;
+    gap: var(--sp-2) var(--sp-5);
+    text-align: start;
 }
 /* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
    style (STATUS_COLOR, daemonInboxLogic.ts), not a hardcoded fill. */
@@ -33,7 +40,7 @@
     background: currentColor;
 }
 .inbox-row-main {
-    flex: 1 1 160px;
+    flex: 1;
     min-width: 0;
 }
 /* WRAPS, deliberately — DaemonInbox.tsx composes this row inside a DaemonPanel column (a few

@@ -1,16 +1,15 @@
 // app/src/daemon/InboxRow.stories.tsx
 // Visual spec for <InboxRow> — one inbox row: status dot, title/source/time, a one-line snippet,
 // and (when due) inline actions. DaemonInbox.tsx is the only importer. Covers every PageStatus
-// the fixture set carries (sampleDaemonPages(), ui/_daemonFixtures.ts) plus the keyboard path a
-// bare-element pass added: the row can't become a real <button> (it nests real action buttons
-// when due, and a button can't contain another button), so it's role="button" + tabindex + its
-// own onKeyDown instead — KeyboardOpen proves Enter opens it and that a press on a nested action
-// button does NOT also open it (the actions wrapper stops that bubble, mirroring the click
-// stopPropagation it already had).
+// the fixture set carries (sampleDaemonPages(), ui/_daemonFixtures.ts) plus the keyboard path: a
+// real <button> (PlainButton) wraps only the dot + main text, since a button can never contain
+// another button and the actions render real ones when due — KeyboardOpen proves Enter on that
+// button opens the row and that a press on a nested action button does NOT also open it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
-import { expect, fireEvent, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import InboxRow from './InboxRow'
+import styles from './InboxRow.module.css'
 import { sampleDaemonPages } from '../ui/_daemonFixtures'
 
 const meta = {
@@ -89,7 +88,10 @@ export const Done: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(done.title)).toBeInTheDocument()
-        await expect(canvasElement.querySelector('button')).toBeNull()
+        // Open button always renders (dot + main); only the actions wrapper is conditional.
+        await expect(
+            canvasElement.querySelector(`.${styles['inbox-row-actions']}`),
+        ).toBeNull()
     },
 }
 
@@ -131,10 +133,9 @@ export const Dismissed: Story = {
 
 let openedCount = 0
 
-/** Keyboard reachability: the row itself is a tab stop (role="button" + tabindex=0) and Enter
- *  opens it, same as a click. A press on a nested action button must NOT also open the row —
- *  proving the keydown-stopPropagation fix on `.inbox-row-actions` actually works, not just the
- *  pre-existing click one. */
+/** Keyboard reachability: the open button (`.inbox-row-open`, a real <button>) is a tab stop and
+ *  Enter opens it, same as a click. A press on a nested action button must NOT also open the row
+ *  — it lives outside the open button's subtree entirely, so there's nothing to bubble into. */
 export const KeyboardOpen: Story = {
     render: () => {
         openedCount = 0
@@ -152,19 +153,21 @@ export const KeyboardOpen: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const row = canvasElement.querySelector<HTMLElement>(
-            '[role="button"]',
+        const openBtn = canvasElement.querySelector<HTMLElement>(
+            `.${styles['inbox-row-open']}`,
         )!
-        await expect(row).not.toBeNull()
-        row.focus()
-        await fireEvent.keyDown(row, { key: 'Enter' })
+        await expect(openBtn).not.toBeNull()
+        // A real <button> has no keydown handler of its own — Enter-activates it via the
+        // platform's default action, which only userEvent (not a raw fireEvent.keyDown) simulates.
+        openBtn.focus()
+        await userEvent.keyboard('{Enter}')
         await expect(openedCount).toBe(1)
 
         const actionBtn = within(canvasElement).getByRole('button', {
             name: 'SUBMIT',
         })
         actionBtn.focus()
-        await fireEvent.keyDown(actionBtn, { key: 'Enter' })
+        await userEvent.keyboard('{Enter}')
         await expect(openedCount).toBe(1)
     },
 }
