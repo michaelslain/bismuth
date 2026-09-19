@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { For, createSignal } from 'solid-js'
 import { expect } from 'storybook/test'
 import { Swatch } from './Swatch'
+import Text from './Text'
 
 const meta = {
     title: 'UI/Swatch',
@@ -126,18 +127,41 @@ export const Selected: Story = {
 
 /** The non-interactive variant (`static`, e.g. ExportView's theme dot) — a decorative colour
  *  square with no click affordance of its own: no `<button>`, no `onClick`, not keyboard-
- *  reachable. `play` proves the rendered element is a plain `<div>` (`tabIndex` -1, i.e. not
- *  tab-reachable), that it is `aria-hidden` when no label is given, and that a label suppresses
- *  aria-hidden and becomes the accessible name instead — Swatch.tsx's `static` contract. */
+ *  reachable — sat beside the ordinary interactive swatch so the two read as a deliberate pair,
+ *  not an isolated fragment. Each row is captioned with a `Text` primitive naming which is which.
+ *  `play` proves the static row's rendered elements are plain `<div>`s (`tabIndex` -1, i.e. not
+ *  tab-reachable), that one is `aria-hidden` with no label and the other's label suppresses
+ *  aria-hidden and becomes the accessible name instead — Swatch.tsx's `static` contract — while
+ *  the interactive row renders real, clickable `<button>`s. */
 export const Static: Story = {
     render: () => (
-        <div style={{ display: 'flex', gap: '10px' }}>
-            <Swatch color="var(--accent)" static />
-            <Swatch color="var(--rose)" label="Rose" static />
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+                <Swatch color="var(--accent)" static />
+                <Swatch color="var(--rose)" label="Rose" static />
+                <Text as="span" size="micro" tone="muted">
+                    static
+                </Text>
+            </div>
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+                <Swatch color="var(--accent)" label="Accent" onClick={() => {}} />
+                <Swatch
+                    color="var(--rose)"
+                    label="Rose"
+                    selected
+                    onClick={() => {}}
+                />
+                <Text as="span" size="micro" tone="muted">
+                    interactive
+                </Text>
+            </div>
         </div>
     ),
     play: async ({ canvasElement }) => {
-        expect(canvasElement.querySelectorAll('button').length).toBe(0)
+        const buttons = [
+            ...canvasElement.querySelectorAll('button[aria-label]'),
+        ]
+        expect(buttons.length).toBe(2)
 
         const dots = [...canvasElement.querySelectorAll('div')].filter(
             d => !!d.style.background,
