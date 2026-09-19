@@ -732,17 +732,7 @@ export function GraphView(props: {
                     <Show when={settings.graph.showFps && fps() !== null}>
                         <Badge
                             class={styles['graph-bottom-fps']}
-                            style={{
-                                background: 'var(--pop-bg)',
-                                border: '1px solid var(--border-soft)',
-                                'border-radius': 'var(--r-0)',
-                                'font-family': 'inherit',
-                                'white-space': 'nowrap',
-                                'font-variant-numeric': 'tabular-nums',
-                                'font-size': 'var(--fs-micro)',
-                                padding: 'var(--sp-1) var(--sp-4)',
-                                color: fpsColor(fps()!),
-                            }}
+                            style={{ color: fpsColor(fps()!) }}
                         >
                             {fps()} fps
                         </Badge>
