@@ -579,7 +579,6 @@ export function MapView(props: {
                             size="inherit"
                             tone="faint"
                             weight="inherit"
-                            class={styles.mapAttrCount}
                         >
                             {markers().length}{' '}
                             {markers().length === 1 ? 'place' : 'places'}
