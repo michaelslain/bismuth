@@ -175,7 +175,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-0);
   box-shadow: var(--lift);
-  font-family: var(--ui-font, system-ui, -apple-system, sans-serif);
+  font-family: var(--ui-font-stack);
   color: var(--fg);
 }
 
@@ -189,7 +189,6 @@
   outline: none;
   background: transparent;
   color: var(--fg);
-  font: inherit;
   font-size: var(--fs-body);
   padding: var(--sp-1);
 }

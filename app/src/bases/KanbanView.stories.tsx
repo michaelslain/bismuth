@@ -70,6 +70,25 @@ export const EditableWithPinnedColumns: Story = {
     },
 }
 
+/** No `groupBy` on the view — the board falls back to a Callout hint instead of columns. */
+export const NoGroupBy: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                onChange={noop}
+            />
+        )
+    },
+}
+
 // Two rows STORED in one base's own body — the shape `POST /rows` returns for `source: {kind:
 // base}` (and what a `mode: tasks` own-rows board holds): both share `syntheticBaseFile`'s ONE
 // synthetic path, and are told apart only by `Row.index`. Built directly (not through
