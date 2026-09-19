@@ -943,6 +943,13 @@ network event can no longer be attributed to the story that caused it. Output is
 before being written, so a pooled run (whose captures complete out of order) still produces a
 diffable, deterministically-ordered baseline file.
 
+**Known non-deterministic stories.** `app-chatview`, `editor-*`, `app-panecontent`,
+`chat-chatcomposer*`, `daemon-daemonchat`, `preview-*`, and `app-previewview` each carry one element
+that legitimately drifts between check runs: a height flip of 16↔18, 10↔12, 14↔16, or 15↔17 px with
+`top` ±1, always on the DOM suffix `…>div[1]>div[1]>div[0]` — CodeMirror's `.cm-cursor` caret overlay
+(root cause documented just below). Drift of only that shape, on only that DOM suffix, in one of those
+prefixes is this known flake, not a regression; any other drift is.
+
 **Two more cross-run flakes found chasing pooling's own contention (2026-09-18), on top of the known
 list above**: `app-terminal--drop-affordance-before-font-load` flips an xterm glyph `<span>`'s height
 21px↔22px (with sibling cells' width/letter-spacing shifting together) — the story is named for and
@@ -961,8 +968,8 @@ not a harness settle gap.** Two full pooled check runs on an unchanged tree inde
 2px height flip (16↔18, 10↔12, 14↔16, 15↔17) with `top` ±1, always on the same relative DOM suffix
 `…>div[1]>div[1]>div[0]`, scattered across whichever stories happened to be running alongside heavy
 concurrent load that run (`app-chatview`, `chat-chatcomposer(bar)`, `app-panecontent`, `preview-*`,
-`app-previewview`, `editor-*`, `daemon-daemonchat`) — see the "Known non-deterministic stories" list
-these prefixes are carried in). A CDP probe of the element (`editor-inkoverlay--attached-ink`,
+`app-previewview`, `editor-*`, `daemon-daemonchat`) — see **Known non-deterministic stories** above,
+which these prefixes are carried in). A CDP probe of the element (`editor-inkoverlay--attached-ink`,
 confirmed identically on `app-chatview--default`'s chat bubble) identifies it precisely:
 `<div class="cm-cursor cm-cursor-primary" style="top:…px; height:…px">`. CodeMirror's `EditorView`
 constructor (`app/node_modules/@codemirror/view/dist/index.js:7877`, third-party, not this repo's
@@ -971,7 +978,8 @@ code) registers a **one-shot** `document.fonts.ready.then(() => { this.viewState
 exactly one `requestAnimationFrame` to re-measure and rewrite the cursor's inline `top`/`height` from
 the line box's *actual* font metrics. Those two numbers are literal px written by CM's own JS, not a
 CSS rule, so they do **not** auto-correct when the browser silently swaps a loaded webface in for a
-fallback — nothing but that one callback ever moves them again for a given `EditorView`. Under light or
+fallback — nothing but that one callback ever moves them again for a given `EditorView` in a story
+that never updates the view after mount. Under light or
 homogeneous load (a single story cloned across many tabs) the relevant font is already warm from a
 previous load, so CM's callback fires and its rAF lands well inside `cssBaseline.ts`'s 1500ms `SETTLE`
 head start, and the recorded value is always the correct, post-swap one. Under heterogeneous pooled
@@ -996,7 +1004,7 @@ bound to a font-loading state captured back at `EditorView` construction — has
 finished its own independently-scheduled `requestAnimationFrame` write. No amount of additional
 waiting inside one `Runtime.evaluate` call can force a rewrite that has to come from CM's own code.
 **Not acted on further**: this is real CodeMirror-internal nondeterminism under contention, already
-covered by the "Known non-deterministic stories" note (a small inline element flipping height 16↔18 or
+covered by **Known non-deterministic stories** above (a small inline element flipping height 16↔18 or
 10↔12, top ±1, under parallel load) — treat drift of only that shape, on only that suffix, in one of
 those prefixes, as this known flake rather than a regression.
 
