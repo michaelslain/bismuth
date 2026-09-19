@@ -63,7 +63,7 @@ export function UpdateBanner() {
                             {phaseLabel(phase())}
                         </Text>
                     </Show>
-                    <TextButton onClick={update} disabled={working()}>
+                    <TextButton onClick={update} disabled={working()} variant="selected">
                         {working() ? 'UPDATING…' : 'UPDATE'}
                     </TextButton>
                     <IconButton

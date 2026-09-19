@@ -111,7 +111,7 @@
   background: var(--bismuth-accent-soft);
 }
 
-.kanbanHint { padding: 40px var(--sp-7); text-align: center; color: var(--bismuth-muted); line-height: 1.6; }
+.kanbanHint { margin: var(--sp-7); }
 
 /* Column reorder feedback */
 .kanbanColDragging { opacity: 0.5; }
