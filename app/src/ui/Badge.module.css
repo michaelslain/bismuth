@@ -1,5 +1,5 @@
 /* app/src/ui/Badge.module.css — the count/indicator primitive (see Badge.tsx). Derived from 7
-   near-identical rules: bases/Flashcards.module.css's .cards-count/.cards-num, DaemonList.module
+   near-identical rules: bases/EditCardsModal.module.css's .cards-count/.cards-num, DaemonList.module
    .css's .daemon-section-count, FileTree.module.css's .ft-visibility-badge, InboxView.module.css's
    .inbox-section-count, SearchResultRows.module.css's .sresult-count, shell/CommandButton.module.css's
    .toolbar-badge.

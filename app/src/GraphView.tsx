@@ -58,16 +58,6 @@ function fpsColor(fps: number): string {
     return 'var(--hud-fps-bad)' // red: janky
 }
 
-// Same traffic-light thresholds as fpsColor, as a GraphView.module.css class name instead of a color
-// literal — for the bottom-bar fps readout, which renders through <Badge> and (unlike <Text>)
-// has no `style` passthrough to carry a computed inline color. The stats-footer fps readout below
-// keeps using fpsColor()+inline style directly on <Text>, which does forward style.
-function fpsColorClass(fps: number): string {
-    if (fps >= 50) return 'graph-hud-fps--good'
-    if (fps >= 30) return 'graph-hud-fps--ok'
-    return 'graph-hud-fps--bad'
-}
-
 // Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
 // NOT a persisted setting. Toggling it must never write settings.yaml (doing so
 // rewrote the file canonically, which reloaded an open settings buffer and scrolled
@@ -741,7 +731,18 @@ export function GraphView(props: {
                     </Show>
                     <Show when={settings.graph.showFps && fps() !== null}>
                         <Badge
-                            class={`${styles['graph-hud-pill']} ${styles['graph-bottom-fps']} ${styles[fpsColorClass(fps()!)]}`}
+                            class={styles['graph-bottom-fps']}
+                            style={{
+                                background: 'var(--pop-bg)',
+                                border: '1px solid var(--border-soft)',
+                                'border-radius': 'var(--r-0)',
+                                'font-family': 'inherit',
+                                'white-space': 'nowrap',
+                                'font-variant-numeric': 'tabular-nums',
+                                'font-size': 'var(--fs-micro)',
+                                padding: 'var(--sp-1) var(--sp-4)',
+                                color: fpsColor(fps()!),
+                            }}
                         >
                             {fps()} fps
                         </Badge>

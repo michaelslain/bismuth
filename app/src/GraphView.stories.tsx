@@ -305,3 +305,81 @@ export const MiniModeSwitcher: Story = {
         ).toBeLessThanOrEqual(1)
     },
 }
+
+/**
+ * THE HUD BADGES — the hover-label pill and the fps pill, GraphView's only two `<Badge>` usages,
+ * both forced on for one shot. Neither has a prop to force it, so each is forced the way this
+ * file's other stateful stories already do (see MiniModeSwitcher above), never with a
+ * `setTimeout`-and-hope:
+ *
+ * - The fps pill only renders while `settings.graph.showFps` is on (default off) AND the
+ *   renderer has measured a real frame rate — its own accumulator only calls back once ~500ms of
+ *   REAL rAF time has elapsed (AsciiGraphRenderer's fpsAccum). `showFps` is flipped the same way
+ *   MiniModeSwitcher flips `daemon.enabled`: captured, set, restored in `onCleanup`. The `waitFor`
+ *   below polls for that real callback to have fired — a genuine settled signal, not a guess.
+ * - The hover pill only renders while the mouse is genuinely over a node (`hovered()`, set by the
+ *   renderer's own `pointermove` listener on `window` — see AsciiGraphRenderer.ts). There is no
+ *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
+ *   the canvas. That lands on a node deterministically, not by luck: `sampleGraphData(8)` and its
+ *   layout (`computeLayout`) are pure functions of fixed inputs, so this exact story (same graph,
+ *   same STORY_H, same `fill`) resolves to the same on-screen arrangement every run — verified
+ *   empirically by sweeping the whole canvas and finding the center point always inside a node's
+ *   cell, never in empty space.
+ */
+export const HudBadges: Story = {
+    render: () => {
+        const previousShowFps = settings.graph.showFps
+        setSettings('graph', 'showFps', true)
+        onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
+
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={sampleGraphData(8)}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={null}
+                    fill
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = canvasElement.querySelector('canvas')
+        if (!canvas) throw new Error('no canvas rendered')
+        const rect = canvas.getBoundingClientRect()
+        // Real event, real listener (window-level `pointermove` — see AsciiGraphRenderer.mount):
+        // there is no prop seam for the hover state, so this IS the deterministic seam.
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+                bubbles: true,
+            }),
+        )
+        await waitFor(
+            () => {
+                const pill = canvasElement.querySelector(
+                    '[class*="graph-hud-hover"]',
+                )
+                expect(pill).not.toBeNull()
+                expect(pill!.textContent).not.toBe('')
+            },
+            { timeout: 3000 },
+        )
+
+        // Waits on the renderer's OWN real fps callback (500ms of accumulated frame time), not a
+        // fixed sleep — see this story's doc comment.
+        await waitFor(
+            () => {
+                const pill = canvasElement.querySelector(
+                    '[class*="graph-bottom-fps"]',
+                )
+                expect(pill).not.toBeNull()
+                expect(pill!.textContent ?? '').toMatch(/^\d+ fps$/)
+            },
+            { timeout: 5000 },
+        )
+    },
+}
