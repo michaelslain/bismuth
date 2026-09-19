@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { affectedWorkspaces, sanitizeGitEnv, touchesDesignSystem } from './gate'
+import { affectedWorkspaces, plan, sanitizeGitEnv, touchesDesignSystem } from './gate'
 
 test('a single-workspace edit tests only that workspace', () => {
     expect(affectedWorkspaces(['app/src/App.tsx'])).toEqual(['app'])
@@ -87,6 +87,36 @@ test('a workspace change alone with no design-system trigger still tests only th
     // it entirely -- the gate has to OR the two signals, not just widen affectedWorkspaces.
     expect(affectedWorkspaces(['DESIGN.md'])).toEqual([])
     expect(touchesDesignSystem(['DESIGN.md'])).toBe(true)
+})
+
+// --- plan() — what main() actually decides to run, not just the two pure predicates in isolation.
+// The two tests above prove affectedWorkspaces/touchesDesignSystem individually; neither one would
+// notice main() regressing how it COMBINES them (e.g. the design-system step silently skipping
+// tests). Pinning plan()'s output is what makes that a plain assertion instead of something only a
+// live `git commit` would surface.
+
+test('plan: a design-system-only change (DESIGN.md) runs the design-system step and skips tests', () => {
+    expect(plan(['DESIGN.md'])).toEqual({
+        typecheck: false,
+        tests: [],
+        designSystem: true,
+    })
+})
+
+test('plan: a docs-only change runs nothing', () => {
+    expect(plan(['docs/x.md'])).toEqual({
+        typecheck: false,
+        tests: [],
+        designSystem: false,
+    })
+})
+
+test('plan: an app/src change runs typecheck, its workspace tests AND the design-system step', () => {
+    expect(plan(['app/src/X.tsx'])).toEqual({
+        typecheck: true,
+        tests: ['app'],
+        designSystem: true,
+    })
 })
 
 // --- git hook-environment isolation ---------------------------------------------------------

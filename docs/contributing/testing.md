@@ -894,7 +894,7 @@ another iteration instead of a wrong capture.
 | `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (759 stories as of 2026-09-14, up from an older ~737 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 | `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
-| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below. |
+| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px `border-radius`/padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`, a hardcoded hex/`rgb()` colour) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below; the two gates' colour/radius checks overlap deliberately rather than duplicating, detail below. |
 | `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
 | `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
 | `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props), ratcheted by `design-system.baseline.json`. Wired into `scripts/gate.ts` pre-commit — see below. |
@@ -1098,13 +1098,30 @@ focused, or interacted with, and nothing the story doesn't itself render.
 ### `bench/tokenLint.ts` — literal-value lint for stylesheets, checked against a committed baseline
 
 Greps every `app/src/**/*.css`/`*.module.css` declaration for a magic value that should have been a
-design token instead: a literal non-zero px `padding`/`margin`/`gap` (and their longhands), a
-`box-shadow` with a non-zero blur radius, or any `backdrop-filter` other than `none`. All three
-checks exempt custom-property (`--foo: …`) declarations, because the token layer itself
-(`styles/tokens.css`) is who is allowed to write the literal a component later reads via
-`var(...)`. **Literal hardcoded colour, border-radius and font-size moved to the design-system
-gate below** (2026-09-18, task 24 of the ds-conformance plan) — it checks the same three things
-against `DESIGN.md`'s token/governance block instead of duplicating them here under a second name.
+design token instead: a literal non-zero px `border-radius` (any longhand corner too, `50%`
+excepted), `padding`/`margin`/`gap` (and their longhands), a `box-shadow` with a non-zero blur
+radius, any `backdrop-filter` other than `none`, or a hardcoded hex/`rgb()`/`rgba()` colour. Only
+the colour rule reads inside custom-property (`--foo: …`) declarations — the rest exempt them,
+because the token layer itself (`styles/tokens.css`) is who is allowed to write the literal a
+component later reads via `var(...)`.
+
+**The design-system gate below ALSO flags hardcoded colour, border-radius and font-size, and the
+two do not fully overlap** (reconciled 2026-09-18, ds-conformance final review Important #1, after
+task 24 first removed these rules on the false claim they were now redundant). The design-system
+gate skips every `governance.global` file (`ui/ui.css`, `App.css`, `styles/**`, and friends),
+checks colour only on a fixed property allowlist (missing `border-left`/`border-top`,
+`background-image`, `column-rule`, `mask-image` and custom properties), treats any value containing
+`var(--` anywhere — including inside a fallback — as clean, and checks only the `border-radius`
+shorthand, not its four longhand corners. `tokenLint.ts` has none of those gaps for the three rules
+it kept (radius, colour, spacing) — it scans every property, custom properties included, and every
+stylesheet — but its baseline-ratchet model means a *pre-existing* literal stays silently green
+until someone sweeps that file, where the design-system gate's DESIGN.md-governance model does not.
+Both run: they disagree about what to skip, not about what a violation is, so a plain `color: #fff`
+in a component module is (deliberately) reported by both, while a `border-left: 2px solid #f00` or
+a literal inside a `governance.global` file is caught by `tokenLint.ts` alone. **font-size is the
+one check that stayed removed here** — the design-system gate's font-size check is strictly broader
+for `.module.css` files, so keeping a second, narrower one would only produce a duplicate finding
+with no coverage of its own.
 
 **Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
 `(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
@@ -1133,9 +1150,9 @@ map, the token file list, story-coverage rules and any `global`/exempt paths) an
 `app/src/**` for what it describes: a bare `<p>`/`<span>`/`<h1>`–`<h6>`/`<button>`/`<input>`/
 `<textarea>`/`<select>`/`<label>` where a primitive from `primitives.elements` should be used
 instead, a `.module.css` with more than one importer, a component with no sibling
-`{name}.stories.tsx`, a Solid component that destructures its props, and — the three checks moved
-out of `tokenLint.ts` above — a literal hardcoded colour, border-radius or font-size instead of a
-token from `tokens.files`.
+`{name}.stories.tsx`, a Solid component that destructures its props, and — narrower but overlapping
+`tokenLint.ts` above, not a replacement for it (see that section for exactly where they differ) — a
+literal hardcoded colour, border-radius or font-size instead of a token from `tokens.files`.
 
 **Ratcheted by `design-system.baseline.json`** at the repo root (`{ "accepted": [{ "check",
 "path" }] }`, matched by `check`+`path`, ignoring line) — the same debt-not-exemption model as

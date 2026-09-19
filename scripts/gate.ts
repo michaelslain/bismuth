@@ -86,6 +86,32 @@ export function touchesDesignSystem(staged: string[]): boolean {
     )
 }
 
+export type GatePlan = {
+    /** Run `bun run typecheck` across every workspace. */
+    typecheck: boolean
+    /** Which workspaces' fast test suites to run (empty = none). */
+    tests: Workspace[]
+    /** Run the design-system gate + tokenLint as the combined third step. */
+    designSystem: boolean
+}
+
+/**
+ * What a run of the gate would DO for this staged-file set, decided but not executed — the pure
+ * core `main()` below consumes, so a regression in the decision (e.g. the design-system step
+ * silently stopping tests) is a plain pinned-input/output test, not something only a live git
+ * commit would exercise. Typecheck and the fast test suites always travel together: typecheck is
+ * "did ANY workspace change enough to need testing at all", so it only runs when `tests` is
+ * non-empty.
+ */
+export function plan(staged: string[]): GatePlan {
+    const tests = affectedWorkspaces(staged)
+    return {
+        typecheck: tests.length > 0,
+        tests,
+        designSystem: touchesDesignSystem(staged),
+    }
+}
+
 /** Staged files, relative to the repo root. Added/copied/modified/renamed only — a pure deletion
  *  cannot break a test by its content. */
 function stagedFiles(): string[] {
@@ -178,9 +204,8 @@ function main(): void {
         process.exit(0)
     }
 
-    const targets = affectedWorkspaces(staged)
-    const checkDesignSystem = touchesDesignSystem(staged)
-    if (targets.length === 0 && !checkDesignSystem) {
+    const { typecheck, tests, designSystem } = plan(staged)
+    if (tests.length === 0 && !designSystem) {
         // Docs, design assets, .gitignore — nothing a test, the typechecker or the design-system
         // gate covers.
         process.stdout.write(
@@ -190,11 +215,11 @@ function main(): void {
     }
 
     process.stdout.write(
-        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${targets.join(', ') || '(none)'}${checkDesignSystem ? ' + design system' : ''}\x1b[0m\n`,
+        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${tests.join(', ') || '(none)'}${designSystem ? ' + design system' : ''}\x1b[0m\n`,
     )
 
     let ok = true
-    if (targets.length > 0) {
+    if (typecheck) {
         ok = run('typecheck (all workspaces)', 'bun', ['run', 'typecheck'])
         // Pass `cli/` not `cli`: `bun test <arg>` is a SUBSTRING match on the whole path, not a
         // workspace selector. Bare `cli` also matches core/test/chatProviders/clineMocked.test.ts
@@ -202,9 +227,9 @@ function main(): void {
         // count nobody could reconcile. The trailing slash scopes it to the directory.
         if (ok) {
             ok = run(
-                `tests (fast) — ${targets.join(', ')}`,
+                `tests (fast) — ${tests.join(', ')}`,
                 'bun',
-                ['test', ...targets.map(t => `${t}/`)],
+                ['test', ...tests.map(t => `${t}/`)],
                 {
                     BISMUTH_FAST_TESTS: '1',
                 },
@@ -214,11 +239,11 @@ function main(): void {
 
     // One combined design-system step: the manifest/story/token gate AND tokenLint's literal-px/
     // shadow/backdrop-filter sweep, so there is one design-system gate in pre-commit, not two.
-    if (ok && checkDesignSystem) {
+    if (ok && designSystem) {
         const baselinePath = 'design-system.baseline.json'
         const gateArgs = ['scripts/designSystem/gate.mjs', '--root', '.']
         if (existsSync(baselinePath)) gateArgs.push('--baseline', baselinePath)
-        ok = run('design system (manifest + stories + tokens)', 'node', gateArgs)
+        ok = run('design system (manifest + stories + tokens)', process.execPath, gateArgs)
         if (ok) ok = run('design system (tokenLint)', 'bun', ['bench/tokenLint.ts'])
     }
 
