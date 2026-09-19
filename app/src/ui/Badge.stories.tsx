@@ -1,4 +1,4 @@
-// Visual spec for <Badge> — the count/indicator primitive that bases/Flashcards.module.css's
+// Visual spec for <Badge> — the count/indicator primitive that bases/EditCardsModal.module.css's
 // .cards-count/.cards-num, DaemonList.module.css's .daemon-section-count,
 // FileTree.module.css's .ft-visibility-badge, InboxView.module.css's .inbox-section-count,
 // SearchResultRows.module.css's .sresult-count, and shell/CommandButton.module.css's .toolbar-badge each
