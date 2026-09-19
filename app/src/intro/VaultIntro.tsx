@@ -351,7 +351,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />
                 )
             case 'daemon':
-                return <TermPanel name="DAEMON // live" lines={DAEMON_LINES} />
+                return <TermPanel name="daemon // live" lines={DAEMON_LINES} />
             case 'agents':
                 /* The transcript is a real Claude Code session because `claude` is
                    DEFAULT_BACKEND (core/src/agentBackends/catalog.ts) — a session has to be

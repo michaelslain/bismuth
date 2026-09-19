@@ -26,14 +26,14 @@ export const DAEMON_LINES: TermLine[] = [
     { d: '∴ crons', dd: '// 4 scheduled', ok: 'running' },
     { d: '∴ weaving memory into graph', ok: '+12 edges' },
     { d: '∴ surfaced', accent: '3 forgotten notes', dd: 'from “last spring”' },
-    { status: 'daemon online — tending the vault' },
+    { status: 'daemon online // tending the vault' },
 ]
 export const AGENT_LINES: TermLine[] = [
     { p: '~/vault', c: '❯ claude' },
     { user: 'make a base of my unread books, by rating' },
     { d: '∴ bismuth_docs_search', accent: '“bases // query syntax”' },
     { d: '∴ writing reading.md', dd: '// type: base' },
-    { status: 'created base — table view // 23 rows' },
+    { status: 'created base // table view // 23 rows' },
 ]
 
 function Line(props: { ln: TermLine }): JSX.Element {
