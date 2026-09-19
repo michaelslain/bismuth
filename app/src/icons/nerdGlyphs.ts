@@ -3,12 +3,14 @@
 // Canonical icon name -> Nerd Font CODEPOINT, for all 140 names in the icon registry.
 //
 // RETIRED FROM <Icon> as of the Phosphor migration (plan §10, 2026-08-27) — registry.ts no longer
-// imports this file. It survives for two reasons only: (1) it is the codepoint source
-// `app/scripts/build-icon-font.ts` reads to build the Nerd Font subset that `styles/icons.css`
-// still loads (`--icon-font-stack`), and (2) iconNames.ts's 140-name canonical list was sourced
-// from this file's key set at migration time and iconNames.test.ts cross-checks the two against
-// drift while both still exist. The live art seam is icons/iconMap.ts +
-// assets/icons/icon-manifest.json; do not add a new icon here expecting it to reach <Icon>.
+// imports this file. It is the codepoint source `app/scripts/build-icon-font.ts` reads to build
+// the Nerd Font subset woff2, but nothing reads `var(--icon-font-stack)` (the custom property
+// `styles/icons.css` still declares), so that subset is now UNUSED — its removal, alongside this
+// file, build-icon-font.ts, icons:font and iconFont.test.ts, is deferred to a follow-up. The other
+// reason it still exists: iconNames.ts's 140-name canonical list was sourced from this file's key
+// set at migration time and iconNames.test.ts cross-checks the two against drift while both still
+// exist. The live art seam is icons/iconMap.ts + assets/icons/icon-manifest.json; do not add a new
+// icon here expecting it to reach <Icon>.
 //
 // Codepoints, not characters, on purpose. `String.fromCodePoint(0xf048a)` is a surrogate PAIR in
 // JS source, and a literal astral character in a `.ts` file is invisible to review, survives a

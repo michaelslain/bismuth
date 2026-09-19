@@ -1161,7 +1161,7 @@ block instead (`stories.exempt`, `global`, or a documented `checks` change).
 
 ```bash
 node scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json
-bun test scripts/designSystem.test.ts    # what the gate actually runs in CI/pre-commit
+bun test scripts/designSystem.test.ts    # the same check as a bun test (pre-push full suite); pre-commit calls gate.mjs directly
 ```
 
 **Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside `tokenLint.ts`, on the
