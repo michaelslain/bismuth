@@ -21,6 +21,7 @@ const Frame = (props: { children: unknown }) => (
             width: '520px',
             border: '1px solid var(--border-soft)',
             display: 'flex',
+            'flex-direction': 'column',
         }}
     >
         {props.children as never}

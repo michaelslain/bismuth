@@ -39,7 +39,12 @@ export const Nested: Story = {
         return (
             <div style={{ width: '260px' }}>
                 <OutlineTree nodes={nodes} onJump={setJumped} />
-                <div data-testid="jumped">{jumped()}</div>
+                <div
+                    data-testid="jumped"
+                    style={{ position: 'absolute', left: '-9999px' }}
+                >
+                    {jumped()}
+                </div>
             </div>
         )
     },
