@@ -2,10 +2,10 @@
    Task 7). ui/TextInput.tsx was the sole reader of `.ui-input-plain` anywhere in the app.
 
    `.ui-input` (this component's OTHER class, used when `plain` is false) now lives in
-   ui/formControlChrome.css, a shared global stylesheet TextInput.tsx and Select.tsx both import —
-   Select's trigger composes the same `.ui-input` chrome. It stays a plain (non-module) global
-   class there, not hashed here, because it is reached via `:global()` from
-   EditDictionaryModal.module.css, ChatHeader.module.css and
+   ui/FormControl.module.css, the shared chrome primitive TextInput composes via `<FormControl
+   as="input"|"textarea">` — Select's trigger composes the same chrome via `as="button"`. It
+   stays a plain (non-module) global class there, not hashed here, because it is reached via
+   `:global()` from EditDictionaryModal.module.css, ChatHeader.module.css and
    calendar/components/CategoryPanel.module.css (was calendar/Calendar.module.css, deleted Task
    15, 2026-09-13), and written as a bare literal directly by graph/EmbeddedGraph.tsx,
    bases/CardEditModal.tsx and editor/datePicker.ts — hashing it would silently unstyle all of

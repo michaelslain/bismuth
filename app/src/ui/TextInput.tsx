@@ -1,6 +1,6 @@
 import { splitProps, type JSX } from 'solid-js'
 import './ui.css'
-import './formControlChrome.css'
+import FormControl from './FormControl'
 import styles from './TextInput.module.css'
 
 export type TextInputProps = {
@@ -34,9 +34,9 @@ export type TextInputProps = {
 )
 
 /**
- * The standard single- or multi-line text field. Shares the `.ui-input` chrome
- * (surface fill, soft border, accent focus ring) with every other form control so
- * inputs/selects look identical. Pass `type="date"`/`"time"` etc. through `rest`.
+ * The standard single- or multi-line text field. Composes FormControl's shared chrome
+ * (surface fill, soft border, accent focus ring) — the same chrome Select's trigger composes —
+ * so inputs/selects look identical. Pass `type="date"`/`"time"` etc. through `rest`.
  */
 function TextInput(props: TextInputProps) {
     const [local, rest] = splitProps(props, [
@@ -46,12 +46,32 @@ function TextInput(props: TextInputProps) {
         'plain',
         'class',
     ])
-    const cls = () =>
-        `${local.plain ? styles['ui-input-plain'] : 'ui-input'} ${local.class ?? ''}`
+    if (local.plain) {
+        const cls = () => `${styles['ui-input-plain']} ${local.class ?? ''}`
+        if (local.multiline) {
+            return (
+                <textarea
+                    class={cls()}
+                    value={local.value}
+                    onInput={e => local.onInput(e.currentTarget.value)}
+                    {...(rest as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
+                />
+            )
+        }
+        return (
+            <input
+                class={cls()}
+                value={local.value}
+                onInput={e => local.onInput(e.currentTarget.value)}
+                {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)}
+            />
+        )
+    }
     if (local.multiline) {
         return (
-            <textarea
-                class={cls()}
+            <FormControl
+                as="textarea"
+                class={local.class}
                 value={local.value}
                 onInput={e => local.onInput(e.currentTarget.value)}
                 {...(rest as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
@@ -59,8 +79,9 @@ function TextInput(props: TextInputProps) {
         )
     }
     return (
-        <input
-            class={cls()}
+        <FormControl
+            as="input"
+            class={local.class}
             value={local.value}
             onInput={e => local.onInput(e.currentTarget.value)}
             {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)}

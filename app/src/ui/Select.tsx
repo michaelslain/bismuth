@@ -4,8 +4,8 @@ import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
 import { placeBelowOrAbove } from './popover/placeAnchored'
 import { Icon } from '../icons/Icon'
+import FormControl from './FormControl'
 import './ui.css'
-import './formControlChrome.css'
 import './popover/popover.css'
 import styles from './Select.module.css'
 
@@ -105,10 +105,11 @@ function Select(props: {
 
     return (
         <>
-            <button
+            <FormControl
+                as="button"
                 ref={triggerRef}
                 type="button"
-                class={`ui-input ui-select-trigger ${props.class ?? ''}`}
+                class={`ui-select-trigger ${props.class ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
                     if (open()) {
@@ -133,7 +134,7 @@ function Select(props: {
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
                 <Icon value="ChevronDown" size={14} class="ui-select-caret" />
-            </button>
+            </FormControl>
             <Show when={open()}>
                 <Portal>
                     <div
