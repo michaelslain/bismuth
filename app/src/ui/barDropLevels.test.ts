@@ -29,7 +29,10 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SRC = join(import.meta.dir, '..')
-const UI_CSS = join(import.meta.dir, 'ui.css')
+// The ladder moved from ui.css to ViewBar.module.css (design-system sweep, one-global-stylesheet
+// task 2) — this constant follows it. Only the path changed; the DEFINE/stripComments logic below
+// still reads whatever file this points at.
+const UI_CSS = join(import.meta.dir, 'ViewBar.module.css')
 
 /** The JSX attribute. Accepts the realistic shapes a formatter or a different author could write —
  *  double- or single-quoted, bare or braced (`data-bar-drop="2"`, `data-bar-drop='2'`,
