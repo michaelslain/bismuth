@@ -20,10 +20,7 @@
       bases/CardEditModal.module.css and bases/BaseView.module.css), `.ui-input`/
       `.ui-select-trigger`/`.ui-select-caret` (reached by ChatHeader/EditDictionaryModal/Calendar,
       plus non-importer literal writers: graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx,
-      editor/datePicker.ts), `.ui-empty`/`.ui-empty-block` (reached by
-      ChatTranscript/Flashcards), `.status-dot` (reached by calendar's GcalSyncPanel, bases'
-      CardBody/ListView/KanbanView/renderValue, and shell/StatusBar — all via ui/StatusDot.tsx,
-      the class's one literal writer), `.search-bar-lead`/`.search-bar-input` (reached by
+      editor/datePicker.ts), `.search-bar-lead`/`.search-bar-input` (reached by
       GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
@@ -297,33 +294,19 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    `querySelector` in bases/CardEditModal.tsx. */
 .ui-select-caret { flex: none; color: var(--faint); }
 
-/* ── EmptyState / Loading ────────────────────────────────────────────────── */
-.ui-empty { color: var(--text-muted); }
-.ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
-/* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
-   and reverted: it replaced a heading element with a div — losing the document semantics a screen
-   reader relies on — to gain nothing, because this register is neither Text's scale nor Heading's
-   markdown ramp. It is also the app's ONLY uppercase eyebrow; DaemonList's and Graph's heads share
-   the tracking but are deliberately mixed-case, which is why `eyebrow` supplies tracking alone. */
-.ui-empty-block h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
-/* .ui-loading MOVED to ui/EmptyState.module.css 2026-09-12 (CSS modules migration Task 7) —
-   ui/EmptyState.tsx was the sole reader anywhere in the app. `.ui-empty`/`.ui-empty-block` (+ its
-   `h2`) directly above STAY here: both are reached via `:global()` from bases/FlashcardsView.module.css,
-   daemon/DaemonPanel.module.css and palette/SwitcherBar.module.css (the chat transcript's empty
-   state renders EmptyState as a component and no longer reaches in). */
+/* `.ui-empty`/`.ui-empty-block` (+ its `h2`) and `.ui-loading` MOVED to ui/EmptyState.module.css
+   (one-global-stylesheet Task 4). `.ui-empty`/`.ui-empty-block` are still reached via `:global()`
+   from bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
+   palette/SwitcherBar.module.css — EmptyState.module.css now carries a `:global()` re-export
+   block for exactly those two classes so those three outside stylesheets keep working unchanged;
+   wave 3 owns converting them to import the component instead. */
 
 /* .stars / .star-on MOVED to ui/Stars.module.css 2026-09-12 (CSS modules migration Task 7) —
    ui/Stars.tsx was the sole reader of both anywhere in the app. */
 
-/* ── Status (colored dot + word) ─────────────────────────────────────────── */
-/* .status-text (+ its ".status-dot" descendant rule) MOVED to ui/StatusDot.module.css 2026-09-12
-   (CSS modules migration Task 7) — ui/StatusDot.tsx's `StatusText` export was the sole reader
-   anywhere in the app. `.status-dot` itself (below, and the standalone sizing rule further down)
-   STAYS here: `ui/StatusDot.tsx` (two call sites) is the only thing that renders it, as a bare,
-   un-hashed class, and `:global()` is what lets ui/StatusDot.module.css's own `.status-text`
-   descendant selector still match that un-hashed name from inside a module. (DaemonList/
-   InboxView cite "the shared .status-dot idiom" in their own comments but render their own
-   module-scoped dot classes — `.daemon-row-dot`, `.inbox-row-dot` — not this one.) */
+/* `.status-text` + `.status-dot` MOVED to ui/StatusDot.module.css (one-global-stylesheet Task 4)
+   — grep confirmed ui/StatusDot.tsx is `.status-dot`'s only literal writer anywhere in the app,
+   so both classes are now fully local there, no `:global()` bridge needed. */
 
 /* ── Chip toggle (selectable pill: export options, search toggles) ──────────
    Default tone = accent; tone-<x> tints the SELECTED state to a category color
@@ -716,17 +699,16 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
   .viewbar .vb-lead * { flex-shrink: 0; }
 }
 
-/* ── Cross-view design components (shared so parallel view work needn't touch them) ──
-   Status dots. View-local styling lives in each view's colocated CSS; this is the genuinely
-   shared atom. (The keyboard-hint chips that used to sit in this section — `.kbd`/`.kbd b` —
-   were DELETED outright by Task 11 of the CSS modularization: zero consumers anywhere in
-   `.tsx`/`.ts`, dead CSS rather than a shared atom. `.chip` and its six `.chip.<tone>` category
-   variants were deleted the same way 2026-08-27 (visual-unification audit §7 wave 0, finding
-   §4.6/§6): zero consumers in `.tsx`/`.ts` — `git grep` for the bare `"chip"` class and every
-   `.chip.<tone>` name turned up only unrelated components (`.chip-toggle`, `EventChip`,
-   `ChatColorDot`, comments) — dead since before this file's own 2026-08 audit comment already
-   flagged it as a deletion candidate.) */
-.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+/* .status-dot MOVED to ui/StatusDot.module.css (one-global-stylesheet Task 4) — grep confirmed
+   ui/StatusDot.tsx is the class's ONLY literal writer anywhere in the app, so it went fully
+   local (no :global() bridge needed here, unlike `.ui-empty`/`.ui-empty-block` above). The
+   keyboard-hint chips that used to share this section (`.kbd`/`.kbd b`) were DELETED outright by
+   Task 11 of the CSS modularization: zero consumers anywhere in `.tsx`/`.ts`, dead CSS rather
+   than a shared atom. `.chip` and its six `.chip.<tone>` category variants were deleted the same
+   way 2026-08-27 (visual-unification audit §7 wave 0, finding §4.6/§6): zero consumers in
+   `.tsx`/`.ts` — `git grep` for the bare `"chip"` class and every `.chip.<tone>` name turned up
+   only unrelated components (`.chip-toggle`, `EventChip`, `ChatColorDot`, comments) — dead since
+   before this file's own 2026-08 audit comment already flagged it as a deletion candidate. */
 
 /* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the pane's
    full geometry while their real content (graph host, lazy chunk) mounts. Moved up from App.css

@@ -1,13 +1,33 @@
 /* app/src/ui/EmptyState.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
-   Task 7). ui/EmptyState.tsx's `Loading` export was the sole reader anywhere in the app.
+   Task 7; `.ui-empty`/`.ui-empty-block` joined them from ui.css in one-global-stylesheet Task 4).
+   ui/EmptyState.tsx is the sole reader of every class below.
 
-   `.ui-empty-block` and `.ui-empty` (EmptyState's OTHER two classes) STAY in ui.css: both are
-   reached via `:global()` from bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
-   palette/SwitcherBar.module.css. See .claude/plans/ui-css-ownership.md. */
+   `.ui-empty` and `.ui-empty-block` (+ its `h2`) are written by EmptyState.tsx as bare, un-hashed
+   literals — not `styles[...]` — because three OTHER stylesheets still reach them via
+   `:global()`: bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
+   palette/SwitcherBar.module.css. The `:global()` block below is a re-export that keeps those
+   three working unchanged; wave 3 (one-global-stylesheet plan) owns converting them to import
+   <EmptyState> itself instead, at which point this block can drop the `:global()` wrapper and
+   these two classes can go fully local like `.ui-loading`/`.ui-empty-icon` already are. See
+   .claude/plans/ui-css-ownership.md. See the ignore comments right above each `:global()` rule
+   below for why each is exempt from the globalReach check — EmptyState genuinely owns these
+   classes, it's a temporary bridge until wave 3 converts the three outside callers. */
+/* design-system-ignore globalReach: EmptyState's own class, temporary :global() bridge to the three outside callers above, until wave 3 */
+:global(.ui-empty) { color: var(--text-muted); }
+/* design-system-ignore globalReach: same bridge as .ui-empty above, until wave 3 */
+:global(.ui-empty-block) { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
+/* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
+   and reverted: it replaced a heading element with a div — losing the document semantics a screen
+   reader relies on — to gain nothing, because this register is neither Text's scale nor Heading's
+   markdown ramp. It is also the app's ONLY uppercase eyebrow; DaemonList's and Graph's heads share
+   the tracking but are deliberately mixed-case, which is why `eyebrow` supplies tracking alone. */
+/* design-system-ignore globalReach: same bridge as .ui-empty-block above, until wave 3 */
+:global(.ui-empty-block) h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
+
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
 
 /* .ui-empty-icon — layout hook for EmptyState's optional `icon` prop (ds-conformance Task 8
-   follow-up, Finding 2). `.ui-empty-block` (ui.css) is already a centered flex column, so this
+   follow-up, Finding 2). `.ui-empty-block` (above) is already a centered flex column, so this
    just centers the icon itself; the icon's own color/size are the caller's — see
    palette/SwitcherBar.module.css's `.switcher-loading-spinner`/`.switcher-error-icon` for the
    restored ask-AI panel glyphs. */
