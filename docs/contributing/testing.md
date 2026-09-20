@@ -1250,6 +1250,14 @@ not own via `:global()`, 57 of them into `Button`'s own `.btn*` family from 50 d
 stylesheets. Each is a component nobody extracted or a prop nobody added, and the ratchet exists so
 the pile can only shrink — a NEW reach, in any file, fails the commit gate.
 
+The 51st entry is `oneGlobalFile`, which says the target shape is **one global stylesheet plus N
+`<Component>.module.css`, and nothing else**. Bismuth's global layer is currently 13 files
+(`App.css`, `styles/{tokens,reset,content}.css`, `ui/ui.css`, `Editor.css`, `Terminal.css`,
+`ui/popover/popover.css`, `editor/datePicker.css`, `graph/asciiGraph.css`, `palette/switcher.css`,
+`sheet/univer-{theme,icons}.css`). Some of those are unextracted components; the rest are sections
+of one file that were filed as files. `@import` does not resolve it — it is still N files, and it
+hoists (see `cssLayering.test.ts`).
+
 Prefer the two narrower mechanisms. A genuine, permanent exception belongs in `DESIGN.md`'s
 `governance` block (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE,
 a `design-system-ignore <check-id>: <reason>` comment (in `//`, `/* */`, or `{/* */}`) on that line
