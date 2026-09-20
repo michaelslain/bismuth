@@ -14,10 +14,18 @@ export type CaretProps = {
  * owning component. Those call sites composing this instead is a later wave's job.
  * `asc-caret` is written as a bare string literal, not `styles[...]`, because the class is
  * still a `:global()` bridge in Caret.module.css — see that file's header.
+ *
+ * Every existing bare `.asc-caret` writer (TopStrip, StatusBar, SwitcherBar, InboxIndicator's
+ * story, ChatTranscript, intro/TermPanel) wraps an underscore glyph as the element's content —
+ * an EMPTY element has no intrinsic size and renders as a 0x0 box, invisible regardless of
+ * color/animation. Caret supplies that same "_" content so it is visible without every caller
+ * having to remember to pass it.
  */
 const Caret: Component<CaretProps> = props => {
     return (
-        <span class={'asc-caret' + (props.class ? ` ${props.class}` : '')} />
+        <span class={'asc-caret' + (props.class ? ` ${props.class}` : '')}>
+            _
+        </span>
     )
 }
 
