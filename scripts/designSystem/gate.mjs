@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// design-system skill scripts v2 (2026-09-18) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v3 (2026-09-20) — copied into repos by install-gate; compare this line to detect a stale copy
 // A short-output gate for CI / a repo's own test suite: run the design-system audit and fail
 // if anything not already accepted into a baseline is found.
 //
