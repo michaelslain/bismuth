@@ -31,6 +31,7 @@ import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
 import Text from './ui/Text'
 import Badge from './ui/Badge'
+import Popover from './ui/Popover'
 import type { GraphMode } from './commands'
 import styles from './GraphView.module.css'
 
@@ -523,6 +524,7 @@ export function GraphView(props: {
                                     <For each={modeOptions()}>
                                         {id => (
                                             <IconButton
+                                                class={styles['graph-mode-icon-btn']}
                                                 icon={MODE_ICON[id]}
                                                 // The mini-graph switcher is ICON-ONLY, so this label IS
                                                 // the entire accessible name and the entire tooltip — the
@@ -603,7 +605,7 @@ export function GraphView(props: {
                 {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
                 <Show when={props.fill && menuOpen()}>
-                    <div class={`${styles['graph-find-panel']} asc-popover`}>
+                    <Popover class={styles['graph-find-panel']}>
                         <GraphSearch
                             embedded
                             items={searchItems()}
@@ -617,7 +619,7 @@ export function GraphView(props: {
                             }}
                             onClose={closeMenu}
                         />
-                    </div>
+                    </Popover>
                 </Show>
                 <div class={styles['graph-bottom-bar']}>
                     <div class={styles['graph-bottom-narrow']}>
@@ -723,7 +725,7 @@ export function GraphView(props: {
                     separators ("brain //100%//60 fps"). Nesting them INSIDE the one flex item's
                     content keeps them in normal inline flow, where interior whitespace is not an
                     edge and survives. */}
-                    <div class={`${styles['graph-stats']} asc-popover`}>
+                    <Popover class={styles['graph-stats']}>
                         <Text as="span" size="inherit" tone="inherit" weight="inherit">
                             {plural(nodeCount(), 'node')} //{' '}
                             {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
@@ -750,7 +752,7 @@ export function GraphView(props: {
                                 </Text>
                             </Show>
                         </Text>
-                    </div>
+                    </Popover>
                 </div>
             </div>
         </div>

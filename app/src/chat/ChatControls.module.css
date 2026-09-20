@@ -6,11 +6,18 @@
    packages `config`/`actions` for interface compatibility, but nothing currently spreads them
    anywhere — every rule below can assume it is inside `.row`.
 
-   REACHES INTO FOREIGN CLASSES via `:global()`: `.ui-select-trigger`/`.ui-input`/`.ui-select-caret`
-   and `.btn--text`/`.btn--selected`/`.btn--normal` (ui/ui.css, not yet modularized) — the row strips
-   both the Select trigger's form-field chrome and the text button's uppercase-label chrome down to
-   plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text label … no
-   `.ui-select-caret`"). */
+   `.mode-select`/`.mode-select--armed` are now plain local classes handed to Select via its own
+   `class` prop (ChatControls.tsx's `<Select class={styles['mode-select'] + …}>`) rather than
+   reached into via `:global(.ui-select-trigger):global(.ui-input)` — the trigger already carries
+   that local class, so no bridge is needed to select it.
+
+   STILL REACHES `:global(.ui-select-caret)` and `:global(.btn--text)`/`.btn--selected`/`.btn--
+   normal` (ui/Button.tsx + icons/Icon.tsx, not modularized here) — the row strips both the Select
+   trigger's caret and the text button's uppercase-label chrome down to plain lowercase text
+   (Acceptance/final-findings #1: "every control a lowercase text label … no `.ui-select-caret`"),
+   and neither Select nor Button exposes a prop for "no caret" / "quiet, chromeless text control"
+   — this row is the one place in the app that register exists, so there is no owner prop to move
+   to without adding one to a component this task does not own. */
 
 .stat {
     display: inline-flex;
@@ -37,13 +44,6 @@
 }
 .mode-select {
     max-width: 130px;
-}
-
-/* ARMED (Bypass) — Acceptance: "a dangerous mode (Bypass) is signalled by text tone only — no box,
-   no border." Only `color` moves; no border-color, no background — the control keeps the exact
-   same box as its neighbours. */
-.row :global(.ui-select-trigger):global(.ui-input).mode-select.mode-select--armed {
-    color: var(--warning);
 }
 
 .auth-anchor {
@@ -121,7 +121,7 @@
     color: var(--faint);
 }
 
-.row :global(.ui-select-trigger):global(.ui-input) {
+.row .mode-select {
     background: transparent;
     border-color: transparent;
     color: inherit;
@@ -132,10 +132,10 @@
     font-size: var(--fs-ui);
     text-transform: lowercase;
 }
-.row :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
+.row .mode-select:hover:not(:focus) {
     color: var(--fg);
 }
-.row :global(.ui-select-trigger):global(.ui-input).mode-select--armed {
+.row .mode-select--armed {
     color: var(--warning);
 }
 /* No caret anywhere in the quiet row — final-findings Group 2 #1: "no `.ui-select-caret`". A

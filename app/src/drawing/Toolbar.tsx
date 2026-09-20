@@ -225,9 +225,12 @@ export function Toolbar(props: {
     const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100)
 
     return (
-        // `.draw-toolbar` is a deliberate bare literal, not `styles['draw-toolbar']` — see the
-        // module's header comment for why the class must stay global and unhashed.
-        <div class="draw-toolbar">
+        // `.draw-toolbar` stays a deliberate bare literal (not `styles['draw-toolbar']`) — several
+        // `*.stories.tsx` probes outside this task's file list still `querySelector('.draw-toolbar')`
+        // for it. `data-draw-toolbar` is the real cross-file contract: InkOverlay.module.css and
+        // PageInk.module.css select on the attribute, not the class, so this component owns its own
+        // stylesheet's :global() reach count of zero for that rule.
+        <div class="draw-toolbar" data-draw-toolbar>
             {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
           tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
             <div class={styles['draw-row']}>
@@ -292,6 +295,11 @@ export function Toolbar(props: {
                 {/* Undo/redo on top, zoom below. */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
+                        {/* NOT SegmentedToggle: undo/redo are two independent commands, not a
+                            mutually-exclusive pair with an active member, and SegmentedToggle's
+                            `value`/`onChange` shape has no way to express "neither segment is ever
+                            selected" without a type-unsafe sentinel. Kept as a raw `.segmented` row
+                            — reported, not forced, per this task's brief. */}
                         <div class="segmented">
                             <Button
                                 kind="text"
@@ -322,6 +330,11 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
+                            {/* NOT SegmentedToggle: per-segment `disabled` (zoom bounds) and a
+                                per-segment extra class (`draw-zoompct`, the fixed-width readout)
+                                have no props on SegmentedToggle/SegmentedOption — it is a uniform
+                                `segmentClass` across every segment with no disabled concept at all.
+                                Kept as a raw `.segmented` row — reported, not forced. */}
                             <div class="segmented">
                                 <Button
                                     kind="text"

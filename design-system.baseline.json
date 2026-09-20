@@ -2,35 +2,11 @@
   "accepted": [
     {
       "check": "globalReach",
-      "path": "app/src/bases/BaseSettings.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/BaseView.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/CardEditModal.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/EditCardsModal.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/bases/FlashcardsView.module.css"
     },
     {
       "check": "globalReach",
-      "path": "app/src/bases/KanbanCard.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/bases/KanbanView.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/PropertyValueEditor.module.css"
     },
     {
       "check": "globalReach",
@@ -58,27 +34,11 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/chat/ChatCopyButton.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/chat/ChatHistoryPanel.module.css"
     },
     {
       "check": "globalReach",
-      "path": "app/src/chat/ChatPermissionCard.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/chat/ChatQuestionCard.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/ChatHeader.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/ChatSetup.module.css"
     },
     {
       "check": "globalReach",
@@ -99,10 +59,6 @@
     {
       "check": "globalReach",
       "path": "app/src/EditDictionaryModal.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/editor/InkOverlay.module.css"
     },
     {
       "check": "globalReach",
@@ -139,10 +95,6 @@
     {
       "check": "globalReach",
       "path": "app/src/preview/OutlineTree.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/preview/PageInk.module.css"
     },
     {
       "check": "globalReach",
@@ -186,15 +138,7 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/Toast.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/ui/FormModal.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/ui/gallery/SymbolGallery.module.css"
     },
     {
       "check": "globalReach",

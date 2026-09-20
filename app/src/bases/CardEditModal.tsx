@@ -24,7 +24,8 @@ import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
 import { Modal } from '../ui/Modal'
-import Chip from '../ui/Chip'
+import ChipToggle from '../ui/ChipToggle'
+import { Icon } from '../icons/Icon'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
 import Field from '../ui/Field'
@@ -334,16 +335,19 @@ export function CardEditModal(props: {
                     weight="inherit"
                     class={styles.boolChip}
                 >
-                    <Chip
+                    <ChipToggle
                         selected={value(id) === true}
-                        icon={value(id) === true ? 'Check' : 'Square'}
-                        iconSize={13}
-                        onClick={() =>
+                        class={styles.boolChipToggle}
+                        onToggle={() =>
                             props.onSetMeta(id, !(value(id) === true))
                         }
                     >
+                        <Icon
+                            value={value(id) === true ? 'Check' : 'Square'}
+                            size={13}
+                        />
                         {value(id) === true ? 'Yes' : 'No'}
-                    </Chip>
+                    </ChipToggle>
                 </Text>
             )
         }

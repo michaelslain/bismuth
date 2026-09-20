@@ -37,10 +37,10 @@
    Flashcards.module.css's git history for the full list — .deck-list/.srs-panel/.vs-section
    families never lived in this file's half).
 
-   :global() — classes this file's selectors reach that are OWNED by ui/ui.css, so hashing them
-   here would make the selector match nothing in the real (unhashed) DOM:
-     .cards-modebar :global(.segmented) :global(.btn)
-     .cards-del :global(.btn--icon), .cards-row:hover .cards-del :global(.btn--icon)
+   :global() — NONE left (one-global-stylesheet Task 10). The modebar's per-segment gap and the
+   delete button's hover-reveal used to reach `:global(.segmented) :global(.btn)` /
+   `:global(.btn--icon)` directly; they're now local classes (`.cards-modebtn`, `.cards-del-btn`)
+   handed down through `<SegmentedToggle segmentClass>` / `<IconButton class>`.
 
    BARE LITERAL (no rule anywhere — hashing it would resolve to `class="undefined"`):
      .cell-front — no dedicated rule; only `.cell-back` overrides the shared `.cell-md`. Left as
@@ -62,7 +62,7 @@
 .cards-meta .dot { color: var(--faint); }
 
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-7); }
-.cards-modebar :global(.segmented) :global(.btn) { gap: var(--sp-4); }
+.cards-modebtn { gap: var(--sp-4); }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
 .cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: var(--r-0); padding: 1px var(--sp-2); color: var(--text-muted); font-size: var(--fs-micro); }
 .sp { flex: 1; }
@@ -136,8 +136,8 @@
 .cards-num-add { color: var(--accent); cursor: default; font-size: var(--fs-lead); }
 
 .cards-del { display: flex; align-items: flex-start; padding-top: var(--sp-4); }
-.cards-del :global(.btn--icon) { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
-.cards-row:hover .cards-del :global(.btn--icon) { opacity: 1; }
+.cards-del-btn { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
+.cards-row:hover .cards-del-btn { opacity: 1; }
 .cards-addrow { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-4) var(--sp-2) var(--sp-3); }
 .cards-lefthint { color: var(--faint); font-size: var(--fs-ui); }
 
