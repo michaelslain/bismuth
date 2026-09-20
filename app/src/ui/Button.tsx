@@ -5,7 +5,7 @@ import {
     type ButtonState,
     type ButtonSize,
 } from './buttonClass'
-import './ui.css'
+import styles from './Button.module.css'
 
 export type { ButtonKind, ButtonState, ButtonSize }
 
@@ -16,6 +16,10 @@ export type ButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
+    /** Renders the "[ label ]" CLI-confirm look — lowercase text wrapped in brackets. Replaces
+     *  the `::before`/`::after` reach into `:global(.btn--text)` that Toast and the chat cards
+     *  used to reimplement themselves. Text buttons only. */
+    bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -29,6 +33,7 @@ function Button(props: ButtonProps) {
         'size',
         'danger',
         'primary',
+        'bracket',
         'class',
         'type',
         'children',
@@ -42,7 +47,12 @@ function Button(props: ButtonProps) {
                 size: local.size,
                 danger: local.danger,
                 primary: local.primary,
-                class: local.class,
+                class: [
+                    local.bracket ? styles.bracket : '',
+                    local.class,
+                ]
+                    .filter(Boolean)
+                    .join(' '),
             })}
             {...rest}
         >

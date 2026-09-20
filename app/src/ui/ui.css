@@ -10,11 +10,10 @@
    default:
 
    1. GENUINE cross-component design-system primitives with two or more real consumers, most
-      documented at the point of use below: the `.btn`/`.btn--*` family (Button.tsx's own classes,
-      but reached via `:global()` from 8 OTHER modules — ChatComposer, ChatSetup, ChatTurnParts,
-      Toast, InboxView, PaneTree, Sidebar, TabRail, TopStrip, ChatTranscript, Graph, Flashcards,
-      SymbolGallery), `.segmented` (+ its cross-primitive `.segmented .btn--text` compounds —
-      SegmentedToggle.tsx AND a raw duplicate in drawing/Toolbar.tsx), the whole
+      documented at the point of use below: `.segmented` (+ its cross-primitive
+      `.segmented .btn--text` compound — SegmentedToggle.tsx AND a raw duplicate in
+      drawing/Toolbar.tsx; the `.btn`/`.btn--*` family itself moved to Button.module.css in
+      one-global-stylesheet Task 1, as a `:global()` bridge — see that file's header), the whole
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
       (ui/ViewBar.tsx, mounted by six unrelated views), `.chip-toggle` (reached by
       bases/CardEditModal.module.css and bases/BaseView.module.css), `.search-bar-lead`/`.search-bar-input` (reached by
@@ -55,158 +54,6 @@
    2026-09-12 (CSS modules migration Task 7): every name still resolves identically — only its
    DEFINITION moved, to styles/tokens.css, since a token is never chrome and belongs there
    regardless of how many components currently read it. */
-
-/* ── Button ──────────────────────────────────────────────────────────────── */
-/* Every button is one of two KINDS (text | icon) in one of three STATES
-   (normal | selected | unselected). normal = standalone; unselected/selected =
-   a member of a toggle/series that is off/on. `danger` is an orthogonal tone;
-   `primary` is a second orthogonal tone — selected + a glow rim. At most ONE
-   .btn--primary per view (it is the view's one emphasized action). */
-.btn {
-  font: inherit;
-  font-family: var(--ui-font-stack);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  line-height: var(--lh-tight);
-  /* ONE control height for every button variant. Text and icon buttons previously set neither and
-     sized themselves off their padding plus content, so a text button and an icon button sitting in
-     the same row were different heights — the most visible reason the two read as different
-     families rather than one.
-     HEIGHT, not min-height: with min-height the box still grew to whatever padding + line-height
-     summed to, so a text button measured 24.7px against an icon button's 24px — close enough to
-     look like a mistake rather than a decision, and enough to break the row rhythm when they sit
-     side by side. A fixed height makes the padding purely horizontal breathing room. */
-  height: var(--h-control);
-}
-.btn:disabled { opacity: 0.4; cursor: default; }
-/* ── Keyboard focus ────────────────────────────────────────────────────────────
-   THE rule that makes this app usable without a mouse. `styles/reset.css` used to kill the native
-   ring on every `button` globally while nothing here restored it, so a keyboard user leaving a text
-   field lost all trace of where they were — across every toolbar, tab strip, palette row and modal
-   footer in the product.
-   `:focus-visible`, NOT `:focus`: the UA only matches it for keyboard/programmatic focus, so a
-   mouse click does not leave a ring stuck on the button it just pressed. That distinction is the
-   whole reason the ring can be this loud without being noise.
-   This lives on `.btn` (both kinds, every state) rather than on each variant, because a ring that
-   is present on text buttons and absent on icon buttons is worse than none — it teaches a user to
-   trust an indicator that then lies. */
-.btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-/* Segmented members overlap their borders by -1px (see .segmented below), so an unraised focused
-   segment has its ring painted over by the NEXT segment's border. Raise it for the same reason
-   :hover and .btn--selected are raised. */
-.segmented .btn--text:focus-visible { z-index: 2; }
-/* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
-   an all-caps label next to an icon reads as floating above the icon's center.
-   Nudge label text down 1px so the caps center on the icon. (Label is wrapped in
-   a <span class="btn-label">.) */
-.btn .btn-label { position: relative; top: 1px; }
-/* The ASCII glyph slot inside a button (in place of an SVG icon) — recedes to
-   --faint at rest, picks up the button's own ink when selected/primary. */
-.btn-glyph { color: var(--faint); line-height: 1; transform: translateY(.5px); }
-.btn--selected .btn-glyph, .btn--primary .btn-glyph { color: currentColor; opacity: .7; }
-
-/* ── text buttons ─────────────────────────────────────────────────────────────
-   BORDERLESS AT REST, exactly like .btn--icon, and for the same reason: resting state is a plain
-   surface, and STATE IS A BACKGROUND SWAP (the reference surface's rule — see the audit §3). These
-   used to carry a hairline border in every state, which made a text button read as a bordered BOX
-   next to a borderless icon button and was the main thing that made the two look like different
-   design systems in the same toolbar.
-   The border did not disappear, it moved to where it carries information: `selected` and `primary`
-   draw an accent border, `danger` a danger-tinted one. So an outline now MEANS something rather
-   than being the family's default chrome. */
-.btn--text {
-  /* Vertical padding must clear the cap-height of an UPPERCASE Monaspace label at
-     --fs-micro/--lh-tight — at 1–2px the caps sit on the hairline border and read
-     as clipped (the graph-mode switcher made this obvious). 4px is the floor. */
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--r-0);
-  border: 1px solid transparent; /* reserved, not drawn — see the note above. Keeping the box
-     model identical to the bordered states stops the label shifting by a pixel on select. */
-  background: transparent;
-  text-transform: uppercase;
-  font-size: var(--fs-micro);
-  letter-spacing: var(--ls-label);
-  color: var(--fg); /* variant-less .btn--text must not inherit UA black */
-}
-/* normal — standalone, full-strength neutral */
-.btn--text.btn--normal { color: var(--fg); }
-.btn--text.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }
-/* unselected — toggle member, off: structure-dim, no outline emphasis */
-.btn--text.btn--unselected { color: var(--faint); }
-.btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-/* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
-   --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
-   visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
-   selected segment looked like a different surface rather than the same surface, selected. The
-   accent border + accent ink already carry "on" unambiguously. */
-.btn--text.btn--selected { color: var(--accent); background: transparent; border-color: var(--accent); }
-/* primary — selected + a glow rim. Max one per view. */
-.btn--text.btn--primary { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--glow-accent); }
-/* danger tone — destructive actions */
-.btn--text.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-.btn--text.btn--danger:hover:not(:disabled) { background: var(--hover-bg); }
-
-/* ── icon buttons: borderless; state changes opacity / fill ───────────────── */
-.btn--icon {
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  padding: var(--sp-2) var(--sp-2);
-  border-radius: var(--r-0);
-  font-size: var(--fs-body-lg);
-}
-/* normal — standalone, full opacity */
-.btn--icon.btn--normal { opacity: 1; }
-.btn--icon.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }
-/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
-.btn--icon.btn--unselected { opacity: 0.5; }
-.btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
-/* selected — toggle member, on: accent icon on an accent-soft fill */
-/* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
-   lighter tile against its container. */
-.btn--icon.btn--selected { opacity: 1; background: transparent; color: var(--accent); }
-/* danger tone */
-.btn--icon.btn--danger { color: var(--danger); }
-
-/* ── icon buttons: the "toolzone" size ──────────────────────────────────────
-   .btn--icon.btn--sm is the fixed square box around a toolbar icon — the sidebar header bar,
-   the tab-rail action toolbar, and the empty-pane "new terminal" button (shell/CommandButton.tsx,
-   EmptyPane.tsx). Before 2026-08-27 (visual-unification audit §7 wave 2, §4.8 "3 incompatible
-   icon-button box models") this exact declaration was copied VERBATIM into FOUR different
-   modules' own `:global(.btn--icon)` overrides (Sidebar.module.css, TabRail.module.css,
-   EmptyPane.module.css, and GraphView.module.css's mode-icon row) because the box model lived
-   with each PARENT instead of with the button. It is now `size="sm"` on the IconButton itself —
-   pass the prop once at the call site instead of re-declaring the box in a new module every time
-   a new toolzone is added.
-   Box is derived from --icon (14px) + a 3px collar each side = 20px — unchanged from every
-   prior copy's literal, so nothing currently using this box moves; a future --icon change now
-   resizes it for free instead of needing a fourth (fifth, sixth…) copy edited by hand.
-   `opacity` is deliberately NOT set here (unlike the old copies, which all hardcoded `opacity: 1`
-   redundantly — every current consumer is always `state="normal"`, which already gets opacity 1
-   from `.btn--icon.btn--normal` above). Leaving it out means this rule never has to referee
-   against `.btn--icon.btn--selected`/`.btn--unselected` if a future toolzone button DOES carry a
-   variant — which is exactly why GraphView.module.css's copy (whose buttons ARE
-   selected/unselected) is NOT migrated onto this rule in this wave; that's a later wave's call. */
-.btn--icon.btn--sm {
-  /* 14px icon + 5px collar each side = 24px, the WCAG 2.5.8 (AA) minimum target. This was a 3px
-     collar (20px) — under the floor, and the app ships on iPad where it is a thumb target, not a
-     mouse one. The icon itself is unchanged, so nothing about the mark's optical size moves; only
-     the hit area grows, and --h-control is already 24px so the button now matches the height every
-     other control in a toolbar row already has. */
-  width: calc(var(--icon) + 10px);
-  height: calc(var(--icon) + 10px);
-  padding: 0;
-  border-radius: var(--r-0);
-  color: var(--text-muted);
-}
-.btn--icon.btn--sm:hover:not(:disabled) { color: var(--fg); background: var(--state-hover-bg); }
-
-/* sizes (text buttons) */
-.btn--text.btn--sm { padding: var(--sp-2) var(--sp-4); }
-.btn--text.btn--lg { padding: var(--sp-2) var(--sp-5); font-size: var(--fs-ui); }
 
 /* ── SegmentedToggle: buttons butted together, sharing one rule ───────────── */
 .segmented { display: inline-flex; align-items: center; }
