@@ -1,6 +1,6 @@
 // app/src/editor/DatePicker.tsx
 // The date/datetime frontmatter property popover's markup + presentation, mounted by
-// datePicker.ts's `showTooltip` tooltip (see that file for why it's a tooltip and not a
+// datePickerExtension.tsx's `showTooltip` tooltip (see that file for why it's a tooltip and not a
 // CodeMirror autocomplete source, and for the CM-view-coupled logic — value insertion,
 // tooltip identity, the field's dismissal state — that has to stay imperative because it
 // dispatches into the EditorView).
@@ -19,7 +19,7 @@ export type DatePickerKind = 'date' | 'datetime'
 
 export type DateOption = { label: string; date: string }
 
-/** Imperative handle for the keyboard commands in datePicker.ts, which only get the
+/** Imperative handle for the keyboard commands in datePickerExtension.tsx, which only get the
  *  EditorView (not this component) from CodeMirror's keymap. */
 export type DatePickerHandle = {
     /** Move the highlighted relative-date row by `delta`, wrapping. Returns false when there

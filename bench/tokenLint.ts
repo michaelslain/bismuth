@@ -53,7 +53,7 @@
 // checks.mjs) ALSO flags hardcoded colour, border-radius and font-size — but it is not a superset
 // of this file, and this file is not a superset of it. Concretely, checks.mjs now:
 //   - scans the global layer too (governance.global files — ui/ui.css, App.css, styles/**,
-//     popover.css, Editor.css, Terminal.css, datePicker.css, asciiGraph.css, switcher.css); only
+//     popover.css, Editor.css, Terminal.css, datePicker.css (removed; see DatePicker.module.css), asciiGraph.css, switcher.css); only
 //     the token files themselves (where a literal belongs) stay excepted.
 //   - checks colour on border-top/-right/-bottom/-left (not just their -color longhands),
 //     background-image (gradients) and any custom property, on top of the base allowlist — but

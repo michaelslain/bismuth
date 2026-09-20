@@ -1,7 +1,7 @@
 // app/src/editor/datePickerCore.ts
 // Pure, DOM-free + CodeMirror-free helpers for the date/datetime frontmatter picker
-// (datePicker.ts). Kept separate so they're unit-testable under `bun test` without
-// importing the editor's CSS or @codemirror/view. See datePicker.ts for the UI.
+// (datePickerExtension.tsx). Kept separate so they're unit-testable under `bun test` without
+// importing the editor's CSS or @codemirror/view. See datePickerExtension.tsx for the UI.
 import type { Schema } from '../../../core/src/schema/types'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 
