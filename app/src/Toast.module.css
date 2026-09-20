@@ -26,8 +26,6 @@
   align-items: center;
   gap: var(--sp-5);
 }
-.toast-pill :global(.btn--text) {
-  text-transform: lowercase;
-}
-.toast-pill :global(.btn--text)::before { content: "[ "; }
-.toast-pill :global(.btn--text)::after { content: " ]"; }
+/* The action's "[ label ]" bracket look now comes from Button's own `bracket` prop
+   (Toast.tsx renders `<Button kind="text" bracket>`) instead of this file reaching into
+   ui.css's `:global(.btn--text)` to redraw the same brackets by hand. */

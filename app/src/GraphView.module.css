@@ -209,10 +209,12 @@
    radius and hover come from the `:global(.btn--icon)` copy directly below — only the row layout
    lives here. */
 .graph-mode-icons { display: flex; align-items: center; gap: var(--sp-2); }
-/* COPY, NOT MOVE — see this file's header. Identical (0,2,0) specificity to the original combined
-   selector list this was split from. */
-.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
-.graph-mode-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+/* Own local class, handed to each <IconButton> via its `class` prop (GraphView.tsx) instead of
+   reaching into ui.css's `:global(.btn--icon)` — the parent imposes this box on its own children,
+   so the fix is the ordinary one-module-one-importer shape: a local class + the `class` prop the
+   component already accepts. Same (0,2,0) specificity the old `:global()` copy carried. */
+.graph-mode-icon-btn { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
+.graph-mode-icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
 /* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
    props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
