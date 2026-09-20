@@ -116,6 +116,7 @@
     opacity: 1;
 }
 .attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
+    /* design-system-ignore hardcodedColor: black is a color-mix darkening operand on the --scrim-bg token, not a colour of its own */
     background: color-mix(in srgb, var(--scrim-bg), black 25%);
     color: var(--on-scrim);
 }
