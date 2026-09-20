@@ -4,7 +4,7 @@ import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
 import { searchBarClass, searchBarInputClass } from './buttonClass'
 import { isConfirmKey } from './widgetKeys'
-import './SearchBar.module.css'
+import styles from './SearchBar.module.css'
 
 export type SearchBarProps = {
     value: string
@@ -55,7 +55,7 @@ function SearchBar(props: SearchBarProps) {
         warnBadIcon('SearchBar', local.leadingIcon)
     }
     return (
-        <div class={searchBarClass(local.class)}>
+        <div class={`${styles['search-bar-marker']} ${searchBarClass(local.class)}`}>
             <Icon
                 value={local.leadingIcon ?? 'Search'}
                 size={14}

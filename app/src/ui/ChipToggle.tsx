@@ -1,5 +1,5 @@
 import type { Component, JSX } from 'solid-js'
-import './ChipToggle.module.css'
+import styles from './ChipToggle.module.css'
 
 export type ChipToggleTone = 'teal' | 'blue' | 'violet' | 'green' | 'gold' | 'rose'
 
@@ -24,6 +24,7 @@ const ChipToggle: Component<ChipToggleProps> = props => {
         <button
             type="button"
             class={[
+                styles['chip-toggle-marker'],
                 'chip-toggle',
                 props.selected ? 'selected' : '',
                 props.tone ? `tone-${props.tone}` : '',

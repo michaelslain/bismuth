@@ -159,13 +159,42 @@ const SKIP_FILES = new Set<string>([
 
 /** Files where a literal colour is a DOCUMENTED, sanctioned exception — not drift to eventually
  *  fix, so check 5 does not run on them at all (a permanent skip, unlike the baseline's per-value
- *  entries which are always implicitly "fix this eventually"). */
-const COLOR_EXEMPT_FILES = new Set<string>([
-    // styles/tokens.css's own header: this file's hex/rgba literals are the deliberate first-paint
-    // :root fallbacks that MUST byte-match core/src/theme/tokens.ts (themeGuard.test.ts enforces
-    // that match already — this tool would just re-litigate a decision already guarded elsewhere).
-    'styles/tokens.css',
-])
+ *  entries which are always implicitly "fix this eventually"). Whole-file, by relative path. */
+const COLOR_EXEMPT_FILES = new Set<string>([])
+
+/** The one-global-stylesheet merge folded the former `styles/tokens.css` into `global.css` as
+ *  its own banner-delimited section rather than a standalone file, so a whole-FILE exemption can
+ *  no longer name it — `global.css` also carries the reset/content/icon layers, which are NOT
+ *  exempt. This is a line-range exemption instead: any hex-color finding on a line between the
+ *  two banner comments below is the same deliberate first-paint `:root` fallback the old
+ *  `styles/tokens.css` entry covered (still required to byte-match core/src/theme/tokens.ts —
+ *  themeGuard.test.ts enforces that match already, so this tool would just re-litigate a decision
+ *  already guarded elsewhere). Computed from the banners rather than hardcoded line numbers so it
+ *  tracks the file if content is ever inserted above it. */
+const COLOR_EXEMPT_RANGES: Record<string, Array<[number, number]>> = (() => {
+    const rel = 'global.css'
+    let raw: string
+    try {
+        raw = readFileSync(join(SRC, rel), 'utf8')
+    } catch {
+        return {}
+    }
+    const startBanner = raw.indexOf('styles/tokens.css — design tokens')
+    const endBanner = raw.indexOf(
+        'styles/reset.css — element reset',
+        startBanner,
+    )
+    if (startBanner === -1 || endBanner === -1) return {}
+    const startLine = raw.slice(0, startBanner).split('\n').length
+    const endLine = raw.slice(0, endBanner).split('\n').length
+    return { [rel]: [[startLine, endLine]] }
+})()
+
+function inColorExemptRange(rel: string, line: number): boolean {
+    const ranges = COLOR_EXEMPT_RANGES[rel]
+    if (!ranges) return false
+    return ranges.some(([start, end]) => line >= start && line < end)
+}
 
 // ---------------------------------------------------------------------------------------------
 // Walk app/src for the two globs the audit named.
@@ -351,9 +380,11 @@ for (const rel of allCssFiles) {
     const clean = blankComments(raw)
     for (const d of declarations(clean)) {
         const isCustom = d.property.startsWith('--')
+        const line = lineOf(clean, d.index)
         for (const rule of rulesToRun) {
             if (isCustom && !rule.checksCustomProps) continue
             if (rule.id === 'hex-color' && COLOR_EXEMPT_FILES.has(rel)) continue
+            if (rule.id === 'hex-color' && inColorExemptRange(rel, line)) continue
             if (!isCustom && !rule.props(d.property)) continue
             const detail = rule.check(d.value)
             if (detail !== null)
@@ -361,7 +392,7 @@ for (const rel of allCssFiles) {
                     file: rel,
                     rule: rule.id,
                     detail: detail.replace(/\s+/g, ' ').trim(),
-                    line: lineOf(clean, d.index),
+                    line,
                 })
         }
     }

@@ -8,8 +8,16 @@
    hashed locals: the outside callers match the global name literally and a hashed local would
    compile, render and match nothing, silently.
 
-   Default tone = accent; tone-<x> tints the SELECTED state to a category color at 14% fill /
-   45% border (moved verbatim from ui.css, no pixel change). */
+   Default tone = accent; tone-<x> tints the SELECTED state's border + label to a category
+   color, fill stays transparent (moved verbatim from ui.css, no pixel change). */
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local its component actually reads — a `.module.css` with zero
+   local classes reads as dead to `bench/moduleClassCheck.ts` and Rollup tree-shakes the whole
+   file's side-effect import out of the production bundle, silently dropping every rule below.
+   See FormControl.module.css for the precedent this copies. */
+.chip-toggle-marker { --chip-toggle: true; }
+
 /* design-system-ignore globalReach: ChipToggle's own class, temporary :global() bridge to the two outside callers above, until a later wave */
 :global(.chip-toggle) { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-3); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--text-muted); background: transparent; border: var(--rule); cursor: pointer; white-space: nowrap; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
