@@ -137,15 +137,9 @@
     flex-wrap: wrap;
 }
 /* Bracket action buttons — "[ submit ]" / "[ skip ]", the SAME idiom ChatPermissionCard's
-   "[ allow ]"/"[ deny ]" uses. Rendered by Button's own `bracket` prop (ui/Button.tsx), not
-   reimplemented here via `::before`/`::after` on `:global(.btn--text)` — the underlying label
-   text stays uppercase (SUBMIT/SKIP). `bracket`'s own `.lowercase` declaration in
-   Button.module.css ties in specificity with `.btn--text`'s base uppercase and loses on source
-   order (both single classes) — a TAG selector, not a class reach, breaks that tie locally
-   without touching Button's own stylesheet. */
-.chat-question-actions button {
-    text-transform: lowercase;
-}
+   "[ allow ]"/"[ deny ]" uses. Rendered by Button's own `bracket` prop (ui/Button.tsx) — the
+   underlying label text stays uppercase (SUBMIT/SKIP). Button.module.css now wins the
+   lowercase/uppercase specificity tie with a compound selector, so no override is needed here. */
 .chat-question-outcome {
     display: flex;
     flex-direction: column;

@@ -19,7 +19,12 @@
    that reach `.btn*` have been re-pointed — see buttonClass.test.ts.
 
    What is ALSO genuinely locally owned, no bridge needed: the "[ label ]" bracket look. */
-.bracket { text-transform: lowercase; }
+/* compound with :global(.btn--text): both classes land on the same <button> (buttonClass()
+   joins them into one class string), so a bare `.bracket` ties on specificity with the later
+   `:global(.btn--text) { text-transform: uppercase }` rule and loses to source order. Same
+   temporary bridge as `.btn`/`.btn--*` above — this is Button's own class, not a foreign reach. */
+/* design-system-ignore globalReach: same bridge as above, until wave 3 */
+:global(.btn--text).bracket { text-transform: lowercase; }
 .bracket::before { content: "[ "; }
 .bracket::after { content: " ]"; }
 
