@@ -1,5 +1,6 @@
 import { splitProps, type JSX } from 'solid-js'
 import './ui.css'
+import './formControlChrome.css'
 import styles from './TextInput.module.css'
 
 export type TextInputProps = {

@@ -5,6 +5,7 @@ import { createMenuNav } from './popover/createMenuNav'
 import { placeBelowOrAbove } from './popover/placeAnchored'
 import { Icon } from '../icons/Icon'
 import './ui.css'
+import './formControlChrome.css'
 import './popover/popover.css'
 import styles from './Select.module.css'
 

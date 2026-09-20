@@ -17,10 +17,7 @@
       SegmentedToggle.tsx AND a raw duplicate in drawing/Toolbar.tsx), the whole
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
       (ui/ViewBar.tsx, mounted by six unrelated views), `.chip-toggle` (reached by
-      bases/CardEditModal.module.css and bases/BaseView.module.css), `.ui-input`/
-      `.ui-select-trigger`/`.ui-select-caret` (reached by ChatHeader/EditDictionaryModal/Calendar,
-      plus non-importer literal writers: graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx,
-      editor/datePicker.ts), `.search-bar-lead`/`.search-bar-input` (reached by
+      bases/CardEditModal.module.css and bases/BaseView.module.css), `.search-bar-lead`/`.search-bar-input` (reached by
       GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
@@ -253,46 +250,10 @@
 /* .ui-field (+ its "> span") MOVED to ui/Field.module.css 2026-09-12 (CSS modules migration
    Task 7) — ui/Field.tsx was the sole reader anywhere in the app. */
 
-/* ── TextInput / Select trigger (shared form-control chrome) ─────────────────
-   One look for every text field and dropdown trigger: surface fill, soft border,
-   accent focus ring. Mono UI font — value and hint are both mono now. */
-.ui-input {
-  width: 100%;
-  box-sizing: border-box;
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-ui);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--surface-2);
-  border: var(--rule-soft);
-  border-radius: var(--r-0);
-  color: var(--fg);
-  outline: none;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-}
-.ui-input::placeholder { color: var(--faint); }
-.ui-input:hover:not(:focus) { border-color: var(--border); }
-/* Signature focus treatment: accent border + a soft accent glow ring. */
-.ui-input:focus, .ui-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
-
-/* .ui-input-plain MOVED to ui/TextInput.module.css 2026-09-12 (CSS modules migration Task 7) —
-   ui/TextInput.tsx was the sole reader anywhere in the app. */
-
-/* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
-   list is a portaled <PopoverList> above the modal overlay; a transparent backdrop
-   between the overlay and the list catches outside clicks. */
-.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); }
-.ui-select-trigger:focus { border-color: var(--accent); }
-/* border-color alone is not a focus indicator on a trigger whose resting border is already a
-   hairline — and it is entirely invisible once the control is in an accent-bordered state. */
-.ui-select-trigger:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-/* .ui-select-value / .ui-select-placeholder / .ui-select-backdrop / .ui-select-list MOVED to
-   ui/Select.module.css 2026-09-12 (CSS modules migration Task 7) — ui/Select.tsx was the sole
-   reader of any of the four anywhere in the app. `.ui-select-trigger` and `.ui-select-caret`
-   directly above/below STAY here: both are reached via `:global()` from other modules (see
-   .claude/plans/ui-css-ownership.md), and `.ui-select-trigger` is also depended on by a literal
-   `querySelector` in bases/CardEditModal.tsx. */
-.ui-select-caret { flex: none; color: var(--faint); }
+/* .ui-input / .ui-select-trigger / .ui-select-caret MOVED to ui/formControlChrome.css
+   2026-09-20 (CSS modules migration continuation, Task 3) — the shared form-control chrome
+   TextInput.tsx and Select.tsx both compose. See ui/formControlChrome.css for why it is a
+   plain shared global stylesheet rather than living in either component's own module. */
 
 /* `.ui-empty`/`.ui-empty-block` (+ its `h2`) and `.ui-loading` MOVED to ui/EmptyState.module.css
    (one-global-stylesheet Task 4). `.ui-empty`/`.ui-empty-block` are still reached via `:global()`
