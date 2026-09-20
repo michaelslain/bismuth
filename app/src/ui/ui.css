@@ -10,13 +10,14 @@
    default:
 
    1. GENUINE cross-component design-system primitives with two or more real consumers, most
-      documented at the point of use below: `.segmented` (+ its cross-primitive
-      `.segmented .btn--text` compound — SegmentedToggle.tsx AND a raw duplicate in
-      drawing/Toolbar.tsx; the `.btn`/`.btn--*` family itself moved to Button.module.css in
-      one-global-stylesheet Task 1, as a `:global()` bridge — see that file's header), the whole
+      documented at the point of use below: the whole
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
-      (ui/ViewBar.tsx, mounted by six unrelated views), `.search-bar-lead`/`.search-bar-input` (reached by
-      GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
+      (ui/ViewBar.tsx, mounted by six unrelated views), and the `asc-*` ASCII register
+      (`.segmented` moved to SegmentedToggle.module.css and `.search-bar`/`.search-bar-lead`/
+      `.search-bar-input` moved to SearchBar.module.css in one-global-stylesheet Task 5;
+      `.chip-toggle` moved to ChipToggle.module.css in Task 6; the `.btn`/`.btn--*` family
+      itself moved to Button.module.css in Task 1 — all four as `:global()` bridges, see each
+      file's own header)
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
       (reached by palette/Palette.module.css), `.asc-popover` (written bare, 3x, by
@@ -54,41 +55,14 @@
    DEFINITION moved, to styles/tokens.css, since a token is never chrome and belongs there
    regardless of how many components currently read it. */
 
-/* ── SegmentedToggle: buttons butted together, sharing one rule ───────────── */
-.segmented { display: inline-flex; align-items: center; }
-.segmented .btn--text { border-radius: 0; position: relative; }
-/* Segments share ONE rule between them by overlapping borders, not by dropping the
-   left one — a dropped border leaves the selected segment's accent outline open on
-   its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
-   so its own border draws the full box. */
-.segmented .btn--text + .btn--text { margin-left: -1px; }
-.segmented .btn--text.btn--selected, .segmented .btn--text.btn--primary, .segmented .btn--text:hover:not(:disabled) { z-index: 1; }
-.segmented .btn--text:first-child { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
-.segmented .btn--text:last-child { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+/* .segmented (+ its cross-primitive `.segmented .btn--text` compound) MOVED to
+   ui/SegmentedToggle.module.css (one-global-stylesheet Task 5) — see that file for the family and
+   the `:global()` bridge to its four outside callers. `drawing/Toolbar.tsx` holds a raw duplicate
+   `<div class="segmented">` — reported there, not fixed (Task 11 owns that file). */
 
-/* ── SearchBar ───────────────────────────────────────────────────────────── */
-/* The search field. NO BORDER: it sits on --surface-1, which already separates it from the panel
-   behind it, and the accent lead glyph (.search-bar-lead) is the affordance that says "type here" —
-   a prompt marker, which is how a terminal indicates an input. A border on top of the fill made it
-   the heaviest control on screen, heavier than the buttons beside it, which is what read as
-   out-of-place. Height matches every other control. */
-.search-bar { display: flex; align-items: center; gap: var(--sp-3); background: var(--surface-1); padding: var(--sp-2) var(--sp-4); height: var(--h-control); }
-.search-bar-lead { color: var(--accent); flex: none; }
-.search-bar-input {
-  flex: 1;
-  font: inherit;
-  font-family: var(--ui-font-stack);
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--fg);
-}
-.search-bar-input::placeholder { color: var(--faint); }
-/* The input is borderless and sits flush inside .search-bar, so an outward ring on the input would
-   be painted under the bar's own background. Ring the BAR instead, inset, when focus is anywhere
-   inside it — the focused thing a user needs to see is "the search field", not the bare <input>. */
-.search-bar:focus-within { outline: var(--focus-ring); outline-offset: -2px; }
-.search-bar-input:focus-visible { outline: none; }
+/* .search-bar / .search-bar-lead / .search-bar-input MOVED to ui/SearchBar.module.css
+   (one-global-stylesheet Task 5) — see that file for the family and the `:global()` bridge to its
+   four outside callers (GraphSearch, palette/PaletteFrame, palette/SwitcherBar, PreviewView). */
 
 /* .ui-overlay MOVED to ui/Modal.module.css 2026-09-12 (CSS modules migration Task 7) —
    Modal.tsx was the sole reader anywhere in the app. */

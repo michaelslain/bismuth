@@ -606,15 +606,15 @@
   "count": 1
  },
  {
-  "file": "ui/SettingsGrid.module.css",
+  "file": "ui/SegmentedToggle.module.css",
   "rule": "spacing-literal",
-  "detail": "15px 18px",
+  "detail": "-1px",
   "count": 1
  },
  {
-  "file": "ui/ui.css",
+  "file": "ui/SettingsGrid.module.css",
   "rule": "spacing-literal",
-  "detail": "-1px",
+  "detail": "15px 18px",
   "count": 1
  },
  {

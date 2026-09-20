@@ -4,7 +4,7 @@ import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
 import { searchBarClass, searchBarInputClass } from './buttonClass'
 import { isConfirmKey } from './widgetKeys'
-import './ui.css'
+import './SearchBar.module.css'
 
 export type SearchBarProps = {
     value: string
