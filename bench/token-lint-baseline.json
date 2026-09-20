@@ -186,12 +186,6 @@
   "count": 1
  },
  {
-  "file": "bases/KanbanView.module.css",
-  "rule": "spacing-literal",
-  "detail": "40px var(--sp-7)",
-  "count": 1
- },
- {
   "file": "bases/ListView.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-4) 18px",
@@ -619,12 +613,6 @@
  },
  {
   "file": "ui/ui.css",
-  "rule": "hex-color",
-  "detail": "#000",
-  "count": 1
- },
- {
-  "file": "ui/ui.css",
   "rule": "spacing-literal",
   "detail": "-1px",
   "count": 1
@@ -632,13 +620,13 @@
  {
   "file": "ui/ui.css",
   "rule": "spacing-literal",
-  "detail": "0 18px",
+  "detail": "1px var(--sp-2)",
   "count": 1
  },
  {
-  "file": "ui/ui.css",
+  "file": "ui/ViewBar.module.css",
   "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
+  "detail": "0 18px",
   "count": 1
  },
  {

@@ -6,6 +6,10 @@
 // structurally identical.
 import { children, type JSX, Show, splitProps } from 'solid-js'
 import { Icon } from '../icons/Icon'
+// Side-effect only: every rule in ViewBar.module.css is wrapped in :global(), so it styles the
+// literal `viewbar`/`vb-*`/`vbtn`/`crumb` class strings this file writes below, not a hashed
+// local. Nothing here imports the module's class map because there isn't one to use.
+import './ViewBar.module.css'
 
 /** The six regions a view bar has. A control's region is decided by the QUESTION it answers, not
  *  by its shape:
