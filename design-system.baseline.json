@@ -2,35 +2,11 @@
   "accepted": [
     {
       "check": "globalReach",
-      "path": "app/src/bases/BaseSettings.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/BaseView.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/CardEditModal.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/EditCardsModal.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/bases/FlashcardsView.module.css"
     },
     {
       "check": "globalReach",
-      "path": "app/src/bases/KanbanCard.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/bases/KanbanView.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/bases/PropertyValueEditor.module.css"
     },
     {
       "check": "globalReach",

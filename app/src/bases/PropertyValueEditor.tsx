@@ -21,7 +21,8 @@
 // the canonical stored number on commit via `parseNumberEdit`.
 import { Show, createSignal, createMemo, For, onCleanup } from 'solid-js'
 import Select from '../ui/Select'
-import Chip from '../ui/Chip'
+import ChipToggle from '../ui/ChipToggle'
+import { Icon } from '../icons/Icon'
 import type { PropertyEditKind } from './propertyEdit'
 import {
     multiselectAvailable,
@@ -208,6 +209,7 @@ export function PropertyValueEditor(props: {
                             options={selectOptions()}
                             onChange={v => props.onCommit(v === '' ? null : v)}
                             onDismiss={props.onCancel}
+                            class={styles.kbMetaSelectTrigger}
                         />
                     </div>
                 </Show>
@@ -302,15 +304,14 @@ function MultiSelectEditor(props: {
         >
             <For each={selected()}>
                 {v => (
-                    <Chip
+                    <ChipToggle
                         selected
-                        icon="X"
-                        iconSize={11}
-                        title="Remove"
-                        onClick={() => remove(v)}
+                        class={styles.kbMetaMultiselectToggle}
+                        onToggle={() => remove(v)}
                     >
+                        <Icon value="X" size={11} />
                         {v}
-                    </Chip>
+                    </ChipToggle>
                 )}
             </For>
             <Show when={available().length > 0}>
