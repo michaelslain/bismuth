@@ -158,4 +158,4 @@
    this one control towered over the multiselect chips directly beneath it, which is the exact
    intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
 .boolChip { align-self: flex-start; }
-.boolChip :global(.chip-toggle) { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }
+.boolChipToggle { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }

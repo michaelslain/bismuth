@@ -515,12 +515,14 @@ export function FlashcardsView(props: {
                 label="Edit this card"
                 iconSize={13}
                 onClick={openCardEdit}
+                class={styles['card-action-btn']}
             />
             <IconButton
                 icon="Trash2"
                 label="Delete this card"
                 iconSize={13}
                 onClick={deleteCurrent}
+                class={styles['card-action-btn']}
             />
         </div>
     )

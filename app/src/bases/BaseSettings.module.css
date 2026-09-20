@@ -47,7 +47,7 @@
 .panel .propset-extra { width: 100%; }
 .panel .propset-options { min-height: 46px; resize: vertical; }
 .panel .propset-numrow { display: flex; gap: var(--sp-4); }
-.panel .propset-numrow :global(.ui-input) { flex: 1; }
+.propset-numrow-unit { flex: 1; }
 .panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
 .panel .propset-foot .sp { flex: 1; }
 /* Same IconButton cascade pin as .propset-eye above. */

@@ -27,14 +27,17 @@
    ui/EmptyState.tsx's mention of "review-done"/"deck-empty" is a JSDoc code EXAMPLE inside a
    comment, not real usage — grepping for it as a live consumer is a false positive.
 
-   :global() — classes this file's selectors reach that are OWNED by ui/ui.css, so hashing them
-   here would make the selector match nothing in the real (unhashed) DOM:
-     .card-actions :global(.btn--icon)
+   :global() — one-global-stylesheet Task 10 re-pointed `.card-actions :global(.btn--icon)` onto
+   a local `.card-action-btn` class handed to both IconButtons via their `class` prop. What's left,
+   and NOT removable from this side:
      .flashcards-host :global(.ui-empty-block) (+ its `h2`)
      .flashcards-host :global(.ui-empty) (+ its `strong`/`code`, and `.inline-bolt` which IS ours
        and stays local) — the "done" (deck/cram complete) state also routes through this now that
        it renders via <EmptyState> instead of hand-rolled `.big`/`.sub` markup (this task's
-       intentional-drift swap; the story showing it is named in this task's report).
+       intentional-drift swap; the story showing it is named in this task's report). EmptyState's
+       own `class` prop lands only on ITS root (`ui-empty-block`), not on the `h2`/`p.ui-empty` it
+       renders internally, so there is no prop this caller could hand it instead — reported, not
+       invented, per this task's brief.
    `.asc-kbd`/`.asc-key`/`.asc-modal` are referenced only as bare JSX literals in the consumer
    (never combined into a selector in this file), so they need no :global() here.
 
@@ -138,7 +141,7 @@
    flip with the card. Faint at rest, firm on card hover. */
 .card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; display: flex; gap: var(--sp-1); opacity: 0.4; transition: opacity 0.15s; }
 .flip-card:hover .card-actions { opacity: 1; }
-.card-actions :global(.btn--icon) { width: 28px; height: 28px; padding: 0; border-radius: var(--r-0); }
+.card-action-btn { width: 28px; height: 28px; padding: 0; border-radius: var(--r-0); }
 .flip-card { width: 100%; min-height: 420px; perspective: 1200px; cursor: pointer; }
 .flip-inner { position: relative; width: 100%; min-height: 420px; transition: transform 0.5s; transform-style: preserve-3d; }
 .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
