@@ -928,13 +928,16 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
       `.search-bar-input` moved to SearchBar.module.css in one-global-stylesheet Task 5;
       `.chip-toggle` moved to ChipToggle.module.css in Task 6; the `.btn`/`.btn--*` family
       itself moved to Button.module.css in Task 1 — all four as `:global()` bridges, see each
-      file's own header). `.asc-caret` (+ its `@keyframes asc-blink`), `.asc-modal` and
-      `.asc-popover` — the three `asc-*` register entries this file's header used to name as
-      having no owning primitive — moved to ui/Caret.module.css, ui/Modal.module.css and
-      ui/Popover.module.css respectively (one-global-stylesheet Task 7), each still
-      `:global()`-bridged to its bare outside writers (ChatView/TermPanel/TopStrip/StatusBar/
-      SwitcherBar; palette/Palette.module.css; graph/GraphView.tsx) until wave 2 converts those
-      call sites to compose the new components. `.row-kbd`/`.asc-key`'s shared compound (written
+      file's own header). `.asc-modal` and `.asc-popover` — two of the three `asc-*` register
+      entries this file's header used to name as having no owning primitive — moved to
+      ui/Modal.module.css and ui/Popover.module.css respectively (one-global-stylesheet Task 7),
+      each still `:global()`-bridged to its bare outside writers (palette/Palette.module.css;
+      graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
+      `.asc-caret` (+ its `@keyframes asc-blink`) took the same trip and came back (regression
+      fix, 2026-09-20, see the rule's own comment below): its would-be owner, ui/Caret.tsx, has
+      no production importer, so the module CSS never reached the bundle and every caret in the
+      shipped app rendered with no colour and no blink. It stays here, genuinely global, with
+      seven bare outside writers and no real owner yet. `.row-kbd`/`.asc-key`'s shared compound (written
       bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx) remains undone the same way:
       accepting the `class` prop `ui/Button.tsx` already exposes at each call site, or extracting
       a shared component, is real work, deliberately deferred to a follow-up plan rather than
@@ -1122,10 +1125,18 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    reader anywhere in the app, so the rule now lives as a real local class in
    Backlinks.module.css instead of sitting here as a bare global one component reached into. */
 
-/* .asc-caret (+ its @keyframes asc-blink) MOVED to ui/Caret.module.css (one-global-stylesheet
-   Task 7) — ui/Caret.tsx is now its owner; the class is still written bare by five components
-   (ChatView, TermPanel, TopStrip, StatusBar, SwitcherBar), so it stays a `:global()` bridge
-   there rather than a hashed local until wave 2 converts those call sites to compose <Caret>. */
+/* .asc-caret (+ its @keyframes asc-blink) briefly MOVED to ui/Caret.module.css
+   (one-global-stylesheet Task 7), then moved BACK here (regression fix, 2026-09-20):
+   Caret.tsx has no production importer — only its own story imports it — so Rollup never pulled
+   the module's CSS into the production bundle and every caret shipped invisible. Seven
+   components write the class bare with no owning importer (ChatComposer, Terminal,
+   intro/TermPanel, chat/ChatTranscript, shell/TopStrip, shell/StatusBar,
+   palette/SwitcherBar) — exactly the shape of a genuine global register entry, not a
+   component-private rule that merely lacks its `:global()` bridge yet. ui/Caret.tsx still
+   exists and writes the same literal class (see its own header), for the one caller that wants
+   the primitive rather than the bare string. */
+@keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.asc-caret { color: var(--accent); animation: asc-blink var(--blink) step-end infinite; }
 
 /* ── Overlay / modal / popover ─────────────────────────────────────────────
    .ui-overlay is ui/Modal.module.css's scrim. .asc-modal MOVED there too (one-global-stylesheet
