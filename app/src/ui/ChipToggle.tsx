@@ -1,5 +1,4 @@
 import type { Component, JSX } from 'solid-js'
-import './ui.css'
 import './ChipToggle.module.css'
 
 export type ChipToggleTone = 'teal' | 'blue' | 'violet' | 'green' | 'gold' | 'rose'

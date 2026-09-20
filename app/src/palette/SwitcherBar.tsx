@@ -61,7 +61,6 @@ import {
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
 import switcherStyles from './SwitcherBar.module.css'
-import './switcher.css'
 
 type Props = {
     onClose: () => void

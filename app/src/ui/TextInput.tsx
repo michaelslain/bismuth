@@ -1,5 +1,4 @@
 import { splitProps, type JSX } from 'solid-js'
-import './ui.css'
 import FormControl from './FormControl'
 import styles from './TextInput.module.css'
 

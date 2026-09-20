@@ -1,5 +1,4 @@
 import { Show, type JSX } from 'solid-js'
-import './ui.css'
 import styles from './EmptyState.module.css'
 
 export type EmptyStateProps = {

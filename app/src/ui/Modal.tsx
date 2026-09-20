@@ -1,6 +1,5 @@
 import { onCleanup, onMount, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
-import './ui.css'
 import styles from './Modal.module.css'
 import { isDismissKey } from './widgetKeys'
 

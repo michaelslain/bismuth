@@ -5,7 +5,6 @@
 // design-system/components/display/Kbd.jsx.
 import { For, Show, type JSX } from 'solid-js'
 import { parseCombo } from './parseCombo'
-import '../ui.css'
 import styles from './Kbd.module.css'
 
 /** One key cap. */

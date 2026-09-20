@@ -135,7 +135,6 @@ import {
 } from './editor/reconcileDispatch'
 import { decideSseReconcile } from './editor/sseReconcile'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
-import './Editor.css'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
 // unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and

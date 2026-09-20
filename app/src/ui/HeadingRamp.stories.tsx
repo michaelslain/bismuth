@@ -20,7 +20,6 @@
 // row beneath it, this story shows it immediately.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Label } from './_storyKit'
-import '../App.css'
 
 const LEVELS = [1, 2, 3, 4, 5, 6] as const
 
