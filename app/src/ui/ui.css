@@ -15,8 +15,7 @@
       drawing/Toolbar.tsx; the `.btn`/`.btn--*` family itself moved to Button.module.css in
       one-global-stylesheet Task 1, as a `:global()` bridge — see that file's header), the whole
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
-      (ui/ViewBar.tsx, mounted by six unrelated views), `.chip-toggle` (reached by
-      bases/CardEditModal.module.css and bases/BaseView.module.css), `.search-bar-lead`/`.search-bar-input` (reached by
+      (ui/ViewBar.tsx, mounted by six unrelated views), `.search-bar-lead`/`.search-bar-input` (reached by
       GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
@@ -117,37 +116,10 @@
    — grep confirmed ui/StatusDot.tsx is `.status-dot`'s only literal writer anywhere in the app,
    so both classes are now fully local there, no `:global()` bridge needed. */
 
-/* ── Chip toggle (selectable pill: export options, search toggles) ──────────
-   Default tone = accent; tone-<x> tints the SELECTED state to a category color
-   at 14% fill / 45% border. */
-/* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1) alongside .btn--text and
-   .vbtn above: radius --r-chip (2px) -> --r-0 (§9.2 — 0 everywhere, no chip/inline exception
-   survives), height set explicitly to --h-control so Chip joins the app's 18/24/36 control
-   rhythm instead of sizing itself off line-height alone. `.selected` used to FILL (accent-soft
-   background) — the third of the app's three divergent "selected toggle" treatments the audit
-   named; it now matches Button's and .vbtn's outline-only look (tone text + tone border,
-   transparent fill) so all three read as the same design. Tone variants get the same
-   fill-to-outline change, tinted to their own tone color instead of --accent. */
-.chip-toggle { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-3); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--text-muted); background: transparent; border: var(--rule); cursor: pointer; white-space: nowrap; }
-.chip-toggle svg { color: var(--faint); }
-.chip-toggle:hover { color: var(--fg); }
-/* Same reasoning as .btn:focus-visible above — chip-toggle is a button that opted out of .btn's
-   box model, not out of being keyboard-reachable. */
-.chip-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-.chip-toggle.selected { color: var(--accent); background: transparent; border-color: var(--accent); }
-.chip-toggle.selected svg { color: var(--accent); }
-.chip-toggle.tone-teal.selected { color: var(--teal); background: transparent; border-color: var(--teal); }
-.chip-toggle.tone-teal.selected svg { color: var(--teal); }
-.chip-toggle.tone-blue.selected { color: var(--blue); background: transparent; border-color: var(--blue); }
-.chip-toggle.tone-blue.selected svg { color: var(--blue); }
-.chip-toggle.tone-violet.selected { color: var(--violet); background: transparent; border-color: var(--violet); }
-.chip-toggle.tone-violet.selected svg { color: var(--violet); }
-.chip-toggle.tone-green.selected { color: var(--green); background: transparent; border-color: var(--green); }
-.chip-toggle.tone-green.selected svg { color: var(--green); }
-.chip-toggle.tone-gold.selected { color: var(--gold); background: transparent; border-color: var(--gold); }
-.chip-toggle.tone-gold.selected svg { color: var(--gold); }
-.chip-toggle.tone-rose.selected { color: var(--rose); background: transparent; border-color: var(--rose); }
-.chip-toggle.tone-rose.selected svg { color: var(--rose); }
+/* .chip-toggle (+ :hover, .selected, .tone-<x>) MOVED to ui/ChipToggle.module.css
+   (one-global-stylesheet Task 6) — ChipToggle.tsx is the new component; the rules stay written
+   as bare :global() literals there since bases/CardEditModal.module.css and
+   bases/BaseView.module.css still reach the class directly, pending a later wave. */
 
 /* ── Cross-component primitives (moved from App.css, 2026-08) ──────────────
    These stay GLOBAL on purpose: each is used by two or more unrelated components, so scoping them
