@@ -1,0 +1,17 @@
+/* app/src/ui/Button.module.css — Button.tsx's own local stylesheet.
+
+   NOT a full move of the `.btn`/`.btn--*` family: that family stays in `ui.css` for now (see
+   ui.css's header comment reason 1) — it is reached via `:global()` from 8+ OTHER modules
+   (ChatComposer, ChatSetup, ChatTurnParts, Toast, InboxView, PaneTree, Sidebar, TabRail, TopStrip,
+   ChatTranscript, Graph, Flashcards, SymbolGallery) plus `.segmented .btn--text`, and this repo's
+   design-system gate (`globalReach`) flags ANY `:global()` reach inside a `*.module.css` file
+   unconditionally, with no self-ownership exemption — so re-publishing those same literal class
+   names from here via `:global()` (this task's first attempt) fails the gate as 50 fresh findings,
+   even though the reach itself is pre-existing, unchanged behaviour. Fully retargeting those 8+
+   reach-ins to `Button`'s `class`/`bracket` props is the real fix and is wave 3's job. Reported as
+   a concern in report-1.md rather than silently worked around.
+
+   What DOES live here, genuinely locally owned: the "[ label ]" bracket look. */
+.bracket { text-transform: lowercase; }
+.bracket::before { content: "[ "; }
+.bracket::after { content: " ]"; }
