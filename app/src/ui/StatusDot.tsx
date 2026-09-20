@@ -30,7 +30,7 @@ export function groupColor(key: string): string {
 function StatusDot(props: { color?: string; status?: string }) {
     return (
         <span
-            class="status-dot"
+            class={styles['status-dot']}
             style={{
                 background:
                     props.color ??
@@ -46,7 +46,7 @@ export default StatusDot
 export function StatusText(props: { status: string }) {
     return (
         <span class={styles['status-text']} style={{ color: statusColor(props.status) }}>
-            <span class="status-dot" />
+            <span class={styles['status-dot']} />
             {props.status}
         </span>
     )
