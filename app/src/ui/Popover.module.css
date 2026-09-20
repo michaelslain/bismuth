@@ -1,0 +1,20 @@
+/* app/src/ui/Popover.module.css — the floating surface behind Popover.tsx. Moved OUT of
+   ui/ui.css (one-global-stylesheet Task 7) as the primitive that file's own header comment
+   named as missing: `.asc-popover` was written bare, 3x, by graph/GraphView.tsx, with no
+   owning component. Popover.tsx is now its owner; GraphView.tsx composing it instead is a
+   later wave's job (it still writes the class literal, so the rule below stays a `:global()`
+   bridge rather than a hashed local — see the reasoned ignore).
+
+   Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1): no blur, radius 0. Has no
+   scrim of its own — it floats directly over live content (a note, the graph field), so it keeps
+   ONE depth cue: --lift, a zero-blur hard-offset "TUI drop-shadow" (2px 2px 0 var(--shadow-hard))
+   instead of the old blur(6px) + --shadow-popup. Sanctioned exception per §9.3 ("no blur, but one
+   hard-offset lift... where a depth cue is genuinely needed") — probed against a same-tone
+   background via storyAudit. */
+/* design-system-ignore globalReach: Popover's own class, temporary :global() bridge to GraphView.tsx's 3 bare writers, until wave 2 */
+:global(.asc-popover) {
+  background: var(--pop-bg);
+  border: var(--rule);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
+}
