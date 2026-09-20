@@ -58,27 +58,11 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/chat/ChatCopyButton.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/chat/ChatHistoryPanel.module.css"
     },
     {
       "check": "globalReach",
-      "path": "app/src/chat/ChatPermissionCard.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/chat/ChatQuestionCard.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/ChatHeader.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/ChatSetup.module.css"
     },
     {
       "check": "globalReach",

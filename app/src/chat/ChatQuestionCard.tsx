@@ -7,7 +7,7 @@ import { createStore } from 'solid-js/store'
 import { For, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
-import { TextButton } from '../ui/TextButton'
+import { Button } from '../ui/Button'
 import { TextInput } from '../ui/TextInput'
 import PlainButton from '../ui/PlainButton'
 import type { QuestionPart } from '../chatTranscript'
@@ -254,17 +254,19 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                 }
             >
                 <div class={styles['chat-question-actions']}>
-                    <TextButton
-                        variant="selected"
+                    <Button
+                        kind="text"
+                        bracket
+                        state="selected"
                         size="sm"
                         disabled={!allAnswered()}
                         onClick={submit}
                     >
                         SUBMIT
-                    </TextButton>
-                    <TextButton size="sm" onClick={() => props.onAnswer(null)}>
+                    </Button>
+                    <Button kind="text" bracket size="sm" onClick={() => props.onAnswer(null)}>
                         SKIP
-                    </TextButton>
+                    </Button>
                 </div>
             </Show>
         </div>

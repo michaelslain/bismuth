@@ -331,6 +331,7 @@ export default function ChatComposerBar(
                             icon="Send"
                             label="Send message"
                             variant="selected"
+                            class={styles.send}
                             onClick={doSend}
                             disabled={
                                 !props.session ||
@@ -344,6 +345,7 @@ export default function ChatComposerBar(
                         icon="Square"
                         label="Stop generating"
                         danger
+                        class={styles.send}
                         onClick={() => props.session?.stop()}
                     />
                 </Show>

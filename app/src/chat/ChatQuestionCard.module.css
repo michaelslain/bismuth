@@ -136,18 +136,15 @@
     margin-top: var(--sp-5);
     flex-wrap: wrap;
 }
-/* Bracket action buttons — "[ submit ]" / "[ skip ]", the SAME idiom + SAME TextButton component
-   ChatPermissionCard's "[ allow ]"/"[ deny ]" uses (design #7 was "boxed SUBMIT" — a filled/boxed
-   TextButton, a different register from that idiom). Lowercase-in-brackets is a look, not a label
-   change: the underlying text stays the uppercase TextButton's warnNonUppercase expects. */
-.chat-question-actions :global(.btn--text) {
+/* Bracket action buttons — "[ submit ]" / "[ skip ]", the SAME idiom ChatPermissionCard's
+   "[ allow ]"/"[ deny ]" uses. Rendered by Button's own `bracket` prop (ui/Button.tsx), not
+   reimplemented here via `::before`/`::after` on `:global(.btn--text)` — the underlying label
+   text stays uppercase (SUBMIT/SKIP). `bracket`'s own `.lowercase` declaration in
+   Button.module.css ties in specificity with `.btn--text`'s base uppercase and loses on source
+   order (both single classes) — a TAG selector, not a class reach, breaks that tie locally
+   without touching Button's own stylesheet. */
+.chat-question-actions button {
     text-transform: lowercase;
-}
-.chat-question-actions :global(.btn--text)::before {
-    content: '[ ';
-}
-.chat-question-actions :global(.btn--text)::after {
-    content: ' ]';
 }
 .chat-question-outcome {
     display: flex;

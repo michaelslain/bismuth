@@ -15,7 +15,9 @@
 
 /* The message box: attachment chips + the CodeMirror field + send/stop inside ONE outlined
    surface, capped to the 680px reading column — no fill, radius 3, a hairline border that turns
-   --accent on focus. */
+   --accent on focus. Layout the send/stop button and the attachment-remove button need is handed
+   to IconButton via its own `class` prop (`.send`, `.attachment-remove.attachment-remove`) rather
+   than reached into via `:global()`. */
 .box {
     /* The composer's one vertical rhythm value — the padding above/below the draft text inside the
        CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
@@ -33,7 +35,7 @@
     border-radius: var(--r-0);
     transition: border-color var(--dur) var(--ease);
 }
-.box > :global(.btn) {
+.send {
     margin-bottom: var(--chat-composer-line-pad);
 }
 .box:hover:not(:focus-within) {
@@ -103,7 +105,11 @@
    DARK in the light themes and would sit invisible on this same dark scrim). Darkened further on
    hover via color-mix on the background token itself, rather than a hardcoded rgba, so a theme's
    own scrim tone still drives the hover state. */
-.attachment :global(.btn--icon).attachment-remove {
+/* `.attachment-remove.attachment-remove` — the class repeated, not reached into `:global(.btn--
+   icon)` — matches that rule's own 0,0,2,0 specificity (ui/Button.module.css's
+   `.btn--icon.btn--normal { opacity: 1 }`) without depending on stylesheet load order, the same
+   guarantee the old `:global()` compound gave, entirely in local classes. */
+.attachment-remove.attachment-remove {
     position: absolute;
     top: 3px;
     right: 3px;
@@ -115,7 +121,7 @@
     color: var(--on-scrim);
     opacity: 1;
 }
-.attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
+.attachment-remove.attachment-remove:hover:not(:disabled) {
     background: color-mix(in srgb, var(--scrim-bg), black 25%);
     color: var(--on-scrim);
 }
