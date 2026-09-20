@@ -12,7 +12,6 @@
    surface ui.css used to be, just colocated with the component that owns it.
    THE COLLAPSE LADDER MOVED WITH THE FAMILY, including its @container tiers. Its
    `data-bar-drop`/`data-bar-label` tag contract is UNCHANGED — attribute selectors needed no
-   /* design-system-ignore globalReach: ViewBar's own classes, temporary :global() bridge to the 8 outside callers, until wave 3 */
    :global() wrapping and nothing about how a caller tags a control changed.
    app/src/ui/barDropLevels.test.ts was repointed at this file (see its own UI_CSS constant)
    since the ladder it audits now lives here. */
