@@ -1,4 +1,4 @@
-// design-system skill scripts v2 (2026-09-18) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v3 (2026-09-20) — copied into repos by install-gate; compare this line to detect a stale copy
 // Pure logic for the design-system skill. No filesystem access — every input arrives as a
 // string or an array of { path, content }. This file is copied into user repos alongside its
 // lib/ siblings, so it (and they) must stay dependency-free (plain Node ESM, node:path/posix
@@ -345,8 +345,9 @@ function checkOneImporter(g, files, isStylesheetFile, isGlobal, isImporterExempt
 //    shorthand `border-(top|right|bottom|left)` (`border-left: 1px solid #fff` hides a literal
 //    behind a shorthand just as easily as the `-color` longhand does).
 //  - `background-image` and `mask-image`, which is where a gradient (`linear-gradient(…, #fff,
-//    …)`) most often hides a literal colour as one of its stops — a mask's colour channel is
-//    alpha-only, but the literal is still not a token, so the same check applies.
+//    …)`) most often hides a literal colour as one of its stops. A mask's channel is alpha-only,
+//    so a BARE `black`/`white` stop there is exempt (see hasHardcodedColor) — but a hex or
+//    colour-function stop still flags, since that spelling usually means a real colour drifted in.
 //  - any custom property (`--foo: …`) — components routinely stash a colour in a local custom
 //    property instead of a real token; the value test still requires the value to actually look
 //    like a colour, so `--radius-local: 8px` is never touched by this.
@@ -406,9 +407,33 @@ function stripTokenCalls(value, tokensUse) {
 // all — a literal INSIDE a var() fallback is accepted, only a literal OUTSIDE any token call is
 // a finding), what remains still looks like a colour: a hex triplet, a colour function, or a
 // bare named-colour keyword.
-function hasHardcodedColor(value, tokensUse) {
+// `black` and `white` are the two named colours that are not always PAINT. In two contexts they
+// are the only spelling available, so flagging them produces a finding no token can ever fix —
+// a check that can only be silenced, never satisfied:
+//
+//  - **A `color-mix()` darkening/lightening operand on a token**
+//    (`color-mix(in srgb, var(--accent) 82%, black)`). The colour still comes from the token;
+//    `black` is the direction of the mix, and no token expresses "the accent, 18% darker".
+//    Requires a token reference in the same value — `color-mix(in srgb, #f00, black)` still flags,
+//    because there the literal IS the colour.
+//  - **A mask gradient** (`mask-image: linear-gradient(to bottom, black 90%, transparent)`).
+//    A mask reads only the ALPHA channel, so black/white are opacity stops that paint nothing.
+//
+// Deliberately narrow: bare keywords only. A hex or colour function in either context still
+// flags, since those spellings are far likelier to be a real colour that drifted in.
+const ACHROMATIC_KEYWORDS = /\b(black|white)\b/gi
+const MASK_PROPS = /^(-webkit-)?mask(-image)?$/
+
+function allowsAchromaticKeywords(value, stripped, prop) {
+    if (prop && MASK_PROPS.test(prop)) return true
+    // a color-mix whose value also references a token: the token is the colour being derived from
+    return /color-mix\(/i.test(value) && stripped !== value
+}
+
+function hasHardcodedColor(value, tokensUse, prop) {
     if (isCascadeKeyword(value)) return false
-    const stripped = stripTokenCalls(value, tokensUse)
+    let stripped = stripTokenCalls(value, tokensUse)
+    if (allowsAchromaticKeywords(value, stripped, prop)) stripped = stripped.replace(ACHROMATIC_KEYWORDS, ' ')
     const v = stripped.trim().toLowerCase()
     if (v === '' || v === 'transparent' || v === 'currentcolor' || v === 'none') return false
     if (/url\(/i.test(stripped)) return false // avoid flagging color-ish words inside asset filenames
@@ -467,7 +492,7 @@ function scanCssLiterals(checkName, g, files, isStyleScanTarget, isTokenFile, pr
             const prop = m[1].trim().toLowerCase()
             if (!propTest(prop)) continue
             const value = m[2].trim()
-            if (!valueTest(value, g.tokens.use)) continue
+            if (!valueTest(value, g.tokens.use, prop)) continue
             findings.push({
                 check: checkName, path: f.path, line: find(m.index),
                 message: `${prop}: ${value} is a hardcoded literal, not a token`,

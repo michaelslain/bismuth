@@ -43,7 +43,6 @@
   --univer-primary-400: var(--accent);
   --univer-primary-500: var(--accent);
   --univer-primary-600: var(--accent);
-  /* design-system-ignore hardcodedColor: black is a color-mix darkening operand on the --accent token, not a colour of its own */
   --univer-primary-700: color-mix(in srgb, var(--accent) 82%, black);
   --univer-primary-900: color-mix(in srgb, var(--accent) 28%, transparent);
 

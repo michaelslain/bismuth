@@ -47,7 +47,6 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    /* design-system-ignore hardcodedColor: mask gradients read the ALPHA channel — black/transparent are opacity stops, not colours */
     mask-image: linear-gradient(
         to bottom,
         black calc(100% - 16px),
