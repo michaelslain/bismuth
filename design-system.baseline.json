@@ -186,15 +186,7 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/Toast.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/ui/FormModal.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/ui/gallery/SymbolGallery.module.css"
     },
     {
       "check": "globalReach",
