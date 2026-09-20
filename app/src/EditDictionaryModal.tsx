@@ -101,6 +101,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
 
                 <div class={styles['dict-add']}>
                     <TextInput
+                        class={styles['dict-input']}
                         placeholder="Add a word…"
                         value={draft()}
                         onInput={setDraft}
