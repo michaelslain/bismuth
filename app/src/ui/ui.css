@@ -250,10 +250,11 @@
 /* .ui-field (+ its "> span") MOVED to ui/Field.module.css 2026-09-12 (CSS modules migration
    Task 7) — ui/Field.tsx was the sole reader anywhere in the app. */
 
-/* .ui-input / .ui-select-trigger / .ui-select-caret MOVED to ui/formControlChrome.css
-   2026-09-20 (CSS modules migration continuation, Task 3) — the shared form-control chrome
-   TextInput.tsx and Select.tsx both compose. See ui/formControlChrome.css for why it is a
-   plain shared global stylesheet rather than living in either component's own module. */
+/* .ui-input / .ui-select-trigger / .ui-select-caret MOVED to ui/FormControl.module.css
+   2026-09-20 (CSS modules migration continuation, Task 3) — TextInput.tsx and Select.tsx's
+   trigger were two real components sharing one rule, so it became a real extracted primitive,
+   ui/FormControl.tsx, rather than a bare shared stylesheet. See ui/FormControl.module.css for
+   why its rules stay wrapped in `:global()` rather than hashed. */
 
 /* `.ui-empty`/`.ui-empty-block` (+ its `h2`) and `.ui-loading` MOVED to ui/EmptyState.module.css
    (one-global-stylesheet Task 4). `.ui-empty`/`.ui-empty-block` are still reached via `:global()`
