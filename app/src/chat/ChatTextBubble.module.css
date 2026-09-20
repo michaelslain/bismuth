@@ -146,7 +146,7 @@
 .chat-bubble blockquote {
     margin: 0.4em 0;
     padding-left: var(--sp-4);
-    border-left: 3px solid var(--border);
+    border-left: 2px solid var(--border);
     opacity: 0.85;
 }
 .chat-bubble hr {

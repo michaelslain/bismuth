@@ -133,7 +133,7 @@
 .mdField :global(.bismuth-doc-milkdown blockquote) {
   margin: var(--sp-3) 0;
   padding-left: var(--sp-5);
-  border-left: 3px solid var(--border);
+  border-left: 2px solid var(--border);
   color: var(--text-muted);
 }
 .mdField :global(.bismuth-doc-milkdown a) { color: var(--accent); text-decoration: none; }
