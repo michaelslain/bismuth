@@ -17,15 +17,17 @@
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
       (ui/ViewBar.tsx, mounted by six unrelated views), `.chip-toggle` (reached by
       bases/CardEditModal.module.css and bases/BaseView.module.css), `.search-bar-lead`/`.search-bar-input` (reached by
-      GraphView.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
-      entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
-      written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
-      (reached by palette/Palette.module.css), `.asc-popover` (written bare, 3x, by
-      graph/GraphView.tsx — no Popover primitive exists), and `.row-kbd`/`.asc-key`'s shared
-      compound (written bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx). Undoing
-      these for real means either accepting the `class` prop `ui/Button.tsx` already exposes at
-      each of those 8+ call sites, or extracting new shared components (`<Caret>`, a `<Popover>`
-      surface) — real work, deliberately deferred to a follow-up plan rather than done here.
+      GraphView.module.css and palette/Palette.module.css), and `.row-kbd`/`.asc-key`'s shared
+      compound (written bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx). `.asc-caret`
+      (+ its `@keyframes asc-blink`), `.asc-modal` and `.asc-popover` — the three `asc-*` register
+      entries this file's header used to name as having no owning primitive — moved to
+      ui/Caret.module.css, ui/Modal.module.css and ui/Popover.module.css respectively
+      (one-global-stylesheet Task 7), each still `:global()`-bridged to its bare outside writers
+      (ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar; palette/Palette.module.css;
+      graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
+      `.row-kbd`/`.asc-key` remains undone the same way: accepting the `class` prop
+      `ui/Button.tsx` already exposes at each call site, or extracting a shared component, is
+      real work, deliberately deferred to a follow-up plan rather than done here.
    2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
       `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
       `--bar-icon-gap`, `--bar-icon-size`, `--bar-crumb-gap`) — a token is never chrome regardless
@@ -263,25 +265,23 @@
    reader anywhere in the app, so the rule now lives as a real local class in
    Backlinks.module.css instead of sitting here as a bare global one component reached into. */
 
-/* ── Caret: the one blinking cursor glyph, reused in terminal/chat/status/tree. */
-@keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-.asc-caret { color: var(--accent); animation: asc-blink var(--blink) step-end infinite; }
+/* .asc-caret (+ its @keyframes asc-blink) MOVED to ui/Caret.module.css (one-global-stylesheet
+   Task 7) — ui/Caret.tsx is now its owner; the class is still written bare by five components
+   (ChatView, TermPanel, TopStrip, StatusBar, SwitcherBar), so it stays a `:global()` bridge
+   there rather than a hashed local until wave 2 converts those call sites to compose <Caret>. */
 
 /* ── Overlay / modal / popover ─────────────────────────────────────────────
-   .ui-overlay above is the scrim; these are the floating surfaces on top of it.
-   Adoption (Modal.tsx / popover) is Stage 5e — classes are ready now. */
-/* Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1): no blur, no blurred
-   elevation shadow, radius 0 — the chrome every dialog and floating panel in the app inherits.
-   .asc-modal sits behind `.ui-overlay`'s scrim (--overlay-bg), which already separates it from
-   whatever was open underneath, so it stays fully flat: fill + hairline, nothing else.
-   .asc-popover has no scrim — it floats directly over live content (a note, the graph field),
-   so it keeps ONE depth cue: --lift, a zero-blur hard-offset "TUI drop-shadow" (2px 2px 0
-   var(--shadow-hard)) instead of the old blur(6px) + --shadow-popup. This is the sanctioned
-   exception §9.3 describes ("no blur, but one hard-offset lift... where a depth cue is
-   genuinely needed") — probed against a same-tone background via storyAudit; see Modal.stories
-   / SegmentedToggle.stories for the check. */
-.asc-modal { background: var(--pop-bg-strong); border: var(--rule); border-radius: var(--r-0); }
-.asc-popover { background: var(--pop-bg); border: var(--rule); border-radius: var(--r-0); box-shadow: var(--lift); }
+   .ui-overlay is ui/Modal.module.css's scrim. .asc-modal MOVED there too (one-global-stylesheet
+   Task 7) — Modal.tsx is now its owner, still `:global()`-bridged to
+   palette/Palette.module.css's `.palette-panel:global(.asc-modal)` until wave 2.
+   .asc-popover MOVED to ui/Popover.module.css (one-global-stylesheet Task 7) — ui/Popover.tsx is
+   now its owner, still `:global()`-bridged to graph/GraphView.tsx's 3 bare writers until wave 2.
+   Both were named as missing primitives in this file's own header comment; Popover has no scrim
+   of its own — it floats directly over live content (a note, the graph field), so it keeps ONE
+   depth cue: --lift, a zero-blur hard-offset "TUI drop-shadow" (2px 2px 0 var(--shadow-hard))
+   instead of the old blur(6px) + --shadow-popup — the sanctioned exception §9.3 describes ("no
+   blur, but one hard-offset lift... where a depth cue is genuinely needed"), probed against a
+   same-tone background via storyAudit; see Modal.stories / SegmentedToggle.stories for the check. */
 /* .asc-menurow (+ its :hover/.active and its own .row-kbd rule) DELETED 2026-09-12 (CSS modules
    migration Task 7, ownership map): zero consumers anywhere in .tsx/.ts — MenuRow.tsx and
    PaletteModal.tsx only ever MENTIONED it in comments while actually rendering
