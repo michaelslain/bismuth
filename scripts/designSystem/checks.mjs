@@ -21,7 +21,7 @@ export function parseGovernance(designMdText) {
 export const CHECK_NAMES = [
     'storyCoverage', 'oneImporter', 'hardcodedColor', 'hardcodedFont',
     'hardcodedFontSize', 'hardcodedRadius', 'bareElement', 'propsDestructure',
-    'ignoreReason', 'globalReach',
+    'ignoreReason', 'globalReach', 'oneGlobalFile',
 ]
 
 const DEFAULT_COMPONENTS_MATCH = '**/[A-Z]*.tsx'
@@ -525,6 +525,27 @@ function scanCssLiterals(checkName, g, files, isStyleScanTarget, isTokenFile, pr
 // Exempt: a class whose DOM is built outside the bundler (a plain-DOM library, a runtime-emitted
 // HTML string), declared via `externalClasses` or covered by the built-in library list — there a
 // hashed local can never land, so `:global()` is the only spelling available.
+// The global layer is ONE file. A project has exactly two kinds of stylesheet — the global one and
+// `<Component>.module.css` — and there is no third kind. A second global file is always one of two
+// things: a component nobody extracted (`ui.css`, `shared.css`), or a section of the global layer
+// that was filed as a file (`tokens.css`, `reset.css`, `Editor.css`). The first is debt; the second
+// is filing, and a comment heading does filing without costing a file.
+//
+// Splitting the global layer is not free, either: CSS `@import` HOISTS, so moving a rule out to a
+// sibling file silently reorders precedence, and nothing reports it until a rule stops applying.
+//
+// One finding for the whole project, not one per file — the shape of the layer is a single
+// decision, and N findings would just be the same sentence N times.
+function checkOneGlobalFile(g, files, isGlobal) {
+    const sheets = files.filter(f => CSS_EXTS.has(extname(f.path)) && isGlobal(f.path)).map(f => f.path).sort()
+    if (sheets.length <= 1) return []
+    return [{
+        check: 'oneGlobalFile', path: sheets[0], line: 0,
+        message: `the global layer is ${sheets.length} files, not 1: ${sheets.join(', ')}`,
+        suggestion: 'merge them into one global stylesheet, each former file a commented section — or, where a file is really a pile of unextracted components, extract those components and let it disappear. @import does not count: it is still N files, and it hoists',
+    }]
+}
+
 function checkGlobalReach(g, files, isStylesheetFile, isGlobal, isTokenFile) {
     const findings = []
     const isExternal = name => g.externalClasses.some(pat => matchGlob(pat, name))
@@ -779,6 +800,7 @@ export function runChecks(manifest, files) {
     if (g.checks.bareElement) findings.push(...checkBareElement(g, files, isComponentFile, isInPrimitivesDir))
     if (g.checks.propsDestructure) findings.push(...checkPropsDestructure(g, files, isComponentFile))
     if (g.checks.globalReach) findings.push(...checkGlobalReach(g, files, isStylesheetFile, isGlobal, isTokenFile))
+    if (g.checks.oneGlobalFile) findings.push(...checkOneGlobalFile(g, files, isGlobal))
 
     const ignoreIndex = buildIgnoreIndex(files)
     let out = filterExempt(findings, ignoreIndex)

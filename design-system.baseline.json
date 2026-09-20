@@ -199,6 +199,10 @@
     {
       "check": "globalReach",
       "path": "app/src/ui/StatusDot.module.css"
+    },
+    {
+      "check": "oneGlobalFile",
+      "path": "app/src/App.css"
     }
   ]
 }
