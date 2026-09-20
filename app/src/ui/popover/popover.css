@@ -7,16 +7,16 @@
  *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (editor/completionDisplay.ts;
  *                       CM owns that DOM, so it shares TOKENS, not components)
  *   3. yaml hover-fix — vanilla .bismuth-popover DOM (editor/yamlFixHover.ts, ui/popover/rowDom.ts)
- *   4. date/datetime property popover — vanilla DOM (editor/datePicker.ts), imperative .className=
+ *   4. date/datetime property popover — DatePicker.tsx's literal 'bismuth-popover'/'bismuth-popover-row' classes, applied via JSX (the mount itself is the small imperative shim editor/datePickerExtension.tsx)
  *   5. command/file palette, chat history picker — shares font/selected/shadow TOKENS only
- * A hashed local could never reach the imperative writers (rowDom.ts/datePicker.ts/
+ * A hashed local could never reach the imperative writers (rowDom.ts/DatePicker.tsx's literal classes/
  * yamlFixHover.ts set `.className` directly on elements the bundler never sees), so this file
  * is the same category as Editor.css/Terminal.css: a global mechanism, not a missing component.
  * Multiple importers (App.tsx, ui/Select.tsx) is legitimate here for that reason.
  *
  * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,
  * Task 10) — those ARE tokens, not chrome, and are read via var() well beyond this file's own
- * importers (SearchResultRows.module.css, editor/datePicker.css, palette/SwitcherBar.module.css,
+ * importers (SearchResultRows.module.css, editor/DatePicker.module.css, palette/SwitcherBar.module.css,
  * palette/Palette.module.css). Change a token there and every surface below still changes
  * together; colors reuse theme vars. */
 

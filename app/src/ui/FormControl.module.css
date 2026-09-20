@@ -13,7 +13,7 @@
    `.ui-select-trigger`/`.ui-select-caret` via `:global()` (ChatControls, ChatHistoryPanel,
    EditDictionaryModal, CategoryPanel, BaseSettings, PropertyValueEditor, EditCardsModal /
    FlashcardsView comments), and three call sites write the literal class name directly
-   (graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx, editor/datePicker.ts), plus a
+   (graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx, editor/DatePicker.tsx), plus a
    `querySelector('.ui-select-trigger')` in bases/CardEditModal.tsx. Hashing any of the three
    here would silently unstyle every one of those. Wave 3 of this plan migrates those readers
    onto the real components; until then FormControl.tsx applies these same literal class names

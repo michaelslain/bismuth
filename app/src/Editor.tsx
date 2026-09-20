@@ -63,7 +63,7 @@ import {
 import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
-import { datePropertyPicker } from './editor/datePicker'
+import { datePropertyPicker } from './editor/datePickerExtension'
 import { iconNames } from './icons/registry'
 import { settingsCompletion, type VaultPath } from './editor/settingsComplete'
 import { editorContextMenu } from './editor/contextMenu'
