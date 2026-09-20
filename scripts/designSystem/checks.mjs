@@ -21,7 +21,7 @@ export function parseGovernance(designMdText) {
 export const CHECK_NAMES = [
     'storyCoverage', 'oneImporter', 'hardcodedColor', 'hardcodedFont',
     'hardcodedFontSize', 'hardcodedRadius', 'bareElement', 'propsDestructure',
-    'ignoreReason',
+    'ignoreReason', 'globalReach',
 ]
 
 const DEFAULT_COMPONENTS_MATCH = '**/[A-Z]*.tsx'
@@ -31,6 +31,14 @@ const DEFAULT_COMPONENTS_EXCLUDE = ['**/*.stories.tsx', '**/*.test.tsx', '**/_*'
 // more files is the stricter option.
 const DEFAULT_STYLESHEETS_MATCH = ['**/*.module.css', '**/*.module.scss']
 const DEFAULT_STYLESHEETS_IMPORTERS_EXEMPT = ['**/*.stories.*', '**/*.test.*', '**/_*']
+// Class names a component stylesheet may legitimately reach with `:global()`: ones whose DOM is
+// built outside the bundler's view, so no hashed local can ever land on it. The built-in list is
+// the common plain-DOM libraries; `externalClasses` in the manifest ADDS to it (it never replaces
+// it), and is where a repo declares its own runtime-emitted prefix.
+const DEFAULT_EXTERNAL_CLASSES = [
+    'cm-*', 'xterm*', 'ProseMirror*', 'milkdown*', 'univer-*', 'leaflet-*',
+    'maplibregl-*', 'mapboxgl-*', 'ql-*', 'fc-*', 'tox-*', 'monaco-*', 'ag-*',
+]
 const DEFAULT_TOKENS_USE = 'var(--'
 const DEFAULT_STORIES_SIBLING = '{name}.stories.tsx'
 const DEFAULT_PRIMITIVES_ELEMENTS = {
@@ -62,6 +70,7 @@ export function withDefaults(governance) {
         use: (g.tokens && g.tokens.use) || DEFAULT_TOKENS_USE,
     }
     out.global = toArr(g.global)
+    out.externalClasses = DEFAULT_EXTERNAL_CLASSES.concat(toArr(g.externalClasses))
     out.primitives = {
         dir: (g.primitives && g.primitives.dir) || '',
         elements: (g.primitives && g.primitives.elements) || DEFAULT_PRIMITIVES_ELEMENTS,
@@ -503,6 +512,49 @@ function scanCssLiterals(checkName, g, files, isStyleScanTarget, isTokenFile, pr
     return findings
 }
 
+// `:global(.foo)` in a component stylesheet is the one-importer rule violated in a spelling the
+// importer check cannot see. `oneImporter` counts IMPORT statements, so a component that reaches
+// another component's classes without importing anything is invisible to it — and if those classes
+// live in a file listed under `global:`, they are invisible to every other check too.
+//
+// Measured on Bismuth 2026-09-20, with the audit reporting ZERO findings: 69 of 190 component
+// stylesheets used `:global()`, including `.btn--icon` 24x, `.btn--text` 19x and `.btn` 15x — one
+// primitive's own classes restyled from 58 places outside it. Every one is the same defect the
+// importer check exists to catch: a component nobody extracted, or a prop nobody added.
+//
+// Exempt: a class whose DOM is built outside the bundler (a plain-DOM library, a runtime-emitted
+// HTML string), declared via `externalClasses` or covered by the built-in library list — there a
+// hashed local can never land, so `:global()` is the only spelling available.
+function checkGlobalReach(g, files, isStylesheetFile, isGlobal, isTokenFile) {
+    const findings = []
+    const isExternal = name => g.externalClasses.some(pat => matchGlob(pat, name))
+    for (const f of files) {
+        if (!isStylesheetFile(f.path) || isGlobal(f.path) || isTokenFile(f.path)) continue
+        if (!CSS_EXTS.has(extname(f.path))) continue
+        const find = makeLineFinder(f.content)
+        const clean = blankCssComments(f.content)
+        const re = /:global\s*\(([^)]*)\)/g
+        const seen = new Set()
+        let m
+        while ((m = re.exec(clean))) {
+            const line = find(m.index)
+            for (const cls of m[1].match(/\.[A-Za-z_][\w-]*/g) || []) {
+                const name = cls.slice(1)
+                if (isExternal(name)) continue
+                const key = `${line}:${name}`
+                if (seen.has(key)) continue
+                seen.add(key)
+                findings.push({
+                    check: 'globalReach', path: f.path, line,
+                    message: `:global(.${name}) reaches a class this component does not own`,
+                    suggestion: `import the component that owns .${name} and compose it (or add the prop it lacks); if .${name} is built by plain-DOM code, declare its prefix in externalClasses`,
+                })
+            }
+        }
+    }
+    return findings
+}
+
 function checkBareElement(g, files, isComponentFile, isInPrimitivesDir) {
     const findings = []
     const names = Object.keys(g.primitives.elements)
@@ -726,6 +778,7 @@ export function runChecks(manifest, files) {
     if (g.checks.hardcodedRadius) findings.push(...scanCssLiterals('hardcodedRadius', g, files, isStyleScanTarget, isTokenFile, isRadiusProp, hasHardcodedRadius))
     if (g.checks.bareElement) findings.push(...checkBareElement(g, files, isComponentFile, isInPrimitivesDir))
     if (g.checks.propsDestructure) findings.push(...checkPropsDestructure(g, files, isComponentFile))
+    if (g.checks.globalReach) findings.push(...checkGlobalReach(g, files, isStylesheetFile, isGlobal, isTokenFile))
 
     const ignoreIndex = buildIgnoreIndex(files)
     let out = filterExempt(findings, ignoreIndex)

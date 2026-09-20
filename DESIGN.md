@@ -126,6 +126,9 @@ governance:
     # whole geometry / type / motion scale; settingsCssVars.ts projects the selected theme at runtime
     files: [core/src/theme/tokens.ts, app/src/styles/tokens.css, app/src/settingsCssVars.ts]
     use: "var(--"
+  # classes built OUTSIDE the bundler, so :global() is the only spelling available —
+  # RUNTIME_CLASS_PREFIXES in app/src/cssLayering.test.ts, the same list, plus xterm's own DOM
+  externalClasses: ["bismuth-*", "callout-*", "cm-*", "xterm*"]
   global:
     - "app/src/styles/**"          # tokens, reset, content (runtime-HTML classes), icon faces
     - app/src/App.css              # the global layer's entry; @imports styles/

@@ -1,0 +1,204 @@
+{
+  "accepted": [
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/BaseSettings.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/BaseView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/CardEditModal.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/EditCardsModal.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/FlashcardsView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/KanbanCard.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/KanbanView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/bases/PropertyValueEditor.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/calendar/components/CalendarFrame.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/calendar/components/CategoryPanel.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/calendar/components/DateNav.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/calendar/components/Toolbar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatComposerBar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatControls.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatCopyButton.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatHistoryPanel.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatPermissionCard.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/chat/ChatQuestionCard.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/ChatHeader.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/ChatSetup.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/daemon/DaemonPage.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/daemon/DaemonPanel.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/daemon/InboxRow.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/drawing/Toolbar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/EditDictionaryModal.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/editor/InkOverlay.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/GraphSearch.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/GraphView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/InboxPageView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/palette/PaletteFrame.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/palette/PaletteRow.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/palette/SwitcherBar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/PaneHeader.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/BookmarksPanel.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/OutlineTree.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/PageInk.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/PageReadout.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/PdfPageCanvas.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/preview/PreviewBar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/PreviewView.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/SearchResultRows.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/shell/GraphFloater.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/shell/PaneOverlay.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/shell/Sidebar.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/shell/TabRail.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/shell/TopStrip.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/Toast.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/ui/FormModal.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/ui/gallery/SymbolGallery.module.css"
+    },
+    {
+      "check": "globalReach",
+      "path": "app/src/ui/StatusDot.module.css"
+    }
+  ]
+}

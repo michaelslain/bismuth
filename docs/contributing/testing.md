@@ -897,7 +897,7 @@ another iteration instead of a wrong capture.
 | `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px `border-radius`/padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`, a hardcoded hex/`rgb()` colour) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below; the two gates' colour/radius checks overlap deliberately rather than duplicating, detail below. |
 | `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
 | `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
-| `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root .` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props), with no baseline — it runs at zero. Wired into `scripts/gate.ts` pre-commit — see below. |
+| `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root .` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props, and `:global()` reach into classes a component does not own), ratcheted by `design-system.baseline.json`. Wired into `scripts/gate.ts` pre-commit — see below. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
 
@@ -1213,8 +1213,7 @@ A run only fails on a violation with no matching baseline entry, i.e. a genuinel
 the pre-existing ones (this repo started the visual-unification audit with ~40 unswept
 stylesheets) stay green until their surface's own sweep wave lands and blesses a lower count.
 **Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside the design-system gate,
-whenever a staged path touches `app/src/`, `DESIGN.md`, `design-system.baseline.json` (still a
-trigger path, so re-adding the ratchet runs the gate) or `scripts/designSystem/`
+whenever a staged path touches `app/src/`, `DESIGN.md`, `design-system.baseline.json` or `scripts/designSystem/`
 (`touchesDesignSystem` in `scripts/gate.ts`).
 
 ```bash
@@ -1238,13 +1237,18 @@ instead, a `.module.css` with more than one importer, a component with no siblin
 `tokenLint.ts` above, not a replacement for it (see that section for exactly where they differ) — a
 literal hardcoded colour, border-radius or font-size instead of a token from `tokens.files`.
 
-**There is no baseline — the gate runs at zero.** It once carried a
-`design-system.baseline.json` debt ratchet at the repo root (`{ "accepted": [{ "check", "path" }] }`,
-matched by `check`+`path`, **ignoring line**, so one entry silenced a check across a whole FILE); its
-last three entries were `color-mix` darkening operands and a `mask-image` alpha gradient — checker
-false positives, not debt — and were re-expressed as inline directives, leaving the file empty and
-deleted. Both call sites (`scripts/gate.ts`, `scripts/designSystem.test.ts`) pass `--baseline` only
-`if (existsSync(...))`, so re-adding the file at the root re-arms the ratchet with no code change.
+**Ratcheted by `design-system.baseline.json`** at the repo root (`{ "accepted": [{ "check",
+"path" }] }`, matched by `check`+`path`, **ignoring line**, so one entry silences a check across a
+whole FILE). Both call sites pass `--baseline` only `if (existsSync(...))`, so deleting the file
+runs the gate at zero.
+
+Its history is the point. It was **emptied and deleted 2026-09-20** once its last three entries
+turned out to be checker false positives on the bare keyword `black` — not debt, and a baseline is
+for debt. It came **back the same day** holding 50 entries, when the `globalReach` check landed and
+found 156 real findings the audit had been blind to: component stylesheets reaching classes they do
+not own via `:global()`, 57 of them into `Button`'s own `.btn*` family from 50 different
+stylesheets. Each is a component nobody extracted or a prop nobody added, and the ratchet exists so
+the pile can only shrink — a NEW reach, in any file, fails the commit gate.
 
 Prefer the two narrower mechanisms. A genuine, permanent exception belongs in `DESIGN.md`'s
 `governance` block (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE,
@@ -1253,7 +1257,7 @@ or the line directly above it exempts just that one finding; a directive with no
 finding (`ignoreReason`).
 
 ```bash
-node scripts/designSystem/gate.mjs --root .
+node scripts/designSystem/gate.mjs --root . --baseline design-system.baseline.json
 bun test scripts/designSystem.test.ts    # the same check as a bun test (pre-push full suite); pre-commit calls gate.mjs directly
 ```
 
