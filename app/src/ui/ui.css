@@ -10,24 +10,24 @@
    default:
 
    1. GENUINE cross-component design-system primitives with two or more real consumers, most
-      documented at the point of use below: `.segmented` (+ its cross-primitive
-      `.segmented .btn--text` compound — SegmentedToggle.tsx AND a raw duplicate in
-      drawing/Toolbar.tsx; the `.btn`/`.btn--*` family itself moved to Button.module.css in
-      one-global-stylesheet Task 1, as a `:global()` bridge — see that file's header), the whole
+      documented at the point of use below: the whole
       `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
-      (ui/ViewBar.tsx, mounted by six unrelated views), `.chip-toggle` (reached by
-      bases/CardEditModal.module.css and bases/BaseView.module.css), `.search-bar-lead`/`.search-bar-input` (reached by
-      GraphView.module.css and palette/Palette.module.css), and `.row-kbd`/`.asc-key`'s shared
-      compound (written bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx). `.asc-caret`
-      (+ its `@keyframes asc-blink`), `.asc-modal` and `.asc-popover` — the three `asc-*` register
-      entries this file's header used to name as having no owning primitive — moved to
-      ui/Caret.module.css, ui/Modal.module.css and ui/Popover.module.css respectively
-      (one-global-stylesheet Task 7), each still `:global()`-bridged to its bare outside writers
-      (ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar; palette/Palette.module.css;
-      graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
-      `.row-kbd`/`.asc-key` remains undone the same way: accepting the `class` prop
-      `ui/Button.tsx` already exposes at each call site, or extracting a shared component, is
-      real work, deliberately deferred to a follow-up plan rather than done here.
+      (ui/ViewBar.tsx, mounted by six unrelated views), and the `asc-*` ASCII register
+      (`.segmented` moved to SegmentedToggle.module.css and `.search-bar`/`.search-bar-lead`/
+      `.search-bar-input` moved to SearchBar.module.css in one-global-stylesheet Task 5;
+      `.chip-toggle` moved to ChipToggle.module.css in Task 6; the `.btn`/`.btn--*` family
+      itself moved to Button.module.css in Task 1 — all four as `:global()` bridges, see each
+      file's own header). `.asc-caret` (+ its `@keyframes asc-blink`), `.asc-modal` and
+      `.asc-popover` — the three `asc-*` register entries this file's header used to name as
+      having no owning primitive — moved to ui/Caret.module.css, ui/Modal.module.css and
+      ui/Popover.module.css respectively (one-global-stylesheet Task 7), each still
+      `:global()`-bridged to its bare outside writers (ChatView/TermPanel/TopStrip/StatusBar/
+      SwitcherBar; palette/Palette.module.css; graph/GraphView.tsx) until wave 2 converts those
+      call sites to compose the new components. `.row-kbd`/`.asc-key`'s shared compound (written
+      bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx) remains undone the same way:
+      accepting the `class` prop `ui/Button.tsx` already exposes at each call site, or extracting
+      a shared component, is real work, deliberately deferred to a follow-up plan rather than
+      done here.
    2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
       `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
       `--bar-icon-gap`, `--bar-icon-size`, `--bar-crumb-gap`) — a token is never chrome regardless
@@ -57,41 +57,14 @@
    DEFINITION moved, to styles/tokens.css, since a token is never chrome and belongs there
    regardless of how many components currently read it. */
 
-/* ── SegmentedToggle: buttons butted together, sharing one rule ───────────── */
-.segmented { display: inline-flex; align-items: center; }
-.segmented .btn--text { border-radius: 0; position: relative; }
-/* Segments share ONE rule between them by overlapping borders, not by dropping the
-   left one — a dropped border leaves the selected segment's accent outline open on
-   its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
-   so its own border draws the full box. */
-.segmented .btn--text + .btn--text { margin-left: -1px; }
-.segmented .btn--text.btn--selected, .segmented .btn--text.btn--primary, .segmented .btn--text:hover:not(:disabled) { z-index: 1; }
-.segmented .btn--text:first-child { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
-.segmented .btn--text:last-child { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+/* .segmented (+ its cross-primitive `.segmented .btn--text` compound) MOVED to
+   ui/SegmentedToggle.module.css (one-global-stylesheet Task 5) — see that file for the family and
+   the `:global()` bridge to its four outside callers. `drawing/Toolbar.tsx` holds a raw duplicate
+   `<div class="segmented">` — reported there, not fixed (Task 11 owns that file). */
 
-/* ── SearchBar ───────────────────────────────────────────────────────────── */
-/* The search field. NO BORDER: it sits on --surface-1, which already separates it from the panel
-   behind it, and the accent lead glyph (.search-bar-lead) is the affordance that says "type here" —
-   a prompt marker, which is how a terminal indicates an input. A border on top of the fill made it
-   the heaviest control on screen, heavier than the buttons beside it, which is what read as
-   out-of-place. Height matches every other control. */
-.search-bar { display: flex; align-items: center; gap: var(--sp-3); background: var(--surface-1); padding: var(--sp-2) var(--sp-4); height: var(--h-control); }
-.search-bar-lead { color: var(--accent); flex: none; }
-.search-bar-input {
-  flex: 1;
-  font: inherit;
-  font-family: var(--ui-font-stack);
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--fg);
-}
-.search-bar-input::placeholder { color: var(--faint); }
-/* The input is borderless and sits flush inside .search-bar, so an outward ring on the input would
-   be painted under the bar's own background. Ring the BAR instead, inset, when focus is anywhere
-   inside it — the focused thing a user needs to see is "the search field", not the bare <input>. */
-.search-bar:focus-within { outline: var(--focus-ring); outline-offset: -2px; }
-.search-bar-input:focus-visible { outline: none; }
+/* .search-bar / .search-bar-lead / .search-bar-input MOVED to ui/SearchBar.module.css
+   (one-global-stylesheet Task 5) — see that file for the family and the `:global()` bridge to its
+   four outside callers (GraphSearch, palette/PaletteFrame, palette/SwitcherBar, PreviewView). */
 
 /* .ui-overlay MOVED to ui/Modal.module.css 2026-09-12 (CSS modules migration Task 7) —
    Modal.tsx was the sole reader anywhere in the app. */
@@ -119,37 +92,10 @@
    — grep confirmed ui/StatusDot.tsx is `.status-dot`'s only literal writer anywhere in the app,
    so both classes are now fully local there, no `:global()` bridge needed. */
 
-/* ── Chip toggle (selectable pill: export options, search toggles) ──────────
-   Default tone = accent; tone-<x> tints the SELECTED state to a category color
-   at 14% fill / 45% border. */
-/* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1) alongside .btn--text and
-   .vbtn above: radius --r-chip (2px) -> --r-0 (§9.2 — 0 everywhere, no chip/inline exception
-   survives), height set explicitly to --h-control so Chip joins the app's 18/24/36 control
-   rhythm instead of sizing itself off line-height alone. `.selected` used to FILL (accent-soft
-   background) — the third of the app's three divergent "selected toggle" treatments the audit
-   named; it now matches Button's and .vbtn's outline-only look (tone text + tone border,
-   transparent fill) so all three read as the same design. Tone variants get the same
-   fill-to-outline change, tinted to their own tone color instead of --accent. */
-.chip-toggle { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-3); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--text-muted); background: transparent; border: var(--rule); cursor: pointer; white-space: nowrap; }
-.chip-toggle svg { color: var(--faint); }
-.chip-toggle:hover { color: var(--fg); }
-/* Same reasoning as .btn:focus-visible above — chip-toggle is a button that opted out of .btn's
-   box model, not out of being keyboard-reachable. */
-.chip-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-.chip-toggle.selected { color: var(--accent); background: transparent; border-color: var(--accent); }
-.chip-toggle.selected svg { color: var(--accent); }
-.chip-toggle.tone-teal.selected { color: var(--teal); background: transparent; border-color: var(--teal); }
-.chip-toggle.tone-teal.selected svg { color: var(--teal); }
-.chip-toggle.tone-blue.selected { color: var(--blue); background: transparent; border-color: var(--blue); }
-.chip-toggle.tone-blue.selected svg { color: var(--blue); }
-.chip-toggle.tone-violet.selected { color: var(--violet); background: transparent; border-color: var(--violet); }
-.chip-toggle.tone-violet.selected svg { color: var(--violet); }
-.chip-toggle.tone-green.selected { color: var(--green); background: transparent; border-color: var(--green); }
-.chip-toggle.tone-green.selected svg { color: var(--green); }
-.chip-toggle.tone-gold.selected { color: var(--gold); background: transparent; border-color: var(--gold); }
-.chip-toggle.tone-gold.selected svg { color: var(--gold); }
-.chip-toggle.tone-rose.selected { color: var(--rose); background: transparent; border-color: var(--rose); }
-.chip-toggle.tone-rose.selected svg { color: var(--rose); }
+/* .chip-toggle (+ :hover, .selected, .tone-<x>) MOVED to ui/ChipToggle.module.css
+   (one-global-stylesheet Task 6) — ChipToggle.tsx is the new component; the rules stay written
+   as bare :global() literals there since bases/CardEditModal.module.css and
+   bases/BaseView.module.css still reach the class directly, pending a later wave. */
 
 /* ── Cross-component primitives (moved from App.css, 2026-08) ──────────────
    These stay GLOBAL on purpose: each is used by two or more unrelated components, so scoping them
