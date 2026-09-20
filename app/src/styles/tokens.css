@@ -430,7 +430,7 @@
    `:root` block that file declared. popover.css itself stays global permanently (see its own
    header) since every class it defines is a runtime-emitted `bismuth-` literal written by
    Solid components and vanilla DOM code alike — but these are TOKENS, not chrome, and are read
-   via var() well beyond popover.css: SearchResultRows.module.css, editor/datePicker.css,
+   via var() well beyond popover.css: SearchResultRows.module.css, editor/DatePicker.module.css,
    palette/SwitcherBar.module.css, and palette/Palette.module.css all consume one or more of
    them. Nothing about their values changes; only the file that defines them does. */
 :root {

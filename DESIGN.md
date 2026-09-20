@@ -135,7 +135,6 @@ governance:
     - app/src/ui/ui.css            # shared register: .btn family, .viewbar ladder, asc-* classes
     - app/src/ui/popover/popover.css  # runtime-emitted bismuth- literals from vanilla DOM code
     - app/src/Editor.css           # CodeMirror theming, a plain-DOM library
-    - app/src/editor/datePicker.css   # imperative widget built outside the Solid tree
     - app/src/Terminal.css         # xterm theming, a plain-DOM library
     - app/src/graph/asciiGraph.css # canvas character-grid metrics
     - app/src/palette/switcher.css # switcher rows written as HTML strings
