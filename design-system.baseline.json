@@ -14,10 +14,6 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/calendar/components/CategoryPanel.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/calendar/components/DateNav.module.css"
     },
     {
@@ -50,15 +46,7 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/daemon/InboxRow.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/drawing/Toolbar.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/EditDictionaryModal.module.css"
     },
     {
       "check": "globalReach",
