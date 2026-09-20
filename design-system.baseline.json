@@ -102,10 +102,6 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/editor/InkOverlay.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/GraphSearch.module.css"
     },
     {
@@ -139,10 +135,6 @@
     {
       "check": "globalReach",
       "path": "app/src/preview/OutlineTree.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/preview/PageInk.module.css"
     },
     {
       "check": "globalReach",

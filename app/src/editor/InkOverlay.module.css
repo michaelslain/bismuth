@@ -22,12 +22,10 @@
   cursor: crosshair;
   touch-action: none; /* stylus/touch draw, not scroll — wheel still forwards to the note */
 }
-/* `.draw-toolbar` is a GLOBAL class, rendered as a bare literal by drawing/Toolbar.tsx and
-   defined in drawing/Toolbar.module.css (kept unhashed there via :global(), same reasoning as
-   here). This file became a CSS module when InkOverlay moved out of editor/, and a module
-   hashes every bare class it names — which would have left this selector matching nothing
-   while still compiling, so the dock would silently stop taking pointer events in draw mode.
-   `:global()` keeps it pointing at the real class. */
-.ink-host.active :global(.draw-toolbar) {
+/* The drawing dock is Toolbar.tsx's `.draw-toolbar` (drawing/Toolbar.module.css) — still a bare,
+   global, unhashed class there (external story probes need the literal string), but this file no
+   longer needs to know that: Toolbar.tsx also carries a `data-draw-toolbar` attribute on the
+   same node, and an attribute selector needs no hashing to stay correct across a build. */
+.ink-host.active [data-draw-toolbar] {
   pointer-events: auto;
 }

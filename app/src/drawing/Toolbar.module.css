@@ -2,11 +2,14 @@
  * Split out of drawing/Drawing.css (Task 10) — Toolbar.tsx's own dock chrome.
  *
  * `.draw-toolbar` stays a GLOBAL, unhashed literal (below) even though it lives in this
- * module: two independent real reaches depend on the exact string "draw-toolbar" surviving in
- * the DOM — `editor/InkOverlay.module.css`'s `.ink-host.active :global(.draw-toolbar)` rule,
- * and `Editor.stories.tsx`'s `canvasElement.querySelector('.draw-toolbar')` draw-mode probe.
- * Toolbar.tsx is still this class's one real owner, so the rule is colocated here rather than
- * in a separate global file — only the SELECTOR is global, not the file. */
+ * module: several `*.stories.tsx` probes outside this task's file list still
+ * `querySelector('.draw-toolbar')` for it, so the DOM node keeps the bare string and this rule
+ * must stay `:global()` to match it — a hashed local here would match nothing. Toolbar.tsx is
+ * still this class's one real owner, so the rule stays colocated here rather than in a separate
+ * global file — only the SELECTOR is global, not the file. What USED to also reach this class
+ * from OTHER files (editor/InkOverlay.module.css, preview/PageInk.module.css) now reads a
+ * `data-draw-toolbar` attribute on the same node instead — those two files no longer need
+ * `:global()` at all, only this one (the real owner) still does. */
 :global(.draw-toolbar) {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
   display: flex; flex-direction: column; gap: var(--sp-2); align-items: center; padding: var(--sp-4) var(--sp-4);
