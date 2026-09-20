@@ -6,6 +6,14 @@
    wave's job — they still write the class literal, so the rule below stays a `:global()`
    bridge rather than a hashed local, and the keyframes move here WITH the rule that uses them
    (an animation referencing a name that no longer exists silently stops, with no error). */
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local its component actually reads — a `.module.css` with zero
+   local classes reads as dead to `bench/moduleClassCheck.ts` and Rollup tree-shakes the whole
+   file's side-effect import out of the production bundle, silently dropping every rule below.
+   See FormControl.module.css for the precedent this copies. */
+.caret-marker { --caret: true; }
+
 @keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 /* design-system-ignore globalReach: Caret's own class, temporary :global() bridge to ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar's 5 bare writers, until wave 2 */
 :global(.asc-caret) {

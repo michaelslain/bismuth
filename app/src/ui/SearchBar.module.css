@@ -19,6 +19,14 @@
    hashed locals is a later wave's job, once the outside stylesheets that reach them have been
    re-pointed. */
 
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local its component actually reads — a `.module.css` with zero
+   local classes reads as dead to `bench/moduleClassCheck.ts` and Rollup tree-shakes the whole
+   file's side-effect import out of the production bundle, silently dropping every rule below.
+   See FormControl.module.css for the precedent this copies. */
+.search-bar-marker { --search-bar: true; }
+
 /* The search field. NO BORDER: it sits on --surface-1, which already separates it from the panel
    behind it, and the accent lead glyph (.search-bar-lead) is the affordance that says "type here" —
    a prompt marker, which is how a terminal indicates an input. A border on top of the fill made it

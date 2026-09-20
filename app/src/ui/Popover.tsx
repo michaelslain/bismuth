@@ -1,5 +1,5 @@
 import type { Component, JSX } from 'solid-js'
-import './Popover.module.css'
+import styles from './Popover.module.css'
 
 export type PopoverProps = {
     class?: string
@@ -17,7 +17,7 @@ export type PopoverProps = {
  */
 const Popover: Component<PopoverProps> = props => {
     return (
-        <div class={'asc-popover' + (props.class ? ` ${props.class}` : '')}>
+        <div class={`${styles['popover-marker']} asc-popover${props.class ? ` ${props.class}` : ''}`}>
             {props.children}
         </div>
     )

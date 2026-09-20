@@ -11,6 +11,14 @@
    instead of the old blur(6px) + --shadow-popup. Sanctioned exception per §9.3 ("no blur, but one
    hard-offset lift... where a depth cue is genuinely needed") — probed against a same-tone
    background via storyAudit. */
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local its component actually reads — a `.module.css` with zero
+   local classes reads as dead to `bench/moduleClassCheck.ts` and Rollup tree-shakes the whole
+   file's side-effect import out of the production bundle, silently dropping every rule below.
+   See FormControl.module.css for the precedent this copies. */
+.popover-marker { --popover: true; }
+
 /* design-system-ignore globalReach: Popover's own class, temporary :global() bridge to GraphView.tsx's 3 bare writers, until wave 2 */
 :global(.asc-popover) {
   background: var(--pop-bg);

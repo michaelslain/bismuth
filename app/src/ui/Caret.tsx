@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js'
-import './Caret.module.css'
+import styles from './Caret.module.css'
 
 export type CaretProps = {
     class?: string
@@ -22,7 +22,7 @@ export type CaretProps = {
  */
 const Caret: Component<CaretProps> = props => {
     return (
-        <span class={'asc-caret' + (props.class ? ` ${props.class}` : '')}>
+        <span class={`${styles['caret-marker']} asc-caret${props.class ? ` ${props.class}` : ''}`}>
             _
         </span>
     )
