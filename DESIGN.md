@@ -124,21 +124,17 @@ governance:
   tokens:
     # tokens.ts owns every colour; tokens.css holds the first-paint copy of the ink theme plus the
     # whole geometry / type / motion scale; settingsCssVars.ts projects the selected theme at runtime
-    files: [core/src/theme/tokens.ts, app/src/styles/tokens.css, app/src/settingsCssVars.ts]
+    files: [core/src/theme/tokens.ts, app/src/global.css, app/src/settingsCssVars.ts]
     use: "var(--"
   # classes built OUTSIDE the bundler, so :global() is the only spelling available —
   # RUNTIME_CLASS_PREFIXES in app/src/cssLayering.test.ts, the same list, plus xterm's own DOM
   externalClasses: ["bismuth-*", "callout-*", "cm-*", "xterm*"]
   global:
-    - "app/src/styles/**"          # tokens, reset, content (runtime-HTML classes), icon faces
-    - app/src/App.css              # the global layer's entry; @imports styles/
-    - app/src/ui/ui.css            # shared register: .btn family, .viewbar ladder, asc-* classes
-    - app/src/ui/popover/popover.css  # runtime-emitted bismuth- literals from vanilla DOM code
-    - app/src/Editor.css           # CodeMirror theming, a plain-DOM library
-    - app/src/Terminal.css         # xterm theming, a plain-DOM library
-    - app/src/graph/asciiGraph.css # canvas character-grid metrics
-    - app/src/palette/switcher.css # switcher rows written as HTML strings
-    - "app/src/sheet/univer-*.css" # Univer theming, a third-party widget
+    - app/src/global.css           # the ONE global stylesheet — tokens, reset, runtime-HTML
+                                    # classes, app shell chrome, the shared asc-*/btn/viewbar
+                                    # register, CodeMirror/xterm/Univer theming, the switcher and
+                                    # popover runtime literals — each former file its own
+                                    # clearly commented section (one-global-stylesheet, Task 14)
   primitives:
     dir: app/src/ui
     elements:

@@ -61,7 +61,10 @@ describe('CSS comments never close early', () => {
         // family) — this canary now points at one of its successors instead, still proving the glob
         // matches `.module.css` files, not just bare `.css` ones.
         expect(cssFiles).toContain('ChatHeader.module.css')
-        expect(cssFiles).toContain('sheet/univer-theme.css')
+        // sheet/univer-theme.css itself is gone (Task 14, one-global-stylesheet: merged into
+        // global.css) — the canary now points at the merged file, still proving the glob matches
+        // bare `.css` files too, not just `.module.css` ones.
+        expect(cssFiles).toContain('global.css')
     })
 
     for (const rel of cssFiles) {

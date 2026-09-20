@@ -19,7 +19,7 @@ import { join } from 'node:path'
 const SRC = join(import.meta.dir)
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
 
-const tokens = read('styles/tokens.css')
+const tokens = read('global.css')
 
 /** Resolve a --fs-* token to px through aliases, max() and min(), for a GIVEN prose size.
  *  `body` is a parameter rather than a constant because --editor-font-size is a USER SETTING
@@ -29,7 +29,7 @@ const resolvePx = (name: string, body: number, depth = 0): number => {
     if (depth > 8) throw new Error(`${name}: alias chain too deep`)
     if (name === 'editor-font-size') return body
     const m = tokens.match(new RegExp(`--${name}:\\s*([^;]+);`))
-    if (!m) throw new Error(`${name} is not defined in styles/tokens.css`)
+    if (!m) throw new Error(`${name} is not defined in global.css`)
     const value = m[1].trim()
 
     const px = value.match(/^([\d.]+)px$/)

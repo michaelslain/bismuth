@@ -1,6 +1,5 @@
 import type { Component } from 'solid-js'
 import './Caret.module.css'
-import './ui.css'
 
 export type CaretProps = {
     class?: string

@@ -2,7 +2,6 @@
 // Colored-dot + word status (no pill): the canonical status renderer. The category
 // palette (Reading=teal / To Read=blue / Finished=green / Abandoned=rose) lives here
 // so Table/List/Kanban — and any future status display — stay in sync.
-import './ui.css'
 import styles from './StatusDot.module.css'
 
 export const STATUS_COLOR: Record<string, string> = {

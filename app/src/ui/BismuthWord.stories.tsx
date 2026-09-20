@@ -21,7 +21,6 @@ import { settingsToCssVars } from '../settingsCssVars'
 import { THEME_NAMES, THEME_LABELS } from '../themes'
 import { DEFAULTS } from '../../../core/src/schema/settingsSchema'
 import type { Settings } from '../settings'
-import '../App.css'
 
 const Prose = (props: { children: any }) => (
     <p

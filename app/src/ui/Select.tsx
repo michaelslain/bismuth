@@ -5,8 +5,6 @@ import { createMenuNav } from './popover/createMenuNav'
 import { placeBelowOrAbove } from './popover/placeAnchored'
 import { Icon } from '../icons/Icon'
 import FormControl from './FormControl'
-import './ui.css'
-import './popover/popover.css'
 import styles from './Select.module.css'
 
 /** `detail` renders as the muted right-side text on the option's row (MenuRow detail) — e.g. the

@@ -1,6 +1,5 @@
 import type { Component, JSX } from 'solid-js'
 import './Popover.module.css'
-import './ui.css'
 
 export type PopoverProps = {
     class?: string

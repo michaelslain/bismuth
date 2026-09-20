@@ -14,7 +14,6 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import WordmarkHero from './WordmarkHero'
-import '../App.css'
 
 const meta = {
     title: 'Intro/WordmarkHero',

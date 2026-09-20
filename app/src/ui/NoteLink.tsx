@@ -1,6 +1,5 @@
 import type { Component, JSX } from 'solid-js'
 import styles from './NoteLink.module.css'
-import './ui.css'
 
 export type NoteLinkProps = {
     /** Vault path of the note to open, e.g. `journal/2026-08-04.md`. */

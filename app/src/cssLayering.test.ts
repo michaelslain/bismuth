@@ -11,8 +11,14 @@
 // only that form, so the check has real work to do against the code as it stands rather than
 // passing vacuously.
 //
-// The rest of the file pins the shape Task 3 of the modularization established: App.css is an
-// import manifest for the three global stylesheets plus a shrinking pile of component chrome.
+// The rest of the file pins the shape Task 3 of the modularization established, updated by Task 14
+// (one-global-stylesheet): the twelve former global files (App.css, Editor.css, Terminal.css,
+// ui/ui.css, styles/{tokens,reset,content}.css, graph/asciiGraph.css, palette/switcher.css,
+// ui/popover/popover.css, sheet/univer-{theme,icons}.css) are now ONE file, global.css, each former
+// file its own clearly commented section. The former `@import` HOISTING of tokens/reset/content
+// ahead of App.css's body is now just textual order in one file — this suite still pins that a
+// former-App.css rule can never precede the tokens/reset/content sections, since that ordering is
+// exactly what used to be invisible (the imports hoisted regardless of where they sat in the file).
 import { describe, it, expect } from 'bun:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -90,7 +96,23 @@ function runtimeClassesDefinedIn(css: string): string[] {
 }
 
 const modules = allFiles(SRC).filter(f => f.endsWith('.module.css'))
-const appCss = readFileSync(join(SRC, 'App.css'), 'utf8')
+const globalCss = readFileSync(join(SRC, 'global.css'), 'utf8')
+
+/** Section markers written by the Task 14 merge ("* <title> \n * ====" banner comments). Each
+ *  former file is its own section; slicing between two markers recovers exactly what that file's
+ *  content used to be, so the checks below can still ask their old, file-scoped questions. */
+const sectionStart = (title: string): number => {
+    const at = globalCss.indexOf(title)
+    if (at < 0) throw new Error(`section not found in global.css: ${title}`)
+    return at
+}
+const tokensAt = sectionStart('styles/tokens.css — design tokens')
+const resetAt = sectionStart('styles/reset.css — element reset')
+const contentAt = sectionStart('styles/content.css — runtime-emitted classes')
+const appShellAt = sectionStart('App.css — app shell chrome')
+const uiCssAt = sectionStart('ui/ui.css — shared design-system primitives')
+// The App.css section runs from its own banner to the next section's banner (ui/ui.css).
+const appCss = globalCss.slice(appShellAt, uiCssAt)
 
 describe('css layering — runtime classes stay out of CSS Modules', () => {
     it('finds the modules it is supposed to be guarding', () => {
@@ -153,21 +175,23 @@ describe('css layering — runtime classes stay out of CSS Modules', () => {
     })
 })
 
-describe('css layering — App.css is the global manifest', () => {
-    it('imports the three global stylesheets before anything else', () => {
-        // `@import` hoists anyway, but a rule written ABOVE these lines reads as if it ran first and
-        // will be reasoned about wrongly by the next person to move something.
-        const firstRule = appCss.search(/^[^\s@].*\{/m)
-        const lastImport = appCss.lastIndexOf('@import "./styles/')
-        for (const f of ['tokens', 'reset', 'content']) {
-            expect(appCss, `imports styles/${f}.css`).toContain(
-                `@import "./styles/${f}.css";`,
-            )
-        }
-        expect(lastImport).toBeGreaterThan(-1)
-        expect(firstRule, 'a rule precedes the @import block').toBeGreaterThan(
-            lastImport,
+describe('css layering — global.css keeps the hoisted order', () => {
+    it('places tokens, reset and content before the App.css section, in that order', () => {
+        // These three used to be `@import`ed by App.css, and `@import` HOISTS — so the browser ran
+        // them ahead of App.css's own body regardless of where the import lines sat in the file. Now
+        // that they are one file, textual order IS effective order, so this is the ordering that
+        // reproduces the old hoisted cascade: get it wrong and every rule below silently changes
+        // precedence with nothing to report it.
+        expect(tokensAt, 'tokens section precedes reset section').toBeLessThan(
+            resetAt,
         )
+        expect(resetAt, 'reset section precedes content section').toBeLessThan(
+            contentAt,
+        )
+        expect(
+            contentAt,
+            'content section precedes the App.css section',
+        ).toBeLessThan(appShellAt)
     })
 
     it('declares no design token — those live in styles/tokens.css', () => {

@@ -30,7 +30,7 @@ const ROOT = join(APP_SRC, '..', '..')
 // The :root first-paint fallbacks moved out of App.css into styles/tokens.css (the CSS
 // modularization's global layer) — App.css only @imports it now. This constant is the one thing
 // that had to follow them; every assertion below is unchanged.
-const APP_CSS = join(APP_SRC, 'styles', 'tokens.css')
+const APP_CSS = join(APP_SRC, 'global.css')
 const TOKENS = join(ROOT, 'core', 'src', 'theme', 'tokens.ts')
 
 /** ColorTokens fields every theme MUST define (the base palette). */

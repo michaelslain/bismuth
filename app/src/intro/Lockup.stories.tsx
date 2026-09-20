@@ -9,7 +9,6 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import Lockup from './Lockup'
-import '../App.css'
 
 const meta = {
     title: 'Intro/Lockup',

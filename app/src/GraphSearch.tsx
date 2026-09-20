@@ -19,7 +19,6 @@ import { IconButton } from './ui/IconButton'
 import Label from './ui/Label'
 import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
-import './graph/asciiGraph.css'
 import styles from './GraphSearch.module.css'
 
 export interface SearchItem {
