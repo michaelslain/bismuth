@@ -1,6 +1,6 @@
 import { For, type JSX } from 'solid-js'
 import { Button, type ButtonSize } from './Button'
-import './ui.css'
+import './SegmentedToggle.module.css'
 
 export type SegmentedOption<T> = { id: T; label: JSX.Element; title?: string }
 
