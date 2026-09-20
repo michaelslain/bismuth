@@ -9,14 +9,13 @@
     padding: var(--sp-3);
 }
 
-/* Unlike the yaml-fix hover (which CM wraps as `.cm-tooltip > .bismuth-popover`, so
-   popover.css's `.cm-tooltip:has(> .bismuth-popover)` reset applies), a `showTooltip` facet
-   tooltip gets the `cm-tooltip` class applied to OUR element directly — class stacking, not
-   nesting — so that `:has` reset never matches and CM's default light tooltip chrome
-   (#f5f5f5 / #bbb border) beats this file's themed background on source order. Re-assert the
-   themed surface here at higher specificity (the `--bg`/`--fg`/`--border` vars resolve fine —
-   they cascade from :root onto the tooltip wherever CM parents it). */
-:global(.cm-editor) :global(.cm-tooltip).root {
+/* CM wraps this widget the same way it wraps the yaml-fix hover: `cm-tooltip` on the outer
+   DOM node CodeMirror owns, with our mounted markup (`.bismuth-popover .root`) nested inside
+   as a child, not stamped onto that same node. Re-assert the themed surface here at higher
+   specificity in case CM's default light tooltip chrome (#f5f5f5 / #bbb border) wins on source
+   order (the `--bg`/`--fg`/`--border` vars resolve fine — they cascade from :root onto the
+   tooltip wherever CM parents it). */
+:global(.cm-editor) :global(.cm-tooltip) .root {
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
