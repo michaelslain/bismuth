@@ -56,7 +56,9 @@
 .kanbanColHeader:active { cursor: grabbing; }
 /* While a pointer-drag is live (class set on <html>), force the grabbing cursor everywhere and kill
    text selection — the drag runs on window listeners, so the cursor isn't over the source element. */
+/* design-system-ignore globalReach: <html> is the document root, outside any component's tree — KanbanView.tsx toggles kb-dragging on document.documentElement itself, so this is that same element, not a reach into another component's class */
 :global(html.kb-dragging), :global(html.kb-dragging) * { cursor: grabbing !important; user-select: none !important; }
+/* design-system-ignore globalReach: same html.kb-dragging state class as above */
 :global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
 .kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
 .kanbanColTitle { text-transform: capitalize; color: var(--fg); }

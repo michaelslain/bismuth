@@ -60,10 +60,12 @@
     flex: 1 1 auto;
     min-width: 0;
 }
+/* design-system-ignore globalReach: cm-* is CodeMirror's own runtime-generated class, painted by the library itself — not a class this repo builds or owns (externalClasses already exempts cm-*; marked here permanently per the plan's "DOM this repo does not build" exception) */
 .input :global(.cm-editor) {
     width: 100%;
     background: transparent;
 }
+/* design-system-ignore globalReach: cm-* CodeMirror class, see above */
 .input :global(.cm-editor):global(.cm-focused) {
     outline: none;
 }
@@ -73,6 +75,7 @@
    `.cm-placeholder` class the same way `.cm-editor`/`.cm-focused` above already do: never hashed,
    a plain-DOM library's own class, not a project module. Selector specificity (module class + 2
    global classes) outranks the theme's own injected rule regardless of stylesheet load order. */
+/* design-system-ignore globalReach: cm-* CodeMirror class, see above */
 .input :global(.cm-editor) :global(.cm-placeholder) {
     color: var(--faint);
 }
