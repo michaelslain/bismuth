@@ -5,9 +5,10 @@ import { InboxIndicator } from './InboxIndicator'
 import styles from './StatusBar.module.css'
 
 // The status bar field-log line (bismuth-design/ascii/README.md "App shell", §2), lifted out of App.tsx
-// verbatim — pure presentation of signals App.tsx already owns: vault name, the focused pane's
-// content, connection health (serverVersion's ConnectionState), and right-aligned daemon +
-// inbox indicators, closed by a blinking `_` caret. No new state; `onCopyVault` is the
+// verbatim — pure presentation of signals App.tsx already owns: a single location readout
+// (issue #10 — the focused file's full absolute path, or `vaultPath // label` for a sentinel
+// pane), connection health (serverVersion's ConnectionState), and right-aligned daemon + inbox
+// indicators, closed by a blinking `_` caret. No new state; `onCopyLocation` is the
 // click-to-copy callback that stays in App.tsx because it pushes toasts, which a presentational
 // component must not do, and `onOpenInbox` for the same reason (it opens a tab).
 //
@@ -43,44 +44,34 @@ const DAEMON_TEXT: Record<'off' | 'idle' | 'working', string> = {
 }
 
 export function StatusBar(props: {
-    vaultName: string
-    vaultPath: string
-    path: string
+    /** The single location readout (App.tsx's `statusLocation()`) — a focused file's full
+     *  absolute path, or `vaultPath // label` for a sentinel pane / no focus. See issue #10. */
+    location: string
     connected: boolean
     daemon: 'off' | 'idle' | 'working'
     /** Daemon-inbox pages awaiting review (App.tsx's `dueCount()`). */
     inboxCount: number
-    onCopyVault: () => void
+    onCopyLocation: () => void
     onOpenInbox: () => void
 }) {
     return (
         <div class={styles['status-bar']}>
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['status-vault']}
-                title={props.vaultPath || undefined}
-                onClick={props.onCopyVault}
-            >
-                {props.vaultName || 'vault'}
-            </Text>
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['status-sep']}
-            >
-                //
-            </Text>
             {/* No layout class of its own, deliberately: this is the one item in the row that can
                 shrink to zero (Label pairs `min-width: 0` with `overflow: hidden`), so it absorbs
                 every shortfall and yields entirely on a narrow bar. That is the intended
                 degradation — the alternative is clipping a live status value mid-character off the
-                right edge. Reasoned through with measurements in StatusBar.module.css. */}
-            <Label tone="muted">{props.path}</Label>
+                right edge. Reasoned through with measurements in StatusBar.module.css.
+                Click-to-copy (issue #10) + `title` tooltip live directly on this Label, which is
+                why `.status-location` in StatusBar.module.css only adds `cursor: pointer` + the
+                hover colour shift — Label already owns the shrink/ellipsis behavior above. */}
+            <Label
+                tone="muted"
+                class={styles['status-location']}
+                title={props.location || undefined}
+                onClick={props.onCopyLocation}
+            >
+                {props.location}
+            </Label>
             {/* The one status in this bar that can cost the user work: while it is showing, edits
                 are not reaching the backend. `role="status"` (an implicit polite live region) so a
                 screen reader is told the moment it appears — it was previously conveyed by 10.5px

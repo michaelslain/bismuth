@@ -62,7 +62,6 @@ import { setPendingAnchor } from './pendingAnchor'
 import { installNativeDrop, uninstallNativeDrop } from './nativeDrop'
 import { isReloadNavigation } from './navType'
 import { installAppMenu } from './nativeAppMenu'
-import { vaultBasename } from './vaultPath'
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() =>
     import('./Terminal').then(m => ({ default: m.TerminalTab })),
@@ -293,47 +292,30 @@ export default function App() {
         return m
     })
 
-    // Vault name for the status bar's field-log line (bismuth-design/ascii/README.md "App shell").
-    // Fetched once from the existing GET /config (already used by the settings page to show how
-    // core was launched) — pure presentation of an existing backend signal, no new server state.
-    // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
-    // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
-    // it as a `title` tooltip + click-to-copy — see the status bar below.
+    // Vault path for the status bar's single location readout (issue #10 superseded issue #7's
+    // basename-only display: the whole point of this readout is the ABSOLUTE path, since the
+    // user may not remember which vault they opened, and the vault tree already shows the
+    // relative path). Fetched once from the existing GET /config (already used by the settings
+    // page to show how core was launched) — pure presentation of an existing backend signal, no
+    // new server state.
     // SEEDED SYNCHRONOUSLY from what the Tauri shell already injected, then refreshed from
     // GET /config. The fetch alone was not enough: it is best-effort and its failure path is
-    // silent, so any window where it did not land showed the literal word "vault" — which reads as
-    // a real vault named `vault` rather than as "we don't know yet", and is exactly how this went
-    // unnoticed. Outside the bundled app there is no injected value and the fetch is still the
-    // only source, which is correct: dev and the browser build have no shell to inject one.
+    // silent, so any window where it did not land showed a bare relative path with no vault
+    // prefix — which reads as "the vault is the cwd" rather than "we don't know yet", and is
+    // exactly how this went unnoticed. Outside the bundled app there is no injected value and the
+    // fetch is still the only source, which is correct: dev and the browser build have no shell
+    // to inject one.
     const injectedVault = injectedVaultPath()
-    const [vaultName, setVaultName] = createSignal<string>(
-        injectedVault ? vaultBasename(injectedVault) : '',
-    )
     const [vaultPath, setVaultPath] = createSignal<string>(injectedVault ?? '')
     onMount(() => {
         fetch(`${apiBase()}/config`)
             .then(r => (r.ok ? r.json() : null))
             .then((cfg: { vault?: string } | null) => {
                 const v = cfg?.vault
-                if (typeof v === 'string') {
-                    setVaultPath(v)
-                    setVaultName(vaultBasename(v))
-                }
+                if (typeof v === 'string') setVaultPath(v)
             })
-            .catch(() => {}) // best-effort — the status bar just shows a blank vault name on failure
+            .catch(() => {}) // best-effort — the status bar just shows a relative path on failure
     })
-
-    /** Click-to-copy the full vault path off `.status-vault` (issue #7) — mirrors
-     *  the chat transcript's copy action: confirm via toast, and toast on rejection too since
-     *  navigator.clipboard can fail (permissions, insecure context). */
-    const copyVaultPath = () => {
-        const p = vaultPath()
-        if (!p) return
-        navigator.clipboard
-            .writeText(p)
-            .then(() => pushToast('Copied vault path'))
-            .catch(() => pushToast("Couldn't copy vault path"))
-    }
 
     // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
     // ChatView from the backend's `title` frames), else the daemon's identity name when it's
@@ -2907,16 +2889,39 @@ export default function App() {
         openContextMenu(e.clientX, e.clientY, items, setEditorMenu)
     }
 
-    // Status bar field-log line (bismuth-design/ascii/README.md "App shell") — pure presentation of
-    // existing signals, no new state: the focused pane's content id (real path, or a friendly
-    // label for a sentinel/terminal via the same contentLabel used by the tab bar).
-    const statusPath = createMemo<string>(() => {
+    // Status bar's single location readout (issue #10) — pure presentation of existing signals,
+    // no new state. A focused FILE shows its full absolute path (vaultPath + relPath), because
+    // the whole point of this readout is the path the vault tree's relative path can't give —
+    // which vault the user is even in. A focused SENTINEL (graph/terminal/chat/daemon…) or no
+    // focus at all has no file path to show, so it falls back to `vaultPath // label`, the same
+    // friendly label the tab bar uses via `contentLabel`. `vaultPath` can be empty for a moment
+    // before GET /config resolves (see above) — both branches degrade to just the relative half.
+    const statusLocation = createMemo<string>(() => {
         const c = focusedContent()
-        if (!c) return 'no file'
-        return isSentinel(c)
+        const vp = vaultPath().replace(/\/+$/, '')
+        if (c && !isSentinel(c)) return vp ? `${vp}/${c}` : c
+        const label = c
             ? contentLabel(c, terminalContentIndex().get(c))
-            : c
+            : 'no file'
+        return vp ? `${vp} // ${label}` : label
     })
+
+    /** Click-to-copy off the status bar's location readout (issue #10, mirrors issue #7's old
+     *  `.status-vault` behavior) — the chat transcript's copy action: confirm via toast, and
+     *  toast on rejection too since navigator.clipboard can fail (permissions, insecure context).
+     *  Copies the focused FILE's absolute path when one is focused, else the vault path alone —
+     *  never the sentinel label, which isn't a path. */
+    const copyStatusLocation = () => {
+        const c = focusedContent()
+        const vp = vaultPath().replace(/\/+$/, '')
+        const target =
+            c && !isSentinel(c) ? (vp ? `${vp}/${c}` : c) : vp
+        if (!target) return
+        navigator.clipboard
+            .writeText(target)
+            .then(() => pushToast('Copied path'))
+            .catch(() => pushToast("Couldn't copy path"))
+    }
 
     return (
         <AppFrame
@@ -3378,9 +3383,7 @@ export default function App() {
             }
             statusBar={
                 <StatusBar
-                    vaultName={vaultName()}
-                    vaultPath={vaultPath()}
-                    path={statusPath()}
+                    location={statusLocation()}
                     connected={currentConnectionState() === 'connected'}
                     daemon={
                         settings.daemon.enabled
@@ -3390,7 +3393,7 @@ export default function App() {
                             : 'off'
                     }
                     inboxCount={dueCount()}
-                    onCopyVault={copyVaultPath}
+                    onCopyLocation={copyStatusLocation}
                     onOpenInbox={openDaemon}
                 />
             }
