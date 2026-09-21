@@ -46,10 +46,13 @@
    (keyframe/media rules are invisible to the `^\.`-anchored ratchet grep but still belong with their
    family).
 
-   THE `:global(.btn--icon...)` REACHES BELOW STAY BRIDGES (one-global-followups Task 4): every
-   button in this toolbar renders through `shell/CommandButton.tsx`, which has no `class` prop —
-   there is no local class here to retarget to, and CommandButton.tsx is outside this task's file
-   scope to add one. Reported, not fixed here; see Sidebar.module.css's identical note. */
+   THE `:global(.btn--icon...)` REACHES ARE GONE (one-global-followups Task 2) — see
+   Sidebar.module.css's identical note for the full account. `shell/CommandButton.tsx` now stamps
+   `data-command-icon="true"` on the button it renders, so this file selects
+   `.tab-rail-actions [data-command-icon]` instead of reaching a foreign module's hashed class via
+   `:global()`; CommandButton also grew a `class` prop, but nothing here can use it yet since
+   App.tsx's `ToolbarButton` (out of this task's file scope) is what actually instantiates the
+   button, not this file. */
 
 /* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
    `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
@@ -118,9 +121,10 @@
    --sp-*" sweep) — they are this exact derivation's inputs, not an arbitrary gap; nudging either
    one off the tabs. The top/bottom 8px and the between-button 3px gap carry no such constraint
    and are tokenized below (--sp-4, --sp-2). */
-/* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
-   is module-hashed and a global rule naming it would match nothing. */
-.tab-rail-actions :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+/* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
+   shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
+   plain attribute selector, not a foreign class reach, so this carries no `:global()`. */
+.tab-rail-actions [data-command-icon] { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 /* CENTER, not flex-start. The rail is a narrow vertical strip, so `row wrap` puts each icon on its
    own line and `justify-content` is what positions it ACROSS the rail. The content box is 21px
    (45px strip minus 12px padding a side) against an 18px icon, so flex-start pinned every icon 1.5px
@@ -134,7 +138,7 @@
      symmetric about the visible centre, so its icons land on 0 offset — the same place the tab
      rows' icons land via their own 5px/10px arithmetic. Without it the two disagree by 0.5px. */
   padding: var(--sp-4) calc(var(--sp-5) + 1px) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
-.tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
+.tab-rail-actions [data-command-icon] { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 /* CENTRED ONLY WHILE COLLAPSED. The centring above is correct for a 46px strip — it is what lands
    each icon on the same optical axis as the tab rows' icons below. Expanded to 232px it kept
