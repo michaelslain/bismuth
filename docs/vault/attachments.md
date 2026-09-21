@@ -282,11 +282,13 @@ whatever the drag actually carries (in priority order: real paths, then raw imag
 `Editor.tsx`'s `runDropActions` carries out the result:
 
 - **A browser image** (dragged out of a page) is downloaded server-side (`POST /asset/fetch`,
-  owner-only, `http:`/`https:` addresses only) into the attachments folder and embedded as
-  `![[name]]`, the same as a locally-uploaded image.
+  owner-only, public `http:`/`https:` addresses only — loopback, private and link-local hosts
+  are refused, including via redirects, and only `image/*` responses are saved) into the
+  attachments folder and embedded as `![[name]]`, the same as a locally-uploaded image.
 - **A Photos/Messages file promise** is received via the native drag pasteboard
-  (`read_drag_pasteboard`, macOS-only), which materializes it into a process-local temp directory
-  first, then embedded the same way as any other dropped file.
+  (`read_drag_pasteboard`, macOS-only), which receives it into `~/Library/Caches/bismuth-drop/`
+  first (subfolders older than an hour are swept on the next drop), then embedded the same way
+  as any other dropped file.
 - **A link with no image** inserts the bare URL as text at the drop point.
 - **Selected text** dragged in from elsewhere inserts that text at the drop point — a drag that
   never left CodeMirror (an internal text selection) MOVES instead, same as any other editor.
