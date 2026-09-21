@@ -53,3 +53,11 @@ function DaemonPanel(props: DaemonPanelProps) {
 }
 
 export default DaemonPanel
+
+/** `blockClass` for an `<EmptyState>` rendered inside a `DaemonPanel`'s body (DaemonInbox,
+ *  DaemonServices, DaemonLog all pass this) — the inset + row-matched font-size a panel's empty
+ *  state needs, formerly `.daemon-panel-body > :global(.ui-empty-block)` reaching EmptyState's
+ *  internals by class name. DaemonPanel itself never renders `<EmptyState>` (its `children` are
+ *  opaque), so this is exported for each caller to hand to its own `<EmptyState blockClass={...}>`
+ *  instead. */
+export const daemonPanelEmptyClass = styles['panel-empty']

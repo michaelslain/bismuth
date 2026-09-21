@@ -39,12 +39,3 @@ export function buttonClass(opts: {
         opts.class,
     )
 }
-
-export function searchBarClass(extra?: string): string {
-    return joinClasses('search-bar', extra)
-}
-
-/** Inner `<input>` class for SearchBar — base class plus an optional call-site extra. */
-export function searchBarInputClass(extra?: string): string {
-    return joinClasses('search-bar-input', extra)
-}

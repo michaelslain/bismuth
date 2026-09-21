@@ -202,7 +202,7 @@ export const LoadFailsShowsErrorAction: Story = {
             '[data-testid="pdfpages-error-action"]',
         ) as HTMLElement
         const errorBlock = canvasElement.querySelector(
-            '.ui-empty-block',
+            '[data-testid="ui-empty-block"]',
         ) as HTMLElement
         await expect(errorBlock.textContent).toContain("Couldn't load PDF")
         await expect(errorActionMounts).toBe(1)
@@ -212,7 +212,9 @@ export const LoadFailsShowsErrorAction: Story = {
         ).toBe(1)
         // Laid out UNDER the message, centred on it — not inline beside the sentence (the action
         // used to sit inside EmptyState's `<p>`, and a stray second copy sat beside the block).
-        const message = errorBlock.querySelector('.ui-empty') as HTMLElement
+        const message = errorBlock.querySelector(
+            '[data-testid="ui-empty"]',
+        ) as HTMLElement
         const mr = message.getBoundingClientRect()
         const ar = action.getBoundingClientRect()
         await expect(message.contains(action)).toBe(false)

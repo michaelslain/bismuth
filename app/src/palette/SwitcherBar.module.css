@@ -52,7 +52,7 @@
 
 /* The search row — big and prominent (this is "the search" that replaced the toolbar). */
 .switcher-search { padding: var(--sp-5) 18px; gap: var(--sp-5); }
-/* Doubled: guarantees this wins over SearchBar's own `:global(.search-bar-lead)` default (equal
+/* Doubled: guarantees this wins over SearchBar's own hashed `.search-bar-lead` default (equal
    values today, but equal specificity is an import-order tie otherwise — see FlashcardsView's
    `.fc-empty-title.fc-empty-title` for the same fix against a real conflict). */
 .switcher-lead.switcher-lead { color: var(--accent); opacity: 1; }

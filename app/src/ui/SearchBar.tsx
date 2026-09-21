@@ -2,7 +2,6 @@ import { splitProps, type JSX } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
-import { searchBarClass, searchBarInputClass } from './buttonClass'
 import { isConfirmKey } from './widgetKeys'
 import styles from './SearchBar.module.css'
 
@@ -58,15 +57,15 @@ function SearchBar(props: SearchBarProps) {
         warnBadIcon('SearchBar', local.leadingIcon)
     }
     return (
-        <div class={`${styles['search-bar-marker']} ${searchBarClass(local.class)}`}>
+        <div class={`${styles['search-bar']} ${local.class ?? ''}`.trim()}>
             <Icon
                 value={local.leadingIcon ?? 'Search'}
                 size={14}
-                class={`search-bar-lead ${local.leadClass ?? ''}`.trim()}
+                class={`${styles['search-bar-lead']} ${local.leadClass ?? ''}`.trim()}
             />
             <input
                 ref={local.inputRef}
-                class={searchBarInputClass(local.inputClass)}
+                class={`${styles['search-bar-input']} ${local.inputClass ?? ''}`.trim()}
                 style={local.inputStyle}
                 placeholder={local.placeholder}
                 aria-label={local['aria-label']}
