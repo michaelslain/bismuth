@@ -25,7 +25,10 @@
 
 /* native date (+ time) inputs row */
 .head {
-    display: flex;
+    display: grid;
+    /* date takes whatever room is left; time gets enough for "hh:mm AM" plus its clock
+       indicator glyph — a fixed 90px clipped the AM/PM segment against the icon. */
+    grid-template-columns: 1fr minmax(12ch, auto);
     gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-1) var(--sp-3);
 }
@@ -81,13 +84,13 @@
 }
 
 .dateInput {
-    flex: 1 1 auto;
+    width: 100%;
     min-width: 0;
 }
 
 .timeInput {
-    flex: 0 0 auto;
-    width: 90px;
+    width: 100%;
+    min-width: 0;
 }
 
 /* relative-date quick options, divided from the inputs above */
