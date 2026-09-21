@@ -1,13 +1,13 @@
 // app/src/bases/DateFieldEditor.tsx
 // A date property as ONE input-height control: a FormControl trigger (the same `.ui-input`
 // chrome TextInput/Select use) showing the value or a muted placeholder, which opens the app's
-// DatePicker (editor/DatePicker.tsx) in a portaled, fixed-positioned layer under the trigger.
+// DatePicker (editor/DatePicker.tsx) anchored under the trigger by `<AnchoredPopover>`.
 //
 // Why not ui/Popover: Popover is only the floating SURFACE (border + --lift), with no anchoring,
 // and DatePicker already paints that surface itself (`.bismuth-popover`) — wrapping it would
-// draw two frames. So this owns only the anchor + dismiss layer, mirroring ui/Select.tsx.
-import { createSignal, Show, type Component } from 'solid-js'
-import { Portal } from 'solid-js/web'
+// draw two frames. So this owns only the anchor + dismiss layer, same as ui/Select.tsx.
+import { createSignal, type Component } from 'solid-js'
+import AnchoredPopover from '../ui/AnchoredPopover'
 import DatePicker, { type DatePickerKind } from '../editor/DatePicker'
 import { parseDateValue, composeDateValue } from '../editor/datePickerCore'
 import FormControl from '../ui/FormControl'
@@ -27,7 +27,7 @@ export type DateFieldEditorProps = {
 
 const DateFieldEditor: Component<DateFieldEditorProps> = props => {
     const [open, setOpen] = createSignal(false)
-    const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0 })
+    const [triggerWidth, setTriggerWidth] = createSignal(0)
     let triggerRef: HTMLButtonElement | undefined
     let lastDate = ''
     let lastTime = ''
@@ -42,9 +42,7 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
     }
 
     function openPicker(): void {
-        if (!triggerRef) return
-        const r = triggerRef.getBoundingClientRect()
-        setPos({ x: r.left, y: r.bottom, w: r.width })
+        if (triggerRef) setTriggerWidth(triggerRef.getBoundingClientRect().width)
         lastDate = parsed().date
         lastTime = parsed().time
         setOpen(true)
@@ -81,39 +79,33 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                 </Text>
                 <Icon value="Calendar" size={14} class={styles.icon} />
             </FormControl>
-            <Show when={open()}>
-                <Portal>
-                    <div class={styles.backdrop} onClick={() => close()} />
-                    <div
-                        class={styles.layer}
-                        data-testid="date-field-popover"
-                        style={{
-                            top: `${pos().y}px`,
-                            left: `${pos().x}px`,
-                            'min-width': `${pos().w}px`,
+            <AnchoredPopover
+                anchor={() => triggerRef}
+                open={open()}
+                onDismiss={close}
+                panelAttrs={{ 'data-testid': 'date-field-popover' }}
+            >
+                <div style={{ 'min-width': `${triggerWidth()}px` }}>
+                    <DatePicker
+                        kind={kind()}
+                        initialDate={lastDate}
+                        initialTime={lastTime}
+                        {...{ options }}
+                        onDateChange={(v, closeAfter) => {
+                            lastDate = v
+                            commit(v, lastTime, closeAfter)
                         }}
-                    >
-                        <DatePicker
-                            kind={kind()}
-                            initialDate={lastDate}
-                            initialTime={lastTime}
-                            {...{ options }}
-                            onDateChange={(v, closeAfter) => {
-                                lastDate = v
-                                commit(v, lastTime, closeAfter)
-                            }}
-                            onTimeChange={v => {
-                                lastTime = v
-                                commit(lastDate, v, true)
-                            }}
-                            onPick={i => {
-                                lastDate = options[i].date
-                                commit(lastDate, lastTime, true)
-                            }}
-                        />
-                    </div>
-                </Portal>
-            </Show>
+                        onTimeChange={v => {
+                            lastTime = v
+                            commit(lastDate, v, true)
+                        }}
+                        onPick={i => {
+                            lastDate = options[i].date
+                            commit(lastDate, lastTime, true)
+                        }}
+                    />
+                </div>
+            </AnchoredPopover>
         </>
     )
 }
