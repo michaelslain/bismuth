@@ -12,7 +12,7 @@ export const PDF_BODY_OVERRIDE =
 
 /** Marker the export document sets on `document.title` once its embedded fonts are ready; the
  *  native printer polls for it before printing (WKWebView.title is readable without a delegate).
- *  The PDF's own Title metadata comes from NSPrintOperation.jobTitle, never from this. */
+ *  The PDF's own Title metadata is set by print_pdf.rs's CoreGraphics compose step (kCGPDFContextTitle), never from this. */
 export const PRINT_READY_TITLE = '__bismuth_print_ready__'
 
 /** Measured in the WebKit print spike: `break-inside: avoid` on `tr` alone is ignored by WebKit

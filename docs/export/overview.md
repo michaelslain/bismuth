@@ -402,9 +402,13 @@ engine just renders the page).
 
 - **`app/src-tauri/src/print_pdf.rs`** — the Rust half: `print_pdf(app, html, title)`, a Tauri
   command that loads `html` into an off-screen, **never-shown** `WKWebView` (no `makeKeyAndOrderFront:`,
-  positioned far off-screen if a window is needed at all) and runs `printOperationWithPrintInfo:`
-  with panels off and an `NSPrintSaveJob` disposition into a temp file, returning the PDF bytes as a
-  raw IPC response. `title` becomes the PDF's Title metadata (`NSPrintOperation.jobTitle`). Returns
+  plus a borderless `defer:true` NSWindow at (-20000,-20000), never ordered front, used only as
+  `runOperationModalForWindow:`'s target) and runs `printOperationWithPrintInfo:`
+  with panels off and an `NSPrintSaveJob` disposition into a temp file. WebKit writes a raw
+  paginated PDF to that temp file; a CoreGraphics compose step then redraws every page onto a
+  Letter sheet filled with the document's body background (this paints the 1in margins) and sets
+  `title` as the PDF's Title metadata (`kCGPDFContextTitle`), returning the PDF bytes as a
+  raw IPC response. Returns
   `Err("unsupported")` on any non-macOS target (iPad's native route is deferred — see the plan); any
   other error string is a real print failure. Registered in `lib.rs`'s `generate_handler!` as
   `print_pdf::print_pdf`; no `capabilities/default.json` entry, same as `open_path`/`set_ui_zoom`.

@@ -447,7 +447,7 @@ export function ExportView(props: {
                     class={styles['exp-paper']}
                     classList={{
                         [styles['paper-wide']]: isBase() && mode() === 'visual',
-                        [styles['paper-pdf']]: !!result()?.previewPdf,
+                        [styles['paper-pdf']]: !result.error && !!result()?.previewPdf,
                     }}
                     // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
                     // theme (not the app's own live scope): print-paper cream for "light", the app's
