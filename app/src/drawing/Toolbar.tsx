@@ -311,11 +311,13 @@ export function Toolbar(props: {
                                     id: 'undo' as const,
                                     label: <Icon value="Undo2" size={17} />,
                                     title: 'Undo',
+                                    ariaLabel: 'Undo',
                                 },
                                 {
                                     id: 'redo' as const,
                                     label: <Icon value="Redo2" size={17} />,
                                     title: 'Redo',
+                                    ariaLabel: 'Redo',
                                 },
                             ]}
                         />
@@ -327,46 +329,43 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
-                            {/* NOT SegmentedToggle: the zoom-percent segment needs its own extra
-                                class (`draw-zoompct`, the fixed-width readout) and SegmentedOption
-                                has no per-segment class — only a uniform `segmentClass` shared by
-                                every segment (per-segment `disabled` IS now supported, used below
-                                for the bound buttons, but that alone isn't enough to convert this
-                                row). Kept as a raw `.segmented` row — reported, not forced. */}
-                            <div class="segmented">
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={styles['draw-iconseg']}
-                                    title="Zoom out"
-                                    aria-label="Zoom out"
-                                    disabled={props.zoom!() <= ZOOM_MIN}
-                                    onClick={() => props.onZoomOut!()}
-                                >
-                                    <Icon value="ZoomOut" size={17} />
-                                </Button>
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={`${styles['draw-iconseg']} ${styles['draw-zoompct']}`}
-                                    title="Reset zoom"
-                                    aria-label="Reset zoom"
-                                    onClick={() => props.onResetZoom!()}
-                                >
-                                    {zoomPct()}%
-                                </Button>
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={styles['draw-iconseg']}
-                                    title="Zoom in"
-                                    aria-label="Zoom in"
-                                    disabled={props.zoom!() >= ZOOM_MAX}
-                                    onClick={() => props.onZoomIn!()}
-                                >
-                                    <Icon value="ZoomIn" size={17} />
-                                </Button>
-                            </div>
+                            <SegmentedToggle
+                                value={undefined}
+                                onChange={id => {
+                                    if (id === 'out') props.onZoomOut!()
+                                    else if (id === 'reset')
+                                        props.onResetZoom!()
+                                    else props.onZoomIn!()
+                                }}
+                                segmentClass={styles['draw-iconseg']}
+                                options={[
+                                    {
+                                        id: 'out' as const,
+                                        label: (
+                                            <Icon value="ZoomOut" size={17} />
+                                        ),
+                                        title: 'Zoom out',
+                                        ariaLabel: 'Zoom out',
+                                        disabled: props.zoom!() <= ZOOM_MIN,
+                                    },
+                                    {
+                                        id: 'reset' as const,
+                                        label: `${zoomPct()}%`,
+                                        title: 'Reset zoom',
+                                        ariaLabel: 'Reset zoom',
+                                        class: styles['draw-zoompct'],
+                                    },
+                                    {
+                                        id: 'in' as const,
+                                        label: (
+                                            <Icon value="ZoomIn" size={17} />
+                                        ),
+                                        title: 'Zoom in',
+                                        ariaLabel: 'Zoom in',
+                                        disabled: props.zoom!() >= ZOOM_MAX,
+                                    },
+                                ]}
+                            />
                         </Show>
                     </div>
                 </div>
