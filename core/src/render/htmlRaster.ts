@@ -127,20 +127,3 @@ export async function htmlToPngHeadless(
         session.close()
     }
 }
-
-/** The paginated Letter pages of `html`, each as a PNG data URL — `ExportDeps.htmlToPdfPages`,
- *  used ONLY by the in-app preview iframe to show what the downloaded PDF's pages will look
- *  like. Nothing in the CLI export path calls this (`bismuth export --format pdf` goes straight
- *  through `htmlToPdfHeadless` and never previews). An earlier version of this function
- *  approximated a per-page image by slicing one full-page raster into `pageCount` even
- *  horizontal bands — which is NOT what the pages actually look like the moment a document has
- *  a `.bismuth-page-break` marker or simply doesn't split at even intervals. A function that
- *  returns plausible-looking wrong data for a feature nothing yet exercises is worse than one
- *  that refuses: it would look like it worked right up until someone wires a headless preview
- *  to it, then hand back silently incorrect page images. Refuse instead until a real per-page
- *  renderer exists. `--format pdf` itself is unaffected — it never calls this function. */
-export async function htmlToPdfPagesHeadless(_html: string): Promise<string[]> {
-    throw new Error(
-        'headless multi-page PDF preview is not implemented — this only backs the in-app preview iframe, which the CLI never renders; `bismuth export --format pdf` does not call this and works',
-    )
-}

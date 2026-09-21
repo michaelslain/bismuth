@@ -3,6 +3,8 @@ use tauri::Manager;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
+mod print_pdf;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -802,7 +804,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

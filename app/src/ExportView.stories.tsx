@@ -1,6 +1,9 @@
 // Visual spec for <ExportView> — the export options screen for a file (PaneContent's
 // `::export:<path>` route). One panel handles two shapes: a plain note (format picker + a live
-// HTML/PNG/PDF preview iframe) and a `type: base` file (adds a view picker + Visual/Data mode).
+// HTML/PNG/PDF preview) and a `type: base` file (adds a view picker + Visual/Data mode). The PDF
+// preview now renders REAL PAGES through PdfPages (the same pdf.js stack PreviewView uses),
+// fed by the `htmlToPdf` prop seam (mirrors PdfPages' own `load` seam) so a story can hand it a
+// pre-built PDF instead of driving the real webkit/canvas print pipeline.
 //
 // `props.path` is read via `api.read()` (ExportDeps.read → api.ts → the global fakeTransport),
 // so a story only needs to seed the file it points at — same seam FileTree/PreviewView stories
@@ -13,6 +16,7 @@ import { expect, waitFor, within } from 'storybook/test'
 import { ExportView } from './ExportView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { buildLetterPdf, inkedPct } from './ui/_pdfStoryFixtures'
 import styles from './ExportView.module.css'
 
 const meta = {
@@ -84,6 +88,46 @@ export const Base: Story = {
         await waitFor(() => {
             expect(canvas.getByText('Table')).toBeInTheDocument()
             expect(canvas.getByText('Cards')).toBeInTheDocument()
+        })
+    },
+}
+
+/** A note exported as PDF: the preview now renders the REAL pages through PdfPages, fed by the
+ *  `htmlToPdf` prop seam — a 2-page PDF built in-browser, standing in for the webkit/canvas print
+ *  pipeline neither of which can run in Storybook. Proves the preview shows real pdf.js pages
+ *  (≥2 canvases painted with real ink) and the "N pages" readout. */
+export const NotePdfPreview: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { [NOTE_PATH]: NOTE_BODY } }))
+        return (
+            <ExportView
+                path={NOTE_PATH}
+                htmlToPdf={async () =>
+                    new Uint8Array(
+                        buildLetterPdf([
+                            { label: 'Page one', color: [200, 60, 60] },
+                            { label: 'Page two', color: [60, 140, 60] },
+                        ]),
+                    )
+                }
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        canvas.getByText('PDF').click()
+        await waitFor(() => {
+            const paper = canvasElement.querySelector(
+                `.${styles['exp-paper']}`,
+            )
+            expect(paper?.querySelectorAll('canvas').length ?? 0).toBeGreaterThanOrEqual(2)
+            expect(canvas.getByText('2 pages')).toBeInTheDocument()
+        })
+        await waitFor(() => {
+            const firstCanvas = canvasElement.querySelector(
+                `.${styles['exp-paper']} canvas`,
+            ) as HTMLCanvasElement
+            expect(inkedPct(firstCanvas)).toBeGreaterThan(0.005)
         })
     },
 }

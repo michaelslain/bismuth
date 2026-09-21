@@ -19,7 +19,6 @@ import { renderDrawFile } from './draw'
 import {
     htmlToPdfHeadless,
     htmlToPngHeadless,
-    htmlToPdfPagesHeadless,
 } from '../../../core/src/render/htmlRaster'
 import { katexInlineCss } from '../katexCss'
 import { docFontInlineCss } from '../docFontCss'
@@ -147,8 +146,7 @@ async function run(args: string[]): Promise<void> {
         // Headless: drives real Chrome over CDP (core/src/render/htmlRaster.ts) against the
         // exact HTML the browser exporter itself produces — no running Bismuth, no fidelity
         // gap against the app's own export.
-        htmlToPdf: htmlToPdfHeadless,
-        htmlToPdfPages: htmlToPdfPagesHeadless,
+        htmlToPdf: (html, _title) => htmlToPdfHeadless(html),
         htmlToPng: htmlToPngHeadless,
         // Inline KaTeX stylesheet + fonts read straight off the resolved `katex` package at
         // katexCss.ts — fonts embedded into the binary at COMPILE time via Bun's own

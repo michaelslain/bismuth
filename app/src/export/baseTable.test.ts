@@ -30,7 +30,6 @@ function deps(read: string, rows: Row[]): ExportDeps {
         read: async () => read,
         resolveRows: async () => rows,
         htmlToPdf: async () => new Uint8Array(),
-        htmlToPdfPages: async () => [],
         htmlToPng: async () => ({ bytes: new Uint8Array(), dataUrl: '' }),
         drawingToPng: async () => ({ bytes: new Uint8Array(), dataUrl: '' }),
         katexCss: async () => '',

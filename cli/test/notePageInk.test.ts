@@ -30,7 +30,6 @@ import { renderDocToPng } from '../../core/src/drawing/export'
 import {
     htmlToPdfHeadless,
     htmlToPngHeadless,
-    htmlToPdfPagesHeadless,
 } from '../../core/src/render/htmlRaster'
 import { renderExport } from '../../app/src/export/exporters'
 import type { ExportDeps } from '../../app/src/export/types'
@@ -101,8 +100,7 @@ const NOTE = [
 const deps: ExportDeps = {
     read: async () => NOTE,
     resolveRows: async () => [],
-    htmlToPdf: htmlToPdfHeadless,
-    htmlToPdfPages: htmlToPdfPagesHeadless,
+    htmlToPdf: (html, _title) => htmlToPdfHeadless(html),
     htmlToPng: htmlToPngHeadless,
     katexCss: async () => '',
     drawingToPng: async (docText, theme, box) => {

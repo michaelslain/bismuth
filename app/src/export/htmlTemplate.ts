@@ -283,7 +283,7 @@ ${headingRules}
   /* A page break: invisible on screen (height:0), a forced new page when printed. The in-app PDF
      rasterizer slices pages at this element explicitly (htmlToPdf.ts). */
   .bismuth-page-break { break-after: page; page-break-after: always; height: 0; }
-  table { border-collapse: collapse; width: 100%; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 ${rule}px; }
   th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${rule}px; }
   th { background: ${p.head}; }
   img { max-width: 100%; }
