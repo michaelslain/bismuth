@@ -6,6 +6,12 @@
 // structurally identical.
 import { children, type JSX, Show, splitProps } from 'solid-js'
 import { Icon } from '../icons/Icon'
+import styles from './ViewBar.module.css'
+
+/** Appends an optional extra class to a base (hashed) one — used throughout for the `class`/
+ *  `parts` merge pattern every region and primitive here takes. */
+const cx = (base: string, extra?: string): string =>
+    extra ? `${base} ${extra}` : base
 
 /** The six regions a view bar has. A control's region is decided by the QUESTION it answers, not
  *  by its shape:
@@ -27,9 +33,30 @@ export type ViewBarSlots = {
     actions?: JSX.Element
 }
 
+/** One extra class per named region/group, appended to that element's own class — the "parts"
+ *  half of the parts-props pattern: an owner exposes a class per internal part instead of a
+ *  consumer reaching a global class string. `lead`/`trail` are the two OUTER groups; the other six
+ *  are the same slots `ViewBarSlots` names. */
+export type ViewBarParts = Partial<
+    Record<
+        | 'lead'
+        | 'identity'
+        | 'locus'
+        | 'facet'
+        | 'trail'
+        | 'readouts'
+        | 'config'
+        | 'actions',
+        string
+    >
+>
+
 export type ViewBarProps = ViewBarSlots & {
     /** Merged onto the root, so one caller can adjust one bar without forking the primitive. */
     class?: string
+    /** One extra class per internal part — see `ViewBarParts`. A consumer that used to reach
+     *  `:global(.vb-identity)` etc from its own stylesheet passes a local class here instead. */
+    parts?: ViewBarParts
 }
 
 /**
@@ -64,28 +91,69 @@ function ViewBar(props: ViewBarProps) {
         return Array.isArray(v) ? v.some(present) : present(v)
     }
 
+    // Every region wrapper below carries `styles.vbRegion` in addition to its own slot class —
+    // purely so the collapse ladder (ViewBar.module.css) can find "any of the six regions" without
+    // a `[class^='vb-']` prefix match, which breaks the moment these classes are hashed (a hashed
+    // local no longer starts with the literal "vb-"). `styles.vbRegion` is never referenced from
+    // outside this file.
     return (
-        <div class={`viewbar ${props.class ?? ''}`} data-viewbar>
-            <div class="vb-lead">
+        <div class={cx(styles.viewbar, props.class)} data-viewbar>
+            <div
+                class={cx(styles['vb-lead'], props.parts?.lead)}
+                data-testid="vb-lead"
+            >
                 <Show when={filled(identity)}>
-                    <div class="vb-identity">{identity()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-identity'], props.parts?.identity)}`}
+                        data-testid="vb-identity"
+                    >
+                        {identity()}
+                    </div>
                 </Show>
                 <Show when={filled(locus)}>
-                    <div class="vb-locus">{locus()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-locus'], props.parts?.locus)}`}
+                        data-testid="vb-locus"
+                    >
+                        {locus()}
+                    </div>
                 </Show>
                 <Show when={filled(facet)}>
-                    <div class="vb-facet">{facet()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-facet'], props.parts?.facet)}`}
+                        data-testid="vb-facet"
+                    >
+                        {facet()}
+                    </div>
                 </Show>
             </div>
-            <div class="vb-trail">
+            <div
+                class={cx(styles['vb-trail'], props.parts?.trail)}
+                data-testid="vb-trail"
+            >
                 <Show when={filled(readouts)}>
-                    <div class="vb-readouts">{readouts()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-readouts'], props.parts?.readouts)}`}
+                        data-testid="vb-readouts"
+                    >
+                        {readouts()}
+                    </div>
                 </Show>
                 <Show when={filled(config)}>
-                    <div class="vb-config">{config()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-config'], props.parts?.config)}`}
+                        data-testid="vb-config"
+                    >
+                        {config()}
+                    </div>
                 </Show>
                 <Show when={filled(actions)}>
-                    <div class="vb-actions">{actions()}</div>
+                    <div
+                        class={`${styles.vbRegion} ${cx(styles['vb-actions'], props.parts?.actions)}`}
+                        data-testid="vb-actions"
+                    >
+                        {actions()}
+                    </div>
                 </Show>
             </div>
         </div>
@@ -100,14 +168,21 @@ export function Crumb(props: {
     icon?: string
     iconSize?: number
     serif?: boolean
+    /** Merged onto the root, so a caller can restyle one instance without forking Crumb. */
+    class?: string
     children: JSX.Element
 }) {
     return (
-        <span class="crumb">
+        <span class={cx(styles.crumb, props.class)}>
             <Show when={props.icon}>
                 {i => <Icon value={i()} size={props.iconSize ?? 15} />}
             </Show>
-            <b classList={{ 'crumb-serif': props.serif }}>{props.children}</b>
+            <b
+                classList={{ [styles['crumb-serif']]: !!props.serif }}
+                data-testid="crumb-title"
+            >
+                {props.children}
+            </b>
         </span>
     )
 }
@@ -158,8 +233,12 @@ export function VBtn(props: VBtnProps) {
     ])
     return (
         <button
-            class={`vbtn ${own.class ?? ''}`}
-            classList={{ active: own.active }}
+            class={cx(styles.vbtn, own.class)}
+            classList={{ [styles.active]: own.active }}
+            /* runtime hook, not test-only: calendar/CalendarFrame.module.css reads [data-active]
+             * to paint its own active-button highlight, since styles.active is a hashed local it
+             * cannot select */
+            data-active={own.active ? '' : undefined}
             title={own.title}
             onClick={e => own.onClick?.(e)}
             {...rest}

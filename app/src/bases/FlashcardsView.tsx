@@ -515,12 +515,14 @@ export function FlashcardsView(props: {
                 label="Edit this card"
                 iconSize={13}
                 onClick={openCardEdit}
+                class={styles['card-action-btn']}
             />
             <IconButton
                 icon="Trash2"
                 label="Delete this card"
                 iconSize={13}
                 onClick={deleteCurrent}
+                class={styles['card-action-btn']}
             />
         </div>
     )
@@ -707,6 +709,9 @@ export function FlashcardsView(props: {
                     when={queue().length > 0}
                     fallback={
                         <EmptyState
+                            blockClass={styles['fc-empty']}
+                            titleClass={styles['fc-empty-title']}
+                            bodyClass={styles['fc-empty-body']}
                             title={
                                 cram()
                                     ? 'No cards in this deck'
@@ -742,6 +747,9 @@ export function FlashcardsView(props: {
                         fallback={
                             <div class={styles['done']}>
                                 <EmptyState
+                                    blockClass={styles['fc-empty']}
+                                    titleClass={styles['fc-empty-title']}
+                                    bodyClass={styles['fc-empty-body']}
                                     title={
                                         cram()
                                             ? 'Cram complete'

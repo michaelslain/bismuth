@@ -6,6 +6,12 @@
 //   • size  — "sm" | "md" | "lg"  (text buttons; md is the default, adds no class)
 //   • danger — orthogonal destructive tone, layerable on any state
 //   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
+//
+// Button also renders `data-state` on its root (defaulting to `'normal'` when `state` is unset) —
+// the runtime hook outside stylesheets select on (`.x[data-state="selected"]`) instead of reaching
+// `:global(.btn--selected)` etc (one-global-followups Task 1). Every story below exercises it
+// implicitly: inspect the rendered `<button>` in any story and its `data-state` always matches the
+// `state` prop passed in, `'normal'` for the stories that omit it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
 import { Button } from './Button'
@@ -151,6 +157,39 @@ export const IconStates: Story = {
                 <Icon value="Star" />
             </Button>
         </Row>
+    ),
+}
+
+/** `bracket` renders the "[ label ]" CLI-confirm look, lowercase, on EVERY kind/register — not
+ *  just `kind="text"`. Task 11 (daemon inbox bulk action) relies on this working for `kind="icon"`
+ *  too. */
+export const Bracket: Story = {
+    render: () => (
+        <Stack>
+            <Row label="text // bracket, every state">
+                <Button kind="text" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" state="selected" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" state="unselected" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" primary bracket>
+                    Approve All
+                </Button>
+                <Button kind="text" danger bracket>
+                    Delete
+                </Button>
+            </Row>
+            <Row label="icon // bracket">
+                <Button kind="icon" bracket title="approve">
+                    <Icon value="Check" size={15} />
+                    Approve
+                </Button>
+            </Row>
+        </Stack>
     ),
 }
 

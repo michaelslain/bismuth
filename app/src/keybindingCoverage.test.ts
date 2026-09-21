@@ -87,7 +87,7 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'the SRS "??" separator Enter guard runs at Prec.highest ahead of the completion popup keymap to stop it swallowing a real newline — part of the same completion-popup contract as completionDisplay.ts, not an independent shortcut',
     },
     {
-        file: 'editor/datePicker.ts',
+        file: 'editor/datePickerExtension.tsx',
         reason: "the date-picker CM tooltip's own Escape/ArrowUp/ArrowDown/Enter — structurally identical popup-navigation contract to the completion popup (dismiss/move/pick), just for a different widget",
     },
     {

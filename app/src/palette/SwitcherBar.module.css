@@ -12,18 +12,16 @@
    `search-ask-ai` on the persistent AI affordance — same two classes on one element as before,
    just both local to this module now.
 
-   `.switcher-list` below is the one exception in THIS file: it stays a bare `:global()` literal
-   rather than a hashed local, even though it physically lives here. Palette.module.css
-   (`:global(.switcher-list) .palette-row`/`.palette-match`) and SearchResultRows.module.css
-   (`:global(.switcher-list) .sresult`) both already reach it by that literal class name, and
-   neither file is part of this task — hashing it here would silently unstyle both without
-   either file's own tests or a story render catching it. SwitcherBar.tsx keeps writing the
-   plain string `class="switcher-list"` for exactly this reason, same as before the split.
+   `.switcher-list` is now a real hashed local (one-global-followups Task 2): SwitcherBar.tsx sets
+   both the local class AND a `data-switcher-list` attribute on the same element, and
+   SearchResultRows.module.css keys its `.sresult` stacking-margin override on
+   `[data-switcher-list]` instead of `:global(.switcher-list)`. PaletteRow.module.css's own
+   `:global(.switcher-list)` compound selector was already gone by the time this file's header was
+   last touched (folded into `.palette-row`'s base rule — see that file's own header), so there was
+   nothing left to retarget there.
 
-   `.search-bar-lead` (written literally by ui/SearchBar.tsx, styled in ui/ui.css, not yet
-   converted) is wrapped in `:global()` below for the same reason GraphView.module.css's
-   `.graph-search-bar :global(.search-bar-lead)` and Palette.module.css's
-   `.palette-search :global(.search-bar-lead)` already are. */
+   `.search-bar-lead` — was `:global()` here too; SwitcherBar.tsx now hands SearchBar its own
+   `leadClass` prop (`.switcher-lead` below) instead. */
 
 /* The search column: a full-height panel pinned to the LEFT of the editor pane, with the
    knowledge graph filling the region to its right (the floater is inset by this column's width
@@ -54,7 +52,10 @@
 
 /* The search row — big and prominent (this is "the search" that replaced the toolbar). */
 .switcher-search { padding: var(--sp-5) 18px; gap: var(--sp-5); }
-.switcher-search :global(.search-bar-lead) { color: var(--accent); opacity: 1; }
+/* Doubled: guarantees this wins over SearchBar's own hashed `.search-bar-lead` default (equal
+   values today, but equal specificity is an import-order tie otherwise — see FlashcardsView's
+   `.fc-empty-title.fc-empty-title` for the same fix against a real conflict). */
+.switcher-lead.switcher-lead { color: var(--accent); opacity: 1; }
 .switcher-input {
   flex: 1;
   min-width: 0;
@@ -78,9 +79,9 @@
   flex: none;
 }
 
-/* The results list fills the rest of the column below the search row. Stays a `:global()`
-   literal — see this file's header. */
-:global(.switcher-list) {
+/* The results list fills the rest of the column below the search row. Now a real hashed local —
+   see this file's header. */
+.switcher-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -184,9 +185,12 @@
    main gave `.search-state` `padding: calc(var(--sp-7) * 2) var(--sp-7)` and `gap: var(--sp-4)`;
    the bare EmptyState swap dropped both, so the panel hung from the top edge with the title-to-
    message gap blown out by the UA default `<p>` margin. Composed onto both the loading and error
-   EmptyState via `class=`, alongside `.switcher-error-panel` on the error one. */
+   EmptyState via `class=`, alongside `.switcher-error-body` layered onto the error one's
+   `bodyClass`. */
 .switcher-ai-panel { padding: calc(var(--sp-7) * 2) var(--sp-7); }
-.switcher-ai-panel :global(.ui-empty) { margin: 0; }
+/* Was `.switcher-ai-panel :global(.ui-empty)` — retargeted onto EmptyState's own `bodyClass` prop
+   (one-global-followups Task 2); see both call sites in SwitcherBar.tsx. */
+.switcher-ai-body { margin: 0; }
 
 /* Restores the readonly ask-AI loading/error panels' original icons (Finding 2, ds-conformance
    Task 8 follow-up) via ui/EmptyState.tsx's new `icon` prop. Same glyphs the pre-migration
@@ -197,5 +201,7 @@
 .switcher-error-icon { color: var(--danger); opacity: 0.9; }
 
 /* Restores the AI error message's overflow guard + danger colour, lost when the panel moved to
-   EmptyState's generic .ui-empty paragraph — a raw backend error string is unbounded. */
-.switcher-error-panel :global(.ui-empty) { color: var(--danger); max-width: 460px; line-height: 1.5; word-break: break-word; }
+   EmptyState's generic paragraph — a raw backend error string is unbounded. Was
+   `.switcher-error-panel :global(.ui-empty)`, retargeted onto `bodyClass` alongside
+   `.switcher-ai-body` above (one-global-followups Task 2). */
+.switcher-error-body { color: var(--danger); max-width: 460px; line-height: 1.5; word-break: break-word; }

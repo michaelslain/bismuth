@@ -78,33 +78,37 @@
    header) — it once rendered ONLY the daemon-mode list.
 
    `:global()` — classes this file's selectors reach that are owned elsewhere and must NOT hash:
-     `.asc-popover` (ui/ui.css design-system surface, stamped by GraphView.tsx alongside the local
+     `.asc-popover` (ui/Popover.tsx's own surface, stamped by GraphView.tsx alongside the local
        `graph-find-panel`/`graph-stats` classes)
-     `.viewbar` (ui/ui.css) in the narrow-container `.viewbar.graph-viewbar` override — see below
-     `.segmented` (ui/ui.css) in the narrow-container segmented-wrap rules
      `.search-bar-input` (ui/SearchBar.tsx) in the Find-panel search bar's type override
-     `.btn--icon` (ui/buttonClass.ts) in the mini-graph mode-icons copy, see next paragraph
      `.selected` — the app-wide bare state-class convention (see palette/Palette.module.css's
        header for the fuller rationale); `.graph-search-row`'s selected state reaches it this way
 
-   `.graph-mode-icons :global(.btn--icon)` (+ its `:hover`) IS A COPY, NOT A MOVE — same idiom
-   shell/Sidebar.module.css already established for its own `.sidebar-icons :global(.btn--icon)`
-   copy. The two-parent selector list `.empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }`
-   that used to live in App.css is split one copy per owning module (`.empty-pane`'s copy is in
-   EmptyPane.module.css); both copies keep the original (0,2,0) specificity verbatim.
-
-   `.viewbar.graph-viewbar` (narrow `@container` block below) keeps the SAME two-class specificity
-   fix ui/ui.css's own header already documents for this exact pair (`.viewbar` vs `.graph-viewbar`
-   both set `padding` at one class) — that note now points here instead of App.css. Specificity,
-   not file position, is still what decides it; nothing about moving it into a module changes that. */
+   PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1) — three families this file
+   used to reach via `:global()` are gone from that list because their owners now expose a real
+   prop instead of an unhashed literal to reach:
+     `.viewbar`/`.vb-lead`/`.vb-trail` (ui/ViewBar.module.css) — GraphView.tsx now passes
+       `class={styles['graph-viewbar']}` and `parts={{ lead: styles['graph-vb-lead'], trail:
+       styles['graph-vb-trail'] }}` to `<ViewBar>` instead of reaching its hashed-now internals
+       from here. `.graph-viewbar { padding: 0 var(--sp-5) }` still needs no `:global()` compound
+       with `.viewbar` to win the specificity tie ui/ui.css's old header described: GraphView.tsx
+       imports ViewBar before this stylesheet runs, so this file's rule always loads after
+       ViewBar.module.css's own and wins any equal-specificity tie by source order.
+     `.segmented` (ui/SegmentedToggle.tsx) — SegmentedToggle already accepted a `class` prop;
+       GraphView.tsx now passes `class={styles['graph-mode-switcher']}`/
+       `class={styles['graph-bottom-toggle']}` to the two instances this file narrows, instead of
+       reaching the shared class by name.
+     `.btn--icon` (ui/buttonClass.ts) in the mini-graph mode-icons box — `.graph-mode-icon-btn`
+       below is the local class GraphView.tsx already hands each `<IconButton>` via its `class`
+       prop; no `:global()` copy remains to describe here. */
 
 .graph-root { container-type: inline-size; container-name: graphroot; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
 /* .graph-bloom + .graph-vignette live in graph/GraphAtmosphere.module.css — mounted by <GraphAtmosphere>;
    the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
    emitBloom). */
-/* The graph toolbar is a PLAIN :global(.viewbar) — same height, gap, padding and hairline as the
-   base rule, so it reads as the same control strip as every other view's (notes, bases, calendar,
-   chat). The class is kept only as the hook for the narrow-container rules below. */
+/* The graph toolbar is a PLAIN ViewBar — same height, gap, padding and hairline as every other
+   view's (notes, bases, calendar, chat). `.graph-viewbar` (below, passed as ViewBar's own `class`)
+   exists only as the hook for the narrow-container rules below. */
 .graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-4); }
 .graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
@@ -206,13 +210,15 @@
    re-enabled because the bar itself is click-through. */
 
 /* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
-   radius and hover come from the `:global(.btn--icon)` copy directly below — only the row layout
-   lives here. */
+   radius and hover come from `.graph-mode-icon-btn` directly below (a local class — see its own
+   comment) — only the row layout lives here. */
 .graph-mode-icons { display: flex; align-items: center; gap: var(--sp-2); }
-/* COPY, NOT MOVE — see this file's header. Identical (0,2,0) specificity to the original combined
-   selector list this was split from. */
-.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
-.graph-mode-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+/* Own local class, handed to each <IconButton> via its `class` prop (GraphView.tsx) instead of
+   reaching into ui.css's `:global(.btn--icon)` — the parent imposes this box on its own children,
+   so the fix is the ordinary one-module-one-importer shape: a local class + the `class` prop the
+   component already accepts. Same (0,2,0) specificity the old `:global()` copy carried. */
+.graph-mode-icon-btn { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
+.graph-mode-icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
 /* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
    props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
@@ -233,10 +239,10 @@
      either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
      The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
      mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
-  /* TWO-CLASS on purpose — see this file's header. `:global(.viewbar)` and `.graph-viewbar` both set
-     `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
-     this now exactly as it did before the move. */
-  :global(.viewbar).graph-viewbar { padding: 0 var(--sp-5); }
+  /* `.graph-viewbar` (this file) overrides ViewBar's own `.viewbar` padding at ONE class each now
+     that `.viewbar` is a hashed local private to ui/ViewBar.module.css — no compound needed to win
+     the tie; see this file's header for why import order settles it regardless. */
+  .graph-viewbar { padding: 0 var(--sp-5); }
   /* THE MINI BAR IS LEFT-ALIGNED, and that is a DELIBERATE REVERSAL of the centring this block
      carried until now — do not "fix" it back. The mode switcher is the sidebar's control strip, and
      it sits directly under `.sidebar-icons`, whose own icons start hard against the left padding.
@@ -253,13 +259,13 @@
      the crumb from the switcher, and `.graph-vb-wide { display: none }` above has already removed
      the crumb at this width — leaving `.vb-identity` a zero-width flex item whose gap survives it
      and indents the icons by half of --bar-crumb-gap for no visible reason. */
-  .graph-viewbar :global(.vb-lead), .graph-viewbar :global(.vb-trail) { gap: 0; }
+  .graph-viewbar .graph-vb-lead, .graph-viewbar .graph-vb-trail { gap: 0; }
   /* flex-start, not center: a segmented control that wraps to a second row keeps both rows on the
      same left edge as the row above, rather than centring the orphan row under it. */
-  .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: flex-start; gap: var(--sp-2); row-gap: var(--sp-2); }
+  .graph-mode-switcher { flex-wrap: wrap; justify-content: flex-start; gap: var(--sp-2); row-gap: var(--sp-2); }
 }
 @container grapharea (max-width: 520px) {
   .graph-stats { display: none; }
-  .graph-bottom-narrow :global(.segmented) { gap: var(--sp-2); }
+  .graph-bottom-toggle { gap: var(--sp-2); }
 }
 @container grapharea (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

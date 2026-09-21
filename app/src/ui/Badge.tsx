@@ -1,7 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Badge.module.css'
-import './ui.css'
 
 export type BadgeTag = 'span' | 'div'
 export type BadgeVariant = 'inline' | 'solid'

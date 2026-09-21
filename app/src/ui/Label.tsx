@@ -1,7 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Label.module.css'
-import './ui.css'
 
 export type LabelTag = 'span' | 'div'
 export type LabelTone = 'default' | 'muted' | 'faint'

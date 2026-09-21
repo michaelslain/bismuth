@@ -19,7 +19,7 @@ import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import Badge from '../ui/Badge'
-import DaemonPanel from './DaemonPanel'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import InboxRow from './InboxRow'
 import styles from './DaemonInbox.module.css'
 
@@ -63,6 +63,10 @@ function DaemonInbox(props: DaemonInboxProps) {
             // DUE pages only — the same count as the ViewBar's `N in inbox` readout and the
             // toolbar badge (daemonInbox.ts dueCount), never scheduled or resolved ones.
             count={due().length}
+            // Acceptance: "no dead space under the last item — the panel packs to content like
+            // the crons/services panels." DaemonPanel's own `packToContent` (DaemonPanel.tsx) —
+            // sizes to its rows instead of stretching to fill the grid cell.
+            packToContent
             class={props.class}
         >
             <Show
@@ -72,7 +76,7 @@ function DaemonInbox(props: DaemonInboxProps) {
                     resolved().length === 0
                 }
             >
-                <EmptyState>nothing needs you</EmptyState>
+                <EmptyState blockClass={daemonPanelEmptyClass}>nothing needs you</EmptyState>
             </Show>
 
             <Show when={due().length > 0}>
@@ -89,6 +93,7 @@ function DaemonInbox(props: DaemonInboxProps) {
                         <TextButton
                             size="sm"
                             primary
+                            bracket
                             onClick={approveAll}
                             style={{ 'margin-left': 'auto' }}
                         >

@@ -21,6 +21,8 @@ const proseText = [
     '',
     '- **Faster startup** — the daemon now boots in under a second',
     '- `bismuth daemon logs` now supports `--since`',
+    '',
+    '> Worth noting: the old flag still works, just deprecated.',
 ].join('\n')
 
 /** Assistant prose — headings, a bulleted list and a bold run render as real markdown. */

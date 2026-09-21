@@ -24,7 +24,8 @@ import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
 import { Modal } from '../ui/Modal'
-import Chip from '../ui/Chip'
+import ChipToggle from '../ui/ChipToggle'
+import { Icon } from '../icons/Icon'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
 import Field from '../ui/Field'
@@ -32,6 +33,7 @@ import { TextInput } from '../ui/TextInput'
 import ModalHeader from '../ui/ModalHeader'
 import ModalFooter from '../ui/ModalFooter'
 import MilkdownField from '../ui/MilkdownField'
+import DateFieldEditor from './DateFieldEditor'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
@@ -334,17 +336,35 @@ export function CardEditModal(props: {
                     weight="inherit"
                     class={styles.boolChip}
                 >
-                    <Chip
+                    <ChipToggle
                         selected={value(id) === true}
-                        icon={value(id) === true ? 'Check' : 'Square'}
-                        iconSize={13}
-                        onClick={() =>
+                        class={styles.boolChipToggle}
+                        onToggle={() =>
                             props.onSetMeta(id, !(value(id) === true))
                         }
                     >
+                        <Icon
+                            value={value(id) === true ? 'Check' : 'Square'}
+                            size={13}
+                        />
                         {value(id) === true ? 'Yes' : 'No'}
-                    </Chip>
+                    </ChipToggle>
                 </Text>
+            )
+        }
+        if (k.kind === 'date') {
+            // The app's own DatePicker (editor/DatePicker.tsx), opened from a single
+            // input-height trigger (DateFieldEditor below) instead of a bare native
+            // `<input type="date">` or DatePicker's own floating-popover frame sitting inline
+            // — so DUE reads as one row like every sibling field. DatePicker itself is
+            // untouched.
+            return (
+                <DateFieldEditor
+                    time={k.time}
+                    className={styles.dueTrigger}
+                    value={value(id)}
+                    onCommit={v => props.onSetMeta(id, v)}
+                />
             )
         }
         return (
@@ -417,13 +437,13 @@ export function CardEditModal(props: {
             <ModalFooter
                 leading={
                     <Show when={props.hasFileIdentity ?? true}>
-                        <TextButton danger onClick={props.onDelete}>
+                        <TextButton danger bracket onClick={props.onDelete}>
                             DELETE
                         </TextButton>
                     </Show>
                 }
             >
-                <TextButton variant="selected" onClick={close}>
+                <TextButton variant="selected" bracket onClick={close}>
                     DONE
                 </TextButton>
             </ModalFooter>

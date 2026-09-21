@@ -396,8 +396,10 @@ export const Empty: Story = {
         await findText(canvasElement, 'anything about your vault')
         // The greeting is centred in the transcript area: its midline sits in the middle band of
         // the space between the header and the composer, not pinned to the top.
-        const greeting = canvasElement.querySelector<HTMLElement>('.ui-empty-block')!
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const greeting = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="ui-empty-block"]',
+        )!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         const composer = canvasElement.querySelector<HTMLElement>('.cm-content')!
         const g = greeting.getBoundingClientRect()
         const top = bar.getBoundingClientRect().bottom
@@ -407,7 +409,9 @@ export const Empty: Story = {
         // Capped to the 680px reading column (ChatTurnColumn), not the full pane width — the
         // greeting's own paragraph wraps at that width instead of stretching edge to edge.
         await expect(g.width).toBeLessThanOrEqual(680)
-        const body = canvasElement.querySelector<HTMLElement>('.ui-empty')!
+        const body = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="ui-empty"]',
+        )!
         await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(680)
     },
 }

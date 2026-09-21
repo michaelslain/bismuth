@@ -29,25 +29,18 @@ import '@fontsource-variable/lora/wght.css'
 import '@fontsource-variable/lora/wght-italic.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
-// ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
-// the shipping bundle does: `App.tsx` statically imports `settingsCssVars`, whose chunk carries
-// ui.css, so the browser inserts ui.css's <link> before App.css's. Storybook used to import them
-// the other way round, which meant any pair of EQUAL-specificity selectors split across the two
-// files resolved one way in Storybook and the opposite way in the app — from identical source.
-// That is not a cosmetic difference: `bench/cssBaseline.ts` measures Storybook, so with the orders
-// reversed a green "0 changed" was proving something about a cascade no user ever sees. The CSS
-// modularization moves rules between these two files by design, so the gate has to be reading the
-// real one.
-//
-// ui.css: the UI primitives' own chrome (.btn / .ui-input / .ui-select / .ui-overlay /
-// .chip-toggle) and the shared floating-list surface Select's dropdown renders into.
-import '../src/ui/ui.css'
-// App.css supplies the global chrome the primitives lean on beyond their own file: via its
-// styles/tokens.css import the `:root` first-paint CSS-var fallbacks and the semantic tokens NOT
-// covered by the theme (`--danger`, `--success`, `--shadow-hard`/`--lift`), and via
-// styles/reset.css the `body` background/color, `* { box-sizing }` and `button { font: inherit }`.
-import '../src/App.css'
-import '../src/ui/popover/popover.css'
+// ONE global stylesheet (one-global-stylesheet, Task 14). It used to be ui.css + App.css +
+// popover.css imported separately here, in an order that did NOT match the shipping bundle's own
+// cascade — App.tsx's chunk graph put ui.css's <link> before App.css's, while this file imported
+// App.css first. That inversion was safe only because nothing was ever declared in both files.
+// One file removes the two-orderings-to-keep-in-sync problem outright (there is only one order
+// now, textual position in global.css), but the underlying hazard — two sections declaring the
+// same selector or the same :root custom property, with whichever is textually LATER silently
+// winning — is still real, just moved from "two files that can drift" to "two sections in one
+// file that can collide". `globalCssSections.test.ts` is what makes it safe now: it parses
+// global.css into its sections and fails if any class selector or :root property is declared in
+// more than one, so a collision here is a red test, not a silent cascade flip.
+import '../src/global.css'
 
 // ── Runtime theme tokens ──────────────────────────────────────────────────────
 // THE crucial step. The primitives are almost entirely driven by CSS custom

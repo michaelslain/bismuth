@@ -49,7 +49,7 @@ export function SearchResultRows(props: {
                 return (
                     <div
                         class={styles['sresult']}
-                        classList={{ selected: props.selected === i() }}
+                        data-selected={props.selected === i() ? '' : undefined}
                         onMouseMove={e => props.onRowPointerMove?.(i(), e)}
                     >
                         {/* The whole header opens the file too (not just the snippet rows) — AI results

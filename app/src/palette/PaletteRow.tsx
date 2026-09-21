@@ -25,13 +25,13 @@ export type PaletteRowProps = {
 }
 
 /** A single palette/switcher row: icon + label/desc column + sublabel + shortcut, all optional
- *  except `label`. `selected` drives the app-wide bare `.selected` keyboard-highlight class (see
- *  this module's stylesheet header for why it never hashes). */
+ *  except `label`. `selected` drives a `data-selected` runtime hook (see this module's
+ *  stylesheet header for why it's a `data-*` attribute rather than a shared class name). */
 function PaletteRow(props: PaletteRowProps) {
     return (
         <div
             class={`${styles['palette-row']} ${props.class ?? ''}`}
-            classList={{ selected: props.selected }}
+            data-selected={props.selected ? '' : undefined}
             data-testid={props.testid}
             onMouseMove={e => props.onMouseMove?.(e)}
             onClick={() => props.onClick?.()}
@@ -92,7 +92,7 @@ function PaletteRow(props: PaletteRowProps) {
 export default PaletteRow
 
 /** The row's own hashed class, for the one caller (PaletteModal.tsx) that needs to build a CSS
- *  selector string (`scrollSelectedIntoView`'s `.${paletteRowClass}.selected`) rather than apply
+ *  selector string (`scrollSelectedIntoView`'s `.${paletteRowClass}[data-selected]`) rather than apply
  *  the class directly — keeps that caller from importing PaletteRow.module.css itself. */
 export const paletteRowClass = styles['palette-row']
 

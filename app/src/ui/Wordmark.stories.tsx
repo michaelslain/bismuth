@@ -14,7 +14,6 @@
 // grading a fabrication. Never stand in for a design token; take the real one.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Label } from './_storyKit'
-import '../App.css'
 
 /** The mark itself — a hopper-crystal silhouette in punctuation. */
 const MARK = ",;']--]';,"

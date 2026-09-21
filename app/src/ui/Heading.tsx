@@ -1,7 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Heading.module.css'
-import './ui.css'
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
 

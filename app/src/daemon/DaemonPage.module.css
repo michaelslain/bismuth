@@ -52,8 +52,9 @@
     padding: var(--sp-6) 18px;
 }
 
-/* min-height: 0, matching .right below (DaemonServices.module.css's own root already carries it
-   too — this is belt-and-suspenders on the grid item itself, not load-bearing on its own). */
+/* min-height: 0, matching .right below. This column stays flush with the stage's bottom inset
+   (assertLayout() checks it); how its two panels size inside it — to content, capped at half the
+   column, scrolling past that — is DaemonServices' `packToContent` prop, which DaemonPage.tsx sets, not this file's. */
 .left {
     grid-area: left;
     min-width: 0;
@@ -141,16 +142,20 @@
 }
 
 /* The first readout is composed from USER DATA (a cron's name), so its length is not knowable at
-   design time and ui.css's `@container viewbar` tiers — which fire on the bar's WIDTH, not on its
-   content — cannot reach it. The trailing group gives instead, and the status ellipsizes. */
-.bar :global(.vb-trail) {
+   design time and ViewBar.module.css's `@container viewbar` tiers — which fire on the bar's WIDTH,
+   not on its content — cannot reach it. The trailing group gives instead, and the status
+   ellipsizes. PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1): these two used
+   to be `.bar :global(.vb-trail)`/`.bar :global(.vb-readouts)`, reaching ViewBar's own unhashed
+   literals. ViewBar's family is real hashed locals now, so DaemonPage.tsx passes
+   `parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}` instead. */
+.barTrail {
     flex: 0 1 auto;
     min-width: 0;
 }
-.bar :global(.vb-readouts) {
+.barReadouts {
     min-width: 0;
 }
-.bar :global(.vb-readouts) > :global([data-bar-label]):first-child {
+.barReadouts > [data-bar-label]:first-child {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

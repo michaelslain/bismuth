@@ -6,11 +6,24 @@
    packages `config`/`actions` for interface compatibility, but nothing currently spreads them
    anywhere — every rule below can assume it is inside `.row`.
 
-   REACHES INTO FOREIGN CLASSES via `:global()`: `.ui-select-trigger`/`.ui-input`/`.ui-select-caret`
-   and `.btn--text`/`.btn--selected`/`.btn--normal` (ui/ui.css, not yet modularized) — the row strips
-   both the Select trigger's form-field chrome and the text button's uppercase-label chrome down to
-   plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text label … no
-   `.ui-select-caret`"). */
+   `.mode-select`/`.mode-select--armed` are now plain local classes handed to Select via its own
+   `class` prop (ChatControls.tsx's `<Select class={styles['mode-select'] + …}>`) rather than
+   reached into via `:global(.ui-select-trigger):global(.ui-input)` — the trigger already carries
+   that local class, so no bridge is needed to select it.
+
+   The caret is hidden via Select's own `caretClass` prop (one-global-followups Task 3:
+   `<Select caretClass={styles['mode-caret']}>`) rather than a `:global(.ui-select-caret)` reach —
+   `.mode-caret` below is a plain local class.
+
+   STILL REACHES `:global(.btn--text)` (ui/Button.tsx's own KIND class, not modularized here) —
+   the row strips the text button's uppercase-label chrome down to plain lowercase text
+   (Acceptance/final-findings #1: "every control a lowercase text label"), and Button exposes no
+   prop for "quiet, chromeless text control" — this row is the one place in the app that register
+   exists, so there is no owner prop to move to without adding one to a component this task does
+   not own. The STATE half (`normal`/`selected`) no longer reaches `.btn--normal`/`.btn--selected`
+   as foreign classes — it keys on Button's own `data-state` attribute instead
+   (one-global-followups Task 1), which needs no `:global()` wrapper since data attributes are
+   never hashed by CSS Modules. */
 
 .stat {
     display: inline-flex;
@@ -37,13 +50,6 @@
 }
 .mode-select {
     max-width: 130px;
-}
-
-/* ARMED (Bypass) — Acceptance: "a dangerous mode (Bypass) is signalled by text tone only — no box,
-   no border." Only `color` moves; no border-color, no background — the control keeps the exact
-   same box as its neighbours. */
-.row :global(.ui-select-trigger):global(.ui-input).mode-select.mode-select--armed {
-    color: var(--warning);
 }
 
 .auth-anchor {
@@ -121,7 +127,7 @@
     color: var(--faint);
 }
 
-.row :global(.ui-select-trigger):global(.ui-input) {
+.row .mode-select {
     background: transparent;
     border-color: transparent;
     color: inherit;
@@ -132,24 +138,24 @@
     font-size: var(--fs-ui);
     text-transform: lowercase;
 }
-.row :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
+.row .mode-select:hover:not(:focus) {
     color: var(--fg);
 }
-.row :global(.ui-select-trigger):global(.ui-input).mode-select--armed {
+.row .mode-select--armed {
     color: var(--warning);
 }
 /* No caret anywhere in the quiet row — final-findings Group 2 #1: "no `.ui-select-caret`". A
    chevron on every picker was half of "icon soup"; hover (above) already says "clickable".
    `!important`, the one in this file (no other rule here needs it): `icons/Icon.tsx` — a shared
-   primitive outside Group 2's files, not ours to edit — sets `display: inline-flex` (plus a fixed
-   `width`/`height`) as an INLINE style on the very span `.ui-select-caret` is a class on
-   (`Select.tsx`'s `<Icon value="ChevronDown" class="ui-select-caret" />` call passes no `style`
-   override). An inline style beats any external stylesheet rule regardless of selector specificity,
-   `!important` is the one thing that still wins, and `display: none` short-circuits every other
-   inline-set box property (width/height/etc. become moot), so this single declaration is enough to
-   fully remove the caret rather than merely hide its ink. Confirmed live: the caret's computed
-   `display` was `flex` (i.e. still laid out) before this line was `!important`. */
-.row :global(.ui-select-caret) {
+   primitive, not ours to edit — sets `display: inline-flex` (plus a fixed `width`/`height`) as an
+   INLINE style on the caret span (`Select.tsx`'s `<Icon value="ChevronDown" class={...} />` call
+   passes no `style` override). An inline style beats any external stylesheet rule regardless of
+   selector specificity, `!important` is the one thing that still wins, and `display: none`
+   short-circuits every other inline-set box property (width/height/etc. become moot), so this
+   single declaration is enough to fully remove the caret rather than merely hide its ink.
+   Confirmed live: the caret's computed `display` was `flex` (i.e. still laid out) before this line
+   was `!important`. Reached via Select's own `caretClass` prop now, not `:global()`. */
+.mode-caret {
     display: none !important;
 }
 
@@ -169,11 +175,11 @@
     font-size: inherit;
     color: inherit;
 }
-.row :global(.btn--text.btn--normal:hover:not(:disabled)) {
+.row :global(.btn--text)[data-state="normal"]:hover:not(:disabled) {
     color: var(--fg);
     background: transparent;
 }
-.row :global(.btn--text.btn--selected) {
+.row :global(.btn--text)[data-state="selected"] {
     color: var(--fg);
     background: transparent;
     border-color: transparent;

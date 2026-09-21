@@ -1,0 +1,17 @@
+/* app/src/bases/DateFieldEditor.module.css — the trigger + anchor layer for DateFieldEditor.tsx.
+   Surface/border/height/font come from FormControl's shared `.ui-input` chrome, so the trigger
+   matches its sibling fields; only the row layout lives here. */
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.placeholder { color: var(--faint); }
+.icon { flex: none; color: var(--faint); }
+/* Positioning + stacking (fixed, z-index 1100, the backdrop, the 4px anchor gap) now live in
+   ui/AnchoredPopover.module.css — this composes <AnchoredPopover> instead of hand positioning
+   its own layer. */

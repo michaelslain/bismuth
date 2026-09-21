@@ -1,6 +1,5 @@
 import { onCleanup, onMount, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
-import './ui.css'
 import styles from './Modal.module.css'
 import { isDismissKey } from './widgetKeys'
 
@@ -8,6 +7,11 @@ export type ModalProps = {
     onClose: () => void
     /** Class for the inner panel (e.g. "event-modal", "recurrence-dialog"). */
     class?: string
+    /** A second class on the same panel element, for a caller that composes its own panel-chrome
+     *  class (sizing/layout) separately from `class` (e.g. FormModal's `.panel`). Kept distinct
+     *  from `class` only so a caller layering both a wrapper's `class` and its own chrome class
+     *  doesn't have to pre-join them itself. */
+    panelClass?: string
     /** Close when the backdrop (outside the panel) is clicked. Default true. */
     closeOnBackdrop?: boolean
     /**
@@ -138,7 +142,13 @@ function Modal(props: ModalProps) {
                 }}
             >
                 <div
-                    class={'asc-modal' + (props.class ? ` ${props.class}` : '')}
+                    class={[
+                        'asc-modal',
+                        props.class,
+                        props.panelClass,
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
                     role="dialog"
                     aria-modal="true"
                     aria-label={props.label}

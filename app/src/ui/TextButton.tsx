@@ -13,6 +13,8 @@ export type TextButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
     primary?: boolean
+    /** Renders the "[ label ]" CLI-confirm look — see Button.tsx. */
+    bracket?: boolean
     size?: ButtonSize
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 

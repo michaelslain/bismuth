@@ -17,7 +17,7 @@ import Label from '../ui/Label'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
-import DaemonPanel from './DaemonPanel'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import cronFrequency from './cronFrequency'
 import { cronStatus, type CronStatusKey } from './cronStatus'
 import styles from './DaemonServices.module.css'
@@ -32,6 +32,8 @@ export type DaemonServicesProps = {
     daemonRunning?: boolean
     onOpen: (path: string) => void
     onChanged: () => void
+    /** Pack both panels to their rows (capped at half the column) instead of splitting it. */
+    packToContent?: boolean
     class?: string
 }
 
@@ -283,10 +285,14 @@ function DaemonServices(props: DaemonServicesProps) {
 
     return (
         <div class={`${styles['daemon-services']} ${props.class ?? ''}`}>
-            <DaemonPanel title="crons" count={props.crons.length}>
+            <DaemonPanel
+                packToContent={props.packToContent}
+                title="crons"
+                count={props.crons.length}
+            >
                 <Show
                     when={props.crons.length > 0}
-                    fallback={<EmptyState>no crons</EmptyState>}
+                    fallback={<EmptyState blockClass={daemonPanelEmptyClass}>no crons</EmptyState>}
                 >
                     <For each={props.crons}>
                         {cron => (
@@ -299,10 +305,14 @@ function DaemonServices(props: DaemonServicesProps) {
                     </For>
                 </Show>
             </DaemonPanel>
-            <DaemonPanel title="services" count={props.processes.length}>
+            <DaemonPanel
+                packToContent={props.packToContent}
+                title="services"
+                count={props.processes.length}
+            >
                 <Show
                     when={props.processes.length > 0}
-                    fallback={<EmptyState>no background services</EmptyState>}
+                    fallback={<EmptyState blockClass={daemonPanelEmptyClass}>no background services</EmptyState>}
                 >
                     <For each={props.processes}>
                         {process => (

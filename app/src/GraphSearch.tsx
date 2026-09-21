@@ -19,7 +19,6 @@ import { IconButton } from './ui/IconButton'
 import Label from './ui/Label'
 import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
-import './graph/asciiGraph.css'
 import styles from './GraphSearch.module.css'
 
 export interface SearchItem {
@@ -76,7 +75,7 @@ export function GraphSearch(props: {
         selected()
         results()
         listRef
-            ?.querySelector<HTMLElement>('[data-row].selected')
+            ?.querySelector<HTMLElement>(`[data-row].${styles['selected']}`)
             ?.scrollIntoView({ block: 'nearest' })
     })
 
@@ -129,6 +128,8 @@ export function GraphSearch(props: {
                 onKeyDown={onKeyDown}
                 inputRef={el => (inputRef = el)}
                 class={styles['graph-search-bar']}
+                leadClass={styles['graph-search-lead']}
+                inputClass={styles['graph-search-input']}
             >
                 <IconButton
                     icon="X"
@@ -146,7 +147,9 @@ export function GraphSearch(props: {
                             <div
                                 data-row
                                 class={styles['graph-search-row']}
-                                classList={{ selected: selected() === i() }}
+                                classList={{
+                                    [styles['selected']!]: selected() === i(),
+                                }}
                                 onMouseEnter={() => {
                                     setSelected(i())
                                     props.onPreview?.(item.id)

@@ -2,7 +2,6 @@
 // Colored-dot + word status (no pill): the canonical status renderer. The category
 // palette (Reading=teal / To Read=blue / Finished=green / Abandoned=rose) lives here
 // so Table/List/Kanban — and any future status display — stay in sync.
-import './ui.css'
 import styles from './StatusDot.module.css'
 
 export const STATUS_COLOR: Record<string, string> = {
@@ -30,7 +29,7 @@ export function groupColor(key: string): string {
 function StatusDot(props: { color?: string; status?: string }) {
     return (
         <span
-            class="status-dot"
+            class={styles['status-dot']}
             style={{
                 background:
                     props.color ??
@@ -46,7 +45,7 @@ export default StatusDot
 export function StatusText(props: { status: string }) {
     return (
         <span class={styles['status-text']} style={{ color: statusColor(props.status) }}>
-            <span class="status-dot" />
+            <span class={styles['status-dot']} />
             {props.status}
         </span>
     )

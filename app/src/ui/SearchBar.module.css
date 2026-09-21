@@ -1,0 +1,37 @@
+/* app/src/ui/SearchBar.module.css — SearchBar.tsx's own local stylesheet.
+
+   The `.search-bar`/`.search-bar-lead`/`.search-bar-input` family moved IN from `ui.css`
+   (one-global-stylesheet Task 5), then converted from a `:global()` re-export bridge to real
+   hashed locals (one-global-followups Task 4) — every outside caller that used to reach these by
+   literal class name (GraphSearch.module.css, palette/PaletteFrame.module.css,
+   palette/SwitcherBar.module.css, one-global-followups Task 2; PreviewView.module.css, this same
+   task) was already composing via SearchBar's own `class`/`leadClass`/`inputClass` props rather
+   than a `:global()` selector, so none needed retargeting — they just keep working now that the
+   classes they compose alongside are hashed too.
+
+   `searchBarClass`/`searchBarInputClass` (SearchBar's former classname builders in
+   buttonClass.ts) are gone — SearchBar.tsx was their only caller, so the composition is inlined
+   here directly against `styles[...]`. */
+
+/* The search field. NO BORDER: it sits on --surface-1, which already separates it from the panel
+   behind it, and the accent lead glyph (.search-bar-lead) is the affordance that says "type here" —
+   a prompt marker, which is how a terminal indicates an input. A border on top of the fill made it
+   the heaviest control on screen, heavier than the buttons beside it, which is what read as
+   out-of-place. Height matches every other control. */
+.search-bar { display: flex; align-items: center; gap: var(--sp-3); background: var(--surface-1); padding: var(--sp-2) var(--sp-4); height: var(--h-control); }
+.search-bar-lead { color: var(--accent); flex: none; }
+.search-bar-input {
+  flex: 1;
+  font: inherit;
+  font-family: var(--ui-font-stack);
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+}
+.search-bar-input::placeholder { color: var(--faint); }
+/* The input is borderless and sits flush inside .search-bar, so an outward ring on the input would
+   be painted under the bar's own background. Ring the BAR instead, inset, when focus is anywhere
+   inside it — the focused thing a user needs to see is "the search field", not the bare <input>. */
+.search-bar:focus-within { outline: var(--focus-ring); outline-offset: -2px; }
+.search-bar-input:focus-visible { outline: none; }

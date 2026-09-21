@@ -1,0 +1,104 @@
+/* app/src/editor/DatePicker.module.css
+   The date/datetime frontmatter property popover (DatePicker.tsx). The container reuses the
+   shared `.bismuth-popover` chrome (ui/popover/popover.css, a permanent global — vanilla DOM
+   code stamps that literal class onto elements the bundler never sees), so only the header
+   inputs + the relative list separator are styled here. */
+
+.root {
+    min-width: 230px;
+    padding: var(--sp-3);
+}
+
+/* CM wraps this widget the same way it wraps the yaml-fix hover: `cm-tooltip` on the outer
+   DOM node CodeMirror owns, with our mounted markup (`.bismuth-popover .root`) nested inside
+   as a child, not stamped onto that same node. Re-assert the themed surface here at higher
+   specificity in case CM's default light tooltip chrome (#f5f5f5 / #bbb border) wins on source
+   order (the `--bg`/`--fg`/`--border` vars resolve fine — they cascade from :root onto the
+   tooltip wherever CM parents it). */
+/* Flat, not the shared .bismuth-popover lift shadow every other popover carries (context menus,
+   the emoji rail) — Acceptance: "the editor date-picker panel has no box-shadow — 1px --border,
+   flat." Scoped to THIS popover only; .bismuth-popover's shared chrome (global.css) is untouched. */
+:global(.cm-editor) :global(.cm-tooltip) .root {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--popover-radius);
+    box-shadow: none;
+}
+
+/* native date (+ time) inputs row */
+.head {
+    display: grid;
+    /* date takes whatever room is left; time gets enough for "hh:mm AM" plus its clock
+       indicator glyph — a fixed 90px clipped the AM/PM segment against the icon. */
+    grid-template-columns: 1fr minmax(12ch, auto);
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-1) var(--sp-3);
+}
+
+/* Flat + square + lighter-weight than the relative-date presets below. The native OS picker
+   chrome (a heavy grey rounded pill with a 3D UA bevel in both WebKit and Chromium) is stripped
+   with `appearance: none` — which also drops the UA's own `border-style: inset` bevel, so the
+   border has to be re-asserted explicitly rather than left to fall back to a default. Background
+   is transparent (reads as the panel's own `--bg`, not a heavier fill of its own) and the border
+   is the SAME hairline (`--border`, 1px solid) the `.list` divider below uses, so the two read as
+   one family. Text sits at the SAME weight as the presets (`--fg`, no override) — only the
+   indicator glyph is dimmed, which is what actually carries the "lighter than the presets"
+   weighting now that the fill and border are no longer doing it. */
+.dateInput,
+.timeInput {
+    font-family: var(--popover-font);
+    font-size: var(--popover-font-size);
+    padding: var(--sp-2) var(--sp-3);
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--fg);
+}
+
+.dateInput::-webkit-datetime-edit,
+.timeInput::-webkit-datetime-edit,
+.dateInput::-webkit-datetime-edit-fields-wrapper,
+.timeInput::-webkit-datetime-edit-fields-wrapper,
+.dateInput::-webkit-datetime-edit-text,
+.timeInput::-webkit-datetime-edit-text,
+.dateInput::-webkit-datetime-edit-year-field,
+.dateInput::-webkit-datetime-edit-month-field,
+.dateInput::-webkit-datetime-edit-day-field,
+.timeInput::-webkit-datetime-edit-hour-field,
+.timeInput::-webkit-datetime-edit-minute-field,
+.timeInput::-webkit-datetime-edit-ampm-field {
+    color: var(--fg);
+}
+
+/* The calendar/clock glyph is the one element still tinted down to --text-muted — it's what
+   makes the control read lighter than the bold preset rows, now that fill/border/text match. */
+.dateInput::-webkit-calendar-picker-indicator,
+.timeInput::-webkit-calendar-picker-indicator {
+    color: var(--text-muted);
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.dateInput::-webkit-calendar-picker-indicator:hover,
+.timeInput::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+.dateInput {
+    width: 100%;
+    min-width: 0;
+}
+
+.timeInput {
+    width: 100%;
+    min-width: 0;
+}
+
+/* relative-date quick options, divided from the inputs above */
+.list {
+    border-top: 1px solid var(--border);
+    margin-top: var(--sp-1);
+    padding-top: var(--sp-2);
+}

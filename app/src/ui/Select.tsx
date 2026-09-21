@@ -1,11 +1,9 @@
-import { createEffect, createSignal, Show, onCleanup } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import { createSignal } from 'solid-js'
+import AnchoredPopover from './AnchoredPopover'
 import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
-import { placeBelowOrAbove } from './popover/placeAnchored'
 import { Icon } from '../icons/Icon'
-import './ui.css'
-import './popover/popover.css'
+import FormControl from './FormControl'
 import styles from './Select.module.css'
 
 /** `detail` renders as the muted right-side text on the option's row (MenuRow detail) — e.g. the
@@ -16,8 +14,8 @@ export type SelectOption = { value: string; label: string; detail?: string }
  * A custom dropdown that replaces the native `<select>`. The trigger reuses the
  * `.ui-input` chrome (so it matches TextInput); the open list is the shared
  * `<PopoverList>` surface (same chrome as the context menu + autocomplete) with
- * `createMenuNav` for keyboard. Portaled to <body> so it escapes the modal's
- * overflow and layers above the modal overlay.
+ * `createMenuNav` for keyboard, anchored under the trigger by `<AnchoredPopover>`
+ * (portaled to <body> so it escapes the modal's overflow and layers above it).
  */
 function Select(props: {
     value: string
@@ -25,6 +23,12 @@ function Select(props: {
     onChange: (value: string) => void
     placeholder?: string
     class?: string
+    /** Appended to the trigger button's own class, alongside `class` (the root). Lets a caller
+     *  style the trigger specifically without a `:global()` reach into `.ui-select-trigger`. */
+    triggerClass?: string
+    /** Appended to the caret icon's class — e.g. a caller that wants to hide it entirely
+     *  (ChatControls' quiet row) without reaching `:global(.ui-select-caret)`. */
+    caretClass?: string
     /** Fired when the popover closes WITHOUT a choice — Escape or a backdrop click — as
      *  opposed to `close()` after `choose()`, which already reported the new value via
      *  `onChange`. Lets a caller that swaps in a Select as a transient editor (the kanban
@@ -34,28 +38,12 @@ function Select(props: {
     onDismiss?: () => void
 }) {
     const [open, setOpen] = createSignal(false)
-    const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0, top: 0 })
     let triggerRef: HTMLButtonElement | undefined
-    // Measured open-list height — the vertical twin of ContextMenu's `menuH`. Re-measured
-    // when the rows change, since a different option set is a different height.
-    let listEl: HTMLDivElement | undefined
-    const [listH, setListH] = createSignal(0)
-    createEffect(() => {
-        props.options // track: re-measure when the options change
-        open() // track: re-measure when the list mounts — `listEl` only exists while open
-        setListH(listEl?.getBoundingClientRect().height ?? 0)
-    })
-    // The list's top, flipped above the trigger when it would fall off the bottom. `pos().y`
-    // is the natural below-trigger position (also the first-frame value while listH() is
-    // still 0, so nothing flashes in the wrong place).
-    const listTop = () =>
-        placeBelowOrAbove({
-            y: pos().y,
-            h: listH(),
-            viewportH: window.innerHeight,
-            flipFrom: pos().top,
-            gap: 4,
-        })
+    // The trigger's measured width, for the open list's min-width — captured on open so it
+    // never lags a resize the same way the anchored position itself does (AnchoredPopover
+    // re-measures the trigger's rect on every reposition; only the width needs to reach the
+    // list's own inline style).
+    const [triggerWidth, setTriggerWidth] = createSignal(0)
 
     const current = () => props.options.find(o => o.value === props.value)
 
@@ -68,8 +56,7 @@ function Select(props: {
 
     function openMenu() {
         if (!triggerRef) return
-        const r = triggerRef.getBoundingClientRect()
-        setPos({ x: r.left, y: r.bottom + 4, w: r.width, top: r.top })
+        setTriggerWidth(triggerRef.getBoundingClientRect().width)
         const idx = props.options.findIndex(o => o.value === props.value)
         nav.setActive(idx >= 0 ? idx : 0)
         setOpen(true)
@@ -89,25 +76,13 @@ function Select(props: {
         close()
     }
 
-    // Reposition on scroll/resize while open (the trigger lives in a scrollable modal).
-    const reposition = () => {
-        if (!open() || !triggerRef) return
-        const r = triggerRef.getBoundingClientRect()
-        setPos({ x: r.left, y: r.bottom + 4, w: r.width, top: r.top })
-    }
-    window.addEventListener('resize', reposition)
-    window.addEventListener('scroll', reposition, true)
-    onCleanup(() => {
-        window.removeEventListener('resize', reposition)
-        window.removeEventListener('scroll', reposition, true)
-    })
-
     return (
         <>
-            <button
+            <FormControl
+                as="button"
                 ref={triggerRef}
                 type="button"
-                class={`ui-input ui-select-trigger ${props.class ?? ''}`}
+                class={`ui-select-trigger ${props.class ?? ''} ${props.triggerClass ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
                     if (open()) {
@@ -131,34 +106,31 @@ function Select(props: {
                 >
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
-                <Icon value="ChevronDown" size={14} class="ui-select-caret" />
-            </button>
-            <Show when={open()}>
-                <Portal>
-                    <div
-                        class={styles['ui-select-backdrop']}
-                        data-select-backdrop
-                        onClick={() => dismiss()}
-                    />
-                    <PopoverList
-                        ref={el => (listEl = el)}
-                        items={props.options.map(o => ({
-                            label: o.label,
-                            detail: o.detail,
-                            icon: o.value === props.value ? 'Check' : undefined,
-                        }))}
-                        active={nav.active()}
-                        onActivate={choose}
-                        onHover={nav.setActive}
-                        class={styles['ui-select-list']}
-                        style={{
-                            top: `${listTop()}px`,
-                            left: `${pos().x}px`,
-                            'min-width': `${pos().w}px`,
-                        }}
-                    />
-                </Portal>
-            </Show>
+                <Icon
+                    value="ChevronDown"
+                    size={14}
+                    class={`ui-select-caret ${props.caretClass ?? ''}`}
+                />
+            </FormControl>
+            <AnchoredPopover
+                anchor={() => triggerRef}
+                open={open()}
+                onDismiss={dismiss}
+                backdropClass={styles['ui-select-backdrop']}
+                backdropAttrs={{ 'data-select-backdrop': true }}
+            >
+                <PopoverList
+                    items={props.options.map(o => ({
+                        label: o.label,
+                        detail: o.detail,
+                        icon: o.value === props.value ? 'Check' : undefined,
+                    }))}
+                    active={nav.active()}
+                    onActivate={choose}
+                    onHover={nav.setActive}
+                    style={{ 'min-width': `${triggerWidth()}px` }}
+                />
+            </AnchoredPopover>
         </>
     )
 }

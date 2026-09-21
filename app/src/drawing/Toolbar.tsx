@@ -225,9 +225,12 @@ export function Toolbar(props: {
     const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100)
 
     return (
-        // `.draw-toolbar` is a deliberate bare literal, not `styles['draw-toolbar']` — see the
-        // module's header comment for why the class must stay global and unhashed.
-        <div class="draw-toolbar">
+        // `.draw-toolbar` stays a deliberate bare literal (not `styles['draw-toolbar']`) — several
+        // `*.stories.tsx` probes outside this task's file list still `querySelector('.draw-toolbar')`
+        // for it. `data-draw-toolbar` is the real cross-file contract: InkOverlay.module.css and
+        // PageInk.module.css select on the attribute, not the class, so this component owns its own
+        // stylesheet's :global() reach count of zero for that rule.
+        <div class="draw-toolbar" data-draw-toolbar>
             {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
           tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
             <div class={styles['draw-row']}>
@@ -292,28 +295,32 @@ export function Toolbar(props: {
                 {/* Undo/redo on top, zoom below. */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
-                        <div class="segmented">
-                            <Button
-                                kind="text"
-                                state="unselected"
-                                class={styles['draw-iconseg']}
-                                title="Undo"
-                                aria-label="Undo"
-                                onClick={() => props.onUndo()}
-                            >
-                                <Icon value="Undo2" size={17} />
-                            </Button>
-                            <Button
-                                kind="text"
-                                state="unselected"
-                                class={styles['draw-iconseg']}
-                                title="Redo"
-                                aria-label="Redo"
-                                onClick={() => props.onRedo()}
-                            >
-                                <Icon value="Redo2" size={17} />
-                            </Button>
-                        </div>
+                        {/* Undo/redo are two independent commands, not a mutually-exclusive pair
+                            with an active member — SegmentedToggle's `value` accepts `undefined`
+                            for exactly this (one-global-followups Task 3), so neither segment is
+                            ever "selected" and this composes the real component instead of a raw
+                            duplicate of its markup. */}
+                        <SegmentedToggle
+                            value={undefined}
+                            onChange={id =>
+                                id === 'undo' ? props.onUndo() : props.onRedo()
+                            }
+                            segmentClass={styles['draw-iconseg']}
+                            options={[
+                                {
+                                    id: 'undo' as const,
+                                    label: <Icon value="Undo2" size={17} />,
+                                    title: 'Undo',
+                                    ariaLabel: 'Undo',
+                                },
+                                {
+                                    id: 'redo' as const,
+                                    label: <Icon value="Redo2" size={17} />,
+                                    title: 'Redo',
+                                    ariaLabel: 'Redo',
+                                },
+                            ]}
+                        />
                         <Show
                             when={
                                 props.zoom &&
@@ -322,40 +329,43 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
-                            <div class="segmented">
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={styles['draw-iconseg']}
-                                    title="Zoom out"
-                                    aria-label="Zoom out"
-                                    disabled={props.zoom!() <= ZOOM_MIN}
-                                    onClick={() => props.onZoomOut!()}
-                                >
-                                    <Icon value="ZoomOut" size={17} />
-                                </Button>
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={`${styles['draw-iconseg']} ${styles['draw-zoompct']}`}
-                                    title="Reset zoom"
-                                    aria-label="Reset zoom"
-                                    onClick={() => props.onResetZoom!()}
-                                >
-                                    {zoomPct()}%
-                                </Button>
-                                <Button
-                                    kind="text"
-                                    state="unselected"
-                                    class={styles['draw-iconseg']}
-                                    title="Zoom in"
-                                    aria-label="Zoom in"
-                                    disabled={props.zoom!() >= ZOOM_MAX}
-                                    onClick={() => props.onZoomIn!()}
-                                >
-                                    <Icon value="ZoomIn" size={17} />
-                                </Button>
-                            </div>
+                            <SegmentedToggle
+                                value={undefined}
+                                onChange={id => {
+                                    if (id === 'out') props.onZoomOut!()
+                                    else if (id === 'reset')
+                                        props.onResetZoom!()
+                                    else props.onZoomIn!()
+                                }}
+                                segmentClass={styles['draw-iconseg']}
+                                options={[
+                                    {
+                                        id: 'out' as const,
+                                        label: (
+                                            <Icon value="ZoomOut" size={17} />
+                                        ),
+                                        title: 'Zoom out',
+                                        ariaLabel: 'Zoom out',
+                                        disabled: props.zoom!() <= ZOOM_MIN,
+                                    },
+                                    {
+                                        id: 'reset' as const,
+                                        label: `${zoomPct()}%`,
+                                        title: 'Reset zoom',
+                                        ariaLabel: 'Reset zoom',
+                                        class: styles['draw-zoompct'],
+                                    },
+                                    {
+                                        id: 'in' as const,
+                                        label: (
+                                            <Icon value="ZoomIn" size={17} />
+                                        ),
+                                        title: 'Zoom in',
+                                        ariaLabel: 'Zoom in',
+                                        disabled: props.zoom!() >= ZOOM_MAX,
+                                    },
+                                ]}
+                            />
                         </Show>
                     </div>
                 </div>

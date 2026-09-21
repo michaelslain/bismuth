@@ -59,10 +59,25 @@
     );
 }
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
-   a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
-   is EmptyState's global root class (ui/ui.css), the same reach
-   bases/FlashcardsView.module.css already makes. EmptyState has no compact variant to ask for instead. */
-.daemon-panel-body > :global(.ui-empty-block) {
+   a row and set in the rows' --fs-ui. No longer reached via `:global(.ui-empty-block)` —
+   DaemonPanel.tsx never renders `<EmptyState>` itself (it's opaque `children`), so this class is
+   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonServices,
+   DaemonLog) as `<EmptyState blockClass={daemonPanelEmptyClass}>` (one-global-followups Task 4).
+   EmptyState has no compact variant to ask for instead. */
+.panel-empty {
     padding: var(--sp-6) var(--sp-4);
     font-size: var(--fs-ui);
+}
+/* `packToContent`: the panel sizes to its rows instead of filling its cell, capped at half its
+   flex column. The body gets the same --sp-3
+   bottom inset the inbox's own content carries, so the 16px fade above lands on that padding rather
+   than on the last 18px row (which it used to half-erase). Past the caller's max-height the body
+   still scrolls, and the fade then hints at more. */
+.daemon-panel.pack-to-content {
+    flex: 0 1 auto;
+    height: auto;
+    max-height: 50%;
+}
+.pack-to-content > .daemon-panel-body {
+    padding-bottom: var(--sp-3);
 }

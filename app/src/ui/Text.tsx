@@ -1,7 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import styles from './Text.module.css'
-import './ui.css'
 
 export type TextTag = 'p' | 'span' | 'div'
 export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'inherit'

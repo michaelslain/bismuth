@@ -107,6 +107,7 @@ function InboxRow(props: InboxRowProps) {
                         {a => (
                             <TextButton
                                 size="sm"
+                                bracket
                                 variant={
                                     a.kind === 'primary' ? 'selected' : 'normal'
                                 }

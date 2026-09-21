@@ -74,6 +74,20 @@ export const Full: Story = {
         expect(canvasElement.querySelector('[title="Pen"]')).not.toBeNull()
         expect(canvasElement.querySelector('[title="Eraser"]')).not.toBeNull()
         expect(canvasElement.querySelector('[title="Lasso"]')).toBeNull()
+        // Undo/redo + the zoom group now compose SegmentedToggle via SegmentedOption's
+        // `ariaLabel`/`class` — same aria-labels as before the composition, and the percent
+        // readout keeps its fixed-width class.
+        expect(
+            canvasElement.querySelector('[aria-label="Undo"]'),
+        ).not.toBeNull()
+        expect(
+            canvasElement.querySelector('[aria-label="Redo"]'),
+        ).not.toBeNull()
+        const resetZoom = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Reset zoom"]',
+        )!
+        expect(resetZoom).not.toBeNull()
+        expect(resetZoom.textContent).toBe('100%')
     },
 }
 

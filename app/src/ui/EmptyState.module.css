@@ -1,13 +1,28 @@
 /* app/src/ui/EmptyState.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
-   Task 7). ui/EmptyState.tsx's `Loading` export was the sole reader anywhere in the app.
+   Task 7; `.ui-empty`/`.ui-empty-block` joined them from ui.css in one-global-stylesheet Task 4).
+   ui/EmptyState.tsx is the sole reader of every class below, and now writes ALL of them as hashed
+   `styles[...]` locals (one-global-followups Task 4) — the last two outside `:global()` bridges
+   (daemon/DaemonPanel.module.css's `.daemon-panel-body > :global(.ui-empty-block)`,
+   palette/SwitcherBar.module.css's `.switcher-ai-panel`/`.switcher-error-panel` reaches) were
+   retargeted onto EmptyState's `blockClass`/`bodyClass` props in this same task —
+   bases/FlashcardsView.module.css and palette/SwitcherBar.module.css's `.search-bar-lead` reach
+   were already converted (one-global-followups Task 2). Three story files that queried these by
+   bare class name (ChatView.stories.tsx, preview/PdfPages.stories.tsx, PreviewView.stories.tsx)
+   now query `[data-testid="ui-empty-block"]`/`[data-testid="ui-empty"]` instead — the two
+   `data-testid`s EmptyState.tsx adds for exactly this. See .claude/plans/ui-css-ownership.md. */
+.ui-empty { color: var(--text-muted); }
+.ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
+/* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
+   and reverted: it replaced a heading element with a div — losing the document semantics a screen
+   reader relies on — to gain nothing, because this register is neither Text's scale nor Heading's
+   markdown ramp. It is also the app's ONLY uppercase eyebrow; DaemonList's and Graph's heads share
+   the tracking but are deliberately mixed-case, which is why `eyebrow` supplies tracking alone. */
+.ui-empty-block h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
 
-   `.ui-empty-block` and `.ui-empty` (EmptyState's OTHER two classes) STAY in ui.css: both are
-   reached via `:global()` from bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
-   palette/SwitcherBar.module.css. See .claude/plans/ui-css-ownership.md. */
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
 
 /* .ui-empty-icon — layout hook for EmptyState's optional `icon` prop (ds-conformance Task 8
-   follow-up, Finding 2). `.ui-empty-block` (ui.css) is already a centered flex column, so this
+   follow-up, Finding 2). `.ui-empty-block` (above) is already a centered flex column, so this
    just centers the icon itself; the icon's own color/size are the caller's — see
    palette/SwitcherBar.module.css's `.switcher-loading-spinner`/`.switcher-error-icon` for the
    restored ask-AI panel glyphs. */

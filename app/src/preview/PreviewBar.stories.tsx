@@ -180,7 +180,7 @@ export const Narrow: Story = {
         const p = expectCalm(bar, 2, 2)
         await expect(p.frames).toBe(0)
         await expect(bar.getBoundingClientRect().height).toBeCloseTo(36, 0)
-        const title = bar.querySelector('.crumb b') as HTMLElement
+        const title = bar.querySelector('[data-testid="crumb-title"]') as HTMLElement
         await expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
         await expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
         for (const label of ['Zoom in', 'Zoom out', 'Open in default app', 'Reveal in file manager']) {
@@ -199,7 +199,7 @@ export const Narrow: Story = {
         // whose lead only ever ellipsizes, never overflows. This bar's own override
         // (`.bar:global(.viewbar) :global(.vb-lead)`, three classes) must win on specificity, not
         // just on load order, or the fade silently comes back.
-        const lead = bar.querySelector('.vb-lead') as HTMLElement
+        const lead = bar.querySelector('[data-testid="vb-lead"]') as HTMLElement
         await expect(getComputedStyle(lead).maskImage).toBe('none')
     },
 }

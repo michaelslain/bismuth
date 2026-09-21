@@ -1,7 +1,6 @@
 /* ChatHeader.module.css — chat/ChatHeader.tsx is the ONLY importer (its story may read the class map).
    The bar-scoped register of the chat tab's ViewBar: the title crumb's width cap and the readout
-   gap. `.chat-header` is merged onto ViewBar's own root, so every rule is a COMPOUND on that element
-   (`.chat-header.viewbar`), never a descendant of some outer host.
+   gap.
 
    ChatHeader renders ONLY identity + readouts now (final-findings Group 2 #5) — Config/Actions (the
    provider/model/effort/permission pickers, auth/history/new-chat) moved out to the quiet
@@ -12,20 +11,25 @@
    ChatControls.module.css. The view root (tint, `--chat-*` token localisation, drop affordance) is
    ChatView.module.css.
 
-   REACHES INTO FOREIGN CLASSES via `:global()` — the shared ViewBar primitives in `ui/ui.css` (not
-   yet modularized): `.viewbar`, `.vb-identity`, `.crumb`, `.vb-readouts`. */
+   PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1). This file used to reach
+   `:global(.viewbar)`/`:global(.vb-identity)`/`:global(.crumb)`/`:global(.vb-readouts)` — the
+   unhashed literals ui/ViewBar.tsx wrote by hand. ViewBar.module.css's family is real hashed
+   CSS-module locals now, so those literals no longer exist to reach. ChatHeader.tsx passes
+   `parts={{ identity: styles.identity, readouts: styles.readouts }}` (appended to ViewBar's own
+   `vb-identity`/`vb-readouts` wrappers) and `class={styles.crumb}` straight to `<Crumb>` — every
+   rule below is a plain local class, not a global compound. */
 
 /* The chat's title lives in the toolbar crumb — give it a real slice of the bar and let a long
    title ellipsize, instead of the readouts starving it to a sliver. THE CAP IS ON THE REGION, NOT ON
-   THE CRUMB: a percentage on the crumb resolves against `.vb-identity`, which sizes to the crumb
-   itself and collapsed the title to zero width. `44cqi`, not `44%`: `.vb-identity`'s containing
-   block is `.vb-lead`, while `cqi` resolves against `.viewbar` itself (ui/ui.css makes it an
-   inline-size container) — 44% of the BAR, which is what the rule means. */
-.chat-header:global(.viewbar) :global(.vb-identity) { flex: 0 1 auto; min-width: 0; max-width: 44cqi; }
-.chat-header:global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; }
-.chat-header:global(.viewbar) :global(.crumb) b { min-width: 0; }
+   THE CRUMB: a percentage on the crumb resolves against the identity region, which sizes to the
+   crumb itself and collapsed the title to zero width. `44cqi`, not `44%`: the identity region's
+   containing block is the lead group, while `cqi` resolves against the bar itself (ViewBar.module.css
+   makes `.viewbar` an inline-size container) — 44% of the BAR, which is what the rule means. */
+.identity { flex: 0 1 auto; min-width: 0; max-width: 44cqi; }
+.crumb { flex: 0 1 auto; min-width: 0; }
+.crumb b { min-width: 0; }
 
-/* The readout region buys its own gap: `.vb-*` regions sit at `--bar-icon-gap: 0` because their
+/* The readout region buys its own gap: ViewBar's regions sit at `--bar-icon-gap: 0` because their
    usual contents carry their own padding, and a readout stat is a bare span that would otherwise
    run flush into its neighbour. */
-.chat-header:global(.viewbar) :global(.vb-readouts) { gap: var(--sp-5); }
+.readouts { gap: var(--sp-5); }
