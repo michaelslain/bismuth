@@ -1,0 +1,17 @@
+/* app/src/bases/DateFieldEditor.module.css — the trigger + anchor layer for DateFieldEditor.tsx.
+   Surface/border/height/font come from FormControl's shared `.ui-input` chrome, so the trigger
+   matches its sibling fields; only the row layout lives here. */
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.placeholder { color: var(--faint); }
+.icon { flex: none; color: var(--faint); }
+/* Above Modal (1000), same stacking pair as ui/Select's backdrop + list. */
+.backdrop { position: fixed; inset: 0; z-index: 1090; }
+.layer { position: fixed; z-index: 1100; margin-top: var(--sp-2); }

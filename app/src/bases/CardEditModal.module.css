@@ -41,22 +41,9 @@
   --kb-meta-margin: 0;
 }
 
-/* DUE: a single input-height trigger (chrome shared with every sibling field via FormControl's
-   `.ui-input`) that opens the app's DatePicker (editor/DatePicker.tsx) as a portaled popover —
-   DatePicker itself is untouched (its own floating-popover frame stays right for its one other
-   host, the note editor's tooltip); this is the trigger+portal wrapper CardEditModal owns. */
-.dateTrigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  cursor: pointer;
-  text-align: left;
-}
-.dateTriggerPlaceholder { color: var(--faint); }
-.dateTriggerIcon { flex: none; color: var(--faint); }
-.dateBackdrop { position: fixed; inset: 0; z-index: 1090; }
-.datePopover { position: fixed; z-index: 1100; }
+/* DUE's trigger (DateFieldEditor) at the compact register of its STATUS sibling — PropertyValueEditor's
+   select trigger — rather than FormControl's full 32px input height, which only TITLE uses here. */
+.dueTrigger { height: auto; min-height: 0; padding: var(--sp-1) var(--sp-3); }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default
    `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
