@@ -571,6 +571,32 @@ fn base64_encode(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+// Remove drop dirs left behind by previous runs (a crash, a force-quit) whose contents are
+// older than an hour. Every error is ignored — this is best-effort housekeeping, never load-
+// bearing for the current drop.
+#[cfg(target_os = "macos")]
+fn sweep_old_drop_dirs(base: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    let cutoff = std::time::Duration::from_secs(60 * 60);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_dir() {
+            continue;
+        }
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if modified.elapsed().map(|age| age > cutoff).unwrap_or(false) {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
 // Receive one file-promise item (e.g. a Photos drag) to a fresh temp dir. The reader block can
 // fire more than once for a single receiver (rare, but the API allows a promise to cover
 // several files), so we wait for exactly as many callbacks as `fileNames()` promised, up to an
@@ -592,7 +618,16 @@ fn receive_file_promise(receiver: &objc2_app_kit::NSFilePromiseReceiver) -> Vec<
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("bismuth-drop-{pid}-{nanos}"));
+    // Written under $HOME so it falls inside the app's fs:scope allowlist ($HOME/** and
+    // /Volumes/**) — std::env::temp_dir() (/var/folders/…/T on macOS) is outside that scope, so
+    // the frontend's readFile(p) on a promised path would be denied by Tauri's fs plugin.
+    let base = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Library/Caches/bismuth-drop");
+    let _ = std::fs::create_dir_all(&base);
+    sweep_old_drop_dirs(&base);
+    let dir = base.join(format!("{pid}-{nanos}"));
     if std::fs::create_dir_all(&dir).is_err() {
         return Vec::new();
     }
@@ -637,8 +672,14 @@ fn receive_file_promise(receiver: &objc2_app_kit::NSFilePromiseReceiver) -> Vec<
 // the drop. Every objc failure path (missing item, wrong type, a promise that never resolves)
 // just omits that entry — this command must never panic, since it runs on every drop the
 // frontend couldn't otherwise explain.
+//
+// Marked `async`: the file-promise branch below can block on `recv_timeout` for up to 10s
+// (waiting on NSFilePromiseReceiver's async callback), and NSPasteboard/NSBitmapImageRep/
+// NSFilePromiseReceiver are not MainThreadOnly in objc2-app-kit, so this is safe to run off the
+// main thread. Without `async`, tauri-macros invokes a sync command inline on the IPC handler
+// (the main thread), and that 10s wait freezes the window.
 #[cfg(target_os = "macos")]
-#[tauri::command]
+#[tauri::command(async)]
 fn read_drag_pasteboard() -> DragPasteboard {
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
@@ -685,6 +726,7 @@ fn read_drag_pasteboard() -> DragPasteboard {
             }
         }
 
+        let before = out.images.len();
         for (ty, ext) in [(&png_type, "png"), (&jpeg_type, "jpg"), (&gif_type, "gif")] {
             if let Some(data) = item.dataForType(ty) {
                 out.images.push(DroppedImage {
@@ -695,18 +737,23 @@ fn read_drag_pasteboard() -> DragPasteboard {
             }
         }
 
-        if let Some(data) = item.dataForType(&tiff_type) {
-            if let Some(rep) = NSBitmapImageRep::imageRepWithData(&data) {
-                let props: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::new();
-                // SAFETY: `properties` is an empty (but correctly-typed) dictionary.
-                let png = unsafe {
-                    rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &props)
-                };
-                if let Some(png) = png {
-                    out.images.push(DroppedImage {
-                        name: "dropped-image.png".to_string(),
-                        base64: base64_encode(&png.to_vec()),
-                    });
+        // Only fall back to the TIFF representation when the item carried none of the above —
+        // one pasteboard item commonly exposes both public.png and public.tiff for the same
+        // image, and pushing both would embed it twice.
+        if out.images.len() == before {
+            if let Some(data) = item.dataForType(&tiff_type) {
+                if let Some(rep) = NSBitmapImageRep::imageRepWithData(&data) {
+                    let props: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::new();
+                    // SAFETY: `properties` is an empty (but correctly-typed) dictionary.
+                    let png = unsafe {
+                        rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &props)
+                    };
+                    if let Some(png) = png {
+                        out.images.push(DroppedImage {
+                            name: "dropped-image.png".to_string(),
+                            base64: base64_encode(&png.to_vec()),
+                        });
+                    }
                 }
             }
         }
@@ -742,7 +789,7 @@ fn read_drag_pasteboard() -> DragPasteboard {
 }
 
 #[cfg(not(target_os = "macos"))]
-#[tauri::command]
+#[tauri::command(async)]
 fn read_drag_pasteboard() -> DragPasteboard {
     DragPasteboard::default()
 }
