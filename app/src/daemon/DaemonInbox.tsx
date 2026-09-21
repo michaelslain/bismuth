@@ -19,7 +19,7 @@ import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import Badge from '../ui/Badge'
-import DaemonPanel from './DaemonPanel'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import InboxRow from './InboxRow'
 import styles from './DaemonInbox.module.css'
 
@@ -72,7 +72,7 @@ function DaemonInbox(props: DaemonInboxProps) {
                     resolved().length === 0
                 }
             >
-                <EmptyState>nothing needs you</EmptyState>
+                <EmptyState blockClass={daemonPanelEmptyClass}>nothing needs you</EmptyState>
             </Show>
 
             <Show when={due().length > 0}>

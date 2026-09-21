@@ -15,12 +15,12 @@
    of the module would hash to a different name than the first and any selector or call site
    expecting one name would silently stop matching the other.
 
-   `.sresult:global(.selected)` — `selected` is the app-wide bare "keyboard-highlighted row"
-   convention (see PaletteRow.module.css's header for the full list of consumers), and
-   SwitcherBar.tsx's `scrollSelectedIntoView(..., '.selected')` queries it generically across
-   `.palette-row` file rows AND `.sresult` AI-result cards in the SAME list. Hashing it here would
-   silently break that query. `classList={{ selected: … }}` in SearchResultRows.tsx stays a bare
-   literal for the same reason.
+   `.sresult[data-selected]` — keyboard-highlighted card, now a `data-selected` RUNTIME HOOK
+   rather than a bare `.selected` class (one-global-followups Task 4): SwitcherBar.tsx's
+   `scrollSelectedIntoView(..., '[data-selected]')` queries it generically across `.palette-row`
+   file rows AND `.sresult` AI-result cards in the SAME list, and a hashed per-file class can't
+   cross that boundary, so `data-selected` (set directly in SearchResultRows.tsx) is the correct
+   escape hatch — see PaletteRow.module.css's header for the matching convention on `.palette-row`.
 
    `[data-switcher-list] .sresult` (was `:global(.switcher-list) .sresult`) — FOLDED IN from
    palette/switcher.css, which no longer defines this selector; the margin-top override belongs
@@ -40,7 +40,7 @@
   gap: var(--sp-3);
 }
 /* Keyboard-highlighted card (the switcher's menu nav walks content/AI rows too). */
-.sresult:global(.selected) {
+.sresult[data-selected] {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   background: var(--popover-selected-bg, var(--hover-bg));
 }

@@ -25,7 +25,8 @@ export type EmptyStateProps = {
 function EmptyState(props: EmptyStateProps) {
     return (
         <div
-            class={`ui-empty-block ${props.class ?? ''} ${props.blockClass ?? ''}`.trim()}
+            class={`${styles['ui-empty-block']} ${props.class ?? ''} ${props.blockClass ?? ''}`.trim()}
+            data-testid="ui-empty-block"
         >
             <Show when={props.icon}>
                 <div class={styles['ui-empty-icon']}>{props.icon}</div>
@@ -34,7 +35,10 @@ function EmptyState(props: EmptyStateProps) {
                 {t => <h2 class={props.titleClass}>{t()}</h2>}
             </Show>
             <Show when={props.children}>
-                <p class={`ui-empty ${props.bodyClass ?? ''}`.trim()}>
+                <p
+                    class={`${styles['ui-empty']} ${props.bodyClass ?? ''}`.trim()}
+                    data-testid="ui-empty"
+                >
                     {props.children}
                 </p>
             </Show>

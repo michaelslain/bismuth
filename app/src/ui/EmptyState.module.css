@@ -1,30 +1,23 @@
 /* app/src/ui/EmptyState.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
    Task 7; `.ui-empty`/`.ui-empty-block` joined them from ui.css in one-global-stylesheet Task 4).
-   ui/EmptyState.tsx is the sole reader of every class below.
-
-   `.ui-empty` and `.ui-empty-block` (+ its `h2`) are written by EmptyState.tsx as bare, un-hashed
-   literals — not `styles[...]` — because one outside stylesheet still reaches them via
-   `:global()`: daemon/DaemonPanel.module.css, whose `.daemon-panel-body > :global(.ui-empty-block)`
-   styles an `<EmptyState>` some OTHER component passes in as `DaemonPanel`'s opaque `children` —
-   `DaemonPanel.tsx` never calls `<EmptyState>` itself, so it has no call site to hand a class prop
-   to. bridge kept: DaemonPanel's body inset, until whichever component renders that EmptyState is
-   in scope to retarget it. bases/FlashcardsView.module.css and palette/SwitcherBar.module.css
-   (one-global-followups Task 2) converted to `titleClass`/`bodyClass`/`blockClass` and no longer
-   reach these two classes. The `:global()` block below is a re-export that keeps DaemonPanel
-   working unchanged. See .claude/plans/ui-css-ownership.md. See the ignore comment right above the
-   `:global()` rule below for why it is exempt from the globalReach check — EmptyState genuinely
-   owns these classes, it's a temporary bridge until DaemonPanel's caller is retargeted. */
-/* design-system-ignore globalReach: EmptyState's own class, temporary :global() bridge to the three outside callers above, until wave 3 */
-:global(.ui-empty) { color: var(--text-muted); }
-/* design-system-ignore globalReach: same bridge as .ui-empty above, until wave 3 */
-:global(.ui-empty-block) { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
+   ui/EmptyState.tsx is the sole reader of every class below, and now writes ALL of them as hashed
+   `styles[...]` locals (one-global-followups Task 4) — the last two outside `:global()` bridges
+   (daemon/DaemonPanel.module.css's `.daemon-panel-body > :global(.ui-empty-block)`,
+   palette/SwitcherBar.module.css's `.switcher-ai-panel`/`.switcher-error-panel` reaches) were
+   retargeted onto EmptyState's `blockClass`/`bodyClass` props in this same task —
+   bases/FlashcardsView.module.css and palette/SwitcherBar.module.css's `.search-bar-lead` reach
+   were already converted (one-global-followups Task 2). Three story files that queried these by
+   bare class name (ChatView.stories.tsx, preview/PdfPages.stories.tsx, PreviewView.stories.tsx)
+   now query `[data-testid="ui-empty-block"]`/`[data-testid="ui-empty"]` instead — the two
+   `data-testid`s EmptyState.tsx adds for exactly this. See .claude/plans/ui-css-ownership.md. */
+.ui-empty { color: var(--text-muted); }
+.ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
 /* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
    and reverted: it replaced a heading element with a div — losing the document semantics a screen
    reader relies on — to gain nothing, because this register is neither Text's scale nor Heading's
    markdown ramp. It is also the app's ONLY uppercase eyebrow; DaemonList's and Graph's heads share
    the tracking but are deliberately mixed-case, which is why `eyebrow` supplies tracking alone. */
-/* design-system-ignore globalReach: same bridge as .ui-empty-block above, until wave 3 */
-:global(.ui-empty-block) h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
+.ui-empty-block h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
 
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
 

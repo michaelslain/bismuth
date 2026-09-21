@@ -59,10 +59,12 @@
     );
 }
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
-   a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
-   is EmptyState's global root class (ui/ui.css), the same reach
-   bases/FlashcardsView.module.css already makes. EmptyState has no compact variant to ask for instead. */
-.daemon-panel-body > :global(.ui-empty-block) {
+   a row and set in the rows' --fs-ui. No longer reached via `:global(.ui-empty-block)` —
+   DaemonPanel.tsx never renders `<EmptyState>` itself (it's opaque `children`), so this class is
+   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonServices,
+   DaemonLog) as `<EmptyState blockClass={daemonPanelEmptyClass}>` (one-global-followups Task 4).
+   EmptyState has no compact variant to ask for instead. */
+.panel-empty {
     padding: var(--sp-6) var(--sp-4);
     font-size: var(--fs-ui);
 }

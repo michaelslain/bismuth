@@ -251,14 +251,14 @@ export function SwitcherBar(props: Props) {
     )
 
     // Keep the highlighted row scrolled into view (file rows and result cards both mark
-    // themselves with `.selected`).
+    // themselves with a `data-selected` runtime hook — see PaletteRow.module.css's header).
     scrollSelectedIntoView(
         () => {
             selected()
             navCount()
         },
         () => listRef,
-        '.selected',
+        '[data-selected]',
     )
 
     // Report the visible result set up so the backdrop graph lights up EVERY matching note:

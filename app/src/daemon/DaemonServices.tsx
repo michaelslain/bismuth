@@ -17,7 +17,7 @@ import Label from '../ui/Label'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
-import DaemonPanel from './DaemonPanel'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import cronFrequency from './cronFrequency'
 import { cronStatus, type CronStatusKey } from './cronStatus'
 import styles from './DaemonServices.module.css'
@@ -292,7 +292,7 @@ function DaemonServices(props: DaemonServicesProps) {
             >
                 <Show
                     when={props.crons.length > 0}
-                    fallback={<EmptyState>no crons</EmptyState>}
+                    fallback={<EmptyState blockClass={daemonPanelEmptyClass}>no crons</EmptyState>}
                 >
                     <For each={props.crons}>
                         {cron => (
@@ -312,7 +312,7 @@ function DaemonServices(props: DaemonServicesProps) {
             >
                 <Show
                     when={props.processes.length > 0}
-                    fallback={<EmptyState>no background services</EmptyState>}
+                    fallback={<EmptyState blockClass={daemonPanelEmptyClass}>no background services</EmptyState>}
                 >
                     <For each={props.processes}>
                         {process => (
