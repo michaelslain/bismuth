@@ -1,3 +1,0 @@
-/* app/src/ui/ascii/Glyph.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
-   Task 7). ui/ascii/Glyph.tsx was the sole reader anywhere in the app. */
-.asc-glyph { white-space: pre; font-family: var(--ui-font-stack); }

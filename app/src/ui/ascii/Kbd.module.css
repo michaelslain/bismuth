@@ -1,20 +1,11 @@
 /* app/src/ui/ascii/Kbd.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
-   Task 7). ui/ascii/Kbd.tsx was the sole reader of all four rules anywhere in the app.
+   Task 7). ui/ascii/Kbd.tsx was the sole reader of this rule anywhere in the app.
 
    `.asc-kbd` / `.asc-kbd.muted` / `.asc-key` (Kbd's OTHER three classes) STAY in ui.css:
    bases/FlashcardsView.tsx writes `.asc-kbd`/`.asc-key` directly too, bypassing this component —
    see .claude/plans/ui-css-ownership.md, "REPORT, do not switch" ruling.
 
-   `.asc-kbd-hint` / `.asc-kbd-desc` / `.asc-kbd-hints` (2026-09-21, one-global-followups Task 7):
-   genuinely READ, by KbdHint/KbdHints below — but those two have no production importer anywhere
-   in app/src (only Kbd.stories.tsx renders them: `KbdHint` is the status-bar / palette-footer
-   hint unit, not yet wired into a real call site). Rollup tree-shakes the unused named exports
-   out of the `vite build` app, so `styles['asc-kbd-hint']` etc never execute THERE, even though
-   the CSS module still ships the rules (CSS isn't shaken per-class) — moduleClassCheck's "nothing
-   reads" finding is a false positive from reading only the production bundle. Deleting them would
-   break Kbd.stories.tsx's own `hint`/`hints-row` shots, which DO render KbdHint/KbdHints, so they
-   stay and are exempted in bench/moduleClassCheck.ts's ALLOW set instead. See task-7-report.md. */
+   `.asc-kbd-hint` / `.asc-kbd-desc` / `.asc-kbd-hints` (and the KbdHint/KbdHints components that
+   read them) were deleted 2026-09-21 (one-global-followups Task 5) — they had no production
+   importer anywhere in app/src, only their own stories. */
 .asc-kbd-then { color: var(--faint); font-size: var(--fs-micro); padding: 0 var(--sp-1); }
-.asc-kbd-hint { display: inline-flex; align-items: center; gap: var(--sp-3); }
-.asc-kbd-desc { color: var(--faint); font-size: var(--fs-micro); }
-.asc-kbd-hints { display: inline-flex; align-items: center; gap: var(--sp-5); }
