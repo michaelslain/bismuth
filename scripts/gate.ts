@@ -25,6 +25,14 @@
 // see that file's header for the split of responsibility) as one combined step, so there is one
 // design-system gate in pre-commit and no check runs twice.
 //
+// A FOURTH step, independent of the third, runs whenever a staged path matches app/src/**/*.css:
+// bench/moduleClassCheck.ts, which builds the app and cross-checks emitted CSS-Module class names
+// against the emitted JS template output — the one migration mistake nothing else catches, a call
+// site left holding an old plain-string class literal that compiles and renders but matches
+// nothing once the real rule is hashed. It needs its own trigger (not touchesDesignSystem's) because
+// it only cares about stylesheets, not components/stories/tokens, and it is the slowest step here
+// (~11s, a full production build) so it should not run on a components-only or docs-only change.
+//
 // Escape hatches, in order of preference:
 //   BISMUTH_SKIP_GATE=1 git commit …   — skip the gate, on purpose, visibly
 //   git commit --no-verify             — skip every hook (blunter)
@@ -86,6 +94,17 @@ export function touchesDesignSystem(staged: string[]): boolean {
     )
 }
 
+/**
+ * Does this staged-file set touch a stylesheet moduleClassCheck needs to re-verify?
+ * Exported (and pure) so gate.test.ts can pin the routing without touching git or the filesystem.
+ *
+ * Narrower than touchesDesignSystem: only app/src/**\/*.css (module or global) can change what
+ * class names the build emits, which is the only thing this check compares.
+ */
+export function touchesStylesheets(staged: string[]): boolean {
+    return staged.some(f => f.startsWith('app/src/') && f.endsWith('.css'))
+}
+
 export type GatePlan = {
     /** Run `bun run typecheck` across every workspace. */
     typecheck: boolean
@@ -93,6 +112,8 @@ export type GatePlan = {
     tests: Workspace[]
     /** Run the design-system gate + tokenLint as the combined third step. */
     designSystem: boolean
+    /** Run bench/moduleClassCheck.ts (builds the app) as the fourth step. */
+    moduleClassCheck: boolean
 }
 
 /**
@@ -109,6 +130,7 @@ export function plan(staged: string[]): GatePlan {
         typecheck: tests.length > 0,
         tests,
         designSystem: touchesDesignSystem(staged),
+        moduleClassCheck: touchesStylesheets(staged),
     }
 }
 
@@ -204,8 +226,8 @@ function main(): void {
         process.exit(0)
     }
 
-    const { typecheck, tests, designSystem } = plan(staged)
-    if (tests.length === 0 && !designSystem) {
+    const { typecheck, tests, designSystem, moduleClassCheck } = plan(staged)
+    if (tests.length === 0 && !designSystem && !moduleClassCheck) {
         // Docs, design assets, .gitignore — nothing a test, the typechecker or the design-system
         // gate covers.
         process.stdout.write(
@@ -215,7 +237,7 @@ function main(): void {
     }
 
     process.stdout.write(
-        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${tests.join(', ') || '(none)'}${designSystem ? ' + design system' : ''}\x1b[0m\n`,
+        `\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${tests.join(', ') || '(none)'}${designSystem ? ' + design system' : ''}${moduleClassCheck ? ' + moduleClassCheck' : ''}\x1b[0m\n`,
     )
 
     let ok = true
@@ -245,6 +267,14 @@ function main(): void {
         if (existsSync(baselinePath)) gateArgs.push('--baseline', baselinePath)
         ok = run('design system (manifest + stories + tokens)', process.execPath, gateArgs)
         if (ok) ok = run('design system (tokenLint)', 'bun', ['bench/tokenLint.ts'])
+    }
+
+    // A fourth, independent step: moduleClassCheck builds the app and cross-checks emitted CSS
+    // class names against the emitted JS, catching a stale string-literal class no other check
+    // sees. It runs only on staged stylesheet changes, since it is the slowest step here (a full
+    // production build, ~11s measured on this repo).
+    if (ok && moduleClassCheck) {
+        ok = run('moduleClassCheck (emitted CSS ↔ JS)', 'bun', ['bench/moduleClassCheck.ts'])
     }
 
     if (!ok) {
