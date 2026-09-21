@@ -2,7 +2,7 @@
 
 Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or a drawing — into a downloadable file: Markdown, HTML, PNG, PDF, or (bases only) CSV. This is the reference for anyone building an export format, adding a new exportable file kind, or debugging a mismatch between what the export pane shows and what actually gets written to disk.
 
-The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths (markdown, HTML, CSV, the pure table/view builders) are fully headless already; rasterizing a note/base/sheet's HTML to PNG/PDF is where the two faces diverge in *how*, not *whether* — the app rasterizes in its own browser process (`html2canvas`/`jsPDF`), while the CLI launches a disposable headless Chrome over CDP (`core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`) to do the same job with no running app to borrow a browser from. Drawings rasterize through the headless core renderer (`core/src/drawing/export.ts`) either way.
+The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths (markdown, HTML, CSV, the pure table/view builders) are fully headless already; rasterizing a note/base/sheet's HTML to PNG/PDF is where the two faces diverge in *how*, not *whether*. For PDF specifically, the app no longer rasterizes in its own browser process for every case: the desktop app prints the export document to PDF through its own native WebKit engine (a `print_pdf` Tauri command — see "Desktop: native WebKit print" below), and only falls back to the browser-side `html2canvas`/`jsPDF` rasterizer when WebKit can't (browser dev mode, iPad). The CLI launches a disposable headless Chrome over CDP (`core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`) to do the same job with no running app to borrow a browser from. Drawings rasterize through the headless core renderer (`core/src/drawing/export.ts`) either way.
 
 **What's in here**: the pane's controls and how a source file is classified as a base ([The export pane](#the-export-pane-exportviewtsx)); which formats each file kind supports ([Targets × formats](#targets--formats)); the visual-vs-data render mode for bases ([Visual vs data render mode](#visual-vs-data-render-mode-bases)); the frontmatter toggle, the markdown-syntax toggle, and page-break splitting ([Include/exclude frontmatter](#includeexclude-frontmatter), [Markdown syntax markers](#markdown-syntax-markers), [Page breaks](#page-breaks)); how a note's document fonts get embedded ([Font embedding](#font-embedding)); the shared renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)); what runs in-app vs. headless ([Headless vs browser-only paths](#headless-vs-browser-only-paths)); the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)); and how a completed export actually reaches disk ([Download flow](#download-flow)).
 
@@ -17,7 +17,7 @@ export const EXPORT_PREFIX = "::export:";
 
 `PaneContent.tsx` routes any leaf whose path `startsWith(EXPORT_PREFIX)` to a **lazily-imported** `ExportView` (`ExportView` pulls in `jspdf`/`html2canvas` transitively, so it is deferred off the entry bundle), stripping the prefix to recover the vault-relative file path: `<ExportView path={props.path.slice(EXPORT_PREFIX.length)} />`. The tab reads as `Export: <name>` with a `Download` icon (`contentLabel`/`contentIcon` in `tabIds.ts`).
 
-The pane is a two-column layout: a live **preview** on the left (an `<iframe srcdoc>` for HTML/MD/CSV, an `<img>` for image previews) and a **control panel** on the right. The panel exposes:
+The pane is a two-column layout: a live **preview** on the left (an `<iframe srcdoc>` for HTML/MD/CSV, an `<img>` for image previews, and — for PDF — a real `PdfPages` pdf.js page stack, since the PDF preview now runs the actual print and shows the actual bytes; see "The preview visualizes the pages") and a **control panel** on the right. The panel exposes:
 
 - **Input path** — which vault-relative file to export. Defaults to the file the tab was opened for, re-pointable by typing a path or (in the desktop app) the `BROWSE` button (`pickFile`, filtered to `md`/`sheet`/`draw`). The committed `srcPath` (which drives the preview resource) is kept separate from the live `srcDraft` text so typing doesn't refetch on every keystroke and drop input focus mid-word; the draft commits on blur/Enter.
 - **Output path** — the destination folder. Empty = the browser/OS Downloads dir. A chosen folder (desktop only, via `pickFolder`) is remembered in `localStorage` under `bismuth.export.destFolder`.
@@ -26,7 +26,7 @@ The pane is a two-column layout: a live **preview** on the left (an `<iframe src
 - **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `bismuth.export.calSpan`.
 - **Frontmatter** (plain `.md` only, not a base) — an "Include frontmatter" toggle, default ON. See "Include/exclude frontmatter" below.
 - **Markdown syntax** (plain `.md` only, not a base, same field as Frontmatter above) — a "Show markdown syntax" toggle, default OFF, wired to `ExportOptions.showMarkdownSyntax`. See "Markdown syntax markers" below.
-- **Format** — the valid format chips for the current file/mode (see Formats below). A page-broken PNG export shows a small heads-up ("N pages → exports as N separate PNG files"); see "Page breaks" below.
+- **Format** — the valid format chips for the current file/mode (see Formats below). A page-broken PNG export shows a small heads-up ("N pages → exports as N separate PNG files"); see "Page breaks" below. A PDF preview shows its own readout once `PdfPages` has counted the real document ("N pages" / "1 page"), refreshed whenever the preview re-renders.
 - **Font size** (PDF only) — a chip per size in `PDF_FONT_SIZES` (`9 10 11 12 14 16 18`pt, `options.ts`), wired to `ExportOptions.pdfFontSize`. Defaults to `DEFAULT_PDF_FONT_SIZE` (12pt, "a standard document body size"). A larger size renders bigger text and **repaginates** — taller content overflows onto more Letter pages, same as widening the font in any paginated document. The CLI has no equivalent flag; a headless PDF export always uses the 12pt default (`defaultExportOptions()`).
 - **Theme** — `dark` or `light`.
 
@@ -129,7 +129,7 @@ CLI: pass `--markdown-syntax` to `bismuth export` to turn the toggle on (maps to
 
 A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian — inserted via the editor's slash menu, `id: "pagebreak"`) marks a page boundary. `bases/markdown.ts`'s `renderMarkdown` turns it into a zero-height `<div class="bismuth-page-break">` (masked/restored like wikilinks so a marker inside a code fence/span stays literal) that survives `sanitizeHtml`; `htmlTemplate.ts` gives it `break-after: page; page-break-after: always; height: 0`. Each format honors this marker differently, since only some formats can hold more than one page:
 
-- **PDF** — a single PDF with a forced page break at each marker. `export/htmlToPdf.ts`'s `htmlToCanvas` measures every `.bismuth-page-break` div's post-layout Y offset (ignoring one that lands outside the real content band — i.e. right at the very start/end of the document, which would otherwise slice off an empty page) and passes those offsets to `htmlToPdf`, which cuts a new Letter page at each one instead of only at the natural page-height boundary. The page math is pure and DOM-free in `export/pageGeometry.ts`: US-Letter-in-points constants (`PAGE_W_PT`/`PAGE_H_PT` 612×792, `MARGIN_PT` 72, `CONTENT_W_PT`/`CONTENT_H_PT` 468×648), the source raster widths (`PAGE_W_PX` 816 for PNG, `CONTENT_W_PX` 624 for the PDF's 1:1-inch printable-box layout), `pdfSliceMetrics` (px→pt scale + per-page slice height), `pageSlices` (auto-pagination: bands ≤ one page, forced breaks ending a page early, and each natural page bottom pulled back to the nearest legal cut — see "Page boundaries never cut a line"), and `parseRgbColor` (the `rgb()`/hex → `[r,g,b]` parser feeding jsPDF's `setFillColor` for the margin-band page fill).
+- **PDF** — a single PDF with a forced page break at each marker. On the desktop app, WebKit's own native pagination honours the `.bismuth-page-break` element's `break-after: page` rule directly — no measurement needed, the same way it honours every other break inside the document. The html2canvas/jsPDF fallback (browser dev mode, iPad) still measures: `export/htmlToPdf.ts`'s `htmlToCanvas` measures every `.bismuth-page-break` div's post-layout Y offset (ignoring one that lands outside the real content band — i.e. right at the very start/end of the document, which would otherwise slice off an empty page) and passes those offsets to `htmlToPdf`, which cuts a new Letter page at each one instead of only at the natural page-height boundary. The page math is pure and DOM-free in `export/pageGeometry.ts`: US-Letter-in-points constants (`PAGE_W_PT`/`PAGE_H_PT` 612×792, `MARGIN_PT` 72, `CONTENT_W_PT`/`CONTENT_H_PT` 468×648), the source raster widths (`PAGE_W_PX` 816 for PNG, `CONTENT_W_PX` 624 for the PDF's 1:1-inch printable-box layout), `pdfSliceMetrics` (px→pt scale + per-page slice height), `pageSlices` (auto-pagination: bands ≤ one page, forced breaks ending a page early, and each natural page bottom pulled back to the nearest legal, painted-safe cut — see "Page boundaries never cut a line"), and `parseRgbColor` (the `rgb()`/hex → `[r,g,b]` parser feeding jsPDF's `setFillColor` for the margin-band page fill).
 - **HTML** — the marker becomes the CSS rule above: a no-op on screen (a live, continuously-scrolling document), but a forced page break if the exported `.html` file is printed (e.g. browser Print → Save as PDF) — print fidelity without changing the on-screen document.
 - **PNG** — a single raster image can't hold more than one page, so a note with page breaks exports as **one PNG file per section** instead of one file for the whole note: `note-1.png`, `note-2.png`, … (`ExportResult.files`). A note with no markers is unaffected (still a single `note.png`). The split happens at the TEXT level, before rendering — `export/pageBreaks.ts`'s pure `pageSections(text)`:
   1. slices frontmatter off FIRST (`stripFrontmatter`, same helper the frontmatter toggle uses) so a marker placed right after the frontmatter block never makes "page 1" just the frontmatter — with `includeFrontmatter: true` the block is re-prepended onto the first surviving section (it renders as prose at the top of page 1, exactly like the single-page/PDF paths, but never counts as a page; the section COUNT is toggle-invariant, so page numbering never shifts);
@@ -142,11 +142,28 @@ A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian �
 
 ### The preview visualizes the pages
 
-The export pane's preview of a page-broken note (html/pdf/png formats) renders **one visually distinct "sheet" per section** — a dashed-border block labeled `Page N of M` with a gap before the next — instead of one continuous body, so the pane shows exactly where the export will split. `renderPreview` builds it from the **same `pageSections(text, includeFrontmatter)` model the PNG export writes files from** (`pageBreakSections` in `exporters.ts` is the shared gate), so preview and export can never disagree about page count or content; each section renders through the same `renderMarkdown` + math-guard as the export. The sheet chrome (`.bismuth-preview-page` / `.bismuth-preview-pagelabel`, palette-tinted) is **preview-only** — the exported HTML file remains one continuous document with invisible print-break markers, the PDF gets real page boundaries, and each PNG file contains just its own section. A note without page breaks previews exactly as before (no wrappers).
+The export pane's preview of a page-broken note (html/png formats) renders **one visually distinct "sheet" per section** — a dashed-border block labeled `Page N of M` with a gap before the next — instead of one continuous body, so the pane shows exactly where the export will split. `renderPreview` builds it from the **same `pageSections(text, includeFrontmatter)` model the PNG export writes files from** (`pageBreakSections` in `exporters.ts` is the shared gate), so preview and export can never disagree about page count or content; each section renders through the same `renderMarkdown` + math-guard as the export. The sheet chrome (`.bismuth-preview-page` / `.bismuth-preview-pagelabel`, palette-tinted) is **preview-only** — the exported HTML file remains one continuous document with invisible print-break markers, and each PNG file contains just its own section. A note without page breaks previews exactly as before (no wrappers).
+
+**PDF is different: the preview IS the real bytes.** `renderPreview(path, 'pdf', …)` now runs the exact same `deps.htmlToPdf(doc, name)` the download uses and returns `{ previewPdf: <the PDF bytes> }` — no separate sheet-per-section rendering, no `previewHtml`. `ExportView.tsx` hands those bytes to `PdfPages` (`app/src/preview/PdfPages.tsx`, the same pdf.js page stack `PreviewView` uses for a standalone PDF file), which renders the document's own real pages — WebKit's native pagination on desktop, the html2canvas/jsPDF fallback elsewhere — so preview and download can never disagree, page-for-page, by construction. `PdfPages.onPageCount` feeds the panel's "N pages" readout (see "The export pane" above).
 
 ## Page boundaries never cut a line
 
-A PDF page bottom is chosen by MEASUREMENT, not by arithmetic on a baseline grid.
+Two engines, two different guarantees for the same acceptance: no text line and no table row is
+ever split across a page boundary.
+
+**WebKit (desktop, the primary path)** gets this for free — it is a real print engine doing its
+own native pagination, and a line box or table row is simply never a candidate cut point in the
+first place. `printCss.ts`'s `WEBKIT_PRINT_HEAD` adds `break-inside: avoid` on `tr`/`table`/`img`/
+`svg`/`.katex-display` so a *block* doesn't straddle a page either (a table taller than one page
+still breaks internally — `avoid` is a preference, not a hard constraint at that scale). No
+measurement, no gate: the engine's own layout pass is the source of truth.
+
+**html2canvas + jsPDF (the fallback — browser dev mode, iPad)** has no such engine underneath it:
+it rasterizes a DOM snapshot and slices the raster with arithmetic, so page boundaries have to be
+chosen deliberately. A PDF page bottom is chosen by MEASUREMENT, not by arithmetic on a baseline
+grid, and — since the diagnosis behind this plan found html2canvas's own raster can drift tens of
+pixels from where the DOM says an element is — by a second, PIXEL-level check on the actual raster
+before trusting any DOM measurement as a cut point.
 
 `htmlToPdf.ts`'s `measureCutStops(doc, scale)` runs on the laid-out off-screen iframe, just before
 html2canvas snapshots it, and collects every **atom** — anything that must not be sliced:
@@ -164,6 +181,24 @@ overlap by a pixel or two, and treating that as disqualifying threw away nearly 
 document. `pageSlices` then pulls each natural page bottom back to the last legal stop that fits; when
 nothing fits (a single atom taller than a whole page) the raw bottom stands, so the pager always
 advances.
+
+**The painted-blank gate.** The DOM stop list above is a *preference*, not the final word — the
+diagnosis for this plan measured html2canvas painting a `<tr>` roughly 25 css px (50 canvas px)
+below its true DOM position, with other blocks drifting ±40–110 canvas px, so a DOM-legal stop can
+still land inside painted ink on the actual raster. `pageGeometry.ts`'s `classifyRows` samples the
+rasterized RGBA data row by row and marks each canvas row `uniform` (every sampled pixel within
+`INK_THRESHOLD` (60, a channel-sum |Δr|+|Δg|+|Δb|) of the row's first sample — blank, or a solid
+fill/rule) or `full` (`FULL_FRACTION` (0.9) or more of samples differ from the background by more
+than `INK_THRESHOLD` — a full-width rule). `cutSafe(rows, y, forbidden)` then allows a cut at row
+`y` only when it sits outside every `forbidden` band (`formulaBands` — a padded band, `DRIFT_PAD_CSS`
+(60 css px) wide, around every stacked-fraction/display-formula atom, since those atoms have blank
+*interior* rows that would otherwise look like a safe cut) and either both `y-1` and `y` are blank,
+or `y-1` is blank and sits right after a full-width rule (a table border / `hr`), or `y` is inside a
+uniform fill (a code block's padding). `pageSlices` prefers the nearest DOM stop that also passes
+`cutSafe`; failing that, it searches back from the natural page bottom (never past `MIN_PAGE_FRACTION`
+(0.5) of a page height) for the largest row that passes `cutSafe` on its own; failing that, the DOM
+stop (or the raw natural bottom) stands, so the pager still always advances. Detail + exact types:
+`export/pageGeometry.ts`.
 
 **Why it is not the 22px grid any more.** `RULE_PX` (`htmlTemplate.ts`) is still the typographic
 baseline unit, and `pdfSliceMetrics` still snaps the page height to a multiple of it — but that only
@@ -316,13 +351,16 @@ builders, calendar/cards/kanban/list HTML, document wrapping) run anywhere:
 
 - **`md` / `html`** — fully headless everywhere. Pure string output; the CLI writes it directly, no
   rasterizer of any kind involved.
-- **`png` / `pdf` of a note / base / sheet** — rasterized, by one of **two independent
-  implementations** wired in through `deps.htmlToPng` / `deps.htmlToPdf`, both starting from the exact
+- **`png` / `pdf` of a note / base / sheet** — rasterized, by one of **three independent
+  implementations** wired in through `deps.htmlToPng` / `deps.htmlToPdf`, all starting from the exact
   same self-contained HTML document `wrapBody` produces:
-  - **The app** — `app/src/export/htmlToPdf.ts`: the document is written into an isolated off-screen
+  - **The app, PDF, desktop** — native WebKit print through the `print_pdf` Tauri command. See
+    "Desktop: native WebKit print (`print_pdf`)" below.
+  - **The app, PDF fallback (browser dev mode, iPad) — and PNG, always** —
+    `app/src/export/htmlToPdf.ts`: the document is written into an isolated off-screen
     `<iframe>` inside the running app's own browser, snapshotted with **`html2canvas`**, then (for PDF)
-    sliced across US-Letter pages via **`jsPDF`**, using the pixel-measurement pagination described in
-    "Page boundaries never cut a line" above.
+    sliced across US-Letter pages via **`jsPDF`**, using the pixel-measurement + painted-blank-gate
+    pagination described in "Page boundaries never cut a line" above.
   - **The CLI** — `core/src/render/htmlRaster.ts`'s `htmlToPdfHeadless` / `htmlToPngHeadless`, wired in
     by `cli/src/commands/export.ts`. There is no running Bismuth to borrow a browser from, so this
     module launches a **disposable headless Chrome** (`core/src/render/chromeSession.ts`'s
@@ -354,6 +392,44 @@ builders, calendar/cards/kanban/list HTML, document wrapping) run anywhere:
   formats straight through the core renderer, so drawing PNG **and** PDF both work headlessly there.
   See the next section for how the two rasterizers relate.
 
+### Desktop: native WebKit print (`print_pdf`)
+
+Inside the Tauri desktop app, a PDF export prints through the OS's own WebKit engine rather than
+rasterizing anything: real selectable/searchable text, WebKit's own native pagination (a line box
+is never split — see "Page boundaries never cut a line" above), and correct KaTeX (the earlier
+html2canvas path drew maths with glyphs off the baseline and `≠` as a boxed glyph; a real print
+engine just renders the page).
+
+- **`app/src-tauri/src/print_pdf.rs`** — the Rust half: `print_pdf(app, html, title)`, a Tauri
+  command that loads `html` into an off-screen, **never-shown** `WKWebView` (no `makeKeyAndOrderFront:`,
+  positioned far off-screen if a window is needed at all) and runs `printOperationWithPrintInfo:`
+  with panels off and an `NSPrintSaveJob` disposition into a temp file, returning the PDF bytes as a
+  raw IPC response. `title` becomes the PDF's Title metadata (`NSPrintOperation.jobTitle`). Returns
+  `Err("unsupported")` on any non-macOS target (iPad's native route is deferred — see the plan); any
+  other error string is a real print failure. Registered in `lib.rs`'s `generate_handler!` as
+  `print_pdf::print_pdf`; no `capabilities/default.json` entry, same as `open_path`/`set_ui_zoom`.
+- **`app/src/export/pdfPrint.ts`** — the engine chooser + fallback. `pickPdfEngine({ tauri })` picks
+  `'webkit'` inside a Tauri webview, `'canvas'` everywhere else (the native command itself is what
+  decides platform support and answers `"unsupported"` where it can't print — the picker doesn't
+  need to know why). `printPdf(html, title, engine, printers, warn?)` runs the chosen engine; a
+  failing `'webkit'` print falls back to `printers.canvas` and calls `warn` once with the failure
+  message — **unless** the message is exactly `"unsupported"`, the expected answer on a platform
+  that was never going to support native print (no need to warn about something that isn't a bug).
+  `realPrinters.webkit` invokes `print_pdf` with the document's `<head>` carrying
+  `printCss.ts`'s `WEBKIT_PRINT_HEAD` (injected via `injectHead`, dynamic-imported
+  `@tauri-apps/api/core`); `realPrinters.canvas` dynamic-imports the same `htmlToPdf.ts` fallback the
+  browser path uses, keeping `jspdf`/`html2canvas` in their lazy chunk either way.
+  `htmlToPdfBytes(html, title)` is what `ExportView.tsx` wires into `ExportDeps.htmlToPdf`:
+  `printPdf(html, title, pickPdfEngine({ tauri: isTauri() }), realPrinters, warn)`.
+- **`app/src/export/printCss.ts`** — the CSS + head markup shared by both PDF engines, so a page's
+  geometry never depends on which one rendered it: `PDF_BODY_OVERRIDE` (drop the reading-column
+  max-width/padding so the *only* margin is the page's own 1in, and zero the first block's intrinsic
+  top margin so content starts exactly at that boundary), `PRINT_READY_TITLE` (a marker the export
+  document sets on `document.title` once `document.fonts.ready` resolves — WebKit's own
+  `WKWebView.title` is readable without a delegate, so the native printer polls for this before
+  printing rather than racing font load), and `injectHead(html, markup)` (inserts before the first
+  `</head>`, case-insensitively, or prepends when there is none).
+
 ### Drawing rasterization: browser (`drawingRaster.ts`) vs headless (`core/src/drawing/export.ts`)
 
 A `.draw` doc is rasterized by two independent implementations that share the same pure pixel logic (`core/src/drawing/render2d.ts`'s `renderPage`/`renderDocStacked`) but a different canvas backend and page-assembly strategy — this is the split referenced above:
@@ -380,8 +456,7 @@ Flow:
 3. **Everything else** calls `renderExport(file, fmt, deps, theme, optionsFrom(args))` with headless deps:
    - `read` → `readNote(vault, p)`
    - `resolveRows` → `resolveSource(spec, { root: vault, today })`
-   - `htmlToPdf` / `htmlToPng` → `htmlToPdfHeadless` / `htmlToPngHeadless` (`core/src/render/htmlRaster.ts`) — a real headless Chrome, launched and torn down per call; see "Headless vs browser-only paths" above for the Chrome-binary dependency this brings
-   - `htmlToPdfPages` → `htmlToPdfPagesHeadless`, which **always throws**: it only backs the in-app paged PDF preview (`renderPreview`'s `format === 'pdf'` branch), the CLI never calls `renderPreview`, and `--format pdf` itself never calls `htmlToPdfPages` — so this deliberately-unimplemented dep is wired in but unreachable from `bismuth export`
+   - `htmlToPdf` (its two-argument `(html, title)` shape — `title` unused headlessly) / `htmlToPng` → `htmlToPdfHeadless` / `htmlToPngHeadless` (`core/src/render/htmlRaster.ts`) — a real headless Chrome, launched and torn down per call; see "Headless vs browser-only paths" above for the Chrome-binary dependency this brings
    - `drawingToPng` → core `renderDocToPng`
    - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
    - `docFontCss` → `cli/src/docFontCss.ts`'s `docFontInlineCss` (see "Font embedding" above) — without it the headless Chrome rasterizing a CLI PDF/PNG would have no Lora Variable or Monaspace Xenon to paint prose with
@@ -402,6 +477,6 @@ So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format
 
 The Tauri surface is injectable (`TauriDelivery`), so the routing + verify-after-write logic is unit-tested without a webview (`download.test.ts`); the real seam lazy-imports `@tauri-apps/plugin-fs` / `@tauri-apps/api/path` / `@tauri-apps/plugin-dialog`.
 
-The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), the deferred `htmlToPdf`/`htmlToPng` (dynamic-imported only when actually exporting a PDF/PNG, to keep `jspdf`+`html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
+The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), `htmlToPdf` (`pdfPrint.ts`'s `htmlToPdfBytes` — webkit/canvas chooser + fallback, itself dynamic-importing whichever engine it needs), the deferred `htmlToPng` (dynamic-imported only when actually exporting a PNG, to keep `html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
 
-Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/markdown.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`.
+Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/pdfPrint.ts`, `app/src/export/printCss.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src/preview/PdfPages.tsx`, `app/src-tauri/src/print_pdf.rs`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/markdown.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`.

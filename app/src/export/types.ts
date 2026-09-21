@@ -160,12 +160,16 @@ export interface ExportOptions {
     palette?: ThemePalette
 }
 
-// What the export tab displays. Cheap to compute — never generates export bytes
-// (in particular never runs the heavy html->pdf pipeline), so switching formats
-// in the UI stays instant and side-effect-free.
+// What the export tab displays. Every format but PDF stays cheap — no export bytes, no
+// html->pdf pipeline. PDF is the one exception: the preview now runs the REAL print (the same
+// bytes as the download), because that's the only way to show WebKit's own pagination/fonts —
+// see ExportPreview.previewPdf.
 export interface ExportPreview {
     previewHtml?: string // shown in an <iframe srcdoc> (isolated document)
     previewImg?: string // data: URL, shown in an <img> (drawings)
+    // The real PDF bytes (from the SAME engine the download uses), rendered by the app's
+    // PdfPages pdf.js stack. Set only for format === 'pdf'; previewHtml/previewImg are unset then.
+    previewPdf?: Uint8Array
 }
 
 export interface ExportResult {
@@ -186,12 +190,11 @@ export interface ExportResult {
 export interface ExportDeps {
     read: (path: string) => Promise<string>
     resolveRows: (spec: SourceSpec) => Promise<Row[]>
-    htmlToPdf: (html: string) => Promise<Uint8Array>
-    // The paginated US-Letter pages of `html` as image data: URLs (one per page) — the SAME
-    // pages htmlToPdf writes. Used by the PDF export PREVIEW to show the exact multi-page
-    // 8.5x11in / 1in-margin layout the downloaded PDF has (rendering the real pages, not the raw
-    // source HTML). Browser-only (html2canvas), like htmlToPdf/htmlToPng.
-    htmlToPdfPages: (html: string) => Promise<string[]>
+    // Desktop: native WebKit print via the `print_pdf` Tauri command (real selectable text,
+    // WebKit's own pagination — a line box is never split, correct KaTeX). Everywhere else:
+    // html2canvas + jsPDF (app/src/export/htmlToPdf.ts). `title` becomes the PDF's Title metadata.
+    // See app/src/export/pdfPrint.ts for the engine chooser + canvas fallback.
+    htmlToPdf: (html: string, title: string) => Promise<Uint8Array>
     htmlToPng: (html: string) => Promise<{ bytes: Uint8Array; dataUrl: string }>
     // Rasterizes a `.draw` document. `box` is the note-ink shape (inkHtml.ts): ONE page of
     // strokes at a caller-chosen logical size on a TRANSPARENT ground, for compositing over the

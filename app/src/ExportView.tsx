@@ -24,6 +24,8 @@ import { pageSections } from './export/pageBreaks'
 import { drawingToPng } from './export/drawingRaster'
 import { deliverFile, writeToFolder, type Delivery } from './export/download'
 import { readCache, writeCache } from './viewCache'
+import { htmlToPdfBytes } from './export/pdfPrint'
+import PdfPages from './preview/PdfPages'
 import type {
     ExportFormat,
     ExportTheme,
@@ -39,11 +41,7 @@ import styles from './ExportView.module.css'
 
 // Defer jspdf + html2canvas (a few hundred KB) out of the entry/preview path: they
 // only load when the user actually exports a PDF. The dynamic import resolves to the
-// same `htmlToPdf` implementation, code-split into its own chunk (see vite manualChunks).
-const htmlToPdf = (html: string): Promise<Uint8Array> =>
-    import('./export/htmlToPdf').then(m => m.htmlToPdf(html))
-const htmlToPdfPages = (html: string): Promise<string[]> =>
-    import('./export/htmlToPdf').then(m => m.htmlToPdfPages(html))
+// same `htmlToPng` implementation, code-split into its own chunk (see vite manualChunks).
 const htmlToPng = (
     html: string,
 ): Promise<{ bytes: Uint8Array; dataUrl: string }> =>
@@ -115,11 +113,11 @@ const SPAN_KEY = 'bismuth.export.calSpan'
 const loadLs = (k: string): string => readCache<string>(k) ?? ''
 const saveLs = (k: string, v: string): void => writeCache(k, v)
 
-const deps: ExportDeps = {
+// Every dep but htmlToPdf: that one is picked per-render from props.htmlToPdf ?? htmlToPdfBytes
+// (a Storybook seam, mirroring PdfPages.load) — never destructure props, read it at call time.
+const BASE_DEPS: Omit<ExportDeps, 'htmlToPdf'> = {
     read: p => api.read(p),
     resolveRows: spec => api.resolveRows(spec),
-    htmlToPdf,
-    htmlToPdfPages,
     htmlToPng,
     drawingToPng,
     // The Vite `?inline`-bundled inline-CSS module (~400KB), dynamic-imported only when an
@@ -136,7 +134,16 @@ const deps: ExportDeps = {
 const viewLabel = (v: ViewConfig, i: number): string =>
     v.name || v.type || `View ${i + 1}`
 
-export function ExportView(props: { path: string }) {
+export function ExportView(props: {
+    path: string
+    // Storybook-only seam (mirrors PdfPages.load): lets a story feed a pre-built PDF instead of
+    // going through the real webkit/canvas print pipeline.
+    htmlToPdf?: (html: string, title: string) => Promise<Uint8Array>
+}) {
+    const deps = (): ExportDeps => ({
+        ...BASE_DEPS,
+        htmlToPdf: props.htmlToPdf ?? htmlToPdfBytes,
+    })
     // The "input path" — which file to export. Defaults to the file the tab was opened for,
     // but can be re-pointed at any other vault file via the picker / text field.
     //
@@ -284,8 +291,15 @@ export function ExportView(props: { path: string }) {
                 pdfFontSize(),
             ] as const,
         async ([path, fmt, thm]) =>
-            renderPreview(path, fmt, deps, thm, buildOptions()),
+            renderPreview(path, fmt, deps(), thm, buildOptions()),
     )
+
+    // PdfPages reports its page count once it has rendered the real bytes (onPageCount below);
+    // reset to 0 while a new preview is loading so a stale "N pages" readout never lingers.
+    const [pdfPageCount, setPdfPageCount] = createSignal(0)
+    createEffect(() => {
+        if (result.loading) setPdfPageCount(0)
+    })
 
     // Keep the chosen format valid as the available set changes (mode flip adds/removes
     // md+csv; a different file changes the matrix entirely).
@@ -352,7 +366,7 @@ export function ExportView(props: { path: string }) {
             const r = await renderExport(
                 srcPath(),
                 format(),
-                deps,
+                deps(),
                 theme(),
                 buildOptions(),
             )
@@ -433,6 +447,7 @@ export function ExportView(props: { path: string }) {
                     class={styles['exp-paper']}
                     classList={{
                         [styles['paper-wide']]: isBase() && mode() === 'visual',
+                        [styles['paper-pdf']]: !!result()?.previewPdf,
                     }}
                     // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
                     // theme (not the app's own live scope): print-paper cream for "light", the app's
@@ -461,20 +476,44 @@ export function ExportView(props: { path: string }) {
                         >
                             {r => (
                                 <Show
-                                    when={r().previewImg}
+                                    when={r().previewPdf}
+                                    keyed
                                     fallback={
-                                        <iframe
-                                            class={styles['export-frame']}
-                                            sandbox="allow-same-origin"
-                                            srcdoc={r().previewHtml ?? ''}
-                                        />
+                                        <Show
+                                            when={r().previewImg}
+                                            fallback={
+                                                <iframe
+                                                    class={styles['export-frame']}
+                                                    sandbox="allow-same-origin"
+                                                    srcdoc={r().previewHtml ?? ''}
+                                                />
+                                            }
+                                        >
+                                            <img
+                                                class={styles['export-img']}
+                                                src={r().previewImg}
+                                                alt="preview"
+                                            />
+                                        </Show>
                                     }
                                 >
-                                    <img
-                                        class={styles['export-img']}
-                                        src={r().previewImg}
-                                        alt="preview"
-                                    />
+                                    {bytes => (
+                                        <div class={styles['export-pdf']}>
+                                            <PdfPages
+                                                // pdf.js's getDocument DETACHES the buffer it's
+                                                // handed, so `load` must hand back a FRESH copy
+                                                // every call — never the same ArrayBuffer twice.
+                                                load={() =>
+                                                    Promise.resolve(
+                                                        bytes.slice()
+                                                            .buffer as ArrayBuffer,
+                                                    )
+                                                }
+                                                zoom={1}
+                                                onPageCount={setPdfPageCount}
+                                            />
+                                        </div>
+                                    )}
                                 </Show>
                             )}
                         </Show>
@@ -671,6 +710,18 @@ export function ExportView(props: { path: string }) {
                         >
                             {pageCount()} pages (page breaks) → exports as{' '}
                             {pageCount()} separate PNG files
+                        </Text>
+                    </Show>
+                    <Show when={format() === 'pdf' && pdfPageCount() > 0}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="inherit"
+                            weight="inherit"
+                            class={styles['exp-hint']}
+                        >
+                            {pdfPageCount()}{' '}
+                            {pdfPageCount() === 1 ? 'page' : 'pages'}
                         </Text>
                     </Show>
                 </div>
