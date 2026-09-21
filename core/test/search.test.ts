@@ -3,6 +3,7 @@ import { writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     findMatches,
+    findMatchesLimited,
     buildMatcher,
     searchVault,
     rankCandidates,
@@ -238,7 +239,9 @@ describe('updateSearchIndex (incremental)', () => {
         writeFileSync(join(root, 'a.md'), 'the new phrasing')
         await updateSearchIndex(root, ['a.md'])
         expect((await searchVault(root, 'ordin', simple)).length).toBe(0)
-        expect((await searchVault(root, 'hrasin', simple)).length).toBe(1) // phrasing, mid-word
+        const after = await searchVault(root, 'hrasin', simple)
+        expect(after.length).toBe(1)
+        expect(after[0].snippets[0].match).toBe('hrasin') // tier 2 only — tier 3 would highlight 'phrasing'
         invalidateSearchIndex(root)
     })
 })
@@ -312,5 +315,53 @@ describe('searchVault: mid-word + typo tiers, no cap, snippetLimit', () => {
         expect(r.snippets.length).toBe(3)
         expect(r.matchCount).toBe(10)
         invalidateSearchIndex(root)
+    })
+
+    test('tier 3 does not flood on a loose fuzzy fraction: an unrelated word is not a typo match', async () => {
+        const root = makeVault({
+            'unrelated.md': 'this note mentions each and reach and teach only',
+        })
+        expect(
+            (await searchVault(root, 'serach', simple)).map(r => r.path),
+        ).not.toContain('unrelated.md')
+        expect(
+            (await searchVault(root, 'search', simple)).map(r => r.path),
+        ).not.toContain('unrelated.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('tier 3 still surfaces a genuine near-miss typo alongside unrelated words', async () => {
+        const root = makeVault({
+            'mixed.md': 'each reach teach beach peach we should search the archive',
+        })
+        const res = await searchVault(root, 'serach', simple)
+        expect(res.map(r => r.path)).toContain('mixed.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('snippetLimit clips an over-long line: before <= 80 chars, after <= 160 chars', async () => {
+        const long = 'x'.repeat(500)
+        const root = makeVault({
+            'long.md': `${long} zeta ${long}`,
+        })
+        const res = await searchVault(root, 'zeta', simple, { snippetLimit: 3 })
+        const r = res.find(x => x.path === 'long.md')!
+        expect(r.snippets[0].before.length).toBeLessThanOrEqual(80)
+        expect(r.snippets[0].after.length).toBeLessThanOrEqual(160)
+        invalidateSearchIndex(root)
+    })
+})
+
+describe('findMatchesLimited', () => {
+    test('total counts every occurrence; snippets are capped at limit', () => {
+        const body = Array.from({ length: 10 }, () => 'zeta').join('\n')
+        const { total, snippets } = findMatchesLimited(
+            body,
+            'zeta',
+            { caseSensitive: false, wholeWord: false, regex: false },
+            3,
+        )
+        expect(total).toBe(10)
+        expect(snippets.length).toBe(3)
     })
 })
