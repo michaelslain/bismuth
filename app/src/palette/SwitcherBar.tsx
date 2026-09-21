@@ -337,8 +337,8 @@ export function SwitcherBar(props: Props) {
 
     // Grow the rendered content page when the trailing sentinel scrolls into the list's own
     // viewport (root = listRef) — the mouse-scroll counterpart to the keyboard-driven growth
-    // effect above. Re-observes on every (re)mount of the sentinel, since it's torn down and
-    // recreated each time the page grows past it.
+    // effect above. Observes the sentinel while it exists; it stays mounted while rows remain
+    // unrendered, so the observer fires again each time it re-enters the list viewport.
     let contentObserver: IntersectionObserver | undefined
     const observeMore = (el: HTMLDivElement) => {
         contentObserver?.disconnect()
@@ -346,7 +346,7 @@ export function SwitcherBar(props: Props) {
             entries => {
                 if (entries[0]?.isIntersecting)
                     setContentLimit(l =>
-                        Math.min(l + CONTENT_PAGE, contentAll().length),
+                        contentRenderLimit(l, l - 1, contentAll().length),
                     )
             },
             { root: listRef },
