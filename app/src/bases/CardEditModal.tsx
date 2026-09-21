@@ -20,6 +20,7 @@ import {
     onCleanup,
     type JSX,
 } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
@@ -30,6 +31,7 @@ import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
 import Field from '../ui/Field'
 import { TextInput } from '../ui/TextInput'
+import FormControl from '../ui/FormControl'
 import ModalHeader from '../ui/ModalHeader'
 import ModalFooter from '../ui/ModalFooter'
 import MilkdownField from '../ui/MilkdownField'
@@ -59,6 +61,100 @@ import styles from './CardEditModal.module.css'
 function titleOf(row: Row, titleCol: string): string {
     const v = resolveProperty(titleCol, row)
     return v == null || typeof v === 'object' ? row.file.name : String(v)
+}
+
+/** DUE's control: a single input-height trigger (FormControl's shared `.ui-input` chrome, same
+ *  as every sibling field) that opens the app's DatePicker (editor/DatePicker.tsx) as a
+ *  portaled, fixed-positioned popover — mirrors Select.tsx's trigger+portal pattern so
+ *  DatePicker's own floating-popover frame never sits inline inside the row. DatePicker itself
+ *  is untouched (Task 10 owns its restyle). */
+function DateFieldEditor(props: {
+    kind: PropertyEditKind & { kind: 'date' }
+    value: unknown
+    onCommit: (value: unknown) => void
+}) {
+    const [open, setOpen] = createSignal(false)
+    const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0 })
+    let triggerRef: HTMLButtonElement | undefined
+    let lastDate = ''
+    let lastTime = ''
+
+    const dpKind = (): DatePickerKind => (props.kind.time ? 'datetime' : 'date')
+    const parsed = () => parseDateValue(String(props.value ?? ''))
+
+    function openPicker(): void {
+        if (!triggerRef) return
+        const r = triggerRef.getBoundingClientRect()
+        setPos({ x: r.left, y: r.bottom + 4, w: r.width })
+        const p = parsed()
+        lastDate = p.date
+        lastTime = p.time
+        setOpen(true)
+    }
+    function close(): void {
+        setOpen(false)
+        triggerRef?.focus()
+    }
+    function commit(d: string, t: string, closeAfter: boolean): void {
+        props.onCommit(composeDateValue(dpKind(), d, t) || null)
+        if (closeAfter) close()
+    }
+
+    return (
+        <>
+            <FormControl
+                as="button"
+                ref={triggerRef}
+                type="button"
+                class={styles.dateTrigger}
+                onClick={() => (open() ? close() : openPicker())}
+            >
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="inherit"
+                    class={parsed().date ? undefined : styles.dateTriggerPlaceholder}
+                >
+                    {parsed().date
+                        ? dpKind() === 'datetime' && parsed().time
+                            ? `${parsed().date} ${parsed().time}`
+                            : parsed().date
+                        : 'Set date…'}
+                </Text>
+                <Icon value="Calendar" size={14} class={styles.dateTriggerIcon} />
+            </FormControl>
+            <Show when={open()}>
+                <Portal>
+                    <div class={styles.dateBackdrop} onClick={() => close()} />
+                    <div
+                        class={styles.datePopover}
+                        style={{
+                            top: `${pos().y}px`,
+                            left: `${pos().x}px`,
+                            'min-width': `${pos().w}px`,
+                        }}
+                    >
+                        <DatePicker
+                            kind={dpKind()}
+                            initialDate={lastDate}
+                            initialTime={lastTime}
+                            options={[]}
+                            onDateChange={(v, closeAfter) => {
+                                lastDate = v
+                                commit(v, lastTime, closeAfter)
+                            }}
+                            onTimeChange={v => {
+                                lastTime = v
+                                commit(lastDate, v, true)
+                            }}
+                            onPick={() => {}}
+                        />
+                    </div>
+                </Portal>
+            </Show>
+        </>
+    )
 }
 
 export function CardEditModal(props: {
@@ -354,39 +450,17 @@ export function CardEditModal(props: {
             )
         }
         if (k.kind === 'date') {
-            // The app's own DatePicker (editor/DatePicker.tsx) — the same header inputs the
-            // note editor's date-property tooltip uses — instead of a bare native
-            // `<input type="date">`, so the control matches the modal's flat chrome. No
-            // relative-date quick-picks here (options=[]): those exist to save a keystroke
-            // mid-typing in a note; a dedicated form field has no typing flow to save.
-            const dpKind: DatePickerKind = k.time ? 'datetime' : 'date'
-            const prefill = untrack(() =>
-                parseDateValue(String(value(id) ?? '')),
-            )
-            let lastDate = prefill.date
-            let lastTime = prefill.time
-            const commitDate = (d: string, t: string): void => {
-                const composed = composeDateValue(dpKind, d, t)
-                props.onSetMeta(id, composed || null)
-            }
+            // The app's own DatePicker (editor/DatePicker.tsx), opened from a single
+            // input-height trigger (DateFieldEditor below) instead of a bare native
+            // `<input type="date">` or DatePicker's own floating-popover frame sitting inline
+            // — so DUE reads as one row like every sibling field. DatePicker itself is
+            // untouched.
             return (
-                <div class={styles.dateField}>
-                    <DatePicker
-                        kind={dpKind}
-                        initialDate={prefill.date}
-                        initialTime={prefill.time}
-                        options={[]}
-                        onDateChange={v => {
-                            lastDate = v
-                            commitDate(v, lastTime)
-                        }}
-                        onTimeChange={v => {
-                            lastTime = v
-                            commitDate(lastDate, v)
-                        }}
-                        onPick={() => {}}
-                    />
-                </div>
+                <DateFieldEditor
+                    kind={k}
+                    value={value(id)}
+                    onCommit={v => props.onSetMeta(id, v)}
+                />
             )
         }
         return (

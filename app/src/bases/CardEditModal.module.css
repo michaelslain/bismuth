@@ -34,13 +34,29 @@
      reads (see PropertyValueEditor.module.css); this is a CSS custom property, not a reach
      into the hashed class itself. */
   --kb-meta-max-width: none;
+  /* Same reasoning as --kb-meta-max-width just above: KanbanCard's inline chip editor sets a
+     -3px -5px negative margin on `.kbMetaInput`/`.kbMetaSelect`/`.kbMetaMultiselect` to sit
+     flush against its OWN compact chrome — here it just bulges PRIORITY/STATUS/TAGS 5px past
+     TITLE/DUE's edges. Zeroed so every field measures to the same left/right edge. */
+  --kb-meta-margin: 0;
 }
 
-/* The DatePicker (DUE) fills the row like every other control here, instead of sizing to
-   its own popover default (`min-width: 230px`, DatePicker.module.css). */
-.dateField {
-  width: 100%;
+/* DUE: a single input-height trigger (chrome shared with every sibling field via FormControl's
+   `.ui-input`) that opens the app's DatePicker (editor/DatePicker.tsx) as a portaled popover —
+   DatePicker itself is untouched (its own floating-popover frame stays right for its one other
+   host, the note editor's tooltip); this is the trigger+portal wrapper CardEditModal owns. */
+.dateTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  cursor: pointer;
+  text-align: left;
 }
+.dateTriggerPlaceholder { color: var(--faint); }
+.dateTriggerIcon { flex: none; color: var(--faint); }
+.dateBackdrop { position: fixed; inset: 0; z-index: 1090; }
+.datePopover { position: fixed; z-index: 1100; }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default
    `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
