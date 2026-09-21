@@ -33,6 +33,8 @@ import { TextInput } from '../ui/TextInput'
 import ModalHeader from '../ui/ModalHeader'
 import ModalFooter from '../ui/ModalFooter'
 import MilkdownField from '../ui/MilkdownField'
+import DatePicker, { type DatePickerKind } from '../editor/DatePicker'
+import { parseDateValue, composeDateValue } from '../editor/datePickerCore'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
@@ -349,6 +351,42 @@ export function CardEditModal(props: {
                         {value(id) === true ? 'Yes' : 'No'}
                     </ChipToggle>
                 </Text>
+            )
+        }
+        if (k.kind === 'date') {
+            // The app's own DatePicker (editor/DatePicker.tsx) — the same header inputs the
+            // note editor's date-property tooltip uses — instead of a bare native
+            // `<input type="date">`, so the control matches the modal's flat chrome. No
+            // relative-date quick-picks here (options=[]): those exist to save a keystroke
+            // mid-typing in a note; a dedicated form field has no typing flow to save.
+            const dpKind: DatePickerKind = k.time ? 'datetime' : 'date'
+            const prefill = untrack(() =>
+                parseDateValue(String(value(id) ?? '')),
+            )
+            let lastDate = prefill.date
+            let lastTime = prefill.time
+            const commitDate = (d: string, t: string): void => {
+                const composed = composeDateValue(dpKind, d, t)
+                props.onSetMeta(id, composed || null)
+            }
+            return (
+                <div class={styles.dateField}>
+                    <DatePicker
+                        kind={dpKind}
+                        initialDate={prefill.date}
+                        initialTime={prefill.time}
+                        options={[]}
+                        onDateChange={v => {
+                            lastDate = v
+                            commitDate(v, lastTime)
+                        }}
+                        onTimeChange={v => {
+                            lastTime = v
+                            commitDate(lastDate, v)
+                        }}
+                        onPick={() => {}}
+                    />
+                </div>
             )
         }
         return (

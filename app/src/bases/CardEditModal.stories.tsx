@@ -55,9 +55,11 @@ export const Default: Story = {
         )
         expect(titleInput).not.toBeNull()
         expect(titleInput!.value).toBe('Ship storybook coverage')
-        // The `due` property (a declared `date` kind) renders a real `<input type="date">`
-        // (PropertyValueEditor.tsx) seeded from the row's value ("2026-08-05") — proves the
-        // "every declared property, populated" half of this modal's whole reason to exist.
+        // The `due` property (a declared `date` kind) renders the app's own DatePicker
+        // (editor/DatePicker.tsx, its header date input under the hood) seeded from the row's
+        // value ("2026-08-05") — proves the "every declared property, populated" half of this
+        // modal's whole reason to exist, and that DUE no longer falls back to the bare native
+        // date input PropertyValueEditor renders for every other declared date property.
         const dueInput = document.querySelector<HTMLInputElement>(
             'input[type="date"]',
         )

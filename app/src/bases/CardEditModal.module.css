@@ -27,6 +27,19 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
+     and any plain text/number property) caps at 200px by default for its OTHER host,
+     KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
+     TITLE/STATUS/TAGS already run edge to edge. `--kb-meta-max-width` is the var that class
+     reads (see PropertyValueEditor.module.css); this is a CSS custom property, not a reach
+     into the hashed class itself. */
+  --kb-meta-max-width: none;
+}
+
+/* The DatePicker (DUE) fills the row like every other control here, instead of sizing to
+   its own popover default (`min-width: 230px`, DatePicker.module.css). */
+.dateField {
+  width: 100%;
 }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default

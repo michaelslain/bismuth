@@ -1,7 +1,10 @@
 .kbMetaInput {
   /* max-width must clear a `datetime-local` value ("MM/DD/YYYY, HH:MM AM") plus its native
-     calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix. */
-  width: 100%; max-width: 200px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
+     calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix.
+     Parameterized (not a bare 200px) so a full-width host — CardEditModal's one-field-per-row
+     layout — can widen it via `--kb-meta-max-width` without reaching this hashed class; the
+     card-face inline chip editor (KanbanCard) sets nothing and keeps this 200px default. */
+  width: 100%; max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: -3px -5px;
   font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); outline: none; line-height: normal;
 }
