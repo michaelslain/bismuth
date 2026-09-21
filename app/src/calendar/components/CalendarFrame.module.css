@@ -4,13 +4,8 @@
 .frame { display: flex; flex-direction: column; height: 100%; font-family: var(--ui-font-stack); }
 .frame input, .frame select, .frame textarea { font-family: var(--ui-font-stack); }
 /* Every button inside the calendar grid shares the graph-toggle look: borderless, muted, brighter on
-   hover. Tag selector, not a class reach. The old `.frame button:global(.active)` rule that used to
-   sit here (a neutral highlight, `.frame`+tag+class specificity 0-2-1) is gone — it was reaching
-   into VBtn's own `active` state (DateNav.tsx/Toolbar.tsx's toolbar buttons, `ui/ViewBar.tsx`) and,
-   at higher specificity than `:global(.vbtn.active)`'s own 0-2-0 rule, was SILENTLY OVERRIDING the
-   accent-outline "selected" look VBtn already renders for itself (ui/ViewBar.module.css's
-   `:global(.vbtn.active)`). No other writer in the calendar tree sets a literal `active` class
-   (grepped), so this owner-doesn't-match-owner reach had no other consumer to preserve; deleting it
-   restores VBtn's own active treatment rather than adding a class this file has no business owning. */
+   hover, a neutral highlight when VBtn's global `.active` is on. Tag selectors, not a class reach.
+   bridge kept: VBtn active highlight in the calendar; needs a VBtn prop (deferred) */
 .frame button { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0); border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: var(--fs-ui); font-family: var(--ui-font-stack); }
 .frame button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.frame button:global(.active) { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
