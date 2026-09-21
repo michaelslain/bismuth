@@ -1,5 +1,7 @@
 // app/src/export/pageGeometry.ts
-// Pure geometry for the browser PDF exporter (htmlToPdf.ts).
+// Pure geometry for html2canvas — the FALLBACK PDF exporter (htmlToPdf.ts), used by browser dev
+// and iPad, where there is no native WebKit print engine to hand the document to. The desktop app
+// prints through WebKit itself (pdfPrint.ts); this module only serves the raster path.
 //
 // The exported PDF is US Letter portrait (8.5in x 11in) with a 1 inch margin on every side —
 // equivalent to the CSS `@page { size: 8.5in 11in; margin: 1in; }` a browser-print path would
@@ -38,6 +40,178 @@ export const PAGE_W_PX = 816 // 8.5 * 96
  * 1in. (The PNG path still lays out at the full PAGE_W_PX with the reading column.)
  */
 export const CONTENT_W_PX = 624 // 6.5 * 96
+
+// --- painted-blank cut gate (fallback only) ---
+//
+// GitHub issue #9, fifth pass: the DOM was right, the canvas was not. `legalCutStops` measures
+// where a cut is legal from the LAID-OUT DOCUMENT, but html2canvas does not paint pixels exactly
+// where the DOM says they are — measured in the diagnosis at ±40-110 canvas px (2x scale) of
+// drift between a DOM-measured atom edge and where its ink actually lands on the raster. A stop
+// that is legal by the DOM can still land on inked pixels on the canvas. This gate reads the
+// raster itself and only allows a cut where the PIXELS are blank (or a legitimate row to cut
+// through, like a table's horizontal rule) — the pixel truth overrides the DOM's opinion.
+
+/** Channel-sum |Δr|+|Δg|+|Δb| above which two pixels are considered visually different. */
+export const INK_THRESHOLD = 60
+/** A row with at least this fraction of its sampled pixels differing from `bg` is a "rule" row —
+ *  a table border or `<hr>`, painted full-width, as opposed to a partial line of text/glyphs. */
+export const FULL_FRACTION = 0.9
+/** Sample every Nth pixel horizontally when classifying a row — full-width sampling is wasted
+ *  precision for this purpose and multiplies the cost of scanning a multi-thousand-row canvas. */
+export const SAMPLE_STEP = 2
+/** css px: the measured html2canvas drift bound (±110 canvas px at 2x scale) used to pad a
+ *  formula's forbidden band, since a display fraction has genuinely blank rows between its
+ *  numerator and denominator that would otherwise look like a safe (blank) cut site. */
+export const DRIFT_PAD_CSS = 60
+/** Never search for a safe cut above `offset + pageHpx * MIN_PAGE_FRACTION` — a page that shrinks
+ *  below half its natural height in search of a blank row would rather cut through ink than
+ *  produce a near-empty page. */
+export const MIN_PAGE_FRACTION = 0.5
+
+/** Per-row classification of a rasterized canvas region. Index = canvas row (0-based from the top
+ *  of the classified range); each array holds 1 (true) or 0 (false) per row. */
+export interface RowClasses {
+    /** uniform[y] = 1 when every sampled pixel in row y is within INK_THRESHOLD of the row's own
+     *  first sampled pixel — true of a genuinely blank row, but ALSO true of a solid fill (a code
+     *  block's padding, a callout's background) and of a full-width rule, since every pixel in
+     *  those rows matches every other pixel in the same row even though the row is not blank.
+     *  "uniform" is deliberately not "blank": a code block's `p.head` fill and a table border are
+     *  legitimate cut sites even though they are painted, because cutting through a flat colour
+     *  (or exactly at a rule) reads as clean, unlike cutting through a line of text. */
+    uniform: Uint8Array
+    /** full[y] = 1 when at least FULL_FRACTION of row y's sampled pixels differ from `bg` by more
+     *  than INK_THRESHOLD — a row painted edge-to-edge with something other than the page
+     *  background, i.e. a table border or `<hr>`, as opposed to a partial-width line of text. */
+    full: Uint8Array
+}
+
+/**
+ * Classify `rows` rows of one RGBA chunk (`data` is `width * rows * 4` bytes, top row first).
+ * Samples `x = 0, SAMPLE_STEP, 2*SAMPLE_STEP, …` while `x < width`, for each row.
+ *
+ * `uniform[y]` compares every sample in row y to that row's OWN first sample — not to `bg` — so
+ * a solid non-background fill (a code block's padding) reads as uniform too, deliberately: it is
+ * a legal cut site (see the `uniform` doc above), just not a "blank" one. `full[y]` compares every
+ * sample to `bg` instead, since a rule/border is only a rule if it actually differs from the page
+ * background across most of the row.
+ *
+ * Pure — no DOM, no canvas context — so it is unit-tested directly against synthetic RGBA buffers
+ * in pageGeometry.test.ts; the caller (`renderLetterPages` in htmlToPdf.ts) supplies `data` via
+ * `ctx.getImageData()` in chunks of at most 1024 rows to bound peak memory on a tall document.
+ */
+export function classifyRows(
+    data: Uint8ClampedArray,
+    width: number,
+    rows: number,
+    bg: [number, number, number],
+): RowClasses {
+    const uniform = new Uint8Array(rows)
+    const full = new Uint8Array(rows)
+    const sampleCount = Math.max(1, Math.ceil(width / SAMPLE_STEP))
+    for (let y = 0; y < rows; y++) {
+        const rowStart = y * width * 4
+        let isUniform = 1
+        let diffFromBgCount = 0
+        let sampled = 0
+        let firstR = 0
+        let firstG = 0
+        let firstB = 0
+        for (let x = 0; x < width; x += SAMPLE_STEP) {
+            const i = rowStart + x * 4
+            const r = data[i]
+            const g = data[i + 1]
+            const b = data[i + 2]
+            if (sampled === 0) {
+                firstR = r
+                firstG = g
+                firstB = b
+            } else {
+                const dFirst =
+                    Math.abs(r - firstR) +
+                    Math.abs(g - firstG) +
+                    Math.abs(b - firstB)
+                if (dFirst > INK_THRESHOLD) isUniform = 0
+            }
+            const dBg =
+                Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2])
+            if (dBg > INK_THRESHOLD) diffFromBgCount++
+            sampled++
+        }
+        uniform[y] = isUniform
+        full[y] = diffFromBgCount / sampleCount >= FULL_FRACTION ? 1 : 0
+    }
+    return { uniform, full }
+}
+
+/**
+ * A cut at canvas row `y` is safe iff `y` is in range, falls strictly inside no `forbidden` band
+ * (a formula's drift-padded extent — see `formulaBands`), and either:
+ *   - `uniform[y-1] && uniform[y]` — two blank (or uniformly-filled) rows in a row, the ordinary
+ *     "nothing here" case; or
+ *   - `uniform[y-1] && full[y-1]` — the row just above `y` is a full-width rule (a table border,
+ *     an `<hr>`), so `y` is the row immediately BELOW a horizontal line. This is deliberately
+ *     `full[y-1]`, not `full[y]`: a bordered table's INTERIOR rows are never `uniform` (the
+ *     vertical cell borders ink a thin stripe down every row, so no two consecutive rows inside
+ *     the table are ever both blank) — the only place such a table is ever cuttable is directly
+ *     beneath one of its horizontal rules, never mid-row.
+ *
+ * `y = 0` is never safe — there is no row above it to test uniformity against, and a cut at the
+ * very top of the canvas is meaningless (nothing precedes it to have been cut FROM).
+ *
+ * Pure. Unit-tested directly in pageGeometry.test.ts.
+ */
+export function cutSafe(
+    rows: RowClasses,
+    y: number,
+    forbidden: readonly [number, number][],
+): boolean {
+    if (y < 1 || y >= rows.uniform.length) return false
+    for (const [lo, hi] of forbidden) {
+        if (y > lo && y < hi) return false
+    }
+    const upBlank = rows.uniform[y - 1] === 1
+    if (!upBlank) return false
+    return rows.uniform[y] === 1 || rows.full[y - 1] === 1
+}
+
+/**
+ * Canvas-px forbidden bands `[top*scale - pad, bottom*scale + pad]` for every atom taller than
+ * `minHeightCss` (CSS px) — a stacked fraction or display formula, the shapes whose rendered
+ * interior has genuinely blank rows (the gap between a numerator and denominator) that would
+ * otherwise look, pixel-for-pixel, exactly like a safe blank cut site. `padCanvasPx` accounts for
+ * html2canvas's paint drift (see `DRIFT_PAD_CSS` above) so the band still covers the formula's
+ * true painted extent even though its DOM-measured top/bottom are not where the ink actually is.
+ *
+ * Only atoms flagged `isFormula` and taller than `minHeightCss` produce a band — a single-line
+ * inline formula (`x^2`) has no blank interior row to protect and would otherwise turn every
+ * inline-math line into an unnecessarily wide dead zone.
+ *
+ * Pure. Unit-tested directly in pageGeometry.test.ts.
+ */
+export function formulaBands(
+    atoms: CutAtom[],
+    scale: number,
+    minHeightCss: number,
+    padCanvasPx: number,
+): [number, number][] {
+    const bands: [number, number][] = []
+    for (const a of atoms) {
+        if (!a.isFormula) continue
+        if (a.bottom - a.top <= minHeightCss) continue
+        const top = a.top * scale - padCanvasPx
+        const bottom = a.bottom * scale + padCanvasPx
+        bands.push([top, bottom])
+    }
+    return bands
+}
+
+/** The painted-blank cut gate `pageSlices` consults when given one: the per-row raster
+ *  classification of the WHOLE content canvas, plus the forbidden formula bands. Optional —
+ *  omitting it keeps `pageSlices`' historical DOM-only behaviour exactly as it was. */
+export interface CutGate {
+    rows: RowClasses
+    forbidden: readonly [number, number][]
+}
 
 /**
  * Snap a raw size DOWN to the nearest whole multiple of `unit` (same px space). Falls back to
@@ -196,13 +370,24 @@ export interface PageSlice {
  * 18px glyph rect, on all four cuts after the table in a six-page probe note. Conforming one
  * more block type per round is unbounded work; measuring where the lines actually are is not.
  *
- * Pure (no DOM) so the pagination math is unit-tested in pageGeometry.test.ts.
+ * GitHub issue #9, fifth pass: the DOM was right, the canvas was not. `stops` alone (the DOM's
+ * opinion) is not enough for the html2canvas fallback, because html2canvas paints ink up to ~110
+ * canvas px away from where the DOM says it is. The optional `gate` (from htmlToPdf.ts's
+ * `renderLetterPages`, painted-blank cut gate) is the PIXEL truth: when given, a DOM stop is only
+ * used if `cutSafe` agrees the raster is actually blank there; when it disagrees, this searches
+ * for the nearest row at or below the stop (and above the page's natural bottom) where the pixels
+ * ARE safe, so the boundary never lands on painted ink even when the DOM was wrong about where
+ * that ink would land.
+ *
+ * Pure (no DOM, no canvas context — `gate.rows`/`gate.forbidden` are plain data) so the
+ * pagination math is unit-tested in pageGeometry.test.ts.
  */
 export function pageSlices(
     contentHpx: number,
     pageHpx: number,
     breaks: number[] = [],
     stops: number[] = [],
+    gate?: CutGate,
 ): PageSlice[] {
     const out: PageSlice[] = []
     if (contentHpx <= 0 || pageHpx <= 0) return out
@@ -219,6 +404,23 @@ export function pageSlices(
             // A forced break inside this page ends it early; the next band starts AT the marker.
             end = sorted[bi]
             bi++
+        } else if (gate && end < contentHpx) {
+            // The painted-blank cut gate (fallback only, GitHub issue #9 fifth pass): the DOM's
+            // stop is only trusted once the raster agrees it is actually safe. When it isn't,
+            // search downward from the natural bottom for the nearest row the PIXELS say is
+            // blank, never above MIN_PAGE_FRACTION of a page (a near-empty page is worse than an
+            // imperfect cut). If nothing in range is safe, fall back to the DOM stop (better than
+            // the raw bottom, even though the pixels disagree) or, failing that, the raw bottom —
+            // always advancing, so the loop always terminates.
+            const s = lastStopIn(legal, offset, end)
+            if (s !== null && cutSafe(gate.rows, s, gate.forbidden)) {
+                end = s
+            } else {
+                const lo = Math.max(offset + 1, offset + pageHpx * MIN_PAGE_FRACTION)
+                const safe = lastSafeIn(gate.rows, gate.forbidden, lo, end)
+                if (safe !== null) end = safe
+                else if (s !== null) end = s
+            }
         } else if (legal.length && end < contentHpx) {
             // Pull the cut back to the last position where nothing is being sliced through. Only
             // when the page really does overflow: on the LAST page the natural bottom is already
@@ -235,6 +437,23 @@ export function pageSlices(
         offset = end
     }
     return out
+}
+
+/** The largest `y` in `[lo, hi]` for which `cutSafe` is true, or null when none is. A linear scan
+ *  downward from `hi` — the range is at most one page tall (a few hundred to ~1000 canvas px),
+ *  unlike `lastStopIn`'s stops list which can hold one entry per rendered line. */
+function lastSafeIn(
+    rows: RowClasses,
+    forbidden: readonly [number, number][],
+    lo: number,
+    hi: number,
+): number | null {
+    const start = Math.min(Math.floor(hi), rows.uniform.length - 1)
+    const bottom = Math.ceil(lo)
+    for (let y = start; y >= bottom; y--) {
+        if (cutSafe(rows, y, forbidden)) return y
+    }
+    return null
 }
 
 /** The largest value of the ascending-sorted `stops` inside `(lo, hi]`, or null when none is.

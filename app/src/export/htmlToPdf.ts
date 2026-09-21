@@ -1,6 +1,17 @@
 // app/src/export/htmlToPdf.ts
 // Renders an HTML *document* string to PDF or PNG bytes.
 //
+// This is the FALLBACK PDF path — used by browser dev and iPad, where there is no native WebKit
+// print engine to hand the document to (the desktop app prints through WebKit itself, pdfPrint.ts,
+// which paginates from the browser's OWN layout engine and needs none of this). html2canvas cannot
+// be trusted for either pagination or KaTeX: it rasterizes a snapshot of the DOM rather than
+// reflowing it, so (1) its paint can drift up to ~110 canvas px from where the DOM says an element
+// is (measured in the diagnosis, ±40-110 canvas px at 2x scale) — a DOM-measured "legal" cut stop
+// can still land on inked pixels — and (2) it has no `@page` support of its own, so pagination is
+// this module's job, sliced from a single full-height raster. The painted-blank cut gate
+// (pageGeometry.ts's `classifyRows`/`cutSafe`/`formulaBands`) is what makes that raster's OWN
+// pixels — not just the DOM's opinion of them — the final authority on where a cut may land.
+//
 // Fidelity strategy: the output must look like the in-app preview, which is just the browser
 // rendering the HTML. jsPDF's own pdf.html() reflows text through a separate engine and
 // looks nothing like the browser. Instead we render the HTML in an isolated off-screen
@@ -12,6 +23,7 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { sanitizeDocColorsForRaster, normalizeCssColor } from './cssColor'
 import { RULE_PX } from './htmlTemplate'
+import { PDF_BODY_OVERRIDE } from './printCss'
 import {
     PAGE_W_PX,
     CONTENT_W_PX,
@@ -22,6 +34,11 @@ import {
     pdfSliceMetrics,
     pageSlices,
     legalCutStops,
+    classifyRows,
+    formulaBands,
+    parseRgbColor,
+    type RowClasses,
+    DRIFT_PAD_CSS,
 } from './pageGeometry'
 
 // US Letter portrait with a 1in margin on every side — geometry lives in pageGeometry.ts
@@ -81,8 +98,13 @@ function snapMathBlocksToGrid(doc: Document): void {
 // of an atom that no other atom straddles — that nested filter is what stops a line inside a table
 // cell offering a cut that would saw through the row around it.
 //
-// Returns ascending canvas-px offsets (the same space pageSlices' `breaks` are in).
-function measureCutStops(doc: Document, scale: number): number[] {
+// Returns ascending canvas-px offsets (the same space pageSlices' `breaks` are in), plus the
+// painted-blank gate's forbidden formula bands (also canvas px) — see formulaBands' doc for why a
+// display formula's blank interior rows need protecting separately from the DOM stop list.
+function measureCutStops(
+    doc: Document,
+    scale: number,
+): { stops: number[]; bands: [number, number][] } {
     // A table ROW, not the whole table: a table taller than a page must still paginate. `.katex`
     // is an atom too — KaTeX renders a formula as nested spans with no atom of its own, so every
     // internal fragment (numerator, denominator, exponent) was offering its own text-node stop,
@@ -120,7 +142,12 @@ function measureCutStops(doc: Document, scale: number): number[] {
     // pageGeometry.ts as `legalCutStops` so it is unit-tested without a browser — see
     // pageGeometry.test.ts. Collecting the atoms themselves stays here because it needs the DOM
     // (getBoundingClientRect / getClientRects).
-    return legalCutStops(atoms, scale)
+    const stops = legalCutStops(atoms, scale)
+    // 1.5 * RULE_PX (33px CSS): only a formula taller than one-and-a-half text lines has a blank
+    // interior row worth protecting — a single-line inline formula has none. DRIFT_PAD_CSS * scale
+    // converts the measured html2canvas drift bound into this raster's canvas-px space.
+    const bands = formulaBands(atoms, scale, 1.5 * RULE_PX, DRIFT_PAD_CSS * scale)
+    return { stops, bands }
 }
 
 /**
@@ -139,6 +166,7 @@ async function htmlToCanvas(
     bg: string
     breaks: number[]
     stops: number[]
+    bands: [number, number][]
 }> {
     const iframe = document.createElement('iframe')
     iframe.setAttribute('aria-hidden', 'true')
@@ -215,8 +243,9 @@ async function htmlToCanvas(
             .sort((a, b) => a - b)
         // Measured on the LIVE iframe document, before html2canvas replaces it with its own clone:
         // the y offsets where a page boundary can land without cutting through a line or an
-        // indivisible element. Same canvas-px space as `breaks` above.
-        const stops = measureCutStops(doc, scale)
+        // indivisible element. Same canvas-px space as `breaks` above. `bands` are the painted-
+        // blank gate's forbidden formula extents (renderLetterPages passes both into pageSlices).
+        const { stops, bands } = measureCutStops(doc, scale)
         const canvas = await html2canvas(doc.body, {
             scale,
             backgroundColor: bg,
@@ -226,7 +255,7 @@ async function htmlToCanvas(
         })
         if (canvas.height === 0)
             throw new Error('htmlToCanvas: nothing to render')
-        return { canvas, bg, breaks, stops }
+        return { canvas, bg, breaks, stops, bands }
     } finally {
         iframe.remove()
     }
@@ -249,29 +278,26 @@ export async function htmlToPng(
     return { bytes: dataUrlToBytes(dataUrl), dataUrl }
 }
 
-// Fill the raster edge-to-edge into the printable box: drop the shared template's reading
-// column (max-width + body padding) so the ONLY margin is the 1in page margin below.
-const PDF_BODY_OVERRIDE =
-    `html,body{margin:0!important;padding:0!important;max-width:none!important;width:100%!important;}` +
-    // The first block's intrinsic top margin (e.g. an <h1>'s margin-top) would otherwise stack on
-    // top of the 1in page margin; zero it so content begins exactly at the 1in boundary.
-    `body>:first-child{margin-top:0!important;}`
-
 // JPEG (opaque — pages are bg-filled) keeps a multi-page doc to a few hundred KB; a full-page 2x
 // PNG raster runs to ~10MB/page. 0.92 is visually lossless at document zoom.
 const JPEG_QUALITY = 0.92
 
 /**
- * Render a self-contained HTML document to a list of full US-Letter **page canvases**. This is
- * the single pagination pipeline shared by `htmlToPdf` (packs the pages into a PDF) and
- * `htmlToPdfPages` (data: URLs for the export PREVIEW) — so what the preview shows is exactly
- * what the PDF contains, page for page.
+ * Render a self-contained HTML document to a list of full US-Letter **page canvases**, for
+ * `htmlToPdf` to pack into a PDF.
  *
  * The content is rasterized once (full height), then `pageSlices` cuts it into page-sized bands
  * — content taller than one page **auto-flows onto page 2, 3, …** with or without explicit
  * `<!-- pagebreak -->` markers (markers just end a page early). Each band is drawn onto a
  * bg-filled Letter canvas inside the 1in margin on every side, so every page is 8.5x11in with a
  * 1in margin regardless of content length.
+ *
+ * The cut itself goes through the painted-blank gate (GitHub issue #9, fifth pass): `pageSlices`'
+ * DOM-measured stops are only a candidate, not the final word — html2canvas's paint can drift far
+ * enough from the DOM's own geometry that a "legal" stop still lands on inked pixels. `rows` is
+ * built by reading the finished raster back in ≤1024-row chunks (bounding peak memory on a tall
+ * document) through `classifyRows`, and handed to `pageSlices` alongside the formula bands so the
+ * gate can veto a stop the pixels disagree with and search for one they don't.
  */
 async function renderLetterPages(
     html: string,
@@ -279,7 +305,7 @@ async function renderLetterPages(
     // Lay the body out at the 6.5in printable width (CONTENT_W_PX), not the full 8.5in page: the
     // raster then maps 1:1 into the printable box (96px == 72pt == 1in) with no horizontal squeeze,
     // so a chosen font size renders at its true point size and every margin is exactly 1in.
-    const { canvas, bg, breaks, stops } = await htmlToCanvas(
+    const { canvas, bg, breaks, stops, bands } = await htmlToCanvas(
         html,
         PDF_BODY_OVERRIDE,
         CONTENT_W_PX,
@@ -290,6 +316,35 @@ async function renderLetterPages(
     const pageWpxFull = Math.round(PAGE_W_PT * density) // full Letter width in source px
     const pageHpxFull = Math.round(PAGE_H_PT * density) // full Letter height in source px
     const marginPx = Math.round(MARGIN_PT * density) // 1in margin in source px
+
+    // Read the finished raster back to classify every row as blank/uniform/full — the pixel truth
+    // the painted-blank gate checks a DOM stop against. Chunked at <=1024 rows: getImageData on
+    // the whole (possibly 10000+ row) canvas at once would allocate one huge ArrayBuffer.
+    const ctx2d = canvas.getContext('2d')!
+    const bgRgb = parseRgbColor(bg)
+    const CHUNK_ROWS = 1024
+    const uniformChunks: Uint8Array[] = []
+    const fullChunks: Uint8Array[] = []
+    for (let y = 0; y < canvas.height; y += CHUNK_ROWS) {
+        const h = Math.min(CHUNK_ROWS, canvas.height - y)
+        const { data } = ctx2d.getImageData(0, y, canvas.width, h)
+        const classified = classifyRows(data, canvas.width, h, bgRgb)
+        uniformChunks.push(classified.uniform)
+        fullChunks.push(classified.full)
+    }
+    const concat = (chunks: Uint8Array[]): Uint8Array => {
+        const out = new Uint8Array(canvas.height)
+        let offset = 0
+        for (const c of chunks) {
+            out.set(c, offset)
+            offset += c.length
+        }
+        return out
+    }
+    const rows: RowClasses = {
+        uniform: concat(uniformChunks),
+        full: concat(fullChunks),
+    }
 
     const makePage = (start: number, height: number): HTMLCanvasElement => {
         const page = document.createElement('canvas')
@@ -318,7 +373,10 @@ async function renderLetterPages(
         return page
     }
 
-    const slices = pageSlices(canvas.height, pageHpx, breaks, stops)
+    const slices = pageSlices(canvas.height, pageHpx, breaks, stops, {
+        rows,
+        forbidden: bands,
+    })
     const pages = slices.map(s => makePage(s.start, s.height))
     // A blank/empty document still yields one valid blank Letter page.
     if (pages.length === 0) pages.push(makePage(0, 0))
@@ -341,14 +399,4 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
         )
     })
     return new Uint8Array(pdf.output('arraybuffer') as ArrayBuffer)
-}
-
-/**
- * The same paginated US-Letter pages `htmlToPdf` writes, as JPEG data: URLs — one per page —
- * for the export PREVIEW. Rendering the real pages (not the raw source HTML) is what makes the
- * preview show the exact multi-page 8.5x11in / 1in-margin layout the downloaded PDF has.
- */
-export async function htmlToPdfPages(html: string): Promise<string[]> {
-    const { pages } = await renderLetterPages(html)
-    return pages.map(page => page.toDataURL('image/jpeg', JPEG_QUALITY))
 }
