@@ -18,9 +18,9 @@
 // catches a change in one workspace breaking another's types.
 //
 // A THIRD, INDEPENDENT step guards the design system: whenever a staged path touches app/src/,
-// DESIGN.md, design-system.baseline.json or scripts/designSystem/ (see touchesDesignSystem below),
+// DESIGN.md, design/ or scripts/designSystem/ (see touchesDesignSystem below),
 // this also runs the design-system gate (scripts/designSystem/gate.mjs — component/story/token
-// conformance against DESIGN.md's governance block, ratcheted by design-system.baseline.json) and
+// conformance against DESIGN.md's governance block, ratcheted by design/baseline.json) and
 // bench/tokenLint.ts (the literal-px/blurred-shadow/backdrop-filter sweep tokenLint still owns —
 // see that file's header for the split of responsibility) as one combined step, so there is one
 // design-system gate in pre-commit and no check runs twice.
@@ -40,7 +40,6 @@
 //   git commit --no-verify             — skip every hook (blunter)
 // Both are legitimate for a WIP commit on a branch. Neither should be how you land on main.
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
 
 const WORKSPACES = [
     'core',
@@ -83,7 +82,8 @@ export function affectedWorkspaces(staged: string[]): Workspace[] {
  * Exported (and pure) so gate.test.ts can pin the routing without touching git or the filesystem.
  *
  * Covers: any app/src/** file (what both checks scan), DESIGN.md (the governance manifest both
- * checks parse), design-system.baseline.json (the debt ratchet), and scripts/designSystem/**
+ * checks parse), anything under design/ (the baseline debt ratchet and whatever design tooling
+ * state joins it), and scripts/designSystem/**
  * (the copied checks themselves — a change there should prove itself against the repo it gates).
  */
 export function touchesDesignSystem(staged: string[]): boolean {
@@ -91,7 +91,7 @@ export function touchesDesignSystem(staged: string[]): boolean {
         f =>
             f.startsWith('app/src/') ||
             f === 'DESIGN.md' ||
-            f === 'design-system.baseline.json' ||
+            f.startsWith('design/') ||
             f.startsWith('scripts/designSystem/'),
     )
 }
@@ -265,9 +265,8 @@ function main(): void {
     // One combined design-system step: the manifest/story/token gate AND tokenLint's literal-px/
     // shadow/backdrop-filter sweep, so there is one design-system gate in pre-commit, not two.
     if (ok && designSystem) {
-        const baselinePath = 'design-system.baseline.json'
+        // gate.mjs reads design/baseline.json on its own when it exists
         const gateArgs = ['scripts/designSystem/gate.mjs', '--root', '.']
-        if (existsSync(baselinePath)) gateArgs.push('--baseline', baselinePath)
         ok = run('design system (manifest + stories + tokens)', process.execPath, gateArgs)
         if (ok) ok = run('design system (tokenLint)', 'bun', ['bench/tokenLint.ts'])
     }
