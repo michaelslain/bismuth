@@ -6,7 +6,7 @@
    `.status-dot` is NOT here and never will be — despite the shared prefix it belongs to
    ui/StatusDot.tsx via ui/ui.css and is a wholly unrelated component.
 
-   `.status-vault:hover` is OUTSIDE the computed-style baseline's reach. `bench/cssBaseline.ts`
+   `.status-location:hover` is OUTSIDE the computed-style baseline's reach. `bench/cssBaseline.ts`
    records the resting state of every Storybook story; CSS `:hover` follows the real pointer and
    `userEvent.hover` only dispatches events without moving it, so no story can pose it. Only
    `bench/moduleClassCheck.ts` covers it, and only at the level of "the hashed name still reaches
@@ -22,36 +22,36 @@
   border-top: 1px solid var(--border-soft); background: var(--rail);
   font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
 }
-/* Click-to-copy the full vault path (issue #7); title="" tooltip shows it on hover.
-   Only a color shift on hover — the status bar has no vertical padding to spare for a
-   hover background (compare .tab:hover / .vbtn:hover, same treatment). */
-.status-vault { color: var(--text-muted); cursor: pointer; }
-.status-vault:hover { color: var(--fg); }
-.status-sep { color: var(--faint); }
-/* .status-path's color(--text-muted)/overflow/ellipsis moved to ui/Label.tsx
-   (`<Label tone="muted">`) — nothing bespoke remained, so the rule and the `class` merge onto
-   the element are both gone, not just trimmed.
+/* Click-to-copy the location readout (issue #10, superseding issue #7's vault-name-only copy);
+   title="" tooltip shows the full text on hover — load-bearing when the Label itself is
+   ellipsized. Only a color shift on hover — the status bar has no vertical padding to spare for
+   a hover background (compare .tab:hover / .vbtn:hover, same treatment). Color/overflow/ellipsis
+   themselves live on `ui/Label.tsx` (`<Label tone="muted">`); this rule only adds what a bare
+   `Label` doesn't have — pointer affordance + the hover tint.
 
    IT DELIBERATELY HAS NO min-width FLOOR, and that is load-bearing rather than an omission.
-   Label pairs `min-width: 0` with `overflow: hidden`, which makes the path the ONE item in this
-   row able to shrink to zero — every other item (vault, daemon, inbox, caret) has
+   Label pairs `min-width: 0` with `overflow: hidden`, which makes the location the ONE item in
+   this row able to shrink to zero — every other item (daemon, inbox, caret) has
    `overflow: visible`, so its `min-width: auto` resolves to its content width and it refuses to
-   shrink at all. The path therefore absorbs 100% of any shortfall, and below a certain width it
-   disappears entirely.
+   shrink at all. The location therefore absorbs 100% of any shortfall, and below a certain width
+   it disappears entirely.
 
    THAT IS THE CORRECT DEGRADATION, verified with numbers, not assumed. At the 360px width the
-   `NarrowBar` story pins, this bar's FIXED content (vault + separator + daemon + inbox + caret +
-   gaps + padding) already measures ~358px on its own. So a floor of any size cannot buy the path
-   room; it can only push the total past the box and let `.status-bar`'s `overflow: hidden` clip
-   the RIGHT edge instead — which truncates a live status value mid-character ("inbox: (" with the
-   caret gone) rather than hiding a redundant one. The path is also the one item here duplicated
-   elsewhere on screen: the focused pane's own header names the same file. Losing it is cheap;
+   `NarrowBar` story pins, this bar's FIXED content (daemon + inbox + caret + gaps + padding)
+   already measures close to that width on its own. So a floor of any size cannot buy the
+   location room; it can only push the total past the box and let `.status-bar`'s
+   `overflow: hidden` clip the RIGHT edge instead — which truncates a live status value
+   mid-character ("inbox: (" with the caret gone) rather than hiding a redundant one. The
+   location is also the one item here duplicated elsewhere on screen: the focused pane's own
+   header names the same file, and the vault tree shows the relative path. Losing it is cheap;
    losing half of "inbox: 3" is a misread number.
 
    A 5ch floor was tried on 2026-08-29 and reverted for exactly that reason — `bench/storyAudit.ts`
    traded a `zero-size` lead for a `clip-x` one ("391px content in 358px box"). If a future change
-   makes the fixed content narrower, this stays as it is: the floor was never what made the path
-   readable, available width was. */
+   makes the fixed content narrower, this stays as it is: the floor was never what made the
+   location readable, available width was. */
+.status-location { cursor: pointer; }
+.status-location:hover { color: var(--fg); }
 /* The connection-lost warning. Promoted 2026-08-29 (design critique P1: "status hierarchy is
    inverted"). It sits in an 18px bar at --fs-micro, and while it is showing the user's edits are
    not reaching the backend — yet it was the QUIETEST signal in the app, while "a new version is
