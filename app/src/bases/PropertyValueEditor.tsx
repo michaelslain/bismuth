@@ -308,6 +308,7 @@ function MultiSelectEditor(props: {
                         selected
                         class={styles.kbMetaMultiselectToggle}
                         onToggle={() => remove(v)}
+                        title="Remove"
                     >
                         <Icon value="X" size={11} />
                         {v}
