@@ -15,12 +15,15 @@
    specificity in case CM's default light tooltip chrome (#f5f5f5 / #bbb border) wins on source
    order (the `--bg`/`--fg`/`--border` vars resolve fine — they cascade from :root onto the
    tooltip wherever CM parents it). */
+/* Flat, not the shared .bismuth-popover lift shadow every other popover carries (context menus,
+   the emoji rail) — Acceptance: "the editor date-picker panel has no box-shadow — 1px --border,
+   flat." Scoped to THIS popover only; .bismuth-popover's shared chrome (global.css) is untouched. */
 :global(.cm-editor) :global(.cm-tooltip) .root {
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
     border-radius: var(--popover-radius);
-    box-shadow: var(--popover-shadow);
+    box-shadow: none;
 }
 
 /* native date (+ time) inputs row */
