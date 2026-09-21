@@ -53,11 +53,17 @@
 }
 
 /* min-height: 0, matching .right below (DaemonServices.module.css's own root already carries it
-   too — this is belt-and-suspenders on the grid item itself, not load-bearing on its own). */
+   too — this is belt-and-suspenders on the grid item itself, not load-bearing on its own).
+   align-self: start overrides the grid's default `stretch` — DaemonServices' own root sizes
+   itself to `height: 100%` of THIS box, so un-stretching the box is what lets the crons/services
+   panels size to their content instead of each being forced to exactly half the column's full
+   height (previously ~60% empty on a vault with few crons/processes). */
 .left {
     grid-area: left;
     min-width: 0;
     min-height: 0;
+    align-self: start;
+    max-height: 100%;
 }
 
 /* The centre column: the face region above its own chat region, stacked top to bottom. This rule
