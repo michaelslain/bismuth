@@ -543,6 +543,210 @@ fn unlock_webview_fps(window: &tauri::WebviewWindow) {
     });
 }
 
+// What was actually on the OS drag pasteboard at the moment of drop — read directly via
+// NSPasteboardNameDrag rather than through wry's drag-drop event, because wry's handler
+// returns `true` for every drag (so WebKit's own `performDragOperation` never runs and no DOM
+// `drop` fires) and its own `collect_paths` only reads NSFilenamesPboardType anyway (a
+// browser/Photos/Mail image drop carries a URL, image bytes, or a file PROMISE — none of
+// which have a filename). The frontend calls this right after its own synthetic drop handling
+// decides "no usable Finder paths", to recover what was really dragged.
+#[derive(serde::Serialize, Default)]
+struct DragPasteboard {
+    files: Vec<String>,
+    images: Vec<DroppedImage>,
+    urls: Vec<String>,
+    html: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DroppedImage {
+    name: String,
+    base64: String,
+}
+
+#[cfg(target_os = "macos")]
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+// Receive one file-promise item (e.g. a Photos drag) to a fresh temp dir. The reader block can
+// fire more than once for a single receiver (rare, but the API allows a promise to cover
+// several files), so we wait for exactly as many callbacks as `fileNames()` promised, up to an
+// overall 10s deadline — an error or a timeout drops that one file rather than the whole drag.
+#[cfg(target_os = "macos")]
+fn receive_file_promise(receiver: &objc2_app_kit::NSFilePromiseReceiver) -> Vec<String> {
+    use core::ptr::NonNull;
+    use objc2_foundation::{NSDictionary, NSError, NSOperationQueue, NSString, NSURL};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let expected = receiver.fileNames().count() as usize;
+    if expected == 0 {
+        return Vec::new();
+    }
+
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("bismuth-drop-{pid}-{nanos}"));
+    if std::fs::create_dir_all(&dir).is_err() {
+        return Vec::new();
+    }
+
+    let dest_url = NSURL::fileURLWithPath(&NSString::from_str(&dir.to_string_lossy()));
+    let options: objc2::rc::Retained<NSDictionary> = NSDictionary::new();
+    let queue = NSOperationQueue::new();
+
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    let reader = block2::RcBlock::new(move |url: NonNull<NSURL>, error: *mut NSError| {
+        if !error.is_null() {
+            let _ = tx.send(None);
+            return;
+        }
+        let path = unsafe { url.as_ref() }.path().map(|p| p.to_string());
+        let _ = tx.send(path);
+    });
+
+    unsafe {
+        receiver.receivePromisedFilesAtDestination_options_operationQueue_reader(
+            &dest_url, &options, &queue, &reader,
+        );
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut out = Vec::new();
+    for _ in 0..expected {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok(Some(path)) => out.push(path),
+            Ok(None) => {} // this one file errored — keep waiting for any others promised
+            Err(_) => break, // timed out or the sender was dropped
+        }
+    }
+    out
+}
+
+// Read the drag pasteboard (NSPasteboardNameDrag), which keeps the last drag's contents after
+// the drop. Every objc failure path (missing item, wrong type, a promise that never resolves)
+// just omits that entry — this command must never panic, since it runs on every drop the
+// frontend couldn't otherwise explain.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn read_drag_pasteboard() -> DragPasteboard {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::ClassType;
+    use objc2_app_kit::{
+        NSBitmapImageFileType, NSBitmapImageRep, NSFilePromiseReceiver, NSPasteboard,
+        NSPasteboardItem,
+    };
+    use objc2_foundation::{NSArray, NSDictionary, NSString, NSURL};
+
+    let mut out = DragPasteboard::default();
+
+    // SAFETY: NSPasteboardNameDrag is a valid AppKit constant; reading an `extern "C"` static.
+    let pb = unsafe { NSPasteboard::pasteboardWithName(objc2_app_kit::NSPasteboardNameDrag) };
+    let Some(items) = pb.pasteboardItems() else {
+        return out;
+    };
+
+    let file_url_type = NSString::from_str("public.file-url");
+    let url_type = NSString::from_str("public.url");
+    let png_type = NSString::from_str("public.png");
+    let jpeg_type = NSString::from_str("public.jpeg");
+    let gif_type = NSString::from_str("com.compuserve.gif");
+    let tiff_type = NSString::from_str("public.tiff");
+    let html_type = NSString::from_str("public.html");
+    let text_type = NSString::from_str("public.utf8-plain-text");
+
+    let count = items.count();
+    for i in 0..count {
+        let item: Retained<NSPasteboardItem> = items.objectAtIndex(i);
+
+        if let Some(s) = item.stringForType(&file_url_type) {
+            if let Some(url) = NSURL::URLWithString(&s) {
+                if let Some(path) = url.path() {
+                    out.files.push(path.to_string());
+                }
+            }
+        }
+
+        if let Some(s) = item.stringForType(&url_type) {
+            let s = s.to_string();
+            if !s.starts_with("file://") {
+                out.urls.push(s);
+            }
+        }
+
+        for (ty, ext) in [(&png_type, "png"), (&jpeg_type, "jpg"), (&gif_type, "gif")] {
+            if let Some(data) = item.dataForType(ty) {
+                out.images.push(DroppedImage {
+                    name: format!("dropped-image.{ext}"),
+                    base64: base64_encode(&data.to_vec()),
+                });
+                break;
+            }
+        }
+
+        if let Some(data) = item.dataForType(&tiff_type) {
+            if let Some(rep) = NSBitmapImageRep::imageRepWithData(&data) {
+                let props: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::new();
+                // SAFETY: `properties` is an empty (but correctly-typed) dictionary.
+                let png = unsafe {
+                    rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &props)
+                };
+                if let Some(png) = png {
+                    out.images.push(DroppedImage {
+                        name: "dropped-image.png".to_string(),
+                        base64: base64_encode(&png.to_vec()),
+                    });
+                }
+            }
+        }
+
+        if out.html.is_none() {
+            if let Some(s) = item.stringForType(&html_type) {
+                out.html = Some(s.to_string());
+            }
+        }
+        if out.text.is_none() {
+            if let Some(s) = item.stringForType(&text_type) {
+                out.text = Some(s.to_string());
+            }
+        }
+    }
+
+    // File promises (e.g. a Photos drag): no filename, no inline data, delivered async.
+    let class_array: Retained<NSArray<objc2::runtime::AnyClass>> =
+        NSArray::from_slice(&[NSFilePromiseReceiver::class()]);
+    // SAFETY: `class_array` holds exactly the one class we expect back cast to; `options: None`
+    // is documented as valid.
+    if let Some(receivers) = unsafe { pb.readObjectsForClasses_options(&class_array, None) } {
+        let rcount = receivers.count();
+        for i in 0..rcount {
+            let obj: Retained<AnyObject> = receivers.objectAtIndex(i);
+            if let Ok(receiver) = obj.downcast::<NSFilePromiseReceiver>() {
+                out.files.extend(receive_file_promise(&receiver));
+            }
+        }
+    }
+
+    out
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn read_drag_pasteboard() -> DragPasteboard {
+    DragPasteboard::default()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -551,7 +755,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).
