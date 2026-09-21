@@ -27,11 +27,12 @@
 
 /* ui.css's `.btn--icon.btn--normal { opacity: 1 }` is declared AFTER `.btn:disabled { opacity:
    0.4 }` at the same specificity (two classes each), so source order — not the disabled state —
-   wins the cascade and a disabled "+" renders visually identical to an enabled one. Scoping the
-   override to this row (an extra class in the selector) outranks both regardless of import order,
-   the same `:global(.btn--icon)` escape hatch IconButton's own box-model overrides already use
-   per call site (see OutlineTree.module.css's disclosure slot). */
-.bookmarks-head :global(.btn:disabled) {
+   wins the cascade and a disabled "+" renders visually identical to an enabled one. Targeting the
+   button's OWN local class (passed through `IconButton`'s `class` prop, same as PageReadout's
+   `.readout`) rather than reaching in via `.bookmarks-head`'s descendant selector outranks both
+   regardless of import order — `.bookmarks-add` + `:global(.btn)` + `:disabled` is 3 selector
+   parts against `.btn--icon.btn--normal`'s 2. */
+.bookmarks-add:global(.btn):disabled {
     opacity: 0.4;
 }
 

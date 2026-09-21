@@ -17,7 +17,12 @@
    ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
    USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all
    three are fully covered by `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac,
-   WindowsLinux) — there is no uncovered rule to flag here. */
+   WindowsLinux) — there is no uncovered rule to flag here.
+
+   THE `:global(.btn--icon.btn--sm)` REACH BELOW STAYS A BRIDGE (one-global-followups Task 4): its
+   button renders through `shell/CommandButton.tsx`, which has no `class` prop — there is no local
+   class here to retarget to, and CommandButton.tsx is outside this task's file scope to add one.
+   Reported, not fixed here; see Sidebar.module.css's identical note. */
 
 /* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
    is module-hashed and a global rule naming it would match nothing. */

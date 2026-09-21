@@ -154,6 +154,39 @@ export const IconStates: Story = {
     ),
 }
 
+/** `bracket` renders the "[ label ]" CLI-confirm look, lowercase, on EVERY kind/register — not
+ *  just `kind="text"`. Task 11 (daemon inbox bulk action) relies on this working for `kind="icon"`
+ *  too. */
+export const Bracket: Story = {
+    render: () => (
+        <Stack>
+            <Row label="text // bracket, every state">
+                <Button kind="text" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" state="selected" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" state="unselected" bracket>
+                    Approve
+                </Button>
+                <Button kind="text" primary bracket>
+                    Approve All
+                </Button>
+                <Button kind="text" danger bracket>
+                    Delete
+                </Button>
+            </Row>
+            <Row label="icon // bracket">
+                <Button kind="icon" bracket title="approve">
+                    <Icon value="Check" size={15} />
+                    Approve
+                </Button>
+            </Row>
+        </Stack>
+    ),
+}
+
 /** The full matrix at a glance. */
 export const AllVariants: Story = {
     render: () => (

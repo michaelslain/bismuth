@@ -18,7 +18,9 @@ export type ButtonProps = {
     primary?: boolean
     /** Renders the "[ label ]" CLI-confirm look — lowercase text wrapped in brackets. Replaces
      *  the `::before`/`::after` reach into `:global(.btn--text)` that Toast and the chat cards
-     *  used to reimplement themselves. Text buttons only. */
+     *  used to reimplement themselves. Works on any `kind`: `Button.module.css`'s `.bracket` rule
+     *  wins over every register's own `text-transform`, not just `kind="text"`'s — Task 11's
+     *  `[ approve all ]` uses it on a `kind="icon"` button too. */
     bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 

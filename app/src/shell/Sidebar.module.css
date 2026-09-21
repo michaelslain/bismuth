@@ -32,6 +32,13 @@
    shell/CommandButton.tsx, which every button in this toolbar renders through. What remains below
    is the one override that genuinely belongs to THIS parent: the settings-driven font-size.
 
+   THE `:global(.btn--icon...)` REACHES BELOW STAY BRIDGES (one-global-followups Task 4): every
+   button in this toolbar renders through `shell/CommandButton.tsx`, which has no `class` prop —
+   Sidebar.tsx has no local class to hand it, and CommandButton.tsx is outside this task's file
+   scope to add one to. Retargeting these to a local class (the pattern PageReadout/BookmarksPanel/
+   OutlineTree now use for their own Button/IconButton instances) needs CommandButton to grow a
+   `class` prop first; reported, not fixed here.
+
    `.sidebar-icons` ALSO carries `data-sidebar-toolbar="true"` in Sidebar.tsx now. That attribute
    is not styled by anything in THIS file — it exists so `palette/switcher.css` (a wholly unrelated
    component) can keep dimming this row while the Cmd+O switcher is open, which it used to do via a
