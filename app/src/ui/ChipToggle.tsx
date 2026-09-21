@@ -19,7 +19,9 @@ export type ChipToggleProps = {
  * `.tone-<x>`) is currently a `:global()` bridge in ChipToggle.module.css, still reached
  * directly by bases/CardEditModal.module.css and bases/BaseView.module.css; see that file's
  * header. Remaining native button attributes (`title`, `aria-*`, …) pass through via
- * `splitProps` onto the underlying `<button>`.
+ * `splitProps` onto the underlying `<button>` — but `onClick` is NOT forwarded: click is owned
+ * via `onToggle`, so a caller-supplied `onClick` is overridden by the component's own handler
+ * and never fires.
  */
 const ChipToggle: Component<ChipToggleProps> = props => {
     const [local, rest] = splitProps(props, [
