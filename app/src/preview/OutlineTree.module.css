@@ -81,8 +81,10 @@
 /* Targets the chevron IconButton's OWN local class (passed through `IconButton`'s `class` prop
    in OutlineTree.tsx) rather than reaching into it from the parent via a `.outline-disclosure
    :global(.btn--icon)` descendant selector — this is the chevron's own instance override, not a
-   foreign reach into DOM this stylesheet doesn't render itself. */
-.outline-disclosure-btn:global(.btn--icon) {
+   foreign reach into DOM this stylesheet doesn't render itself. The class is doubled
+   (`.outline-disclosure-btn.outline-disclosure-btn`) to keep the 2-selector-part specificity the
+   removed `:global(.btn--icon)` compound had, so it still outranks `.btn--icon.btn--normal`. */
+.outline-disclosure-btn.outline-disclosure-btn {
     position: absolute;
     top: 0;
     left: 50%;

@@ -35,7 +35,7 @@
    + .sw-c) — a different shape from the other groups' individually-boxed segments. The
    active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
    swatch already IS a color; ringing it in --accent would fight the ink color itself).
-   `.segmented` is the ui/ SegmentedToggle family, global-by-necessity per Task 7's ruling. */
+   `.segmented` is the ui/ SegmentedToggle family: kept: zoom group needs a per-segment class SegmentedOption does not expose (deferred). */
 .draw-colorrow:global(.segmented) { gap: 0; border: 1px solid var(--border); }
 .draw-colorseg:global(.btn) { padding: 0; border-radius: 0 !important; background: none; }
 .draw-colorseg:global(.btn--selected) {

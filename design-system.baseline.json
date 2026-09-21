@@ -22,18 +22,6 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/preview/BookmarksPanel.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/preview/OutlineTree.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/preview/PageReadout.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/PreviewView.module.css"
     },
     {

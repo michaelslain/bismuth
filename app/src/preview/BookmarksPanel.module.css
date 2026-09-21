@@ -30,9 +30,9 @@
    wins the cascade and a disabled "+" renders visually identical to an enabled one. Targeting the
    button's OWN local class (passed through `IconButton`'s `class` prop, same as PageReadout's
    `.readout`) rather than reaching in via `.bookmarks-head`'s descendant selector outranks both
-   regardless of import order — `.bookmarks-add` + `:global(.btn)` + `:disabled` is 3 selector
-   parts against `.btn--icon.btn--normal`'s 2. */
-.bookmarks-add:global(.btn):disabled {
+   regardless of import order — the class is doubled (`.bookmarks-add.bookmarks-add`) to keep 3
+   selector parts against `.btn--icon.btn--normal`'s 2, matching the reach this replaced. */
+.bookmarks-add.bookmarks-add:disabled {
     opacity: 0.4;
 }
 
