@@ -281,14 +281,17 @@ whatever the drag actually carries (in priority order: real paths, then raw imag
 `<img src>` found in dragged HTML, then an image URL, then any URL, then plain text) and
 `Editor.tsx`'s `runDropActions` carries out the result:
 
-- **A browser image** (dragged out of a page) is downloaded server-side (`POST /asset/fetch`) into
-  the attachments folder and embedded as `![[name]]`, the same as a locally-uploaded image.
+- **A browser image** (dragged out of a page) is downloaded server-side (`POST /asset/fetch`,
+  owner-only, `http:`/`https:` addresses only) into the attachments folder and embedded as
+  `![[name]]`, the same as a locally-uploaded image.
 - **A Photos/Messages file promise** is received via the native drag pasteboard
-  (`read_drag_pasteboard`, macOS-only) and embedded the same way as any other dropped file.
+  (`read_drag_pasteboard`, macOS-only), which materializes it into a process-local temp directory
+  first, then embedded the same way as any other dropped file.
 - **A link with no image** inserts the bare URL as text at the drop point.
-- **Selected text** dragged in from elsewhere inserts that text at the drop point.
-- **Anything `planDrop` can't read at all** — an empty pasteboard, a drag CodeMirror already
-  rejected — shows one toast (`Couldn't read that drop`) instead of doing nothing silently.
+- **Selected text** dragged in from elsewhere inserts that text at the drop point — a drag that
+  never left CodeMirror (an internal text selection) MOVES instead, same as any other editor.
+- **Anything `planDrop` can't read at all** — an empty pasteboard — shows one toast (`Couldn't read
+  that drop`) instead of doing nothing silently.
 
 ## Dropping OS Files Onto The File Tree
 
