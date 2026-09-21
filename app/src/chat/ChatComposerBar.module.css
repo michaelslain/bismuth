@@ -61,12 +61,10 @@
     flex: 1 1 auto;
     min-width: 0;
 }
-/* design-system-ignore globalReach: cm-* is CodeMirror's own runtime-generated class, painted by the library itself — not a class this repo builds or owns (externalClasses already exempts cm-*; marked here permanently per the plan's "DOM this repo does not build" exception) */
 .input :global(.cm-editor) {
     width: 100%;
     background: transparent;
 }
-/* design-system-ignore globalReach: cm-* CodeMirror class, see above */
 .input :global(.cm-editor):global(.cm-focused) {
     outline: none;
 }
@@ -76,7 +74,6 @@
    `.cm-placeholder` class the same way `.cm-editor`/`.cm-focused` above already do: never hashed,
    a plain-DOM library's own class, not a project module. Selector specificity (module class + 2
    global classes) outranks the theme's own injected rule regardless of stylesheet load order. */
-/* design-system-ignore globalReach: cm-* CodeMirror class, see above */
 .input :global(.cm-editor) :global(.cm-placeholder) {
     color: var(--faint);
 }
@@ -112,7 +109,10 @@
 /* `.attachment-remove.attachment-remove` — the class repeated, not reached into `:global(.btn--
    icon)` — matches that rule's own 0,0,2,0 specificity (ui/Button.module.css's
    `.btn--icon.btn--normal { opacity: 1 }`) without depending on stylesheet load order, the same
-   guarantee the old `:global()` compound gave, entirely in local classes. */
+   guarantee the old `:global()` compound gave, entirely in local classes.
+   Acceptance: square (--r-0, not a circle), no filled background, glyph in --text-muted (nearest
+   real token to a --fg-muted this app doesn't define), --fg on hover — a plain glyph button over
+   the thumbnail rather than a filled scrim chip. */
 .attachment-remove.attachment-remove {
     position: absolute;
     top: 3px;
@@ -120,14 +120,14 @@
     width: 18px;
     height: 18px;
     padding: 0;
-    border-radius: 50%;
-    background: var(--scrim-bg);
-    color: var(--on-scrim);
+    border-radius: var(--r-0);
+    background: none;
+    color: var(--text-muted);
     opacity: 1;
 }
 .attachment-remove.attachment-remove:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--scrim-bg), black 25%);
-    color: var(--on-scrim);
+    background: none;
+    color: var(--fg);
 }
 
 /* The slash-command autocomplete popover — a child of `.box` (not `.bar`), so its containing

@@ -39,11 +39,20 @@
      flush against its OWN compact chrome — here it just bulges PRIORITY/STATUS/TAGS 5px past
      TITLE/DUE's edges. Zeroed so every field measures to the same left/right edge. */
   --kb-meta-margin: 0;
+  /* Acceptance: "every field control in the modal (title, status, due, tags add, priority) is
+     the same height, --h-control." PropertyValueEditor.module.css reads this as its own
+     `--kb-meta-height` override (same mechanism as the two vars above — a CSS custom property,
+     not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/`.kbMetaSelectTrigger`) and the
+     TAGS "+ add" trigger (`.kbMetaMultiselectAdd`); the card-face inline chip editor (KanbanCard)
+     sets nothing and keeps its own compact defaults. TITLE (.titleInput) and DUE (.dueTrigger)
+     below are this file's own classes and set the same value directly. */
+  --kb-meta-height: var(--h-control);
 }
 
-/* DUE's trigger (DateFieldEditor) at the compact register of its STATUS sibling — PropertyValueEditor's
-   select trigger — rather than FormControl's full 32px input height, which only TITLE uses here. */
-.dueTrigger { height: auto; min-height: 0; padding: var(--sp-1) var(--sp-3); }
+/* DUE's trigger (DateFieldEditor), pinned to the same --h-control every sibling control in this
+   modal now shares (see --kb-meta-height above and .titleInput's own height) rather than
+   FormControl's full 32px input height. */
+.dueTrigger { height: var(--h-control); box-sizing: border-box; min-height: 0; padding: var(--sp-1) var(--sp-3); }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default
    `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
@@ -66,6 +75,11 @@
   font-size: var(--fs-lead);
   font-weight: 600;
   letter-spacing: -0.01em;
+  /* Same --h-control every other field control in this modal is pinned to (see --kb-meta-height
+     above) — FormControl's own default is the full 32px input height, which stood taller than
+     every sibling here. */
+  height: var(--h-control);
+  box-sizing: border-box;
 }
 
 .readonly {

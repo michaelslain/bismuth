@@ -437,13 +437,13 @@ export function CardEditModal(props: {
             <ModalFooter
                 leading={
                     <Show when={props.hasFileIdentity ?? true}>
-                        <TextButton danger onClick={props.onDelete}>
+                        <TextButton danger bracket onClick={props.onDelete}>
                             DELETE
                         </TextButton>
                     </Show>
                 }
             >
-                <TextButton variant="selected" onClick={close}>
+                <TextButton variant="selected" bracket onClick={close}>
                     DONE
                 </TextButton>
             </ModalFooter>
