@@ -20,7 +20,7 @@ run time     app/src/updateCheck.ts  ──poll──> GET /update/status   (cor
              app/src/UpdateBanner.tsx  (shown when available)
                │ click UPDATE
                ├─ POST /update/apply          → startUpdate()  (returns immediately)
-               │     └─ git pull --ff-only → bun run tauri build --bundles app
+               │     └─ git pull --ff-only → bun install --frozen-lockfile → bun run tauri build --bundles app
                │        └─ spawnRelauncher() writes + nohup-spawns a detached swap script
                ├─ poll GET /update/progress   → phase: pulling → building → ready
                └─ on "ready": invoke Tauri `quit_app`
@@ -88,10 +88,13 @@ Guard rails before kicking off:
 - `getUpdateStatus().available === false` → `phase:"idle"`, `"already up to date"`.
 - `dirty` working tree → `phase:"error"`, `"the Bismuth repo has uncommitted changes — won't overwrite"`.
 
-The pipeline (`runPipeline`):
+The pipeline (`runPipeline`), all deps (`git`, `proc`, `signingIdentity`, `spawnRelauncher`, `logPath`) injectable for tests:
 1. `git pull --ff-only origin main` (120 s). Non-zero (diverged/conflict) → `phase:"error"` with the stderr tail.
-2. `phase:"building"`, then `bun run tauri build --bundles app` in `<repoRoot>/app` (900 s). **`--bundles app` deliberately skips the `.dmg`**: self-update only swaps the `.app`, and the dmg packaging step (`bundle_dmg.sh`) is intermittently flaky, so building it would only add a failure mode. (`bun` is resolved via `Bun.which("bun", { PATH })` because in the compiled sidecar `process.execPath` is the sidecar binary, not bun.)
-3. On build success: `spawnRelauncher(repoRoot, appPath)`, then `phase:"ready"`, `"update ready — relaunching…"`.
+2. `phase:"building"`, `"installing dependencies…"`, then `bun install --frozen-lockfile` in `<repoRoot>` (300 s). `--frozen-lockfile` matters: `bun.lock` is committed, and a plain `bun install` could rewrite it, leaving the clone dirty — and `startUpdate()` refuses to run against a dirty clone, so the *next* update would be blocked. Non-zero → `phase:"error"`, `"bun install failed — full log: <path>"` (e.g. a pulled dependency bump that `bun install` hasn't resolved yet, like `Could not resolve: "heic-convert"`).
+3. `phase:"building"`, `"rebuilding Bismuth (this takes a few minutes)…"`, then `bun run tauri build --bundles app` in `<repoRoot>/app` (900 s). **`--bundles app` deliberately skips the `.dmg`**: self-update only swaps the `.app`, and the dmg packaging step (`bundle_dmg.sh`) is intermittently flaky, so building it would only add a failure mode. (`bun` is resolved via `Bun.which("bun", { PATH })` because in the compiled sidecar `process.execPath` is the sidecar binary, not bun.)
+4. On build success: `spawnRelauncher(repoRoot, appPath)`, then `phase:"ready"`, `"update ready — relaunching…"`.
+
+Every step's command line + full stdout/stderr/exit code is appended to a **persistent log**, `join(tmpdir(), "bismuth-update-build.log")`, truncated at the start of each `runPipeline` run (writing to it never throws into the pipeline). On any step's failure the `message` names that path, so a build failure survives past the in-memory banner's short tail.
 
 `buildPath()` augments `PATH` with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.cargo/bin`, `~/.bun/bin`, `~/.local/bin` — a Finder-launched sidecar inherits only the minimal launchd `PATH`, so git/bun/cargo wouldn't otherwise resolve for a from-source rebuild.
 
@@ -104,7 +107,7 @@ type UpdatePhase = "idle" | "pulling" | "building" | "ready" | "error";
 interface UpdateProgress { phase: UpdatePhase; message?: string; log?: string }
 ```
 
-`log` holds the tail (≤2000 chars) of git/build stderr on failure.
+`log` holds the tail (≤2000 chars) of the failing step's combined stderr+stdout; `message` additionally names the full persistent log path (`join(tmpdir(), "bismuth-update-build.log")`) for any step's failure.
 
 ### The detached relauncher
 
