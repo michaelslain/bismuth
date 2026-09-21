@@ -75,7 +75,7 @@ export function GraphSearch(props: {
         selected()
         results()
         listRef
-            ?.querySelector<HTMLElement>('[data-row].selected')
+            ?.querySelector<HTMLElement>(`[data-row].${styles['selected']}`)
             ?.scrollIntoView({ block: 'nearest' })
     })
 
@@ -128,6 +128,8 @@ export function GraphSearch(props: {
                 onKeyDown={onKeyDown}
                 inputRef={el => (inputRef = el)}
                 class={styles['graph-search-bar']}
+                leadClass={styles['graph-search-lead']}
+                inputClass={styles['graph-search-input']}
             >
                 <IconButton
                     icon="X"
@@ -145,7 +147,9 @@ export function GraphSearch(props: {
                             <div
                                 data-row
                                 class={styles['graph-search-row']}
-                                classList={{ selected: selected() === i() }}
+                                classList={{
+                                    [styles['selected']!]: selected() === i(),
+                                }}
                                 onMouseEnter={() => {
                                     setSelected(i())
                                     props.onPreview?.(item.id)

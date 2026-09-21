@@ -28,16 +28,12 @@
    comment, not real usage — grepping for it as a live consumer is a false positive.
 
    :global() — one-global-stylesheet Task 10 re-pointed `.card-actions :global(.btn--icon)` onto
-   a local `.card-action-btn` class handed to both IconButtons via their `class` prop. What's left,
-   and NOT removable from this side:
-     .flashcards-host :global(.ui-empty-block) (+ its `h2`)
-     .flashcards-host :global(.ui-empty) (+ its `strong`/`code`, and `.inline-bolt` which IS ours
-       and stays local) — the "done" (deck/cram complete) state also routes through this now that
-       it renders via <EmptyState> instead of hand-rolled `.big`/`.sub` markup (this task's
-       intentional-drift swap; the story showing it is named in this task's report). EmptyState's
-       own `class` prop lands only on ITS root (`ui-empty-block`), not on the `h2`/`p.ui-empty` it
-       renders internally, so there is no prop this caller could hand it instead — reported, not
-       invented, per this task's brief.
+   a local `.card-action-btn` class handed to both IconButtons via their `class` prop.
+   `.flashcards-host :global(.ui-empty-block)`/`:global(.ui-empty)` (+ their `h2`/`strong`/`code`)
+   are GONE (one-global-followups Task 2): EmptyState grew `titleClass`/`bodyClass`/`blockClass`
+   props exactly so this caller no longer needs to reach its internals by class name — see
+   `.fc-empty`/`.fc-empty-title`/`.fc-empty-body` below and their two call sites in
+   FlashcardsView.tsx. `.inline-bolt` was always local and is unaffected.
    `.asc-kbd`/`.asc-key`/`.asc-modal` are referenced only as bare JSX literals in the consumer
    (never combined into a selector in this file), so they need no :global() here.
 
@@ -241,20 +237,35 @@
 
 /* Done state (deck/cram complete). Layout wrapper only — the title + message now render through
    <EmptyState> (this task's intentional judgment-finding swap), so `.big`/`.sub` no longer have
-   rules here; EmptyState's own `h2`/`p.ui-empty` pick up matching italic prose styling from the
-   `.flashcards-host :global(.ui-empty-block)`/`:global(.ui-empty)` block below, same as the
-   queue-empty state already did. */
+   rules here; EmptyState's `h2`/`p` pick up matching italic prose styling via `titleClass`/
+   `bodyClass` below, same as the queue-empty state already did. */
 .done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-6); text-align: center; margin: auto; }
 .good-text { color: var(--blue); }
 
 /* Empty/all-done states: faint prose italic, matching the card prose tone (not the
-   default mono EmptyState). Scoped to the review so other empty states are untouched. */
-.flashcards-host :global(.ui-empty-block) { gap: var(--sp-2); }
-.flashcards-host :global(.ui-empty-block) h2 { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
-.flashcards-host :global(.ui-empty) { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--text-muted); }
-.flashcards-host :global(.ui-empty) :is(strong, b) { font-style: italic; font-weight: 600; color: var(--fg); }
-.flashcards-host :global(.ui-empty) .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
-.flashcards-host :global(.ui-empty) code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
+   default mono EmptyState). Scoped to the review so other empty states are untouched — passed to
+   both <EmptyState> call sites in FlashcardsView.tsx as `blockClass={styles['fc-empty']}
+   titleClass={styles['fc-empty-title']} bodyClass={styles['fc-empty-body']}` (was
+   `.flashcards-host :global(.ui-empty-block)`/`:global(.ui-empty)` reaching EmptyState's internals
+   by class name — one-global-followups Task 2).
+
+   Doubled (`.fc-empty-title.fc-empty-title` etc.): EmptyState.module.css's remaining
+   `:global(.ui-empty-block) h2`/`:global(.ui-empty)` bridge rules (kept for DaemonPanel, see that
+   file's header) are a DESCENDANT selector off a foreign root class — (0,1,1)/(0,1,0) specificity —
+   which otherwise silently wins the italic/color/weight fight over a plain single-class prop rule
+   at equal or lower specificity. Confirmed by `bun run verify`: without doubling,
+   `bases-flashcardsview--default`/`--deck-complete`/`--cram-mode`/`--revealed` all rendered the
+   done-state title bold/white instead of italic/muted. `.fc-empty-title` deliberately does NOT set
+   `text-transform`/`letter-spacing` — those two properties fall through un-overridden from the
+   bridge's own `uppercase`/`var(--ls-eyebrow)` (the pre-existing baseline look, an eyebrow-style
+   heading), same as before this task touched the file; only the properties the old
+   `.flashcards-host :global(.ui-empty-block) h2` selector actually set are reproduced here. */
+.fc-empty.fc-empty { gap: var(--sp-2); }
+.fc-empty-title.fc-empty-title { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
+.fc-empty-body.fc-empty-body { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--text-muted); }
+.fc-empty-body.fc-empty-body :is(strong, b) { font-style: italic; font-weight: 600; color: var(--fg); }
+.fc-empty-body.fc-empty-body .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
+.fc-empty-body.fc-empty-body code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
 
 /* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. Narrower than the
    shared CardsModal default — `.card-edit-one` overrides `.panel`'s width/height; doubled

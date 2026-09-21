@@ -7,6 +7,13 @@ export type EmptyStateProps = {
     /** Optional heading shown above the message. */
     title?: string
     class?: string
+    /** Extra class on the root `.ui-empty-block` (alongside `class` — for a caller composing
+     *  both a layout class and a look-and-feel class, e.g. FlashcardsView's italic-prose variant). */
+    blockClass?: string
+    /** Extra class on the inner `<h2>` title. */
+    titleClass?: string
+    /** Extra class on the inner `<p class="ui-empty">` body. */
+    bodyClass?: string
     children?: JSX.Element
 }
 
@@ -17,13 +24,19 @@ export type EmptyStateProps = {
  */
 function EmptyState(props: EmptyStateProps) {
     return (
-        <div class={`ui-empty-block ${props.class ?? ''}`}>
+        <div
+            class={`ui-empty-block ${props.class ?? ''} ${props.blockClass ?? ''}`.trim()}
+        >
             <Show when={props.icon}>
                 <div class={styles['ui-empty-icon']}>{props.icon}</div>
             </Show>
-            <Show when={props.title}>{t => <h2>{t()}</h2>}</Show>
+            <Show when={props.title}>
+                {t => <h2 class={props.titleClass}>{t()}</h2>}
+            </Show>
             <Show when={props.children}>
-                <p class="ui-empty">{props.children}</p>
+                <p class={`ui-empty ${props.bodyClass ?? ''}`.trim()}>
+                    {props.children}
+                </p>
             </Show>
         </div>
     )

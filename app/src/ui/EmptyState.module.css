@@ -3,15 +3,17 @@
    ui/EmptyState.tsx is the sole reader of every class below.
 
    `.ui-empty` and `.ui-empty-block` (+ its `h2`) are written by EmptyState.tsx as bare, un-hashed
-   literals — not `styles[...]` — because three OTHER stylesheets still reach them via
-   `:global()`: bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
-   palette/SwitcherBar.module.css. The `:global()` block below is a re-export that keeps those
-   three working unchanged; wave 3 (one-global-stylesheet plan) owns converting them to import
-   <EmptyState> itself instead, at which point this block can drop the `:global()` wrapper and
-   these two classes can go fully local like `.ui-loading`/`.ui-empty-icon` already are. See
-   .claude/plans/ui-css-ownership.md. See the ignore comments right above each `:global()` rule
-   below for why each is exempt from the globalReach check — EmptyState genuinely owns these
-   classes, it's a temporary bridge until wave 3 converts the three outside callers. */
+   literals — not `styles[...]` — because one outside stylesheet still reaches them via
+   `:global()`: daemon/DaemonPanel.module.css, whose `.daemon-panel-body > :global(.ui-empty-block)`
+   styles an `<EmptyState>` some OTHER component passes in as `DaemonPanel`'s opaque `children` —
+   `DaemonPanel.tsx` never calls `<EmptyState>` itself, so it has no call site to hand a class prop
+   to. bridge kept: DaemonPanel's body inset, until whichever component renders that EmptyState is
+   in scope to retarget it. bases/FlashcardsView.module.css and palette/SwitcherBar.module.css
+   (one-global-followups Task 2) converted to `titleClass`/`bodyClass`/`blockClass` and no longer
+   reach these two classes. The `:global()` block below is a re-export that keeps DaemonPanel
+   working unchanged. See .claude/plans/ui-css-ownership.md. See the ignore comment right above the
+   `:global()` rule below for why it is exempt from the globalReach check — EmptyState genuinely
+   owns these classes, it's a temporary bridge until DaemonPanel's caller is retargeted. */
 /* design-system-ignore globalReach: EmptyState's own class, temporary :global() bridge to the three outside callers above, until wave 3 */
 :global(.ui-empty) { color: var(--text-muted); }
 /* design-system-ignore globalReach: same bridge as .ui-empty above, until wave 3 */
