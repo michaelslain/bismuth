@@ -13,6 +13,12 @@ import {
     parseRgbColor,
     snapDownToGrid,
     legalCutStops,
+    classifyRows,
+    cutSafe,
+    formulaBands,
+    MIN_PAGE_FRACTION,
+    type RowClasses,
+    type CutAtom,
 } from './pageGeometry'
 import { RULE_PX } from './htmlTemplate'
 
@@ -392,6 +398,246 @@ describe('legalCutStops — the enclosure test behind measureCutStops', () => {
         const stops = legalCutStops(atoms, 1)
         expect(stops).toContain(22)
         expect(stops).toContain(40)
+    })
+})
+
+// --- painted-blank cut gate (task 4) ---
+
+const ROW_W = 40
+const BG: [number, number, number] = [255, 255, 255]
+const INK: [number, number, number] = [10, 10, 10]
+const BORDER: [number, number, number] = [120, 120, 120]
+const FILL: [number, number, number] = [30, 30, 200]
+
+/** An entirely blank row: every pixel == bg. */
+function blankRow(x: number): [number, number, number] {
+    return BG
+}
+
+/** A row with a handful of scattered ink pixels — a line of text — never covering a full-width
+ *  fraction of the row and never uniform (the ink pixels differ from the row's own first sample,
+ *  which is bg). */
+function textRow(x: number): [number, number, number] {
+    return x === 4 || x === 20 ? INK : BG
+}
+
+/** A full-width rule: every pixel painted the same non-bg colour, e.g. a table border or <hr>. */
+function ruleRow(x: number): [number, number, number] {
+    return BORDER
+}
+
+/** Blank except 2-px vertical lines at x=0 and x=38 — a bordered table's interior row (the
+ *  vertical cell borders ink a thin stripe at each edge; the row is otherwise blank). Both x=0
+ *  and x=38 land on a SAMPLE_STEP=2 sample point, which is deliberate: it is what stops the row
+ *  reading as uniform. */
+function borderedRow(x: number): [number, number, number] {
+    return x === 0 || x === 38 ? BORDER : BG
+}
+
+/** A uniform non-bg fill spanning the whole row — a code block's `p.head` padding, or a callout
+ *  background. Every pixel matches every other pixel (uniform), and every pixel differs from bg
+ *  (full), simultaneously — this is the shape that makes "uniform" deliberately not "blank". */
+function fillRow(x: number): [number, number, number] {
+    return FILL
+}
+
+/** Build a `width * rowFns.length * 4` RGBA buffer, one row per generator function, every pixel
+ *  fully opaque. */
+function buildRows(
+    rowFns: ((x: number) => [number, number, number])[],
+    width = ROW_W,
+): Uint8ClampedArray {
+    const data = new Uint8ClampedArray(width * rowFns.length * 4)
+    rowFns.forEach((fn, y) => {
+        for (let x = 0; x < width; x++) {
+            const [r, g, b] = fn(x)
+            const i = (y * width + x) * 4
+            data[i] = r
+            data[i + 1] = g
+            data[i + 2] = b
+            data[i + 3] = 255
+        }
+    })
+    return data
+}
+
+describe('classifyRows', () => {
+    test('blank / text / rule / bordered / fill rows classify as documented', () => {
+        const rowFns = [blankRow, textRow, ruleRow, borderedRow, fillRow]
+        const data = buildRows(rowFns)
+        const { uniform, full } = classifyRows(data, ROW_W, rowFns.length, BG)
+        // blank: uniform (every sample matches bg, its own first sample), not full (no diff from bg)
+        expect(uniform[0]).toBe(1)
+        expect(full[0]).toBe(0)
+        // text: not uniform (scattered ink differs from the row's own first bg sample), not full
+        // (only 2 of 20 sampled pixels differ from bg — nowhere near FULL_FRACTION)
+        expect(uniform[1]).toBe(0)
+        expect(full[1]).toBe(0)
+        // rule: uniform (every sample is the same border colour) AND full (every sample differs
+        // from bg) — a full-width rule is both at once
+        expect(uniform[2]).toBe(1)
+        expect(full[2]).toBe(1)
+        // bordered: not uniform (the two edge samples differ from the row's own first bg sample),
+        // not full (only 2 of 20 sampled pixels differ from bg)
+        expect(uniform[3]).toBe(0)
+        expect(full[3]).toBe(0)
+        // fill: uniform (every sample matches every other) AND full (every sample differs from bg)
+        expect(uniform[4]).toBe(1)
+        expect(full[4]).toBe(1)
+    })
+})
+
+describe('cutSafe', () => {
+    test('blank | blank -> true', () => {
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([1, 1]),
+            full: Uint8Array.from([0, 0]),
+        }
+        expect(cutSafe(rows, 1, [])).toBe(true)
+    })
+
+    test('text | blank -> false', () => {
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([0, 1]),
+            full: Uint8Array.from([0, 0]),
+        }
+        expect(cutSafe(rows, 1, [])).toBe(false)
+    })
+
+    test('rule | bordered -> true (just below a table border)', () => {
+        // Row 0 is a full-width rule (uniform + full); row 1 is a bordered table's interior row
+        // (not uniform, since the vertical cell borders ink it). cutSafe must accept the row
+        // immediately BELOW the rule even though row 1 itself is not uniform.
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([1, 0]),
+            full: Uint8Array.from([1, 0]),
+        }
+        expect(cutSafe(rows, 1, [])).toBe(true)
+    })
+
+    test('bordered | bordered -> false', () => {
+        // Neither row is uniform (both are bordered-table interior rows), so there is no rule
+        // above to except it — mid-table is never a legal cut.
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([0, 0]),
+            full: Uint8Array.from([0, 0]),
+        }
+        expect(cutSafe(rows, 1, [])).toBe(false)
+    })
+
+    test('fill | fill -> true', () => {
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([1, 1]),
+            full: Uint8Array.from([1, 1]),
+        }
+        expect(cutSafe(rows, 1, [])).toBe(true)
+    })
+
+    test('y = 0 -> false (no row above it to test)', () => {
+        const rows: RowClasses = {
+            uniform: Uint8Array.from([1, 1]),
+            full: Uint8Array.from([0, 0]),
+        }
+        expect(cutSafe(rows, 0, [])).toBe(false)
+    })
+
+    test('a blank|blank y strictly inside a forbidden band -> false; on its edge -> true', () => {
+        const rows: RowClasses = {
+            uniform: new Uint8Array(10).fill(1),
+            full: new Uint8Array(10),
+        }
+        const forbidden: [number, number][] = [[3, 7]]
+        expect(cutSafe(rows, 5, forbidden)).toBe(false) // strictly inside (3 < 5 < 7)
+        expect(cutSafe(rows, 3, forbidden)).toBe(true) // on the low edge
+        expect(cutSafe(rows, 7, forbidden)).toBe(true) // on the high edge
+    })
+})
+
+describe('formulaBands', () => {
+    test('only atoms flagged isFormula AND taller than minHeightCss produce a band, scaled and padded', () => {
+        const atoms: CutAtom[] = [
+            { top: 100, bottom: 120, isFormula: true }, // height 20 <= minHeightCss 33 -> excluded
+            { top: 200, bottom: 250, isFormula: true }, // height 50 > 33 -> included
+            { top: 300, bottom: 360, isFormula: false }, // tall but not a formula -> excluded
+        ]
+        const bands = formulaBands(atoms, 2, 33, 10)
+        expect(bands).toEqual([[200 * 2 - 10, 250 * 2 + 10]])
+        expect(bands).toEqual([[390, 510]])
+    })
+})
+
+describe('pageSlices — the painted-blank cut gate (task 4)', () => {
+    // A 200-canvas-row buffer, all classified "unsafe" (uniform=0) by default, with individual
+    // rows overridden per test so exactly the intended row(s) are safe. This keeps every gate
+    // test grounded in real per-row data (never a mocked cutSafe), so a change to cutSafe's own
+    // rule would show up here too.
+    function makeRows(len: number, safeIndices: number[] = []): RowClasses {
+        const uniform = new Uint8Array(len)
+        for (const i of safeIndices) uniform[i] = 1
+        return { uniform, full: new Uint8Array(len) }
+    }
+
+    test('(a) a DOM stop landing on inked pixels is rejected; the gate searches the page for a safe row instead', () => {
+        // pageHpx=100: natural bottom (end) is 100. DOM's own stop is 95, but row 95 is inked
+        // (uniform[94]=0, so cutSafe(95) is false) — the pixels disagree with the DOM. End=100 is
+        // ALSO inked (uniform[99] left 0). The only safe row anywhere in [50,100] is 80
+        // (uniform[79]=uniform[80]=1, satisfying cutSafe's two-blank-rows case) — set up so the
+        // test can fail: if the gate ignored the pixels and trusted the DOM stop, it would cut at
+        // 95; if it ignored MIN_PAGE_FRACTION, it might land elsewhere.
+        const rows = makeRows(200, [79, 80])
+        const out = pageSlices(200, 100, [], [95], { rows, forbidden: [] })
+        expect(out[0]).toEqual({ start: 0, height: 80 })
+    })
+
+    test('(b) a safe DOM stop is used directly, even though a different safe row also exists', () => {
+        // Row 90 (the DOM stop) is itself safe (uniform[89]=uniform[90]=1). Row 60 is ALSO safe
+        // (uniform[59]=uniform[60]=1) but must NOT be preferred — the DOM stop wins as soon as
+        // the pixels confirm it, without searching further.
+        const rows = makeRows(200, [59, 60, 89, 90])
+        const out = pageSlices(200, 100, [], [90], { rows, forbidden: [] })
+        expect(out[0]).toEqual({ start: 0, height: 90 })
+    })
+
+    test('(c) no safe row anywhere in range falls back to the (unsafe) DOM stop, not the raw bottom', () => {
+        // No index is marked safe at all — row 95 (the DOM stop) is unsafe, and so is every other
+        // row in [50,100]. The gate still prefers the DOM's own opinion over the raw, ungated
+        // natural bottom (100).
+        const rows = makeRows(200, [])
+        const out = pageSlices(200, 100, [], [95], { rows, forbidden: [] })
+        expect(out[0]).toEqual({ start: 0, height: 95 })
+    })
+
+    test('(c) no DOM stop and no safe row falls back to the raw natural bottom', () => {
+        const rows = makeRows(200, [])
+        const out = pageSlices(200, 100, [], [], { rows, forbidden: [] })
+        expect(out[0]).toEqual({ start: 0, height: 100 })
+    })
+
+    test('(d) a fully inked canvas with no stops still advances every page and terminates', () => {
+        const rows = makeRows(350, [])
+        const out = pageSlices(350, 100, [], [], { rows, forbidden: [] })
+        expect(out).toEqual([
+            { start: 0, height: 100 },
+            { start: 100, height: 100 },
+            { start: 200, height: 100 },
+            { start: 300, height: 50 },
+        ])
+        // Every slice has positive height, so `offset` strictly increased each iteration.
+        for (const s of out) expect(s.height).toBeGreaterThan(0)
+    })
+
+    test('(e) a forced break still wins inside a page, even over a gate that would reject every row', () => {
+        // Every row is unsafe (nothing marked in makeRows) — if the gate were consulted here, it
+        // could not possibly approve anything. The forced break at 70 must still cut there,
+        // proving the gate is never reached when a break falls inside the page.
+        const rows = makeRows(300, [])
+        const out = pageSlices(300, 100, [70], [], { rows, forbidden: [] })
+        expect(out[0]).toEqual({ start: 0, height: 70 })
+        expect(out[1]).toEqual({ start: 70, height: 100 })
+    })
+
+    test('MIN_PAGE_FRACTION is 0.5 (never search for a safe row above half a page)', () => {
+        expect(MIN_PAGE_FRACTION).toBe(0.5)
     })
 })
 
