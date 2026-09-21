@@ -10,7 +10,7 @@
 //
 // Self-disables when there's no source build (no build-origin.json or no BISMUTH_APP_PATH) — e.g.
 // dev (`bun run dev:browser`). Never throws; failures surface as an "error" phase / a reason.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { claudeLookupPath } from './claudeWhich'
@@ -111,9 +111,39 @@ export type GitRunner = (
 const realGit: GitRunner = (repoRoot, args, timeoutMs = 15_000) =>
     runProc(['git', '-C', repoRoot, ...args], { timeoutMs })
 
+/** Runs an arbitrary command (same shape as runProc). Injectable so runPipeline's step
+ *  order and failure handling is unit-testable without spawning real processes. */
+export type ProcRunner = (
+    cmd: string[],
+    opts?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
+) => Promise<{ code: number; stdout: string; stderr: string }>
+
 function tail(s: string, n = 2000): string {
     const t = s.trim()
     return t.length > n ? `…${t.slice(-n)}` : t
+}
+
+// Persistent build log: every pipeline step's command line + full stdout/stderr/exit code,
+// truncated at the start of each run — so a build failure survives past the ~2000-char tail
+// kept in the in-memory banner (cf. the relauncher's own /tmp/bismuth-update.log). Writing
+// it must never throw into the pipeline.
+function resetUpdateLog(logPath: string): void {
+    try {
+        writeFileSync(logPath, '')
+    } catch {}
+}
+
+function appendUpdateLog(
+    logPath: string,
+    cmd: string,
+    r: { code: number; stdout: string; stderr: string },
+): void {
+    try {
+        appendFileSync(
+            logPath,
+            `$ ${cmd}\n${r.stdout}${r.stderr}\nexit ${r.code}\n\n`,
+        )
+    } catch {}
 }
 
 interface BuildOrigin {
@@ -263,21 +293,62 @@ export async function startUpdate(): Promise<UpdateProgress> {
     return state
 }
 
-async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
+/** Deps for runPipeline, all injectable so its step order and failure handling is
+ *  unit-testable without spawning real processes or touching the real relauncher/keychain. */
+interface PipelineDeps {
+    git?: GitRunner
+    proc?: ProcRunner
+    signingIdentity?: () => Promise<string | null>
+    spawnRelauncher?: (repoRoot: string, appPath: string) => void
+    logPath?: string
+}
+
+export async function runPipeline(
+    repoRoot: string,
+    appPath: string,
+    deps: PipelineDeps = {},
+): Promise<void> {
+    const git = deps.git ?? realGit
+    const proc = deps.proc ?? runProc
+    const getSigningIdentity = deps.signingIdentity ?? findSigningIdentity
+    const relaunch = deps.spawnRelauncher ?? spawnRelauncher
+    const logPath = deps.logPath ?? join(tmpdir(), 'bismuth-update-build.log')
+    resetUpdateLog(logPath)
     try {
-        const pull = await realGit(
-            repoRoot,
-            ['pull', '--ff-only', 'origin', 'main'],
-            120_000,
-        )
+        const pullArgs = ['pull', '--ff-only', 'origin', 'main']
+        const pull = await git(repoRoot, pullArgs, 120_000)
+        appendUpdateLog(logPath, `git ${pullArgs.join(' ')}`, pull)
         if (pull.code !== 0) {
             state = {
                 phase: 'error',
-                message: 'git pull failed (diverged or conflict)',
-                log: tail(pull.stderr || pull.stdout),
+                message: `git pull failed (diverged or conflict) — full log: ${logPath}`,
+                log: tail(`${pull.stderr}\n${pull.stdout}`),
             }
             return
         }
+
+        state = { phase: 'building', message: 'installing dependencies…' }
+        // Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
+        // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
+        const bun = Bun.which('bun', { PATH: buildPath() }) ?? 'bun'
+        // `--frozen-lockfile`: bun.lock is committed, and a plain `bun install` could rewrite
+        // it, leaving the clone dirty — and startUpdate() refuses to run against a dirty
+        // clone, so the NEXT update would be blocked.
+        const installArgs = ['install', '--frozen-lockfile']
+        const install = await proc([bun, ...installArgs], {
+            cwd: repoRoot,
+            timeoutMs: 300_000,
+        })
+        appendUpdateLog(logPath, `${bun} ${installArgs.join(' ')}`, install)
+        if (install.code !== 0) {
+            state = {
+                phase: 'error',
+                message: `bun install failed — full log: ${logPath}`,
+                log: tail(`${install.stderr}\n${install.stdout}`),
+            }
+            return
+        }
+
         state = {
             phase: 'building',
             message: 'rebuilding Bismuth (this takes a few minutes)…',
@@ -285,9 +356,7 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
         // `bun run tauri build --bundles app` in app/ — rebuilds frontend + sidecar + tools +
         // the .app, but SKIPS the .dmg: self-update only swaps the .app, and the dmg packaging
         // step (bundle_dmg.sh) is intermittently flaky, so building it would just add a failure
-        // mode. Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
-        // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
-        const bun = Bun.which('bun', { PATH: buildPath() }) ?? 'bun'
+        // mode.
         // Stable code identity (macOS): with only ad-hoc signing, every rebuild changes the
         // .app's CDHash, and macOS TCC — which pins Files-and-Folders grants to the code
         // identity — silently revokes the user's folder permissions on EVERY update. If a
@@ -295,26 +364,25 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
         // created once via Keychain Access → Certificate Assistant → "Code Signing"; see
         // docs/overview/install.md), pass it to Tauri (APPLE_SIGNING_IDENTITY) so the identity
         // stays stable across rebuilds and grants survive. Opt-in: no cert → same as before.
-        const signingIdentity = await findSigningIdentity()
-        const build = await runProc(
-            [bun, 'run', 'tauri', 'build', '--bundles', 'app'],
-            {
-                cwd: join(repoRoot, 'app'),
-                timeoutMs: 900_000,
-                ...(signingIdentity
-                    ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } }
-                    : {}),
-            },
-        )
+        const signingIdentity = await getSigningIdentity()
+        const buildArgs = ['run', 'tauri', 'build', '--bundles', 'app']
+        const build = await proc([bun, ...buildArgs], {
+            cwd: join(repoRoot, 'app'),
+            timeoutMs: 900_000,
+            ...(signingIdentity
+                ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } }
+                : {}),
+        })
+        appendUpdateLog(logPath, `${bun} ${buildArgs.join(' ')}`, build)
         if (build.code !== 0) {
             state = {
                 phase: 'error',
-                message: 'build failed',
-                log: tail(build.stderr || build.stdout),
+                message: `build failed — full log: ${logPath}`,
+                log: tail(`${build.stderr}\n${build.stdout}`),
             }
             return
         }
-        spawnRelauncher(repoRoot, appPath)
+        relaunch(repoRoot, appPath)
         state = { phase: 'ready', message: 'update ready — relaunching…' }
     } catch (e) {
         state = {

@@ -1,5 +1,13 @@
 import { test, expect } from 'bun:test'
-import { getUpdateStatus, type GitRunner } from '../src/selfUpdate'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import {
+    getUpdateProgress,
+    getUpdateStatus,
+    runPipeline,
+    type GitRunner,
+    type ProcRunner,
+} from '../src/selfUpdate'
 
 // A fake git runner: maps a subcommand key → canned {code, stdout}. rev-parse is keyed by
 // its target ("rev-parse HEAD" / "rev-parse origin/main" / "rev-parse --is-inside-work-tree").
@@ -190,4 +198,91 @@ test('not available when up to date; dirty flag surfaces', async () => {
     expect(s.available).toBe(false)
     expect(s.behind).toBe(0)
     expect(s.dirty).toBe(true)
+})
+
+function testLogPath(name: string): string {
+    return join(tmpdir(), `bismuth-update-build-test-${name}-${process.pid}.log`)
+}
+
+test('runPipeline runs pull, install, then build, in order', async () => {
+    const calls: string[] = []
+    const git: GitRunner = async (_repo, args) => {
+        calls.push(`git ${args.join(' ')}`)
+        return { code: 0, stdout: '', stderr: '' }
+    }
+    const seenProc: { cmd: string[]; cwd?: string }[] = []
+    const proc: ProcRunner = async (cmd, opts) => {
+        calls.push(cmd.join(' '))
+        seenProc.push({ cmd, cwd: opts?.cwd })
+        return { code: 0, stdout: '', stderr: '' }
+    }
+    let relaunched = false
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git,
+        proc,
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {
+            relaunched = true
+        },
+        logPath: testLogPath('order'),
+    })
+    expect(calls[0]).toBe('git pull --ff-only origin main')
+    expect(calls[1]).toContain('install --frozen-lockfile')
+    expect(calls[2]).toContain('run tauri build --bundles app')
+    expect(seenProc[0].cwd).toBe('/repo')
+    expect(seenProc[0].cmd).toContain('install')
+    expect(seenProc[0].cmd).toContain('--frozen-lockfile')
+    expect(seenProc[1].cwd).toBe(join('/repo', 'app'))
+    expect(relaunched).toBe(true)
+})
+
+test('install failure stops before the build and reports the log path', async () => {
+    const git: GitRunner = async () => ({ code: 0, stdout: '', stderr: '' })
+    const buildCalls: string[][] = []
+    const proc: ProcRunner = async cmd => {
+        if (cmd.includes('install'))
+            return { code: 1, stdout: '', stderr: 'Could not resolve: "heic-convert"' }
+        buildCalls.push(cmd)
+        return { code: 0, stdout: '', stderr: '' }
+    }
+    const logPath = testLogPath('install-fail')
+    let relaunched = false
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git,
+        proc,
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {
+            relaunched = true
+        },
+        logPath,
+    })
+    expect(buildCalls).toEqual([])
+    expect(relaunched).toBe(false)
+    const progress = getUpdateProgress()
+    expect(progress.phase).toBe('error')
+    expect(progress.message).toContain('bun install failed')
+    expect(progress.message).toContain(logPath)
+})
+
+test('pull failure never runs install', async () => {
+    const git: GitRunner = async () => ({
+        code: 1,
+        stdout: '',
+        stderr: 'diverged',
+    })
+    const procCalls: string[][] = []
+    const proc: ProcRunner = async cmd => {
+        procCalls.push(cmd)
+        return { code: 0, stdout: '', stderr: '' }
+    }
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git,
+        proc,
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('pull-fail'),
+    })
+    expect(procCalls).toEqual([])
+    expect(getUpdateProgress().phase).toBe('error')
+    expect(getUpdateProgress().message).toContain('git pull failed')
 })
