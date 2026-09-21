@@ -26,7 +26,9 @@
 // design-system gate in pre-commit and no check runs twice.
 //
 // A FOURTH step, independent of the third, runs whenever a staged path matches app/src/**/*.css:
-// bench/moduleClassCheck.ts, which builds the app and cross-checks emitted CSS-Module class names
+// bench/moduleClassCheck.ts, which builds the app (~11s) and cross-checks emitted CSS-Module class
+// names. Narrowed to stylesheets as a cost tradeoff: a .tsx-only change that reintroduces a stale
+// class literal is NOT caught here — run bench/moduleClassCheck.ts by hand for that case.
 // against the emitted JS template output — the one migration mistake nothing else catches, a call
 // site left holding an old plain-string class literal that compiles and renders but matches
 // nothing once the real rule is hashed. It needs its own trigger (not touchesDesignSystem's) because
@@ -98,8 +100,9 @@ export function touchesDesignSystem(staged: string[]): boolean {
  * Does this staged-file set touch a stylesheet moduleClassCheck needs to re-verify?
  * Exported (and pure) so gate.test.ts can pin the routing without touching git or the filesystem.
  *
- * Narrower than touchesDesignSystem: only app/src/**\/*.css (module or global) can change what
- * class names the build emits, which is the only thing this check compares.
+ * Narrower than touchesDesignSystem: gated on stylesheets only as a cost tradeoff (the app build
+ * this check needs is ~11s) — a .tsx-only commit that reintroduces a stale class literal is NOT
+ * caught by this trigger; run bench/moduleClassCheck.ts by hand for that case.
  */
 export function touchesStylesheets(staged: string[]): boolean {
     return staged.some(f => f.startsWith('app/src/') && f.endsWith('.css'))

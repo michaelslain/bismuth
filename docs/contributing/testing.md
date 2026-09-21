@@ -1285,11 +1285,12 @@ a component with no story. It compares NAMES only, not appearance or cascade ord
 module whose `styles` object is indexed by a runtime key as UNCHECKABLE rather than guessing.
 
 **Wired into `scripts/gate.ts` pre-commit**, as its own fourth step, whenever a staged path matches
-`app/src/**/*.css` (`touchesStylesheets` — narrower than `touchesDesignSystem` above: only a
-stylesheet can change what class name the build emits, which is all this check compares). It builds
-the app to get real bundle output, which makes it the slowest gate step — **~11s measured** on this
-repo — so it is gated on its own narrower trigger rather than riding the design-system step's
-broader one.
+`app/src/**/*.css` (`touchesStylesheets` — narrower than `touchesDesignSystem` above). It builds the
+app to get real bundle output, which makes it the slowest gate step — **~11s measured** on this
+repo — so the trigger is narrowed to stylesheets only as a cost tradeoff, and only runs when a
+stylesheet is staged. This means a **`.tsx`-only** change that reintroduces a stale class literal
+(e.g. `class="vbtn"`) is **NOT caught at pre-commit** — run `bun run bench/moduleClassCheck.ts` by
+hand for that case. Like every gate step, it reads the working tree, not the staged snapshot.
 
 ### `bench/templateDiff.ts` — did a refactor change the emitted markup?
 
