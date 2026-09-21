@@ -19,20 +19,39 @@ export const PRINT_READY_TITLE = '__bismuth_print_ready__'
  *  (a row split with its empty top half on one page), on `table` it holds (a table taller than a
  *  page still breaks — avoid is only a preference); the display-formula padding keeps the integral
  *  glyph's overflow inside its box, which otherwise left a 1-2px sliver on the previous page. No
- *  `@page` override: the document's own `@page{margin:1in}` is what WebKit honours. The heading
- *  rules keep a heading on the same page as the block it introduces, so it never gets stranded
- *  alone at the foot of a page with its body pushed to the next. */
+ *  `@page` override: the document's own `@page{margin:1in}` is what WebKit honours. WebKit also
+ *  ignores `break-after`/`break-before: avoid` on headings — a heading rule using either still let
+ *  a heading get stranded alone at the foot of a page with its body on the next. What holds instead
+ *  is the head script's keep-with-next wrap (see WEBKIT_PRINT_HEAD): it wraps each heading with its
+ *  next element sibling in a `.bismuth-keep` div, and `break-inside: avoid` on THAT div is what
+ *  WebKit actually honours. */
 const WEBKIT_PRINT_BREAKS =
     'tr,table,img,svg,.katex-display{break-inside:avoid;page-break-inside:avoid}' +
     '.katex-display{padding:0.3em 0}' +
-    'h1,h2,h3,h4,h5,h6{break-after:avoid;page-break-after:avoid}' +
-    'h2+blockquote,h3+blockquote{break-before:avoid;page-break-before:avoid}'
+    '.bismuth-keep{break-inside:avoid;page-break-inside:avoid}'
 
 /** Head markup for the WebKit print path: the body override, print colour adjust so backgrounds
- *  print, the break rules above, and the fonts-ready marker script. */
+ *  print, the break rules above, a keep-with-next wrap for headings, and the fonts-ready marker
+ *  script. The wrap runs inside the `document.fonts.ready.then(...)` callback — the body is fully
+ *  parsed by then (fonts.ready resolves after parsing) — and MUST run before `document.title` is
+ *  set to PRINT_READY_TITLE, since the native printer polls for that title as its "go" signal. */
 export const WEBKIT_PRINT_HEAD =
     `<style>${PDF_BODY_OVERRIDE}html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}${WEBKIT_PRINT_BREAKS}</style>` +
-    `<script>document.fonts.ready.then(function(){document.title=${JSON.stringify(PRINT_READY_TITLE)}})</script>`
+    '<script>document.fonts.ready.then(function(){' +
+    // keep-with-next: wrap each heading + its next sibling in a break-inside:avoid div so a
+    // heading never gets stranded alone at the foot of a page (see WEBKIT_PRINT_BREAKS doc comment)
+    'var hs=document.body.querySelectorAll("h1,h2,h3,h4,h5,h6");' +
+    'for(var i=0;i<hs.length;i++){' +
+    'var h=hs[i];var next=h.nextElementSibling;' +
+    'if(!next)continue;' +
+    'var wrap=document.createElement("div");' +
+    'wrap.className="bismuth-keep";' +
+    'h.parentNode.insertBefore(wrap,h);' +
+    'wrap.appendChild(h);' +
+    'wrap.appendChild(next);' +
+    '}' +
+    `document.title=${JSON.stringify(PRINT_READY_TITLE)}` +
+    '})</script>'
 
 /** Insert `markup` immediately before `</head>` (case-insensitive, first occurrence); a document
  *  with no `</head>` gets it prepended to the string. Pure. */

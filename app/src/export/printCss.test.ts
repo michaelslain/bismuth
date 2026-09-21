@@ -34,7 +34,16 @@ describe('WEBKIT_PRINT_HEAD', () => {
         expect(WEBKIT_PRINT_HEAD).toContain(PDF_BODY_OVERRIDE)
         expect(WEBKIT_PRINT_HEAD).toContain('-webkit-print-color-adjust:exact')
         expect(WEBKIT_PRINT_HEAD).toContain(PRINT_READY_TITLE)
-        expect(WEBKIT_PRINT_HEAD).toContain('h1,h2,h3,h4,h5,h6{break-after:avoid')
+        expect(WEBKIT_PRINT_HEAD).toContain('.bismuth-keep{break-inside:avoid')
+        expect(WEBKIT_PRINT_HEAD).toContain('bismuth-keep')
+    })
+
+    test('wraps headings into .bismuth-keep BEFORE setting the ready title', () => {
+        const wrapIndex = WEBKIT_PRINT_HEAD.indexOf('bismuth-keep')
+        const titleIndex = WEBKIT_PRINT_HEAD.indexOf('document.title=')
+        expect(wrapIndex).toBeGreaterThan(-1)
+        expect(titleIndex).toBeGreaterThan(-1)
+        expect(wrapIndex).toBeLessThan(titleIndex)
     })
 })
 
