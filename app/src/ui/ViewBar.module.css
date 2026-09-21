@@ -1,20 +1,27 @@
 /* app/src/ui/ViewBar.module.css
    Home of the .viewbar / .vbtn / .vb-* / .crumb family — moved here from ui.css (design-system
-   sweep, one-global-stylesheet plan, task 2). This is a component stylesheet in name and
-   colocation only: every selector below is individually wrapped in a CSS Modules :global(...)
-   so the class names stay the exact unhashed literals ui/ViewBar.tsx writes (`class="viewbar"`,
-   `class="vb-lead"`, …). Attribute selectors ([data-bar-drop='4'] etc) are untouched — :global()
-   only affects class tokens, and CSS Modules never hashes an attribute selector anyway. The
-   eight files outside ui/ that reach these classes via :global() in their OWN stylesheets (see
-   the task-2 report for the grep) continue to match with zero changes on their side — the
-   literal strings never moved, only which file declares the base rule for them. Wave 3 is what
-   turns those call sites into component composition; until then this file is the same global
-   surface ui.css used to be, just colocated with the component that owns it.
-   THE COLLAPSE LADDER MOVED WITH THE FAMILY, including its @container tiers. Its
-   `data-bar-drop`/`data-bar-label` tag contract is UNCHANGED — attribute selectors needed no
-   :global() wrapping and nothing about how a caller tags a control changed.
-   app/src/ui/barDropLevels.test.ts was repointed at this file (see its own UI_CSS constant)
-   since the ladder it audits now lives here. */
+   sweep, one-global-stylesheet plan, task 2), at that point still wrapped in `:global()` so the
+   unhashed literals ui/ViewBar.tsx wrote by hand (`class="viewbar"`, `class="vb-lead"`, …) kept
+   matching for every outside consumer reaching in by string.
+
+   HASHED FOR REAL NOW (one-global-stylesheet followups, task 1). ViewBar.tsx imports this
+   module's class map and applies the hashed locals directly — a `:global()`-only module ships no
+   CSS at all (Rollup tree-shakes the side-effect import; this file was one of
+   bench/moduleClassCheck.ts's "emitted NOTHING" findings). Every outside consumer that used to
+   reach `:global(.viewbar)`/`:global(.vbtn)`/`:global(.vb-*)`/`:global(.crumb)` by the bare
+   string has been retargeted: `ViewBarProps.parts` (a class appended to one named slot's wrapper)
+   for a consumer styling a REGION, and the `class` prop `Crumb`/`VBtn` now both accept for styling
+   one instance of either. Nothing outside this file reaches these classes by name any more —
+   anything that needs to find a bar at all keys on the `data-viewbar` attribute.
+
+   Attribute selectors (`[data-bar-drop='4']`, `[data-bar-label]`, `[data-bar-abbr]`) needed no
+   `:global()` wrapper before and need none now — CSS Modules only ever hashes class tokens.
+   THE LADDER'S REGION MATCH used to key on `[class^='vb-']`, a prefix test against the UNHASHED
+   class string. Hashing breaks that prefix (a hashed local no longer starts with "vb-"), so every
+   region wrapper now also carries a shared `.vbRegion` class purely for the ladder to match
+   against — see the six wrapper `<div>`s in ViewBar.tsx.
+   app/src/ui/barDropLevels.test.ts is unaffected: it reads the ladder's `[data-bar-drop='N']`
+   attribute selectors here, which stayed literal throughout. */
 /* ── Shared view bar (named regions, two groups) ───────────────────────────────
    The 36px (2×--row-h) header most content views start with — graph header + base
    ViewBar rows both route through this class: a leading group (identity · locus ·
@@ -59,29 +66,25 @@
 /* --bar-icon-gap / --bar-icon-size / --bar-crumb-gap MOVED to styles/tokens.css 2026-09-12 (CSS
    modules migration Task 7) — a token, not chrome, regardless of currently having only this
    file's own viewbar section as a reader. Values unchanged. */
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar .btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+/* `.btn--icon`/`.btn--sm` are Button.module.css's own bare global literals (Button family not yet
+   componentized — Task 4 of this plan owns that file), reached here so a bar's icon buttons
+   inherit the bar's own icon-rhythm box. `.viewbar` itself needs no `:global()` any more: it is a
+   real hashed local, matched here inside its own module. */
+/* design-system-ignore globalReach: Button family (.btn--icon/.btn--sm) is out of this task's file scope — Task 4 owns componentizing it */
+.viewbar :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why
    the name had to exist there first. */
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar) { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vb-lead) { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vb-trail) { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vb-identity), :global(.vb-locus), :global(.vb-facet), :global(.vb-readouts), :global(.vb-config), :global(.vb-actions) { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar .crumb) { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar .crumb b) { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar .crumb svg) { color: var(--faint); }
+.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
+.vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
+.vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
+.vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
+.viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
+.viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.viewbar .crumb svg { color: var(--faint); }
 /* Serif crumb title (standalone calendar month, etc.). */
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.viewbar .crumb b.crumb-serif) { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
+.viewbar .crumb b.crumb-serif { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
 /* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1): height 28 -> --h-control
    (24), radius 7px -> --r-0, tracking 0.03em -> --ls-label. `.active` used to fill (--surface-2 +
    a --border ring) — the same "selected state should not fill" defect .btn--text.btn--selected
@@ -90,14 +93,10 @@
    exact treatment — accent text + accent outline, transparent fill — so all three of the app's
    selected/toggle primitives (Button, VBtn, Chip below) agree. This rule also governs
    ChatHeader.module.css's four header `<Select>` pickers, which read the same geometry. */
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vbtn) { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: var(--ls-label); }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vbtn:hover) { background: var(--hover-bg); color: var(--fg); }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vbtn:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-/* design-system-ignore globalReach: same bridge as above, until wave 3 */
-:global(.vbtn.active) { color: var(--accent); background: transparent; border-color: var(--accent); }
+.vbtn { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: var(--ls-label); }
+.vbtn:hover { background: var(--hover-bg); color: var(--fg); }
+.vbtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+.vbtn.active { color: var(--accent); background: transparent; border-color: var(--accent); }
 
 /* ── The collapse ladder ──────────────────────────────────────────────────────────────────────
    Every view bar gets narrow-pane behaviour by TAGGING its controls, not by writing queries. A view
@@ -222,10 +221,8 @@
   /* WORDS, EARLY — the early words go. Every button that loses one keeps an icon that already names it and a
         `title`, so the label was a convenience rather than the only signal — and it squares up
         instead of keeping text padding around nothing. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-label='early']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar .vbtn:has(> [data-bar-label='early'])) { width: var(--h-control); padding: 0; justify-content: center; }
+  .viewbar [data-bar-label='early'] { display: none; }
+  .viewbar .vbtn:has(> [data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 650px) {
   /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
@@ -251,10 +248,8 @@
      and this token is what pays for it. Guarded by ui/ViewBar.stories.tsx's
      TextOnlyRegionSurvivesTheTiers and EmptyLeadKeepsTheTrailPinnedRight, both of which go red if
      it is removed. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-drop='4']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'])))) { display: none; }
+  .viewbar [data-bar-drop='4'] { display: none; }
+  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4']))) { display: none; }
 }
 @container viewbar (max-width: 640px) {
   /* ABBREVIATE — long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
@@ -264,45 +259,35 @@
         Matching through `[data-bar-label]` is not decoration either: it out-specifies
         BarLabel.module.css's own `.label [data-bar-abbr='short'] { display: none }` default, which
         ties at two classes and wins on load order otherwise. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-label]:has([data-bar-abbr='short']) [data-bar-abbr='long']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-label] [data-bar-abbr='short']) { display: inline; }
+  .viewbar [data-bar-label]:has([data-bar-abbr='short']) [data-bar-abbr='long'] { display: none; }
+  .viewbar [data-bar-label] [data-bar-abbr='short'] { display: inline; }
 }
 @container viewbar (max-width: 570px) {
   /* DROP 3 — the chat's reasoning-effort picker. It goes before the provider because it is the more
      derived of the two: effort is a property OF the selected model (it is populated from the
      `models` frame and disappears entirely for a model with no levels), whereas the provider names
      which CLI is answering at all. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-drop='3']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'])))) { display: none; }
+  .viewbar [data-bar-drop='3'] { display: none; }
+  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3']))) { display: none; }
 }
 @container viewbar (max-width: 500px) {
   /* DROP 2 — the chat's provider picker, the widest single control in that bar at 119px. Losing it
      leaves the model picker, which is the one that says what is answering; a chat's provider is
      also the setting a user changes least, and switching it starts a fresh session either way. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-drop='2']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'])))) { display: none; }
+  .viewbar [data-bar-drop='2'] { display: none; }
+  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2']))) { display: none; }
 }
 @container viewbar (max-width: 480px) {
   /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-label='late']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar .vbtn:has(> [data-bar-label='late'])) { width: var(--h-control); padding: 0; justify-content: center; }
+  .viewbar [data-bar-label='late'] { display: none; }
+  .viewbar .vbtn:has(> [data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 465px) {
   /* DROP 1 — the LAST whole control goes, because there are no words left to shed. The region wrapper
         goes with it when nothing else is left standing in it — see DROP 4's comment for why the
         rule asks that as `:not(:has(> :not(…)))` rather than as `:only-child`. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [data-bar-drop='1']) { display: none; }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1'])))) { display: none; }
+  .viewbar [data-bar-drop='1'] { display: none; }
+  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1']))) { display: none; }
 }
 @container viewbar (max-width: 430px) {
   /* BELOW THE FLOOR. A pane has no minimum width (PaneTree.module.css sets only `min-width: 0`), so
@@ -312,15 +297,12 @@
      primary action is never what gets scrolled away. The scrollbar is hidden (a 36px band cannot
      spare 15px) and the edge is masked so the cut reads as "more this way" rather than as a sliced
      button. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar .vb-lead) { overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(to right, black calc(100% - 20px), transparent); }
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar .vb-lead::-webkit-scrollbar) { display: none; }
+  .viewbar .vb-lead { overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(to right, black calc(100% - 20px), transparent); }
+  .viewbar .vb-lead::-webkit-scrollbar { display: none; }
   /* THE ELASTIC THINGS GO RIGID HERE, and without this the tier above is inert. The crumb's title
      and DateNav's range date both shrink with ellipsis, so `.vb-lead` never overflows — it just
      eats them, one character at a time, down to nothing. There would be no overflow for a scroller
      to answer and the date, the one thing the bar exists to say, would be the first thing gone.
      Rigid, the row overflows honestly and the mask says so. */
-  /* design-system-ignore globalReach: same bridge as above, until wave 3 */
-  :global(.viewbar .vb-lead *) { flex-shrink: 0; }
+  .viewbar .vb-lead * { flex-shrink: 0; }
 }

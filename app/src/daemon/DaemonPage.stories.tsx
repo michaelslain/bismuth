@@ -454,7 +454,7 @@ export const Narrow: Story = {
         await expect(rect(crons).top - rect(chat).bottom).toBeLessThan(80)
         // The bar's trailing group (the status readout) must give rather than overflow — the same
         // proof `chat-chatcontrols--overflow-240` makes for its own controls row.
-        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        const trail = canvasElement.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
         await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
     },
 }
@@ -486,7 +486,7 @@ export const ConversingNarrow: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeLessThan(56)
-        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        const trail = canvasElement.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
         await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
     },
 }

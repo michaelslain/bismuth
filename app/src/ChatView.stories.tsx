@@ -397,7 +397,7 @@ export const Empty: Story = {
         // The greeting is centred in the transcript area: its midline sits in the middle band of
         // the space between the header and the composer, not pinned to the top.
         const greeting = canvasElement.querySelector<HTMLElement>('.ui-empty-block')!
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         const composer = canvasElement.querySelector<HTMLElement>('.cm-content')!
         const g = greeting.getBoundingClientRect()
         const top = bar.getBoundingClientRect().bottom

@@ -216,9 +216,9 @@ export const Narrow480LateWords: Story = {
             todayWord: '',
             categoriesShown: false,
         })
-        expect(shown(canvasElement.querySelector('.vb-config'))).toBe(false)
+        expect(shown(canvasElement.querySelector('[data-testid="vb-config"]'))).toBe(false)
         // Nothing clipped at this tier: the leading group still fits its own box.
-        const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
+        const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(lead.scrollWidth).toBeLessThanOrEqual(lead.clientWidth + 1)
         // …and it has NOT switched on the scroll/mask treatment. Folded into this tier, the fade
         // sat on a perfectly-fitting bar and this healthy state shipped looking broken.
@@ -231,7 +231,7 @@ export const Narrow480LateWords: Story = {
         // against the exact defect class this plan already shipped once (a chat title clipped to
         // zero width inside a correctly-sized region, which every numeric probe passed).
         for (const el of [
-            canvasElement.querySelector<HTMLElement>('.crumb b')!,
+            canvasElement.querySelector<HTMLElement>('[data-testid="crumb-title"]')!,
             canvasElement.querySelector<HTMLElement>('[data-testid="range"]')!,
         ]) {
             // A zero-width box makes the comparison below vacuous, so prove there is a box first.
@@ -251,14 +251,14 @@ export const Narrow340BelowFloor: Story = {
         return <InBaseBar width={340} />
     },
     play: async ({ canvasElement }) => {
-        const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
+        const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(getComputedStyle(lead).overflowX).toBe('auto')
         expect(getComputedStyle(lead).maskImage).not.toBe('none')
         expect(lead.scrollWidth).toBeGreaterThan(lead.clientWidth)
         // + Event and the base's own gear/source stay pinned and on screen — the trailing group is
         // never what gets scrolled away.
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
-        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const trail = canvasElement.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
         expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right + 1,
         )
@@ -307,13 +307,13 @@ export const CalendarBaseWithTwoViews: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector('.viewbar')!
+        const bar = canvasElement.querySelector('[data-viewbar]')!
         // Two toggles, and they are in DIFFERENT regions — that separation IS the design. If both
         // ever land in one region this reads 2 and 0, with nothing on screen to tell them apart.
-        expect(bar.querySelectorAll('.vb-locus .segmented').length).toBe(1)
-        expect(bar.querySelectorAll('.vb-facet .segmented').length).toBe(1)
+        expect(bar.querySelectorAll('[data-testid="vb-locus"] .segmented').length).toBe(1)
+        expect(bar.querySelectorAll('[data-testid="vb-facet"] .segmented').length).toBe(1)
         // The period switcher follows DateNav inside `locus`, not the other way round.
-        const locus = bar.querySelector('.vb-locus')!
+        const locus = bar.querySelector('[data-testid="vb-locus"]')!
         const kids = [...locus.children]
         expect(kids[kids.length - 1]!.className).toContain('segmented')
     },

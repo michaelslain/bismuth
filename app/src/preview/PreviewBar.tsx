@@ -90,7 +90,17 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
     return (
         <ViewBar
             class={`${styles.bar} ${props.class ?? ''}`}
-            identity={<Crumb icon={props.icon()}>{props.name()}</Crumb>}
+            parts={{
+                lead: styles.lead,
+                identity: styles.identity,
+                config: styles.config,
+                actions: styles.actions,
+            }}
+            identity={
+                <Crumb icon={props.icon()} class={styles.crumb}>
+                    {props.name()}
+                </Crumb>
+            }
             readouts={
                 <Show when={pdf() && (props.pageCount?.() ?? 0) > 0}>
                     {/* The least essential thing in the trail: a reading position is worth less

@@ -399,7 +399,7 @@ function groupGap(canvasElement: HTMLElement): number {
     const count = canvasElement.querySelector(
         '[data-testid="fc-count"]',
     ) as HTMLElement
-    const trail = canvasElement.querySelector('.vb-trail') as HTMLElement
+    const trail = canvasElement.querySelector('[data-testid="vb-trail"]') as HTMLElement
     return (
         trail.getBoundingClientRect().left -
         count.getBoundingClientRect().right
@@ -511,7 +511,7 @@ export const FlashcardsTight: Story = {
         // `.viewbar` is rendered behind BaseView's async `createResource` + `<Show>`, so reading
         // `.clientWidth` before that resolves would risk a null dereference instead of this guard's
         // own deliberately clear message.
-        const bar = canvasElement.querySelector('.viewbar') as HTMLElement
+        const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
         const content = bar.clientWidth - 36 // `padding: 0 18px`, outside the container query
         expect(
             content,
@@ -569,7 +569,7 @@ export const FlashcardsFloor: Story = {
         expect(isLaidOut(canvas.getByTestId('fc-tally'))).toBe(false)
         // The region wrapper too, not just its contents: `.vb-trail` gaps every region, so one
         // left standing over a hidden only child still charges the bar 12px for nothing.
-        const region = canvasElement.querySelector('.vb-readouts')
+        const region = canvasElement.querySelector('[data-testid="vb-readouts"]')
         expect(isLaidOut(region)).toBe(false)
         // What survives: the progress rule (it costs no width, so it never sheds), the count
         // (where am I), and every control still reachable by icon.
@@ -578,7 +578,7 @@ export const FlashcardsFloor: Story = {
         expect(isLaidOut(canvas.getByTitle(/^Browse, add/))).toBe(true)
         // And the row still fits the band — no control pushed out of the 36px bar.
         const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
-        const trail = canvasElement.querySelector('.vb-trail') as HTMLElement
+        const trail = canvasElement.querySelector('[data-testid="vb-trail"]') as HTMLElement
         expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right,
         )

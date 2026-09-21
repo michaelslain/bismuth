@@ -129,7 +129,7 @@ export const LateLabelAndControlDropped: Story = {
         expect(visibleText(r, 'late-btn')).toBe('')
         expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(false)
         // The region wrapper goes too — otherwise `.vb-trail`'s gap survives its only child.
-        expect(shown(r.querySelector('.vb-config'))).toBe(false)
+        expect(shown(r.querySelector('[data-testid="vb-config"]'))).toBe(false)
         // What must NEVER drop: navigation and the primary action.
         expect(shown(r.querySelector('[data-testid="late-btn"]'))).toBe(true)
         expect(shown(r.querySelector('[data-testid="action-btn"]'))).toBe(true)
@@ -143,7 +143,7 @@ export const LateLabelAndControlDropped: Story = {
 export const BelowTheFloor: Story = {
     render: () => <Bar width={200} />,
     play: async ({ canvasElement }) => {
-        const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
+        const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(getComputedStyle(lead).overflowX).toBe('auto')
         expect(getComputedStyle(lead).maskImage).not.toBe('none')
         // Scrolling is only honest if there is something to scroll to.
@@ -152,7 +152,7 @@ export const BelowTheFloor: Story = {
         const action = canvasElement.querySelector<HTMLElement>(
             '[data-testid="action-btn"]',
         )!
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         expect(action.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right,
         )
