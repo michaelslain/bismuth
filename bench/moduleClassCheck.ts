@@ -98,6 +98,14 @@ const ALLOW = new Set<string>([
     // intro/VaultIntro.module.css's own header: no `.tsx` renders `.vi-graph3d-labels`
     // (IntroGraph mounts `.vi-graph3d-canvas` + <GraphAtmosphere>, never a labels layer).
     'intro/VaultIntro.module.css:vi-graph3d-labels',
+    // one-global-followups Task 7: read (`styles['asc-kbd-hint']` etc) by KbdHint/KbdHints in
+    // ui/ascii/Kbd.tsx, but those two have no production importer anywhere in app/src — only
+    // Kbd.stories.tsx renders them (confirmed via `grep -rn 'KbdHint\b' app/src`) — so Rollup
+    // tree-shakes the reads out of the `vite build` app this check reads. See Kbd.module.css's own
+    // header.
+    'ui/ascii/Kbd.module.css:asc-kbd-hint',
+    'ui/ascii/Kbd.module.css:asc-kbd-desc',
+    'ui/ascii/Kbd.module.css:asc-kbd-hints',
 ])
 
 /** Modules this check cannot ever pass, structurally — not a violation to fix, so they are
@@ -123,6 +131,24 @@ const SKIP_MODULES = new Set<string>([
     // visible today only in Storybook, structurally cannot appear in a `vite build` of the app.
     'ui/Callout.module.css',
     'ui/Frontmatter.module.css',
+    // one-global-followups Task 7: Backlinks.tsx has ZERO production importers — FileView.tsx's own
+    // comment says so ("Backlinks.tsx / BacklinksPanel are unmounted"); confirmed via
+    // `grep -rn Backlinks app/src` (only hits: itself, its own .stories.tsx, and comments). Its
+    // sole production-path consumer of AsciiTree is Backlinks itself, so AsciiTree.module.css is
+    // unreachable too, visible today only via AsciiTree.stories.tsx. Same shape as Callout/
+    // Frontmatter above: real components, structurally unreachable by `vite build` until something
+    // mounts Backlinks again.
+    'Backlinks.module.css',
+    'ui/ascii/AsciiTree.module.css',
+    // Glyph.tsx's only non-story importer is ui/ascii/GraphField.tsx, which itself has NO production
+    // importer anywhere in app/src (confirmed via `grep -rn "GraphField'" app/src` — only its own
+    // file and unrelated comments mentioning the name in prose). So Glyph.module.css is unreachable
+    // transitively, visible today only via Glyph.stories.tsx.
+    'ui/ascii/Glyph.module.css',
+    // ChatSessionProbe.tsx's own header says it plainly: "DEV-ONLY ... Not used by the app." No
+    // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
+    // and its own .stories.tsx), by design.
+    'chat/ChatSessionProbe.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')
