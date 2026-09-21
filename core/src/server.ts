@@ -1790,16 +1790,19 @@ export function createServer(cfg: CoreConfig) {
         // Vault full-text search (Omnisearch-style ranking). Read-only despite POST
         // (the body carries the query + toggles), so it lives in routes, not mutatingRoutes.
         'POST /search': async (req, __) => {
-            const { query, opts } = (await req.json()) as {
+            const { query, opts, snippetLimit } = (await req.json()) as {
                 query: string
                 opts: {
                     caseSensitive: boolean
                     wholeWord: boolean
                     regex: boolean
                 }
+                snippetLimit?: number
             }
             try {
-                const results = await searchVault(cfg.vault, query, opts)
+                const results = await searchVault(cfg.vault, query, opts, {
+                    snippetLimit,
+                })
                 const denyEntries = await denyEntriesForRequest(req)
                 return Response.json(
                     filterByPath(results, denyEntries, r => r.path),

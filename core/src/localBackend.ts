@@ -174,7 +174,9 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     today: todayISO(),
                 })
             case 'POST /search':
-                return searchVault(vault, b.query as string, b.opts)
+                return searchVault(vault, b.query as string, b.opts, {
+                    snippetLimit: b.snippetLimit,
+                })
 
             // ---- content-only writes ----
             case 'PUT /file': {
