@@ -94,6 +94,13 @@ import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import { filePathsFromTransfer, isHeicName, jpegNameFor } from './fileIntake'
 import { nativeDropScale, claimNativeDrop } from './nativeDropRouting'
 import { isTauri } from './nativeMenu'
+import {
+    planDrop,
+    pasteboardFromTransfer,
+    bytesFromBase64,
+    type DragPasteboard,
+    type DropAction,
+} from './dropIntake'
 import { findBareUrls } from './editor/urls'
 import { openExternalUrl } from './appWindow'
 import { settings } from './settings'
@@ -281,6 +288,11 @@ const yamlHighlight = HighlightStyle.define([
         color: 'var(--faint)',
     },
 ])
+
+// Whether a drag currently in flight started somewhere inside this app (any pane, any editor,
+// a calendar chip) rather than outside the window. Module-level: a drag can start in one editor
+// instance and be dropped on another, or on a non-editor pane, so this can't live per-Editor.
+let internalAppDrag = false
 
 // Vault template paths, fetched once and cached, for the settings.yaml `template:`
 // autocomplete. Sync getter (CM completion sources run synchronously); the first call
@@ -643,6 +655,64 @@ async function embedNativePaths(
     }
 }
 
+/** Insert plain text at the current selection (used for a dropped link or dropped text — neither
+ *  is an attachment, so no embed/upload path applies). */
+function insertTextAtSelection(view: EditorView, text: string): void {
+    const { from, to } = view.state.selection.main
+    view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+    })
+}
+
+/** Carry out the `DropAction[]` a `planDrop` plan produced — the single funnel both the native
+ *  (Tauri pasteboard) and DOM (browser `drop`) paths route a drag through once no OS file path is
+ *  available. An empty plan means the drag carried nothing `planDrop` could read at all — toast
+ *  rather than doing nothing silently. */
+async function runDropActions(
+    view: EditorView,
+    actions: DropAction[],
+    notePath: string | null,
+): Promise<void> {
+    if (actions.length === 0) {
+        pushToast("Couldn't read that drop")
+        return
+    }
+    for (const action of actions) {
+        switch (action.kind) {
+            case 'paths':
+                await embedNativePaths(view, action.paths, notePath)
+                break
+            case 'bytes':
+                await uploadAndInsert(
+                    view,
+                    new Blob([bytesFromBase64(action.base64)]),
+                    action.name,
+                    notePath,
+                )
+                break
+            case 'url-image':
+                try {
+                    const finalPath = await api.fetchAsset(
+                        action.url,
+                        attachmentTarget(fileBase(action.name), notePath),
+                    )
+                    insertEmbedStandalone(view, markupFor(finalPath))
+                } catch (e) {
+                    pushToast(`Couldn't download ${action.name}`)
+                    console.error('asset fetch failed', e)
+                }
+                break
+            case 'link':
+                insertTextAtSelection(view, action.url)
+                break
+            case 'text':
+                insertTextAtSelection(view, action.text)
+                break
+        }
+    }
+}
+
 /** Scroll a CodeMirror view to the ATX heading whose text matches `heading` (the anchor of a
  *  `[[File#Heading]]` link), placing the caret at its line start. Reuses the same dispatch +
  *  EditorView.scrollIntoView primitive the find bar (findPanel.revealFrom) uses. Returns false
@@ -884,6 +954,32 @@ export function Editor(props: {
     // See editor/rebuildSeed.ts for the rule and the measurement.
     let carriedDoc: { path: string; text: string } | null = null
 
+    // A drag that STARTED inside this app (anywhere — another pane, an embed, a calendar chip,
+    // or this editor's own selection). Under wry the native drop bridge also intercepts these —
+    // not just drags from outside the window — and delivers them with empty `paths`, which used
+    // to reach the native empty-paths branch below and do nothing useful (or, for a CM text
+    // drag, insert a copy instead of moving the selection). `internalAppDrag` distinguishes "this
+    // drag never left the app" from "this really is an external paths-less drop (browser image,
+    // link, text)"; `internalDrag` additionally remembers THIS editor's own text-selection drag so
+    // the native branch can perform the move itself (the DOM `drop` event never fires under wry).
+    let internalDrag: { from: number; to: number } | null = null
+
+    onMount(() => {
+        const onDragStart = (): void => {
+            internalAppDrag = true
+        }
+        const onDragEnd = (): void => {
+            internalAppDrag = false
+            internalDrag = null
+        }
+        document.addEventListener('dragstart', onDragStart, true)
+        document.addEventListener('dragend', onDragEnd, true)
+        onCleanup(() => {
+            document.removeEventListener('dragstart', onDragStart, true)
+            document.removeEventListener('dragend', onDragEnd, true)
+        })
+    })
+
     // Flush the debounced autosave NOW, so a reload / file-switch can't drop an edit still
     // sitting in the 800ms timer (e.g. a table cell committed on click-off right before you
     // reload). `keepalive` lets the PUT survive page unload, where a normal async write
@@ -1051,7 +1147,60 @@ export function Editor(props: {
             // silently on an empty result, so dragging a document (or a HEIC photo — the format an
             // iPhone actually produces) out of Finder looked like a broken feature.
             const embeddable = d.paths
-            if (embeddable.length === 0) return
+            // No OS file path at all (a browser image, a Photos/Messages file promise wry couldn't
+            // receive, a link, plain text) — read the drag pasteboard directly instead of giving up.
+            // Same claim/routing gates as the path case, just no cell-drop or zoom-scaled cell target.
+            if (embeddable.length === 0) {
+                // wry intercepts a drag that STARTED inside this app too, not only one dragged in
+                // from outside the window — and delivers it here with empty paths, same as a real
+                // external paths-less drop. Before this branch existed all three of these did
+                // nothing: a CM text-selection drag inserted a copy nowhere (the DOM `drop` event
+                // CodeMirror relies on never fires under wry), dragging a rendered embed re-uploaded
+                // it as a new file, and a calendar chip toasted "Couldn't read that drop". Only the
+                // first of those is something we can usefully do ourselves — perform the move.
+                if (internalAppDrag) {
+                    const drag = internalDrag
+                    if (!drag) {
+                        internalAppDrag = false
+                        internalDrag = null
+                        return
+                    }
+                    if (!claimNativeDrop(d)) {
+                        internalAppDrag = false
+                        internalDrag = null
+                        return
+                    }
+                    const pos = v.posAtCoords({ x, y })
+                    internalAppDrag = false
+                    internalDrag = null
+                    if (pos == null || (pos >= drag.from && pos <= drag.to))
+                        return
+                    const text = v.state.sliceDoc(drag.from, drag.to)
+                    v.dispatch({
+                        changes: [
+                            { from: drag.from, to: drag.to, insert: '' },
+                            { from: pos, insert: text },
+                        ],
+                    })
+                    return
+                }
+                if (!claimNativeDrop(d)) return
+                const pos = v.posAtCoords({ x, y })
+                if (pos != null) v.dispatch({ selection: { anchor: pos } })
+                let pb: DragPasteboard
+                try {
+                    const { invoke } = await import('@tauri-apps/api/core')
+                    pb = await invoke<DragPasteboard>(
+                        'read_drag_pasteboard',
+                    )
+                } catch (e) {
+                    pushToast("Couldn't read that drop")
+                    console.error('read_drag_pasteboard failed', e)
+                    return
+                }
+                await runDropActions(v, planDrop(pb), activePath)
+                return
+            }
             // This editor owns the drop — claim it so a duplicated listener can't insert a second copy.
             if (!claimNativeDrop(d)) return
             // If the drop targets a table cell while ANOTHER edit is still uncommitted in a cell (the
@@ -1086,7 +1235,19 @@ export function Editor(props: {
         }
         const onNativeDrag = (e: Event): void => {
             const d = (e as CustomEvent<NativeDragDetail>).detail
-            if (!view || !d || d.type !== 'drop' || d.paths.length === 0) return
+            if (!d) return
+            // `leave` is a window-level "the drag ended without dropping on us" signal (it carries
+            // no position/paths) — reset the in-app-drag tracking here too, in case `dragend` isn't
+            // fired under wry for a drag that got reinterpreted as a native one partway through.
+            if (d.type === 'leave') {
+                internalAppDrag = false
+                internalDrag = null
+                return
+            }
+            // Empty `paths` no longer disqualifies the drag — handleNativeDrop falls back to
+            // reading the drag pasteboard directly for the paths-less case (browser image, Photos
+            // file promise, link, text).
+            if (!view || d.type !== 'drop') return
             void handleNativeDrop(d)
         }
         window.addEventListener('bismuth-native-drag', onNativeDrag)
@@ -1644,6 +1805,21 @@ export function Editor(props: {
                             }
                             return true
                         },
+                        // Remember an internal text-selection drag started FROM this editor, so the native
+                        // empty-paths drop branch (wry intercepts in-app drags too, delivering them with no
+                        // paths) can perform the move itself — the DOM `drop` event this normally relies on
+                        // never fires under wry.
+                        dragstart: (_e, v) => {
+                            internalDrag = {
+                                from: v.state.selection.main.from,
+                                to: v.state.selection.main.to,
+                            }
+                            return false
+                        },
+                        dragend: () => {
+                            internalDrag = null
+                            return false
+                        },
                         // Allow dropping files onto the editor (the default would navigate away). Accept both
                         // the `Files` type flag AND a non-empty `items` list — some drag sources populate
                         // `items` but not `types` during dragover, which made image drops silently fall through.
@@ -1661,16 +1837,55 @@ export function Editor(props: {
                         // `![[name]]` reference instead (no copy). Move/reference-by-absolute-path are
                         // desktop-only refinements (the browser can't read a dropped file's real path).
                         drop: (e, view) => {
-                            // preventDefault FIRST, before any early return, so the browser never navigates to
-                            // a dropped file even when we end up not embedding it.
-                            e.preventDefault()
+                            // preventDefault is NOT unconditional here — CM's own runHandlers stops
+                            // (defaultPrevented) the moment we call it, which would swallow CM's built-in
+                            // dropText (an internal text drag that MOVES the selection) and turn it into a
+                            // copy. So we compute what the drop actually is first, and only preventDefault
+                            // on the paths we're about to handle ourselves — still before any embed/insert
+                            // side effect, so the browser never navigates to a dropped file we do act on.
                             const de = e as DragEvent
                             const dt = de.dataTransfer
                             // Accept EVERY dropped file, not just the renderable ones. Filtering by
                             // isEmbeddableFile here is what made a .txt/.csv/.zip drop vanish without a trace;
                             // markupFor decides embed-vs-link per file at insert time instead.
                             const files = dt ? [...dt.files] : []
-                            if (files.length === 0) return false // no files at all — let CM handle the text drag
+                            if (files.length === 0) {
+                                // No browser File at all. filePathsFromTransfer reads a real on-disk
+                                // path (e.g. a Finder-copied file's text/uri-list) — that path should have
+                                // been claimed already by the handler that reads real paths; if it wasn't,
+                                // there's nothing else we can do with it, so say so rather than silently
+                                // no-op'ing.
+                                if (filePathsFromTransfer(dt).length > 0) {
+                                    e.preventDefault()
+                                    pushToast(
+                                        "Couldn't read that drop — drag the file itself",
+                                    )
+                                    return true
+                                }
+                                // Paths-less case (a browser image, a link, plain text). If this is a plain
+                                // internal text drag, let CodeMirror's own drop handler run it — it moves
+                                // the selection rather than copying it, which our planner can't do.
+                                const actions = planDrop(
+                                    pasteboardFromTransfer(dt),
+                                )
+                                if (
+                                    actions.length === 1 &&
+                                    actions[0].kind === 'text'
+                                )
+                                    return false
+                                e.preventDefault()
+                                const pos = view.posAtCoords({
+                                    x: de.clientX,
+                                    y: de.clientY,
+                                })
+                                if (pos != null)
+                                    view.dispatch({
+                                        selection: { anchor: pos },
+                                    })
+                                void runDropActions(view, actions, path)
+                                return true
+                            }
+                            e.preventDefault()
                             const reference =
                                 de.altKey ||
                                 settings.attachments.onDrop === 'reference'

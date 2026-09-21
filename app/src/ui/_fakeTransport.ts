@@ -220,6 +220,10 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 return seed.onUpload(targetPath, bytes) || targetPath
             throw new Error('fakeTransport: uploadAsset is not supported')
         },
+        fetchAsset: async (
+            _url: string,
+            targetPath: string,
+        ): Promise<string> => targetPath,
         assetUrl: (target: string) => target,
         eventsUrl: () => '',
         base: () => 'fake://storybook',

@@ -54,6 +54,11 @@ export function inProcessTransport(backend: LocalBackend): Transport {
                 'uploadAsset is not supported by the in-process backend yet',
             )
         },
+        fetchAsset: async () => {
+            throw new Error(
+                'fetchAsset is not supported by the in-process backend yet',
+            )
+        },
         // HEIC transcoding + scratch staging both need a real backend process (sips / the wasm
         // decoder / a writable scratch dir). Same "documented follow-up" status as uploadAsset —
         // iPad has no Finder to drag out of, so neither path is reachable there today.

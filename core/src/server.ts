@@ -38,6 +38,7 @@ import {
     deleteFrontmatterViewKey,
 } from './frontmatter'
 import { AppError } from './error'
+import { fetchRemoteAsset, extForContentType } from './assetFetch'
 import { buildVaultRows, patchVaultRows } from './basesData'
 import { buildTaskRows, patchTaskRows } from './bases/tasksData'
 import { parseBaseFile } from './bases/parse'
@@ -1494,6 +1495,39 @@ export function createServer(cfg: CoreConfig) {
             if (bytes.byteLength > MAX_ASSET_BYTES)
                 return error('attachment too large', 413)
             const finalRel = uniqueAssetPath(cfg.vault, target)
+            await writeBinary(cfg.vault, finalRel, bytes)
+            return ok({ path: finalRel })
+        },
+
+        // Download a remote image (a URL dragged/pasted from the browser, e.g. an <img> src
+        // lifted off a web page) into the vault, the server-side half of `POST /asset`'s upload
+        // path — the frontend has bytes in neither case, only a URL, so this fetches them first.
+        // Same target-safety + size-cap reasoning as `POST /asset`; NOT a mutation for the same
+        // reason (attachments are invisible to the graph/tree/search caches).
+        'POST /asset/fetch': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { url, path: target } = (await req.json()) as {
+                url?: string
+                path?: string
+            }
+            if (!url) throw new AppError('EINVAL', 'missing url', 400)
+            if (!target) throw new AppError('EINVAL', 'missing path', 400)
+            if (!isSafeAssetTarget(target))
+                return error('invalid attachment path', 400)
+            const { bytes, contentType } = await fetchRemoteAsset(url, {
+                maxBytes: MAX_ASSET_BYTES,
+            })
+            // A URL rarely names its own extension reliably (query strings, redirects, extensionless
+            // CDN paths) — trust the server's declared content type over the URL when they disagree,
+            // same as a browser "Save Image As" would.
+            const wantExt = extForContentType(contentType)
+            const dot = target.lastIndexOf('.')
+            const haveExt = dot >= 0 ? target.slice(dot + 1).toLowerCase() : undefined
+            const desiredPath =
+                wantExt && wantExt !== haveExt
+                    ? `${dot >= 0 ? target.slice(0, dot) : target}.${wantExt}`
+                    : target
+            const finalRel = uniqueAssetPath(cfg.vault, desiredPath)
             await writeBinary(cfg.vault, finalRel, bytes)
             return ok({ path: finalRel })
         },
