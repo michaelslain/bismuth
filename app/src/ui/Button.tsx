@@ -11,6 +11,9 @@ export type { ButtonKind, ButtonState, ButtonSize }
 
 export type ButtonProps = {
     kind?: ButtonKind
+    /** Also rendered as `data-state` on the root element (defaulting to `'normal'`) — the runtime
+     *  hook outside callers select on (`.x[data-state="selected"]`) instead of reaching
+     *  `:global(.btn--selected)` etc. See one-global-followups Task 1. */
     state?: ButtonState
     size?: ButtonSize
     danger?: boolean
@@ -43,6 +46,7 @@ function Button(props: ButtonProps) {
     return (
         <button
             type={local.type ?? 'button'}
+            data-state={local.state ?? 'normal'}
             class={buttonClass({
                 kind: local.kind,
                 state: local.state,
