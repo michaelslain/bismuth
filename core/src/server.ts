@@ -745,11 +745,16 @@ export function createServer(cfg: CoreConfig) {
                 tree = true
                 continue
             }
-            // .daemon/memory is the 3rd brain → graph only; other .settings/.daemon
-            // content (cron/process defs, etc.) → sidebar (tree) only.
+            // .daemon/memory is the 3rd brain (feeds the graph) AND shows in the sidebar
+            // tree, so a memory-file/subfolder change must dirty both — a new/deleted
+            // sub-note or sub-folder is structural to the tree the same way an ordinary
+            // vault note is; a content-only rewrite isn't, so an .md path still goes
+            // through the tracker below rather than forcing tree=true unconditionally.
             if (isDaemonRuntimeNoise(p)) continue // daemon logs/pids/cron-state → never refetch
             if (isDaemonMemoryPath(p)) {
                 graph = true
+                if (p.endsWith('.md')) notePaths.push(p)
+                else tree = true
                 continue
             }
             if (isSystemFolderPath(p)) {
@@ -818,7 +823,10 @@ export function createServer(cfg: CoreConfig) {
                     } else if (vaultPaths.length) {
                         dirty = await classifyVault(vaultPaths)
                     }
-                    // Memory (3rd brain) feeds the graph, never the vault file tree.
+                    // This dedicated memory watcher only ever feeds the graph — it has no
+                    // per-path info to classify a tree change from. In production cfg.memory
+                    // IS <vault>/.daemon/memory, so the SAME writes also land on the vault
+                    // watcher above, which does dirty the tree via classifyVault.
                     if (memory) {
                         dirty.graph = true
                         // Autosave the memory repo so it's revertable + gives the dream cron a commit
