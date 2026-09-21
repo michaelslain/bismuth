@@ -30,19 +30,25 @@
     padding: var(--sp-1) var(--sp-1) var(--sp-3);
 }
 
-/* Flat + square + lighter-weight than the relative-date presets below: the native OS picker
-   chrome (a heavy grey rounded pill in both WebKit and Chromium) is stripped with `appearance:
-   none` and the exposed pseudo-elements are repainted from tokens — `--text-muted` rather than
-   `--fg` is what makes these read as lighter than `.bismuth-popover-label` (which inherits
-   `--fg` with no override). */
+/* Flat + square + lighter-weight than the relative-date presets below. The native OS picker
+   chrome (a heavy grey rounded pill with a 3D UA bevel in both WebKit and Chromium) is stripped
+   with `appearance: none` — which also drops the UA's own `border-style: inset` bevel, so the
+   border has to be re-asserted explicitly rather than left to fall back to a default. Background
+   is transparent (reads as the panel's own `--bg`, not a heavier fill of its own) and the border
+   is the SAME hairline (`--border`, 1px solid) the `.list` divider below uses, so the two read as
+   one family. Text sits at the SAME weight as the presets (`--fg`, no override) — only the
+   indicator glyph is dimmed, which is what actually carries the "lighter than the presets"
+   weighting now that the fill and border are no longer doing it. */
 .dateInput,
 .timeInput {
     font-family: var(--popover-font);
     font-size: var(--popover-font-size);
     padding: var(--sp-2) var(--sp-3);
     appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
     border-radius: 0;
-    color: var(--text-muted);
+    color: var(--fg);
 }
 
 .dateInput::-webkit-datetime-edit,
@@ -57,18 +63,21 @@
 .timeInput::-webkit-datetime-edit-hour-field,
 .timeInput::-webkit-datetime-edit-minute-field,
 .timeInput::-webkit-datetime-edit-ampm-field {
-    color: var(--text-muted);
+    color: var(--fg);
 }
 
+/* The calendar/clock glyph is the one element still tinted down to --text-muted — it's what
+   makes the control read lighter than the bold preset rows, now that fill/border/text match. */
 .dateInput::-webkit-calendar-picker-indicator,
 .timeInput::-webkit-calendar-picker-indicator {
-    opacity: 0.5;
+    color: var(--text-muted);
+    opacity: 0.6;
     cursor: pointer;
 }
 
 .dateInput::-webkit-calendar-picker-indicator:hover,
 .timeInput::-webkit-calendar-picker-indicator:hover {
-    opacity: 0.85;
+    opacity: 1;
 }
 
 .dateInput {
