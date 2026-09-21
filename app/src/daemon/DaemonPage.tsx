@@ -83,6 +83,7 @@ function DaemonPage(props: DaemonPageProps) {
                 <Show when={props.enabled}>
                     <DaemonServices
                         class={styles.left}
+                        packToContent
                         crons={props.snapshot.crons}
                         processes={props.snapshot.processes}
                         daemonRunning={props.snapshot.daemon.running}

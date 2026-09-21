@@ -15,12 +15,17 @@ export type DaemonPanelProps = {
     count?: number
     actions?: JSX.Element
     children: JSX.Element
+    /** Size to content (capped by the caller's max-height) instead of filling the cell. */
+    packToContent?: boolean
     class?: string
 }
 
 function DaemonPanel(props: DaemonPanelProps) {
     return (
-        <div class={`${styles['daemon-panel']} ${props.class ?? ''}`}>
+        <div
+            class={`${styles['daemon-panel']} ${props.class ?? ''}`}
+            classList={{ [styles['pack-to-content']]: props.packToContent }}
+        >
             <div class={styles['daemon-panel-head']}>
                 <Text
                     as="div"
