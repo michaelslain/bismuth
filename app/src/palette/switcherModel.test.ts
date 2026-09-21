@@ -75,8 +75,12 @@ describe('contentRenderLimit — incremental paging over every content row', () 
         expect(contentRenderLimit(CONTENT_PAGE, CONTENT_PAGE - 1, 60)).toBe(60)
     })
 
-    it('clamps even when not growing (limit already exceeds a shrunk total)', () => {
-        expect(contentRenderLimit(CONTENT_PAGE, 5, 20)).toBe(20)
+    it('does not shrink when the total drops', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, 5, 20)).toBe(CONTENT_PAGE)
+    })
+
+    it('handles no active content index with a zero total (fresh query, no results yet)', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, -3, 0)).toBe(CONTENT_PAGE)
     })
 
     it('never exceeds total across repeated boundary hits', () => {

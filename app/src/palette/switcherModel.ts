@@ -41,18 +41,16 @@ export function visibleContent(
 export const CONTENT_PAGE = 50
 
 /**
- * How many content rows to render: grows by CONTENT_PAGE when the active nav index reaches the
- * last rendered row; never exceeds total; resets to CONTENT_PAGE on a new query (the caller does
- * that reset — this function is stateless and only ever grows or clamps what it's given).
+ * How many content rows to render: grows by CONTENT_PAGE up to total when the active index
+ * reaches the last rendered row; never shrinks (the caller resets it on a new query).
  */
 export function contentRenderLimit(
     limit: number,
     activeContentIndex: number,
     total: number,
 ): number {
-    const grown =
-        activeContentIndex >= limit - 1 ? limit + CONTENT_PAGE : limit
-    return Math.min(grown, total)
+    if (activeContentIndex < limit - 1 || limit >= total) return limit
+    return Math.min(limit + CONTENT_PAGE, total)
 }
 
 export type SwitcherEnterAction =

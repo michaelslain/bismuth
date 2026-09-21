@@ -227,9 +227,9 @@ export const MidWordMatch: Story = {
                         snippets: [
                             {
                                 line: 2,
-                                before: 'Still deep in ',
+                                before: 'Still deep in res',
                                 match: 'earch',
-                                after: ' for the essay — r',
+                                after: ' for the essay.',
                             },
                         ],
                     },
