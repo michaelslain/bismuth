@@ -19,10 +19,14 @@ export const PRINT_READY_TITLE = '__bismuth_print_ready__'
  *  (a row split with its empty top half on one page), on `table` it holds (a table taller than a
  *  page still breaks — avoid is only a preference); the display-formula padding keeps the integral
  *  glyph's overflow inside its box, which otherwise left a 1-2px sliver on the previous page. No
- *  `@page` override: the document's own `@page{margin:1in}` is what WebKit honours. */
+ *  `@page` override: the document's own `@page{margin:1in}` is what WebKit honours. The heading
+ *  rules keep a heading on the same page as the block it introduces, so it never gets stranded
+ *  alone at the foot of a page with its body pushed to the next. */
 const WEBKIT_PRINT_BREAKS =
     'tr,table,img,svg,.katex-display{break-inside:avoid;page-break-inside:avoid}' +
-    '.katex-display{padding:0.3em 0}'
+    '.katex-display{padding:0.3em 0}' +
+    'h1,h2,h3,h4,h5,h6{break-after:avoid;page-break-after:avoid}' +
+    'h2+blockquote,h3+blockquote{break-before:avoid;page-break-before:avoid}'
 
 /** Head markup for the WebKit print path: the body override, print colour adjust so backgrounds
  *  print, the break rules above, and the fonts-ready marker script. */
