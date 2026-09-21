@@ -50,6 +50,20 @@
    icon variant ever adds one. */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon).bracket { text-transform: lowercase; }
+/* Both registers of a bracket button render at ONE size — --fs-ui, not the text register's
+   default --fs-micro (`.btn--text` above) nor the icon register's default --fs-body-lg
+   (`.btn--icon` above) — plus a 1px --border hairline box, so `[ approve ]` and `[ ✓ approve ]`
+   read as the same control regardless of kind (one-global-followups Task 1 acceptance line 1).
+   Two classes (0,2,0) still beats `:global(.btn--text)`'s/`:global(.btn--icon)`'s own (0,1,0)
+   rules above, so this always wins regardless of source order. Same temporary bridge as the two
+   text-transform rules above — Button's own class, not a foreign reach. */
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text).bracket,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon).bracket {
+  font-size: var(--fs-ui);
+  border: 1px solid var(--border);
+}
 .bracket::before { content: "[ "; }
 .bracket::after { content: " ]"; }
 

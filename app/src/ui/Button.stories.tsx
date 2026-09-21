@@ -6,6 +6,12 @@
 //   • size  — "sm" | "md" | "lg"  (text buttons; md is the default, adds no class)
 //   • danger — orthogonal destructive tone, layerable on any state
 //   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
+//
+// Button also renders `data-state` on its root (defaulting to `'normal'` when `state` is unset) —
+// the runtime hook outside stylesheets select on (`.x[data-state="selected"]`) instead of reaching
+// `:global(.btn--selected)` etc (one-global-followups Task 1). Every story below exercises it
+// implicitly: inspect the rendered `<button>` in any story and its `data-state` always matches the
+// `state` prop passed in, `'normal'` for the stories that omit it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
 import { Button } from './Button'

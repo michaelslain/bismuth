@@ -15,12 +15,15 @@
    `<Select caretClass={styles['mode-caret']}>`) rather than a `:global(.ui-select-caret)` reach —
    `.mode-caret` below is a plain local class.
 
-   STILL REACHES `:global(.btn--text)`/`.btn--selected`/`.btn--normal` (ui/Button.tsx +
-   icons/Icon.tsx, not modularized here) — the row strips the text button's uppercase-label chrome
-   down to plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text
-   label"), and Button exposes no prop for "quiet, chromeless text control" — this row is the one
-   place in the app that register exists, so there is no owner prop to move to without adding one
-   to a component this task does not own. */
+   STILL REACHES `:global(.btn--text)` (ui/Button.tsx's own KIND class, not modularized here) —
+   the row strips the text button's uppercase-label chrome down to plain lowercase text
+   (Acceptance/final-findings #1: "every control a lowercase text label"), and Button exposes no
+   prop for "quiet, chromeless text control" — this row is the one place in the app that register
+   exists, so there is no owner prop to move to without adding one to a component this task does
+   not own. The STATE half (`normal`/`selected`) no longer reaches `.btn--normal`/`.btn--selected`
+   as foreign classes — it keys on Button's own `data-state` attribute instead
+   (one-global-followups Task 1), which needs no `:global()` wrapper since data attributes are
+   never hashed by CSS Modules. */
 
 .stat {
     display: inline-flex;
@@ -172,11 +175,11 @@
     font-size: inherit;
     color: inherit;
 }
-.row :global(.btn--text.btn--normal:hover:not(:disabled)) {
+.row :global(.btn--text)[data-state="normal"]:hover:not(:disabled) {
     color: var(--fg);
     background: transparent;
 }
-.row :global(.btn--text.btn--selected) {
+.row :global(.btn--text)[data-state="selected"] {
     color: var(--fg);
     background: transparent;
     border-color: transparent;
