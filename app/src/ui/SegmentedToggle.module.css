@@ -16,8 +16,16 @@
    SegmentedToggle's layout rule (the butted-border overlap), not Button's, so it stays here
    rather than in Button.module.css. Both halves of the selector are still global class names
    (Button's `.btn--text` is itself a `:global()` bridge in Button.module.css per Task 1), so the
-   whole compound is wrapped in `:global()` too. `drawing/Toolbar.tsx` holds a raw duplicate
-   `<div class="segmented">` — reported, not fixed here (Task 11 owns that file). */
+   whole compound is wrapped in `:global()` too. `drawing/Toolbar.tsx`'s undo/redo group now
+   composes this component (one-global-followups Task 3); its zoom group is still a raw duplicate
+   `<div class="segmented">` — that one needs a per-segment class SegmentedOption doesn't expose,
+   reported not fixed. */
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local SegmentedToggle.tsx actually reads (`styles.wrap`) — a
+   `.module.css` with zero local classes reads as dead to Rollup's tree-shaker and ships no CSS
+   at all (the same trap ui/FormControl.module.css documents). */
+.wrap { --segmented-toggle: true; }
 
 /* design-system-ignore globalReach: SegmentedToggle's own class, temporary :global() bridge to the four outside callers above, until a later wave */
 :global(.segmented) { display: inline-flex; align-items: center; }

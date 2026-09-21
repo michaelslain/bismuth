@@ -295,33 +295,30 @@ export function Toolbar(props: {
                 {/* Undo/redo on top, zoom below. */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
-                        {/* NOT SegmentedToggle: undo/redo are two independent commands, not a
-                            mutually-exclusive pair with an active member, and SegmentedToggle's
-                            `value`/`onChange` shape has no way to express "neither segment is ever
-                            selected" without a type-unsafe sentinel. Kept as a raw `.segmented` row
-                            — reported, not forced, per this task's brief. */}
-                        <div class="segmented">
-                            <Button
-                                kind="text"
-                                state="unselected"
-                                class={styles['draw-iconseg']}
-                                title="Undo"
-                                aria-label="Undo"
-                                onClick={() => props.onUndo()}
-                            >
-                                <Icon value="Undo2" size={17} />
-                            </Button>
-                            <Button
-                                kind="text"
-                                state="unselected"
-                                class={styles['draw-iconseg']}
-                                title="Redo"
-                                aria-label="Redo"
-                                onClick={() => props.onRedo()}
-                            >
-                                <Icon value="Redo2" size={17} />
-                            </Button>
-                        </div>
+                        {/* Undo/redo are two independent commands, not a mutually-exclusive pair
+                            with an active member — SegmentedToggle's `value` accepts `undefined`
+                            for exactly this (one-global-followups Task 3), so neither segment is
+                            ever "selected" and this composes the real component instead of a raw
+                            duplicate of its markup. */}
+                        <SegmentedToggle
+                            value={undefined}
+                            onChange={id =>
+                                id === 'undo' ? props.onUndo() : props.onRedo()
+                            }
+                            segmentClass={styles['draw-iconseg']}
+                            options={[
+                                {
+                                    id: 'undo' as const,
+                                    label: <Icon value="Undo2" size={17} />,
+                                    title: 'Undo',
+                                },
+                                {
+                                    id: 'redo' as const,
+                                    label: <Icon value="Redo2" size={17} />,
+                                    title: 'Redo',
+                                },
+                            ]}
+                        />
                         <Show
                             when={
                                 props.zoom &&
@@ -330,11 +327,12 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
-                            {/* NOT SegmentedToggle: per-segment `disabled` (zoom bounds) and a
-                                per-segment extra class (`draw-zoompct`, the fixed-width readout)
-                                have no props on SegmentedToggle/SegmentedOption — it is a uniform
-                                `segmentClass` across every segment with no disabled concept at all.
-                                Kept as a raw `.segmented` row — reported, not forced. */}
+                            {/* NOT SegmentedToggle: the zoom-percent segment needs its own extra
+                                class (`draw-zoompct`, the fixed-width readout) and SegmentedOption
+                                has no per-segment class — only a uniform `segmentClass` shared by
+                                every segment (per-segment `disabled` IS now supported, used below
+                                for the bound buttons, but that alone isn't enough to convert this
+                                row). Kept as a raw `.segmented` row — reported, not forced. */}
                             <div class="segmented">
                                 <Button
                                     kind="text"

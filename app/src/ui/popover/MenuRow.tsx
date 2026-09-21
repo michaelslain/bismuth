@@ -19,12 +19,17 @@ function MenuRow(props: {
     selected?: boolean
     /** Render a right-side chevron marking a nested submenu. */
     hasSubmenu?: boolean
+    /** Appended to the row's own root class, so a caller can style one instance without a
+     *  `:global(.bismuth-popover-row)` reach. */
+    class?: string
+    /** Appended to the detail span's class — e.g. a caller that wants the detail text mono. */
+    detailClass?: string
     onClick?: (e: MouseEvent) => void
     onMouseEnter?: () => void
 }): JSX.Element {
     return (
         <div
-            class="bismuth-popover-row"
+            class={`bismuth-popover-row ${props.class ?? ''}`}
             classList={{
                 'bismuth-popover-row--selected': props.selected,
                 'bismuth-popover-row--danger': props.danger,
@@ -43,7 +48,9 @@ function MenuRow(props: {
             </Show>
             <span class="bismuth-popover-label">{props.label}</span>
             <Show when={props.detail}>
-                <span class="bismuth-popover-detail">{props.detail}</span>
+                <span class={`bismuth-popover-detail ${props.detailClass ?? ''}`}>
+                    {props.detail}
+                </span>
             </Show>
             {/* row-kbd (ui/ui.css): the caps recede to --faint, the same treatment every
           .asc-menurow shortcut gets. */}

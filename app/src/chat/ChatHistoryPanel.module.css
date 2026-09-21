@@ -8,9 +8,11 @@
    needed there any more. `.scope-toggle`/`.scope-segment` are handed to SegmentedToggle via its
    own `class`/`segmentClass` props for the same reason.
 
-   STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow's
-   OWN internal row/detail classes (ui/popover/MenuRow.tsx), which PopoverList exposes no override
-   hook for; not this task's component to add one to. */
+   STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow now
+   accepts `class`/`detailClass` for exactly this (one-global-followups Task 3), but PopoverList
+   (this file's actual child, ui/popover/PopoverList.tsx — not in this task's file set) renders
+   MenuRow internally and exposes no prop to pass either through; the bridge stays until PopoverList
+   forwards them. */
 
 .panel {
     display: flex;
