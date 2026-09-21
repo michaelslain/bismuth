@@ -235,6 +235,10 @@ export function VBtn(props: VBtnProps) {
         <button
             class={cx(styles.vbtn, own.class)}
             classList={{ [styles.active]: own.active }}
+            /* runtime hook, not test-only: calendar/CalendarFrame.module.css reads [data-active]
+             * to paint its own active-button highlight, since styles.active is a hashed local it
+             * cannot select */
+            data-active={own.active ? '' : undefined}
             title={own.title}
             onClick={e => own.onClick?.(e)}
             {...rest}
