@@ -41,11 +41,8 @@ function deps(over: Partial<ExportDeps> = {}): ExportDeps {
                 formula: {},
             },
         ],
-        htmlToPdf: async html => new TextEncoder().encode('PDF:' + html.length),
-        htmlToPdfPages: async html => [
-            `data:image/jpeg;base64,PAGE1:${html.length}`,
-            'data:image/jpeg;base64,PAGE2',
-        ],
+        htmlToPdf: async (html, _title) =>
+            new TextEncoder().encode('PDF:' + html.length),
         htmlToPng: async html => ({
             bytes: new TextEncoder().encode('PNG:' + html.length),
             dataUrl: 'data:image/png;base64,AQI=',
@@ -83,6 +80,18 @@ describe('renderExport', () => {
         expect(r.mime).toBe('application/pdf')
         expect(enc.decode(r.bytes)).toStartWith('PDF:')
         expect(r.previewHtml).toContain('<h1>Title</h1>')
+    })
+
+    test('renderExport passes title "note" to htmlToPdf', async () => {
+        let capturedTitle = ''
+        const d = deps({
+            htmlToPdf: async (html, title) => {
+                capturedTitle = title
+                return new TextEncoder().encode('PDF:' + html.length)
+            },
+        })
+        await renderExport('a/note.md', 'pdf', d)
+        expect(capturedTitle).toBe('note')
     })
 
     test('pdf export applies the chosen body font size (pt); default is 12pt', async () => {
@@ -146,35 +155,26 @@ describe('renderExport', () => {
     })
 })
 
-describe('renderPreview (no downloadable bytes; PDF paginates for fidelity)', () => {
-    test('note pdf preview shows the ACTUAL paginated Letter page images (via htmlToPdfPages), never a raw source page', async () => {
-        let pagesCalls = 0
-        let pdfBytesCalls = 0
+describe('renderPreview (no downloadable bytes for text formats; PDF now runs the real print)', () => {
+    test('note pdf preview calls htmlToPdf exactly once with title "note", returns previewPdf equal to the mock bytes, previewHtml/previewImg undefined', async () => {
+        let pdfCalls = 0
+        let capturedTitle = ''
+        const mockBytes = new Uint8Array([9, 8, 7])
         const r = await renderPreview(
             'a/note.md',
             'pdf',
             deps({
-                htmlToPdf: async h => {
-                    pdfBytesCalls++
-                    return new TextEncoder().encode(h)
-                },
-                htmlToPdfPages: async () => {
-                    pagesCalls++
-                    return [
-                        'data:image/jpeg;base64,PG1',
-                        'data:image/jpeg;base64,PG2',
-                    ]
+                htmlToPdf: async (_html, title) => {
+                    pdfCalls++
+                    capturedTitle = title
+                    return mockBytes
                 },
             }),
         )
-        expect(pdfBytesCalls).toBe(0) // never generates downloadable pdf bytes for a preview
-        expect(pagesCalls).toBe(1) // it DOES paginate the doc into real pages
-        // The preview embeds each paginated page image + a "Page N of M" label (2 pages here), so
-        // the pane shows the exact multi-page layout — not one long continuous source page.
-        expect(r.previewHtml).toContain('data:image/jpeg;base64,PG1')
-        expect(r.previewHtml).toContain('data:image/jpeg;base64,PG2')
-        expect(r.previewHtml).toContain('Page 1 of 2')
-        expect(r.previewHtml).toContain('Page 2 of 2')
+        expect(pdfCalls).toBe(1)
+        expect(capturedTitle).toBe('note')
+        expect(r.previewPdf).toEqual(mockBytes)
+        expect(r.previewHtml).toBeUndefined()
         expect(r.previewImg).toBeUndefined()
     })
 
@@ -595,17 +595,14 @@ describe('preview shows page separation (sheet per section)', () => {
         })
     }
 
-    test('pdf preview of a page-broken note shows the paginated page images, NOT the sheet-per-section wrappers', async () => {
+    test('pdf preview of a page-broken note shows the real bytes (previewPdf), NOT the sheet-per-section wrappers', async () => {
         const r = await renderPreview(
             'note.md',
             'pdf',
             deps({ read: async () => PAGED }),
         )
-        const html = r.previewHtml!
-        // Real page rasters from htmlToPdfPages (the mock returns 2), never the marker-section sheets.
-        expect(html).not.toContain('bismuth-preview-page')
-        expect(html).toContain('data:image/jpeg;base64,PAGE1')
-        expect(html).toContain('Page 1 of 2')
+        expect(r.previewPdf).toBeDefined()
+        expect(r.previewHtml).toBeUndefined()
     })
 
     test('a note with no page breaks previews WITHOUT sheet wrappers (unchanged)', async () => {

@@ -41,6 +41,22 @@
   width: min(960px, 100%);
 }
 
+/* PDF preview: PdfPages (.pdf-pages is height:100%; display:flex) needs a bounded, flex-filled
+   frame to scroll inside rather than growing the whole pane — stretch across .exppreview's
+   flex-start alignment and give the frame real height instead of the default 640px min-height. */
+.exp-paper.paper-pdf {
+  align-self: stretch;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 640px;
+}
+.export-pdf {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
 /* The rendered note lives in an isolated iframe carrying its OWN inline copy of the
    chosen export theme's tokens (export/htmlTemplate.ts) — self-contained, so it reads
    correctly whether opened inside Bismuth or as a standalone file. This wrapper only
