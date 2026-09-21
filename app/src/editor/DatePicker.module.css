@@ -30,11 +30,45 @@
     padding: var(--sp-1) var(--sp-1) var(--sp-3);
 }
 
+/* Flat + square + lighter-weight than the relative-date presets below: the native OS picker
+   chrome (a heavy grey rounded pill in both WebKit and Chromium) is stripped with `appearance:
+   none` and the exposed pseudo-elements are repainted from tokens — `--text-muted` rather than
+   `--fg` is what makes these read as lighter than `.bismuth-popover-label` (which inherits
+   `--fg` with no override). */
 .dateInput,
 .timeInput {
     font-family: var(--popover-font);
     font-size: var(--popover-font-size);
     padding: var(--sp-2) var(--sp-3);
+    appearance: none;
+    border-radius: 0;
+    color: var(--text-muted);
+}
+
+.dateInput::-webkit-datetime-edit,
+.timeInput::-webkit-datetime-edit,
+.dateInput::-webkit-datetime-edit-fields-wrapper,
+.timeInput::-webkit-datetime-edit-fields-wrapper,
+.dateInput::-webkit-datetime-edit-text,
+.timeInput::-webkit-datetime-edit-text,
+.dateInput::-webkit-datetime-edit-year-field,
+.dateInput::-webkit-datetime-edit-month-field,
+.dateInput::-webkit-datetime-edit-day-field,
+.timeInput::-webkit-datetime-edit-hour-field,
+.timeInput::-webkit-datetime-edit-minute-field,
+.timeInput::-webkit-datetime-edit-ampm-field {
+    color: var(--text-muted);
+}
+
+.dateInput::-webkit-calendar-picker-indicator,
+.timeInput::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+}
+
+.dateInput::-webkit-calendar-picker-indicator:hover,
+.timeInput::-webkit-calendar-picker-indicator:hover {
+    opacity: 0.85;
 }
 
 .dateInput {
