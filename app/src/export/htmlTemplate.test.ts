@@ -328,6 +328,13 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
         expect(rule).toContain('margin: 0 0 30px')
     })
 
+    test('a table carries the same bottom margin as a paragraph, not just a top border rule', () => {
+        const rule = /table \{[^}]*\}/.exec(
+            wrapHtmlDocument('<p>x</p>', 'n', { ...p, proseLeading: 1.5 }, '', 12, false, true),
+        )?.[0] ?? ''
+        expect(rule).toContain('margin: 0 0 24px')
+    })
+
     test('list items keep zero margin — blank-line spacing is a paragraph concern, not a list one', () => {
         const rule = /\n  li \{[^}]*\}/.exec(
             wrapHtmlDocument('<p>x</p>', 'N'),

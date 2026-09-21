@@ -204,36 +204,6 @@ function previewPagesCss(p: ThemePalette): string {
 `
 }
 
-// The PDF preview document: the actual paginated Letter page images (from htmlToPdfPages —
-// the SAME pages the downloaded PDF holds) stacked as sheets, so the preview shows the exact
-// multi-page 8.5x11in / 1in-margin layout of the output rather than one long continuous page.
-// Each image already bakes in the 1in margin band + Letter aspect, so it just displays at width.
-function pdfPreviewDoc(pageDataUrls: string[], palette: ThemePalette): string {
-    const n = pageDataUrls.length
-    // A neutral backdrop so the light/dark pages read as physical sheets floating on the pane.
-    const backdrop = palette.scheme === 'dark' ? '#17181d' : '#52545a'
-    const label =
-        palette.scheme === 'dark'
-            ? 'rgba(255,255,255,0.55)'
-            : 'rgba(255,255,255,0.8)'
-    const body = pageDataUrls
-        .map(
-            (src, i) =>
-                `<div class="pdfpage"><img src="${src}" alt="Page ${i + 1} of ${n}"><div class="pdflabel">Page ${i + 1} of ${n}</div></div>`,
-        )
-        .join('\n')
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
-    html,body{margin:0;padding:0;background:${backdrop};}
-    body{padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:22px;
-      font-family:system-ui,-apple-system,sans-serif;}
-    .pdfpage{width:100%;max-width:612px;}
-    .pdfpage img{display:block;width:100%;height:auto;border-radius:2px;
-      box-shadow:0 2px 14px rgba(0,0,0,0.45);}
-    .pdflabel{margin-top:7px;text-align:center;font-size:10.5px;font-weight:600;
-      letter-spacing:0.08em;text-transform:uppercase;color:${label};}
-  </style></head><body>${body}</body></html>`
-}
-
 // The <body> of the paged preview: one labeled sheet per rendered section. Pure over the
 // already-rendered fragments; exercised via renderPreview in exporters.test.ts.
 function previewPagesBody(sectionHtmls: string[]): string {
@@ -290,12 +260,12 @@ async function csvText(
 
 /**
  * Compute what the export tab displays for (path, format, theme, options). Never produces
- * downloadable export bytes, so flipping formats/options stays cheap for the text formats.
+ * downloadable export bytes for the text formats, so flipping formats/options stays cheap there.
  *
- * The PDF preview is the EXCEPTION: it rasterizes + paginates the document into real Letter
- * pages (via `deps.htmlToPdfPages`) so the preview shows the exact multi-page 8.5x11in /
- * 1in-margin layout the downloaded PDF has — a plain source-HTML preview never revealed the
- * pagination. (PNG/HTML previews stay the lightweight rendered HTML.)
+ * The PDF preview is the EXCEPTION: it now runs the REAL print (`deps.htmlToPdf`) and hands the
+ * actual PDF bytes back as `previewPdf` — the same bytes the download produces, rendered by the
+ * app's PdfPages pdf.js stack, so preview and output can never disagree page-for-page. (PNG/HTML
+ * previews stay the lightweight rendered HTML.)
  */
 export async function renderPreview(
     path: string,
@@ -323,10 +293,8 @@ export async function renderPreview(
         const pre = `<pre>${escapeHtml(await csvText(path, deps, opts))}</pre>`
         return { previewHtml: wrapHtmlDocument(pre, name, palette) }
     }
-    // PDF previews as the ACTUAL paginated Letter pages the export produces (draw handled above).
-    // Rasterizing the rendered doc into fixed 8.5x11in / 1in-margin pages is the only way the
-    // preview can show the auto-pagination (content overflowing onto page 2, 3, …) — the same
-    // page images the downloaded PDF holds, so preview and output never disagree.
+    // PDF previews as the REAL bytes the download produces — same engine, same print, so preview
+    // and output can never disagree. `PdfPages` (ExportView.tsx) renders the pdf.js page stack.
     if (format === 'pdf') {
         const { html, css, prose } = await renderedBody(
             path,
@@ -344,8 +312,7 @@ export async function renderPreview(
             opts.showMarkdownSyntax,
             prose,
         )
-        const pages = await deps.htmlToPdfPages(doc)
-        return { previewHtml: pdfPreviewDoc(pages, palette) }
+        return { previewPdf: await deps.htmlToPdf(doc, name) }
     }
     // A page-broken note previews as one visually distinct "sheet" per section — the same
     // pageSections model the PNG export writes files from and the PDF forces breaks at, so
@@ -457,6 +424,7 @@ export async function renderExport(
                 )
                 const pdf = await deps.htmlToPdf(
                     wrapHtmlDocument(`<img src="${dataUrl}">`, name, palette),
+                    name,
                 )
                 return {
                     bytes: pdf,
@@ -481,7 +449,7 @@ export async function renderExport(
                 opts.showMarkdownSyntax,
                 prose,
             )
-            const pdf = await deps.htmlToPdf(doc)
+            const pdf = await deps.htmlToPdf(doc, name)
             return {
                 bytes: pdf,
                 mime: 'application/pdf',
