@@ -634,6 +634,16 @@ export function createServer(cfg: CoreConfig) {
     const isSystemFolderPath = (p: string) => p.startsWith('.daemon/')
     const isDaemonMemoryPath = (p: string) =>
         p === '.daemon/memory' || p.startsWith('.daemon/memory/')
+    // .daemon/memory has its own autosave git repo (scheduleBackup, below) plus whatever other
+    // dotfiles land inside it — none of that is the 3rd brain itself. A dot-prefixed segment
+    // BELOW .daemon/memory/ (.daemon/memory/.git/**, a stray .DS_Store) is noise the same way
+    // the dedicated memory watcher's isHidden guard already treats it; the folder itself and its
+    // ordinary subfolders/notes are not.
+    const isDaemonMemoryNoise = (p: string) => {
+        if (!isDaemonMemoryPath(p)) return false
+        const rest = p.slice('.daemon/memory'.length).replace(/^\//, '')
+        return rest !== '' && isHidden(rest)
+    }
     // The daemon writes high-frequency runtime state under .daemon while it runs — process logs,
     // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the
     // sidebar or the graph, so reacting to it (cache invalidate → version bump → SSE → full
@@ -644,12 +654,13 @@ export function createServer(cfg: CoreConfig) {
     // (.daemon/pages/.state/**) and trigger dir (.daemon/pages/.triggers/**) stay dot-prefixed,
     // so they're still noise (correct — their churn shouldn't bump the tree).
     const isDaemonRuntimeNoise = (p: string) =>
-        p.startsWith('.daemon/') &&
-        !isDaemonMemoryPath(p) &&
-        p !== '.daemon/identity.md' && // the user-editable personality file — show it in the sidebar
-        p !== '.daemon/PAGES.md' && // the seeded page-format guide — show it in the sidebar (explicit allowlist, not "any root .md", so future runtime files stay noise)
-        !DAEMON_DEF_RE.test(p) &&
-        !DAEMON_PAGE_RE.test(p)
+        isDaemonMemoryNoise(p) ||
+        (p.startsWith('.daemon/') &&
+            !isDaemonMemoryPath(p) &&
+            p !== '.daemon/identity.md' && // the user-editable personality file — show it in the sidebar
+            p !== '.daemon/PAGES.md' && // the seeded page-format guide — show it in the sidebar (explicit allowlist, not "any root .md", so future runtime files stay noise)
+            !DAEMON_DEF_RE.test(p) &&
+            !DAEMON_PAGE_RE.test(p))
 
     // Clear only the caches a change touched, bump version, and tell subscribers
     // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -1000,7 +1011,8 @@ export function createServer(cfg: CoreConfig) {
     // watchLive, not a bare fs.watch: a change made while the watch is still starting (this server's
     // own boot writes, an agent editing as the app launches) is otherwise never reported.
     const skipWatchWalk = (rel: string) =>
-        isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`)
+        isDaemonMemoryNoise(rel) ||
+        (isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`))
     try {
         watchers.push(
             watchLive(

@@ -551,6 +551,73 @@ test('writing a note into a new .daemon/memory subfolder on disk bumps dirty.tre
     }
 })
 
+test('daemon memory autosave git churn does not dirty the tree', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        // Prime — flushes SSE response headers (same prime step the tests above use).
+        await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
+        })
+
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+
+        // The memory dir's own autosave git repo — exactly what scheduleBackup's commit
+        // touches on every memory write, not an API-driven change.
+        mkdirSync(join(vault, '.daemon', 'memory', '.git', 'objects', 'ab'), {
+            recursive: true,
+        })
+        await Bun.write(join(vault, '.daemon', 'memory', '.git', 'index'), 'x')
+        await Bun.write(
+            join(vault, '.daemon', 'memory', '.git', 'objects', 'ab', 'cd'),
+            'y',
+        )
+
+        // A real memory note — this SHOULD dirty the tree. Whether its frame arrives alone or
+        // batched with the git churn above (same debounce window), it's the frame under test:
+        // its paths must not carry the .git churn along with it.
+        const notePath = '.daemon/memory/topics/rent.md'
+        mkdirSync(join(vault, '.daemon', 'memory', 'topics'), {
+            recursive: true,
+        })
+        await Bun.write(join(vault, notePath), '# Rent notes\n')
+
+        const start = Date.now()
+        while (Date.now() - start < 3000) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value)
+            const parts = buf.split('\n\n')
+            buf = parts.pop() ?? ''
+            for (const f of parts) {
+                if (!f.startsWith('data: ')) continue
+                const payload = JSON.parse(f.slice(6))
+                if (!Array.isArray(payload.paths)) continue
+                // Any frame carrying .git churn is itself the defect under test, regardless of
+                // whether it's the one that also mentions notePath.
+                expect(
+                    payload.paths.some((p: string) =>
+                        p.includes('.daemon/memory/.git'),
+                    ),
+                ).toBe(false)
+                if (payload.paths.includes(notePath)) {
+                    await reader.cancel()
+                    return
+                }
+            }
+        }
+        throw new Error(`no SSE frame mentioned ${notePath}; buf=${buf}`)
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('adding then removing a .png on disk marks dirty.tree in the SSE payload (classifyVault treats non-.md as structural)', async () => {
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
