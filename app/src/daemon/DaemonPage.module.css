@@ -141,16 +141,20 @@
 }
 
 /* The first readout is composed from USER DATA (a cron's name), so its length is not knowable at
-   design time and ui.css's `@container viewbar` tiers — which fire on the bar's WIDTH, not on its
-   content — cannot reach it. The trailing group gives instead, and the status ellipsizes. */
-.bar :global(.vb-trail) {
+   design time and ViewBar.module.css's `@container viewbar` tiers — which fire on the bar's WIDTH,
+   not on its content — cannot reach it. The trailing group gives instead, and the status
+   ellipsizes. PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1): these two used
+   to be `.bar :global(.vb-trail)`/`.bar :global(.vb-readouts)`, reaching ViewBar's own unhashed
+   literals. ViewBar's family is real hashed locals now, so DaemonPage.tsx passes
+   `parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}` instead. */
+.barTrail {
     flex: 0 1 auto;
     min-width: 0;
 }
-.bar :global(.vb-readouts) {
+.barReadouts {
     min-width: 0;
 }
-.bar :global(.vb-readouts) > :global([data-bar-label]):first-child {
+.barReadouts > [data-bar-label]:first-child {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

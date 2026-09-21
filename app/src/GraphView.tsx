@@ -480,6 +480,10 @@ export function GraphView(props: {
         >
             <ViewBar
                 class={styles['graph-viewbar']}
+                parts={{
+                    lead: styles['graph-vb-lead'],
+                    trail: styles['graph-vb-trail'],
+                }}
                 identity={
                     <Text
                         as="span"
@@ -507,6 +511,7 @@ export function GraphView(props: {
                                 when={props.mini}
                                 fallback={
                                     <SegmentedToggle
+                                        class={styles['graph-mode-switcher']}
                                         value={props.mode}
                                         onChange={props.setMode}
                                         size="sm"
@@ -648,6 +653,7 @@ export function GraphView(props: {
                         </Show>
                         <Show when={!props.mini}>
                             <SegmentedToggle
+                                class={styles['graph-bottom-toggle']}
                                 value={graphViewMode()}
                                 onChange={setViewMode}
                                 size="sm"

@@ -1,8 +1,11 @@
 // app/src/ui/_previewBarAssertions.ts
 // Story-only probes for preview/PreviewBar, shared by Preview/PreviewBar.stories.tsx (the bar alone)
 // and App/PreviewView.stories.tsx (the bar as it ships, above a real PDF). Everything here reads
-// the DOM the way a person sees it — rects, computed colours, glyph boxes — and never a CSS-module
-// class name, which hashes (the bar's own module has exactly one importer: PreviewBar.tsx).
+// the DOM the way a person sees it — rects, computed colours, glyph boxes — never a CSS-module
+// class name, which hashes. ui/ViewBar.module.css's `.vb-trail`/`.crumb` family hashed for real
+// (one-global-stylesheet followups, task 1), so the two probes that used to read those literal
+// strings now key on the `data-testid="vb-trail"`/`"crumb-title"` hooks ViewBar.tsx renders
+// instead — test-only, nothing in production reads either.
 
 /** A painted element's box: false for `display: none` (dropped by the collapse ladder). */
 const painted = (el: Element) => el.getClientRects().length > 0
@@ -10,7 +13,7 @@ const painted = (el: Element) => el.getClientRects().length > 0
 /** The bar's CONTROLS in reading order: the page readout's button, every trail button, and the zoom
  *  percentage between − and + (a readout, but it occupies the row like a control does). */
 export function barItems(bar: HTMLElement): HTMLElement[] {
-    const trail = bar.querySelector('.vb-trail') as HTMLElement | null
+    const trail = bar.querySelector('[data-testid="vb-trail"]') as HTMLElement | null
     if (!trail) return []
     const all = Array.from(trail.querySelectorAll<HTMLElement>('button, span, div')).filter(
         el =>
@@ -87,7 +90,7 @@ export function probeBar(bar: HTMLElement): BarProbe {
             cs.borderTopColor === accent
         )
     }).length
-    const trail = bar.querySelector('.vb-trail') as HTMLElement
+    const trail = bar.querySelector('[data-testid="vb-trail"]') as HTMLElement
     const glyphSizes = [
         ...new Set(
             Array.from(trail.querySelectorAll('svg'))
@@ -132,7 +135,7 @@ export function probeBar(bar: HTMLElement): BarProbe {
     }
     const centre = (b.top + b.bottom) / 2
     const maxCentreOffset = Math.max(0, ...rects.map(r => Math.abs((r.top + r.bottom) / 2 - centre)))
-    const title = bar.querySelector('.crumb b') as HTMLElement | null
+    const title = bar.querySelector('[data-testid="crumb-title"]') as HTMLElement | null
     return {
         gaps,
         iconGap,

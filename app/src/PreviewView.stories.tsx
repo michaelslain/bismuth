@@ -1559,7 +1559,7 @@ export const PdfViewBarNarrow: Story = {
             expect(p.frames, `${w}px: accent frames at rest`).toBe(0)
 
             // The filename: ellipsizing, at least 6ch of it visible.
-            const title = bar.querySelector('.crumb b') as HTMLElement
+            const title = bar.querySelector('[data-testid="crumb-title"]') as HTMLElement
             const tr = title.getBoundingClientRect()
             const ch = chPx(title)
             expect(

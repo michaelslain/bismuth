@@ -55,7 +55,7 @@ function DaemonPage(props: DaemonPageProps) {
             data-testid="daemon-page"
         >
             <ViewBar
-                class={styles.bar}
+                parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}
                 identity={<Crumb icon="Bot">{props.name}</Crumb>}
                 readouts={
                     <Show when={props.readouts.length > 0}>
