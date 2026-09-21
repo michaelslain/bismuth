@@ -1,5 +1,5 @@
 import { test, expect, spyOn } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
@@ -495,6 +495,124 @@ test('writing a .daemon/pages/*.md page bumps dirty.tree (the DAEMON_PAGE_RE noi
             }
         }
         throw new Error(`no SSE frame mentioned the page path; buf=${buf}`)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('writing a note into a new .daemon/memory subfolder on disk bumps dirty.tree (issue #15)', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        // Prime — flushes SSE response headers (same prime step the tests above use).
+        await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
+        })
+
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+
+        // A real filesystem write outside the API — exactly what ClaudeCode adding a sub-folder
+        // + file to its memory looks like (not the mutatingHandler path).
+        const subPath = '.daemon/memory/topics/housing.md'
+        mkdirSync(join(vault, '.daemon', 'memory', 'topics'), {
+            recursive: true,
+        })
+        await Bun.write(join(vault, subPath), '# Housing notes\n')
+
+        const start = Date.now()
+        while (Date.now() - start < 3000) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value)
+            const frames = buf.split('\n\n')
+            buf = frames.pop() ?? ''
+            for (const f of frames) {
+                if (!f.startsWith('data: ')) continue
+                const payload = JSON.parse(f.slice(6))
+                if (
+                    Array.isArray(payload.paths) &&
+                    payload.paths.includes(subPath)
+                ) {
+                    expect(payload.dirty.tree).toBe(true)
+                    await reader.cancel()
+                    return
+                }
+            }
+        }
+        throw new Error(`no SSE frame mentioned ${subPath}; buf=${buf}`)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('daemon memory autosave git churn does not dirty the tree', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        // Prime — flushes SSE response headers (same prime step the tests above use).
+        await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
+        })
+
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+
+        // The memory dir's own autosave git repo — exactly what scheduleBackup's commit
+        // touches on every memory write, not an API-driven change.
+        mkdirSync(join(vault, '.daemon', 'memory', '.git', 'objects', 'ab'), {
+            recursive: true,
+        })
+        await Bun.write(join(vault, '.daemon', 'memory', '.git', 'index'), 'x')
+        await Bun.write(
+            join(vault, '.daemon', 'memory', '.git', 'objects', 'ab', 'cd'),
+            'y',
+        )
+
+        // A real memory note — this SHOULD dirty the tree. Whether its frame arrives alone or
+        // batched with the git churn above (same debounce window), it's the frame under test:
+        // its paths must not carry the .git churn along with it.
+        const notePath = '.daemon/memory/topics/rent.md'
+        mkdirSync(join(vault, '.daemon', 'memory', 'topics'), {
+            recursive: true,
+        })
+        await Bun.write(join(vault, notePath), '# Rent notes\n')
+
+        const start = Date.now()
+        while (Date.now() - start < 3000) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value)
+            const parts = buf.split('\n\n')
+            buf = parts.pop() ?? ''
+            for (const f of parts) {
+                if (!f.startsWith('data: ')) continue
+                const payload = JSON.parse(f.slice(6))
+                if (!Array.isArray(payload.paths)) continue
+                // Any frame carrying .git churn is itself the defect under test, regardless of
+                // whether it's the one that also mentions notePath.
+                expect(
+                    payload.paths.some((p: string) =>
+                        p.includes('.daemon/memory/.git'),
+                    ),
+                ).toBe(false)
+                if (payload.paths.includes(notePath)) {
+                    await reader.cancel()
+                    return
+                }
+            }
+        }
+        throw new Error(`no SSE frame mentioned ${notePath}; buf=${buf}`)
     } finally {
         server.stop(true)
     }
