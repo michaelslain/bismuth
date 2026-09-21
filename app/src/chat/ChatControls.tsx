@@ -148,6 +148,7 @@ function Config(props: { session: ChatSession }) {
                 data-testid="chat-perm-mode"
             >
                 <Select
+                    caretClass={styles['mode-caret']}
                     class={
                         styles['mode-select'] +
                         // ARMED STATE. `bypassPermissions` lets the agent write to the vault

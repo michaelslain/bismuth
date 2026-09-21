@@ -24,6 +24,12 @@ function Select(props: {
     onChange: (value: string) => void
     placeholder?: string
     class?: string
+    /** Appended to the trigger button's own class, alongside `class` (the root). Lets a caller
+     *  style the trigger specifically without a `:global()` reach into `.ui-select-trigger`. */
+    triggerClass?: string
+    /** Appended to the caret icon's class — e.g. a caller that wants to hide it entirely
+     *  (ChatControls' quiet row) without reaching `:global(.ui-select-caret)`. */
+    caretClass?: string
     /** Fired when the popover closes WITHOUT a choice — Escape or a backdrop click — as
      *  opposed to `close()` after `choose()`, which already reported the new value via
      *  `onChange`. Lets a caller that swaps in a Select as a transient editor (the kanban
@@ -107,7 +113,7 @@ function Select(props: {
                 as="button"
                 ref={triggerRef}
                 type="button"
-                class={`ui-select-trigger ${props.class ?? ''}`}
+                class={`ui-select-trigger ${props.class ?? ''} ${props.triggerClass ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
                     if (open()) {
@@ -131,7 +137,11 @@ function Select(props: {
                 >
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
-                <Icon value="ChevronDown" size={14} class="ui-select-caret" />
+                <Icon
+                    value="ChevronDown"
+                    size={14}
+                    class={`ui-select-caret ${props.caretClass ?? ''}`}
+                />
             </FormControl>
             <Show when={open()}>
                 <Portal>
