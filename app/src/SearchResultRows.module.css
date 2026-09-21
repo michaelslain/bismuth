@@ -117,5 +117,6 @@
   background: color-mix(in srgb, var(--teal) 22%, transparent);
   color: var(--teal);
   border-radius: var(--r-0);
-  padding: 0 var(--sp-1);
+  padding: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 22%, transparent);
 }

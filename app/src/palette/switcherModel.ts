@@ -37,6 +37,22 @@ export function visibleContent(
     return stored.results.filter(r => !taken.has(r.path))
 }
 
+/** How many content rows render per page — see `contentRenderLimit`. */
+export const CONTENT_PAGE = 50
+
+/**
+ * How many content rows to render: grows by CONTENT_PAGE up to total when the active index
+ * reaches the last rendered row; never shrinks (the caller resets it on a new query).
+ */
+export function contentRenderLimit(
+    limit: number,
+    activeContentIndex: number,
+    total: number,
+): number {
+    if (activeContentIndex < limit - 1 || limit >= total) return limit
+    return Math.min(limit + CONTENT_PAGE, total)
+}
+
 export type SwitcherEnterAction =
     // Open the currently highlighted row (file / content / AI result) — the caller's menu-nav
     // Enter handling does this; "commit" means "let it".

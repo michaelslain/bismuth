@@ -175,7 +175,7 @@ bismuth daily --id 1 --vault ~/vault --pretty   # the SECOND configured daily-no
 Wraps `core/src/search.ts` `searchVault` and `core/src/replace.ts` `replaceInVault`. Both build `SearchOpts` from three shared boolean flags: `--regex` (regex mode), `--case` (case-sensitive), `--word` (whole-word). All require a vault.
 
 ### `search <query> [--regex] [--case] [--word]`
-Ranked full-text search with match snippets. Empty/missing query is coerced to `""`.
+Ranked full-text search with match snippets — mid-word and typo-tolerant (non-regex mode only), and returns every matching note, not just the top results. Empty/missing query is coerced to `""`.
 ```bash
 bismuth search "neural net" --vault ~/vault --pretty
 bismuth search "TODO\(\w+\)" --regex --case --vault ~/vault

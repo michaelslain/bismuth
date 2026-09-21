@@ -314,9 +314,9 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 - **Cache/SSE:** none (read-only despite POST). See [bases overview](../bases/overview.md).
 
 ### `POST /search`
-- **Body:** `{ query: string, opts: { caseSensitive: boolean, wholeWord: boolean, regex: boolean } }`.
-- **Action:** `searchVault(vault, query, opts)` (Omnisearch-style ranking).
-- **Response:** `SearchResult[]` = `{ path, matchCount, snippets: MatchSnippet[] }[]`.
+- **Body:** `{ query: string, opts: { caseSensitive: boolean, wholeWord: boolean, regex: boolean }, snippetLimit?: number }`. `snippetLimit` caps `snippets.length` per note (default 20) — it does not affect `matchCount`.
+- **Action:** `searchVault(vault, query, opts, { snippetLimit })`. Non-regex mode ranks in three tiers, concatenated: (1) literal hits MiniSearch also ranked, in MiniSearch's BM25 order; (2) literal hits MiniSearch missed (typically mid-word), sorted by match count descending; (3) — only when `caseSensitive` is false — typo hits from a second, `combineWith: 'AND'` fuzzy MiniSearch query. Regex mode is unchanged: every note is scanned and results are sorted by match count descending.
+- **Response:** `SearchResult[]` = `{ path, matchCount, snippets: MatchSnippet[] }[]`, **uncapped** — every matching note is returned, not just the top N. `matchCount` is always the note's true total occurrence count, independent of `snippetLimit`.
 - **Errors:** an invalid regex (etc.) is caught and returned as `400` with the error message (so the UI shows it inline) — NOT a 500.
 - **Visibility:** gated — hits on a restricted note are silently omitted from the results. See [Visibility gating](#visibility-gating).
 - **Cache/SSE:** none.

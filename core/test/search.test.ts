@@ -3,6 +3,7 @@ import { writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     findMatches,
+    findMatchesLimited,
     buildMatcher,
     searchVault,
     rankCandidates,
@@ -230,5 +231,146 @@ describe('updateSearchIndex (incremental)', () => {
         await updateSearchIndex(root, ['settings.yaml', 'somedir'])
         expect((await searchVault(root, 'alpha', simple)).length).toBe(1) // unaffected
         invalidateSearchIndex(root)
+    })
+
+    test('a mid-word query finds new text after an edit, not the old', async () => {
+        const root = makeVault({ 'a.md': 'the old wording' })
+        expect((await searchVault(root, 'ordin', simple)).length).toBe(1) // wording — caches the index
+        writeFileSync(join(root, 'a.md'), 'the new phrasing')
+        await updateSearchIndex(root, ['a.md'])
+        expect((await searchVault(root, 'ordin', simple)).length).toBe(0)
+        const after = await searchVault(root, 'hrasin', simple)
+        expect(after.length).toBe(1)
+        expect(after[0].snippets[0].match).toBe('hrasin') // tier 2 only — tier 3 would highlight 'phrasing'
+        invalidateSearchIndex(root)
+    })
+})
+
+describe('searchVault: mid-word + typo tiers, no cap, snippetLimit', () => {
+    const simple = { caseSensitive: false, wholeWord: false, regex: false }
+
+    test('mid-word: a query matching only mid-word is returned with the matched substring', async () => {
+        const root = makeVault({ 'r.md': 'a note about research topics' })
+        const res = await searchVault(root, 'earch', simple)
+        const r = res.find(x => x.path === 'r.md')
+        expect(r).toBeDefined()
+        expect(r!.snippets.some(s => s.match === 'earch')).toBe(true)
+        invalidateSearchIndex(root)
+    })
+
+    test('typo: a near-miss query surfaces a note via fuzzy tier, gated on caseSensitive', async () => {
+        const root = makeVault({ 's.md': 'we should search the archive' })
+        const insensitive = await searchVault(root, 'serach', simple)
+        expect(insensitive.map(r => r.path)).toContain('s.md')
+
+        const sensitive = await searchVault(root, 'serach', {
+            ...simple,
+            caseSensitive: true,
+        })
+        expect(sensitive.map(r => r.path)).not.toContain('s.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('multi-word typo search is AND: a note missing one word is not returned', async () => {
+        const root = makeVault({
+            'only-search.md': 'we should search the archive',
+        })
+        const res = await searchVault(root, 'serach roadmap', simple)
+        expect(res.map(r => r.path)).not.toContain('only-search.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('no cap: every one of 120 matching notes comes back', async () => {
+        const files: Record<string, string> = {}
+        for (let i = 0; i < 120; i++) files[`n${i}.md`] = `note ${i} has zeta in it`
+        const root = makeVault(files)
+        const res = await searchVault(root, 'zeta', simple)
+        expect(res.length).toBe(120)
+        invalidateSearchIndex(root)
+    })
+
+    test('ordering: whole-word literal, then mid-word-only, then typo-only', async () => {
+        const root = makeVault({
+            'whole.md': '# Search\nthis note is literally about search',
+            'midword.md': 'this note only mentions research in passing',
+            'typo.md': 'this note talks about serach behavior only',
+        })
+        const res = await searchVault(root, 'search', simple)
+        const order = res.map(r => r.path)
+        const iWhole = order.indexOf('whole.md')
+        const iMid = order.indexOf('midword.md')
+        const iTypo = order.indexOf('typo.md')
+        expect(iWhole).toBeGreaterThanOrEqual(0)
+        expect(iMid).toBeGreaterThan(iWhole)
+        expect(iTypo).toBeGreaterThan(iMid)
+        invalidateSearchIndex(root)
+    })
+
+    test('snippetLimit caps snippets but matchCount stays the true total', async () => {
+        const root = makeVault({
+            'many.md': Array.from({ length: 10 }, () => 'zeta').join('\n'),
+        })
+        const res = await searchVault(root, 'zeta', simple, { snippetLimit: 3 })
+        const r = res.find(x => x.path === 'many.md')!
+        expect(r.snippets.length).toBe(3)
+        expect(r.matchCount).toBe(10)
+        invalidateSearchIndex(root)
+    })
+
+    test('tier 3 does not flood on a loose fuzzy fraction: an unrelated word is not a typo match', async () => {
+        const root = makeVault({
+            'unrelated.md': 'this note mentions each and reach and teach only',
+        })
+        expect(
+            (await searchVault(root, 'serach', simple)).map(r => r.path),
+        ).not.toContain('unrelated.md')
+        expect(
+            (await searchVault(root, 'search', simple)).map(r => r.path),
+        ).not.toContain('unrelated.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('tier 3 still surfaces a genuine near-miss typo alongside unrelated words', async () => {
+        const root = makeVault({
+            'mixed.md': 'each reach teach beach peach we should search the archive',
+        })
+        const res = await searchVault(root, 'serach', simple)
+        expect(res.map(r => r.path)).toContain('mixed.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('a repeated query word does not inflate the AND-coverage requirement', async () => {
+        const root = makeVault({ 's.md': 'we should search the archive' })
+        const single = await searchVault(root, 'serach', simple)
+        expect(single.map(r => r.path)).toContain('s.md')
+        const repeated = await searchVault(root, 'serach serach', simple)
+        expect(repeated.map(r => r.path)).toContain('s.md')
+        invalidateSearchIndex(root)
+    })
+
+    test('snippetLimit clips an over-long line: before <= 80 chars, after <= 160 chars', async () => {
+        const long = 'x'.repeat(500)
+        const root = makeVault({
+            'long.md': `${long} zeta ${long}`,
+        })
+        const res = await searchVault(root, 'zeta', simple, { snippetLimit: 3 })
+        const r = res.find(x => x.path === 'long.md')!
+        expect(r.snippets[0].before.length).toBeLessThanOrEqual(80)
+        expect(r.snippets[0].after.length).toBeLessThanOrEqual(160)
+        invalidateSearchIndex(root)
+    })
+})
+
+describe('findMatchesLimited', () => {
+    test('total counts every occurrence; snippets are capped at limit', () => {
+        const body = Array.from({ length: 10 }, () => 'zeta').join('\n')
+        const { total, snippets } = findMatchesLimited(
+            body,
+            'zeta',
+            { caseSensitive: false, wholeWord: false, regex: false },
+            3,
+        )
+        expect(total).toBe(10)
+        expect(snippets.length).toBe(3)
     })
 })
