@@ -634,6 +634,16 @@ export function createServer(cfg: CoreConfig) {
     const isSystemFolderPath = (p: string) => p.startsWith('.daemon/')
     const isDaemonMemoryPath = (p: string) =>
         p === '.daemon/memory' || p.startsWith('.daemon/memory/')
+    // .daemon/memory has its own autosave git repo (scheduleBackup, below) plus whatever other
+    // dotfiles land inside it — none of that is the 3rd brain itself. A dot-prefixed segment
+    // BELOW .daemon/memory/ (.daemon/memory/.git/**, a stray .DS_Store) is noise the same way
+    // the dedicated memory watcher's isHidden guard already treats it; the folder itself and its
+    // ordinary subfolders/notes are not.
+    const isDaemonMemoryNoise = (p: string) => {
+        if (!isDaemonMemoryPath(p)) return false
+        const rest = p.slice('.daemon/memory'.length).replace(/^\//, '')
+        return rest !== '' && isHidden(rest)
+    }
     // The daemon writes high-frequency runtime state under .daemon while it runs — process logs,
     // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the
     // sidebar or the graph, so reacting to it (cache invalidate → version bump → SSE → full
@@ -644,12 +654,13 @@ export function createServer(cfg: CoreConfig) {
     // (.daemon/pages/.state/**) and trigger dir (.daemon/pages/.triggers/**) stay dot-prefixed,
     // so they're still noise (correct — their churn shouldn't bump the tree).
     const isDaemonRuntimeNoise = (p: string) =>
-        p.startsWith('.daemon/') &&
-        !isDaemonMemoryPath(p) &&
-        p !== '.daemon/identity.md' && // the user-editable personality file — show it in the sidebar
-        p !== '.daemon/PAGES.md' && // the seeded page-format guide — show it in the sidebar (explicit allowlist, not "any root .md", so future runtime files stay noise)
-        !DAEMON_DEF_RE.test(p) &&
-        !DAEMON_PAGE_RE.test(p)
+        isDaemonMemoryNoise(p) ||
+        (p.startsWith('.daemon/') &&
+            !isDaemonMemoryPath(p) &&
+            p !== '.daemon/identity.md' && // the user-editable personality file — show it in the sidebar
+            p !== '.daemon/PAGES.md' && // the seeded page-format guide — show it in the sidebar (explicit allowlist, not "any root .md", so future runtime files stay noise)
+            !DAEMON_DEF_RE.test(p) &&
+            !DAEMON_PAGE_RE.test(p))
 
     // Clear only the caches a change touched, bump version, and tell subscribers
     // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -745,11 +756,16 @@ export function createServer(cfg: CoreConfig) {
                 tree = true
                 continue
             }
-            // .daemon/memory is the 3rd brain → graph only; other .settings/.daemon
-            // content (cron/process defs, etc.) → sidebar (tree) only.
+            // .daemon/memory is the 3rd brain (feeds the graph) AND shows in the sidebar
+            // tree, so a memory-file/subfolder change must dirty both — a new/deleted
+            // sub-note or sub-folder is structural to the tree the same way an ordinary
+            // vault note is; a content-only rewrite isn't, so an .md path still goes
+            // through the tracker below rather than forcing tree=true unconditionally.
             if (isDaemonRuntimeNoise(p)) continue // daemon logs/pids/cron-state → never refetch
             if (isDaemonMemoryPath(p)) {
                 graph = true
+                if (p.endsWith('.md')) notePaths.push(p)
+                else tree = true
                 continue
             }
             if (isSystemFolderPath(p)) {
@@ -818,7 +834,10 @@ export function createServer(cfg: CoreConfig) {
                     } else if (vaultPaths.length) {
                         dirty = await classifyVault(vaultPaths)
                     }
-                    // Memory (3rd brain) feeds the graph, never the vault file tree.
+                    // This dedicated memory watcher only ever feeds the graph — it has no
+                    // per-path info to classify a tree change from. In production cfg.memory
+                    // IS <vault>/.daemon/memory, so the SAME writes also land on the vault
+                    // watcher above, which does dirty the tree via classifyVault.
                     if (memory) {
                         dirty.graph = true
                         // Autosave the memory repo so it's revertable + gives the dream cron a commit
@@ -992,7 +1011,8 @@ export function createServer(cfg: CoreConfig) {
     // watchLive, not a bare fs.watch: a change made while the watch is still starting (this server's
     // own boot writes, an agent editing as the app launches) is otherwise never reported.
     const skipWatchWalk = (rel: string) =>
-        isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`)
+        isDaemonMemoryNoise(rel) ||
+        (isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`))
     try {
         watchers.push(
             watchLive(
