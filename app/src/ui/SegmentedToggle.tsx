@@ -7,6 +7,10 @@ export type SegmentedOption<T> = {
     label: JSX.Element
     title?: string
     disabled?: boolean
+    /** Extra class merged onto this option's Button, alongside `segmentClass`. */
+    class?: string
+    /** Rendered as `aria-label` on this option's Button. `title` stays as-is. */
+    ariaLabel?: string
 }
 
 export type SegmentedToggleProps<T> = {
@@ -40,8 +44,9 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
                         size={props.size}
-                        class={props.segmentClass}
+                        class={`${props.segmentClass ?? ''} ${opt.class ?? ''}`}
                         title={opt.title}
+                        aria-label={opt.ariaLabel}
                         disabled={opt.disabled}
                         onClick={() => props.onChange(opt.id)}
                     >
