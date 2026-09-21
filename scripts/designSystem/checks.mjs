@@ -1,4 +1,4 @@
-// design-system skill scripts v3 (2026-09-20) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v4 (2026-09-21) — copied into repos by install-gate; compare this line to detect a stale copy
 // Pure logic for the design-system skill. No filesystem access — every input arrives as a
 // string or an array of { path, content }. This file is copied into user repos alongside its
 // lib/ siblings, so it (and they) must stay dependency-free (plain Node ESM, node:path/posix
@@ -7,6 +7,11 @@
 import { basename, extname } from 'node:path/posix'
 import { parseYamlGovernanceBlock } from './lib/yamlSubset.mjs'
 import { NAMED_COLORS } from './lib/namedColors.mjs'
+
+// Where a repo keeps its design files, relative to the repo root. DESIGN.md stays at the root
+// because impeccable reads it only there (plus .agents/context/ and docs/); the tooling state
+// the gate owns goes in design/, out of the root.
+export const BASELINE_PATH = 'design/baseline.json'
 
 // `governance:` block of DESIGN.md's frontmatter → the parsed object, or null if there is no
 // frontmatter / no governance key. Throws a clear error on YAML outside the documented subset.

@@ -113,7 +113,7 @@
 //
 // WIRED INTO THE PRE-COMMIT GATE. `scripts/gate.ts` runs this (alongside the design-system gate,
 // as one combined step) whenever a staged path touches app/src/, DESIGN.md,
-// design-system.baseline.json or scripts/designSystem/ — see `touchesDesignSystem` there.
+// design/ or scripts/designSystem/ — see `touchesDesignSystem` there.
 //
 // Usage:
 //   bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any

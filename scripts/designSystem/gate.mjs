@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// design-system skill scripts v3 (2026-09-20) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v4 (2026-09-21) — copied into repos by install-gate; compare this line to detect a stale copy
 // A short-output gate for CI / a repo's own test suite: run the design-system audit and fail
 // if anything not already accepted into a baseline is found.
 //
@@ -9,14 +9,15 @@
 // Usage: node run-gate.mjs --root <dir> [--baseline <file>]
 //   --root <dir>       repo root to audit (required)
 //   --baseline <file>  JSON { accepted: [{ check, path }] } — findings matching an entry
-//                       (by check + path, ignoring line) are subtracted before the gate decides
+//                       (by check + path, ignoring line) are subtracted before the gate decides.
+//                       Default: <root>/design/baseline.json when it exists, else none.
 //
 // Exit codes: 0 clean, 1 findings remain, 2 usage/setup error (e.g. no DESIGN.md governance block)
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, extname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { parseGovernance, withDefaults, runChecks } from './checks.mjs'
+import { parseGovernance, withDefaults, runChecks, BASELINE_PATH } from './checks.mjs'
 
 const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'target', '.claude'])
 const READ_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte', '.astro', '.css', '.scss'])
@@ -111,7 +112,8 @@ function main() {
 
     let accepted
     try {
-        accepted = loadBaseline(args.baseline)
+        const fallback = join(args.root, BASELINE_PATH)
+        accepted = loadBaseline(args.baseline ?? (existsSync(fallback) ? fallback : undefined))
     } catch (err) {
         console.error(`run-gate: ${err.message}`)
         process.exit(2)

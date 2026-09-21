@@ -1,7 +1,7 @@
 // design-system gate — installed by ~/.claude/skills/design-system (install-gate)
 // Fails when a component stylesheet uses a literal instead of a token, a stylesheet has more
 // than one importer, a component has no story, or (solid) props are destructured. Accepted
-// debt lives in design-system.baseline.json; permanent exemptions live in DESIGN.md's governance
+// debt lives in design/baseline.json; permanent exemptions live in DESIGN.md's governance
 // block, and a one-off exemption for a single line is a `design-system-ignore <check-id>: <reason>`
 // comment on that line or the line directly above it.
 import { describe, it, expect } from 'bun:test'
@@ -12,7 +12,7 @@ import { join } from 'node:path'
 // this file lives at scripts/designSystem.test.ts, so one '..' from its own dir is the repo root
 const root = join(import.meta.dir, '..')
 const gate = join(root, 'scripts', 'designSystem', 'gate.mjs')
-const baseline = join(root, 'design-system.baseline.json')
+const baseline = join(root, 'design', 'baseline.json')
 
 describe('design system', () => {
     it('has no findings outside the baseline', () => {

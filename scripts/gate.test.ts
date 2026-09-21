@@ -75,7 +75,8 @@ test('touchesDesignSystem fires on app/src changes', () => {
 
 test('touchesDesignSystem fires on the manifest, the baseline and the copied gate scripts', () => {
     expect(touchesDesignSystem(['DESIGN.md'])).toBe(true)
-    expect(touchesDesignSystem(['design-system.baseline.json'])).toBe(true)
+    expect(touchesDesignSystem(['design/baseline.json'])).toBe(true)
+    expect(touchesDesignSystem(['design-system.baseline.json'])).toBe(false)
     expect(touchesDesignSystem(['scripts/designSystem/checks.mjs'])).toBe(true)
     expect(touchesDesignSystem(['scripts/designSystem/lib/yamlSubset.mjs'])).toBe(true)
 })
