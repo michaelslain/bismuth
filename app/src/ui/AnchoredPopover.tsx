@@ -4,7 +4,15 @@
 // dismissed on Escape or an outside pointerdown. Owns only positioning + the backdrop/panel
 // stacking pair (1090/1100) — the CONTENT (a list, a date picker) is the caller's, passed as
 // children, so this stays a pure anchoring primitive rather than another popover surface.
-import { createEffect, createSignal, onCleanup, Show, type Component, type JSX } from 'solid-js'
+import {
+    children as resolveChildren,
+    createEffect,
+    createSignal,
+    onCleanup,
+    Show,
+    type Component,
+    type JSX,
+} from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { computeAnchorRect } from './anchorPosition'
 import { isDismissKey } from './widgetKeys'
@@ -51,10 +59,15 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
         setPos({ top, left })
     }
 
+    // `children` resolves the JSX once into a stable getter — reading `props.children` directly
+    // in the effect would construct a fresh subtree (a second, unmounted PopoverList/DatePicker)
+    // on every read since JSX children are a getter in Solid.
+    const resolved = resolveChildren(() => props.children)
+
     // Re-measure + reposition whenever the popover opens, or its content changes shape while
-    // open (children is reactive — a different option set is a different height).
+    // open (resolved is reactive — a different option set is a different height).
     createEffect(() => {
-        props.children // track: re-measure when the content changes
+        resolved() // track: re-measure when the content changes
         if (props.open) reposition()
     })
 
@@ -98,7 +111,7 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
                     style={{ top: `${pos().top}px`, left: `${pos().left}px` }}
                     {...(props.panelAttrs ?? {})}
                 >
-                    {props.children}
+                    {resolved()}
                 </div>
             </Portal>
         </Show>
