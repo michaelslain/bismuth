@@ -52,43 +52,12 @@
     padding: var(--sp-6) 18px;
 }
 
-/* min-height: 0, matching .right below (DaemonServices.module.css's own root already carries it
-   too — this is belt-and-suspenders on the grid item itself, not load-bearing on its own). This
-   box itself STAYS flush with the stage's bottom inset (DaemonPage.stories.tsx's assertLayout()
-   asserts `.left`'s own bottom edge against the stage — that invariant is about the COLUMN, not
-   about how full its panels look, and stays true here). What changes is what happens INSIDE it:
-   see `.left.left > *` below. */
+/* min-height: 0, matching .right below. This column stays flush with the stage's bottom inset
+   (assertLayout() checks it); how its two panels size inside it — to content, capped at half the
+   column, scrolling past that — is DaemonServices' `packToContent` prop, which DaemonPage.tsx sets, not this file's. */
 .left {
     grid-area: left;
     min-width: 0;
-    min-height: 0;
-}
-/* The crons/services panels (DaemonServices.module.css's `.daemon-services > *`, `flex: 1`) used
-   to be forced to exactly HALF of this column's full height each, regardless of content — on a
-   vault with a handful of crons/processes that left each panel's bordered box ~85% empty
-   interior. `.left`'s own root element IS DaemonServices' root too (`class={styles.left}` lands
-   directly on it, not on a wrapper), so these are DIRECT CHILDREN of `.left`: the two DaemonPanel
-   boxes. Override them to pack at the top, sized to content, instead of stretching — the leftover
-   column space then falls OUTSIDE any bordered box, as plain background beneath the packed
-   panels, exactly like `.right`'s inbox/log below it. `max-height` (not a fixed height) keeps a
-   long crons/processes list bounded to the column's real height, scrolling inside its own
-   DaemonPanel body (`overflow-y: auto`) instead of growing the page — a short list simply doesn't
-   reach it. The doubled `.left.left` selector (specificity 0,2,0) is what reliably beats
-   DaemonServices.module.css's `.daemon-services > *` and DaemonPanel.module.css's `.daemon-panel`
-   (each 0,1,0) for `flex`/`height`, without depending on CSS import order between the modules —
-   same technique as `.barTrail`/`.barReadouts` below reaching ViewBar's own literals used to, but
-   here it is this module's OWN `.left` class riding alongside a foreign one on the same element,
-   not a `:global()` reach into either sibling module. */
-.left.left {
-    display: flex;
-    flex-direction: column;
-    align-content: start;
-    gap: var(--sp-5);
-}
-.left.left > * {
-    flex: 0 1 auto;
-    height: auto;
-    max-height: 50%;
     min-height: 0;
 }
 

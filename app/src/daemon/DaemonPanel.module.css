@@ -66,3 +66,16 @@
     padding: var(--sp-6) var(--sp-4);
     font-size: var(--fs-ui);
 }
+/* `packToContent`: the panel sizes to its rows instead of filling its cell, capped at half its
+   flex column. The body gets the same --sp-3
+   bottom inset the inbox's own content carries, so the 16px fade above lands on that padding rather
+   than on the last 18px row (which it used to half-erase). Past the caller's max-height the body
+   still scrolls, and the fade then hints at more. */
+.daemon-panel.pack-to-content {
+    flex: 0 1 auto;
+    height: auto;
+    max-height: 50%;
+}
+.pack-to-content > .daemon-panel-body {
+    padding-bottom: var(--sp-3);
+}
