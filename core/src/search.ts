@@ -14,6 +14,15 @@ export interface SearchOpts {
     regex: boolean
 }
 
+/** Extra, optional controls over a `searchVault` call. */
+export interface SearchVaultOptions {
+    /** Max snippets returned PER note. `matchCount` is unaffected — it is always the
+     *  true total occurrence count, never `snippets.length`. Default 20. */
+    snippetLimit?: number
+}
+
+const DEFAULT_SNIPPET_LIMIT = 20
+
 export interface MatchSnippet {
     /** 1-based line number of the match. */
     line: number
@@ -77,6 +86,86 @@ export function findMatches(
     return out
 }
 
+/**
+ * Same walk as `findMatches`, but stops allocating snippets past `limit` — `total` still counts
+ * EVERY occurrence (so callers get a true matchCount without paying to materialize a snippet for
+ * each one). Used by searchVault's per-keystroke path, where a note can have thousands of hits
+ * and only the first `snippetLimit` are ever shown.
+ */
+export function findMatchesLimited(
+    body: string,
+    query: string,
+    opts: SearchOpts,
+    limit: number,
+): { total: number; snippets: MatchSnippet[] } {
+    if (!query) return { total: 0, snippets: [] }
+    const re = buildMatcher(query, opts)
+    const snippets: MatchSnippet[] = []
+    let total = 0
+    const lines = body.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        re.lastIndex = 0
+        let m: RegExpExecArray | null
+        while ((m = re.exec(line)) !== null) {
+            total++
+            if (snippets.length < limit)
+                snippets.push({
+                    line: i + 1,
+                    before: line.slice(0, m.index),
+                    match: m[0],
+                    after: line.slice(m.index + m[0].length),
+                })
+            if (m[0].length === 0) re.lastIndex++ // avoid zero-width infinite loop
+        }
+    }
+    return { total, snippets }
+}
+
+/**
+ * Optimal-string-alignment (OSA / restricted Damerau-Levenshtein) distance: Levenshtein plus
+ * adjacent-transposition as a single edit. Plain Levenshtein counts `serach`→`search` as 2 edits
+ * (delete+insert), so any fuzzy fraction loose enough to accept that typo also accepts two
+ * unrelated deletions — this is what lets tier 3's post-filter tell a transposition apart from
+ * genuinely-different words of the same edit distance.
+ */
+export function osaDistance(a: string, b: string): number {
+    const la = a.length
+    const lb = b.length
+    const d: number[][] = Array.from({ length: la + 1 }, () =>
+        new Array(lb + 1).fill(0),
+    )
+    for (let i = 0; i <= la; i++) d[i][0] = i
+    for (let j = 0; j <= lb; j++) d[0][j] = j
+    for (let i = 1; i <= la; i++) {
+        for (let j = 1; j <= lb; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1
+            d[i][j] = Math.min(
+                d[i - 1][j] + 1,
+                d[i][j - 1] + 1,
+                d[i - 1][j - 1] + cost,
+            )
+            if (
+                i > 1 &&
+                j > 1 &&
+                a[i - 1] === b[j - 2] &&
+                a[i - 2] === b[j - 1]
+            )
+                d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost)
+        }
+    }
+    return d[la][lb]
+}
+
+/** Clip an over-long line's context so one giant line can't dominate a snippet payload. */
+function clipSnippet(s: MatchSnippet): MatchSnippet {
+    return {
+        ...s,
+        before: s.before.length > 80 ? s.before.slice(-80) : s.before,
+        after: s.after.length > 160 ? s.after.slice(0, 160) : s.after,
+    }
+}
+
 /** Extract markdown heading text (lines starting with #) for index weighting. */
 function extractHeadings(body: string): string {
     return body
@@ -112,6 +201,11 @@ interface IndexDoc {
 interface SearchIndex {
     mini: MiniSearch<IndexDoc>
     bodies: Map<string, string>
+    // Lowercased mirror of `bodies`, kept in sync alongside it. Lets the case-insensitive
+    // non-regex path in searchVault screen every note with a plain indexOf before paying for
+    // a findMatches scan (buildMatcher + a RegExp per line) — the "cost control for every
+    // note" this uncapped search relies on.
+    lowerBodies: Map<string, string>
     paths: string[]
 }
 const indexCache = new Map<string, SearchIndex>()
@@ -167,6 +261,7 @@ export async function updateSearchIndex(
             if (indexed) {
                 idx.mini.discard(p)
                 idx.bodies.delete(p)
+                idx.lowerBodies.delete(p)
                 const i = idx.paths.indexOf(p)
                 if (i >= 0) idx.paths.splice(i, 1)
             }
@@ -186,6 +281,7 @@ export async function updateSearchIndex(
             idx.paths.push(p)
         }
         idx.bodies.set(p, body)
+        idx.lowerBodies.set(p, body.toLowerCase())
     }
 }
 
@@ -198,12 +294,14 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
     const { listMarkdown, readNote } = await getFileAccess()
     const paths = await listMarkdown(root)
     const bodies = new Map<string, string>()
+    const lowerBodies = new Map<string, string>()
     const docs = await mapWithConcurrency(
         paths,
         BUILD_READ_CONCURRENCY,
         async p => {
             const body = await readNote(root, p)
             bodies.set(p, body)
+            lowerBodies.set(p, body.toLowerCase())
             return {
                 id: p,
                 basename: fileBasename(p),
@@ -229,7 +327,7 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
     // final index; race-safe because getSearchIndex's generation guard already discards a build
     // that an invalidation overtook. (A microtask yield would NOT release the I/O poll phase.)
     await mini.addAllAsync(docs, { chunkSize: 200 })
-    return { mini, bodies, paths }
+    return { mini, bodies, lowerBodies, paths }
 }
 
 async function getSearchIndex(root: string): Promise<SearchIndex> {
@@ -256,50 +354,159 @@ async function getSearchIndex(root: string): Promise<SearchIndex> {
 }
 
 /**
- * Rank vault notes for `query` and attach per-note match snippets.
+ * Rank vault notes for `query` and attach per-note match snippets. No cap on the number of
+ * notes returned — every matching note comes back, and `matchCount` is always the note's TRUE
+ * total occurrence count (never `snippets.length`, which is bounded by `extra?.snippetLimit`).
  *
- * When regex mode is OFF, MiniSearch (BM25, fuzzy for longer terms, prefix match)
- * ranks the notes; filename/headings/tags are boosted above body. When regex mode
- * is ON, MiniSearch can't parse the pattern, so we scan every note and rank by
- * match count. Either way, snippets are computed with the same findMatches matcher
- * so highlighting is exact.
+ * Regex mode: MiniSearch can't parse an arbitrary pattern, so every note is scanned and the
+ * results are ranked by match count, descending.
+ *
+ * Non-regex mode ranks in three tiers, each ordered internally, concatenated in this order:
+ *   1. Literal hits MiniSearch also ranked — every note MiniSearch returned (BM25/fuzzy/prefix)
+ *      that also contains a verbatim occurrence of `query` (honoring caseSensitive/wholeWord),
+ *      in MiniSearch's own order.
+ *   2. Literal hits MiniSearch missed — every OTHER note with a verbatim occurrence (typically
+ *      mid-word, so no MiniSearch token/prefix match), sorted by total match count descending.
+ *   3. Typo hits — only when `caseSensitive` is false. Notes with no verbatim occurrence that
+ *      match a second, `combineWith: 'AND'` MiniSearch query (so a multi-word query requires
+ *      every word to fuzzily match — no single-word OR noise), in that query's order. Snippets
+ *      are built from each hit's matched document terms (the real words, not the mistyped
+ *      query), merged by line then column. A hit whose matched terms occur only in its
+ *      basename/headings/tags and never in the body is dropped — the switcher's file-name rows
+ *      already cover names.
+ *
+ * Cost control: tiers 1 and 2 scan every candidate note's body for a literal match. For the
+ * case-insensitive path (the common per-keystroke case) each note is first screened with a
+ * plain `indexOf` against a cached lowercased body, so only notes that can possibly match pay
+ * for a `findMatches` scan (a RegExp built + walked line by line).
  */
 export async function searchVault(
     root: string,
     query: string,
     opts: SearchOpts,
+    extra?: SearchVaultOptions,
 ): Promise<SearchResult[]> {
     if (!query) return []
-    const { mini, bodies, paths } = await getSearchIndex(root)
+    const s = extra?.snippetLimit
+    const snippetLimit =
+        Number.isInteger(s) && s! >= 0 ? s! : DEFAULT_SNIPPET_LIMIT
+    const { mini, bodies, lowerBodies, paths } = await getSearchIndex(root)
 
-    let ordered: string[]
     if (opts.regex) {
-        ordered = paths
-    } else {
-        const hits = mini.search(query)
-        ordered = hits.map(h => h.id as string)
+        const results: SearchResult[] = []
+        for (const p of paths) {
+            const snippets = findMatches(bodies.get(p) ?? '', query, opts)
+            if (snippets.length === 0) continue
+            results.push({
+                path: p,
+                matchCount: snippets.length,
+                snippets: snippets.slice(0, snippetLimit),
+            })
+        }
+        results.sort((a, b) => b.matchCount - a.matchCount)
+        return results
     }
 
-    // Cap the non-regex (BM25-ranked) result set. A 1-3 char prefix query — exactly what the
-    // debounced per-keystroke switcher search sends — prefix-matches a large fraction of the vault,
-    // and the loop below full-body-scans (findMatches builds a RegExp + walks every line) EVERY hit,
-    // then ships an unbounded payload the switcher renders as unbounded DOM rows. MiniSearch already
-    // returns hits BM25-ranked, so once we have the top N the remainder is lower-ranked noise the
-    // switcher never usefully shows — stop scanning there. Regex mode has no pre-ranking (it's sorted
-    // by match count below and is an explicit find-all, not per-keystroke), so it is left uncapped.
-    const RESULT_LIMIT = 50
-    const results: SearchResult[] = []
-    for (const p of ordered) {
-        const snippets = findMatches(bodies.get(p) ?? '', query, opts).slice(
-            0,
-            20,
-        )
-        if (snippets.length === 0) continue // a ranked hit with no literal match in body
-        results.push({ path: p, matchCount: snippets.length, snippets })
-        if (!opts.regex && results.length >= RESULT_LIMIT) break
+    // Cheap pre-filter shared by tiers 1 and 2: a literal (non-regex) match implies the raw
+    // query substring occurs in the body, regardless of wholeWord — so indexOf is always a
+    // valid, cheaper necessary condition to check before paying for findMatches.
+    const lowerQuery = query.toLowerCase()
+    function literalSnippets(p: string): { total: number; snippets: MatchSnippet[] } {
+        if (opts.caseSensitive) {
+            const body = bodies.get(p) ?? ''
+            if (body.indexOf(query) === -1) return { total: 0, snippets: [] }
+            return findMatchesLimited(body, query, opts, snippetLimit)
+        }
+        const lower = lowerBodies.get(p) ?? ''
+        if (lower.indexOf(lowerQuery) === -1) return { total: 0, snippets: [] }
+        return findMatchesLimited(bodies.get(p) ?? '', query, opts, snippetLimit)
     }
-    // When regex (no BM25 order), sort by match count desc for a useful order.
-    if (opts.regex) results.sort((a, b) => b.matchCount - a.matchCount)
+
+    const seen = new Set<string>()
+    const results: SearchResult[] = []
+
+    // Tier 1: literal hits MiniSearch also ranked, in MiniSearch's own order.
+    const miniHits = mini.search(query)
+    for (const hit of miniHits) {
+        const p = hit.id as string
+        if (seen.has(p)) continue
+        const r = literalSnippets(p)
+        if (r.total === 0) continue
+        seen.add(p)
+        results.push({ path: p, matchCount: r.total, snippets: r.snippets })
+    }
+
+    // Tier 2: literal hits MiniSearch missed (typically mid-word), sorted by match count desc.
+    const tier2: { path: string; total: number; snippets: MatchSnippet[] }[] = []
+    for (const p of paths) {
+        if (seen.has(p)) continue
+        const r = literalSnippets(p)
+        if (r.total === 0) continue
+        seen.add(p)
+        tier2.push({ path: p, total: r.total, snippets: r.snippets })
+    }
+    tier2.sort((a, b) => b.total - a.total)
+    for (const t of tier2)
+        results.push({ path: t.path, matchCount: t.total, snippets: t.snippets })
+
+    // Tier 3: typo hits — only for case-insensitive search. AND-combined so a multi-word query
+    // requires every word to fuzzily match.
+    if (!opts.caseSensitive) {
+        // A looser fuzzy fraction than the index's default (0.2) for CANDIDATE GENERATION only —
+        // tier 3 exists specifically to catch typos, so MiniSearch is deliberately over-loose
+        // here. MiniSearch rounds this fraction to 2-3 edits for typical-length terms, which
+        // would otherwise flood results with unrelated words of the same edit distance (`serach`
+        // matching `each`/`reach`/`teach`/…). The post-filter below is what actually enforces a
+        // typo-shaped distance, using transposition-aware osaDistance so `serach`→`search`
+        // (1 transposition, 2 plain-Levenshtein edits) still passes while unrelated words don't.
+        const typoHits = mini.search(query, {
+            combineWith: 'AND',
+            fuzzy: term => (term.length > 3 ? 0.34 : false),
+        })
+        const qTerms = query.toLowerCase().split(/\s+/).filter(Boolean)
+        const uniqueQTerms = new Set(qTerms)
+        const allowed = (len: number) => (len <= 3 ? 0 : len <= 7 ? 1 : 2)
+        const isTypoOf = (q: string, t: string) =>
+            t.startsWith(q) || osaDistance(q, t) <= allowed(q.length)
+        for (const hit of typoHits) {
+            const p = hit.id as string
+            if (seen.has(p)) continue
+            const filteredTerms = hit.terms.filter(t =>
+                qTerms.some(q => isTypoOf(q, t)),
+            )
+            // AND semantics: every query word must be covered by a surviving term, or the note
+            // only real-matched some of a multi-word query (e.g. `serach roadmap` with no
+            // `roadmap`-shaped word in the note) and must be dropped like tiers 1/2 already do.
+            const coveredQTerms = new Set(
+                qTerms.filter(q => filteredTerms.some(t => isTypoOf(q, t))),
+            )
+            if (coveredQTerms.size < uniqueQTerms.size) continue
+            const body = bodies.get(p) ?? ''
+            let total = 0
+            let merged: MatchSnippet[] = []
+            for (const term of filteredTerms) {
+                const r = findMatchesLimited(
+                    body,
+                    term,
+                    { caseSensitive: false, wholeWord: true, regex: false },
+                    snippetLimit,
+                )
+                total += r.total
+                merged.push(...r.snippets)
+            }
+            if (total === 0) continue // matched only in basename/headings/tags
+            merged.sort(
+                (a, b) => a.line - b.line || a.before.length - b.before.length,
+            )
+            merged = merged.slice(0, snippetLimit)
+            seen.add(p)
+            results.push({ path: p, matchCount: total, snippets: merged })
+        }
+    }
+
+    if (extra?.snippetLimit !== undefined)
+        for (const r of results) r.snippets = r.snippets.map(clipSnippet)
+
     return results
 }
 

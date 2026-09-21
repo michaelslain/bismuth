@@ -22,6 +22,7 @@ import { setTransport, type Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { SearchResult } from '../searchOpts'
+import sresultStyles from '../SearchResultRows.module.css'
 
 const meta = {
     title: 'Palette/SwitcherBar',
@@ -73,7 +74,9 @@ function withSearch(opts: {
 
 function typeQuery(canvasElement: HTMLElement, text: string) {
     const canvas = within(canvasElement)
-    const input = canvas.getByPlaceholderText('Search files, contents, or ask…')
+    const input = canvas.getByPlaceholderText(
+        'Search file names and note text…',
+    )
     return userEvent.type(input, text)
 }
 
@@ -110,8 +113,9 @@ export const FilteredFileMatches: Story = {
     },
 }
 
-/** Keyword content matches under the "Content matches" divider — a note whose BODY matches but
- *  whose NAME doesn't. Debounced (150ms), so `play` waits for the section to actually appear. */
+/** Keyword content matches under the "In note text // 1 note" divider — a note whose BODY
+ *  matches but whose NAME doesn't. Debounced (150ms), so `play` waits for the section to
+ *  actually appear. */
 export const ContentMatches: Story = {
     render: () => {
         setTransport(
@@ -139,10 +143,107 @@ export const ContentMatches: Story = {
         await waitFor(
             () =>
                 expect(
-                    within(canvasElement).getByText('Content matches'),
+                    within(canvasElement).getByText('In note text // 1 note'),
                 ).toBeInTheDocument(),
             { timeout: 2000 },
         )
+    },
+}
+
+/** 120 matching notes — every one is reachable, not just the first 50 (the old `RESULT_LIMIT`
+ *  cap this fix removes). The header counts all 120; only 50 cards render at first (a page,
+ *  see `CONTENT_PAGE` in switcherModel.ts). Walking the keyboard highlight down to the 50th
+ *  (last-rendered) row grows the page to 100 — asserted via `waitFor` on the card count, never
+ *  a sleep, since the growth is a synchronous effect off the nav index. */
+export const ManyContentMatches: Story = {
+    render: () => {
+        setTransport(
+            withSearch({
+                search: Array.from({ length: 120 }, (_, i) => ({
+                    path: `notes/note-${i}.md`,
+                    matchCount: 7,
+                    snippets: [
+                        {
+                            line: 1,
+                            before: 'This note mentions the ',
+                            match: 'roadmap',
+                            after: ' three separate times.',
+                        },
+                        {
+                            line: 5,
+                            before: 'Another ',
+                            match: 'roadmap',
+                            after: ' reference further down.',
+                        },
+                        {
+                            line: 9,
+                            before: 'And a third ',
+                            match: 'roadmap',
+                            after: ' mention here.',
+                        },
+                    ],
+                })),
+            }),
+        )
+        return <SwitcherBar onClose={noop} openFile={noop} />
+    },
+    play: async ({ canvasElement }) => {
+        // A query built from letters absent from every TREE path/label (no z/q/x/w/k/v in the
+        // fixture above) so it fuzzy-matches ZERO file rows — every ArrowDown below lands
+        // directly on a content row, with no file-row section to walk through first.
+        await typeQuery(canvasElement, 'zqxwkv')
+        await waitFor(
+            () =>
+                expect(
+                    within(canvasElement).getByText(
+                        'In note text // 120 notes',
+                    ),
+                ).toBeInTheDocument(),
+            { timeout: 2000 },
+        )
+        const cardCount = () =>
+            canvasElement.querySelectorAll(`.${sresultStyles['sresult']}`)
+                .length
+        await waitFor(() => expect(cardCount()).toBe(50), { timeout: 2000 })
+        // Walk the keyboard highlight down to the 50th (last-rendered) row.
+        for (let i = 0; i < 49; i++)
+            await userEvent.keyboard('{ArrowDown}')
+        await waitFor(() => expect(cardCount()).toBe(100), { timeout: 2000 })
+    },
+}
+
+/** Mid-word matching: a note containing only "research" surfaces for the query "earch", with
+ *  just the matched substring highlighted inside the word — proving the switcher renders a
+ *  backend snippet whose `match` isn't a whole word without assuming anything about word
+ *  boundaries. */
+export const MidWordMatch: Story = {
+    render: () => {
+        setTransport(
+            withSearch({
+                search: [
+                    {
+                        path: 'reading/Essay.md',
+                        matchCount: 1,
+                        snippets: [
+                            {
+                                line: 2,
+                                before: 'Still deep in res',
+                                match: 'earch',
+                                after: ' for the essay.',
+                            },
+                        ],
+                    },
+                ],
+            }),
+        )
+        return <SwitcherBar onClose={noop} openFile={noop} />
+    },
+    play: async ({ canvasElement }) => {
+        await typeQuery(canvasElement, 'earch')
+        await waitFor(() => {
+            const mark = within(canvasElement).getByText('earch')
+            expect(mark).toBeInTheDocument()
+        })
     },
 }
 

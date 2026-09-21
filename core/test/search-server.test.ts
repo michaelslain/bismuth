@@ -35,6 +35,37 @@ describe('search + replace endpoints', () => {
         }
     })
 
+    test('POST /search honors snippetLimit in the body', async () => {
+        const vault = makeVault({
+            'many.md': Array.from({ length: 10 }, () => 'zeta').join('\n'),
+        })
+        const memory = tempDir('search-mem-')
+        const s = createServer({ vault, memory, port: 0 })
+        const base = `http://localhost:${s.port}`
+        try {
+            const res = await fetch(`${base}/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: 'zeta',
+                    opts: {
+                        caseSensitive: false,
+                        wholeWord: false,
+                        regex: false,
+                    },
+                    snippetLimit: 3,
+                }),
+            })
+            expect(res.status).toBe(200)
+            const body = await res.json()
+            const many = body.find((r: { path: string }) => r.path === 'many.md')
+            expect(many.snippets.length).toBe(3)
+            expect(many.matchCount).toBe(10)
+        } finally {
+            s.stop(true)
+        }
+    })
+
     test('POST /replace rewrites matched files', async () => {
         const vault = makeVault({ 'a.md': 'brown', 'b.md': 'brown brown' })
         const memory = tempDir('search-mem-')

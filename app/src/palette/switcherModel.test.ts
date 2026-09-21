@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import {
     visibleContent,
     planSwitcherEnter,
+    contentRenderLimit,
+    CONTENT_PAGE,
     type ContentHits,
     type SwitcherEnterState,
 } from './switcherModel'
@@ -52,6 +54,44 @@ describe('visibleContent — freshness + dedupe for the unified list', () => {
 
     it('query comparison is exact (whitespace differences count as a different query)', () => {
         expect(visibleContent(hits('q ', 'a.md'), 'q', [])).toEqual([])
+    })
+})
+
+describe('contentRenderLimit — incremental paging over every content row', () => {
+    it('grows by CONTENT_PAGE when the active index reaches the last rendered row', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, CONTENT_PAGE - 1, 120)).toBe(
+            CONTENT_PAGE * 2,
+        )
+    })
+
+    it('does not grow while the active index is mid-page', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, 10, 120)).toBe(CONTENT_PAGE)
+        expect(contentRenderLimit(CONTENT_PAGE, 0, 120)).toBe(CONTENT_PAGE)
+        // Nothing active in the content section at all (e.g. a file row is highlighted).
+        expect(contentRenderLimit(CONTENT_PAGE, -1, 120)).toBe(CONTENT_PAGE)
+    })
+
+    it('clamps the grown limit to the total row count', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, CONTENT_PAGE - 1, 60)).toBe(60)
+    })
+
+    it('does not shrink when the total drops', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, 5, 20)).toBe(CONTENT_PAGE)
+    })
+
+    it('handles no active content index with a zero total (fresh query, no results yet)', () => {
+        expect(contentRenderLimit(CONTENT_PAGE, -3, 0)).toBe(CONTENT_PAGE)
+    })
+
+    it('never exceeds total across repeated boundary hits', () => {
+        let limit = CONTENT_PAGE
+        limit = contentRenderLimit(limit, limit - 1, 120)
+        expect(limit).toBe(100)
+        limit = contentRenderLimit(limit, limit - 1, 120)
+        expect(limit).toBe(120)
+        // A further boundary hit at the true end must not overshoot.
+        limit = contentRenderLimit(limit, limit - 1, 120)
+        expect(limit).toBe(120)
     })
 })
 
