@@ -42,6 +42,22 @@ export const Empty: Story = {
     },
 }
 
+/** Escape dismisses the open popover, via AnchoredPopover's `isDismissKey` handling — the
+ *  round trip is: open, press Escape, wait for the popover to actually unmount. */
+export const DismissesOnEscape: Story = {
+    args: { value: '', onCommit: () => {} },
+    render: () => <Harness initial="" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const trigger = canvas.getByTestId('date-field-trigger')
+        await userEvent.click(trigger)
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
+    },
+}
+
 export const WithValue: Story = {
     args: { value: '2026-09-14', onCommit: () => {} },
     render: () => <Harness initial="2026-09-14" />,

@@ -12,6 +12,6 @@
 }
 .placeholder { color: var(--faint); }
 .icon { flex: none; color: var(--faint); }
-/* Above Modal (1000), same stacking pair as ui/Select's backdrop + list. */
-.backdrop { position: fixed; inset: 0; z-index: 1090; }
-.layer { position: fixed; z-index: 1100; margin-top: var(--sp-2); }
+/* Positioning + stacking (fixed, z-index 1100, the backdrop, the 4px anchor gap) now live in
+   ui/AnchoredPopover.module.css — this composes <AnchoredPopover> instead of hand positioning
+   its own layer. */
