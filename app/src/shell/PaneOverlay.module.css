@@ -18,4 +18,5 @@
    `bench/moduleClassCheck.ts` alone — it proves the class names still reach the DOM, not that the
    pointer-events behaviour still fires during a real drag. */
 
+/* design-system-ignore globalReach: <html> is the document root, outside any component's tree — App.tsx toggles view-dragging on document.documentElement itself during a view drag, not a class this component reaches into another owner's DOM for */
 :global(html.view-dragging) .terminal-overlay { pointer-events: none; }
