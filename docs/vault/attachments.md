@@ -273,6 +273,28 @@ Attachments are invisible to the graph/search caches — the knowledge graph is 
 
 ---
 
+## Dropping From Other Apps Onto A Note
+
+A drag that carries no OS file path — a browser image, a Photos/Messages file promise, a plain
+link, or selected text — no longer does nothing. `app/src/dropIntake.ts`'s `planDrop` reads
+whatever the drag actually carries (in priority order: real paths, then raw image bytes, then an
+`<img src>` found in dragged HTML, then an image URL, then any URL, then plain text) and
+`Editor.tsx`'s `runDropActions` carries out the result:
+
+- **A browser image** (dragged out of a page) is downloaded server-side (`POST /asset/fetch`,
+  owner-only, public `http:`/`https:` addresses only — loopback, private and link-local hosts
+  are refused, including via redirects, and only `image/*` responses are saved) into the
+  attachments folder and embedded as `![[name]]`, the same as a locally-uploaded image.
+- **A Photos/Messages file promise** is received via the native drag pasteboard
+  (`read_drag_pasteboard`, macOS-only), which receives it into `~/Library/Caches/bismuth-drop/`
+  first (subfolders older than an hour are swept on the next drop), then embedded the same way
+  as any other dropped file.
+- **A link with no image** inserts the bare URL as text at the drop point.
+- **Selected text** dragged in from elsewhere inserts that text at the drop point — a drag that
+  never left CodeMirror (an internal text selection) MOVES instead, same as any other editor.
+- **Anything `planDrop` can't read at all** — an empty pasteboard — shows one toast (`Couldn't read
+  that drop`) instead of doing nothing silently.
+
 ## Dropping OS Files Onto The File Tree
 
 Dropping files from outside the app directly onto the sidebar's file tree (`app/src/FileTree.tsx`)

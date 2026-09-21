@@ -184,6 +184,9 @@ export interface Transport {
     ): Promise<{ conflict: false } | { conflict: true; current: string }>
     /** Upload attachment bytes to `targetPath`; returns the path actually written. */
     uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>
+    /** Download a remote image at `url` into the vault at (or near) `targetPath`; returns the
+     *  path actually written (extension may be corrected to match the fetched content type). */
+    fetchAsset(url: string, targetPath: string): Promise<string>
     /** Transcode HEIC/HEIF bytes to JPEG (backend — WebKit can decode HEIC but Chromium can't, so
      *  doing it in-page would work only in the packaged macOS app). Rejects on undecodable input. */
     convertHeic(bytes: ArrayBuffer): Promise<ArrayBuffer>
@@ -312,6 +315,22 @@ export function httpTransport(base: string): Transport {
             const { path } = (await r.json()) as { path: string }
             return path
         },
+        fetchAsset: async (
+            url: string,
+            targetPath: string,
+        ): Promise<string> => {
+            const r = await fetch(`${base}/asset/fetch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...ownerTokenHeaders(),
+                },
+                body: JSON.stringify({ url, path: targetPath }),
+            })
+            if (!r.ok) throw new Error(await r.text())
+            const { path } = (await r.json()) as { path: string }
+            return path
+        },
         convertHeic: async (bytes: ArrayBuffer): Promise<ArrayBuffer> => {
             const r = await fetch(`${base}/convert/heic`, {
                 method: 'POST',
@@ -422,6 +441,11 @@ export const api = {
     // whose basename the caller inserts as `![[basename]]`.
     uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
         transport.uploadAsset(targetPath, bytes),
+    // Downloads a remote image (a URL dragged/pasted from a browser) into the vault, server-side —
+    // avoids a CORS-blocked in-page fetch and lets the backend correct the extension against the
+    // fetched Content-Type.
+    fetchAsset: (url: string, targetPath: string): Promise<string> =>
+        transport.fetchAsset(url, targetPath),
     convertHeic: (bytes: ArrayBuffer): Promise<ArrayBuffer> =>
         transport.convertHeic(bytes),
     stageTmpFile: (name: string, bytes: ArrayBuffer): Promise<string> =>
