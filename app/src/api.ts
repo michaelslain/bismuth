@@ -437,8 +437,15 @@ export const api = {
     writeChecked: (path: string, contents: string, baseText: string) =>
         transport.writeFileChecked(path, contents, baseText),
     backup: () => post('/backup', {}).then(() => {}),
-    search: (query: string, opts: SearchOpts) =>
-        postJson<SearchResult[]>('/search', { query, opts }),
+    // `snippetLimit` caps snippets PER NOTE (the switcher sends 3); results themselves are
+    // uncapped — every matching note comes back. Omitted when undefined so the server's own
+    // default (SearchVaultOptions) applies.
+    search: (query: string, opts: SearchOpts, snippetLimit?: number) =>
+        postJson<SearchResult[]>('/search', {
+            query,
+            opts,
+            ...(snippetLimit !== undefined ? { snippetLimit } : {}),
+        }),
     // AI prompt-search fallback (one-shot Haiku re-rank of keyword candidates). Enter-gated in the
     // UI; 400 when Claude Code isn't installed, 500 on a model failure — both surfaced inline by
     // the Cmd+O switcher's error panel (palette/SwitcherBar.tsx). (Vault-wide find-and-replace has

@@ -57,9 +57,12 @@ import {
 import {
     visibleContent,
     planSwitcherEnter,
+    contentRenderLimit,
+    CONTENT_PAGE,
     type ContentHits,
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
+import { plural } from '../plural'
 import switcherStyles from './SwitcherBar.module.css'
 
 type Props = {
@@ -110,7 +113,13 @@ export function SwitcherBar(props: Props) {
     let contentTimer: ReturnType<typeof setTimeout> | undefined
     const runContentSearch = (q: string) => {
         const gen = ++contentGen
-        api.search(q, { caseSensitive: false, wholeWord: false, regex: false })
+        // 3 snippets per card is plenty to place a hit — the badge shows the note's TRUE total
+        // occurrence count, which can exceed that.
+        api.search(
+            q,
+            { caseSensitive: false, wholeWord: false, regex: false },
+            3,
+        )
             .then(r => {
                 if (gen === contentGen) setContentHits({ query: q, results: r })
             })
@@ -120,12 +129,23 @@ export function SwitcherBar(props: Props) {
     }
     onCleanup(() => clearTimeout(contentTimer))
 
-    const contentRows = createMemo<SearchResult[]>(() =>
+    // Every deduped content match for the current query, uncapped — the count for the section
+    // header and the full set `onResultsChange` reports so the backdrop graph lights up every
+    // matching note, not just the rendered page.
+    const contentAll = createMemo<SearchResult[]>(() =>
         visibleContent(
             contentHits(),
             query(),
             fileRows().map(r => r.item.id),
         ),
+    )
+
+    // How many of those rows are actually RENDERED — grows a page at a time as the keyboard
+    // highlight reaches the end, or the sentinel scrolls into view (see contentLimit below).
+    // Reset to CONTENT_PAGE on every new query (onQueryInput).
+    const [contentLimit, setContentLimit] = createSignal(CONTENT_PAGE)
+    const contentRows = createMemo<SearchResult[]>(() =>
+        contentAll().slice(0, contentLimit()),
     )
 
     // 3. Bismuth AI escalation state (idle / loading / results / error) — see switcherAi.ts.
@@ -224,6 +244,16 @@ export function SwitcherBar(props: Props) {
     })
     const selected = nav.active
 
+    // Grow the rendered content page as the keyboard highlight reaches its last rendered row
+    // (contentRenderLimit — switcherModel.ts). The active index is relative to the content
+    // section; a highlight still in the file rows (or nowhere) is negative and never grows.
+    createEffect(() => {
+        const activeContentIndex = selected() - fileRows().length
+        setContentLimit(l =>
+            contentRenderLimit(l, activeContentIndex, contentAll().length),
+        )
+    })
+
     // Every keystroke: reset the AI lifecycle (cancels/ignores any in-flight or shown AI turn —
     // the query changed, so a stale answer must not linger) and re-arm the content-search
     // debounce, dropping any late response for the superseded query.
@@ -232,6 +262,7 @@ export function SwitcherBar(props: Props) {
         setAiState(s => switcherAiReducer(s, { type: 'reset' }))
         clearTimeout(contentTimer)
         contentGen++ // a late response for the previous query must not render
+        setContentLimit(CONTENT_PAGE) // new query — start the paging over
         if (v.trim())
             contentTimer = setTimeout(
                 () => runContentSearch(v),
@@ -275,7 +306,7 @@ export function SwitcherBar(props: Props) {
                 : aiPhase() === 'idle'
                   ? [
                         ...fileRows().map(r => r.item.id),
-                        ...contentRows().map(r => r.path),
+                        ...contentAll().map(r => r.path),
                     ]
                   : []
         props.onResultsChange?.(paths)
@@ -304,6 +335,26 @@ export function SwitcherBar(props: Props) {
     // Same stationary-pointer guard as the palette — see createPointerGuard.
     const onRowPointerMove = createPointerGuard(nav.setActive)
 
+    // Grow the rendered content page when the trailing sentinel scrolls into the list's own
+    // viewport (root = listRef) — the mouse-scroll counterpart to the keyboard-driven growth
+    // effect above. Re-observes on every (re)mount of the sentinel, since it's torn down and
+    // recreated each time the page grows past it.
+    let contentObserver: IntersectionObserver | undefined
+    const observeMore = (el: HTMLDivElement) => {
+        contentObserver?.disconnect()
+        contentObserver = new IntersectionObserver(
+            entries => {
+                if (entries[0]?.isIntersecting)
+                    setContentLimit(l =>
+                        Math.min(l + CONTENT_PAGE, contentAll().length),
+                    )
+            },
+            { root: listRef },
+        )
+        contentObserver.observe(el)
+    }
+    onCleanup(() => contentObserver?.disconnect())
+
     onMount(() => inputRef?.focus())
 
     return (
@@ -313,7 +364,7 @@ export function SwitcherBar(props: Props) {
                 leadClass={switcherStyles['switcher-lead']}
                 inputClass={switcherStyles['switcher-input']}
                 inputRef={el => (inputRef = el)}
-                placeholder="Search files, contents, or ask…"
+                placeholder="Search file names and note text…"
                 value={query()}
                 onInput={onQueryInput}
                 onKeyDown={onKeyDown}
@@ -357,7 +408,7 @@ export function SwitcherBar(props: Props) {
                     {/* Keyword content matches, under the file-name rows — the old Search tab's
               full-text results folded into this one list. Selection indices continue from
               the file rows (the nav walks the whole list). */}
-                    <Show when={contentRows().length > 0}>
+                    <Show when={contentAll().length > 0}>
                         <Text
                             as="div"
                             size="inherit"
@@ -365,7 +416,7 @@ export function SwitcherBar(props: Props) {
                             weight="inherit"
                             class={switcherStyles['switcher-section']}
                         >
-                            Content matches
+                            {`In note text // ${plural(contentAll().length, 'note')}`}
                         </Text>
                         <SearchResultRows
                             results={contentRows()}
@@ -375,6 +426,16 @@ export function SwitcherBar(props: Props) {
                                 onRowPointerMove(fileRows().length + i, e)
                             }
                         />
+                        {/* Sentinel: scrolling this into view (root = the list element) grows the
+                        rendered page just like reaching it via the keyboard (see the
+                        contentRenderLimit effect above) — a mouse-scrolling user reaches rows
+                        the keyboard hasn't visited yet. */}
+                        <Show when={contentRows().length < contentAll().length}>
+                            <div
+                                data-switcher-more
+                                ref={el => observeMore(el)}
+                            />
+                        </Show>
                     </Show>
                     {/* Persistent AI affordance for question-shaped queries that DO have rows — plain
               Enter commits the highlighted row, so the AI needs its own visible path. */}
@@ -415,7 +476,7 @@ export function SwitcherBar(props: Props) {
                         </Show>
                         {/* Any zero-result search — the Enter-to-AI empty state. Inside
                         navCount() === 0, offerAi() reduces to !!query().trim() (see
-                        shouldOfferAiEscalation), so a plain "No matching files" branch gated on
+                        shouldOfferAiEscalation), so a plain "No matches" branch gated on
                         !offerAi() here would be X && !X — permanently unreachable. There is no
                         third state: empty query -> Loading files…, non-empty -> this CTA. */}
                         <Show when={offerAi()}>
@@ -436,7 +497,7 @@ export function SwitcherBar(props: Props) {
                                     weight="inherit"
                                     class={switcherStyles['search-empty-title']}
                                 >
-                                    No matching files
+                                    No matches in file names or note text
                                 </Text>
                                 <Text
                                     as="div"
