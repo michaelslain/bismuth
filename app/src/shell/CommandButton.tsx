@@ -29,6 +29,23 @@ import styles from './CommandButton.module.css'
 // is hardcoded here rather than threaded as a prop nobody would ever set differently. This used
 // to be a per-PARENT `:global(.btn--icon)` CSS override copied into Sidebar/TabRail/EmptyPane's
 // own modules; giving the component the size fixes every caller from one place.
+//
+// `class` (one-global-followups Task 2) forwards onto the inner IconButton/Button, same shape as
+// every other primitive in `ui/`. No caller passes it yet — App.tsx's `ToolbarButton` (which
+// actually instantiates this component for the sidebar bar, the tab rail and the top strip) is
+// out of this task's file scope, so wiring a per-container local class through it is follow-up
+// work, reported rather than done here.
+//
+// `data-command-icon="true"` is the real fix for THIS task's job (Sidebar/TabRail/TopStrip no
+// longer reaching `.btn--icon` via `:global()`): those three containers still need a per-parent
+// override of the toolzone box (Sidebar/TabRail want `--bar-icon-size` = 18px; Button.module.css's
+// own `.btn--icon.btn--sm` default is 24px — genuinely different values, not a duplicate to
+// delete), but since App.tsx is the one instantiating this component, there is no scoped `class`
+// they can attach yet. An unhashed `data-*` attribute is this repo's existing escape hatch for
+// exactly that shape (see `data-sidebar-toolbar`/`data-tab-rail`/`data-pane-leaf`) — a plain
+// attribute selector, never a class-name reach, so it carries no `globalReach` bridge at all
+// instead of a permanent `:global()` one. Sidebar.module.css/TabRail.module.css/TopStrip.module.css
+// now select `[data-command-icon]` scoped under their own container class.
 export function CommandButton(props: {
     icon: string
     label: string
@@ -37,6 +54,8 @@ export function CommandButton(props: {
     /** Rendered only when greater than 0. */
     badge?: number
     onClick?: (e: MouseEvent) => void
+    /** Forwarded onto the inner Button. No current caller sets this — see header comment. */
+    class?: string
 }) {
     return (
         <div class={styles['toolbar-btn-wrap']}>
@@ -47,6 +66,8 @@ export function CommandButton(props: {
                 disabled={props.disabled}
                 label={props.label}
                 onClick={props.onClick}
+                class={props.class}
+                data-command-icon="true"
             />
             <Show when={(props.badge ?? 0) > 0}>
                 <Badge variant="solid" class={styles['toolbar-badge']}>
