@@ -1,12 +1,23 @@
 import { For, type JSX } from 'solid-js'
 import { Button, type ButtonSize } from './Button'
-import './ui.css'
+import styles from './SegmentedToggle.module.css'
 
-export type SegmentedOption<T> = { id: T; label: JSX.Element; title?: string }
+export type SegmentedOption<T> = {
+    id: T
+    label: JSX.Element
+    title?: string
+    disabled?: boolean
+    /** Extra class merged onto this option's Button, alongside `segmentClass`. */
+    class?: string
+    /** Rendered as `aria-label` on this option's Button. `title` stays as-is. */
+    ariaLabel?: string
+}
 
 export type SegmentedToggleProps<T> = {
     options: SegmentedOption<T>[]
-    value: T
+    /** `undefined` for a group with no selected segment — e.g. undo/redo, which are two
+     *  independent commands rather than a mutually-exclusive pair with an active member. */
+    value: T | undefined
     onChange: (id: T) => void
     size?: ButtonSize
     class?: string
@@ -21,7 +32,10 @@ export type SegmentedToggleProps<T> = {
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
     return (
-        <div class={`segmented ${props.class ?? ''}`}>
+        // `styles.wrap` is a no-op marker local (see SegmentedToggle.module.css) — without a
+        // real local class referenced from here, the module has zero locals and Rollup
+        // tree-shakes its whole CSS output, same trap as ui/FormControl.module.css.
+        <div class={`segmented ${styles.wrap} ${props.class ?? ''}`}>
             <For each={props.options}>
                 {opt => (
                     <Button
@@ -30,8 +44,10 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
                         size={props.size}
-                        class={props.segmentClass}
+                        class={`${props.segmentClass ?? ''} ${opt.class ?? ''}`}
                         title={opt.title}
+                        aria-label={opt.ariaLabel}
+                        disabled={opt.disabled}
                         onClick={() => props.onChange(opt.id)}
                     >
                         {opt.label}

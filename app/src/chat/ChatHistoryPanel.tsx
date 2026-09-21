@@ -86,6 +86,8 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
             </div>
             <div class={styles.scope}>
                 <SegmentedToggle
+                    class={styles['scope-toggle']}
+                    segmentClass={styles['scope-segment']}
                     options={SCOPE_OPTIONS}
                     value={props.history.scope()}
                     onChange={props.history.setScope}

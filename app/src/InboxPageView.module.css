@@ -9,12 +9,15 @@
   min-height: 0;
 }
 /* The gap belongs to the REGION, not to the bar. Every control this bar carries lives in the
-   `actions` slot, and `.vb-actions` inherits the bar-wide `--bar-icon-gap` (0px) — right for an
+   `actions` slot, and that region inherits the bar-wide `--bar-icon-gap` (0px) — right for an
    icon run, wrong here, where the run is a bare status note followed by text buttons and 0px runs
-   the sentence flush into the first button. Setting it on `.viewbar` itself does nothing now: the
+   the sentence flush into the first button. Setting it on the bar itself does nothing now: the
    bar's only children are the two groups, and space-between already separates those.
-   `.vb-actions` stays :global — it's ViewBar's own internal class (ui/ui.css), not ours. */
-.inbox-page-bar :global(.vb-actions) {
+   PARTS PROP, NOT A REACH (one-global-stylesheet followups, task 1): this used to be
+   `.inbox-page-bar :global(.vb-actions)`, reaching ViewBar's own unhashed literal. ViewBar's
+   family is real hashed locals now, so InboxPageView.tsx passes `parts={{ actions: styles.actions }}`
+   instead — a class ViewBar appends to its own `vb-actions` wrapper. */
+.actions {
   gap: var(--sp-4);
 }
 .inbox-page-body {

@@ -8,8 +8,6 @@ import { UniverSheetsFilterPreset } from '@univerjs/preset-sheets-filter'
 import UniverPresetSheetsFilterEnUS from '@univerjs/preset-sheets-filter/locales/en-US'
 import '@univerjs/preset-sheets-sort/lib/index.css'
 import '@univerjs/preset-sheets-filter/lib/index.css'
-import './univer-theme.css' // app-cohesive restyle of Univer's chrome (scoped to .bismuth-sheet)
-import './univer-icons.css' // re-skins Univer's toolbar icons with lucide (generated)
 import type { WorkbookSnapshot } from './snapshot'
 
 export interface SheetHandle {

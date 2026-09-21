@@ -39,7 +39,6 @@ function Wrap(props: { children: JSX.Element }) {
                 width: '220px',
                 background: 'var(--surface-1)',
                 border: '1px solid var(--border)',
-                'border-radius': '8px',
                 padding: '4px',
             }}
         >

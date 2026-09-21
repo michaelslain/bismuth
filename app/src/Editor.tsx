@@ -63,7 +63,7 @@ import {
 import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
-import { datePropertyPicker } from './editor/datePicker'
+import { datePropertyPicker } from './editor/datePickerExtension'
 import { iconNames } from './icons/registry'
 import { settingsCompletion, type VaultPath } from './editor/settingsComplete'
 import { editorContextMenu } from './editor/contextMenu'
@@ -135,7 +135,6 @@ import {
 } from './editor/reconcileDispatch'
 import { decideSseReconcile } from './editor/sseReconcile'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
-import './Editor.css'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
 // unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and

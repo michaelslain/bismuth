@@ -4,7 +4,7 @@
 import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
-import { TextButton } from '../ui/TextButton'
+import { Button } from '../ui/Button'
 import CodeBlock from '../ui/CodeBlock'
 import { chipSummary } from '../chatToolIcon'
 import { summarizeInput } from './chatToolFormat'
@@ -81,26 +81,32 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
                 }
             >
                 <div class={styles['chat-permission-actions']}>
-                    <TextButton
-                        variant="selected"
+                    <Button
+                        kind="text"
+                        bracket
+                        state="selected"
                         size="sm"
                         onClick={() => props.onAnswer('allow', false)}
                     >
                         ALLOW
-                    </TextButton>
-                    <TextButton
+                    </Button>
+                    <Button
+                        kind="text"
+                        bracket
                         size="sm"
                         onClick={() => props.onAnswer('allow', true)}
                     >
                         ALLOW ALWAYS
-                    </TextButton>
-                    <TextButton
+                    </Button>
+                    <Button
+                        kind="text"
+                        bracket
                         danger
                         size="sm"
                         onClick={() => props.onAnswer('deny', false)}
                     >
                         DENY
-                    </TextButton>
+                    </Button>
                 </div>
             </Show>
         </div>

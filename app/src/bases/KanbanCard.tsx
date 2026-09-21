@@ -20,7 +20,8 @@ import { metaVisible, writableKey } from './kanbanMeta'
 import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
-import Chip from '../ui/Chip'
+import ChipToggle from '../ui/ChipToggle'
+import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import styles from './KanbanCard.module.css'
 import EmptyValue from '../ui/EmptyValue'
@@ -279,13 +280,16 @@ export function KanbanCard(props: {
                                             weight="inherit"
                                             class={styles.kbMetaBoolChip}
                                         >
-                                            <Chip
+                                            <ChipToggle
                                                 selected={on}
-                                                icon={on ? 'Check' : 'Square'}
-                                                iconSize={12}
+                                                class={styles.kbMetaBoolChipToggle}
                                             >
+                                                <Icon
+                                                    value={on ? 'Check' : 'Square'}
+                                                    size={12}
+                                                />
                                                 {on ? 'Yes' : 'No'}
-                                            </Chip>
+                                            </ChipToggle>
                                         </Text>
                                     )
                                 }
@@ -306,7 +310,7 @@ export function KanbanCard(props: {
                                             }
                                         >
                                             <For each={vals}>
-                                                {t => <Chip selected>{t}</Chip>}
+                                                {t => <ChipToggle selected class={styles.kbMetaMultiselectDisplayToggle}>{t}</ChipToggle>}
                                             </For>
                                         </Text>
                                     )

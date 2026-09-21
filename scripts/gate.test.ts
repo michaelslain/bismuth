@@ -3,7 +3,13 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { affectedWorkspaces, plan, sanitizeGitEnv, touchesDesignSystem } from './gate'
+import {
+    affectedWorkspaces,
+    plan,
+    sanitizeGitEnv,
+    touchesDesignSystem,
+    touchesStylesheets,
+} from './gate'
 
 test('a single-workspace edit tests only that workspace', () => {
     expect(affectedWorkspaces(['app/src/App.tsx'])).toEqual(['app'])
@@ -100,6 +106,7 @@ test('plan: a design-system-only change (DESIGN.md) runs the design-system step 
         typecheck: false,
         tests: [],
         designSystem: true,
+        moduleClassCheck: false,
     })
 })
 
@@ -108,15 +115,34 @@ test('plan: a docs-only change runs nothing', () => {
         typecheck: false,
         tests: [],
         designSystem: false,
+        moduleClassCheck: false,
     })
 })
 
-test('plan: an app/src change runs typecheck, its workspace tests AND the design-system step', () => {
+test('plan: an app/src .ts-only change runs typecheck, its workspace tests AND the design-system step, but not moduleClassCheck', () => {
     expect(plan(['app/src/X.tsx'])).toEqual({
         typecheck: true,
         tests: ['app'],
         designSystem: true,
+        moduleClassCheck: false,
     })
+})
+
+// --- moduleClassCheck routing ------------------------------------------------------------------
+// bench/moduleClassCheck.ts builds the app, so it is the slowest gate step (~11s measured) — it
+// should fire only on a staged stylesheet, never on a components-only or docs-only change.
+
+test('touchesStylesheets fires on a staged app/src .css or .module.css, not on .ts/.tsx', () => {
+    expect(touchesStylesheets(['app/src/ui/Text.module.css'])).toBe(true)
+    expect(touchesStylesheets(['app/src/global.css'])).toBe(true)
+    expect(touchesStylesheets(['app/src/ui/Text.tsx'])).toBe(false)
+    expect(touchesStylesheets(['core/src/server.ts'])).toBe(false)
+    expect(touchesStylesheets(['docs/README.md'])).toBe(false)
+})
+
+test('plan: a staged .css path enables moduleClassCheck; a .ts-only change does not', () => {
+    expect(plan(['app/src/ui/Text.module.css']).moduleClassCheck).toBe(true)
+    expect(plan(['app/src/ui/Text.tsx']).moduleClassCheck).toBe(false)
 })
 
 // --- git hook-environment isolation ---------------------------------------------------------

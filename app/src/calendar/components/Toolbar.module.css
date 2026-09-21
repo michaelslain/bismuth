@@ -11,10 +11,10 @@
  * carried size containment and a zero flex-basis, so it could never claim width from a
  * shrink-to-fit region.
  *
- * REACHES OUT TO A GLOBAL PRIMITIVE via `:global()`: `.vbtn` is ui/ViewBar.tsx's VBtn. It is
- * qualified with a local class so it wins on SPECIFICITY (two classes) rather than on load order —
- * a bare `.cta` would tie with ui.css's `.vbtn` and be decided by which stylesheet the surface
- * happened to emit last, which differs between the app bundle and Storybook. */
+ * `.vbtn` (VBtn's own base class) is a real hashed local now (ui/ViewBar.module.css), not
+ * reachable from outside that module by name — `.cta` below needs no `:global(.vbtn)` compound any
+ * more, since a bare local class here always outranks VBtn's single-class base by specificity
+ * regardless of load order. */
 
 /* The period switcher's air. Region gaps are `--bar-icon-gap` (0px), which is right for the
    icon-button pairs the value was chosen for and wrong immediately after a text label — without
@@ -25,12 +25,12 @@
 
 /* + Event is the bar's one primary action and keeps a tint the outline states never use, so
    "create" never reads as "selected". */
-:global(.vbtn).cta {
+.cta {
     color: var(--fg);
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
-:global(.vbtn).cta:hover {
+.cta:hover {
     background: color-mix(in srgb, var(--accent) 24%, transparent);
     color: var(--fg);
 }

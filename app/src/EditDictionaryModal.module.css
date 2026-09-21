@@ -43,9 +43,10 @@
 
 /* add-a-word — distinct dashed card (same affordance as the categories modal) */
 .dict-modal .dict-add { margin-top: var(--sp-2); border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: var(--sp-5); align-items: center; }
-/* .ui-input is the shared TextInput chrome class from ui/ui.css — still global, so it must
-   not hash here or this rule silently stops matching (see plan Task 4 trap 3). */
-.dict-modal .dict-add :global(.ui-input) { flex: 1; }
+/* Was a `:global(.ui-input)` reach into FormControl's shared chrome class; TextInput now takes a
+   local class directly (its own `class` prop, merged onto the same element), so this targets our
+   own hashed local instead of the foreign global one. */
+.dict-modal .dict-input { flex: 1; }
 
 /* footer: esc hint + DONE */
 .dict-modal .dict-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px 15px; border-top: 1px solid var(--border-soft); }

@@ -1,0 +1,5 @@
+/* app/src/ui/AnchoredPopover.module.css — the anchor + dismiss layer shared by Select and
+   DateFieldEditor. Same stacking pair those two hand-rolled before this component existed:
+   above Modal (1000), backdrop under panel. */
+.backdrop { position: fixed; inset: 0; z-index: 1090; }
+.panel { position: fixed; z-index: 1100; }

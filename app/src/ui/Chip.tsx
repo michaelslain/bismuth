@@ -6,7 +6,6 @@
 import { type JSX, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import type { PaletteTokenName } from './palette'
-import './ui.css'
 
 export type ChipTone = PaletteTokenName
 

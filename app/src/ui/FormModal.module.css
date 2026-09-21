@@ -9,8 +9,15 @@
    nonzero match for `var(--mono` outside Calendar.module.css — EditDictionaryModal.module.css and
    bases/CardEditModal.module.css each reference it), but both are self-sufficient: the former
    defines its own, the latter falls back to a literal stack — so nothing actually reads the value
-   this file would cascade down. All eight are dropped as unused outside the calendar. */
-:global(.asc-modal).panel {
+   this file would cascade down. All eight are dropped as unused outside the calendar.
+
+   `.panel` no longer reaches `:global(.asc-modal)` for specificity — FormModal.tsx hands this
+   class to `<Modal>`'s own `panelClass` prop (one-global-followups Task 2), which puts it on the
+   SAME element as `.asc-modal` rather than requiring a compound selector to win a cascade fight.
+   Nothing here conflicts with `.asc-modal`'s own background/border/radius (this file only ever
+   sets size/layout — see the warning above about never redeclaring an opaque background), so a
+   plain single-class rule is sufficient. */
+.panel {
     position: relative;
     width: var(--form-modal-width, 548px);
     max-width: calc(100vw - 32px);

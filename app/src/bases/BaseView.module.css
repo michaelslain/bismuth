@@ -72,8 +72,15 @@
    calendar's switcher in the same bar, which was butted. */
 .tabs { display: flex; }
 
-/* Embedded query header: flush to the block edges (query hard-left, source icon hard-right). */
-:global(.viewbar).embeddedBar { padding-left: 0; padding-right: 0; }
+/* Embedded query header: flush to the block edges (query hard-left, source icon hard-right).
+   Doubled (`.embeddedBar.embeddedBar`) for the same reason as `.cards-draft.cards-draft` in
+   EditCardsModal.module.css: ViewBar.module.css's own `:global(.viewbar)` base padding rule is
+   also specificity (0,1,0), and cross-module load order can't be trusted to pick this override —
+   only higher specificity can. This used to chain `:global(.viewbar)` onto the front for the same
+   specificity bump; that reached ViewBar's own global class name from outside, which this drops
+   now that `<ViewBar class={styles.embeddedBar}>` (BaseView.tsx) is the only thing that needs to
+   win. */
+.embeddedBar.embeddedBar { padding-left: 0; padding-right: 0; }
 
 /* The faint "query" label in an embedded query's header bar is a <Badge> now (the house rule: never
    a bare <span> where a ui/ primitive fits). `.queryLabel` is deleted with it — it also hardcoded a

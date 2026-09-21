@@ -280,6 +280,7 @@ export function EditCardsModal(props: {
                     value={mode()}
                     onChange={setMode}
                     size="sm"
+                    segmentClass={styles['cards-modebtn']}
                     options={[
                         {
                             id: 'list',
@@ -383,6 +384,7 @@ export function EditCardsModal(props: {
                                         danger
                                         disabled={busy()}
                                         onClick={() => removeCard(i())}
+                                        class={styles['cards-del-btn']}
                                     />
                                 </div>
                             </div>

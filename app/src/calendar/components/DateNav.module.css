@@ -1,14 +1,15 @@
 /* app/src/calendar/components/DateNav.module.css — the view bar's time cluster.
  *
- * REACHES OUT TO A GLOBAL PRIMITIVE via `:global()`: `.vbtn` is ui/ViewBar.tsx's VBtn (global, per
- * ui/ui.css's own header). Every rule here is scoped under a LOCAL class first, so it outranks
- * ui.css's bare `.vbtn` without needing !important and without leaking to any other bar.
+ * `.vbtn` (VBtn's own base class, ui/ViewBar.module.css) is a real hashed local now — not reachable
+ * from outside that module by name any more — so `.range` below no longer needs a `:global(.vbtn)`
+ * compound to outrank it: a plain local class beats VBtn's single-class base on specificity alone
+ * (two classes via the `.nav` ancestor vs one), no load-order dependency either way.
  *
  * THERE ARE NO COLLAPSE RULES HERE ANY MORE. This file used to carry two @container tiers against
  * `caltoolbar`, repeating Toolbar.module.css's 540 and 400 under a comment asking the two files to
- * stay in step. Both are now one ladder in ui/ui.css, and DateNav.tsx opts in by tagging:
- * `<BarLabel drop="late">` on TODAY, a plain `<BarLabel>` on the range — which opts OUT of the
- * ladder entirely, so it survives every tier. Nothing to keep in step. */
+ * stay in step. Both are now one ladder in ui/ViewBar.module.css, and DateNav.tsx opts in by
+ * tagging: `<BarLabel drop="late">` on TODAY, a plain `<BarLabel>` on the range — which opts OUT of
+ * the ladder entirely, so it survives every tier. Nothing to keep in step. */
 
 .nav {
     display: flex;
@@ -37,11 +38,9 @@
 }
 
 /* The subject of the bar, and a secondary jump back to today. Sentence case, --fg, no tracking —
-   every control around it is uppercase and muted. `:global(.vbtn)` + a local class outranks
-   ui.css's bare `.vbtn` on specificity rather than load order. The ONLY elastic thing in the bar:
-   flex 0 1 auto + an ellipsizing inner span make a shortened date the failure mode, not controls
-   pushed out. */
-.nav :global(.vbtn).range {
+   every control around it is uppercase and muted. The ONLY elastic thing in the bar: flex 0 1 auto
+   + an ellipsizing inner span make a shortened date the failure mode, not controls pushed out. */
+.nav .range {
     flex: 0 1 auto;
     min-width: 0;
     padding: 0 var(--sp-3);

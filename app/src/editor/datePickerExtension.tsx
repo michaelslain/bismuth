@@ -43,20 +43,12 @@ import {
     type DateKind,
     type DateTarget,
 } from './datePickerCore'
-import './datePicker.css'
+import { mountSolid, disposeSolid } from './solidWidget'
+import DatePicker, { type DatePickerHandle } from './DatePicker'
 
 // Force the picker closed (Escape, or after a pick). The dismissed target's sig is held in
 // the field so it stays closed while the caret remains on the same property.
 const dismissPicker = StateEffect.define<null>()
-
-/** Imperative handle to the mounted popover, kept in a per-view map so the keymap
- *  commands (which only get the EditorView) can drive highlight + selection. */
-interface PickerController {
-    rows: HTMLElement[]
-    index: number
-    setHighlight(i: number): void
-    pick(i: number): void
-}
 
 interface PickerState {
     /** The live target is kept here so insertValue + the refresh hook read it without
@@ -68,8 +60,9 @@ interface PickerState {
 }
 
 export function datePropertyPicker(getSchema: () => Schema): Extension {
-    // One active controller per view (only one picker shows at a time).
-    const controllers = new WeakMap<EditorView, PickerController>()
+    // One active handle per view (only one picker shows at a time) — the keymap commands below
+    // only get the EditorView from CodeMirror, so they reach the rendered component through this.
+    const handles = new WeakMap<EditorView, DatePickerHandle>()
 
     function makeTooltip(target: DateTarget): Tooltip {
         return {
@@ -86,36 +79,9 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
         initial: string,
     ): TooltipView {
         const prefill = parseDateValue(initial)
-        const dom = document.createElement('div')
-        // `.bismuth-popover` supplies the menu chrome; datePicker.css restores the themed surface
-        // (CM stamps `cm-tooltip` onto this element, whose default light bg would otherwise win).
-        dom.className = 'bismuth-popover bismuth-datepicker'
-
-        // header — native date (+ time) inputs, defaulting to today / now.
-        const head = document.createElement('div')
-        head.className = 'bismuth-datepicker-head'
-        const dateInput = document.createElement('input')
-        dateInput.type = 'date'
-        dateInput.className = 'ui-input bismuth-datepicker-date'
-        dateInput.value = prefill.date || todayISO()
-        head.appendChild(dateInput)
-
-        let timeInput: HTMLInputElement | null = null
-        if (kind === 'datetime') {
-            timeInput = document.createElement('input')
-            timeInput.type = 'time'
-            timeInput.className = 'ui-input bismuth-datepicker-time'
-            timeInput.value = prefill.time || nowHHMM()
-            head.appendChild(timeInput)
-        }
-        dom.appendChild(head)
-
-        // relative-date quick options.
-        const list = document.createElement('div')
-        list.className = 'bismuth-datepicker-list'
-        dom.appendChild(list)
-
         const options = relativeDateOptions()
+        let lastDate = prefill.date || todayISO()
+        let lastTime = prefill.time || nowHHMM()
 
         // Replace the property's value with `value`. The live range comes from the field's stored
         // target (kept current by the StateField), so no re-derivation from the whole doc here.
@@ -123,7 +89,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
             const value = composeDateValue(
                 kind,
                 dateStr,
-                timeInput?.value ?? '',
+                kind === 'datetime' ? lastTime : '',
             )
             if (!value) return
             const t = view.state.field(field, false)?.open?.target
@@ -141,73 +107,47 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
             if (close) view.focus()
         }
 
-        const ctrl: PickerController = {
-            rows: [],
-            index: -1,
-            setHighlight(i: number) {
-                this.index = i
-                this.rows.forEach((r, idx) =>
-                    r.classList.toggle(
-                        'bismuth-popover-row--selected',
-                        idx === i,
-                    ),
-                )
-            },
-            pick(i: number) {
-                const opt = options[i]
-                if (opt) insertValue(opt.date, true)
-            },
-        }
+        const dom = document.createElement('div')
+        mountSolid(dom, () => (
+            <DatePicker
+                kind={kind}
+                initialDate={prefill.date || todayISO()}
+                initialTime={lastTime}
+                options={options}
+                onDateChange={(v, close) => {
+                    lastDate = v
+                    insertValue(v, close)
+                }}
+                onTimeChange={v => {
+                    lastTime = v
+                    insertValue(lastDate, true)
+                }}
+                onPick={i => {
+                    const opt = options[i]
+                    if (opt) insertValue(opt.date, true)
+                }}
+                handleRef={h => handles.set(view, h)}
+            />
+        ))
 
-        options.forEach((opt, i) => {
-            const row = document.createElement('div')
-            row.className = 'bismuth-popover-row'
-            const label = document.createElement('span')
-            label.className = 'bismuth-popover-label'
-            label.textContent = opt.label
-            row.appendChild(label)
-            const detail = document.createElement('span')
-            detail.className = 'bismuth-popover-detail'
-            detail.textContent = opt.date
-            row.appendChild(detail)
-            // mousedown + preventDefault → applying a row never blurs the editor.
-            row.addEventListener('mousedown', e => {
-                e.preventDefault()
-                insertValue(opt.date, true)
-            })
-            row.addEventListener('mouseenter', () => ctrl.setHighlight(i))
-            list.appendChild(row)
-            ctrl.rows.push(row)
-        })
-
-        // Native picker: applying immediately. A bare date closes; a datetime keeps the popover
-        // open after the date so the time can still be set (and vice-versa).
-        dateInput.addEventListener('change', () =>
-            insertValue(dateInput.value, kind === 'date'),
-        )
-        timeInput?.addEventListener('change', () =>
-            insertValue(dateInput.value, true),
-        )
-
-        controllers.set(view, ctrl)
         return {
             dom,
             mount() {}, // don't scroll/reposition the editor when the popover mounts
             // The tooltip is reused (not remounted) while the caret stays on the same property, so
             // refresh the inputs in place when the underlying value is edited — but never steal
-            // focus from an input the user is actively using.
+            // focus from an input the user is actively using (DatePicker.refresh enforces that).
             update(u) {
                 if (!u.docChanged) return
                 const target = u.state.field(field, false)?.open?.target
                 if (!target) return
                 const pf = parseDateValue(target.current)
-                if (document.activeElement !== dateInput)
-                    dateInput.value = pf.date || todayISO()
-                if (timeInput && document.activeElement !== timeInput)
-                    timeInput.value = pf.time || nowHHMM()
+                lastDate = pf.date || todayISO()
+                lastTime = pf.time || lastTime
+                handles.get(view)?.refresh(lastDate, lastTime)
             },
             destroy() {
-                if (controllers.get(view) === ctrl) controllers.delete(view)
+                disposeSolid(dom)
+                if (handles.get(view)) handles.delete(view)
             },
         }
     }
@@ -261,14 +201,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
 
     function move(view: EditorView, delta: number): boolean {
         if (!isOpen(view.state)) return false
-        const ctrl = controllers.get(view)
-        if (!ctrl || ctrl.rows.length === 0) return false
-        const n = ctrl.rows.length
-        let i = ctrl.index + delta
-        if (i < 0) i = n - 1
-        else if (i >= n) i = 0
-        ctrl.setHighlight(i)
-        return true
+        return handles.get(view)?.moveHighlight(delta) ?? false
     }
 
     const dateKeymap = Prec.highest(
@@ -287,10 +220,8 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
                 key: 'Enter',
                 run: view => {
                     if (!isOpen(view.state)) return false
-                    const ctrl = controllers.get(view)
-                    if (!ctrl || ctrl.index < 0) return false // nothing highlighted → normal Enter
-                    ctrl.pick(ctrl.index)
-                    return true
+                    // false (nothing highlighted) → fall through to normal Enter.
+                    return handles.get(view)?.pickHighlighted() ?? false
                 },
             },
         ]),

@@ -5,6 +5,7 @@
 // Props: options (id + label + optional title), value, onChange, size?, class?,
 // segmentClass?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { SegmentedToggle } from './SegmentedToggle'
 import { Icon } from '../icons/Icon'
@@ -97,6 +98,57 @@ export const WithIcons: Story = {
                 ]}
             />
         )
+    },
+}
+
+/** No selected segment (undo/redo shape) plus a per-option `class` + `ariaLabel` — the
+ *  drawing toolbar's zoom group shape: two icon commands and a fixed-width percent readout,
+ *  none of them ever "selected". */
+export const NoSelectionWithOptionExtras: Story = {
+    render: () => {
+        const [pct, setPct] = createSignal(100)
+        return (
+            <SegmentedToggle
+                value={undefined}
+                onChange={id => {
+                    if (id === 'out') setPct(p => p - 5)
+                    else if (id === 'in') setPct(p => p + 5)
+                }}
+                options={[
+                    {
+                        id: 'out' as const,
+                        label: <Icon value="ZoomOut" size={17} />,
+                        title: 'Zoom out',
+                        ariaLabel: 'Zoom out',
+                    },
+                    {
+                        id: 'reset' as const,
+                        label: `${pct()}%`,
+                        title: 'Reset zoom',
+                        ariaLabel: 'Reset zoom',
+                        class: 'fixed-width-demo',
+                    },
+                    {
+                        id: 'in' as const,
+                        label: <Icon value="ZoomIn" size={17} />,
+                        title: 'Zoom in',
+                        ariaLabel: 'Zoom in',
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const out = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Zoom out"]',
+        )!
+        const reset = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Reset zoom"]',
+        )!
+        expect(out).not.toBeNull()
+        expect(reset.classList.contains('fixed-width-demo')).toBe(true)
+        // No segment is ever "selected" — this group has no active member.
+        expect(out.classList.contains('btn--selected')).toBe(false)
     },
 }
 

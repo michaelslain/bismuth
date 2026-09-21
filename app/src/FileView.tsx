@@ -127,8 +127,7 @@ export function FileView(props: {
               No backlinks surface here any more — neither the below-editor strip nor the corner
               control. The note's connections are answered by the graph's LOCAL lens (GraphView's
               MODE_ICON/local mode), which shows inbound AND outbound links rather than a list of
-              inbound ones. Backlinks.tsx / BacklinksPanel are unmounted; backlinkGraph.ts (pure +
-              tested) stays for whatever surfaces them next. */}
+              inbound ones. */}
                     <div class={styles['fv-column']}>
                         <div class={styles['fv-editor-slot']}>
                             <Editor

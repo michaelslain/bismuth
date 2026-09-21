@@ -787,6 +787,11 @@ export function BaseSettings(props: {
                                                                         },
                                                                     )
                                                                 }
+                                                                class={
+                                                                    styles[
+                                                                        'propset-numrow-unit'
+                                                                    ]
+                                                                }
                                                             />
                                                         </Show>
                                                     </div>

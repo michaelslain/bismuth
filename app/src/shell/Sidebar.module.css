@@ -32,6 +32,18 @@
    shell/CommandButton.tsx, which every button in this toolbar renders through. What remains below
    is the one override that genuinely belongs to THIS parent: the settings-driven font-size.
 
+   THE `:global(.btn--icon...)` REACHES ARE GONE (one-global-followups Task 2). CommandButton now
+   grows a `class` prop, but nothing here can use it: every button in this toolbar renders through
+   `shell/CommandButton.tsx`, instantiated by App.tsx's `ToolbarButton` (out of this task's file
+   scope) via `Sidebar`'s `toolbar: JSX.Element` slot — Sidebar.tsx never creates the button
+   element itself, so it has no call site to attach a local class to. What DOES close the reach:
+   `shell/CommandButton.tsx` now also stamps `data-command-icon="true"` on the button it renders —
+   a stable, UNHASHED attribute (same shape as `data-sidebar-toolbar` two paragraphs down), so this
+   file can select `.sidebar-icons [data-command-icon]` instead of reaching into a foreign
+   module's hashed class via `:global()`. `--bar-icon-size` (18px) genuinely differs from
+   Button.module.css's own `.btn--icon.btn--sm` default (24px) — not a duplicate to delete, a real
+   per-container override that has to land somewhere.
+
    `.sidebar-icons` ALSO carries `data-sidebar-toolbar="true"` in Sidebar.tsx now. That attribute
    is not styled by anything in THIS file — it exists so `palette/switcher.css` (a wholly unrelated
    component) can keep dimming this row while the Cmd+O switcher is open, which it used to do via a
@@ -78,9 +90,10 @@
    land on the shared rhythm. --h-band is the fix, not a new number. */
 /* The icon box + zero gap that make glyph-to-glyph match the file tree's 6px live in ui/ui.css
    now, applied to EVERY bar rather than only this one. */
-/* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
-   is module-hashed and a global rule naming it would match nothing. */
-.sidebar-icons :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+/* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
+   shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
+   plain attribute selector, not a foreign class reach, so this carries no `:global()`. */
+.sidebar-icons [data-command-icon] { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 .sidebar-icons { display: flex; align-items: center; gap: var(--bar-icon-gap); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
@@ -88,5 +101,5 @@
    also brings the BUTTON element's own font-size in line so nothing inside it silently reverts.
    The box model (width/height/padding/radius/hover) that used to sit in a second copy of this
    same selector moved to ui/ui.css's `.btn--icon.btn--sm` — see this file's header comment. */
-.sidebar-icons :global(.btn--icon) { font-size: var(--sidebar-icon-font-size); }
+.sidebar-icons [data-command-icon] { font-size: var(--sidebar-icon-font-size); }
 .sidebar canvas { display: block; }

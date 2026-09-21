@@ -15,12 +15,17 @@ export type DaemonPanelProps = {
     count?: number
     actions?: JSX.Element
     children: JSX.Element
+    /** Size to content (capped by the caller's max-height) instead of filling the cell. */
+    packToContent?: boolean
     class?: string
 }
 
 function DaemonPanel(props: DaemonPanelProps) {
     return (
-        <div class={`${styles['daemon-panel']} ${props.class ?? ''}`}>
+        <div
+            class={`${styles['daemon-panel']} ${props.class ?? ''}`}
+            classList={{ [styles['pack-to-content']]: props.packToContent }}
+        >
             <div class={styles['daemon-panel-head']}>
                 <Text
                     as="div"
@@ -48,3 +53,11 @@ function DaemonPanel(props: DaemonPanelProps) {
 }
 
 export default DaemonPanel
+
+/** `blockClass` for an `<EmptyState>` rendered inside a `DaemonPanel`'s body (DaemonInbox,
+ *  DaemonServices, DaemonLog all pass this) — the inset + row-matched font-size a panel's empty
+ *  state needs, formerly `.daemon-panel-body > :global(.ui-empty-block)` reaching EmptyState's
+ *  internals by class name. DaemonPanel itself never renders `<EmptyState>` (its `children` are
+ *  opaque), so this is exported for each caller to hand to its own `<EmptyState blockClass={...}>`
+ *  instead. */
+export const daemonPanelEmptyClass = styles['panel-empty']

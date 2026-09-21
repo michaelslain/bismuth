@@ -5,7 +5,7 @@
 import { For, Show } from 'solid-js'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import activityLine from './activityLine'
-import DaemonPanel from './DaemonPanel'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import styles from './DaemonLog.module.css'
@@ -25,7 +25,7 @@ function DaemonLog(props: DaemonLogProps) {
         >
             <Show
                 when={props.events.length > 0}
-                fallback={<EmptyState>nothing logged yet</EmptyState>}
+                fallback={<EmptyState blockClass={daemonPanelEmptyClass}>nothing logged yet</EmptyState>}
             >
                 <For each={props.events}>
                     {e => {

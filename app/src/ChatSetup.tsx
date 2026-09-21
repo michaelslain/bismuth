@@ -36,7 +36,7 @@ const ChatSetup: Component<ChatSetupProps> = props => (
         </div>
         <Heading level={3}>{props.heading}</Heading>
         {props.body}
-        <TextButton onClick={props.onAction}>{props.actionLabel}</TextButton>
+        <TextButton class={styles['switch-btn']} onClick={props.onAction}>{props.actionLabel}</TextButton>
     </div>
 )
 

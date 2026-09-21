@@ -219,6 +219,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                 }}
                             />
                             <TextInput
+                                class={styles['cat-input']}
                                 placeholder="Category name"
                                 value={newName()}
                                 onInput={setNewName}

@@ -35,6 +35,7 @@ function PaletteFrame(props: PaletteFrameProps) {
         >
             <SearchBar
                 class={styles['palette-search']}
+                leadClass={styles['palette-lead']}
                 inputClass={styles['palette-input']}
                 inputRef={props.inputRef}
                 placeholder={props.placeholder}

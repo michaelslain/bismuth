@@ -56,7 +56,7 @@ export const Filled: Story = {
     render: () => (
         <Controlled
             initial={
-                '## Ship the release\n\n**Bold** and _italic_ render as real formatting, not symbols.\n\n- Cut the changelog\n- Tag the build\n'
+                '## Ship the release\n\n**Bold** and _italic_ render as real formatting, not symbols.\n\n- Cut the changelog\n- Tag the build\n\n> Freeze the branch before tagging.\n'
             }
         />
     ),

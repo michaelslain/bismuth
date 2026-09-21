@@ -53,7 +53,9 @@
     --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
     --min-font-size-inv: calc(1 / var(--min-font-size));
 }
+/* design-system-ignore globalReach: pdf.js's own TextLayer paints .markedContent spans directly into the DOM at runtime (upstream pdfjs-dist markup this repo does not build) — the same plain-DOM-library exception as the span/br rules above */
 .pdf-text-layer > :global(:not(.markedContent)),
+/* design-system-ignore globalReach: pdf.js-emitted .markedContent, see above */
 .pdf-text-layer :global(.markedContent span:not(.markedContent)) {
     --font-height: 0;
     font-size: calc(var(--text-scale-factor) * var(--font-height));
@@ -62,6 +64,7 @@
     transform: rotate(var(--rotate)) scaleX(var(--scale-x))
         scale(var(--min-font-size-inv));
 }
+/* design-system-ignore globalReach: pdf.js-emitted .markedContent, see above */
 .pdf-text-layer :global(.markedContent) {
     display: contents;
 }

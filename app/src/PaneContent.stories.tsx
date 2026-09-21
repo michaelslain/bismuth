@@ -135,7 +135,7 @@ export const ChatSentinel: Story = {
     play: async ({ canvasElement }) => {
         await waitFor(
             () => {
-                expect(canvasElement.querySelector('.viewbar')).not.toBeNull()
+                expect(canvasElement.querySelector('[data-viewbar]')).not.toBeNull()
                 expect(
                     canvasElement.querySelector('.cm-content'),
                 ).not.toBeNull()

@@ -123,6 +123,18 @@ const SKIP_MODULES = new Set<string>([
     // visible today only in Storybook, structurally cannot appear in a `vite build` of the app.
     'ui/Callout.module.css',
     'ui/Frontmatter.module.css',
+    // one-global-followups Task 5: Backlinks.tsx (and Glyph.tsx/GraphField.tsx, which had the same
+    // shape) were deleted outright as dead code, confirmed via `grep -rn` across app/src, bench/,
+    // core/, docs/ with only their own stories/tests as hits. AsciiTree.tsx was Backlinks' sole
+    // production-path consumer and is unaffected by that deletion (out of this task's scope), so
+    // AsciiTree.module.css is now unreachable too, visible today only via AsciiTree.stories.tsx —
+    // same shape as Callout/Frontmatter above: a real component, structurally unreachable by
+    // `vite build` until something mounts it again.
+    'ui/ascii/AsciiTree.module.css',
+    // ChatSessionProbe.tsx's own header says it plainly: "DEV-ONLY ... Not used by the app." No
+    // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
+    // and its own .stories.tsx), by design.
+    'chat/ChatSessionProbe.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

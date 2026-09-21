@@ -88,7 +88,40 @@ export const Drafting: Story = (() => {
     }
 })() satisfies Story
 
+/** Render-only: proves the chip renders and stays put for the screenshot — `RemoveAttachment`
+ *  below is the one that clicks it away. Splitting these means the post-play screenshot this
+ *  story is judged by actually shows an attachment chip. */
 export const WithAttachments: Story = {
+    render: () => {
+        const session = makeStubChatSession({
+            attachments: [
+                { name: 'shot.png', mediaType: 'image/png', data: TINY_PNG },
+            ],
+        })
+        return (
+            <ChatComposerBar
+                session={session}
+                placeholder="Message Claude"
+                noteNames={noNames}
+                memoryNames={noNames}
+                tagNames={noNames}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const chips = canvasElement.querySelectorAll(
+            `.${styles.attachment}`,
+        )
+        expect(chips.length).toBe(1)
+        await expect(
+            within(canvasElement).getByLabelText('Remove attachment'),
+        ).not.toBeNull()
+    },
+}
+
+/** Clicking the remove button on an attachment chip drops it — the behavior `WithAttachments`
+ *  above used to assert (and, by clicking mid-play, leave its own screenshot empty). */
+export const RemoveAttachment: Story = {
     render: () => {
         const session = makeStubChatSession({
             attachments: [
@@ -124,8 +157,18 @@ export const WithAttachments: Story = {
 }
 
 /** Typing "/" opens the slash popover, filtered by the session's own slash commands — never a
- *  hardcoded list. */
+ *  hardcoded list. The popover opens ABOVE the box (`.slash-popover`'s `bottom: calc(100% + 6px)`),
+ *  so with no headroom above the composer it lands off the top of the canvas (measured at
+ *  y = -54) — this decorator gives it ~90px of top padding to render inside the frame, the same
+ *  way a real page has toolbar/chrome above the composer. */
 export const SlashPopover: Story = {
+    decorators: [
+        Story => (
+            <div style={{ 'padding-top': '90px' }}>
+                <Story />
+            </div>
+        ),
+    ],
     render: () => {
         const session = makeStubChatSession({
             slashCommands: ['compact', 'clear', 'chrome'],

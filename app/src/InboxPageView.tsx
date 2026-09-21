@@ -92,7 +92,7 @@ export function InboxPageView(props: {
     return (
         <div class={styles['inbox-page-host']}>
             <ViewBar
-                class={styles['inbox-page-bar']}
+                parts={{ actions: styles.actions }}
                 identity={<Crumb icon="Inbox">Daemon inbox</Crumb>}
                 actions={
                     <>

@@ -3,9 +3,16 @@
    ChatHeader.module.css now that ChatHistoryPanel.tsx (not ChatHeader.tsx) renders this markup —
    the anchor + toggle button stay in ChatControls.module.css, which owns "where does this attach".
 
-   REACHES INTO FOREIGN CLASSES via `:global()`: `.list:global(.bismuth-popover)` + `:global(.bismuth-
-   popover-detail)` (the shared popover chrome, ui/popover/popover.css), `.scope :global(.segmented)`
-   (+` button`, ui/ui.css), `.search-input:global(.ui-input)` (+`:focus`, ui/ui.css). */
+   `.list`/`.search-input` are now plain local classes: PopoverList and TextInput already accept a
+   `class` prop and carry it on the exact element these rules target, so no `:global()` bridge is
+   needed there any more. `.scope-toggle`/`.scope-segment` are handed to SegmentedToggle via its
+   own `class`/`segmentClass` props for the same reason.
+
+   STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow now
+   accepts `class`/`detailClass` for exactly this (one-global-followups Task 3), but PopoverList
+   (this file's actual child, ui/popover/PopoverList.tsx — not in this task's file set) renders
+   MenuRow internally and exposes no prop to pass either through; the bridge stays until PopoverList
+   forwards them. */
 
 .panel {
     display: flex;
@@ -53,7 +60,7 @@
     padding-block: var(--sp-2);
     padding-inline: max(var(--sp-2), calc((100% - 720px) / 2));
 }
-.list:global(.bismuth-popover) {
+.list {
     border: none;
     box-shadow: none;
     background: transparent;
@@ -61,7 +68,7 @@
     min-width: 0;
     width: 100%;
 }
-.list:global(.bismuth-popover) :global(.bismuth-popover-row) {
+.list :global(.bismuth-popover-row) {
     padding-block: var(--sp-3);
 }
 .panel :global(.bismuth-popover-detail) {
@@ -81,7 +88,7 @@
     color: var(--faint);
     flex: 0 0 auto;
 }
-.search-input:global(.ui-input) {
+.search-input {
     flex: 1 1 auto;
     min-width: 0;
     border: none;
@@ -90,7 +97,7 @@
     font-size: var(--fs-body);
     box-shadow: none;
 }
-.search-input:global(.ui-input):focus {
+.search-input:focus {
     outline: none;
     box-shadow: none;
 }
@@ -103,10 +110,10 @@
     padding: var(--sp-3) var(--sp-5);
     border-bottom: 1px solid var(--border-soft);
 }
-.scope :global(.segmented) {
+.scope-toggle {
     width: 100%;
 }
-.scope :global(.segmented) button {
+.scope-segment {
     flex: 1 1 0;
 }
 

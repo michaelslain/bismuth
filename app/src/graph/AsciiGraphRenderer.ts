@@ -42,7 +42,6 @@
 // crossfades, not switches, and `lodMix` owns both ends of the first one — see the field docs on
 // `glyphAlpha`/`memberEdgeAlpha` for the trap of collapsing them into a single number.
 
-import './asciiGraph.css'
 import { parseHex } from '../color/parseHex'
 import type { GraphData, GraphNode } from '../../../core/src/graph'
 import { nodeVisualState } from '../../../core/src/daemonViz'

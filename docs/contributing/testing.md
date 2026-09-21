@@ -1250,13 +1250,15 @@ not own via `:global()`, 57 of them into `Button`'s own `.btn*` family from 50 d
 stylesheets. Each is a component nobody extracted or a prop nobody added, and the ratchet exists so
 the pile can only shrink — a NEW reach, in any file, fails the commit gate.
 
-The 51st entry is `oneGlobalFile`, which says the target shape is **one global stylesheet plus N
-`<Component>.module.css`, and nothing else**. Bismuth's global layer is currently 13 files
-(`App.css`, `styles/{tokens,reset,content}.css`, `ui/ui.css`, `Editor.css`, `Terminal.css`,
+It carried an `oneGlobalFile` entry too, for a stretch when the global layer was still split across
+13 files (`App.css`, `styles/{tokens,reset,content}.css`, `ui/ui.css`, `Editor.css`, `Terminal.css`,
 `ui/popover/popover.css`, `editor/datePicker.css`, `graph/asciiGraph.css`, `palette/switcher.css`,
-`sheet/univer-{theme,icons}.css`). Some of those are unextracted components; the rest are sections
-of one file that were filed as files. `@import` does not resolve it — it is still N files, and it
-hoists (see `cssLayering.test.ts`).
+`sheet/univer-{theme,icons}.css`) — some unextracted components, the rest sections of one file filed
+as files. `@import` did not resolve it — still N files, and it hoists (see `cssLayering.test.ts`).
+That work landed, the global layer is now the target shape (one `app/src/global.css`, nothing
+else), and the baseline was pruned to match: it now holds 13 `globalReach` entries and no
+`oneGlobalFile` entry — down from 34, found by running the gate with an empty baseline and keeping
+exactly the findings that still fire.
 
 Prefer the two narrower mechanisms. A genuine, permanent exception belongs in `DESIGN.md`'s
 `governance` block (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE,
@@ -1281,6 +1283,14 @@ compiles and renders but matches nothing once the real rule's name is hashed. Ne
 — unlike `cssBaseline.ts`, it isn't blind to a `:hover`-only branch, a Tauri-only window control, or
 a component with no story. It compares NAMES only, not appearance or cascade order, and reports any
 module whose `styles` object is indexed by a runtime key as UNCHECKABLE rather than guessing.
+
+**Wired into `scripts/gate.ts` pre-commit**, as its own fourth step, whenever a staged path matches
+`app/src/**/*.css` (`touchesStylesheets` — narrower than `touchesDesignSystem` above). It builds the
+app to get real bundle output, which makes it the slowest gate step — **~11s measured** on this
+repo — so the trigger is narrowed to stylesheets only as a cost tradeoff, and only runs when a
+stylesheet is staged. This means a **`.tsx`-only** change that reintroduces a stale class literal
+(e.g. `class="vbtn"`) is **NOT caught at pre-commit** — run `bun run bench/moduleClassCheck.ts` by
+hand for that case. Like every gate step, it reads the working tree, not the staged snapshot.
 
 ### `bench/templateDiff.ts` — did a refactor change the emitted markup?
 

@@ -59,8 +59,10 @@
   height: 0;
 }
 
-/* `.draw-toolbar` is the GLOBAL literal drawing/Toolbar.tsx renders (see Toolbar.module.css) —
-   reached with :global() so this module does not hash it into a selector matching nothing. */
-.page-ink.active :global(.draw-toolbar) {
+/* The drawing dock is Toolbar.tsx's `.draw-toolbar` (still a bare, global, unhashed class in
+   drawing/Toolbar.module.css — external story probes need the literal string). This file reaches
+   it through the `data-draw-toolbar` attribute Toolbar.tsx also carries on the same node instead,
+   which needs no hashing to stay correct. */
+.page-ink.active [data-draw-toolbar] {
   pointer-events: auto;
 }

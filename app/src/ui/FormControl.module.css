@@ -1,0 +1,58 @@
+/* app/src/ui/FormControl.module.css — the shared form-control chrome behind TextInput and
+   Select's trigger. MOVED from ui/ui.css (2026-09-20, CSS modules migration continuation, Task
+   3, revised after review).
+
+   `.ui-input` is applied by BOTH TextInput.tsx (the field itself) and Select.tsx (composed onto
+   its trigger button via FormControl's `as="button"` branch) — two real components sharing one
+   rule, which is a missing component, not a reason to strand the rule in a bare global file.
+   FormControl.tsx is that missing component; this is its ONE colocated stylesheet, imported by
+   its one importer.
+
+   The selectors below stay wrapped in `:global()` — genuinely GLOBAL, unhashed class names, not
+   scoped module locals — because six stylesheets outside ui/ still reach `.ui-input`/
+   `.ui-select-trigger`/`.ui-select-caret` via `:global()` (ChatHistoryPanel, EditDictionaryModal,
+   CategoryPanel, BaseSettings, PropertyValueEditor, EditCardsModal / FlashcardsView comments —
+   ChatControls migrated off this list in one-global-followups Task 3, onto Select's own
+   `class`/`caretClass` props), and three call sites write the literal class name directly
+   (graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx, editor/DatePicker.tsx), plus a
+   `querySelector('.ui-select-trigger')` in bases/CardEditModal.tsx. Hashing any of the three
+   here would silently unstyle every one of those. A later wave migrates the remaining readers
+   onto the real components; until then FormControl.tsx applies these same literal class names
+   (see FormControl.tsx's `cls()`), not the hashed module locals a `.module.css` would normally
+   produce. See .claude/plans/ui-css-ownership.md. */
+
+/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
+   this file exports a real hashed local FormControl.tsx actually reads — a `.module.css` with
+   zero local classes reads as dead to `bench/moduleClassCheck.ts`, which this isn't. */
+.control { --form-control: true; }
+
+/* One look for every text field and dropdown trigger: surface fill, soft border, accent focus
+   ring. Mono UI font — value and hint are both mono now. */
+:global(.ui-input) { /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border: var(--rule-soft);
+  border-radius: var(--r-0);
+  color: var(--fg);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+:global(.ui-input)::placeholder { color: var(--faint); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-input):hover:not(:focus) { border-color: var(--border); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* Signature focus treatment: accent border + a soft accent glow ring. */
+:global(.ui-input):focus, :global(.ui-input):focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+textarea:global(.ui-input) { resize: none; min-height: 62px; line-height: var(--lh-ui); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+
+/* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
+   list is a portaled <PopoverList> above the modal overlay; a transparent backdrop
+   between the overlay and the list catches outside clicks. */
+:global(.ui-select-trigger) { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-select-trigger):focus { border-color: var(--accent); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* border-color alone is not a focus indicator on a trigger whose resting border is already a
+   hairline — and it is entirely invisible once the control is in an accent-bordered state. */
+:global(.ui-select-trigger):focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-select-caret) { flex: none; color: var(--faint); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */

@@ -15,12 +15,15 @@
 
 /* The message box: attachment chips + the CodeMirror field + send/stop inside ONE outlined
    surface, capped to the 680px reading column — no fill, radius 3, a hairline border that turns
-   --accent on focus. */
+   --accent on focus. Layout the send/stop button and the attachment-remove button need is handed
+   to IconButton via its own `class` prop (`.send`, `.attachment-remove.attachment-remove`) rather
+   than reached into via `:global()`. */
 .box {
     /* The composer's one vertical rhythm value — the padding above/below the draft text inside the
        CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
        var(--chat-composer-line-pad)) and the amount the send button lifts by to sit level with it. */
     --chat-composer-line-pad: 5px;
+    position: relative;
     display: flex;
     align-items: flex-end;
     gap: var(--sp-3);
@@ -33,7 +36,7 @@
     border-radius: var(--r-0);
     transition: border-color var(--dur) var(--ease);
 }
-.box > :global(.btn) {
+.send {
     margin-bottom: var(--chat-composer-line-pad);
 }
 .box:hover:not(:focus-within) {
@@ -103,26 +106,33 @@
    DARK in the light themes and would sit invisible on this same dark scrim). Darkened further on
    hover via color-mix on the background token itself, rather than a hardcoded rgba, so a theme's
    own scrim tone still drives the hover state. */
-.attachment :global(.btn--icon).attachment-remove {
+/* `.attachment-remove.attachment-remove` — the class repeated, not reached into `:global(.btn--
+   icon)` — matches that rule's own 0,0,2,0 specificity (ui/Button.module.css's
+   `.btn--icon.btn--normal { opacity: 1 }`) without depending on stylesheet load order, the same
+   guarantee the old `:global()` compound gave, entirely in local classes.
+   Acceptance: square (--r-0, not a circle), no filled background, glyph in --text-muted (nearest
+   real token to a --fg-muted this app doesn't define), --fg on hover — a plain glyph button over
+   the thumbnail rather than a filled scrim chip. */
+.attachment-remove.attachment-remove {
     position: absolute;
     top: 3px;
     right: 3px;
     width: 18px;
     height: 18px;
     padding: 0;
-    border-radius: 50%;
-    background: var(--scrim-bg);
-    color: var(--on-scrim);
+    border-radius: var(--r-0);
+    background: none;
+    color: var(--text-muted);
     opacity: 1;
 }
-.attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--scrim-bg), black 25%);
-    color: var(--on-scrim);
+.attachment-remove.attachment-remove:hover:not(:disabled) {
+    background: none;
+    color: var(--fg);
 }
 
-/* The slash-command autocomplete popover — anchored to the bar (see the header comment in
-   ChatComposerBar.tsx: its `bottom: 100%` resolves against `.bar`'s top edge, which is always the
-   box's top edge since the box is `.bar`'s first flowed child). */
+/* The slash-command autocomplete popover — a child of `.box` (not `.bar`), so its containing
+   block is the 680px centred column, not the bar's full-width row. `.bar` spans the whole pane
+   width; anchoring to it left the popover pinned to the pane's left edge instead of the box. */
 .slash-popover {
     position: absolute;
     left: 0;

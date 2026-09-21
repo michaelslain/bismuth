@@ -3,11 +3,9 @@
    ChatView.css verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented
    below. Consumed by ChatView.tsx only.
 
-   OWNS: .chat-setup, .chat-setup-icon (+ plain `h3`/`p`/`code` element selectors under `.chat-setup`,
-   which need no hashing).
-
-   REACHES ONE FOREIGN CLASS via `:global()`: `.chat-setup :global(.btn)` — the shared Button
-   (ui/ui.css), the setup screen's switch-provider escape hatch. */
+   OWNS: .chat-setup, .chat-setup-icon, .switch-btn (+ plain `h3`/`p`/`code` element selectors under
+   `.chat-setup`, which need no hashing). The switch-provider escape hatch's spacing is handed to
+   TextButton via its `class` prop rather than reached into via `:global(.btn)`. */
 
 /* ── Setup state (claude not installed) — already minimal. ───────────────────────────── */
 .chat-setup {
@@ -40,7 +38,7 @@
   line-height: 1.5;
 }
 /* The setup screen's switch-provider escape hatch (card #90) — breathing room off the copy. */
-.chat-setup :global(.btn) {
+.switch-btn {
   margin-top: var(--sp-5);
 }
 .chat-setup code {

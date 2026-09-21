@@ -52,6 +52,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                         icon="Plus"
                         label="Bookmark this page"
                         size="sm"
+                        class={styles['bookmarks-add']}
                         disabled={!ready()}
                         onClick={() =>
                             props.store.edit(d =>

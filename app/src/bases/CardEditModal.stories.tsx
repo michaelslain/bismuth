@@ -55,14 +55,16 @@ export const Default: Story = {
         )
         expect(titleInput).not.toBeNull()
         expect(titleInput!.value).toBe('Ship storybook coverage')
-        // The `due` property (a declared `date` kind) renders a real `<input type="date">`
-        // (PropertyValueEditor.tsx) seeded from the row's value ("2026-08-05") — proves the
-        // "every declared property, populated" half of this modal's whole reason to exist.
-        const dueInput = document.querySelector<HTMLInputElement>(
-            'input[type="date"]',
+        // The `due` property (a declared `date` kind) renders DateFieldEditor — one trigger that opens the app's DatePicker
+        // (editor/DatePicker.tsx, its header date input under the hood) seeded from the row's
+        // value ("2026-08-05") — proves the "every declared property, populated" half of this
+        // modal's whole reason to exist, and that DUE no longer falls back to the bare native
+        // date input PropertyValueEditor renders for every other declared date property.
+        const dueTrigger = document.querySelector<HTMLButtonElement>(
+            '[data-testid="date-field-trigger"]',
         )
-        expect(dueInput).not.toBeNull()
-        expect(dueInput!.value).toBe('2026-08-05')
+        expect(dueTrigger).not.toBeNull()
+        expect(dueTrigger!.textContent).toBe('2026-08-05')
     },
 }
 
@@ -102,10 +104,10 @@ export const EmptyCard: Story = {
         // state distinction the story exists to demonstrate: a fresh card's declared
         // properties are all present and all EMPTY, not the row's real ("2026-08-05") value
         // `Default` asserts.
-        const dueInput = document.querySelector<HTMLInputElement>(
-            'input[type="date"]',
+        const dueTrigger = document.querySelector<HTMLButtonElement>(
+            '[data-testid="date-field-trigger"]',
         )
-        expect(dueInput).not.toBeNull()
-        expect(dueInput!.value).toBe('')
+        expect(dueTrigger).not.toBeNull()
+        expect(dueTrigger!.textContent).toBe('Set date…')
     },
 }

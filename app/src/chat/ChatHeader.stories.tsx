@@ -82,7 +82,7 @@ function InPane(props: { width: number; permMode?: string }) {
 export const Default: Story = {
     render: () => <InPane width={900} />,
     play: async ({ canvasElement }) => {
-        const title = canvasElement.querySelector<HTMLElement>('.crumb b')!
+        const title = canvasElement.querySelector<HTMLElement>('[data-testid="crumb-title"]')!
         expect(title.clientWidth).toBeGreaterThan(0)
         expect(
             canvasElement.querySelector('[data-testid="chat-tools"]'),
@@ -117,7 +117,7 @@ export const Bypass: Story = {
         expect(
             canvasElement.querySelector('[data-testid="chat-perm-mode"]'),
         ).toBeNull()
-        expect(canvasElement.querySelector('.crumb b')).not.toBeNull()
+        expect(canvasElement.querySelector('[data-testid="crumb-title"]')).not.toBeNull()
     },
 }
 
@@ -126,7 +126,7 @@ export const Bypass: Story = {
 export const Narrow460: Story = {
     render: () => <InPane width={460} />,
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         const readouts = canvasElement.querySelector<HTMLElement>(
             '[data-testid="chat-context"]',
         )!

@@ -2,9 +2,8 @@ import { splitProps, type JSX } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
-import { searchBarClass, searchBarInputClass } from './buttonClass'
 import { isConfirmKey } from './widgetKeys'
-import './ui.css'
+import styles from './SearchBar.module.css'
 
 export type SearchBarProps = {
     value: string
@@ -25,6 +24,8 @@ export type SearchBarProps = {
     children?: JSX.Element
     /** Class on the outer `.search-bar` wrapper. */
     class?: string
+    /** Extra class on the leading icon (for call-site-specific lead styling). */
+    leadClass?: string
     /** Extra class on the inner `<input>` (for call-site-specific input styling). */
     inputClass?: string
     /** Inline style on the inner `<input>`. */
@@ -44,6 +45,7 @@ function SearchBar(props: SearchBarProps) {
         'aria-label',
         'children',
         'class',
+        'leadClass',
         'inputClass',
         'inputStyle',
     ])
@@ -55,15 +57,15 @@ function SearchBar(props: SearchBarProps) {
         warnBadIcon('SearchBar', local.leadingIcon)
     }
     return (
-        <div class={searchBarClass(local.class)}>
+        <div class={`${styles['search-bar']} ${local.class ?? ''}`.trim()}>
             <Icon
                 value={local.leadingIcon ?? 'Search'}
                 size={14}
-                class="search-bar-lead"
+                class={`${styles['search-bar-lead']} ${local.leadClass ?? ''}`.trim()}
             />
             <input
                 ref={local.inputRef}
-                class={searchBarInputClass(local.inputClass)}
+                class={`${styles['search-bar-input']} ${local.inputClass ?? ''}`.trim()}
                 style={local.inputStyle}
                 placeholder={local.placeholder}
                 aria-label={local['aria-label']}

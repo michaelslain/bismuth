@@ -5,7 +5,6 @@
 // other half is `data-bar-drop` on a whole control (see the ladder's own comment).
 import { type Component, Show } from 'solid-js'
 import styles from './BarLabel.module.css'
-import './ui.css'
 
 export type BarLabelProps = {
     /** Full text. Shown whenever there is room. */

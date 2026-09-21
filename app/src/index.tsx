@@ -25,7 +25,7 @@ import '@fontsource/monaspace-radon/700.css'
 // everything else stays on the Monaspace grid. Repoints CMU Serif (Computer Modern), which is
 // uninstalled; CMU itself replaced Newsreader 2026-08-29 from a 21-candidate comparison. The
 // package declares `font-family: 'Lora Variable'` (not bare `'Lora'`) — see the --prose-font
-// comment in styles/tokens.css for why that string is load-bearing.
+// comment in global.css's tokens section for why that string is load-bearing.
 import '@fontsource-variable/lora/wght.css'
 import '@fontsource-variable/lora/wght-italic.css'
 import { isTauri } from './nativeMenu'

@@ -45,17 +45,10 @@
     flex-wrap: wrap;
 }
 /* Bracket action buttons — "[ allow ]" / "[ always ]" / "[ deny ]", the CLI-confirm register the
-   design system reserves for a callout's own actions. Lowercase-in-brackets is a look, not a label
-   change: the underlying text stays the uppercase TextButton warnNonUppercase expects. */
-.chat-permission-actions :global(.btn--text) {
-    text-transform: lowercase;
-}
-.chat-permission-actions :global(.btn--text)::before {
-    content: '[ ';
-}
-.chat-permission-actions :global(.btn--text)::after {
-    content: ' ]';
-}
+   design system reserves for a callout's own actions. Rendered by Button's own `bracket` prop
+   (ui/Button.tsx) — the underlying label text stays uppercase (ALLOW/DENY), `bracket` does the
+   lowercase-in-brackets look itself. Button.module.css now wins the lowercase/uppercase
+   specificity tie with a compound selector, so no override is needed here. */
 .chat-permission-outcome {
     display: inline-flex;
     align-items: center;

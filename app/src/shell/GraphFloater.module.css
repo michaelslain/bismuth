@@ -43,4 +43,5 @@
    the graph collapses/reveals smoothly along with the rest of the sidebar. */
 .graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
 
+/* design-system-ignore globalReach: <html> is the document root, outside any component's tree — App.tsx toggles view-dragging on document.documentElement itself during a view drag, not a class this component reaches into another owner's DOM for */
 :global(html.view-dragging) .graph-floater { pointer-events: none; }

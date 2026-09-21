@@ -71,17 +71,17 @@ export function PaletteModal(props: Props) {
         () => nav.setActive(0),
     )
 
-    // Keep the highlighted row scrolled into view. `selected` is the app-wide bare state-class
-    // convention (see PaletteRow.module.css's header) — it never hashes, so this selector stays
-    // a plain string; only `palette-row` needs the module lookup (via PaletteRow's exported
-    // class, so this file never imports PaletteRow.module.css itself).
+    // Keep the highlighted row scrolled into view. `[data-selected]` is a `data-*` runtime hook
+    // (see PaletteRow.module.css's header for why it isn't a hashed class); `palette-row` still
+    // needs the module lookup (via PaletteRow's exported class, so this file never imports
+    // PaletteRow.module.css itself).
     scrollSelectedIntoView(
         () => {
             selected()
             results()
         },
         () => listRef,
-        `.${paletteRowClass}.selected`,
+        `.${paletteRowClass}[data-selected]`,
     )
 
     onMount(() => inputRef?.focus())

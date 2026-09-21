@@ -162,8 +162,8 @@ export const MiniLocal: Story = {
        The guard that DOES fail in CI is MiniModeSwitcher's own `getOwner()` assertion — an
        unowned `onCleanup` is the one way the restore silently stops running. */
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector('.viewbar')
-        if (!bar) throw new Error('no .viewbar rendered')
+        const bar = canvasElement.querySelector('[data-viewbar]')
+        if (!bar) throw new Error('no [data-viewbar] rendered')
         const modeIcons = [...bar.querySelectorAll('button')].filter(b =>
             /^(2nd brain|3rd brain|Both brains)/i.test(
                 b.getAttribute('aria-label') ?? '',
@@ -292,8 +292,8 @@ export const MiniModeSwitcher: Story = {
         await canvas.findByRole('button', { name: /^3rd brain/i })
         await canvas.findByRole('button', { name: /^Both brains/i })
 
-        const bar = canvasElement.querySelector('.viewbar')
-        if (!bar) throw new Error('no .viewbar rendered')
+        const bar = canvasElement.querySelector('[data-viewbar]')
+        if (!bar) throw new Error('no [data-viewbar] rendered')
         const barLeft =
             bar.getBoundingClientRect().left +
             parseFloat(getComputedStyle(bar).paddingLeft)

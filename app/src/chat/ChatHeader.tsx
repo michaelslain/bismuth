@@ -31,8 +31,13 @@ export type ChatHeaderProps = {
 export default function ChatHeader(props: ChatHeaderProps): JSX.Element {
     return (
         <ViewBar
-            class={`${styles['chat-header']} ${props.class ?? ''}`}
-            identity={<Crumb icon={props.originIcon}>{props.title}</Crumb>}
+            class={props.class}
+            parts={{ identity: styles.identity, readouts: styles.readouts }}
+            identity={
+                <Crumb icon={props.originIcon} class={styles.crumb}>
+                    {props.title}
+                </Crumb>
+            }
             readouts={chatControlSlots(props.session).readouts}
         />
     )

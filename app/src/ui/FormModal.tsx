@@ -19,7 +19,8 @@ const FormModal: Component<FormModalProps> = props => {
     return (
         <Modal
             {...rest}
-            class={[styles.panel, local.class ?? ''].filter(Boolean).join(' ')}
+            class={local.class}
+            panelClass={styles.panel}
             panelRef={el => {
                 if (local.width !== undefined)
                     el.style.setProperty('--form-modal-width', `${local.width}px`)

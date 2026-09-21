@@ -1,0 +1,2171 @@
+/* ============================================================================
+ * styles/tokens.css — design tokens (hoisted first: former @import in App.css)
+ * ============================================================================ */
+/* app/src/styles/tokens.css — the design-token layer.
+   Split out of App.css because a token is the one thing that CANNOT be scoped: CSS Modules hash
+   class names, never custom-property names, and every stylesheet in the app reads these by name.
+
+   Nothing here is a source of truth. core/src/theme/tokens.ts owns the palette; App.tsx projects
+   the SELECTED theme onto :root at runtime via settingsCssVars.ts and overwrites all of it. These
+   literals exist only for the frames before that projection runs, which is why they must stay
+   byte-identical to the "ink" theme (the schema default) — themeGuard.test.ts asserts exactly that
+   against this file, and its anti-drift lint points here too: a centralized hex may appear in
+   tokens.ts and in this file, and nowhere else in app/src or core/src. */
+:root {
+  color-scheme: dark;
+  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the selected theme
+     (core/src/theme/tokens.ts) and set on :root at runtime. The literals below are
+     only first-paint fallbacks and MUST equal the "ink" theme (the schema default). */
+  --bg: #15161A;
+  --fg: #E8E3D6;
+  --accent: #93BDB0;
+  --border: #3A3E4A;
+  --text-muted: #9C998E;
+  --panel: #20222A;
+  --hover-bg: rgba(232,227,214,.05);
+  --surface-1: #20222A;
+  --surface-2: #272A33;
+  --surface-3: #31353F;
+  --border-soft: #282B34;
+  --faint: #827F78;
+  --rail: #101116;
+  /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
+     literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
+  --editor: #191A1F;
+  --pop-bg: rgba(25,26,31,.88);
+  --pop-bg-strong: rgba(25,26,31,.94);
+  --scrim-bg: rgba(10,11,14,.6);
+  --overlay-bg: rgba(10,11,14,.6);
+  --label-halo: #15161A;
+  --graph-edge: #3C4048;
+  --node-cold: #4A4E58;
+  --node-self: #E8E3D6;
+  --term-bg: #101116;
+  --term-fg: #C9C4B6;
+  --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
+  --accent-soft: rgba(147,189,176,0.12);
+  --on-accent: #15161A;
+  /* Foreground over an arbitrary-photo scrim (--scrim-bg) — always white, every theme. See
+     settingsCssVars.ts's --on-scrim projection for why this isn't a light/dark derivation. */
+  --on-scrim: #fff;
+  --glow-accent: 0 0 0 1px rgba(147,189,176,0.14);
+  --glow-text: none;
+  /* Named chrome accents + iridescent gradient (derived from the graph ramp at runtime). */
+  --teal: #83B4AE;
+  --blue: #8296C6;
+  --violet: #A190C4;
+  --grad: linear-gradient(120deg,#C98CA8,#A190C4,#8296C6,#83B4AE,#A3BE8C,#CBB27E);
+  /* Category hues — Bases statuses / calendar categories / map pins / chart series.
+     CATEGORICAL, kept separate from the semantic --success/--danger below. */
+  --green: #A3BE8C;
+  --gold: #CBB27E;
+  --rose: #C98CA8;
+  --editor-font-size: var(--fs-lead);
+  /* --icon-font-stack (the Nerd Font subset's family, with a --ui-font-stack fallback) was DELETED
+     here (ds-conformance Task 8) alongside the rest of that retired icon system — nothing read the
+     var() reference to it by the time it was removed. Icon art is Phosphor SVG now (icons/registry.ts),
+     rendered as inline `<svg>` with `fill="currentColor"`, so `<Icon>` needs no font stack of its
+     own at all. See docs/overview/third-party-notices.md for the removal record. */
+  /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
+     projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
+  --danger: #C87F72;
+  --success: #A3BE8C;
+  --warning: #CBB27E;
+  /* --shadow-menu/-popup/-card/-modal (the four blurred elevation shadows) were DELETED
+     2026-08-27 (visual-unification audit §9.3, wave 1) — no blur survives the redesign. Every
+     former consumer now reads --lift instead (see the Elevation block below). */
+  /* The flat, zero-blur shadow colour --lift composites against (see the Elevation block below).
+     NEW as of the 2026-08-27 visual-unification wave 0 — projected per-theme from
+     core/src/theme/tokens.ts (SHADOW_DARK.hard / SHADOW_LIGHT.hard). */
+  --shadow-hard: rgba(0,0,0,.45);
+
+  /* ════════════════════════════════════════════════════════════════════════════════════════
+     GEOMETRY / RHYTHM / MOTION TOKENS — moved here 2026-08-27 (visual-unification audit wave 0)
+     from app/src/ui/ui.css. WHY THEY MOVED: this file sits in App.css's GUARANTEED-FIRST
+     `@import` chain (App.css imports styles/tokens.css before anything else, and CSS `@import`
+     HOISTS — an imported stylesheet is always emitted ahead of every rule left in the importing
+     file, regardless of source position). ui/ui.css is a plain side-effect import pulled in
+     wherever a ui/ primitive happens to be used, so its load order relative to other component
+     CSS was never guaranteed — exactly why a token declared only there (this app's actual type/
+     radius/motion scale) could lose a tie to a same-specificity rule in a differently-ordered
+     bundle (Storybook vs. the app bundle disagreed at least once over exactly this; see
+     ui.css's own `.viewbar` cascade note). Landing the scale here removes that class of bug for
+     every token below, including the brand-new ones this wave adds.
+
+     THE RULE FOR THIS WAVE (non-negotiable): nothing may change visually. Every value below is
+     either (a) an EXACT copy of the value already live in ui.css, so no call site's rendered
+     output moves, or (b) a genuinely NEW token with no consumer yet, safe to introduce at
+     whatever value later waves are meant to consume it at. Where the audit (§2.2) proposes
+     COLLAPSING an existing value, this wave ALIASES instead and comments which later wave owns
+     the real collapse — see --fs-body-lg below for the one case that applies here.
+     ════════════════════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Type scale — UNCHANGED VALUES, moved verbatim from ui.css:19-25. Names and numbers are
+     exactly what shipped; the wave-0 mandate is "nothing moves," not "adopt §2.2's renames." */
+  --fs-micro: 10.5px;   /* eyebrows, meta, legends, status bar */
+  --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse (== asciiGrid.ts FONT_PX) */
+  --fs-body: 13px;      /* note prose in panels */
+  /* --fs-body-lg used to be its own step (13.5px, note prose in the full editor column) — the
+     audit (§2.2) found it 4% off --fs-body, an invisible distinction costing a token and a
+     decision at every call site, and calls for deleting it. ALIASED rather than deleted THIS
+     wave (existing call sites still read var(--fs-body-lg) and must keep rendering 13.5px-
+     adjacent unchanged) — collapsing it to var(--fs-body) is wave 1's job (§7 wave 1 "tighten"),
+     not wave 0's. Remove this alias and its call sites' references then, don't just re-point it.
+     It therefore KEEPS ITS OWN 13.5px value here. Pointing it at var(--fs-body) would move ~20
+     call sites from 13.5px to 13px, which is exactly the silent visual change wave 0 forbids —
+     the collapse is a deliberate act for the wave that owns those surfaces, not a side effect
+     of introducing the scale. */
+  --fs-body-lg: 13.5px;
+  --fs-lead: 15px;      /* section heads inside prose */
+  --fs-title: 19px;     /* panel titles */
+  --fs-display: 24px;   /* note titles, the one big size */
+
+  /* ── THE CONTENT HEADING RAMP — ONE definition, consumed by every surface that renders
+     markdown. Added 2026-08-28 (visual-unification audit §7 wave 5, §4.5).
+
+     WHY IT EXISTS AT ALL. The app had FOUR incompatible heading ramps and one of them was
+     upside-down. Note prose renders at --editor-font-size (== --fs-lead, 15px), while the editor
+     ramp sized h3/h4/h5/h6 at 13.5/13/11.5/10.5 — so FOUR OF THE SIX HEADING LEVELS RENDERED
+     SMALLER THAN THE BODY TEXT THEY HEAD. That is not a style preference, it is broken
+     typography. The other three ramps: chat (em multipliers off 13.5px, whose own comment claimed
+     it "mirrors the editor" while not doing so), CardEditModal (1.5/1.3/1.14em, no h4-h6), and
+     Flashcards' .card-md, which set NOTHING and let h1-h3 fall through to raw UA defaults off a
+     22px base (~44/33/25.7px) — a fourth scale nobody chose.
+
+     THE RULE THIS ENCODES: a heading is never smaller than the prose it heads. h3 and h4 sit AT
+     body size and separate themselves by weight, not by size; h5 and h6 drop below only by taking
+     on a label register (caps + tracking, muted) so they read as labels rather than as shrunken
+     headings.
+
+     WHY TOKENS RATHER THAN A SHARED CLASS. The consumers are not all CSS: editor/livePreview.ts
+     builds a CodeMirror theme object in JS, and the others are plain stylesheets or CSS Modules.
+     A custom property is the only form all of them can read. Per audit §9.8 the ramp is defined
+     ONCE here — do NOT copy these numbers into a consumer.
+
+     RELATIVE TO THE USER'S PROSE SIZE, not fixed px. This is the subtlety that makes the whole
+     thing work. `--editor-font-size` is NOT a design token — settingsCssVars.ts:198 projects it
+     from `appearance.editorFontSize`, a USER SETTING (13.5px by default; the `var(--fs-lead)`
+     literal above it is only a first-paint fallback). A ramp of fixed pixels therefore holds the
+     invariant at exactly one setting and silently breaks it everywhere else: set the editor font
+     to 18px and a fixed 15px h3 is once again SMALLER than the body it heads — the precise bug
+     this ramp was created to remove, reintroduced by the fix.
+     So h3/h4 track the prose size exactly and separate by WEIGHT; h1/h2 take the larger of their
+     step and the prose size; h5/h6 take the smaller, keeping them in label register no matter how
+     small the user's prose gets. The invariant now holds at every setting, which is the only way
+     it is worth asserting. */
+  --fs-h1: max(var(--fs-display), var(--editor-font-size));   /* >= 24, never below prose */
+  --fs-h2: max(var(--fs-title), var(--editor-font-size));     /* >= 19, never below prose */
+  --fs-h3: var(--editor-font-size);    /* AT prose size, bold */
+  --fs-h4: var(--editor-font-size);    /* AT prose size, medium */
+  --fs-h5: min(var(--fs-body), var(--editor-font-size));      /* label register: caps + tracking */
+  --fs-h6: min(var(--fs-body), var(--editor-font-size));      /* label register: muted */
+  --fw-h1: var(--fw-bold);
+  --fw-h2: var(--fw-bold);
+  --fw-h3: var(--fw-bold);
+  --fw-h4: var(--fw-medium);
+  --fw-h5: var(--fw-medium);
+  --fw-h6: var(--fw-medium);
+  /* NEW, scoped-use only (§2.2, §9). Not a step in the chrome scale — intro/VaultIntro's own
+     three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
+     a later wave's edit, not this one's. Nothing reads this token yet. */
+  --fs-hero: 40px;
+  /* VaultIntro's hero headline (.vi-title), fixed — not fluid. bench/invariants.ts's
+     font-size-off-scale check only accepts a flat SCALE/SCALE_EXEMPT membership (48 is in
+     SCALE_EXEMPT) or a live-resolved prose size, and a vw-derived clamp only lands on a scale
+     step at one specific viewport width. 48px is the scale step directly above --fs-hero
+     (40px), which VaultIntro's own <980px rule still drops to. */
+  --fs-intro-title: 48px;
+  /* VaultIntro's body copy (.vi-body), fixed at the type scale's 19px step for the same reason
+     --fs-intro-title is fixed above — was a fluid clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem)
+     that rendered 19.2px at the audited viewport, 0.2px off this exact step. */
+  --fs-intro-body: 19px;
+
+  /* fixed dev-HUD traffic light, deliberately theme-independent (graph fps HUD) */
+  --hud-fps-good: #3fb950;
+  --hud-fps-ok: #d29922;
+  --hud-fps-bad: #f85149;
+
+  /* ── Relative sizing — NEW (task 1, token literals sweep). Steps expressed in `em`, meant for a
+     size that scales WITH its inherited context rather than to an absolute px step in the scale
+     above (inline `code` inside prose that itself resizes per --editor-font-size/prose ramp). */
+  --fs-rel-code: 0.9em;   /* inline code, slightly under its surrounding text */
+
+  /* ── Font weight — unchanged, moved verbatim from ui.css:41-43. */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+
+  /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
+  --lh-tight: 1.4;
+  --lh-ui: 1.7;
+  --lh-prose: 1.6;
+  --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
+
+  /* ── Letter spacing — unchanged, moved verbatim from ui.css:46-48. Eyebrows/labels are
+     UPPERCASE and widely tracked; body text is never tracked. */
+  --ls-eyebrow: .14em;
+  --ls-label: .06em;
+  --ls-display: -.01em;
+
+  /* ── Radius — the 4 EXISTING steps moved verbatim from ui.css:52-55, values unchanged (their
+     consumers — .btn--text, .asc-modal/.asc-popover, .asc-card, etc. — still read these same
+     names at these same values; nothing is re-pointed this wave). PLUS --r-0, new: per the
+     ANSWERED decision (audit §9.2), radius collapses to a single rectangle value, 0, everywhere
+     except 50% for genuine circular dots — stricter than §2.2's original "0 default + 2px chip
+     exception" proposal. `--r-1` is explicitly NOT created (§9.2). --r-0 has no consumer yet;
+     the sweep that retires --r-chip/--r-control/--r-card/--r-panel in its favor is a later
+     wave's (§7 wave 1+), not wave 0's — introducing it here just makes it available to alias to. */
+  --r-0: 0;
+  --r-chip: 2px;
+  --r-control: 3px;
+  --r-card: 4px;
+  --r-panel: 5px;
+  /* NEW (task 1, token literals sweep). The PDF text-highlight mark's own corner radius —
+     NOT a step in the 0/50% UI radius scale above (§9.2): it renders a physical highlighter
+     mark (preview/HighlightLayer.module.css), whose softened corner is part of the mark
+     itself, not chrome. Kept at its pre-existing 1px value; cssBaseline showed real drift
+     at --r-0 so this stays a distinct token rather than aliasing to it. */
+  --r-mark: 1px;
+
+  /* ── Rule / border — --rule/--rule-soft moved verbatim from ui.css:56-57 (values unchanged:
+     both already read var(--border)/var(--border-soft), so nothing about how a hairline renders
+     changes). --rule-accent/--rule-dashed are NEW (§2.2) — no consumer yet; they exist so a
+     later wave can replace the hand-written `1px solid var(--accent)` / ad-hoc dashed drop-cues
+     (PaneTree.module.css, Terminal.css, ChatHeader.module.css) with a named rule instead of a
+     literal. */
+  --rule: 1px solid var(--border);
+  --rule-soft: 1px solid var(--border-soft);
+  --rule-accent: 1px solid var(--accent);
+  --rule-dashed: 1px dashed var(--border);
+
+  /* ── Motion — RECONCILED 2026-08-27 (visual-unification audit §7 wave 2, "shared chrome" —
+     the wave that owns nav-chrome motion, per wave 0's own deferral note below). Wave 0 moved
+     --dur-fast/--dur/--ease here byte-identical and left the reconciliation for later; this is
+     that later. THE CALL: the unnamed cubic-bezier(0.22,1,0.36,1) is now --ease's value — it
+     already owned 6-7 call sites (App.css's sidebar/rail collapse, FileTree's row-collapse,
+     PaneTree's pane-in/flex-basis, shell/TabRail's rail-expand, bases/Flashcards' card-appear,
+     palette/switcher's drop-in, editor/foldBlocks.ts's fold animation) against the previously-
+     named curve's 4 (DaemonList, GraphView.module.css, ChatComposer.module.css, ui/ui.css
+     itself) — and it is the shorter, flatter curve the terminal register argues for.
+     --dur-fast/--dur retime to 80ms/120ms with it. Every literal cubic-bezier(0.22, 1, 0.36, 1)
+     call site above was swept onto var(--ease) in the same commit (their own durations are
+     untouched — those are each transition's own considered timing, not this generic step; only
+     the CURVE they all already agreed on is now named instead of copy-pasted). The 4 sites that
+     already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, GraphView.module.css,
+     ChatComposer, ui.css) pick up the new curve/timing for free — no edit needed there, which is
+     the entire point of them having been tokenized already. */
+  --dur-fast: 80ms;
+  --dur: 120ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── Spacing — NEW (§2.2, §7 wave 0). A 2/4/6/8 grid, not 4/8: the existing radius ladder
+     (2/3/4/5) and row unit (18px) already say this app is denser than an 8-grid product. No
+     current call site references --sp-*; the sweep of ~18 ad-hoc padding/gap literals onto
+     this scale is later-wave work (chrome in wave 2, per-surface after that). */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 24px;
+
+  /* ── Control-height rhythm — NEW (§2.2, amended §9.4). Three bands: a list row, a control
+     (button/select/input/chip), and a band (toolbar/header). §9.4 answers the two open questions
+     from §8.4: the control step is 24 (on the 2/4/6/8 spacing grid, NOT the 18-grid's ugly-to-
+     type 27), and PaneHeader — the one real regression the audit found — resolves to
+     --h-control (24px), never --h-band (36px): a 4-way split at 36px/header costs 144px of
+     chrome. No current call site references --h-*; --row-h (ui.css) remains the token every
+     existing row consumer reads until each surface is migrated. */
+  --h-row: 18px;
+  --h-control: 24px;
+  /* One "band" — the top strip, the view bars, the sidebar toolzone. Two row units, so a
+     horizontal ruler through the app still lands on a row boundary.
+     NOT shrunk: the bars' HEIGHT was never the problem — the gap BETWEEN their buttons was, and
+     that is `gap` on each bar, not this. Dropping this to one row unit forces the controls inside
+     below --h-control (24px) and under WCAG 2.5.8's target minimum, which is a real cost for a
+     rhythm change nobody asked for. Change the bar's `gap` instead. */
+  --h-band: 36px;
+
+  /* ── Icon size — NEW (§9.5). ONE size, stricter than §2.2's original 3-step sm/md/lg proposal
+     ("we should just have one size i feel no?"). --icon-sm and --icon-lg are deliberately NOT
+     created — a genuinely oversized empty-state mark sets its own literal at the call site with
+     a comment, and does not get a token. No current call site references --icon yet; the six
+     existing sizes (12/13/14/15/16/18, incl. IconButton.tsx's ICON_PX=12 and Icon.tsx's default)
+     all collapse onto it in a later wave. */
+  --icon: 14px;
+
+  /* ── State — NEW (§2.2's state table, verified against the values already in effect where an
+     equivalent exists: --hover-bg (settingsCssVars.ts) is already exactly this 8% mix, so
+     --state-hover-bg reproduces it rather than inventing a new number). No current call site
+     references --state-*; today's five-plus ad-hoc color-mix percentages (PaneTree.module.css's
+     12/22/28%, WindowControls' 14%, etc.) and the three-tier hover/selected/multiselect
+     treatment in FileTree.module.css are unified onto these in a later wave. */
+  --state-hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
+  --state-active-bg: color-mix(in srgb, var(--fg) 14%, transparent);
+  --state-selected-bg: var(--accent-soft);
+  --state-selected-fg: var(--accent);
+  --state-focus-ring: inset 0 0 0 1px var(--accent);
+  --state-disabled-op: 0.45;
+
+  /* ── Keyboard focus ring — the ONE ring every focusable control draws.
+     `outline`, not the `--state-focus-ring` box-shadow above it: an outline is painted OUTSIDE the
+     border box and never participates in layout, so it cannot shift a 24px control or nudge a
+     segmented toggle's overlapped borders; an inset box-shadow lands INSIDE the border and is
+     invisible on the several controls that already draw an accent border when selected (the
+     segmented members, .btn--primary) — exactly the states a keyboard user most needs to tell
+     apart from "focused".
+     2px, because 1px against --border at these sizes is indistinguishable from the control's own
+     hairline. --focus-ring-offset is positive so the ring clears the border rather than sitting on
+     it; surfaces that would clip an outer ring (a scroll container's edge, a flush-butted row) set
+     -2px locally instead of dropping the ring, and the calendar's three existing propset controls
+     already use exactly that pattern.
+     Uses --accent so the ring re-tints per theme for free. */
+  --focus-ring: 2px solid var(--accent);
+  --focus-ring-offset: 1px;
+
+  /* ── Elevation — NEW (§9.3, answered stricter-but-same-shape as §2.2/§8.3's recommendation B):
+     no blur anywhere, ever; the one permitted depth cue is a flat, hard-offset "TUI drop-shadow"
+     compositing against --shadow-hard (defined above, projected per-theme from
+     core/src/theme/tokens.ts). --shadow-menu/-popup/-card/-modal are deleted (wave 1, §7) — every
+     former consumer reads --lift now. The five backdrop-filter sites outside ui/ui.css's
+     .asc-modal/.asc-popover (Editor.css, PreviewView.module.css, switcher.css) are unchanged by
+     wave 1 — those surfaces belong to later waves (editor: wave 5, preview: wave 7, palette
+     switcher: wave 3). */
+  --lift: 2px 2px 0 var(--shadow-hard);
+
+  /* ── Prose font ───────────────────────────────────────────────────────────────────────────
+     The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
+     and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
+     and chat message bodies INCLUDING the composer you type them into — never code (blocks and
+     spans), frontmatter or math, which are pulled back to --ui-font-stack in Editor.css and
+     chat/ChatTextBubble.module.css.
+
+     HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
+     title in one family and the paragraph under it in another; a heading is the note's own text,
+     not chrome around it. The composer moved in at the same time and for the same reason: it is
+     where a chat message body is written, and the transcript already rendered it in this face, so
+     a message silently changed typeface between writing and reading.
+
+     TABLES MOVED INTO THIS SCOPE 2026-08-31 too, same day, same reasoning: a table in a note is
+     the note's own content, not chrome, and rendering it in a different family from the paragraph
+     above it made a note look like two documents. Unlike headings, tables also lose the SIZE
+     reset in Editor.css (headings keep it, because livePreview.ts gives them their own absolute
+     scale; a table has none, so leaving the size reset on would flatten it back to mono size).
+
+     Lora (via @fontsource-variable/lora), repointed here from CMU Serif (Computer Modern), which
+     is uninstalled; CMU itself replaced Newsreader 2026-08-29 from a 21-candidate comparison. The
+     package declares `font-family: 'Lora Variable'` — NOT bare `'Lora'` — so the family string
+     leads with that exact string, with bare `Lora` kept only as a second-line fallback for a
+     system install. A name that does not resolve falls silently through to the Georgia fallback
+     with no error anywhere — this is the trap that let the CMU-era stack go unnoticed for weeks;
+     see index.tsx / preview.ts for where the two Lora stylesheets are actually loaded. */
+  --prose-font: 'Lora Variable', Lora, Georgia, serif;
+
+  /* Optical-size compensation. A serif and a mono at the same NOMINAL px do not read at the same
+     size, so switching prose to a proportional face without this silently shrinks every note.
+     Measured in-browser at 100px em (bench/chromeSession.ts driving the FontSpecimen story,
+     confirmed loaded by measuring the pangram against a deliberately nonexistent family, not by
+     `document.fonts.check`, which cannot tell a loaded face from a missing one — see
+     `ui/_fontFace.ts`):
+       x-height  — mono 51.75, Lora 50.00
+       n advance — mono 62.00, Lora 60.70
+     x-height parity is 51.75 / 50.00 = 1.04; advance parity is 62.00 / 60.70 = 1.02 — they
+     disagree, same as every face measured here before, so this number is re-derived per face
+     rather than inherited. x-height parity governs apparent size, so 1.04 is the constant, NOT a
+     value close to the previous 1.28: CMU Serif had an unusually small x-height (43.10 against
+     mono's 51.75); Lora's x-height is close to mono's, so the two faces need barely any
+     compensation at all.
+     DERIVED, never a literal font-size: --prose-font-size tracks appearance.editorFontSize, so the
+     user's editor size still moves prose with it. */
+  --prose-scale: 1.04;
+  --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
+}
+
+/* Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7): these were the two `:root`
+   blocks left in that file after the visual-unification audit's 2026-08-27 token move — genuinely
+   shared tokens (--row-h alone is read by 30+ other stylesheets), just never relocated. Nothing
+   about their values changes; only the file that defines them does. */
+:root {
+  /* The UI monospace font stack shared by buttons, modal text, and select
+     triggers — defined once so the stack can't drift between them. This literal
+     is only the first-paint fallback (before settings hydrate); at runtime
+     settingsCssVars.ts overrides it from appearance.uiFont (FONT_STACKS). */
+  --ui-font-stack: "Monaspace Xenon", ui-monospace, monospace;
+
+  /* THE app-wide row/line unit. One number, everywhere a row repeats: a sidebar tree
+     row, a tab's hit height, a graph list row, a status/top bar (as a whole multiple),
+     and — via --prose-line-height below — a line of note prose in both editors. Chrome
+     that needs a taller band (top strip, tabbar, view bars) sizes itself to a MULTIPLE
+     of this unit (36px = 2×18) rather than inventing its own number, so a horizontal
+     ruler through the app always lands on a row boundary. Font size is independent of
+     this (see --fs-ui) — only the vertical rhythm is unified. Kept alongside --h-row
+     rather than merged into it: every existing row consumer reads THIS name, and the
+     two carry the same 18px value on purpose until a later wave migrates call sites
+     onto --h-row. */
+  --row-h: 18px;
+
+  --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
+
+  --blink: 1.1s;        /* caret step-end blink */
+  --sheen: 8s;          /* wordmark gradient traverse */
+
+  /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
+     layer under a GraphField's rasterized edges. Only consumer is ui/ascii/GraphField.module.css. */
+  --field-noise-op: .45;
+
+  /* The character grid's cell metrics for the ASCII primitives (Glyph.tsx et al). A shared
+     primitive (Glyph.tsx, consumed well outside the graph) depending on a single feature's
+     stylesheet for its own sizing was the bug this fixed (visual-unification audit §7 wave 0,
+     finding §4.6) — this is the one file every ui/ primitive already side-effect-imported, now
+     folded into the token layer proper. --cell-w/--cell-w-dense stay in graph/asciiGraph.css: they
+     are genuinely graph-specific (the font's own advance width at the graph's --fs-ui), not
+     shared geometry. Values unchanged. */
+  --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
+  --cell-h-dense: 7px;
+}
+
+/* The view-bar icon rhythm — read only within ui/ui.css's own `.viewbar` section today, but a
+   token rather than chrome, so it lives here regardless of how many consumers it currently has. */
+:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
+
+/* Moved in from ui/popover/popover.css (2026-09-12, CSS modules migration Task 10): the one
+   `:root` block that file declared. popover.css itself stays global permanently (see its own
+   header) since every class it defines is a runtime-emitted `bismuth-` literal written by
+   Solid components and vanilla DOM code alike — but these are TOKENS, not chrome, and are read
+   via var() well beyond popover.css: SearchResultRows.module.css, editor/DatePicker.module.css,
+   palette/SwitcherBar.module.css, and palette/Palette.module.css all consume one or more of
+   them. Nothing about their values changes; only the file that defines them does. */
+:root {
+  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
+     --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
+     Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
+     itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
+  --popover-radius: var(--r-0);
+  --popover-pad: 4px;
+  /* Row height is now the app's row unit (--row-h, styles/tokens.css) via an explicit height
+     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
+     autocomplete, and the chat history list all snap to the same 18px cadence as the
+     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
+     specific list without touching the shared row rule. */
+  --popover-row-pad-y: 0px;
+  --popover-row-pad-x: 8px;
+  --popover-row-radius: 0;
+  --popover-row-gap: var(--sp-4);
+  --popover-font-size: var(--fs-ui);
+  --popover-min-width: 170px;
+  /* Sourced from the canonical --state-selected-bg (visual-unification audit §7 wave 3) rather
+     than --accent-soft directly, so this and every other "persistently selected" surface in the
+     app move together if that token's value ever changes. */
+  --popover-selected-bg: var(--state-selected-bg);
+  --popover-detail-opacity: 0.5;
+  /* UI-chrome font + one shadow for every popover surface. Centralised here so the
+     context menu, autocomplete, and palette can never drift on either. */
+  --popover-font: var(--ui-font-stack);
+  --popover-shadow: var(--lift);
+}
+
+/* Registered custom properties. `@property` registration is document-global — it cannot be scoped
+   to a module or a component — so it belongs with the tokens even though the two properties are
+   SET on `.layout` (App.css). Registration order relative to use does not matter; what matters is
+   that the registration exists at all, or the collapse animations below degrade to instant jumps. */
+/* The animated sidebar width lives in a *registered* custom property so it
+   interpolates as a real <length>. Transitioning grid-template-columns directly
+   is unreliable — Chrome falls back to a discrete (instant) jump when a track
+   animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
+   transitioning that property instead gives a smooth, frame-by-frame collapse. */
+@property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 266px; }
+/* Registered (like --sidebar-w above) so its 48px<->0 collapse animates as a real <length>
+   instead of snapping instantly — see BUG #40 below. */
+@property --rail-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
+/* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
+   its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
+   overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */
+
+
+/* ============================================================================
+ * styles/reset.css — element reset (hoisted second: former @import in App.css)
+ * ============================================================================ */
+/* app/src/styles/reset.css — the element-level layer.
+   Every selector in this file is a universal, a bare element, an id, or a pseudo-element: `*`,
+   `button`, `body`, `html`, `#root`, `::selection`, `::-webkit-scrollbar`. CSS Modules hash class
+   names, so there is nothing here for a module to hash — these rules are global or they do not
+   exist at all.
+
+   Cascade note for whoever moves the next batch of rules out of App.css: `@import` hoists, so this
+   file always wins the ORDER contest against anything left in App.css. That is inert here — every
+   rule below is specificity 0-0-0 or 0-0-1, so any class rule anywhere still beats it. Keep it that
+   way; the moment a class selector lands in this file the hoist stops being harmless. */
+* { box-sizing: border-box; }
+/* Buttons don't inherit font-family from ancestors — force it so every button
+   (including non-.btn ones like .vbtn) renders in the app's Monaspace, not the
+   browser UA system font.
+
+   `outline: none` USED TO RIDE ALONG HERE and it was the single worst accessibility bug in the
+   app: a global, unconditional kill of the focus ring on EVERY button, while `ui/ui.css` never
+   restored one. Every tab close, toolbar icon, palette row and modal action was invisible to a
+   keyboard user the moment they left a text field — in an app that ships user-configurable
+   keybindings. It survived because it is unobservable to this repo's gates: `bench/cssBaseline.ts`
+   records the RESTING state and no story could pose `:focus-visible`. The focus ring now lives in
+   `ui/ui.css` beside `.btn` (and in each surface's own module for non-.btn controls); this rule is
+   font-only, which is all it ever claimed to be. DO NOT re-add `outline: none` here. */
+button { font: inherit; }
+body, html, #root { margin: 0; height: 100%; }
+/* Monaspace ships coding ligatures (e.g. "->", "!="); they break the character grid
+   the whole ASCII design leans on, so they're off everywhere, app-wide. */
+body, html { font-variant-ligatures: none; }
+body { background: var(--bg); color: var(--fg); }
+
+/* Text selection ("highlighting" a drag-range) tints with the accent palette color
+   everywhere. Without this the whole app — and rendered/live-preview "formatter"
+   content — falls back to the browser's harsh bright-blue default. The CodeMirror
+   editor sets its own matching tint in Editor.tsx (.cm-selectionBackground). */
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
+   invisible; the thumb is a faint inset pill that only firms up on hover. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 16%, transparent) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 15%, transparent); border-radius: var(--r-0); border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 30%, transparent); background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
+
+/* ============================================================================
+ * styles/content.css — runtime-emitted classes for rendered note HTML (hoisted third: former @import in App.css)
+ * ============================================================================ */
+/* app/src/styles/content.css — classes written into runtime-generated HTML as plain strings.
+   The emitters (bases/markdown.ts, editor/livePreview.ts, editor/inlineMarkdown.ts,
+   editor/bismuthWord.ts, editor/cellList.ts, editor/queryBlock.ts, export/) build these class
+   names as string literals, never as an imported identifier. Put one in a CSS Module and the
+   module hashes the name at build time while the emitter keeps writing the literal: the styling
+   disappears from every rendered note, and nothing — not typecheck, not a unit test, not a
+   console warning — reports it. cssLayering.test.ts is the ratchet that keeps them here.
+
+   `:global(...)` in a module is the sanctioned escape hatch (bases/BaseView.module.css and
+   bases/CardEditModal.module.css both use it, correctly) because names inside it are not hashed.
+   The test allows that form and only that form.
+
+   DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` still lives in
+   App.css beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
+   ever migrates into a module the keyframes block has to stay global or this rule silently
+   stops animating — a blank-looking word, not an error. */
+/* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
+   with a shimmering bismuth-crystal gradient (the rainbow oxide iridescence of real bismuth:
+   magenta → purple → blue → teal → green → gold) via background-clip:text. Shared by the
+   reading-mode markdown renderer (`.bismuth-word`, bases/markdown.ts) and the live-preview editor
+   decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
+   a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
+   crystal colors read the same on every theme; the effect never uses a theme-accent color.
+   Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
+   rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
+.bismuth-word, .cm-bismuth {
+  /* THE SAME GRADIENT AS THE TOP-STRIP WORDMARK, deliberately — `--grad`, exactly what
+     `.asc-wordmark` paints with (App.css). This used to be a bespoke saturated rainbow
+     (#ff6ec7 → #a06bff → #4d8bff → #22d3d6 → #5ff0a8 → #ffd36e) that shared only the sheen
+     animation, so the app's two iridescent surfaces were two different brands. One mark, one
+     gradient.
+     KNOWN TRADEOFF: the old ramp was theme-INDEPENDENT on purpose (the crystal colours read
+     identically on ink/paper/cathode/riso). `--grad` is projected per-theme by
+     settingsCssVars.ts, so the word now shifts with the theme. That is the intended cost of
+     unification — do not "fix" it by reintroducing a second hardcoded ramp. */
+  background-image: var(--grad);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 600;
+  animation: asc-sheen var(--sheen, 8s) linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bismuth-word, .cm-bismuth { animation: none; }
+}
+
+/* EMBEDDED ```query blocks (editor/queryBlock.ts sets .bismuth-query-block) render a base view INSIDE
+   a note, so their text follows the NOTE prose size — everything in a note is one size. Scoped to this
+   wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
+   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell.
+   --prose-font-size, NOT --editor-font-size: note tables now render at --prose-font-size
+   (Editor.tsx's editorTheme — see Editor.css's "TABLES ARE PROSE" note), so pinning this to the
+   mono size left an in-note query-block table ~22% smaller than the note's own markdown tables,
+   directly under them, serif-at-mono-size — exactly the mismatch this rule exists to prevent. */
+.bismuth-query-block table,
+.bismuth-query-block td,
+.bismuth-query-block th { font-size: var(--prose-font-size, 17px); }
+
+/* EMBEDDED ```graph blocks (editor/graphBlock.ts sets .bismuth-graph-block on the widget's own
+   outer container — outside EmbeddedGraph.tsx's own render tree, so it can't live in that
+   component's EmbeddedGraph.module.css; see that file's header). Just breathing room around the
+   card so it doesn't sit flush against the surrounding note prose. */
+.bismuth-graph-block { padding: var(--sp-2) 0; }
+
+/* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
+   export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
+   equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
+.bismuth-math-display { display: block; }
+.bismuth-math-display .katex-display { margin: 0.4em 0; }
+
+/* Lists inside a table cell (see editor/cellList.ts): a `- item` / `1. item` run renders as a
+   compact <ul>/<ol> whose bullet/number is REAL TEXT (a `.bismuth-cell-mk` span), the native
+   marker off via inline `list-style:none`. One global rule covers BOTH the editor's editable-
+   table widget cells (.cm-td) and every reading surface (note tables, cards, export): tight
+   margins so the list sits neatly within the cell, and `list-style:none` (belt-and-suspenders
+   with the render's inline style) so the native marker never doubles the text glyph.
+
+   Moving these out of App.css flipped one precedence pair worth recording so nobody re-litigates
+   it: `.card-md li` sets `margin: 0` and stays in App.css, so it now sorts AFTER this file and
+   would out-rank the `li` margin below at equal specificity. It does not matter. cellList.ts
+   writes `margin:0.05em 0` as an INLINE style on every li it emits, and an inline declaration
+   beats both rules — before the split and after. The class appears in no other markup, so there
+   is no element where the flip is observable. Raising the specificity here would be a change with
+   no effect, made to satisfy an analysis rather than a symptom. */
+.bismuth-cell-list, .bismuth-cell-list li { list-style: none; }
+.bismuth-cell-list { margin: 0; padding-left: 0.2em; }
+.bismuth-cell-list li { margin: 0.05em 0; }
+
+/* Bracket task fields (`[due 2026-09-14]`, `[every week]`, `[high]`) rendered as chips inside a
+   task card's body (bases/taskCardMarkup.ts sets .bismuth-task-field as a plain string literal
+   in the generated markup, so this rule lives here, not a CSS Module — see this file's header).
+   Understated on purpose: the bracket text itself still reads as the field's value, this just
+   sets it off from the surrounding prose. --r-0, no pill: same "no radius survives" rule as
+   ui/Badge.module.css's .badge--solid. */
+.bismuth-task-field {
+  display: inline-block;
+  border: var(--rule-soft);
+  border-radius: var(--r-0);
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- Rendered-markdown callouts (cards / transclusion) ------------------------------------- */
+/* These `.callout` classes are emitted by bases/markdown.ts renderMarkdown — used on every
+   in-app rendered-note surface (card faces, `.md` transclusion). Moved here verbatim from the
+   deleted BlockEditor.module.css (2026-09, blocks-mode removal): this file is one of the four
+   global stylesheets App.css imports, so the rules still apply wherever those surfaces render.
+   The export pipeline (htmlTemplate.ts) + the CodeMirror widget (livePreview.ts calloutTheme)
+   carry their OWN copies of the equivalent rules.
+   PER-TYPE ACCENTS BELOW MUST STAY IN SYNC WITH CALLOUT_TYPES IN editor/callout.ts. */
+.callout {
+  margin: 1em 0;
+  /* Per-type accent comes from the inline --callout-color set by renderCalloutHtml
+     (editor/callout.ts, the SINGLE source). */
+  border-left: 2px solid var(--callout-color, var(--accent));
+  border-radius: var(--r-0);
+  background: var(--surface-1);
+  padding: 0.55em 0.85em;
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-weight: 600;
+  font-size: var(--fs-ui);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+.callout-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.callout-icon svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+.callout-title-inner {
+  min-width: 0;
+}
+.callout-content {
+  margin-top: 0.4em;
+}
+.callout-content > :first-child {
+  margin-top: 0;
+}
+.callout-content > :last-child {
+  margin-bottom: 0;
+}
+details.callout > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.callout > summary::-webkit-details-marker {
+  display: none;
+}
+/* Title tint = the same inline --callout-color as the left bar. The 26 per-type hex rules
+   that used to live here are gone: editor/callout.ts (CALLOUT_TYPES) is the ONE source now,
+   emitting the color inline on each callout root. */
+.callout > .callout-title {
+  color: var(--callout-color, var(--accent));
+}
+
+
+/* ============================================================================
+ * App.css — app shell chrome (former App.css body, below its three @imports above)
+ * ============================================================================ */
+
+/* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
+   `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL
+   client area. The `vh` viewport unit does NOT — in the macOS WKWebView it fails to track
+   the usable height across the windowed↔native-fullscreen transition (in fullscreen `100vh`
+   resolves TALLER than the real webview area, since the native title-bar band drops out of the
+   frame but the viewport unit keeps counting it / lags the resize), so the grid overflowed
+   past the bottom of the screen and the bottom of the content was clipped in full-screen. */
+/* ── App shell: top strip + status bar (bismuth-design/ascii/README.md "Screens -> App shell", §1-2) ──
+   `.app-shell` stacks the 36px top strip (2×--row-h), the existing 3-column `.layout` grid
+   (unchanged internally), and the 18px status bar (1×--row-h). height:100% for the same
+   WKWebView-fullscreen reason `.layout` used it (see the comment that used to sit just above
+   `.layout` below) — `.app-shell` is now the top-level element under #root instead. */
+/* line-height = --row-h (the ONE app-wide row unit, ui.css :root), not a font-size-relative
+   ratio: every chrome row (sidebar tree, tabs, status bar) shares this same 18px cadence, and
+   any descendant that doesn't set its own line-height inherits it here. Prose (note body text)
+   opts out explicitly via --prose-line-height (Editor.tsx). */
+.app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }
+.app-shell .layout { height: auto; flex: 1 1 auto; min-height: 0; }
+/* `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` chrome moved into shell/TopStrip.module.css.
+   The Windows/Linux typed window controls that sit at this strip's right edge live in
+   shell/WindowControls.module.css, not here. */
+/* `.status-bar` and its `.status-*` fields moved into shell/StatusBar.module.css. `.status-dot`
+   (owned by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never moved with them. */
+
+/* Wordmark: the system's ONE decorative flourish (bismuth-design/ascii/README.md "App shell" + ui.css's
+   reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
+   the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
+/* The mark is ASCII art (`,;']--]';,` — a hopper-crystal silhouette), not a word, so it wants
+   NEGATIVE tracking: the glyphs have to close up into one shape. `.08em` is right for lettering
+   and wrong here — it breaks the form into ten loose punctuation marks.
+   AN EARLIER VERSION OF THIS COMMENT CLAIMED A FLOOR at about -0.06em, past which the `]--]` was
+   said to fuse into an illegible smear. That was wrong, and it was wrong in the way stale comments
+   usually are: it described the ladder that existed at the time (which stopped at -0.12em) as if it
+   described the glyphs. Checked in devtools 2026-08-27 — the mark stays legible far tighter, and
+   -0.22em is where it finally reads as one crystal rather than a row of marks. The ladder now runs
+   to -0.28em so the real limit is visible instead of asserted. Tunable via --wordmark-tracking. */
+/* Sized ABOVE the 13px UI scale on purpose: the mark is 10 punctuation glyphs where the old
+   wordmark was 7 letterforms, so at 13px it measured 32px against the word's 53px and read as a
+   faint speck rather than a mark. 16px restores the presence the corner had. Line-height is
+   pinned so the taller glyphs cannot grow the top strip. */
+.asc-wordmark {
+  /* Tracking is -0.22em, well past where a lettering face would break. That is correct HERE: the
+     mark is ASCII art, not a word — the glyphs have to overlap into ONE hopper-crystal silhouette,
+     and anything looser reads as loose punctuation. Picked by eye in devtools, then added to
+     ui/Wordmark.stories.tsx's ladder. This file had shipped -0.03em while that ladder already
+     labelled -0.06em "current", so the two silently drifted; the story IS the deciding surface —
+     change the value there and here together, never one alone. */
+  /* Size is a token for the same reason tracking is: the ASCII crystal and a set word want
+     different values, and an instance should be able to say which it is rather than fighting a
+     hardcoded default with a descendant selector. --fs-lead stays the default (the crystal's
+     presence argument above), and the top strip overrides it. */
+  font-size: var(--wordmark-size, var(--fs-lead)); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.22em);
+  background: var(--grad); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: asc-sheen var(--sheen, 8s) linear infinite;
+}
+@keyframes asc-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@media (prefers-reduced-motion: reduce) { .asc-wordmark { animation: none; } }
+
+/* The sidebar/rail collapse used to hardcode its own cubic-bezier(0.22, 1, 0.36, 1) literal —
+   the single most visible chrome animation in the app, and untokenized (visual-unification audit
+   §4.7). Wave 2 repointed --ease onto exactly this curve (styles/tokens.css) and swept the
+   literal onto var(--ease) here; 0.26s stays its own literal — a sidebar-width slide is a much
+   larger, slower motion than the generic --dur/--dur-fast steps, and unifying the CURVE is the
+   point, not forcing every transition in the app onto one duration. */
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease); }
+.layout.has-rail { --rail-w: 46px; }
+/* PINNED IS LAYOUT; HOVER IS OVERLAY. `.tab-rail-inner` is `position:absolute; right:0` and animates
+   its OWN width 46px → 232px (shell/TabRail.module.css), while the grid cell behind it only ever
+   reserved the collapsed 46px. That is right for the hover flyout — a transient panel over the
+   editor, which is why it carries `--lift` — and wrong for pinned, where 186px of opaque rail sat on
+   the note. TabRail.module.css already drops the lift when pinned, i.e. it already claimed to be
+   part of the layout; only the reserved width disagreed.
+   `:not(.switcher-active)` rather than relying on source order: the switcher override below is also
+   (0,3,0), so an equal-specificity tie would be settled by POSITION IN THIS FILE. CSS `@import`
+   hoists and rules get relocated, so an order-dependent tie is exactly the fragility that has bitten
+   this stylesheet before — the guard is written into the selector instead. */
+.layout.has-rail.rail-pinned:not(.switcher-active) { --rail-w: 232px; }
+/* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
+   `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
+   rail never followed the same rule, so it kept floating over the switcher's full-window graph
+   backdrop. Collapse its grid column to 0 in lockstep (App.tsx's `tabRailVisible()` unmounts the
+   rail's own DOM at the same condition, so this is belt-and-suspenders against any layout jump
+   even for the one frame before the `<Show>` toggles). Combined selector so it always outranks
+   `.has-rail` regardless of source order. */
+.layout.has-rail.switcher-active { --rail-w: 0px; }
+/* `.sidebar`, `.sidebar > *`, `.sidebar-eyebrow-row`, `.sidebar-files`, `.sidebar-graph-section`
+   (+ `.collapsed`), `.sidebar-graph`, `.sidebar-icons` (+ its `:global(.btn--icon)` copies) and
+   `.sidebar canvas` moved into shell/Sidebar.module.css. `.sidebar-logo` moved with them only in
+   the sense of being deleted — it had zero consumers. `.layout.sidebar-hidden` below is NOT part
+   of that family: it belongs to `.layout`, staying here until Task 11's AppFrame. */
+.layout.sidebar-hidden { --sidebar-w: 0px; }
+@media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
+.graph-slot-main { width: 100%; height: 100%; }
+/* `.full` (generic full-box filler — pane placeholders / Suspense fallbacks) moved UP into
+   ui/ui.css: used by both App.tsx and PaneContent.tsx, two unrelated components (Task 4's rule). */
+/* `.graph-floater` / `.graph-floater.docked` (the always-mounted Knowledge Graph wrapper) moved
+   into shell/GraphFloater.module.css. */
+/* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
+   resting color rising to --fg on hover — not full-strength white at rest. Shared by
+   the empty-pane new-terminal icon and the graph-mode icons.
+   The two-parent selector list that used to live here (`.empty-pane .btn--icon, .graph-mode-icons
+   .btn--icon { … }`, plus its `:hover` pair) is now two COPIES, one per owning module:
+   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and GraphView.module.css's
+   `.graph-mode-icons :global(.btn--icon)` — same idiom shell/Sidebar.module.css and
+   shell/TabRail.module.css already used for their own copies of this same declaration
+   (`.tab-rail-actions .btn--icon` / `.tabbar-actions .btn--icon` — the rail's copy lives in
+   shell/TabRail.module.css, the strip's was deleted outright with the dead horizontal tab strip). */
+/* The file tree's own chrome (.ft-… , plus the `active` / `system` / `drop-target` / `open` /
+   `hidden` state classes that only ever ride on it) moved DOWN into FileTree.module.css: one
+   owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
+   generic state names from being reachable app-wide. */
+
+/* The shared view bar (.viewbar, .crumb, the .vb-* regions, .vbtn) and the category chips +
+   status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
+   unrelated components, so scoping them into any one module would force every other consumer
+   to import that module. ui/ui.css records the per-family consumer count and the cascade
+   analysis behind the move. Note the knock-on below: the mini-graph's `.graph-viewbar`
+   padding override had to become a two-class selector once `.viewbar` left this file. */
+
+/* `.kbd` / `.kbd b` (keyboard hint chips) DELETED, not migrated — Task 11 confirmed zero
+   consumers anywhere in `.tsx`/`.ts` (the app's keyboard-hint chips all render through
+   `ui/ascii/Kbd.tsx`'s `.asc-kbd` family instead). Dead-rule removal beats migrating dead CSS. */
+/* `.editor-pane`/`.editor-body` (shell/EditorPane.tsx's own chrome) moved into
+   shell/EditorPane.module.css (Task 11 — single owner; see that module's header for the
+   `[data-editor-pane]` cross-boundary fix palette/switcher.css needed alongside the move). */
+/* The horizontal tab strip (`.tabbar` + its scrollbar-hiding pair, `.tab` and its nine state/
+   descendant variants, `.tab-icon`, `.tabbar-actions`, `.tab-caret`) was DELETED, not migrated — the
+   vertical tab rail (shell/TabRail.module.css, shared by shell/TabRail.tsx + TabRailRow.tsx) replaced
+   it and these rules had zero consumers left (shell/TabRail.tsx:2 documents the rail as "The app's
+   ONLY tab presentation"; Task 8 confirmed dead via a broad grep across every .tsx/.ts/.css file
+   before deleting). */
+
+/* `.tab-rename` (the inline rename input, used by the vertical rail's TabRailRow) moved into
+   shell/TabRail.module.css. */
+
+/* The vertical tab rail (`.tab-rail`, `.tab-rail-inner`, `.tab-rail-actions`, `.tab-rail-list`,
+   `.tab-rail-row`, `.tab-rail-icon`, `.tab-rail-label`, `.tab-x`, `.tab-pin`) moved into
+   shell/TabRail.module.css, shared by shell/TabRail.tsx and shell/TabRailRow.tsx. */
+
+/* `.drag-ghost` / `.drag-ghost.pane` (the floating chip that follows the cursor during a tab/pane
+   drag) moved into shell/DragGhost.module.css. */
+
+/* While any view drag is in progress: grabbing cursor + no accidental text selection. */
+html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
+/* …and let drops pass through the always-mounted terminal overlay + graph floater to the
+   pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). This rule used to
+   be one 3-selector block here; it is now split, one `:global(html.view-dragging)` copy per module —
+   shell/PaneOverlay.module.css (`.terminal-overlay`) and
+   shell/GraphFloater.module.css (`.graph-floater`). */
+
+/* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. The `.palette-*` family
+   (plus palette/palette.css, now deleted, and the palette-touching rules that used to sit in
+   palette/switcher.css) moved into palette/Palette.module.css (Task 6). */
+
+/* Graph Find panel search (a compact sibling of .palette-search) + the Graph Find overlay itself
+   (GraphSearch.tsx): the `.graph-search*` family moved into GraphView.module.css with the rest
+   of the graph chrome (Task 9). */
+
+/* Icon picker: a searchable grid reusing the palette overlay/panel chrome (ui/gallery/
+   SymbolGallery.tsx). The `.icon-picker-*` family moved into ui/gallery/SymbolGallery.module.css
+   (Task 11 — single owner). */
+
+/* The flashcard review UI (FlashcardsView.tsx), its deck-wide edit modal (EditCardsModal.tsx)
+   and single-card edit modal (CardsModal.tsx/CardEditModal.tsx) moved out of App.css into
+   bases/Flashcards.module.css: one owner, no runtime-generated names. `.cell-*` and
+   `.cards-draft`, held back from that move (Task 8) by the innerHTML/closest/querySelector trap,
+   joined them in Task 11. `.deck-*`/`.srs-*`/`.vs-*` (dead, zero consumers) were deleted rather
+   than migrated. That single Flashcards.module.css has since been split further: each component
+   now owns its own module — FlashcardsView.module.css, EditCardsModal.module.css,
+   CardsModal.module.css, CardEditModal.module.css and the extracted CardFrame/CardBodyInner/
+   CardTitle/SkeletonBar all carry `.cell-*`/`.cards-draft`/etc. by their own name; there is no
+   longer a single `bases/Flashcards.module.css` file. */
+
+/* The `.pane-*` family (splits, leaves, headers, dropzones, dividers) and its `@keyframes pane-in`
+   moved out of App.css into what was then PaneTree.module.css, shared by PaneTree/PaneLeaf/
+   PaneHeader/PaneDropZone. The old separate PaneTree.css was folded into it at the same time.
+   Each of the four has since been split into its own module (PaneTree.module.css,
+   PaneLeaf.module.css, PaneHeader.module.css, PaneDropZone.module.css); the selectors that used
+   to cross the file boundary now reach the ancestor through the unhashed `data-pane-focused`
+   attribute PaneLeaf.tsx sets on its own root. */
+/* ── Knowledge-graph chrome ──────────────────────────────────────────────────
+   GraphView is ONE component used full-pane AND in the narrow sidebar mini-panel, so the full
+   chrome (crumb, Find, floating legend/stats cards, in-bar 2D/3D) is gated to wide width via a
+   container query; the compact bottom controls show in the narrow sidebar. The whole `.graph-*`
+   family (+ the overlay rules that used to live in graph/asciiGraph.css) moved into
+   GraphView.module.css (Task 9) — see that module's header for the two-file merge. */
+
+/* Daemon services list: nothing here. Its rules left this file for DaemonList.module.css (Task 11),
+   and DaemonList itself is now DELETED — the graph's "daemon" mode is gone (docs/graph/overview.md)
+   and the crons + services list lives on the daemon's own page (app/src/daemon/DaemonServices.tsx,
+   with its own DaemonServices.module.css). History only; no `.daemon-*` rule remains global. */
+
+/* Empty pane: a centered "new terminal" icon (styled to match the sidebar toolbar icons,
+   `[data-sidebar-toolbar] :global(.btn--icon)`, shell/Sidebar.module.css) above a faint italic hint
+   that the pane is fillable. The `.empty-pane` family moved into EmptyPane.module.css (Task 11). */
+
+
+
+/* ============================================================================
+ * ui/ui.css — shared design-system primitives (asc-* register + cross-component chrome)
+ * ============================================================================ */
+/* app/src/ui/ui.css — the app's GLOBAL design-system register, not a component stylesheet.
+   Imported once (side-effect) by each of its 21 consumers; Vite dedupes.
+
+   RESHAPED 2026-09-12 (CSS modules migration Task 7). Every class here USED to live in this one
+   file regardless of how many components actually read it. The ownership map
+   (.claude/plans/ui-css-ownership.md) audited all ~80 of them and moved every SINGLE-OWNER class
+   into its owning primitive's colocated `<Primitive>.module.css` — Modal, Field, TextInput,
+   Select, EmptyState, Stars, StatusDot, ascii/Glyph, ascii/AsciiTree, ascii/Kbd (partially; see
+   below) all got one. Every class that survives here does so for one of four reasons, not by
+   default:
+
+   1. GENUINE cross-component design-system primitives with two or more real consumers, most
+      documented at the point of use below: the whole
+      `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
+      (ui/ViewBar.tsx, mounted by six unrelated views), and the `asc-*` ASCII register
+      (`.segmented` moved to SegmentedToggle.module.css and `.search-bar`/`.search-bar-lead`/
+      `.search-bar-input` moved to SearchBar.module.css in one-global-stylesheet Task 5;
+      `.chip-toggle` moved to ChipToggle.module.css in Task 6; the `.btn`/`.btn--*` family
+      itself moved to Button.module.css in Task 1 — all four as `:global()` bridges, see each
+      file's own header). `.asc-modal` and `.asc-popover` — two of the three `asc-*` register
+      entries this file's header used to name as having no owning primitive — moved to
+      ui/Modal.module.css and ui/Popover.module.css respectively (one-global-stylesheet Task 7),
+      each still `:global()`-bridged to its bare outside writers (palette/Palette.module.css;
+      graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
+      `.asc-caret` (+ its `@keyframes asc-blink`) took the same trip and came back (regression
+      fix, 2026-09-20, see the rule's own comment below): its would-be owner, ui/Caret.tsx, has
+      no production importer, so the module CSS never reached the bundle and every caret in the
+      shipped app rendered with no colour and no blink. It stays here, genuinely global, with
+      seven bare outside writers and no real owner yet. `.row-kbd`/`.asc-key`'s shared compound (written
+      bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx) remains undone the same way:
+      accepting the `class` prop `ui/Button.tsx` already exposes at each call site, or extracting
+      a shared component, is real work, deliberately deferred to a follow-up plan rather than
+      done here.
+   2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
+      `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
+      `--bar-icon-gap`, `--bar-icon-size`, `--bar-crumb-gap`) — a token is never chrome regardless
+      of its current reader count.
+   3. Classes whose sole real reader is a component OUTSIDE ui.css's 21 declared importers —
+      `.asc-meter`/`.asc-meter-empty` (AsciiMeter.tsx) and `.asc-field`/`.asc-node-label` (+
+      children; GraphField.tsx). Single-owner in shape, exactly like the classes that DID move,
+      but editing those two files was out of this task's declared file scope. Left as a mechanical
+      follow-up, not a design decision.
+   4. DEAD code, deleted outright rather than moved: `.asc-menurow` (+ its `:hover`/`.active`/
+      `.row-kbd` rules) and `.asc-prose`/`.asc-wikilink`/`.asc-tag` — zero consumers anywhere in
+      `.tsx`/`.ts`, confirmed by exhaustive grep including comments, stories, `querySelector` and
+      template strings.
+
+   Two more findings recorded but NOT acted on this round (reported, not fixed — see the ownership
+   map): `bases/FlashcardsView.tsx` writes `.asc-kbd`/`.asc-key` directly instead of using
+   `ui/ascii/Kbd.tsx`, and `graph/EmbeddedGraph.tsx` writes `.btn-label`/`.ui-input` directly
+   instead of composing `Button`/`TextInput`. Both are missing-component symptoms in files outside
+   this task's scope, not CSS problems. */
+
+/* ── Tokens ──────────────────────────────────────────────────────────────── */
+/* The fixed type/weight/line-height/tracking/radius/rule/motion scale that used to live in this
+   block moved OUT to app/src/styles/tokens.css in the 2026-08-27 visual-unification wave 0 — see
+   that file's own header comment for why. The remaining `--ui-font-stack`/`--row-h`/`--accent-edge`/
+   `--blink`/`--sheen`/`--field-noise-op`/`--cell-h`/`--cell-h-dense` block MOVED OUT the same way
+   2026-09-12 (CSS modules migration Task 7): every name still resolves identically — only its
+   DEFINITION moved, to styles/tokens.css, since a token is never chrome and belongs there
+   regardless of how many components currently read it. */
+
+/* .segmented (+ its cross-primitive `.segmented .btn--text` compound) MOVED to
+   ui/SegmentedToggle.module.css (one-global-stylesheet Task 5) — see that file for the family and
+   the `:global()` bridge to its four outside callers. `drawing/Toolbar.tsx` holds a raw duplicate
+   `<div class="segmented">` — reported there, not fixed (Task 11 owns that file). */
+
+/* .search-bar / .search-bar-lead / .search-bar-input MOVED to ui/SearchBar.module.css
+   (one-global-stylesheet Task 5) — see that file for the family and the `:global()` bridge to its
+   four outside callers (GraphSearch, palette/PaletteFrame, palette/SwitcherBar, PreviewView). */
+
+/* .ui-overlay MOVED to ui/Modal.module.css 2026-09-12 (CSS modules migration Task 7) —
+   Modal.tsx was the sole reader anywhere in the app. */
+
+/* .ui-field (+ its "> span") MOVED to ui/Field.module.css 2026-09-12 (CSS modules migration
+   Task 7) — ui/Field.tsx was the sole reader anywhere in the app. */
+
+/* .ui-input / .ui-select-trigger / .ui-select-caret MOVED to ui/FormControl.module.css
+   2026-09-20 (CSS modules migration continuation, Task 3) — TextInput.tsx and Select.tsx's
+   trigger were two real components sharing one rule, so it became a real extracted primitive,
+   ui/FormControl.tsx, rather than a bare shared stylesheet. See ui/FormControl.module.css for
+   why its rules stay wrapped in `:global()` rather than hashed. */
+
+/* `.ui-empty`/`.ui-empty-block` (+ its `h2`) and `.ui-loading` MOVED to ui/EmptyState.module.css
+   (one-global-stylesheet Task 4). `.ui-empty`/`.ui-empty-block` are still reached via `:global()`
+   from bases/FlashcardsView.module.css, daemon/DaemonPanel.module.css and
+   palette/SwitcherBar.module.css — EmptyState.module.css now carries a `:global()` re-export
+   block for exactly those two classes so those three outside stylesheets keep working unchanged;
+   wave 3 owns converting them to import the component instead. */
+
+/* .stars / .star-on MOVED to ui/Stars.module.css 2026-09-12 (CSS modules migration Task 7) —
+   ui/Stars.tsx was the sole reader of both anywhere in the app. */
+
+/* `.status-text` + `.status-dot` MOVED to ui/StatusDot.module.css (one-global-stylesheet Task 4)
+   — grep confirmed ui/StatusDot.tsx is `.status-dot`'s only literal writer anywhere in the app,
+   so both classes are now fully local there, no `:global()` bridge needed. */
+
+/* .chip-toggle (+ :hover, .selected, .tone-<x>) MOVED to ui/ChipToggle.module.css
+   (one-global-stylesheet Task 6) — ChipToggle.tsx is the new component; the rules stay written
+   as bare :global() literals there since bases/CardEditModal.module.css and
+   bases/BaseView.module.css still reach the class directly, pending a later wave. */
+
+/* ── Cross-component primitives (moved from App.css, 2026-08) ──────────────
+   These stay GLOBAL on purpose: each is used by two or more unrelated components, so scoping them
+   into any one module would force every other consumer to import that module. Global is the correct
+   answer for a design-system primitive; it is only the wrong answer for component-private chrome.
+
+   WHICH FAMILIES MOVED, AND WHICH DID NOT. The migration enumerated every consumer of seven
+   candidate families before touching anything, because "shared" is a claim about the consumer list,
+   not a feeling about the name:
+
+     MOVED — .viewbar, .crumb, the `.vb-*` regions   ui/ViewBar.tsx writes the class and six unrelated views
+       mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
+       calendar/components/Toolbar). Three stylesheets outside this file also modify it:
+       ChatHeader.module.css (formerly ChatView.css — reaches in via `:global()` since the 2026-08
+       CSS-module migration), InboxPageView.module.css, bases/BaseView.module.css. (calendar/
+       Calendar.module.css was a fourth until Task 15, 2026-09-13, deleted it along with the
+       `.cal-viewbar` override below — the calendar toolbar now composes bare `<ViewBar>` slots
+       with no bar-level override of its own.)
+     MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
+       calendar/Calendar.module.css used to restyle it under .cal-viewbar — gone with that
+       stylesheet (Task 15, 2026-09-13); nothing restyles .vbtn from the calendar side any more.
+     DELETED 2026-08-27 (visual-unification audit §7 wave 1) — .vseg   was documented as one
+       primitive with the two above by both calendar/Calendar.module.css and ChatHeader.module.css
+       (formerly ChatView.css), but it had ZERO consumers: no .tsx ever wrote the class and no
+       other stylesheet targeted it (SegmentedToggle/Button's `state` prop is the live segmented-
+       selection primitive). Flagged as a deletion candidate when it was first moved here; deleted
+       outright rather than "re-implemented as a call site" since there was no call site to
+       convert.
+     MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
+       status renderer behind Table, List and Kanban); at the time of this move it was ALSO named
+       by calendar/Calendar.module.css's `.gcal-status :global(.status-dot) { }` — an empty rule
+       that turned out to be dead (confirmed when `GcalSyncPanel.module.css` was extracted; never
+       copied), so nothing calendar-side actually restyled it, then or now. That stylesheet is gone
+       as of Task 15 (2026-09-13). Separately, the `.status-text .status-dot` rule above already
+       pointed at App.css for its sizing. That
+       sizing lived in ONE grouped rule with `.chip .dot` at the time of this move, so the chip
+       family travelled with it rather than being split across two files. UPDATE 2026-08-27: the
+       `.chip` base and its six tone variants — flagged right above as zero-consumer deletion
+       candidates — were deleted (visual-unification audit §7 wave 0); `.status-dot` now stands
+       alone in its own rule in the section below.
+
+     STAYED in App.css, THEN MOVED (2026-08, app-shell componentization) — the status bar
+       (.status-bar, .status-vault, .status-sep, .status-path, .status-conn, .status-spacer,
+       .status-daemon) now lives in shell/StatusBar.module.css. Written by shell/StatusBar.tsx and
+       by nothing else. One consumer means it belongs in that component, not in the design system,
+       and not in App.css either once App.css had a shell/ to move it to.
+       (`.status-mode` was in that list until 2026-08-29, when the graph-mode readout was removed
+       from the bar entirely — the graph pane's own header toolbar owns that control. The bar's
+       inbox notification indicator added at the same time is a separate component with its own
+       module, shell/InboxIndicator.module.css, for the same one-consumer reason.)
+     STAYED — the icon picker (six rules). Every one is written only by ui/gallery/SymbolGallery.tsx;
+       icons/IconPicker.tsx writes none of them. One consumer.
+     STAYED in App.css, THEN MOVED (2026-08-18, the flashcards CSS module) — .progress, its
+       .count child and .card-dir. Never in this file: they left the global layer straight from
+       App.css into what was then one shared bases/Flashcards.module.css in one move, and only
+       there — 2026-09-02, when the flashcards deck stopped drawing its own header — was .progress
+       deleted outright. .count / .card-dir survived that same change as MODULE classes, rendering
+       inside .viewbar as bar slots — they now live in bases/FlashcardsView.module.css, one of the
+       several per-component modules that single shared file was later split into (Task 4 of the
+       design-system conformance pass; there is no longer a single bases/Flashcards.module.css
+       file). Nothing global remains for this family.
+
+   CASCADE. These rules changed FILE, and both files are global, so they changed POSITION — which is
+   the only way a pure relocation can break. Two equal-specificity ties exist:
+     .viewbar vs .graph-viewbar — both set `padding` on the same element at one class. This is why
+       GraphView.module.css writes `:global(.viewbar).graph-viewbar` (moved there from App.css by
+       the 2026-08 CSS modularization, Task 9 — same fix, same specificity, new file). The two
+       surfaces disagree about file order: the app bundle loads this file BEFORE App.css (ui.css
+       rides a dependency chunk), while
+       .storybook/preview.ts imports App.css first and this file after. A one-class override would
+       have won in the app and lost in Storybook — the same source rendering two ways.
+     .viewbar vs .cal-viewbar used to tie on `gap` at one class each (calendar/Calendar.module.css,
+       which loaded after this one on both surfaces and so kept winning). Task 15 (2026-09-13)
+       deleted `.cal-viewbar` along with that stylesheet — the calendar toolbar sets no bar-level
+       override any more, so this tie no longer exists. (.inbox-page-bar was the other half of
+       this pair. It no longer collides at all: the bar's own gap became meaningless once the
+       children were the two groups and space-between separated them, so InboxPageView.module.css
+       now sets `.inbox-page-bar .vb-actions` — two classes, and it wins on specificity rather
+       than on load order.) */
+
+/* .viewbar / .vbtn / .vb-* / .crumb + the collapse ladder MOVED to ui/ViewBar.module.css (design-system sweep, one-global-stylesheet task 2) — see that file for the family and the @container tiers. */
+
+/* .status-dot MOVED to ui/StatusDot.module.css (one-global-stylesheet Task 4) — grep confirmed
+   ui/StatusDot.tsx is the class's ONLY literal writer anywhere in the app, so it went fully
+   local (no :global() bridge needed here, unlike `.ui-empty`/`.ui-empty-block` above). The
+   keyboard-hint chips that used to share this section (`.kbd`/`.kbd b`) were DELETED outright by
+   Task 11 of the CSS modularization: zero consumers anywhere in `.tsx`/`.ts`, dead CSS rather
+   than a shared atom. `.chip` and its six `.chip.<tone>` category variants were deleted the same
+   way 2026-08-27 (visual-unification audit §7 wave 0, finding §4.6/§6): zero consumers in
+   `.tsx`/`.ts` — `git grep` for the bare `"chip"` class and every `.chip.<tone>` name turned up
+   only unrelated components (`.chip-toggle`, `EventChip`, `ChatColorDot`, comments) — dead since
+   before this file's own 2026-08 audit comment already flagged it as a deletion candidate. */
+
+/* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the pane's
+   full geometry while their real content (graph host, lazy chunk) mounts. Moved up from App.css
+   (2026-08 CSS modularization, Task 11): used by both App.tsx and PaneContent.tsx, two unrelated
+   components, so it belongs here per Task 4's rule rather than in either one's module. */
+.full { width: 100%; height: 100%; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ASCII primitives — new .asc-* classes ported from
+   bismuth-design/ascii/design-system/patterns.css. Section order mirrors that file.
+   These are unused for now: Stage 4 (app/src/ui/ascii/, Solid components) and
+   Stage 5 (views) are what will actually render them. Not ported here: the
+   "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)
+   and .asc-wordmark/.asc-table, which belong to App.css view chrome (later
+   stages). The .viewbar, .crumb and .vbtn set is no longer the exception this
+   note used to name — it moved INTO this file; see the cross-component
+   primitives block directly above.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* .asc-eyebrow MOVED OUT 2026-09-12 (CSS modules migration Task 7): Backlinks.tsx was its only
+   reader anywhere in the app, so the rule now lives as a real local class in
+   Backlinks.module.css instead of sitting here as a bare global one component reached into. */
+
+/* .asc-caret (+ its @keyframes asc-blink) briefly MOVED to ui/Caret.module.css
+   (one-global-stylesheet Task 7), then moved BACK here (regression fix, 2026-09-20):
+   Caret.tsx has no production importer — only its own story imports it — so Rollup never pulled
+   the module's CSS into the production bundle and every caret shipped invisible. Seven
+   components write the class bare with no owning importer (ChatComposer, Terminal,
+   intro/TermPanel, chat/ChatTranscript, shell/TopStrip, shell/StatusBar,
+   palette/SwitcherBar) — exactly the shape of a genuine global register entry, not a
+   component-private rule that merely lacks its `:global()` bridge yet. ui/Caret.tsx still
+   exists and writes the same literal class (see its own header), for the one caller that wants
+   the primitive rather than the bare string. */
+@keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.asc-caret { color: var(--accent); animation: asc-blink var(--blink) step-end infinite; }
+
+/* ── Overlay / modal / popover ─────────────────────────────────────────────
+   .ui-overlay is ui/Modal.module.css's scrim. .asc-modal MOVED there too (one-global-stylesheet
+   Task 7) — Modal.tsx is now its owner, still `:global()`-bridged to
+   palette/Palette.module.css's `.palette-panel:global(.asc-modal)` until wave 2.
+   .asc-popover MOVED to ui/Popover.module.css (one-global-stylesheet Task 7) — ui/Popover.tsx is
+   now its owner, still `:global()`-bridged to graph/GraphView.tsx's 3 bare writers until wave 2.
+   Both were named as missing primitives in this file's own header comment; Popover has no scrim
+   of its own — it floats directly over live content (a note, the graph field), so it keeps ONE
+   depth cue: --lift, a zero-blur hard-offset "TUI drop-shadow" (2px 2px 0 var(--shadow-hard))
+   instead of the old blur(6px) + --shadow-popup — the sanctioned exception §9.3 describes ("no
+   blur, but one hard-offset lift... where a depth cue is genuinely needed"), probed against a
+   same-tone background via storyAudit; see Modal.stories / SegmentedToggle.stories for the check. */
+/* .asc-menurow (+ its :hover/.active and its own .row-kbd rule) DELETED 2026-09-12 (CSS modules
+   migration Task 7, ownership map): zero consumers anywhere in .tsx/.ts — MenuRow.tsx and
+   PaletteModal.tsx only ever MENTIONED it in comments while actually rendering
+   `bismuth-popover-row`/`bismuth-popover-*` (a different, runtime-emitted family). Dead since
+   before this file's own prior audits caught the .vseg/.chip case above. */
+
+/* Card / callout / frontmatter — MOVED OUT 2026-08-27 (visual-unification audit §7 wave 1,
+   §9.8's "a shared stylesheet is evidence of a missing component"): `.asc-card`/`.asc-card--
+   proposal`/`.asc-frontmatter`/`.asc-callout` used to be bare classes here, exactly the pattern
+   Text/Label/Badge were built to eliminate. Now real components with colocated modules:
+   ui/Card.tsx (Card.module.css), ui/Callout.tsx (Callout.module.css), ui/Frontmatter.tsx
+   (Frontmatter.module.css) — each still shares the one 2px accent left border, --accent-edge,
+   defined in styles/tokens.css. */
+
+/* .asc-prose / .asc-wikilink (+ :hover) / .asc-tag DELETED 2026-09-12 (CSS modules migration
+   Task 7, ownership map): zero consumers anywhere in .tsx/.ts, not even in a comment. The real
+   runtime markdown renderer (bases/markdown.ts) emits a DIFFERENTLY NAMED family instead —
+   `bismuth-wikilink`, `bismuth-tag`, `bismuth-memory-ref` — styled elsewhere (e.g.
+   milkdown/inlineNodes.ts's chips). These `asc-` versions were leftover scaffolding from the
+   ASCII design-system port that never got wired up to a real consumer. */
+
+/* ── Kbd ────────────────────────────────────────────────────────────────────
+   A keybinding is a run of individual CAPS, not one box: adjacency is the
+   chord. The caps are the one place a Unicode modifier glyph is allowed in
+   chrome (⌘ ⌥ ↵ ↑ ↓ — not box-drawing). */
+.asc-kbd { display: inline-flex; align-items: center; gap: var(--sp-1); vertical-align: baseline; }
+.asc-kbd.muted { opacity: .6; }
+.asc-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 var(--sp-2);
+  border: var(--rule);
+  border-bottom-width: 2px;
+  border-radius: var(--r-0);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  line-height: 1;
+}
+/* .asc-kbd-then / .asc-kbd-hint / .asc-kbd-desc / .asc-kbd-hints MOVED to
+   ui/ascii/Kbd.module.css 2026-09-12 (CSS modules migration Task 7) — ui/ascii/Kbd.tsx was the
+   sole reader of all four anywhere in the app. `.asc-kbd`/`.asc-kbd.muted`/`.asc-key` directly
+   above STAY here: bases/FlashcardsView.tsx writes `.asc-kbd`/`.asc-key` directly too, bypassing
+   the Kbd component (a reported finding, not fixed in this task — see
+   .claude/plans/ui-css-ownership.md). */
+/* In a menu/palette row the caps sit right-aligned and recede. `.row-kbd` is written directly by
+   ui/popover/MenuRow.tsx and palette/PaletteModal.tsx (neither imports this file); the
+   `.asc-menurow` ancestor variant this selector used to also match was deleted above as dead. */
+.row-kbd .asc-key { background: transparent; border-bottom-width: 1px; color: var(--faint); }
+
+/* ── ASCII primitives: tree / meter / field / glyph / node-label ────────────
+   Consumed by AsciiTree / AsciiMeter / GraphField components.
+   .asc-glyph MOVED to ui/ascii/Glyph.module.css and .asc-tree/.asc-tree-row(+:hover/.active)
+   MOVED to ui/ascii/AsciiTree.module.css, both 2026-09-12 (CSS modules migration Task 7) — each
+   was the sole reader of its own rules anywhere in the app.
+   .asc-meter(+.asc-meter-empty) and .asc-field(+pre/.noise/.edges)/.asc-node-label(+.active)
+   STAY here for now: AsciiMeter.tsx and GraphField.tsx are each the sole real reader of their
+   own group (same single-owner shape as the classes that DID move), but neither file is one of
+   ui.css's 21 declared importers, so editing them is out of THIS task's file scope. Mechanical
+   follow-up, not a design decision — see .claude/plans/ui-css-ownership.md. */
+/* font-family is NOT optional here (same as Glyph's own .asc-glyph): the meter is a character
+   grid, and in an inherited proportional font its `.` cells collapse to ~3px while
+   `#` stays wide, so the bar reads as a thin dotted line instead of a meter. */
+.asc-meter { white-space: pre; color: var(--accent); font-family: var(--ui-font-stack); }
+/* Namespaced, not `.empty` — App.css's global `.empty` (the empty-pane flex column)
+   would otherwise turn this inline run into a block and break the bar onto 3 lines. */
+.asc-meter .asc-meter-empty { color: var(--faint); }
+.asc-field { position: relative; overflow: hidden; background: var(--graph-bg); }
+.asc-field pre { position: absolute; left: 0; top: 0; margin: 0; white-space: pre; }
+.asc-field .noise { color: var(--faint); opacity: var(--field-noise-op); }
+.asc-field .edges { color: var(--accent); text-shadow: var(--glow-accent); }
+.asc-node-label {
+  position: absolute;
+  font-size: var(--fs-ui);
+  background: var(--bg);
+  padding: 1px var(--sp-2);
+  border: var(--rule);
+  white-space: nowrap;
+}
+.asc-node-label.active { color: var(--accent); border-color: var(--accent); text-shadow: var(--glow-text); }
+
+
+/* ============================================================================
+ * Editor.css — CodeMirror theming (third-party plain-DOM; never a module)
+ * ============================================================================ */
+/* app/src/Editor.css
+
+   NOT A CSS MODULE, AND STAYS THAT WAY — checked as part of the 2026-08 CSS modularization
+   (the task that turned App.css/ChatView.css/searchResults.css/PreviewView.css/Calendar.css/
+   VaultIntro.css into `*.module.css`). Every selector below is one of exactly two kinds, and
+   BOTH kinds are excluded from CSS Modules by cssLayering.test.ts's RUNTIME_CLASS_PREFIXES —
+   see that file's own header for the full "why a hashed name can never match a runtime
+   string" argument.
+
+     `.cm-*`   — CodeMirror's OWN classes (`.cm-editor`, `.cm-panels`, `.cm-searchMatch`,
+       `.cm-td`, …), created by the CodeMirror/`@codemirror/search` PACKAGE at runtime, not by
+       any Solid template this repo compiles. A hashed name could never appear in a string
+       CodeMirror itself writes.
+     `.bismuth-*` — THIS app's own runtime-string emitters: editor/findPanel.ts builds the
+       whole find bar with raw `document.createElement` + `el.className = 'bismuth-find'` /
+       `classList.toggle('bismuth-find-empty', …)` (confirmed by reading that file — it is a
+       CodeMirror panel, not a Solid component, so nothing here ever passes through the JSX
+       compiler moduleClassCheck.ts's Check B relies on); editor/cellList.ts and
+       bases/markdown.ts's reader engine write `bismuth-wikilink`/`bismuth-memory-ref`/
+       `bismuth-tag`/`bismuth-cell-list` as literal strings into rendered HTML the same way
+       bases/BaseView.module.css and chat/ChatTextBubble.module.css already document for their own
+       `:global(.bismuth-*)` reaches.
+
+   There is consequently NOTHING here for a hash to protect: no rule in this file is ever
+   addressed by a Solid `class={styles[...]}` lookup, because Editor.tsx and its `editor/`
+   helpers never write a bare `.editor-*`-style class of their own for this file to own — they
+   either lean on CodeMirror's classes directly or emit `bismuth-*` at runtime. Renaming this
+   to `Editor.module.css` would move a file whose entire contents are `:global(...)`-only,
+   which the modularization's own instructions call out as the wrong move: "If a file ends up
+   entirely `:global`, it is not a module — leave it a global stylesheet and say so." So it
+   stays exactly what it already was, and this header exists so the next person who wonders
+   why Editor.css was skipped in a from-App.css sweep finds the answer here instead of
+   re-deriving it. */
+
+/* Editor visuals live elsewhere now:
+   - squiggles (spell=red, grammar=blue, property=purple) → livePreview's EditorView.theme
+   - the right-click menu → the shared <ContextMenu> component (App.tsx), driven by
+     editor/contextMenu.ts. This file is intentionally (nearly) empty.
+
+   Prose detail polish (README §1) is owned by the scoped CM theme in
+   editor/livePreview.ts, NOT here — those `.cm-*` rules are generated with a unique
+   wrapper class, so a plain selector in this file can't override them. The spec values
+   already match there:
+     - .cm-wikilink / .cm-link → color var(--accent); text-decoration none;
+       border-bottom 1px solid var(--accent-soft)  (soft underline)
+     - .cm-h1 → inherits var(--prose-font) (Lora) + var(--fg); weight 600; tight tracking
+     - .cm-h2 → inherits var(--prose-font); weight 600; letter-spacing -0.01em
+   The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.module.css.
+   Body `#tags` have NO decoration class in live-preview (only headings consume `#`),
+   so there is no hook to tint gold without adding new parsing — intentionally left alone. */
+
+/* ── In-editor Find bar (editor/findPanel.ts) ──────────────────────────────────
+   The bar is a custom CodeMirror search panel. CM mounts it in `.cm-panels-top`
+   (sticky, above the scroller). We collapse that container to 0 height + visible
+   overflow so the bar floats over the top-right of the editor instead of pushing
+   the prose down — and anchor the bar to it absolutely. */
+.cm-editor .cm-panels.cm-panels-top {
+  background: transparent !important;
+  border-bottom: none !important;
+  height: 0;
+  overflow: visible;
+}
+
+.bismuth-find {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
+  background: var(--pop-bg-strong, var(--bg));
+
+
+  border: var(--rule);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
+  font-family: var(--ui-font-stack);
+  color: var(--fg);
+}
+
+.bismuth-find-input {
+  width: 168px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-ui);
+  padding: var(--sp-1) var(--sp-1);
+}
+.bismuth-find-input::placeholder { color: var(--text-muted); }
+
+.bismuth-find-count {
+  min-width: 30px;
+  margin: 0 var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: right;
+}
+.bismuth-find-count.bismuth-find-empty { color: var(--danger); }
+
+.bismuth-find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-0);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.bismuth-find-btn:hover { background: var(--hover-bg); color: var(--fg); }
+.bismuth-find-btn:active { background: var(--border); }
+
+.bismuth-find-case {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: var(--ui-font-stack);
+}
+.bismuth-find-btn.bismuth-find-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Match highlighting (the panel-gated highlighter from @codemirror/search). Recolor
+   to the app accent; !important beats the package's themed `.cm-searchMatch` rules.
+   Every match gets a legible accent wash + a hairline ring so it reads against prose;
+   the ACTIVE match (the one the selection sits on — typing/Enter/prev-next move it, see
+   findPanel.revealFrom) gets a strong solid wash + a full 2px accent ring so it's
+   unmistakable even while the find INPUT (not the editor) holds focus and the editor's
+   own selection layer is dimmed. Contrast here is what makes "where the match is" obvious. */
+.cm-editor .cm-searchMatch {
+  background: color-mix(in srgb, var(--accent) 26%, transparent) !important;
+  border-radius: var(--r-0);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.cm-editor .cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--accent) 58%, transparent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--r-0);
+}
+
+/* ── Find matches INSIDE a rendered table widget (#31) ─────────────────────────
+   A GFM table is an atomic block widget that hides its source, so Cmd+F can't paint the
+   package highlighter over it. Instead `editor/tableWidget.ts` wraps each match in the cell's
+   RENDERED text with `<mark class="cm-table-find-match">` (and the active one gets
+   `-active`), mirroring the `.cm-searchMatch` / `-selected` look above so a match reads the
+   same whether it's in prose or a table cell. `mark` defaults to a yellow browser background —
+   reset it so only our accent wash shows. The table is NEVER flipped to raw markdown source. */
+.cm-editor .cm-table-rendered mark.cm-table-find-match {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: inherit;
+  border-radius: var(--r-0);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.cm-editor .cm-table-rendered mark.cm-table-find-match.cm-table-find-active {
+  background: color-mix(in srgb, var(--accent) 58%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--r-0);
+}
+
+/* ── Table-cell text selection color (#23) ─────────────────────────────────────
+   A table cell (editor/tableWidget.ts `.cm-td`) is a contenteditable inside a block
+   widget, so selecting text in it uses the browser's NATIVE ::selection. CodeMirror's
+   drawSelection injects, at Prec.highest, `.cm-content :focus ::selection { background:
+   Highlight !important }` (Highlight = the OS system selection color) for any focused
+   element inside the content — which overrides the editor's own accent tint, so a cell's
+   selection rendered as OS blue instead of the app selection color everywhere else.
+   Re-assert the editor selection color: the SAME accent tint CodeMirror draws for a
+   FOCUSED editor's `.cm-selectionBackground` (Editor.tsx line 99:
+   `color-mix(in srgb, var(--accent) 38%, transparent)`), so a cell's selection matches
+   the rest of the editor. The four class-level selectors (`.cm-editor .cm-content
+   .cm-table-rendered .cm-td`) give specificity (0,4,1) — strictly higher than CM's
+   `.cm-content :focus ::selection` (0,3,1) — so this wins deterministically alongside
+   `!important` (source order irrelevant). Both `::selection` and `::-moz-selection`. */
+.cm-editor .cm-content .cm-table-rendered .cm-td::selection,
+.cm-editor .cm-content .cm-table-rendered .cm-td ::selection {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+}
+.cm-editor .cm-content .cm-table-rendered .cm-td::-moz-selection,
+.cm-editor .cm-content .cm-table-rendered .cm-td ::-moz-selection {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+}
+
+/* ── Lists inside a table cell (#15) ───────────────────────────────────────────
+   A list cell renders as `<ul>/<ol class="bismuth-cell-list">` whose EACH item carries its
+   bullet/number as REAL TEXT (a `.bismuth-cell-mk` span), with the native list marker turned
+   off via an inline `list-style:none` (editor/cellList.ts). The glyph is content, so no
+   cascade or contenteditable quirk can strip it. We deliberately DON'T set `list-style-type`
+   here (an earlier attempt did — with inline `list-style:none` it's dead, and it would only
+   risk DOUBLING the marker if the inline style were ever dropped). Keep `list-style:none` +
+   compact spacing so the class agrees with the render on every surface.
+   (The reader engine — bases/markdown.ts, used by note-body tables — still emits this class;
+   the WIDGET's display face now block-renders instead, see below.) */
+.cm-editor .cm-td .bismuth-cell-list,
+.cm-editor .cm-td .bismuth-cell-list li {
+  list-style: none;
+}
+
+/* ── Block-rendered cell display face (#15, the "block thing") ─────────────────
+   The widget's DISPLAY face renders through the FULL note-reading engine
+   (editor/cellBlockRender.ts → bases/markdown.ts renderNoteBody), so a cell shows real
+   <p>/<ul>/<ol>/<li> blocks exactly like reading mode. Scope the block metrics to the cell so
+   note-sized margins don't explode row height: zero outer margins, compact list indent, and
+   tight spacing between consecutive blocks. Height stays auto (#52). */
+/* The cell inherits CodeMirror's content `white-space: pre-wrap`, which renders the block
+   engine's inter-tag newlines as visible blank lines (huge gaps between <li>s). The DISPLAY
+   face is normal HTML flow; only the EDIT face (raw source) needs pre-wrap so typed spaces
+   and line breaks show while editing. <pre>/<code> re-establish their own white-space. */
+.cm-editor .cm-td {
+  white-space: normal;
+}
+.cm-editor .cm-td[data-editing="1"] {
+  white-space: pre-wrap;
+}
+/* ── Empty-cell height (#61 / #62) ──────────────────────────────────────────────
+   The display face of an EMPTY cell (a freshly-added row, or a cell the user cleared)
+   block-renders to an empty string, so it has NO line box and collapses to just its
+   vertical padding — a sliver beside the filled rows ("new rows are really short"; on blur
+   an empty cell/line "hides its empty line" and the row jumps, #62).
+
+   The widget injects a REAL placeholder element (`span.cm-td-ph` holding a genuine
+   NON-BREAKING SPACE) into every empty cell's display face. A block box with actual nbsp
+   content establishes a real line box WebKit cannot collapse (unlike `min-height` on a
+   `display: table-cell`, which WebKit ignores, or a lone *inline* nbsp, which it may not give
+   its own line). Crucially the placeholder's `line-height` is the SAME `--cm-td-lh` the display
+   cells AND the nested EDIT editor use (livePreview.ts / cellEditor.ts) — so an empty cell, a
+   filled single-line cell, and the edit face are all one line box tall to the pixel, and NOTHING
+   changes height on focus/blur (the root cause the prior placeholder-only fix left unsolved: the
+   edit face was 1.5 while the always-compact display face was 1.3). An edited cell (nested editor
+   mounted → no placeholder) is untouched. */
+.cm-editor .cm-td .cm-td-ph {
+  display: block;
+  line-height: var(--cm-td-lh, 1.5);
+  min-height: calc(var(--cm-td-lh, 1.5) * 1em);
+}
+/* Belt-and-suspenders: also reserve height on the td itself when empty (ignored by WebKit on a
+   table-cell, but a safety net for other engines / the dev browser). */
+.cm-editor .cm-td.cm-td-empty {
+  min-height: calc(var(--cm-td-lh, 1.5) * 1em);
+}
+.cm-editor .cm-td p,
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol,
+.cm-editor .cm-td blockquote,
+.cm-editor .cm-td pre,
+.cm-editor .cm-td h1,
+.cm-editor .cm-td h2,
+.cm-editor .cm-td h3,
+.cm-editor .cm-td h4,
+.cm-editor .cm-td h5,
+.cm-editor .cm-td h6 {
+  margin: 0;
+}
+.cm-editor .cm-td > * + * {
+  margin-top: 0.3em;
+}
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol {
+  padding-left: 1.25em;
+}
+.cm-editor .cm-td li {
+  margin: 0.05em 0;
+}
+.cm-editor .cm-td li > p {
+  margin: 0; /* loose-list items: keep the paragraph flush inside its li */
+}
+.cm-editor .cm-td h1, .cm-editor .cm-td h2, .cm-editor .cm-td h3,
+.cm-editor .cm-td h4, .cm-editor .cm-td h5, .cm-editor .cm-td h6 {
+  /* design-system-ignore hardcodedFontSize: heading inside a table cell */
+  font-size: 1.05em; /* a heading in a cell reads as emphasis, not a page title */
+}
+/* The reader's wikilink/tag chips (a.bismuth-wikilink / span.bismuth-tag) styled to match the
+   editor's own .cm-wikilink / .cm-tag marks (livePreview theme), so a link or tag in a cell
+   reads identically to one in the note body. */
+.cm-editor .cm-td a.bismuth-wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+.cm-editor .cm-td a.bismuth-memory-ref {
+  color: var(--violet);
+  border-bottom-color: color-mix(in srgb, var(--violet) 14%, transparent);
+}
+/* A #tag inside a rendered table cell. TABLES ARE PROSE (see the family-list note above) and this
+   is the standing exception to that — it already was one, declaring a mono family while the cell
+   around it stays serif. It now uses the SAME token pair as .cm-tag, the chat transcript and the
+   Milkdown chip, so a tag does not change size depending on whether it sits inside a table. */
+.cm-editor .cm-td .bismuth-tag {
+  color: var(--gold);
+  font-family: var(--ui-font-stack);
+  font-size: var(--editor-font-size);
+}
+
+/* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────
+   NO bespoke styles here, deliberately. The popup (editor/cellEmoji.ts) carries CodeMirror's
+   exact tooltip classes + DOM shape (.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]
+   > .cm-completionLabel) and mounts INSIDE the editor root, so it is styled by the SAME two
+   sources as the editor's own autocomplete popup: CM's base autocomplete theme and the app's
+   completionTheme (editor/completionDisplay.ts — the single source of completion styling).
+   Restyling either popup automatically restyles both; adding rules here would fork them again. */
+
+/* ── Prose vs mono inside the editor ──────────────────────────────────────────────────────────
+   `.cm-scroller` now sets --prose-font (Editor.tsx's editorTheme) so note BODY text renders in the
+   proportional face. Everything below is explicitly NOT prose and is pulled back to the monospace
+   editor font. The prose scope itself is defined once, in styles/tokens.css's --prose-font block —
+   deliberately NOT re-quoted here: a verbatim copy is exactly what let this drift. It said "never
+   headings, tables, ..." long after headings became prose and tables were still on the list below,
+   and nothing caught it because the copy had no way to know the source had moved. The two selector
+   lists below ARE that scope's mono half AS CODEMIRROR IMPLEMENTS IT — not the whole of it:
+   chat/ChatTextBubble.module.css carries its own, independently-driftable list for the chat surface,
+   so this file settling the question for the CodeMirror editor says nothing about whether that
+   one still agrees with it.
+
+   Why this is a pull-back rather than a push-forward: prose is the common case and every other
+   construct is an exception, so defaulting the scroller to prose and listing the exceptions keeps
+   the rule count small. The alternative — tagging every prose line — would need a decoration on
+   every line in the document.
+
+   --ui-font-stack (not a literal) so the user's appearance.uiFont setting still governs the mono
+   half of the editor; it just no longer governs prose, which is the point of the decision. */
+/* HEADINGS ARE PROSE and are deliberately absent from this list. They used to be pulled back to
+   the mono face with everything else, on the reading of the token scope that a heading is chrome.
+   It is not: a heading is the note's own text, it is read as part of the prose it introduces, and
+   setting it in a different family from the paragraph one line below made every note look like two
+   documents. The heading MARK (`#`) goes with them — it only appears on the caret line, and a mono
+   `#` in front of h1-sized serif reads as a rendering fault rather than as syntax. */
+/* TABLES ARE PROSE and are deliberately absent from both lists, for the same reason headings are:
+   a table in a note is the note's own content, not chrome, and setting it in a different family
+   from the paragraph above it made a note look like two documents. Unlike headings, tables take
+   the SIZE reset off too — headings are excluded there because livePreview.ts gives .cm-h1..h6
+   their own absolute scale, and a table has no such scale, so family-only would leave it serif at
+   the mono size, which reads optically small (that gap is exactly what --prose-scale exists for). */
+.cm-editor .cm-codeblock,
+.cm-editor .cm-inline-code,
+.cm-editor .cm-code-header,
+.cm-editor .cm-code-headerwrap,
+.cm-editor .cm-code-lang,
+.cm-editor .cm-code-numbered,
+.cm-editor .cm-frontmatter,
+.cm-editor .cm-fm-key,
+.cm-editor .cm-math,
+.cm-editor .cm-math-src,
+.cm-editor .cm-inline-math {
+  font-family: var(--ui-font-stack);
+}
+
+/* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
+   optically compensated prose size (--prose-font-size, scaled up by --prose-scale), and mono does
+   not need that compensation — inheriting it would render every code span too large.
+   HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own absolute sizes
+   off the fixed type scale (--fs-h1..--fs-h6), so resetting them here would flatten the whole
+   heading ramp to body size. They take the family reset and nothing else.
+   TABLES ARE EXCLUDED TOO, but for the opposite reason — see the TABLES ARE PROSE note above the
+   family list: a table has no absolute scale of its own, so leaving the size reset ON is what
+   would flatten it back to mono size after the family reset already moved it to serif.
+   .cm-list-marker / .cm-syntax-mark / .cm-tag set their font-family INLINE in livePreview.ts's
+   EditorView.theme() rather than going through the family list above, and were never added here
+   either — so all three silently inherited --prose-font-size against the 13.5px editor size,
+   exactly the --prose-scale compensation. Any class that sets font-family inline in livePreview.ts
+   needs a matching entry in THIS list too, or it optically renders too large next to the mono size. */
+.cm-editor .cm-codeblock,
+.cm-editor .cm-inline-code,
+.cm-editor .cm-code-header,
+.cm-editor .cm-code-headerwrap,
+.cm-editor .cm-code-lang,
+.cm-editor .cm-code-numbered,
+.cm-editor .cm-frontmatter,
+.cm-editor .cm-fm-key,
+.cm-editor .cm-math,
+.cm-editor .cm-math-src,
+.cm-editor .cm-inline-math,
+.cm-editor .cm-list-marker,
+.cm-editor .cm-syntax-mark,
+.cm-editor .cm-tag {
+  font-size: var(--editor-font-size);
+}
+
+/* Task bracket fields — `[due 2026-09-14]`, `[high]`, `[every week]`. A MARK, not a
+   replacement: the literal syntax is the drawing, so there is nothing to hide and no
+   cursor-reveal to build. Same token pair as .cm-tag so a field and a #tag read as one
+   family, and the editor face at the editor size so nothing is scaled out of prose. */
+.cm-editor .cm-task-field {
+  font-family: var(--ui-font-stack);
+  font-size: var(--editor-font-size);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--r-0);
+  padding: 0 2px;
+}
+
+
+/* ============================================================================
+ * Terminal.css — xterm.js theming (third-party plain-DOM; never a module)
+ * ============================================================================ */
+/* Terminal host — ASCII redesign.
+   Full-pane terminal on the deep --term-bg, following the user's chosen UI face
+   (--ui-font-stack) at 13px/1.6, padded 16px 18px. xterm.js owns the grid + the ANSI
+   palette DERIVED from the scope's tokens (Terminal.tsx buildTerminalTheme — see
+   bismuth-design/ascii-extended/PORTING.md §1a): prompt/errors/paths etc. move with the scope,
+   not hand-picked here. We only theme the host container + the custom cursor. */
+
+.term-host {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  box-sizing: border-box;
+  background: var(--term-bg, #08090e);
+  color: var(--term-fg, var(--fg));
+  font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  padding: var(--sp-6) 18px;
+  overflow: hidden;
+}
+
+/* Dragging a file over the terminal — inset accent ring + faint wash to signal the
+   drop inserts the file's path at the prompt. inset so it reads inside the padding. */
+.term-host.term-drop-active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--r-0);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* Let xterm's own viewport sit transparently on the host bg so the padding
+   shows the deep terminal surface, not xterm's default fill. */
+.term-host .xterm,
+.term-host .xterm-viewport,
+.term-host .xterm-screen {
+  background: transparent !important;
+}
+
+/* Reduce graininess on macOS displays. */
+.xterm {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* Custom gliding cursor overlay — a blinking underline, matching .asc-caret
+   everywhere else in the system (ui.css), not a solid block. xterm's native cursor
+   is a class transferred between inline spans, so CSS transitions don't apply — we
+   render our own absolutely-positioned bar and animate transform. Terminal.tsx sets
+   width to the live cell width (font/zoom-dependent) and height stays CARET_H (2px,
+   see Terminal.tsx); the 8px width below is only the pre-measurement fallback for the
+   very first paint. Glide/blink speed still come from the user's terminal.* settings
+   (--term-cursor-glide/--term-cursor-blink) — unlike .asc-caret's fixed --blink, this
+   one stays user-configurable. */
+.xterm-custom-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  transition: transform var(--term-cursor-glide, 70ms) ease-out;
+  animation: xterm-caret-blink var(--term-cursor-blink, 1.2s) steps(1) infinite;
+  will-change: transform;
+  z-index: 5;
+}
+
+@keyframes xterm-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Hide the custom cursor while the terminal is unfocused (xterm toggles `.focus` on
+   the .xterm root). A blinking accent underline in a background pane reads as "active"
+   and competes with the focused pane's cursor; native terminals dim/hollow theirs. */
+.term-host:has(.xterm:not(.focus)) .xterm-custom-cursor {
+  opacity: 0;
+  animation: none;
+}
+
+
+/* ============================================================================
+ * graph/asciiGraph.css — knowledge-graph canvas overlay chrome
+ * ============================================================================ */
+/* app/src/graph/asciiGraph.css
+ * The ASCII knowledge graph: the character-field viewport (AsciiGraphRenderer) — the `:root` cell
+ * metrics below and the `.asc-field`/`.asc-graph-canvas` primitives. Source:
+ * bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html and
+ * bismuth-design/ascii/design-system/ui_kits/bismuth-app/GraphView.jsx.
+ *
+ * The two floating overlays this file used to restyle (the cluster legend and the graph find
+ * panel — `.graph-legend-card`, `.graph-find-panel`, `.graph-search-*`, `.graph-stats`) moved into
+ * GraphView.module.css (2026-08 CSS modularization, Task 9), which folded in this file's overlay
+ * rules too — see that module's header for the merge. What's left here is genuinely global: cell
+ * metrics AsciiGraphRenderer reads live off the host element, and `.asc-*` design-system
+ * primitives that belong in the global ASCII register regardless of which component uses them.
+ */
+
+/* The character grid's cell metrics (bismuth-design/ascii/design-system/tokens/ascii.css). --cell-w is the
+   font's own advance width at --fs-ui (11.5px) — if the font size changes this must change with it,
+   or the drawing shears. GRID LAW: line-height == cell height, always — never scale a glyph.
+   AsciiGraphRenderer reads --cell-w live off the host (asciiGrid.ts's CELL_W is only the
+   pre-mount/test fallback). One cell width for both the main pane and the sidebar mini-graph —
+   there is no denser variant any more.
+   --cell-h / --cell-h-dense (the line-box height — the app's unified row unit, and Glyph.tsx's
+   own dense cell) MOVED to ui/ui.css 2026-08-27 (visual-unification audit §7 wave 0, finding
+   §4.6): they are shared-primitive geometry (Glyph.tsx is consumed well outside the graph), not
+   something the graph field itself owns, so a shared primitive depending on this feature
+   stylesheet for its sizing was the bug. Values unchanged. */
+:root {
+  --cell-w: 6.3px;               /* advance width at --fs-ui (11.5px) */
+  --cell-w-dense: 4.2px;         /* advance width at 7px — Glyph.tsx's own dense cell (unrelated primitive, not used by the graph field) */
+}
+
+/* ── The field ───────────────────────────────────────────────────────────── */
+/* .asc-field (ui.css) already gives us position/overflow and the flat --graph-bg ground the
+   design calls for — no atmosphere glow, no vignette, no gradient. */
+/* Both classes are on the same element and .asc-field declares `position: relative`, so this rule
+   is written at two-class specificity — stylesheet import order must not decide the layout. */
+.asc-field.asc-graph-viewport {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  /* Own stacking context so the canvas can't paint over the floating legend / stats / find panel. */
+  isolation: isolate;
+}
+.asc-field.asc-graph-viewport.is-dragging { cursor: grabbing; }
+
+/* The single canvas the whole field is drawn on — every glyph is a fillText at a fixed cell.
+   NEVER give this a transform: scale; zoom is resolution (ascii-zoom.card.html). */
+.asc-graph-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+
+/* ============================================================================
+ * palette/switcher.css — Cmd+O quick switcher chrome
+ * ============================================================================ */
+/* app/src/palette/switcher.css
+   The Cmd+O switcher's OWN chrome (.switcher-bar, .switcher-search, .switcher-input, .switcher-esc,
+   .switcher-list, .switcher-section, .switcher-ask-ai, and the switcher-drop keyframes) moved to
+   the colocated palette/SwitcherBar.module.css during the 2026-09 CSS-modules migration. What
+   remains here are the rules that MUST stay global — they target OTHER components' DOM by
+   `[data-*]` attribute precisely BECAUSE the corresponding classes are already CSS-Modules
+   locals owned by those other components, and a module class cannot reach another component's
+   DOM. This file is still loaded at boot (SwitcherBar.tsx eagerly imports it via
+   `import './switcher.css'`, and SwitcherBar is itself eagerly imported by App), so the
+   `[data-editor-pane]` positioning context below is in place before the bar ever renders. */
+
+/* Positioning context for the absolute bar. Harmless when idle (no offset children). Selects
+   `[data-editor-pane]`, NOT `.editor-pane`: that class is now a CSS-Modules local of
+   shell/EditorPane.module.css and hashes at build time, so a bare `.editor-pane` here would
+   compile and match nothing. shell/EditorPane.tsx carries the attribute for exactly this reach —
+   the same shape of problem `[data-graph-floater]`/`[data-sidebar-toolbar]` already solved. */
+[data-editor-pane] { position: relative; }
+
+/* CRITICAL: in switcher mode the graph floater is positioned over the whole editor body as the
+   backdrop, but its canvas is transparent where there's no glow — so the note pane BEHIND it
+   showed through (note title/text bleeding into the graph). Give the floater an opaque app-bg
+   fill ONLY while switcher mode is on, so the graph reads as a clean full-window backdrop. In
+   every other graph mode (sidebar mini, ::graph home tab) the floater stays transparent.
+   Selects `[data-graph-floater]`, NOT `.graph-floater`: that class is now a CSS-Modules local of
+   shell/GraphFloater.module.css and hashes at build time, so a bare `.graph-floater` here would
+   compile and match nothing. shell/GraphFloater.tsx carries the attribute for exactly this reach. */
+.layout.switcher-active [data-graph-floater] { background: var(--bg); }
+
+/* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
+   non-interactive — and restores on Esc. Subtle, per the design.
+   Selects `[data-sidebar-toolbar]`, NOT `.sidebar-icons`: that class is now a CSS-Modules local of
+   shell/Sidebar.module.css and hashes at build time, so a bare `.sidebar-icons` here would compile
+   and match nothing. shell/Sidebar.tsx carries the attribute for exactly this reach. */
+.layout.switcher-active [data-sidebar-toolbar] {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+
+/* ============================================================================
+ * ui/popover/popover.css — runtime-emitted bismuth-* popover classes (vanilla DOM, outside the bundler's view)
+ * ============================================================================ */
+/* app/src/ui/popover/popover.css
+ * STAYS GLOBAL PERMANENTLY — not a candidate for CSS-modules conversion (CSS modules migration
+ * Task 10 audited it and ruled this explicitly, so a later reader does not re-open the question).
+ * Every class below is a `bismuth-` runtime-emitted literal (RUNTIME_CLASS_PREFIXES,
+ * cssLayering.test.ts) written directly, outside the bundler's view, by:
+ *   1. context menu   — Solid <PopoverList>/<MenuRow>, plus ContextMenu.tsx's own literals
+ *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (editor/completionDisplay.ts;
+ *                       CM owns that DOM, so it shares TOKENS, not components)
+ *   3. yaml hover-fix — vanilla .bismuth-popover DOM (editor/yamlFixHover.ts, ui/popover/rowDom.ts)
+ *   4. date/datetime property popover — DatePicker.tsx's literal 'bismuth-popover'/'bismuth-popover-row' classes, applied via JSX (the mount itself is the small imperative shim editor/datePickerExtension.tsx)
+ *   5. command/file palette, chat history picker — shares font/selected/shadow TOKENS only
+ * A hashed local could never reach the imperative writers (rowDom.ts/DatePicker.tsx's literal classes/
+ * yamlFixHover.ts set `.className` directly on elements the bundler never sees), so this file
+ * is the same category as Editor.css/Terminal.css: a global mechanism, not a missing component.
+ * Multiple importers (App.tsx, ui/Select.tsx) is legitimate here for that reason.
+ *
+ * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,
+ * Task 10) — those ARE tokens, not chrome, and are read via var() well beyond this file's own
+ * importers (SearchResultRows.module.css, editor/DatePicker.module.css, palette/SwitcherBar.module.css,
+ * palette/Palette.module.css). Change a token there and every surface below still changes
+ * together; colors reuse theme vars. */
+
+/* chrome */
+.bismuth-popover {
+  background: var(--bg);
+  border: var(--rule);
+  border-radius: var(--popover-radius);
+  padding: var(--popover-pad);
+  min-width: var(--popover-min-width);
+  box-shadow: var(--popover-shadow);
+  font-family: var(--popover-font);
+  font-size: var(--popover-font-size);
+  color: var(--fg);
+  overflow: hidden;
+  /* A menu longer than the viewport must scroll, not be clipped. `overflow: hidden` alone
+     (with no max-height) meant a long list simply ran off the bottom edge — the flip in
+     ContextMenu.tsx handles the common case, this handles the case no flip can fix. */
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* row */
+.bismuth-popover-row {
+  display: flex;
+  align-items: center;
+  gap: var(--popover-row-gap);
+  height: var(--row-h, 18px);
+  padding: var(--popover-row-pad-y) var(--popover-row-pad-x);
+  border-radius: var(--popover-row-radius);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+/* accent-on-accent-soft — the same selection treatment as .asc-menurow. This is the row
+   `createMenuNav` currently has active (keyboard Up/Down, or the default landed on open) — it
+   persists even while the pointer sits elsewhere, the same way FileTree's "open file" persists
+   without a hover. */
+.bismuth-popover-row--selected { background: var(--popover-selected-bg); color: var(--accent); }
+.bismuth-popover-row--danger { color: var(--danger); }
+.bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
+/* A plain mouse-over gets the LIGHT wash, not the heavy selected fill (visual-unification audit
+   §7 wave 3, §4.10: "hovering a palette row currently reads exactly as loud as 'this file is
+   open'"). Wins outright on SPECIFICITY, not source order: `:not(.bismuth-popover-row--disabled)`
+   counts the specificity of its argument, so this selector is one base class + :hover (a
+   pseudo-class, counts as one class) + one class from inside :not() = (0,3,0), against
+   `--selected` alone at (0,1,0) — the hover rule always wins regardless of declaration order.
+   That's what covers the common case where the mouse is resting on the row `createMenuNav`'s
+   onMouseEnter also just made active — mouse-driven highlighting reads as a hover, and only a
+   row highlighted WITHOUT the pointer over it (reached by keyboard, or the query-reset default)
+   reads at the louder --state-selected-bg weight. This requires no JS change: onMouseEnter still
+   calls onHover (Enter/click still act on the same row); only the paint differs. */
+.bismuth-popover-row:hover:not(.bismuth-popover-row--disabled) { background: var(--state-hover-bg); }
+
+.bismuth-popover-icon,
+.bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
+.bismuth-popover-icon { opacity: 0.85; }
+.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: var(--sp-5); }
+/* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
+   Kbd primitive supplies the cap look. */
+.bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: var(--sp-5); display: inline-flex; align-items: center; }
+/* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
+.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: var(--sp-2); }
+
+.bismuth-popover-sep {
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-2) var(--sp-1);
+}
+
+/* Quick-action rail (#67) — a small icon strip hanging off a context menu's LEFT edge for
+   actions that must survive a long option list (the emoji library). Reuses .bismuth-popover
+   chrome so it reads as part of the same menu; only the list-shaped bits are overridden.
+   Geometry is mirrored by RAIL_WIDTH in ContextMenu.tsx — keep the two in sync. */
+.bismuth-popover-rail {
+  min-width: 0; /* the popover min-width (170px) is for lists; the rail is icon-width */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.bismuth-popover-rail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--popover-row-radius);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  /* PlainButton's reset sets text-align: start; restore the UA <button> default this rail
+     relied on (its icon is centered by the flex align/justify above regardless, but keep the
+     computed style unchanged — a bare <button>'s was text-align: center). */
+  text-align: center;
+}
+/* A plain hover, not a selection — this rail has no keyboard-active concept, so it reads at the
+   hover weight rather than borrowing the row list's --popover-selected-bg (audit §7 wave 3). */
+.bismuth-popover-rail-btn:hover { background: var(--state-hover-bg); }
+
+/* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
+   quick-fix on hover), strip CM's default tooltip chrome so the border/background
+   isn't doubled — the .bismuth-popover supplies its own. */
+.cm-tooltip:has(> .bismuth-popover) {
+  border: none;
+  background: transparent;
+}
+
+
+/* ============================================================================
+ * sheet/univer-theme.css — Univer spreadsheet theming (third-party plain-DOM; scoped to .bismuth-sheet)
+ * ============================================================================ */
+/* app/src/sheet/univer-theme.css
+   Make Univer's DOM chrome (ribbon, toolbar, menus, dialogs) feel native to the
+   ASCII redesign. Univer's chrome is Tailwind utilities that reference `var(--univer-*)`
+   color tokens with !important, so we recolor by overriding the VARIABLES (not the
+   properties) — no specificity fight. Everything is scoped to `.bismuth-sheet` (the
+   adapter's container) so it never leaks to the rest of the app. The mapped values
+   read the app's own semantic tokens (--accent/--fg/--rail/--border/…), which already
+   flip with the active scope (ink/paper/cathode/riso), so the sheet chrome follows the
+   scope with no per-theme authoring here — see bismuth-design/ascii-extended/PORTING.md §2b.
+
+   REACHABLE vs NOT — per PORTING's "apply what the theming API allows, document what
+   can't be reached": the spreadsheet grid itself (cells, gridlines, column/row headers,
+   the selected-cell outline) is rendered on Univer's own <canvas> by its render engine —
+   not DOM, so none of it is reachable from CSS, and per the porting scope we never reach
+   into Univer's render tree to change it (no color-config API call, no canvas patch).
+   What IS DOM and reachable: the ribbon (tabs below), popovers/menus/inputs, the
+   `univerjs-icon-*-icon` glyphs (stable hook, used by univer-icons.css), and the
+   formula-bar ROW's background/border/base text color (a defensive structural selector,
+   since the row has no stable semantic class in this build). The name box, the fx toggle
+   label, formula SYNTAX coloring (function/range/literal), the sheet-tab strip, and the
+   aggregate readout ship in this Univer build as Tailwind utilities with build-hashed
+   class names — no stable selector to hook without risking breakage on Univer's next
+   internal refactor, so those are left at Univer's own chrome (recolored only insofar as
+   they read the --univer-gray-* and --univer-primary-* variable remap below, which is a
+   real theming API, not a guessed selector) rather than a name-by-name CSS override. */
+
+/* Use the app's UI face everywhere in the chrome (the single biggest cohesion win,
+   and keeps the sheet chrome following the same appearance.uiFont face as the rest of
+   the app). Cell text is canvas-rendered by Univer and unaffected — that's intended. */
+.bismuth-sheet,
+.bismuth-sheet * {
+  font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace !important;
+}
+
+.bismuth-sheet {
+  /* Accent ramp → the app accent (active ribbon tab, primary buttons, focus ring,
+     selection chrome). Light stops become translucent accent tints; mid/strong
+     stops become the accent itself. */
+  --univer-primary-50: color-mix(in srgb, var(--accent) 14%, transparent);
+  --univer-primary-100: color-mix(in srgb, var(--accent) 22%, transparent);
+  --univer-primary-200: color-mix(in srgb, var(--accent) 34%, transparent);
+  --univer-primary-300: var(--accent);
+  --univer-primary-400: var(--accent);
+  --univer-primary-500: var(--accent);
+  --univer-primary-600: var(--accent);
+  --univer-primary-700: color-mix(in srgb, var(--accent) 82%, black);
+  --univer-primary-900: color-mix(in srgb, var(--accent) 28%, transparent);
+
+  /* Danger ramp → the app danger color. */
+  --univer-red-300: var(--danger);
+  --univer-red-400: var(--danger);
+  --univer-red-500: var(--danger);
+  --univer-red-600: var(--danger);
+}
+
+/* Ribbon tabs (Start / Formulas / Data) → the ASCII system's own SegmentedToggle
+   register (ui/ui.css `.segmented` + `.btn--selected`/`.btn--unselected`, the ONE
+   selected/unselected vocabulary the whole app now shares — graph mode, calendar view
+   switcher, BaseView tabs). Inactive tabs are `--faint`, hover lifts to `--text-muted`
+   + `--hover-bg`, and the ACTIVE tab is `--accent` text on `--accent-soft` — exactly
+   `.btn--selected`, not a neutral pill. We can't embed the Solid <SegmentedToggle>
+   inside Univer's DOM, so this mirrors its CSS values 1:1. The ribbon header is the
+   `select-none h-9` row; tabs carry `px-2`. */
+.bismuth-sheet .univer-select-none.univer-h-9 > div {
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important; /* faint track */
+  border-radius: var(--r-control, 3px) !important;
+  padding: 2px !important;
+  gap: 2px !important;
+}
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: var(--r-chip, 2px) !important;
+  font-weight: 400 !important;
+  font-size: var(--fs-micro) !important; /* tiny uppercase, matching .btn--text.btn--sm */
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  padding: 2px 8px !important;
+  color: var(--faint) !important;
+}
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
+  color: var(--text-muted) !important;
+  background: var(--hover-bg) !important;
+}
+/* the active tab carries a `text-primary*` utility → `.btn--selected`: accent text
+   on accent-soft (NOT the neutral/fg pill an earlier pre-ASCII pass used here). */
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+}
+
+/* Popover / menu / dropdown / toolbar surfaces → the app surfaces. Univer uses the
+   gray-500..900 stops only for surfaces / borders / hover (never body text — that
+   reads off --fg/--faint/--text-muted via the accent/gray remap's neighbors), so
+   remapping these five tokens is safe and recolors all chrome surfaces at once, in
+   BOTH light and dark scopes (unlike the pre-ASCII version of this file, which only
+   remapped `.univer-dark` — the four ASCII scopes' `--rail`/`--surface-*`/`--border*`
+   already resolve correctly per scope, so a light scope like paper/riso now gets its
+   own warm chrome instead of Univer's default cool whites). The outer toolbar/
+   formula-bar rail is `--rail` (slightly off the editor body), raised surfaces step
+   through `--surface-1/-2`, hairlines are `--border-soft` with strong borders at
+   `--border`. */
+.bismuth-sheet {
+  --univer-gray-900: var(--rail);        /* toolbar + formula-bar outer rail (darker chrome) */
+  --univer-gray-800: var(--surface-1);   /* popovers, menus, dropdowns */
+  --univer-gray-700: var(--surface-2);   /* inputs, subtle hover */
+  --univer-gray-600: var(--border);      /* strong borders / strong hover */
+  --univer-gray-500: var(--border-soft); /* hairline dividers between chrome rows */
+}
+
+/* The DOM formula-bar row (cell-ref box + fx toggle + formula input) sits directly
+   under the toolbar. Univer builds it from utility classes (no stable semantic
+   class), so we can only reach it structurally as the bordered row that hosts the
+   formula editor. Pin it to the register rhythm: a `--rail` rail with a
+   `--border-soft` hairline beneath, muted text. Selectors are defensive (`:where`,
+   attribute hooks) so a Univer re-render never breaks them; if a hook misses, the row
+   simply falls back to the `--univer-gray-*` remap above — no visual regression. */
+.bismuth-sheet :where([data-u-comp="formula-bar"], .univer-formula-bar) {
+  background: var(--rail) !important;
+  border-bottom: 1px solid var(--border-soft) !important;
+  color: var(--text-muted) !important;
+}
+/* The fx (function) toggle reads as the design's faint glyph. */
+.bismuth-sheet .univerjs-icon-fx-icon {
+  color: var(--faint) !important;
+}
+
+
+/* ============================================================================
+ * sheet/univer-icons.css — Univer toolbar icon re-skin (generated, third-party plain-DOM)
+ * ============================================================================ */
+/* GENERATED by gen-univer-icons.ts — do not edit by hand.
+   Re-skins Univer's toolbar icons with lucide (currentColor mask, keyed on Univer's
+   stable univerjs-icon-*-icon classes; survives Univer re-renders). Regenerate with:
+   bun gen-univer-icons.ts */
+
+.bismuth-sheet svg.univerjs-icon-undo-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207v6h6%22%2F%3E%3Cpath%20d%3D%22M21%2017a9%209%200%200%200-9-9%209%209%200%200%200-6%202.3L3%2013%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207v6h6%22%2F%3E%3Cpath%20d%3D%22M21%2017a9%209%200%200%200-9-9%209%209%200%200%200-6%202.3L3%2013%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-undo-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-redo-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%207v6h-6%22%2F%3E%3Cpath%20d%3D%22M3%2017a9%209%200%200%201%209-9%209%209%200%200%201%206%202.3l3%202.7%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%207v6h-6%22%2F%3E%3Cpath%20d%3D%22M3%2017a9%209%200%200%201%209-9%209%209%200%200%201%206%202.3l3%202.7%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-redo-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-brush-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14.622%2017.897-10.68-2.913%22%2F%3E%3Cpath%20d%3D%22M18.376%202.622a1%201%200%201%201%203.002%203.002L17.36%209.643a.5.5%200%200%200%200%20.707l.944.944a2.41%202.41%200%200%201%200%203.408l-.944.944a.5.5%200%200%201-.707%200L8.354%207.348a.5.5%200%200%201%200-.707l.944-.944a2.41%202.41%200%200%201%203.408%200l.944.944a.5.5%200%200%200%20.707%200z%22%2F%3E%3Cpath%20d%3D%22M9%208c-1.804%202.71-3.97%203.46-6.583%203.948a.507.507%200%200%200-.302.819l7.32%208.883a1%201%200%200%200%201.185.204C12.735%2020.405%2016%2016.792%2016%2015%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14.622%2017.897-10.68-2.913%22%2F%3E%3Cpath%20d%3D%22M18.376%202.622a1%201%200%201%201%203.002%203.002L17.36%209.643a.5.5%200%200%200%200%20.707l.944.944a2.41%202.41%200%200%201%200%203.408l-.944.944a.5.5%200%200%201-.707%200L8.354%207.348a.5.5%200%200%201%200-.707l.944-.944a2.41%202.41%200%200%201%203.408%200l.944.944a.5.5%200%200%200%20.707%200z%22%2F%3E%3Cpath%20d%3D%22M9%208c-1.804%202.71-3.97%203.46-6.583%203.948a.507.507%200%200%200-.302.819l7.32%208.883a1%201%200%200%200%201.185.204C12.735%2020.405%2016%2016.792%2016%2015%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-brush-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-clear-format-double-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207V4h16v3%22%2F%3E%3Cpath%20d%3D%22M5%2020h6%22%2F%3E%3Cpath%20d%3D%22M13%204%208%2020%22%2F%3E%3Cpath%20d%3D%22m15%2015%205%205%22%2F%3E%3Cpath%20d%3D%22m20%2015-5%205%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207V4h16v3%22%2F%3E%3Cpath%20d%3D%22M5%2020h6%22%2F%3E%3Cpath%20d%3D%22M13%204%208%2020%22%2F%3E%3Cpath%20d%3D%22m15%2015%205%205%22%2F%3E%3Cpath%20d%3D%22m20%2015-5%205%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-clear-format-double-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-font-size-increase-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14%2011%204-4%204%204%22%2F%3E%3Cpath%20d%3D%22M18%2016V7%22%2F%3E%3Cpath%20d%3D%22m2%2016%204.039-9.69a.5.5%200%200%201%20.923%200L11%2016%22%2F%3E%3Cpath%20d%3D%22M3.304%2013h6.392%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14%2011%204-4%204%204%22%2F%3E%3Cpath%20d%3D%22M18%2016V7%22%2F%3E%3Cpath%20d%3D%22m2%2016%204.039-9.69a.5.5%200%200%201%20.923%200L11%2016%22%2F%3E%3Cpath%20d%3D%22M3.304%2013h6.392%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-font-size-increase-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-font-size-reduce-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14%2012%204%204%204-4%22%2F%3E%3Cpath%20d%3D%22M18%2016V7%22%2F%3E%3Cpath%20d%3D%22m2%2016%204.039-9.69a.5.5%200%200%201%20.923%200L11%2016%22%2F%3E%3Cpath%20d%3D%22M3.304%2013h6.392%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14%2012%204%204%204-4%22%2F%3E%3Cpath%20d%3D%22M18%2016V7%22%2F%3E%3Cpath%20d%3D%22m2%2016%204.039-9.69a.5.5%200%200%201%20.923%200L11%2016%22%2F%3E%3Cpath%20d%3D%22M3.304%2013h6.392%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-font-size-reduce-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-bold-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%2012h9a4%204%200%200%201%200%208H7a1%201%200%200%201-1-1V5a1%201%200%200%201%201-1h7a4%204%200%200%201%200%208%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%2012h9a4%204%200%200%201%200%208H7a1%201%200%200%201-1-1V5a1%201%200%200%201%201-1h7a4%204%200%200%201%200%208%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-bold-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-italic-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2219%22%20x2%3D%2210%22%20y1%3D%224%22%20y2%3D%224%22%2F%3E%3Cline%20x1%3D%2214%22%20x2%3D%225%22%20y1%3D%2220%22%20y2%3D%2220%22%2F%3E%3Cline%20x1%3D%2215%22%20x2%3D%229%22%20y1%3D%224%22%20y2%3D%2220%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2219%22%20x2%3D%2210%22%20y1%3D%224%22%20y2%3D%224%22%2F%3E%3Cline%20x1%3D%2214%22%20x2%3D%225%22%20y1%3D%2220%22%20y2%3D%2220%22%2F%3E%3Cline%20x1%3D%2215%22%20x2%3D%229%22%20y1%3D%224%22%20y2%3D%2220%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-italic-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-underline-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%204v6a6%206%200%200%200%2012%200V4%22%2F%3E%3Cline%20x1%3D%224%22%20x2%3D%2220%22%20y1%3D%2220%22%20y2%3D%2220%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%204v6a6%206%200%200%200%2012%200V4%22%2F%3E%3Cline%20x1%3D%224%22%20x2%3D%2220%22%20y1%3D%2220%22%20y2%3D%2220%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-underline-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-strikethrough-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M16%204H9a3%203%200%200%200-2.83%204%22%2F%3E%3Cpath%20d%3D%22M14%2012a4%204%200%200%201%200%208H6%22%2F%3E%3Cline%20x1%3D%224%22%20x2%3D%2220%22%20y1%3D%2212%22%20y2%3D%2212%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M16%204H9a3%203%200%200%200-2.83%204%22%2F%3E%3Cpath%20d%3D%22M14%2012a4%204%200%200%201%200%208H6%22%2F%3E%3Cline%20x1%3D%224%22%20x2%3D%2220%22%20y1%3D%2212%22%20y2%3D%2212%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-strikethrough-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-all-border-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203v18%22%2F%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M3%209h18%22%2F%3E%3Cpath%20d%3D%22M3%2015h18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203v18%22%2F%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M3%209h18%22%2F%3E%3Cpath%20d%3D%22M3%2015h18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-all-border-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-left-justifying-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%205H3%22%2F%3E%3Cpath%20d%3D%22M15%2012H3%22%2F%3E%3Cpath%20d%3D%22M17%2019H3%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%205H3%22%2F%3E%3Cpath%20d%3D%22M15%2012H3%22%2F%3E%3Cpath%20d%3D%22M17%2019H3%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-left-justifying-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-merge-all-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14%203a1%201%200%200%201%201%201v5a1%201%200%200%201-1%201%22%2F%3E%3Cpath%20d%3D%22M19%203a1%201%200%200%201%201%201v5a1%201%200%200%201-1%201%22%2F%3E%3Cpath%20d%3D%22m7%2015%203%203%22%2F%3E%3Cpath%20d%3D%22m7%2021%203-3H5a2%202%200%200%201-2-2v-2%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2214%22%20width%3D%227%22%20height%3D%227%22%20rx%3D%221%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%227%22%20height%3D%227%22%20rx%3D%221%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14%203a1%201%200%200%201%201%201v5a1%201%200%200%201-1%201%22%2F%3E%3Cpath%20d%3D%22M19%203a1%201%200%200%201%201%201v5a1%201%200%200%201-1%201%22%2F%3E%3Cpath%20d%3D%22m7%2015%203%203%22%2F%3E%3Cpath%20d%3D%22m7%2021%203-3H5a2%202%200%200%201-2-2v-2%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2214%22%20width%3D%227%22%20height%3D%227%22%20rx%3D%221%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%227%22%20height%3D%227%22%20rx%3D%221%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-merge-all-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-percent-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2219%22%20x2%3D%225%22%20y1%3D%225%22%20y2%3D%2219%22%2F%3E%3Ccircle%20cx%3D%226.5%22%20cy%3D%226.5%22%20r%3D%222.5%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%2217.5%22%20r%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2219%22%20x2%3D%225%22%20y1%3D%225%22%20y2%3D%2219%22%2F%3E%3Ccircle%20cx%3D%226.5%22%20cy%3D%226.5%22%20r%3D%222.5%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%2217.5%22%20r%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-percent-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-dollar-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2212%22%20x2%3D%2212%22%20y1%3D%222%22%20y2%3D%2222%22%2F%3E%3Cpath%20d%3D%22M17%205H9.5a3.5%203.5%200%200%200%200%207h5a3.5%203.5%200%200%201%200%207H6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%2212%22%20x2%3D%2212%22%20y1%3D%222%22%20y2%3D%2222%22%2F%3E%3Cpath%20d%3D%22M17%205H9.5a3.5%203.5%200%200%200%200%207h5a3.5%203.5%200%200%201%200%207H6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-dollar-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-protect-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2211%22%20x%3D%223%22%20y%3D%2211%22%20rx%3D%222%22%20ry%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%2011V7a5%205%200%200%201%2010%200v4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2211%22%20x%3D%223%22%20y%3D%2211%22%20rx%3D%222%22%20ry%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%2011V7a5%205%200%200%201%2010%200v4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-protect-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-close-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%206%206%2018%22%2F%3E%3Cpath%20d%3D%22m6%206%2012%2012%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%206%206%2018%22%2F%3E%3Cpath%20d%3D%22m6%206%2012%2012%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-close-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-check-mark-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-check-mark-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-more-down-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-more-down-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-dropdown-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-dropdown-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-overflow-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m16%2016-3%203%203%203%22%2F%3E%3Cpath%20d%3D%22M3%2012h14.5a1%201%200%200%201%200%207H13%22%2F%3E%3Cpath%20d%3D%22M3%2019h6%22%2F%3E%3Cpath%20d%3D%22M3%205h18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m16%2016-3%203%203%203%22%2F%3E%3Cpath%20d%3D%22M3%2012h14.5a1%201%200%200%201%200%207H13%22%2F%3E%3Cpath%20d%3D%22M3%2019h6%22%2F%3E%3Cpath%20d%3D%22M3%205h18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-overflow-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-more-function-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3Ccircle%20cx%3D%2219%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3Ccircle%20cx%3D%225%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3Ccircle%20cx%3D%2219%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3Ccircle%20cx%3D%225%22%20cy%3D%2212%22%20r%3D%221%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-more-function-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-font-color-double-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%2020h16%22%2F%3E%3Cpath%20d%3D%22m6%2016%206-12%206%2012%22%2F%3E%3Cpath%20d%3D%22M8%2012h8%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%2020h16%22%2F%3E%3Cpath%20d%3D%22m6%2016%206-12%206%2012%22%2F%3E%3Cpath%20d%3D%22M8%2012h8%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-font-color-double-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-paint-bucket-double-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11%207%206%202%22%2F%3E%3Cpath%20d%3D%22M18.992%2012H2.041%22%2F%3E%3Cpath%20d%3D%22M21.145%2018.38A3.34%203.34%200%200%201%2020%2016.5a3.3%203.3%200%200%201-1.145%201.88c-.575.46-.855%201.02-.855%201.595A2%202%200%200%200%2020%2022a2%202%200%200%200%202-2.025c0-.58-.285-1.13-.855-1.595%22%2F%3E%3Cpath%20d%3D%22m8.5%204.5%202.148-2.148a1.205%201.205%200%200%201%201.704%200l7.296%207.296a1.205%201.205%200%200%201%200%201.704l-7.592%207.592a3.615%203.615%200%200%201-5.112%200l-3.888-3.888a3.615%203.615%200%200%201%200-5.112L5.67%207.33%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11%207%206%202%22%2F%3E%3Cpath%20d%3D%22M18.992%2012H2.041%22%2F%3E%3Cpath%20d%3D%22M21.145%2018.38A3.34%203.34%200%200%201%2020%2016.5a3.3%203.3%200%200%201-1.145%201.88c-.575.46-.855%201.02-.855%201.595A2%202%200%200%200%2020%2022a2%202%200%200%200%202-2.025c0-.58-.285-1.13-.855-1.595%22%2F%3E%3Cpath%20d%3D%22m8.5%204.5%202.148-2.148a1.205%201.205%200%200%201%201.704%200l7.296%207.296a1.205%201.205%200%200%201%200%201.704l-7.592%207.592a3.615%203.615%200%200%201-5.112%200l-3.888-3.888a3.615%203.615%200%200%201%200-5.112L5.67%207.33%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-paint-bucket-double-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-align-bottom-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%226%22%20height%3D%2216%22%20x%3D%224%22%20y%3D%222%22%20rx%3D%222%22%2F%3E%3Crect%20width%3D%226%22%20height%3D%229%22%20x%3D%2214%22%20y%3D%229%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M22%2022H2%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%226%22%20height%3D%2216%22%20x%3D%224%22%20y%3D%222%22%20rx%3D%222%22%2F%3E%3Crect%20width%3D%226%22%20height%3D%229%22%20x%3D%2214%22%20y%3D%229%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M22%2022H2%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-align-bottom-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-no-rotation-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%2F%3E%3Cpath%20d%3D%22M3%203v5h5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%2F%3E%3Cpath%20d%3D%22M3%203v5h5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-no-rotation-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-add-digits-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2018h10%22%2F%3E%3Cpath%20d%3D%22m17%2021%203-3-3-3%22%2F%3E%3Cpath%20d%3D%22M3%2011h.01%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2018h10%22%2F%3E%3Cpath%20d%3D%22m17%2021%203-3-3-3%22%2F%3E%3Cpath%20d%3D%22M3%2011h.01%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-add-digits-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-reduce-digits-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m13%2021-3-3%203-3%22%2F%3E%3Cpath%20d%3D%22M20%2018H10%22%2F%3E%3Cpath%20d%3D%22M3%2011h.01%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m13%2021-3-3%203-3%22%2F%3E%3Cpath%20d%3D%22M20%2018H10%22%2F%3E%3Cpath%20d%3D%22M3%2011h.01%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%223%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%222.5%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-reduce-digits-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-shortcut-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%208h.01%22%2F%3E%3Cpath%20d%3D%22M12%2012h.01%22%2F%3E%3Cpath%20d%3D%22M14%208h.01%22%2F%3E%3Cpath%20d%3D%22M16%2012h.01%22%2F%3E%3Cpath%20d%3D%22M18%208h.01%22%2F%3E%3Cpath%20d%3D%22M6%208h.01%22%2F%3E%3Cpath%20d%3D%22M7%2016h10%22%2F%3E%3Cpath%20d%3D%22M8%2012h.01%22%2F%3E%3Crect%20width%3D%2220%22%20height%3D%2216%22%20x%3D%222%22%20y%3D%224%22%20rx%3D%222%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%208h.01%22%2F%3E%3Cpath%20d%3D%22M12%2012h.01%22%2F%3E%3Cpath%20d%3D%22M14%208h.01%22%2F%3E%3Cpath%20d%3D%22M16%2012h.01%22%2F%3E%3Cpath%20d%3D%22M18%208h.01%22%2F%3E%3Cpath%20d%3D%22M6%208h.01%22%2F%3E%3Cpath%20d%3D%22M7%2016h10%22%2F%3E%3Cpath%20d%3D%22M8%2012h.01%22%2F%3E%3Crect%20width%3D%2220%22%20height%3D%2216%22%20x%3D%222%22%20y%3D%224%22%20rx%3D%222%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-shortcut-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-hide-gridlines-double-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M3%209h18%22%2F%3E%3Cpath%20d%3D%22M3%2015h18%22%2F%3E%3Cpath%20d%3D%22M9%203v18%22%2F%3E%3Cpath%20d%3D%22M15%203v18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M3%209h18%22%2F%3E%3Cpath%20d%3D%22M3%2015h18%22%2F%3E%3Cpath%20d%3D%22M9%203v18%22%2F%3E%3Cpath%20d%3D%22M15%203v18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-hide-gridlines-double-icon > *{display:none!important}
+.bismuth-sheet svg.univerjs-icon-fx-icon{-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%20ry%3D%222%22%2F%3E%3Cpath%20d%3D%22M9%2017c2%200%202.8-1%202.8-2.8V10c0-2%201-3.3%203.2-3%22%2F%3E%3Cpath%20d%3D%22M9%2011.2h5.7%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%20ry%3D%222%22%2F%3E%3Cpath%20d%3D%22M9%2017c2%200%202.8-1%202.8-2.8V10c0-2%201-3.3%203.2-3%22%2F%3E%3Cpath%20d%3D%22M9%2011.2h5.7%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;background-color:currentColor!important}
+.bismuth-sheet svg.univerjs-icon-fx-icon > *{display:none!important}
+
+

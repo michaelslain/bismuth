@@ -20,7 +20,6 @@
 // `position: absolute` finds no positioned ancestor and escapes to the viewport — landing directly
 // on top of the body stub below it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import '../palette/switcher.css'
 import { EditorPane } from './EditorPane'
 
 const noop = () => {}

@@ -143,11 +143,13 @@ export const AllRegions: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector('.viewbar')!
-        // All six regions, in the documented order, split across the two groups.
-        const order = [...bar.querySelectorAll('[class^="vb-"]')].map(
-            e => e.className,
-        )
+        const bar = canvasElement.querySelector('[data-viewbar]')!
+        // All six regions, in the documented order, split across the two groups. `data-testid`
+        // rather than a `[class^="vb-"]` prefix match: ViewBar.module.css's classes are hashed
+        // locals now, so the class attribute no longer starts with the literal "vb-".
+        const order = [
+            ...bar.querySelectorAll<HTMLElement>('[data-testid^="vb-"]'),
+        ].map(e => e.dataset.testid)
         expect(order).toEqual([
             'vb-lead',
             'vb-identity',
@@ -161,7 +163,7 @@ export const AllRegions: Story = {
         // One band, and the trailing group really is pushed to the right edge.
         const barBox = bar.getBoundingClientRect()
         const trailBox = bar
-            .querySelector('.vb-trail')!
+            .querySelector('[data-testid="vb-trail"]')!
             .getBoundingClientRect()
         expect(Math.round(barBox.height)).toBe(36)
         expect(Math.round(barBox.right - trailBox.right)).toBe(18) // the bar's own padding
@@ -176,10 +178,10 @@ export const IdentityOnly: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector('.viewbar')!
-        expect(bar.querySelector('.vb-lead')!.children.length).toBe(1)
-        expect(bar.querySelector('.vb-trail')!.children.length).toBe(0)
-        expect(bar.querySelector('.vb-identity')).not.toBeNull()
+        const bar = canvasElement.querySelector('[data-viewbar]')!
+        expect(bar.querySelector('[data-testid="vb-lead"]')!.children.length).toBe(1)
+        expect(bar.querySelector('[data-testid="vb-trail"]')!.children.length).toBe(0)
+        expect(bar.querySelector('[data-testid="vb-identity"]')).not.toBeNull()
     },
 }
 
@@ -219,16 +221,17 @@ export const EmptyTrailingRegions: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         expect(canvas.getByText('Reading List')).toBeInTheDocument()
-        const bar = canvasElement.querySelector('.viewbar')!
+        const bar = canvasElement.querySelector('[data-viewbar]')!
         // ZERO element children. Under a `length > 0` check this is 1 — an empty .vb-actions.
-        expect(bar.querySelector('.vb-trail')!.children.length).toBe(0)
+        expect(bar.querySelector('[data-testid="vb-trail"]')!.children.length).toBe(0)
         // The leading group still renders exactly the one region that IS populated.
-        const lead = bar.querySelector('.vb-lead')!
+        const lead = bar.querySelector('[data-testid="vb-lead"]')!
         expect(lead.children.length).toBe(1)
-        expect(lead.querySelector('.vb-identity')).not.toBeNull()
+        expect(lead.querySelector('[data-testid="vb-identity"]')).not.toBeNull()
         // And no region wrapper anywhere in the bar is empty.
         for (const r of bar.querySelectorAll(
-            '.vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions',
+            '[data-testid="vb-identity"], [data-testid="vb-locus"], [data-testid="vb-facet"], ' +
+                '[data-testid="vb-readouts"], [data-testid="vb-config"], [data-testid="vb-actions"]',
         ))
             expect(r.children.length).toBeGreaterThan(0)
     },
@@ -260,10 +263,10 @@ export const TextOnlyRegionSurvivesTheTiers: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         // The container really is inside the tier — otherwise this story proves nothing.
         expect(bar.clientWidth).toBeLessThanOrEqual(650)
-        const readouts = bar.querySelector<HTMLElement>('.vb-readouts')!
+        const readouts = bar.querySelector<HTMLElement>('[data-testid="vb-readouts"]')!
         // Text-only, so ZERO element children — the exact shape the predicate is vacuous for.
         expect(readouts.children.length).toBe(0)
         expect(readouts.textContent).toBe('12 unread')
@@ -292,15 +295,15 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         expect(bar.clientWidth).toBeLessThanOrEqual(650)
-        const lead = bar.querySelector<HTMLElement>('.vb-lead')!
+        const lead = bar.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         // Genuinely empty — no identity, locus or facet slot was passed.
         expect(lead.children.length).toBe(0)
         expect(getComputedStyle(lead).display).not.toBe('none')
         // The load-bearing consequence: the trailing group is still on the right. Measured against
         // the bar's own box, so its 18px padding is not mistaken for a gap.
-        const trail = bar.querySelector<HTMLElement>('.vb-trail')!
+        const trail = bar.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
         const barBox = bar.getBoundingClientRect()
         const trailBox = trail.getBoundingClientRect()
         expect(barBox.right - trailBox.right).toBeLessThanOrEqual(19)
@@ -343,12 +346,12 @@ export const BelowFloor: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         // The container really is below the floor boundary — otherwise this story proves nothing.
         expect(bar.clientWidth).toBeGreaterThan(0)
         expect(bar.clientWidth).toBeLessThanOrEqual(400)
 
-        const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
+        const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(lead).toBeTruthy()
         expect(lead.clientWidth).toBeGreaterThan(0)
 
@@ -359,7 +362,7 @@ export const BelowFloor: Story = {
         // And the trail is still fully on the bar — the thing the floor tier exists to protect.
         // `clientWidth > 0` first: a right-edge comparison against a zero-width box is vacuously
         // true, which is exactly the shape of Critical this plan's predecessor shipped.
-        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        const trail = canvasElement.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
         expect(trail.clientWidth).toBeGreaterThan(0)
         expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right + 0.5,

@@ -191,7 +191,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--glow-text': a.glowText ?? 'none',
         // The four blurred elevation shadows (--shadow-menu/-popup/-card/-modal) were deleted
         // 2026-08-27 (visual-unification audit §9.3, wave 1) — every former consumer now reads
-        // --lift instead. --shadow-hard is the flat shadow color --lift (styles/tokens.css) composites against — see
+        // --lift instead. --shadow-hard is the flat shadow color --lift (the tokens section of global.css) composites against — see
         // ShadowTokens.hard's doc comment in core/src/theme/tokens.ts for why it isn't
         // just a fifth blurred shadow.
         '--shadow-hard': shadow.hard,

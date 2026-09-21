@@ -27,7 +27,32 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
+     and any plain text/number property) caps at 200px by default for its OTHER host,
+     KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
+     TITLE/STATUS/TAGS already run edge to edge. `--kb-meta-max-width` is the var that class
+     reads (see PropertyValueEditor.module.css); this is a CSS custom property, not a reach
+     into the hashed class itself. */
+  --kb-meta-max-width: none;
+  /* Same reasoning as --kb-meta-max-width just above: KanbanCard's inline chip editor sets a
+     -3px -5px negative margin on `.kbMetaInput`/`.kbMetaSelect`/`.kbMetaMultiselect` to sit
+     flush against its OWN compact chrome — here it just bulges PRIORITY/STATUS/TAGS 5px past
+     TITLE/DUE's edges. Zeroed so every field measures to the same left/right edge. */
+  --kb-meta-margin: 0;
+  /* Acceptance: "every field control in the modal (title, status, due, tags add, priority) is
+     the same height, --h-control." PropertyValueEditor.module.css reads this as its own
+     `--kb-meta-height` override (same mechanism as the two vars above — a CSS custom property,
+     not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/`.kbMetaSelectTrigger`) and the
+     TAGS "+ add" trigger (`.kbMetaMultiselectAdd`); the card-face inline chip editor (KanbanCard)
+     sets nothing and keeps its own compact defaults. TITLE (.titleInput) and DUE (.dueTrigger)
+     below are this file's own classes and set the same value directly. */
+  --kb-meta-height: var(--h-control);
 }
+
+/* DUE's trigger (DateFieldEditor), pinned to the same --h-control every sibling control in this
+   modal now shares (see --kb-meta-height above and .titleInput's own height) rather than
+   FormControl's full 32px input height. */
+.dueTrigger { height: var(--h-control); box-sizing: border-box; min-height: 0; padding: var(--sp-1) var(--sp-3); }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default
    `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
@@ -50,6 +75,11 @@
   font-size: var(--fs-lead);
   font-weight: 600;
   letter-spacing: -0.01em;
+  /* Same --h-control every other field control in this modal is pinned to (see --kb-meta-height
+     above) — FormControl's own default is the full 32px input height, which stood taller than
+     every sibling here. */
+  height: var(--h-control);
+  box-sizing: border-box;
 }
 
 .readonly {
@@ -133,7 +163,7 @@
 .mdField :global(.bismuth-doc-milkdown blockquote) {
   margin: var(--sp-3) 0;
   padding-left: var(--sp-5);
-  border-left: 3px solid var(--border);
+  border-left: 2px solid var(--border);
   color: var(--text-muted);
 }
 .mdField :global(.bismuth-doc-milkdown a) { color: var(--accent); text-decoration: none; }
@@ -158,4 +188,4 @@
    this one control towered over the multiselect chips directly beneath it, which is the exact
    intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
 .boolChip { align-self: flex-start; }
-.boolChip :global(.chip-toggle) { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }
+.boolChipToggle { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }

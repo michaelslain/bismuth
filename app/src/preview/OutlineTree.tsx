@@ -244,6 +244,9 @@ function OutlineTree(props: OutlineTreeProps) {
                                             }
                                             iconSize={10}
                                             aria-expanded={open()}
+                                            class={
+                                                styles['outline-disclosure-btn']
+                                            }
                                             // Not a separate tab stop — the tree's roving
                                             // handler above reaches it with `.click()`.
                                             tabindex="-1"

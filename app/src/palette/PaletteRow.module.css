@@ -4,12 +4,16 @@
    neither ever needs to import Palette.module.css itself (one stylesheet, one importer; see
    PaletteFrame.module.css for the other half of what used to live there).
 
-   `selected` STAYS A BARE GLOBAL LITERAL, not hashed — the app-wide "keyboard-highlighted row"
-   convention (SearchResultRows.module.css's `.sresult.selected`, ui/ui.css's
-   `.chip-toggle.selected`, graph/asciiGraph.css's `.cluster-row.selected`). SwitcherBar.tsx's
-   `scrollSelectedIntoView(..., '.selected')` queries it generically across `.palette-row` rows
-   AND `.sresult` AI-result cards in the SAME list, so hashing it here would silently break that
-   query for rows this module does not own.
+   KEYBOARD-HIGHLIGHTED ROW is now a `data-selected` RUNTIME HOOK, not a bare `.selected` class
+   (one-global-followups Task 4) — the app-wide convention used to be a literal class string for
+   exactly this reason (SwitcherBar.tsx's `scrollSelectedIntoView` queries it generically across
+   `.palette-row` rows AND `.sresult` AI-result cards in the SAME list, and PaletteRow's own class
+   is hashed per-file so a shared class name can't cross that boundary), but a `data-*` attribute
+   is the correct escape hatch for exactly this case — see CLAUDE.md's "two element-hook forms".
+   SearchResultRows.module.css's `.sresult[data-selected]` carries the matching convention for
+   `.sresult` cards; ui/ui.css's `.chip-toggle.selected` and graph/asciiGraph.css's
+   `.cluster-row.selected` are separate, unrelated uses of a plain (non-module) `.selected` class
+   and are untouched by this.
 
    `:global(.switcher-list)` reaches into SwitcherBar's own results column
    (SwitcherBar.module.css, switcher-owned chrome, not part of this module) to give the switcher's
@@ -37,11 +41,11 @@
   border-radius: 0;
 }
 .palette-row .palette-icon { color: var(--text-muted); }
-.palette-row:global(.selected) {
+.palette-row[data-selected] {
   background: var(--state-selected-bg);
   color: var(--accent);
 }
-.palette-row:global(.selected) .palette-icon { color: var(--accent); }
+.palette-row[data-selected] .palette-icon { color: var(--accent); }
 .palette-row:hover { background: var(--state-hover-bg); }
 /* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
    leaves it sitting a few px high against the label) is vertically centered in the
