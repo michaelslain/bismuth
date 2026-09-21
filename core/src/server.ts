@@ -1485,6 +1485,7 @@ export function createServer(cfg: CoreConfig) {
         // Same target-safety + size-cap reasoning as `POST /asset`; NOT a mutation for the same
         // reason (attachments are invisible to the graph/tree/search caches).
         'POST /asset/fetch': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { url, path: target } = (await req.json()) as {
                 url?: string
                 path?: string
