@@ -464,6 +464,7 @@ export async function searchVault(
             fuzzy: term => (term.length > 3 ? 0.34 : false),
         })
         const qTerms = query.toLowerCase().split(/\s+/).filter(Boolean)
+        const uniqueQTerms = new Set(qTerms)
         const allowed = (len: number) => (len <= 3 ? 0 : len <= 7 ? 1 : 2)
         const isTypoOf = (q: string, t: string) =>
             t.startsWith(q) || osaDistance(q, t) <= allowed(q.length)
@@ -479,7 +480,7 @@ export async function searchVault(
             const coveredQTerms = new Set(
                 qTerms.filter(q => filteredTerms.some(t => isTypoOf(q, t))),
             )
-            if (coveredQTerms.size < qTerms.length) continue
+            if (coveredQTerms.size < uniqueQTerms.size) continue
             const body = bodies.get(p) ?? ''
             let total = 0
             let merged: MatchSnippet[] = []

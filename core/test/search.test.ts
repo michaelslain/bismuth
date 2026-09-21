@@ -339,6 +339,15 @@ describe('searchVault: mid-word + typo tiers, no cap, snippetLimit', () => {
         invalidateSearchIndex(root)
     })
 
+    test('a repeated query word does not inflate the AND-coverage requirement', async () => {
+        const root = makeVault({ 's.md': 'we should search the archive' })
+        const single = await searchVault(root, 'serach', simple)
+        expect(single.map(r => r.path)).toContain('s.md')
+        const repeated = await searchVault(root, 'serach serach', simple)
+        expect(repeated.map(r => r.path)).toContain('s.md')
+        invalidateSearchIndex(root)
+    })
+
     test('snippetLimit clips an over-long line: before <= 80 chars, after <= 160 chars', async () => {
         const long = 'x'.repeat(500)
         const root = makeVault({
