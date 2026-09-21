@@ -22,12 +22,12 @@
    silently break that query. `classList={{ selected: … }}` in SearchResultRows.tsx stays a bare
    literal for the same reason.
 
-   `:global(.switcher-list) .sresult` — FOLDED IN from palette/switcher.css, which no longer
-   defines this selector. That file's own header already explains switcher.css reuses `.sresult`
-   from this file; the margin-top override belongs beside the class it adjusts, not in the file
-   reaching in from outside. `.switcher-list` itself stays global (switcher.css owns the
-   results-column chrome), reached here via `:global()` exactly like PaletteRow.module.css's own
-   `:global(.switcher-list)` reach. */
+   `[data-switcher-list] .sresult` (was `:global(.switcher-list) .sresult`) — FOLDED IN from
+   palette/switcher.css, which no longer defines this selector; the margin-top override belongs
+   beside the class it adjusts, not in the file reaching in from outside. Retargeted onto the
+   `data-switcher-list` attribute SwitcherBar.tsx sets on its results column (one-global-followups
+   Task 2) instead of reaching SwitcherBar.module.css's `.switcher-list` class by name — a
+   `data-*` context hook, not a foreign class. */
 
 /* .sresult — one card per file: header (icon + title + folder) over serif snippets. */
 .sresult {
@@ -47,7 +47,7 @@
 /* Reused inside the switcher's results column, which isn't a flex/gap container — give the
    card its own stacking margin there instead of duplicating layout. Folded in from
    palette/switcher.css; see this file's header. */
-:global(.switcher-list) .sresult { margin-top: var(--sp-4); }
+[data-switcher-list] .sresult { margin-top: var(--sp-4); }
 
 .sresult-head {
   display: flex;

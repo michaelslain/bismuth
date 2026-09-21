@@ -310,6 +310,7 @@ export function SwitcherBar(props: Props) {
         <div class={switcherStyles['switcher-bar']} onPointerDown={e => e.stopPropagation()}>
             <SearchBar
                 class={switcherStyles['switcher-search']}
+                leadClass={switcherStyles['switcher-lead']}
                 inputClass={switcherStyles['switcher-input']}
                 inputRef={el => (inputRef = el)}
                 placeholder="Search files, contents, or ask…"
@@ -329,7 +330,11 @@ export function SwitcherBar(props: Props) {
                     <Kbd combo="Escape" />
                 </Text>
             </SearchBar>
-            <div class="switcher-list" ref={listRef}>
+            <div
+                class={switcherStyles['switcher-list']}
+                data-switcher-list
+                ref={listRef}
+            >
                 <Show when={aiPhase() === 'idle'}>
                     <For each={fileRows()}>
                         {(r, i) => (
@@ -459,6 +464,7 @@ export function SwitcherBar(props: Props) {
                 <Show when={aiPhase() === 'loading'}>
                     <EmptyState
                         class={switcherStyles['switcher-ai-panel']}
+                        bodyClass={switcherStyles['switcher-ai-body']}
                         icon={
                             <Text
                                 as="span"
@@ -477,7 +483,8 @@ export function SwitcherBar(props: Props) {
                 </Show>
                 <Show when={aiPhase() === 'error'}>
                     <EmptyState
-                        class={`${switcherStyles['switcher-ai-panel']} ${switcherStyles['switcher-error-panel']}`}
+                        class={switcherStyles['switcher-ai-panel']}
+                        bodyClass={`${switcherStyles['switcher-ai-body']} ${switcherStyles['switcher-error-body']}`}
                         icon={
                             <Icon
                                 value="TriangleAlert"

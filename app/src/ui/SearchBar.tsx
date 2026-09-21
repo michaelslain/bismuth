@@ -25,6 +25,8 @@ export type SearchBarProps = {
     children?: JSX.Element
     /** Class on the outer `.search-bar` wrapper. */
     class?: string
+    /** Extra class on the leading icon (for call-site-specific lead styling). */
+    leadClass?: string
     /** Extra class on the inner `<input>` (for call-site-specific input styling). */
     inputClass?: string
     /** Inline style on the inner `<input>`. */
@@ -44,6 +46,7 @@ function SearchBar(props: SearchBarProps) {
         'aria-label',
         'children',
         'class',
+        'leadClass',
         'inputClass',
         'inputStyle',
     ])
@@ -59,7 +62,7 @@ function SearchBar(props: SearchBarProps) {
             <Icon
                 value={local.leadingIcon ?? 'Search'}
                 size={14}
-                class="search-bar-lead"
+                class={`search-bar-lead ${local.leadClass ?? ''}`.trim()}
             />
             <input
                 ref={local.inputRef}

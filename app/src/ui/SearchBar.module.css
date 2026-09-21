@@ -2,15 +2,16 @@
 
    The `.search-bar`/`.search-bar-lead`/`.search-bar-input` family moved IN from `ui.css`
    (one-global-stylesheet Task 5). It stays a `:global()` re-export bridge, not fully local: it is
-   reached via `:global()` from GraphSearch.module.css, palette/PaletteFrame.module.css,
-   palette/SwitcherBar.module.css and PreviewView.module.css, and this repo's design-system gate
+   still reached via `:global()` from PreviewView.module.css, and this repo's design-system gate
    (`globalReach`) flags ANY `:global()` reach inside a `*.module.css` file unconditionally, with
-   no self-ownership exemption. The ruling (see .claude/plans/ui-css-ownership.md and the wave-4
-   EmptyState/ViewBar precedent): keep the `:global()` bridge, with a per-line
-   `design-system-ignore globalReach:` comment on each rule naming it a temporary bridge — that is
-   what the mechanism exists for. A later wave retargets the outside reach-ins to SearchBar's own
-   `class`/`inputClass` props; the wave after that deletes every `:global()` wrapper and ignore
-   comment here in one pass.
+   no self-ownership exemption. GraphSearch.module.css, palette/PaletteFrame.module.css and
+   palette/SwitcherBar.module.css were retargeted onto SearchBar's own `leadClass`/`inputClass`
+   props in one-global-followups Task 2 — PreviewView is the one outside caller left. The ruling
+   (see .claude/plans/ui-css-ownership.md and the wave-4 EmptyState/ViewBar precedent): keep the
+   `:global()` bridge, with a per-line `design-system-ignore globalReach:` comment on each rule
+   naming it a temporary bridge — that is what the mechanism exists for. A later wave retargets
+   PreviewView too; the wave after that deletes every `:global()` wrapper and ignore comment here
+   in one pass.
 
    `searchBarClass`/`searchBarInputClass` (SearchBar's classname builders, in buttonClass.ts) stay
    in that plain module with NO stylesheet import — they emit the literal global strings
