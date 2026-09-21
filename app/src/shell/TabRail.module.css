@@ -44,7 +44,12 @@
    The `@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }` block
    moved here with `.tab-rail-inner` — its animation-affecting sibling, per the parent plan's Trap 6
    (keyframe/media rules are invisible to the `^\.`-anchored ratchet grep but still belong with their
-   family). */
+   family).
+
+   THE `:global(.btn--icon...)` REACHES BELOW STAY BRIDGES (one-global-followups Task 4): every
+   button in this toolbar renders through `shell/CommandButton.tsx`, which has no `class` prop —
+   there is no local class here to retarget to, and CommandButton.tsx is outside this task's file
+   scope to add one. Reported, not fixed here; see Sidebar.module.css's identical note. */
 
 /* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
    `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
