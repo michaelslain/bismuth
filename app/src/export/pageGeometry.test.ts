@@ -639,6 +639,11 @@ describe('pageSlices — the painted-blank cut gate (task 4)', () => {
     test('MIN_PAGE_FRACTION is 0.5 (never search for a safe row above half a page)', () => {
         expect(MIN_PAGE_FRACTION).toBe(0.5)
     })
+
+    test('(f) a safe row above MIN_PAGE_FRACTION of the page is never chosen', () => {
+        const rows = makeRows(200, [29, 30])
+        expect(pageSlices(200, 100, [], [95], { rows, forbidden: [] })[0]).toEqual({ start: 0, height: 95 })
+    })
 })
 
 describe('ATOM_SELECTOR includes .katex (htmlToPdf.ts)', () => {
