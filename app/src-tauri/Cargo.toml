@@ -26,10 +26,16 @@ serde_json = "1"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-shell = "2"
 
-# macOS-only: set the per-vault dock icon at startup (NSApplication.setApplicationIconImage).
-# Minimal feature set matching how tauri/wry declare objc2-app-kit.
+# macOS-only: set the per-vault dock icon at startup (NSApplication.setApplicationIconImage),
+# lift the WKWebView 60fps rAF cap, and print export documents to PDF through an off-screen
+# WKWebView (print_pdf.rs — issue #9: html2canvas drift + broken KaTeX layout, no Chrome
+# dependency allowed in the export path). Feature lists are exactly what each call site uses.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSImage"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString"] }
+block2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSImage", "NSView", "NSWindow", "NSGraphics", "NSPrintInfo", "NSPrintOperation", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString", "NSURL", "NSDictionary", "NSArray", "NSValue", "NSGeometry", "NSDate", "NSRunLoop", "NSError", "NSObject", "NSEnumerator"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKNavigation", "block2", "objc2-app-kit", "objc2-core-foundation"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFURL", "CFString", "CFDictionary", "CFArray", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGContext", "CGPDFContext", "CGPDFDocument", "CGPDFPage", "CGColor"] }
 
