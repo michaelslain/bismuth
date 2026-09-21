@@ -4,8 +4,7 @@
 .frame { display: flex; flex-direction: column; height: 100%; font-family: var(--ui-font-stack); }
 .frame input, .frame select, .frame textarea { font-family: var(--ui-font-stack); }
 /* Every button inside the calendar grid shares the graph-toggle look: borderless, muted, brighter on
-   hover, a neutral highlight when VBtn's global `.active` is on. Tag selectors, not a class reach.
-   bridge kept: VBtn active highlight in the calendar; needs a VBtn prop (deferred) */
+   hover, a neutral highlight keyed on VBtn's `data-active` hook (not a class reach). */
 .frame button { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0); border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: var(--fs-ui); font-family: var(--ui-font-stack); }
 .frame button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.frame button:global(.active) { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
+.frame button[data-active] { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
