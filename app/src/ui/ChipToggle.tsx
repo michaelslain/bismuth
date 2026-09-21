@@ -1,4 +1,5 @@
 import type { Component, JSX } from 'solid-js'
+import { splitProps } from 'solid-js'
 import styles from './ChipToggle.module.css'
 
 export type ChipToggleTone = 'teal' | 'blue' | 'violet' | 'green' | 'gold' | 'rose'
@@ -11,31 +12,40 @@ export type ChipToggleProps = {
     tone?: ChipToggleTone
     class?: string
     children: JSX.Element
-}
+} & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
  * A selectable pill toggle — export options, search toggles. `.chip-toggle` (+ `.selected`,
  * `.tone-<x>`) is currently a `:global()` bridge in ChipToggle.module.css, still reached
  * directly by bases/CardEditModal.module.css and bases/BaseView.module.css; see that file's
- * header.
+ * header. Remaining native button attributes (`title`, `aria-*`, …) pass through via
+ * `splitProps` onto the underlying `<button>`.
  */
 const ChipToggle: Component<ChipToggleProps> = props => {
+    const [local, rest] = splitProps(props, [
+        'selected',
+        'onToggle',
+        'tone',
+        'class',
+        'children',
+    ])
     return (
         <button
             type="button"
+            {...rest}
             class={[
                 styles['chip-toggle-marker'],
                 'chip-toggle',
-                props.selected ? 'selected' : '',
-                props.tone ? `tone-${props.tone}` : '',
-                props.class ?? '',
+                local.selected ? 'selected' : '',
+                local.tone ? `tone-${local.tone}` : '',
+                local.class ?? '',
             ]
                 .filter(Boolean)
                 .join(' ')}
-            aria-pressed={!!props.selected}
-            onClick={() => props.onToggle?.()}
+            aria-pressed={!!local.selected}
+            onClick={() => local.onToggle?.()}
         >
-            {props.children}
+            {local.children}
         </button>
     )
 }
