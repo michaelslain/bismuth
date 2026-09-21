@@ -71,8 +71,8 @@ flash on every launch would be noise, not information — see the comment above
 | `Open folder failed: <reason>` | A folder was chosen, but no backend could be started for it. | Check the folder still exists and is readable, then retry — the prompt stays open for another attempt. |
 | `Folder server started, but the window couldn't open` | The backend for that folder is running, but the OS refused to open a new window for it. | Retry; if it repeats, relaunch Bismuth. |
 | `Couldn't open a new window` | The OS refused to open a new window (used by "New window", which reopens your current vault in another window). | Relaunch Bismuth. |
-| `Copied vault path` | Clicking the vault name in the status bar copied the vault's full filesystem path to your clipboard (`copyVaultPath` in `app/src/App.tsx`). | None — the path is on your clipboard. |
-| `Couldn't copy vault path` | The clipboard write failed after clicking the vault name (e.g. clipboard permissions, or an insecure context — the `.catch` in `copyVaultPath`, `app/src/App.tsx`). | Try clicking again, or read the path from the tooltip shown on hover. |
+| `Copied path` | Clicking the status bar's location readout copied a path to your clipboard (`copyStatusLocation` in `app/src/App.tsx`) — the focused file's full absolute path, or the vault's path when the focused pane isn't a file. | None — the path is on your clipboard. |
+| `Couldn't copy path` | The clipboard write failed after clicking the location readout (e.g. clipboard permissions, or an insecure context — the `.catch` in `copyStatusLocation`, `app/src/App.tsx`). | Try clicking again, or read the path from the tooltip shown on hover. |
 
 ## One folder, one backend, one window
 
@@ -82,11 +82,9 @@ gets its own backend process on its own port, and its own window pinned to that 
 `?api=<url>`. So two open folders are two windows that cannot interfere with each other's
 caches, watchers, or tabs.
 
-The vault's folder name is shown at the left of the status bar at the bottom of the window, next
-to the connection indicator described above. The full path is not shown inline, but it is one
-hover away: point at the folder name for a `title` tooltip with the full path, or click it to
-copy the full path to your clipboard (`copyVaultPath` in `app/src/App.tsx`) — see the `Copied vault path` /
-`Couldn't copy vault path` toasts in the table above.
+The status bar at the bottom of the window shows the focused pane's location, next to the
+connection indicator described above — see "What the status bar shows" below for what it reads
+and why it's the full absolute path, not just the vault's folder name.
 
 ## What the status bar shows
 
@@ -94,8 +92,7 @@ Left to right (`app/src/shell/StatusBar.tsx`):
 
 | Item | Meaning |
 | --- | --- |
-| Vault name | The open vault's folder name. Hover for the full path, click to copy it. |
-| `//` + path | The focused pane's content — a note path, or a label for a non-file pane. This is the one item allowed to shrink to nothing on a narrow window, so nothing else gets clipped mid-character. |
+| Location | A single readout (issue #10). A focused **file** shows its full absolute filesystem path — `<vaultPath>/<relPath>` — because the vault tree already shows the relative path, and the point of this readout is telling you which vault you're even in. A focused **sentinel** pane (graph, terminal, chat, daemon…) or no focus shows `<vaultPath> // <label>` instead, since there's no file path to give. Hover for a `title` tooltip with the full text, click to copy it (see the `Copied path` / `Couldn't copy path` toasts above). This is the one item allowed to shrink to nothing on a narrow window, so nothing else gets clipped mid-character. |
 | `connection lost — polling` | Only while SSE is down. See [The connection](#the-connection) above. |
 | `inbox: N` | Daemon-inbox pages awaiting review. Always present while the daemon is on, **including at zero**, so it is a findable place rather than a control that only exists when it has something to say. Quiet at zero; a `--gold` dot appears and the count brightens when something is waiting. Click it to open the inbox. Hidden entirely when the daemon is off, since the whole inbox surface is gated behind `daemon.enabled`. |
 | `daemon: off / idle / working` | Whether this machine's daemon is running for this vault, and whether it is currently doing something. Only the state word is coloured — `--faint` for `off`, `--gold` for `idle`, `--green` for `working` — and the blinking `_` caret sits directly after it, marking it as the live value on the line. |

@@ -37,8 +37,8 @@ import styles from './InboxIndicator.module.css'
 // primitive: a real `<button>` with its native chrome reset to nothing, so `.status-inbox` below
 // stays the only thing that paints it — exactly "chrome that is clickable without being
 // button-shaped". shell/WindowControls.tsx uses the same primitive for the same reason.
-// It IS a real <button>, not the clickable <span> that `.status-vault` uses beside it, because
-// this one is reachable and operable from the keyboard; `.status-vault`'s copy-to-clipboard is
+// It IS a real <button>, not the clickable Label that `.status-location` uses beside it, because
+// this one is reachable and operable from the keyboard; `.status-location`'s copy-to-clipboard is
 // not, which is a pre-existing gap this component does not inherit.
 //
 // Classes are reached through the imported `styles` object — bracket access, not
