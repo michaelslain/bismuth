@@ -21,13 +21,16 @@
 // `makeKeyAndOrderFront`, no `setIsVisible(true)`, and the app's own `NSApplication` activation
 // policy is never touched here (Tauri already owns that).
 //
-// Threading. `print_pdf` is `async`, so Tauri runs it on an async-runtime worker thread, never the
-// main thread — but every AppKit/WebKit call below MUST run on the main thread (Cocoa's hard
-// rule). Each step hops there via `AppHandle::run_on_main_thread`, which only SCHEDULES a closure
-// and returns immediately; this worker polls a small shared slot (`on_main`) with a short
-// `std::thread::sleep` between hops until the result lands or the 60s deadline passes. `tokio` is
-// not a direct dependency of this crate and is not added for this — the sleep blocks only the
-// async-runtime worker thread the command is already running on, never the main thread.
+// Threading. The `#[tauri::command]` `print_pdf` is `async`, but it immediately hands the real
+// work to `mac_impl::print_pdf_blocking` via `tauri::async_runtime::spawn_blocking`, so it never
+// runs on an async-runtime worker thread — every AppKit/WebKit call below MUST run on the main
+// thread (Cocoa's hard rule), and blocking that spawned thread while it polls is fine precisely
+// because it isn't one of the async runtime's workers. Each step hops to the main thread via
+// `AppHandle::run_on_main_thread`, which only SCHEDULES a closure and returns immediately; this
+// worker polls a small shared slot (`on_main`) with a short `std::thread::sleep` between hops
+// until the result lands or the 60s deadline passes. `tokio` is not a direct dependency of this
+// crate and is not added for this. `print_pdf_blocking` also serializes concurrent calls through
+// `PRINT_LOCK` — see the doc comment there.
 //
 // The `WKWebView` and the off-screen `NSWindow` are `MainThreadOnly` objc2 types (not `Send`), so
 // they never cross a thread boundary directly — they live in a `thread_local!` slot for the
@@ -110,6 +113,13 @@ mod mac_impl {
 
     thread_local! {
         static ACTIVE: RefCell<Option<PrintSession>> = RefCell::new(None);
+        // Sessions whose print was still pending (`delegate` status < 0) when `step_release` ran
+        // for the timeout/deadline path. AppKit's `runOperationModalForWindow:` callback can still
+        // land after we give up waiting on it; dropping the session out from under that in-flight
+        // operation frees the WKWebView/NSWindow/delegate while AppKit still holds pointers to
+        // them (use-after-free). Orphaning keeps them alive for the rest of the process instead —
+        // a small, bounded leak on the timeout path only, never on the success path.
+        static ORPHANS: RefCell<Vec<PrintSession>> = RefCell::new(Vec::new());
     }
 
     /// Run `f` on the main thread via `run_on_main_thread` (which only schedules — it does not
@@ -164,7 +174,9 @@ mod mac_impl {
     /// A fresh temp path for one print job's output. `print_pdf` appends `.raw.pdf` for the
     /// WebKit-written intermediate (pre margin-fill compose) and uses this path itself for the
     /// final, composed file. Distinct on every call within one process (pid + a monotonic
-    /// counter), so concurrent print jobs — however unlikely — never collide.
+    /// counter) so each job's files never collide on disk — but prints themselves are NOT
+    /// concurrent: `PRINT_LOCK` (see `print_pdf_blocking`) serializes every call through the one
+    /// `ACTIVE` session slot, one print at a time.
     fn temp_pdf_path() -> PathBuf {
         let n = PATH_COUNTER.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("bismuth-print-{}-{}.pdf", std::process::id(), n))
@@ -287,9 +299,23 @@ mod mac_impl {
     }
 
     /// Step 6 (main thread): release the WKWebView + NSWindow. Always called before returning,
-    /// success or failure, so a failed print never leaks a session into the next call.
+    /// success or failure, so a failed print never leaks a session into the next call — UNLESS
+    /// the delegate's status is still pending (-1, see `PrintDelegate::did_run`), meaning
+    /// `runOperationModalForWindow:` has not called back yet (the deadline/timeout path). AppKit
+    /// does not retain a modal-run delegate itself, so dropping the session here would free the
+    /// WKWebView/NSWindow/delegate while AppKit can still send `printOperationDidRun:` to them —
+    /// a use-after-free. A still-pending session is moved into `ORPHANS` to keep it alive instead
+    /// of being torn down under an in-flight operation; `PRINT_LOCK` still serializes every call
+    /// through `ACTIVE`, so this never blocks the next print.
     fn step_release() {
-        ACTIVE.with(|a| *a.borrow_mut() = None);
+        ACTIVE.with(|a| {
+            if let Some(s) = a.borrow_mut().take() {
+                let pending = s.delegate.as_ref().map_or(false, |d| d.ivars().get() < 0);
+                if pending {
+                    ORPHANS.with(|o| o.borrow_mut().push(s));
+                }
+            }
+        });
     }
 
     /// Parse `rgb(r, g, b)` / `rgba(r, g, b, a)` (WebKit's `getComputedStyle` form) into 0..1
@@ -368,14 +394,22 @@ mod mac_impl {
         }
     }
 
-    pub async fn print_pdf(app: tauri::AppHandle, html: String, title: String) -> Result<tauri::ipc::Response, String> {
+    /// Blocking entry point — runs on a `spawn_blocking` thread (see the `#[tauri::command]`
+    /// wrapper below), never on an async-runtime worker. `PRINT_LOCK` serializes every call: only
+    /// one `ACTIVE` print session exists at a time, so a second `print_pdf` invocation (ExportView
+    /// fires one per option change, plus `doExport` — two concurrent calls are normal) waits here
+    /// instead of racing the first for `ACTIVE`/`s.delegate`.
+    pub fn print_pdf_blocking(app: tauri::AppHandle, html: String, title: String) -> Result<tauri::ipc::Response, String> {
+        static PRINT_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = PRINT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
         let deadline = Instant::now() + OVERALL_TIMEOUT;
         let out_path = temp_pdf_path();
         let raw_path = PathBuf::from(format!("{}.raw.pdf", out_path.display()));
         let _ = std::fs::remove_file(&raw_path);
         let _ = std::fs::remove_file(&out_path);
 
-        let result = run(&app, deadline, &out_path, &raw_path, html, title).await;
+        let result = run(&app, deadline, &out_path, &raw_path, html, title);
 
         // Always release the main-thread session and delete any temp files, success or failure.
         let _ = on_main(&app, Instant::now() + Duration::from_secs(5), step_release);
@@ -386,7 +420,7 @@ mod mac_impl {
         result
     }
 
-    async fn run(
+    fn run(
         app: &tauri::AppHandle,
         deadline: Instant,
         out_path: &std::path::Path,
@@ -480,5 +514,10 @@ mod mac_impl {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn print_pdf(app: tauri::AppHandle, html: String, title: String) -> Result<tauri::ipc::Response, String> {
-    mac_impl::print_pdf(app, html, title).await
+    // AppKit/WebKit calls in mac_impl block on main-thread round trips (`on_main`'s poll loop),
+    // so this runs off the async runtime entirely via `spawn_blocking` rather than as a direct
+    // `.await` on an async-runtime worker thread.
+    tauri::async_runtime::spawn_blocking(move || mac_impl::print_pdf_blocking(app, html, title))
+        .await
+        .map_err(|e| format!("print task failed: {e}"))?
 }
