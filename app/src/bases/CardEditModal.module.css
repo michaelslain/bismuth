@@ -27,7 +27,23 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
+     and any plain text/number property) caps at 200px by default for its OTHER host,
+     KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
+     TITLE/STATUS/TAGS already run edge to edge. `--kb-meta-max-width` is the var that class
+     reads (see PropertyValueEditor.module.css); this is a CSS custom property, not a reach
+     into the hashed class itself. */
+  --kb-meta-max-width: none;
+  /* Same reasoning as --kb-meta-max-width just above: KanbanCard's inline chip editor sets a
+     -3px -5px negative margin on `.kbMetaInput`/`.kbMetaSelect`/`.kbMetaMultiselect` to sit
+     flush against its OWN compact chrome — here it just bulges PRIORITY/STATUS/TAGS 5px past
+     TITLE/DUE's edges. Zeroed so every field measures to the same left/right edge. */
+  --kb-meta-margin: 0;
 }
+
+/* DUE's trigger (DateFieldEditor) at the compact register of its STATUS sibling — PropertyValueEditor's
+   select trigger — rather than FormControl's full 32px input height, which only TITLE uses here. */
+.dueTrigger { height: auto; min-height: 0; padding: var(--sp-1) var(--sp-3); }
 
 /* `.titleField > .label` (not `> span`) out-specifies Field's own default
    `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`

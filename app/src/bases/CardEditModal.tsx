@@ -33,6 +33,7 @@ import { TextInput } from '../ui/TextInput'
 import ModalHeader from '../ui/ModalHeader'
 import ModalFooter from '../ui/ModalFooter'
 import MilkdownField from '../ui/MilkdownField'
+import DateFieldEditor from './DateFieldEditor'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
@@ -349,6 +350,21 @@ export function CardEditModal(props: {
                         {value(id) === true ? 'Yes' : 'No'}
                     </ChipToggle>
                 </Text>
+            )
+        }
+        if (k.kind === 'date') {
+            // The app's own DatePicker (editor/DatePicker.tsx), opened from a single
+            // input-height trigger (DateFieldEditor below) instead of a bare native
+            // `<input type="date">` or DatePicker's own floating-popover frame sitting inline
+            // — so DUE reads as one row like every sibling field. DatePicker itself is
+            // untouched.
+            return (
+                <DateFieldEditor
+                    time={k.time}
+                    className={styles.dueTrigger}
+                    value={value(id)}
+                    onCommit={v => props.onSetMeta(id, v)}
+                />
             )
         }
         return (

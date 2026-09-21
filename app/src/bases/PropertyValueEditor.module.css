@@ -1,11 +1,14 @@
 .kbMetaInput {
   /* max-width must clear a `datetime-local` value ("MM/DD/YYYY, HH:MM AM") plus its native
-     calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix. */
-  width: 100%; max-width: 200px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: -3px -5px;
+     calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix.
+     Parameterized (not a bare 200px) so a full-width host — CardEditModal's one-field-per-row
+     layout — can widen it via `--kb-meta-max-width` without reaching this hashed class; the
+     card-face inline chip editor (KanbanCard) sets nothing and keeps this 200px default. */
+  width: 100%; max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
+  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
   font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); outline: none; line-height: normal;
 }
-.kbMetaSelect { display: inline-flex; margin: -3px -5px; }
+.kbMetaSelect { display: inline-flex; margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1))); }
 .kbMetaSelectTrigger {
   height: auto; min-height: 0; padding: var(--sp-1) 22px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0);
 }
@@ -18,7 +21,7 @@
 /* A declared `multiselect` property (#101), the EDITABLE version: same chip row as
    KanbanCard's read-only `.kbMetaMultiselectDisplay`, each chip clickable to remove, plus a
    shrunk "+ Add" Select offering the remaining declared options. */
-.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: -3px -5px; }
+.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1))); }
 .kbMetaMultiselectToggle { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
 /* Select's `class` prop lands on the trigger BUTTON itself (already carrying
    `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
