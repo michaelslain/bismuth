@@ -414,6 +414,15 @@ These drive the Google Calendar OAuth flow + connection lifecycle. All secrets a
 - **Errors:** `400 "invalid attachment path"` (unsafe target) or `400 "missing ?path="`; `413 "attachment too large"` (over 100 MB).
 - **Cache/SSE:** none.
 
+### `POST /asset/fetch`
+> Listed in the read table — same reasoning as `POST /asset`: downloading an attachment is not a graph/tree/search mutation.
+- **Params:** none.
+- **Body:** JSON `{ url: string, path: string }` — `path` is the desired vault-relative attachment path (as `POST /asset`'s `?path=`), `url` is the remote image to fetch.
+- **Action:** validates `path` with `isSafeAssetTarget` (same rejection rules as `POST /asset`), then `fetchRemoteAsset(url, { maxBytes: MAX_ASSET_BYTES })` (`core/src/assetFetch.ts`): only `http:`/`https:` URLs, follows redirects, a 20s timeout, and enforces the 100 MB cap against both the declared `Content-Length` and the actual streamed byte count (an oversized body is aborted mid-transfer even when `Content-Length` is absent or understates the truth). If `path` has no extension, or its extension disagrees with the fetched response's `Content-Type` (`extForContentType`), the extension is corrected before writing. De-collides the filename (`uniqueAssetPath`, never overwrites) and `writeBinary(...)`.
+- **Response:** `{ path: <final relative path actually used> }`, same contract as `POST /asset`.
+- **Errors:** `400 "missing url"` / `400 "missing path"`; `400 "invalid attachment path"` (unsafe target); `400 "invalid url"` (not `http:`/`https:`, or unparseable); `502` when the remote fetch fails or returns non-2xx; `413` when the remote asset exceeds 100 MB.
+- **Cache/SSE:** none.
+
 ### `POST /convert/heic`
 > Listed in the read table — a pure byte transform; nothing in the vault changes.
 - **Params:** none.
