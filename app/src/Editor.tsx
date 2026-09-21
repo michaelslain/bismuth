@@ -94,6 +94,13 @@ import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import { filePathsFromTransfer, isHeicName, jpegNameFor } from './fileIntake'
 import { nativeDropScale, claimNativeDrop } from './nativeDropRouting'
 import { isTauri } from './nativeMenu'
+import {
+    planDrop,
+    pasteboardFromTransfer,
+    bytesFromBase64,
+    type DragPasteboard,
+    type DropAction,
+} from './dropIntake'
 import { findBareUrls } from './editor/urls'
 import { openExternalUrl } from './appWindow'
 import { settings } from './settings'
@@ -643,6 +650,64 @@ async function embedNativePaths(
     }
 }
 
+/** Insert plain text at the current selection (used for a dropped link or dropped text — neither
+ *  is an attachment, so no embed/upload path applies). */
+function insertTextAtSelection(view: EditorView, text: string): void {
+    const { from, to } = view.state.selection.main
+    view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+    })
+}
+
+/** Carry out the `DropAction[]` a `planDrop` plan produced — the single funnel both the native
+ *  (Tauri pasteboard) and DOM (browser `drop`) paths route a drag through once no OS file path is
+ *  available. An empty plan means the drag carried nothing `planDrop` could read at all — toast
+ *  rather than doing nothing silently. */
+async function runDropActions(
+    view: EditorView,
+    actions: DropAction[],
+    notePath: string | null,
+): Promise<void> {
+    if (actions.length === 0) {
+        pushToast("Couldn't read that drop")
+        return
+    }
+    for (const action of actions) {
+        switch (action.kind) {
+            case 'paths':
+                await embedNativePaths(view, action.paths, notePath)
+                break
+            case 'bytes':
+                await uploadAndInsert(
+                    view,
+                    new Blob([bytesFromBase64(action.base64)]),
+                    action.name,
+                    notePath,
+                )
+                break
+            case 'url-image':
+                try {
+                    const finalPath = await api.fetchAsset(
+                        action.url,
+                        attachmentTarget(fileBase(action.name), notePath),
+                    )
+                    insertEmbedStandalone(view, markupFor(finalPath))
+                } catch (e) {
+                    pushToast(`Couldn't download ${action.name}`)
+                    console.error('asset fetch failed', e)
+                }
+                break
+            case 'link':
+                insertTextAtSelection(view, action.url)
+                break
+            case 'text':
+                insertTextAtSelection(view, action.text)
+                break
+        }
+    }
+}
+
 /** Scroll a CodeMirror view to the ATX heading whose text matches `heading` (the anchor of a
  *  `[[File#Heading]]` link), placing the caret at its line start. Reuses the same dispatch +
  *  EditorView.scrollIntoView primitive the find bar (findPanel.revealFrom) uses. Returns false
@@ -1051,7 +1116,27 @@ export function Editor(props: {
             // silently on an empty result, so dragging a document (or a HEIC photo — the format an
             // iPhone actually produces) out of Finder looked like a broken feature.
             const embeddable = d.paths
-            if (embeddable.length === 0) return
+            // No OS file path at all (a browser image, a Photos/Messages file promise wry couldn't
+            // receive, a link, plain text) — read the drag pasteboard directly instead of giving up.
+            // Same claim/routing gates as the path case, just no cell-drop or zoom-scaled cell target.
+            if (embeddable.length === 0) {
+                if (!claimNativeDrop(d)) return
+                const pos = v.posAtCoords({ x, y })
+                if (pos != null) v.dispatch({ selection: { anchor: pos } })
+                let pb: DragPasteboard
+                try {
+                    const { invoke } = await import('@tauri-apps/api/core')
+                    pb = await invoke<DragPasteboard>(
+                        'read_drag_pasteboard',
+                    )
+                } catch (e) {
+                    pushToast("Couldn't read that drop")
+                    console.error('read_drag_pasteboard failed', e)
+                    return
+                }
+                await runDropActions(v, planDrop(pb), activePath)
+                return
+            }
             // This editor owns the drop — claim it so a duplicated listener can't insert a second copy.
             if (!claimNativeDrop(d)) return
             // If the drop targets a table cell while ANOTHER edit is still uncommitted in a cell (the
@@ -1086,7 +1171,10 @@ export function Editor(props: {
         }
         const onNativeDrag = (e: Event): void => {
             const d = (e as CustomEvent<NativeDragDetail>).detail
-            if (!view || !d || d.type !== 'drop' || d.paths.length === 0) return
+            // Empty `paths` no longer disqualifies the drag — handleNativeDrop falls back to
+            // reading the drag pasteboard directly for the paths-less case (browser image, Photos
+            // file promise, link, text).
+            if (!view || !d || d.type !== 'drop') return
             void handleNativeDrop(d)
         }
         window.addEventListener('bismuth-native-drag', onNativeDrag)
@@ -1670,7 +1758,29 @@ export function Editor(props: {
                             // isEmbeddableFile here is what made a .txt/.csv/.zip drop vanish without a trace;
                             // markupFor decides embed-vs-link per file at insert time instead.
                             const files = dt ? [...dt.files] : []
-                            if (files.length === 0) return false // no files at all — let CM handle the text drag
+                            if (files.length === 0) {
+                                // No browser File at all. filePathsFromTransfer reads a real on-disk
+                                // path (e.g. a Finder-copied file's text/uri-list) — when one is
+                                // present, leave it to whatever already handles that case rather than
+                                // reinterpreting it here. Otherwise this is the paths-less case (a
+                                // browser image, a link, plain text) — plan it from the raw transfer.
+                                if (filePathsFromTransfer(dt).length > 0)
+                                    return false
+                                const pos = view.posAtCoords({
+                                    x: de.clientX,
+                                    y: de.clientY,
+                                })
+                                if (pos != null)
+                                    view.dispatch({
+                                        selection: { anchor: pos },
+                                    })
+                                void runDropActions(
+                                    view,
+                                    planDrop(pasteboardFromTransfer(dt)),
+                                    path,
+                                )
+                                return true
+                            }
                             const reference =
                                 de.altKey ||
                                 settings.attachments.onDrop === 'reference'
