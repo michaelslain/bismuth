@@ -30,11 +30,16 @@ import '@fontsource-variable/lora/wght-italic.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ONE global stylesheet (one-global-stylesheet, Task 14). It used to be ui.css + App.css +
-// popover.css imported separately here, in an order deliberately matching the shipping bundle's
-// own cascade (App.tsx's chunk graph put ui.css's <link> before App.css's). That ordering concern
-// is now internal to global.css itself — tokens/reset/content are textually first, then the
-// former App.css body, then ui.css and the rest — so a single import reproduces the same cascade
-// with nothing left to get out of sync between Storybook and the app.
+// popover.css imported separately here, in an order that did NOT match the shipping bundle's own
+// cascade — App.tsx's chunk graph put ui.css's <link> before App.css's, while this file imported
+// App.css first. That inversion was safe only because nothing was ever declared in both files.
+// One file removes the two-orderings-to-keep-in-sync problem outright (there is only one order
+// now, textual position in global.css), but the underlying hazard — two sections declaring the
+// same selector or the same :root custom property, with whichever is textually LATER silently
+// winning — is still real, just moved from "two files that can drift" to "two sections in one
+// file that can collide". `globalCssSections.test.ts` is what makes it safe now: it parses
+// global.css into its sections and fails if any class selector or :root property is declared in
+// more than one, so a collision here is a red test, not a silent cascade flip.
 import '../src/global.css'
 
 // ── Runtime theme tokens ──────────────────────────────────────────────────────
