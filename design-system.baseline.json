@@ -6,15 +6,7 @@
     },
     {
       "check": "globalReach",
-      "path": "app/src/daemon/DaemonPanel.module.css"
-    },
-    {
-      "check": "globalReach",
       "path": "app/src/drawing/Toolbar.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/palette/PaletteRow.module.css"
     },
     {
       "check": "globalReach",
@@ -23,22 +15,6 @@
     {
       "check": "globalReach",
       "path": "app/src/PreviewView.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/SearchResultRows.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/shell/Sidebar.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/shell/TabRail.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/shell/TopStrip.module.css"
     }
   ]
 }
