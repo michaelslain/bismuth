@@ -89,6 +89,7 @@ function DaemonInbox(props: DaemonInboxProps) {
                         <TextButton
                             size="sm"
                             primary
+                            bracket
                             onClick={approveAll}
                             style={{ 'margin-left': 'auto' }}
                         >
