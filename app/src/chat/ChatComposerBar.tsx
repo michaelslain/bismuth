@@ -260,20 +260,20 @@ export default function ChatComposerBar(
 
     return (
         <div class={`${styles.bar} ${props.class ?? ''}`}>
-            <Show when={slashOpen()}>
-                <div
-                    class={styles['slash-popover']}
-                    onMouseDown={e => e.preventDefault() /* keep composer focus */}
-                >
-                    <PopoverList
-                        items={slashRows()}
-                        active={slashNav.active()}
-                        onActivate={i => chooseSlash(i)}
-                        onHover={i => slashNav.setActive(i)}
-                    />
-                </div>
-            </Show>
             <div class={styles.box} onPointerDown={onBoxPointerDown} onFocusIn={onGesture}>
+                <Show when={slashOpen()}>
+                    <div
+                        class={styles['slash-popover']}
+                        onMouseDown={e => e.preventDefault() /* keep composer focus */}
+                    >
+                        <PopoverList
+                            items={slashRows()}
+                            active={slashNav.active()}
+                            onActivate={i => chooseSlash(i)}
+                            onHover={i => slashNav.setActive(i)}
+                        />
+                    </div>
+                </Show>
                 <div class={styles.main}>
                     <Show when={attachments().length > 0}>
                         <div class={styles.attachments}>

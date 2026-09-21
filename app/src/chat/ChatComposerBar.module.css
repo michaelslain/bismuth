@@ -23,6 +23,7 @@
        CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
        var(--chat-composer-line-pad)) and the amount the send button lifts by to sit level with it. */
     --chat-composer-line-pad: 5px;
+    position: relative;
     display: flex;
     align-items: flex-end;
     gap: var(--sp-3);
@@ -129,9 +130,9 @@
     color: var(--on-scrim);
 }
 
-/* The slash-command autocomplete popover — anchored to the bar (see the header comment in
-   ChatComposerBar.tsx: its `bottom: 100%` resolves against `.bar`'s top edge, which is always the
-   box's top edge since the box is `.bar`'s first flowed child). */
+/* The slash-command autocomplete popover — a child of `.box` (not `.bar`), so its containing
+   block is the 680px centred column, not the bar's full-width row. `.bar` spans the whole pane
+   width; anchoring to it left the popover pinned to the pane's left edge instead of the box. */
 .slash-popover {
     position: absolute;
     left: 0;
