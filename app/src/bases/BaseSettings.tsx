@@ -752,7 +752,7 @@ export function BaseSettings(props: {
                                                         </Show>
                                                     </div>
                                                     <Select
-                                                        class={styles['propset-kind']}
+                                                        class={styles['propset-kind-select']}
                                                         value={row().kind}
                                                         options={KIND_OPTS}
                                                         onChange={v =>

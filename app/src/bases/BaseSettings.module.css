@@ -47,7 +47,7 @@
 /* The name field's own column — wraps its TextInput + the duplicate-name warning below it, so
    the grid cell grows with the warning instead of it overflowing into the kind Select's column. */
 .panel .propset-field { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
-.panel .propset-kind { width: 100%; }
+.panel .propset-kind-select { width: 100%; }
 .panel .propset-dupe { color: var(--danger); }
 .panel .propset-extra { width: 100%; }
 /* Tall enough to show a handful of options at once without immediately needing the resize
