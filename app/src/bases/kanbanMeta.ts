@@ -71,6 +71,36 @@ export function metaVisible(
     return hasValue(value)
 }
 
+/** Which `order:` id is the TITLE for a board that owns its own rows (no `source:` — a card
+ * is a row in the base's own body, not a note, so there is no `file.name` to bind to). The
+ * first `order:` id that resolves to a writable note property; `title` when the view
+ * declares no writable column at all (still a valid frontmatter key to write under, even
+ * though nothing currently reads it back as a heading — the row's own `title` property). */
+export function storedTitleColumn(order: string[]): string {
+    return order.find(id => writableKey(id) !== null) ?? 'title'
+}
+
+/** Which of a column's CURRENT rows is the real row a stored-row optimistic add resolved
+ * to — the one whose id was NOT present before the add was made, and whose written property
+ * carries the value the add wrote. Returns that row's id, or `undefined` when the real row
+ * hasn't landed yet (nothing new, or nothing new matching).
+ *
+ * Exists because the server APPENDS a stored row to the base file's raw row array
+ * (core/src/bases/rowOps.ts `upsertRow`), not at a position this view's filtered/grouped
+ * index can predict — a `filters:` block, or any row this view drops, makes a client-guessed
+ * index wrong, and a wrong guess means the optimistic placeholder's rowId never matches the
+ * real one and lingers forever (a permanent ghost duplicate). Matching by "new since the add"
+ * + "carries the written value" needs no index at all. */
+export function matchedStoredRowId(
+    rows: { id: string; value: unknown }[],
+    priorIds: Set<string>,
+    matchValue: unknown,
+): string | undefined {
+    const want = JSON.stringify(matchValue)
+    return rows.find(r => !priorIds.has(r.id) && JSON.stringify(r.value) === want)
+        ?.id
+}
+
 /** Resolve the frontmatter key to WRITE for a property id, or null when the id names a
  * non-writable derived namespace (`file.`/`formula.`/`this.` — a filesystem fact or a
  * computed value, not a stored property). Shared by KanbanView (groupBy writes on drop)

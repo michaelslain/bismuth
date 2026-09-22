@@ -26,6 +26,7 @@ import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
+import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
 import {
     flushEditorsAtOrUnder,
     flushSidecarsAtOrUnder,
@@ -158,7 +159,14 @@ export function KanbanView(props: {
     // A kanban card IS a note; its title is the note's filename (editing it renames the file).
     // Bound to file.name — NOT the base's first display column — so an explicit `order:` that puts
     // a property first can't turn a title-edit into a rename-to-a-property-value.
-    const titleCol = () => 'file.name'
+    //
+    // `props.ownsRows` boards have no file at all — a card there is a row in the base's own
+    // body — so there is no `file.name` to bind. `storedTitleColumn` picks the `order:` id to
+    // write the title under instead (the first writable one, falling back to `title`).
+    const titleCol = () =>
+        props.ownsRows
+            ? storedTitleColumn(props.result.view.order ?? [])
+            : 'file.name'
     // The view's remaining `order:` properties — or, when the base declares its own property
     // set (list-form `properties:`), the engine-resolved columns — shown as editable meta chips
     // on each card below the title (which keeps its own dedicated editable slot). `description`
@@ -223,8 +231,23 @@ export function KanbanView(props: {
     // brings the real row — so adding a card doesn't blink/hide-then-reappear. Each clears once the
     // server data contains its path.
     const [pendingAdds, setPendingAdds] = createSignal<
-        Array<{ row: Row; col: string }>
+        Array<{
+            row: Row
+            col: string
+            /** Set only for a `props.ownsRows` (stored-row) add — see the resolve effect
+             *  below. A file-based add still clears by path match (the file write's own
+             *  refetch brings a row at that exact path), so it needs none of this. */
+            stored?: {
+                priorIds: Set<string>
+                matchKey: string
+                matchValue: unknown
+            }
+        }>
     >([])
+    // Monotonic sentinel for a stored-row optimistic placeholder's `Row.index` — always
+    // negative, so its rowId (`${path}#${index}`) can never collide with a real appended
+    // row's (always >= 0). The real index is unknowable client-side (see matchedStoredRowId).
+    let nextStoredPendingIndex = -1
     // Optimistic column order after a header drag — so the columns settle instantly instead of
     // snapping back while the `columns` write + refetch land. Cleared once the server order matches.
     const [pendingColOrder, setPendingColOrder] = createSignal<string[] | null>(
@@ -310,8 +333,14 @@ export function KanbanView(props: {
         })
     })
 
-    // Drop an optimistic new card once the server data actually contains its path (the write's
-    // refetch has landed) — the path-keyed row then just re-points at the real Row, no remount.
+    // Drop an optimistic new card once the server data resolves it:
+    //  - a FILE-based add, once the server data actually contains its path (the write's
+    //    refetch has landed) — the path-keyed row then just re-points at the real Row, no
+    //    remount.
+    //  - a STORED-row add, once its target column contains a row that wasn't there before the
+    //    add and carries the value the add wrote (`matchedStoredRowId` — see its own doc for
+    //    why an index guess can't be used: the server appends to the base's raw row array,
+    //    not this view's filtered/grouped position).
     createEffect(() => {
         const groups = props.result.groups
         untrack(() => {
@@ -319,8 +348,29 @@ export function KanbanView(props: {
             const present = new Set<string>()
             for (const g of groups)
                 for (const r of g.rows) present.add(rowId(r))
+            const claimed = new Set<string>()
             setPendingAdds(prev => {
-                const next = prev.filter(a => !present.has(rowId(a.row)))
+                const next = prev.filter(a => {
+                    if (a.stored) {
+                        const grp = groups.find(g => g.key === a.col)
+                        const rows = (grp?.rows ?? [])
+                            .map(r => ({
+                                id: rowId(r),
+                                value: (r.note as Record<string, unknown>)[
+                                    a.stored!.matchKey
+                                ],
+                            }))
+                            .filter(r => !claimed.has(r.id))
+                        const hit = matchedStoredRowId(
+                            rows,
+                            a.stored.priorIds,
+                            a.stored.matchValue,
+                        )
+                        if (hit) claimed.add(hit)
+                        return !hit
+                    }
+                    return !present.has(rowId(a.row))
+                })
                 return next.length === prev.length ? prev : next
             })
         })
@@ -849,19 +899,26 @@ export function KanbanView(props: {
         props.onChange()
     }
 
-    // ── Card rename (title = filename) ──
-    // A rename changes the note's path, so the refetch below re-keys the row and remounts the card
-    // (its identity genuinely changed). Editing is single-mode, so there's no open description edit
-    // to lose in the normal flow; only a description typed into the SAME card during the brief
-    // in-flight window of a just-committed rename would be dropped — a narrow, no-existing-data-loss
-    // race we accept rather than couple the two async writes.
-    //
-    // A stored row has no file to rename — `row.file.path` there is the BASE's own path, and
-    // `api.move` on it would rename the base out from under every OTHER row it holds. There is
-    // no rename affordance for a stored row (see `hasFileIdentity` on KanbanCard); this guard is
-    // defense in depth against that affordance ever calling in anyway.
+    // ── Card rename ──
+    // A stored row has no file to rename — `row.file.path` there is the BASE's own path, so
+    // an `api.move` on it would rename the base out from under every OTHER row it holds.
+    // Instead it writes the new title under `titleCol()`'s key (`storedTitleColumn`'s pick)
+    // via `api.rowUpdate`, addressed by `row.index` like every other stored-row write
+    // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
     async function renameCard(row: Row, newTitle: string): Promise<void> {
-        if (canWriteStoredRow(row)) return
+        if (canWriteStoredRow(row)) {
+            if (!props.basePath) return
+            const key = writableKey(titleCol())
+            if (key === null) return
+            const note = { ...storedNote(row), [key]: newTitle }
+            await api.rowUpdate(props.basePath, row.index!, note)
+            return
+        }
+        // A rename changes the note's path, so the refetch below re-keys the row and remounts the
+        // card (its identity genuinely changed). Editing is single-mode, so there's no open
+        // description edit to lose in the normal flow; only a description typed into the SAME
+        // card during the brief in-flight window of a just-committed rename would be dropped — a
+        // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
         const dir = dirOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
         if (desired === row.file.path) return
@@ -943,10 +1000,9 @@ export function KanbanView(props: {
     }
     // ── Delete (trash + undo toast, mirrors FileTree) ──
     // Lives ONLY inside the card's edit modal (CardEditModal) — no separate right-click menu, so
-    // there's exactly one delete affordance per card. A stored row has no file to trash — there is
-    // no delete affordance for one at all (see `hasFileIdentity` on KanbanCard; `api.rowDelete`
-    // exists but wiring a row delete is a separate feature with its own undo story). This guard is
-    // defense in depth against that affordance ever calling in anyway.
+    // there's exactly one delete affordance per card. A stored row has no file to trash, so it
+    // deletes by index (`api.rowDelete`) instead; Undo re-creates the row (`api.rowCreate`) rather
+    // than restoring it to its exact prior index/position, which `api.rowDelete` doesn't hand back.
     //
     // Ids deleted this session but not yet confirmed gone by a refetch — hidden from every
     // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
@@ -954,19 +1010,42 @@ export function KanbanView(props: {
     const [deletedIds, setDeletedIds] = createSignal<Set<string>>(new Set())
 
     async function deleteCard(row: Row): Promise<void> {
-        if (!editable() || canWriteStoredRow(row)) return
-        const path = row.file.path
+        if (!editable()) return
         const id = rowId(row)
-        const name = row.file.name
         // Hide the card INSTANTLY (optimistic overlay), FLIP the survivors so they slide up smoothly
-        // instead of snapping. No props.onChange(): POST /delete is a mutating route → it bumps the
-        // server version, and BaseView's SSE-driven revalidation refetches the board in a useTransition
-        // (stale-while-revalidate) — the SMOOTH path. The old direct props.onChange() refetch ran
-        // OUTSIDE that transition, which is what made a delete feel like a full-page reload; the
-        // deletedIds hide covers the gap until the SSE refetch lands and the prune-effect clears it.
+        // instead of snapping. No props.onChange(): both delete routes are mutating → they bump the
+        // server version, and BaseView's SSE-driven revalidation refetches the board in a
+        // useTransition (stale-while-revalidate) — the SMOOTH path. The deletedIds hide covers the
+        // gap until that refetch lands and the prune-effect clears it.
         snapshotRects()
         setDeletedIds(prev => markDeleted(prev, id))
         requestAnimationFrame(playFlip)
+
+        if (canWriteStoredRow(row)) {
+            if (!props.basePath) {
+                setDeletedIds(prev => unmarkDeleted(prev, id))
+                return
+            }
+            const basePath = props.basePath
+            const note = { ...storedNote(row) }
+            const titleKey = writableKey(titleCol())
+            const name = String((titleKey ? note[titleKey] : undefined) ?? 'card')
+            try {
+                await api.rowDelete(basePath, row.index!)
+                pushToast(`Deleted "${name}"`, {
+                    label: 'Undo',
+                    onClick: () =>
+                        void restoreStoredCard(basePath, note, id, name),
+                })
+            } catch (e) {
+                setDeletedIds(prev => unmarkDeleted(prev, id))
+                pushToast(`Delete failed: ${(e as Error).message}`)
+            }
+            return
+        }
+
+        const path = row.file.path
+        const name = row.file.name
         try {
             // Flush a pending autosave for this note BEFORE trashing it — a delete landing
             // inside the autosave debounce would otherwise discard the just-typed edit, and
@@ -985,6 +1064,25 @@ export function KanbanView(props: {
         } catch (e) {
             setDeletedIds(prev => unmarkDeleted(prev, id)) // revert the optimistic hide
             pushToast(`Delete failed: ${(e as Error).message}`)
+        }
+    }
+
+    /** Undo for a stored-row delete: re-create the row via `api.rowCreate` (appends — see
+     *  `deleteCard`'s comment on why an exact position isn't restored). The optimistic hide
+     *  drops right away; the prune-effect above clears the `deletedIds` entry for good once
+     *  the SSE refetch confirms the row is really back. */
+    async function restoreStoredCard(
+        basePath: string,
+        note: Record<string, unknown>,
+        id: string,
+        name: string,
+    ): Promise<void> {
+        try {
+            await api.rowCreate(basePath, note)
+            setDeletedIds(prev => unmarkDeleted(prev, id))
+            pushToast(`Restored "${name}"`)
+        } catch (e) {
+            pushToast(`Restore failed: ${(e as Error).message}`)
         }
     }
 
@@ -1061,10 +1159,11 @@ export function KanbanView(props: {
         const grp = groupByKey(colKey)
         const orderVal = appendOrder(grp.rows.map(r => effOrder(r, grp)))
 
-        // The title column's writable key — today always null (titleCol() is 'file.name', a
-        // computed pseudo-property, never a frontmatter key), so this is a no-op in practice.
-        // Written generically rather than assuming that forever, exactly like the groupBy/order
-        // keys above.
+        // The title column's writable key. On a normal (file-backed) board `titleCol()` is
+        // `'file.name'`, a computed pseudo-property with no writable key, so this stays a
+        // no-op there. On a `props.ownsRows` (stored-row) board `titleCol()` is
+        // `storedTitleColumn`'s pick — always writable — so the composer's typed title lands
+        // under that key below, same as every other property here.
         const titleKey = writableKey(titleCol())
         const exclude = new Set([statusKey, ORDER_KEY])
         if (titleKey) exclude.add(titleKey)
@@ -1085,20 +1184,38 @@ export function KanbanView(props: {
         // never "this looks like an own-rows base"). The optimistic placeholder must NOT claim a
         // file path (there is no note being created): it shares the base's own synthetic file,
         // same as every other stored row (`rowIdentity.ts`), so `rowId` addresses it consistently.
+        //
+        // Its `index` is a negative sentinel, NOT a guess at the row's real position — the
+        // server appends to the base file's raw row array (rowOps.ts), which this view's
+        // filtered/grouped `props.result` cannot predict (a `filters:` block, or any row this
+        // view drops, throws a positional guess off). `matchedStoredRowId` (the resolve effect
+        // above) finds the real row once it lands, by "new since this add + carries the
+        // written value" instead of by index.
         if (props.ownsRows) {
             if (!props.basePath) return
             const basePath = props.basePath
-            const index =
-                props.result.groups.flatMap(g => g.rows).length +
-                pendingAdds().filter(a => a.row.file.path === basePath).length
+            const priorIds = new Set(
+                props.result.groups.flatMap(g => g.rows).map(rowId),
+            )
             const optimistic: Row = {
                 file: syntheticBaseFile(basePath),
                 note: { ...front },
                 formula: {},
-                index,
+                index: nextStoredPendingIndex--,
             }
             setDraft('')
-            setPendingAdds(prev => [...prev, { row: optimistic, col: colKey }])
+            setPendingAdds(prev => [
+                ...prev,
+                {
+                    row: optimistic,
+                    col: colKey,
+                    stored: {
+                        priorIds,
+                        matchKey: statusKey,
+                        matchValue: statusValue ?? colKey,
+                    },
+                },
+            ])
             await api.rowCreate(basePath, front)
             return
         }
@@ -1545,11 +1662,6 @@ export function KanbanView(props: {
                                                                                         props.config
                                                                                     }
                                                                                     editable={editable()}
-                                                                                    hasFileIdentity={
-                                                                                        !canWriteStoredRow(
-                                                                                            r(),
-                                                                                        )
-                                                                                    }
                                                                                     hideLabels={hideLabels()}
                                                                                     onEditingChange={
                                                                                         setEditing

@@ -51,15 +51,13 @@ export function KanbanCard(props: {
     metaCols: string[]
     config: BaseConfig
     editable: boolean
-    /** Whether this row has a real file behind it (a note) rather than being a row STORED in a
-     *  base's own body. A stored row's `file.path` is the base's own path, so renaming or
-     *  deleting "it" would rename/delete the base out from under every other row it holds —
-     *  there is no rename/delete affordance for one at all (rather than a broken one), so this
-     *  is threaded down to `CardEditModal` to hide the title-rename field and the DELETE button.
-     *  Meta-property editing is unaffected — that already addresses a stored row by index
-     *  (KanbanView's `setMetaProperty`), so it stays available regardless of this flag.
-     *  Optional/defaults to `true` (has a file) so every existing caller keeps today's
-     *  behaviour untouched. */
+    /** Whether the title field and DELETE button render at all. A stored row (one held in a
+     *  base's own body, no note file behind it) is now writable by INDEX rather than by path —
+     *  `KanbanView`'s `renameCard`/`deleteCard` address it via `api.rowUpdate`/`api.rowDelete`,
+     *  same as a real note's `api.move`/`api.del` — so every row `KanbanView` passes down is
+     *  rename/delete-capable and this stays `true`. Kept as an escape hatch (default `true`)
+     *  rather than removed outright, for a future row shape that genuinely has neither a file
+     *  nor a write-back index. */
     hasFileIdentity?: boolean
     /** #105: the kanban view's `hideLabels` toggle — when true, meta rows show only the
      *  value, no label caption above it. Tag rows already skip the label regardless. */

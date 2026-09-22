@@ -377,3 +377,128 @@ export const StoredRowsAddCard: Story = {
         expect(kanbanCalls.some(c => c.path === '/file')).toBe(false)
     },
 }
+
+// Rows for the title/rename/delete stories below — same stored-row shape as `STORED_ROWS`,
+// with `description` as the view's first `order:` id so `storedTitleColumn` binds the title
+// there (task 4's fix: before it, `titleCol()` stayed `'file.name'` on an own-rows board, so
+// every card's heading rendered empty — `syntheticBaseFile`'s `name` is `''`).
+const STORED_TITLE_PATH = 'boards/stored-titles.md'
+const STORED_TITLE_ROWS: Row[] = [
+    { description: 'write the spec', status: 'Todo' },
+    { description: 'fix the flake', status: 'Todo' },
+].map((note, index) => ({
+    file: syntheticBaseFile(STORED_TITLE_PATH),
+    note,
+    formula: {},
+    index,
+}))
+
+/** Both stored rows render their real `description` as the card heading — not empty, and not
+ *  ALSO repeated as a meta chip (`storedTitleColumn` picks `description` as the title column,
+ *  so `metaColumns` drops it from the chip list the same way it drops `file.name` normally). */
+export const StoredRowsTitles: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        return (
+            <KanbanView
+                result={runView(config, STORED_TITLE_ROWS, 0)}
+                config={config}
+                basePath={STORED_TITLE_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const titles = [
+            ...canvasElement.querySelectorAll(
+                '[data-edit-target="description"]',
+            ),
+        ].map(el => (el.textContent ?? '').trim())
+        expect(titles).toEqual(['write the spec', 'fix the flake'])
+        // No OTHER element also carries a `description` edit-target (the duplicate-chip bug) —
+        // exactly one per card, the title itself.
+        expect(
+            canvasElement.querySelectorAll('[data-edit-target]').length,
+        ).toBe(2)
+    },
+}
+
+/** A stored row's card title is renamable and deletable, same as a real note's: tapping the
+ *  title opens the edit modal, typing a new title + Enter writes it back via
+ *  `api.rowUpdate` (`POST /row/update`, `index` matching the row, `note.description` the new
+ *  text), and DELETE writes `api.rowDelete` (`POST /row/delete`) — task 4's fix, `CardEditModal`
+ *  no longer hides either affordance for a stored row. */
+export const StoredRowsRenameDelete: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={runView(config, STORED_TITLE_ROWS, 0)}
+                config={config}
+                basePath={STORED_TITLE_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-edit-target="description"]',
+        )!
+        await userEvent.click(title)
+        const titleInput = await within(document.body).findByPlaceholderText(
+            'Untitled',
+        )
+        await userEvent.clear(titleInput)
+        await userEvent.type(titleInput, 'renamed task')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/update' &&
+                        (
+                            c.body as {
+                                index: unknown
+                                note: Record<string, unknown>
+                            }
+                        ).index === 0 &&
+                        (c.body as { note: Record<string, unknown> }).note
+                            .description === 'renamed task',
+                ),
+            ).toBe(true),
+        )
+
+        const deleteButton = await within(document.body).findByText('DELETE')
+        await userEvent.click(deleteButton)
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/delete' &&
+                        (c.body as { index: unknown }).index === 0,
+                ),
+            ).toBe(true),
+        )
+    },
+}
