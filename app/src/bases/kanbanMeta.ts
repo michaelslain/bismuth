@@ -98,6 +98,12 @@ export function storedTitleColumn(order: string[]): string {
  * every later row's id down by one, so the newly-added row can land at an id a PRIOR row already
  * held — an id-keyed "was this id here before" check then wrongly excludes it forever. A row's
  * content survives that shift unchanged, so a content-keyed check is immune to it. */
+/** Not airtight under concurrency: two rapid same-column adds from this client, or another
+ * client's concurrent add of an identical value, can both match the same "new since the add"
+ * row and cross-claim each other's placeholder. The visible effect is a brief flicker (a
+ * placeholder resolving to the wrong sibling's real row for one refetch) — the board is
+ * correct again once every in-flight add has resolved, since each add's own value eventually
+ * lands on some row and the content-keyed match self-corrects on the next refetch. */
 export function matchedStoredRowId(
     rows: { id: string; snapshot: string; value: unknown }[],
     priorSnapshots: Set<string>,
