@@ -3,7 +3,7 @@
 // with a `groupBy`, rendered by the real KanbanView component. `onChange` is a required prop
 // (fired after a write); a no-op here since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { KanbanView } from './KanbanView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
@@ -14,6 +14,7 @@ import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { FakeTransportSeed } from '../ui/_fakeTransport'
 import type { Transport } from '../api'
+import { toasts } from '../toastStore'
 
 // `fakeTransport` gives every route a generic 200 ack with no record of the call — enough for a
 // story that only needs the write to succeed, not enough to ASSERT what was written. Wraps it
@@ -804,11 +805,14 @@ function storedDeleteRows(): Row[] {
 // waits on the captured request, not on a timer.
 let deleteShiftRefetch: () => Promise<void> = async () => {}
 
-/** A stored-row delete's write path (`api.rowDelete` -> `POST /row/delete`) and read path
- *  (`POST /rows`) share the SAME server-side array — this fake transport splices it on delete so
- *  the next `/rows` resolve proves the row actually left the store, not just the client's
- *  optimistic hide. `deleteShiftRefetch` re-runs `api.resolveRows` + `runView` to rebuild the
- *  board from that fresh read, on demand — never a timer. */
+/** A stored-row delete's optimistic hide (`deletedIds`, keyed by id + a content snapshot — see
+ *  `deleteCard`'s own comment) survives the index shift a delete causes. This fake transport
+ *  splices ITS OWN in-memory array on `/row/delete` (not a real backend) so the next `/rows`
+ *  resolve returns rows re-indexed the way a real delete would shift them; `deleteShiftRefetch`
+ *  re-runs `api.resolveRows` + `runView` to rebuild the board from that fresh read, on demand,
+ *  never a timer. What this PROVES is that the hide's snapshot check stops covering the card
+ *  that shifted into the deleted row's old id (it renders under its own real title) — not that
+ *  any real store spliced anything, which is outside a Storybook story's reach. */
 export const StoredRowsDeleteShift: Story = {
     render: () => {
         const views = [
@@ -897,6 +901,280 @@ export const StoredRowsDeleteShift: Story = {
 
         await waitFor(() => expect(titles()).toHaveLength(2))
         expect(titles()).toEqual(['fix the flake', 'ship the release'])
+    },
+}
+
+/** A stored-row add whose `api.rowCreate` write (`POST /row/update`, `index: null`) rejects: the
+ *  optimistic ghost card must not become a permanent artifact — `addCard`'s catch drops exactly
+ *  this call's placeholder (matched by its own optimistic index) — and the user sees why via an
+ *  `Add card failed` toast rather than a card that silently vanishes with no explanation. */
+export const StoredAddFails: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        const base = fakeTransport()
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                if (
+                    path === '/row/update' &&
+                    (body as { index: unknown }).index === null
+                )
+                    throw new Error('base file is locked')
+                return base.post(path, body)
+            },
+        }
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={runView(config, STORED_ADD_ROWS, 0)}
+                config={config}
+                basePath={STORED_ADD_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const before = toasts().length
+        const addButton = canvas.getAllByLabelText('Add a card')[0]!
+        await userEvent.click(addButton)
+        const input = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(input, 'ship the broken build')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(toasts().length).toBe(before + 1))
+        expect(toasts()[before].message).toContain('Add card failed')
+        // The optimistic ghost is gone, not left behind as a permanent card.
+        expect(canvas.queryByText('ship the broken build')).toBeNull()
+    },
+}
+
+/** `renameColumn` writes `columns` first, then moves the column's `groupColors` pin. When
+ *  `columns` lands but the `groupColors` write rejects, the rename is already live server-side —
+ *  a full rollback would lie about what happened — so the column KEEPS its new name and the user
+ *  gets a `Rename column partially applied` toast instead of `Rename column failed`. */
+export const RenameColumnPartial: Story = {
+    render: () => {
+        const base = fakeTransport()
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                if (
+                    path === '/set-property' &&
+                    (body as { key?: string }).key === 'groupColors'
+                )
+                    throw new Error('base file changed underneath')
+                return base.post(path, body)
+            },
+        }
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-rename-partial.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const before = toasts().length
+        const col = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"]',
+        )!
+        const menu = within(col).getAllByLabelText('Column menu')[0]!
+        // The trigger sits `pointer-events: none` until hovered/focused — reach it via keyboard focus.
+        menu.focus()
+        await userEvent.keyboard('{Enter}')
+        await userEvent.click(await body.findByText(/^rename$/i))
+        const input = await waitFor(
+            () =>
+                within(
+                    body.getByTestId('kanban-column-menu'),
+                ).getByDisplayValue('Todo'),
+            { timeout: 3000 },
+        )
+        await userEvent.clear(input)
+        await userEvent.type(input, 'Backlog')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(toasts().length).toBe(before + 1))
+        expect(toasts()[before].message).toContain(
+            'Rename column partially applied',
+        )
+        // NOT asserting the column's visible key here: `renameColumn`'s catch unconditionally
+        // reverts the local `pendingColOrder`/`pending` overlay on ANY failure (columnsLanded
+        // only picks the toast wording), relying on the app's own refetch (`props.onChange` ->
+        // BaseView's SSE-driven revalidation) to reconcile the visible board with the server's
+        // already-renamed state — a static-result story has no such refetch to observe.
+    },
+}
+
+/** Same partial-failure shape as `RenameColumnPartial`, for delete: `columns` drops the key
+ *  first, then the `groupColors` cleanup write (only issued when the column HAD an override —
+ *  hence the seeded `groupColors` below) rejects. The column is already gone server-side, so the
+ *  toast reads `Delete column partially applied`, not `Delete column failed`. */
+export const DeleteColumnPartial: Story = {
+    render: () => {
+        const base = fakeTransport()
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                if (
+                    (path === '/set-property' || path === '/delete-property') &&
+                    (body as { key?: string }).key === 'groupColors'
+                )
+                    throw new Error('base file changed underneath')
+                return base.post(path, body)
+            },
+        }
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
+                groupColors: { Blocked: '#e06c6c' },
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-delete-partial.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const before = toasts().length
+        const menus = canvas.getAllByLabelText('Column menu')
+        const blockedCol = canvasElement.querySelector(
+            '[data-kbcol="Blocked"]',
+        )!
+        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
+        blockedMenu.focus()
+        await userEvent.keyboard('{Enter}')
+        const del = await body.findByText(/^delete$/i)
+        await userEvent.click(del)
+        await waitFor(() => expect(toasts().length).toBe(before + 1))
+        expect(toasts()[before].message).toContain(
+            'Delete column partially applied',
+        )
+        // NOT asserting the column is gone from the DOM here: `deleteColumn`'s catch
+        // unconditionally reverts the local `pendingRemovedCols` overlay on ANY failure —
+        // same reliance on the app's own refetch as `RenameColumnPartial` above.
+    },
+}
+
+// A `source:` board's rows carry `syntheticBaseFile(<the SOURCE base's own path>)`, distinct
+// from `basePath` (THIS board's own file) below — the shape `POST /rows` returns for any board
+// that queries another base rather than owning its rows inline.
+const SOURCE_DROP_PATH = 'boards/source-tasks.md'
+const SOURCE_DROP_BOARD_PATH = 'boards/kanban-board.md'
+const SOURCE_DROP_ROWS: Row[] = [
+    { description: 'ship the release', status: 'Todo' },
+    { description: 'write the spec', status: 'Doing' },
+].map((note, index) => ({
+    file: syntheticBaseFile(SOURCE_DROP_PATH),
+    note,
+    formula: {},
+    index,
+}))
+
+/** Dropping a card on a `source:` board must batch its `rowUpdateMany` write to the row's OWN
+ *  file (`groupUpdatesByPath`, keyed by `r.file.path`) — the SOURCE base's path — never to
+ *  `props.basePath`, this board's own file, or the drop would silently corrupt the board being
+ *  viewed instead of the board it actually sources from. Drives the drop the way the pointer
+ *  handlers actually work (`startCardDrag`/`onPointerMove`/`onPointerUp`, not HTML5 DnD): a
+ *  `pointerdown` on the card, a `pointermove` past the 5px commit threshold, a second
+ *  `pointermove` over the target column (read via `document.elementFromPoint` in
+ *  `resolveCardTarget`), then `pointerup`. */
+export const SourceBoardDropPerPath: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={runView(config, SOURCE_DROP_ROWS, 0)}
+                config={config}
+                basePath={SOURCE_DROP_BOARD_PATH}
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"] [data-kbcard]',
+        )!
+        const doingCol = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Doing"]',
+        )!
+        const cardRect = card.getBoundingClientRect()
+        const from = {
+            x: cardRect.left + cardRect.width / 2,
+            y: cardRect.top + cardRect.height / 2,
+        }
+        const colRect = doingCol.getBoundingClientRect()
+        const to = {
+            x: colRect.left + colRect.width / 2,
+            y: colRect.top + colRect.height / 2,
+        }
+
+        fireEvent.pointerDown(card, {
+            button: 0,
+            clientX: from.x,
+            clientY: from.y,
+        })
+        fireEvent.pointerMove(window, {
+            clientX: from.x + 10,
+            clientY: from.y + 10,
+        })
+        fireEvent.pointerMove(window, { clientX: to.x, clientY: to.y })
+        fireEvent.pointerUp(window, { clientX: to.x, clientY: to.y })
+
+        await waitFor(() =>
+            expect(kanbanCalls.some(c => c.path === '/rows/update')).toBe(
+                true,
+            ),
+        )
+        const update = kanbanCalls.find(c => c.path === '/rows/update')!
+        expect((update.body as { file: string }).file).toBe(
+            SOURCE_DROP_PATH,
+        )
+        expect((update.body as { file: string }).file).not.toBe(
+            SOURCE_DROP_BOARD_PATH,
+        )
     },
 }
 
