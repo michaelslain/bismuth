@@ -41,8 +41,11 @@
 .panel .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .panel .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* expanded editor: full form for exactly one row */
-.panel .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); }
+/* expanded editor: full form for exactly one row. `--surface-1` (one step below the list's
+   `--surface-2`) so the name/kind/default/format controls' own fill actually shows against the
+   panel — without it every control painted the same colour as the row background and read as
+   loose text with no chrome, unlike the filled Sort by/Group by selects above. */
+.panel .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); background: var(--surface-1); }
 .panel .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
 /* The name field's own column — wraps its TextInput + the duplicate-name warning below it, so
    the grid cell grows with the warning instead of it overflowing into the kind Select's column. */
@@ -50,9 +53,9 @@
 .panel .propset-kind-select { width: 100%; }
 .panel .propset-dupe { color: var(--danger); }
 .panel .propset-extra { width: 100%; }
-/* Tall enough to show a handful of options at once without immediately needing the resize
-   handle — was 46px (one line), which clipped a select/multiselect's option list to a sliver. */
-.panel .propset-options { min-height: 84px; resize: vertical; }
+/* Fits the option list with at least 4 visible lines and grows with the content up to 12 lines
+   before the resize handle takes over — was a fixed 84px (~3.5 lines) that never grew. */
+.panel .propset-options { min-height: calc(4lh + 2 * var(--sp-3)); field-sizing: content; max-height: calc(12lh + 2 * var(--sp-3)); resize: vertical; }
 .panel .propset-numrow { display: flex; gap: var(--sp-4); }
 .propset-numrow-unit { flex: 1; }
 .panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }

@@ -735,7 +735,10 @@ export function BaseSettings(props: {
                                         <Show when={open()}>
                                             <div class={styles['propset-body']}>
                                                 <div class={styles['propset-fields']}>
-                                                    <div class={styles['propset-field']}>
+                                                    <SettingsField
+                                                        label="name"
+                                                        class={styles['propset-field']}
+                                                    >
                                                         <TextInput
                                                             value={row().name}
                                                             placeholder="Property name"
@@ -747,20 +750,24 @@ export function BaseSettings(props: {
                                                         />
                                                         <Show when={dupe()}>
                                                             <SettingsHint class={styles['propset-dupe']}>
-                                                                Another property already uses this name — rename one before saving.
+                                                                duplicate name // only the first is saved
                                                             </SettingsHint>
                                                         </Show>
-                                                    </div>
-                                                    <Select
+                                                    </SettingsField>
+                                                    <SettingsField
+                                                        label="kind"
                                                         class={styles['propset-kind-select']}
-                                                        value={row().kind}
-                                                        options={KIND_OPTS}
-                                                        onChange={v =>
-                                                            updateRow(i, {
-                                                                kind: v as BasePropertyKind,
-                                                            })
-                                                        }
-                                                    />
+                                                    >
+                                                        <Select
+                                                            value={row().kind}
+                                                            options={KIND_OPTS}
+                                                            onChange={v =>
+                                                                updateRow(i, {
+                                                                    kind: v as BasePropertyKind,
+                                                                })
+                                                            }
+                                                        />
+                                                    </SettingsField>
                                                 </div>
 
                                                 <Show
@@ -787,17 +794,25 @@ export function BaseSettings(props: {
                                                     when={row().kind === 'number'}
                                                 >
                                                     <div class={`${styles['propset-extra']} ${styles['propset-numrow']}`}>
-                                                        <Select
-                                                            value={row().number}
-                                                            options={
-                                                                NUMBER_FORMAT_OPTS
-                                                            }
-                                                            onChange={v =>
-                                                                updateRow(i, {
-                                                                    number: v as NumberFormat,
-                                                                })
-                                                            }
-                                                        />
+                                                        <SettingsField
+                                                            label="format"
+                                                            class={styles['propset-numrow-unit']}
+                                                        >
+                                                            <Select
+                                                                value={row().number}
+                                                                options={
+                                                                    NUMBER_FORMAT_OPTS
+                                                                }
+                                                                onChange={v =>
+                                                                    updateRow(
+                                                                        i,
+                                                                        {
+                                                                            number: v as NumberFormat,
+                                                                        },
+                                                                    )
+                                                                }
+                                                            />
+                                                        </SettingsField>
                                                         <Show
                                                             when={
                                                                 row().number ===
