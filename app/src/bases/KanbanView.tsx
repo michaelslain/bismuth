@@ -1021,6 +1021,7 @@ export function KanbanView(props: {
         // Whether `from` was ALREADY hidden before this call — if so, this call didn't add it
         // and must not remove it on rollback (some other in-flight action owns that removal).
         const alreadyRemoved = pendingRemovedCols().has(from)
+        const targetWasRemoved = pendingRemovedCols().has(trimmed)
         const prevOrder = pendingColOrder()
         // The exact entries THIS call is about to write into `pending`, so a rollback can undo
         // only these (by `===` identity) rather than clobbering an overlay entry another
@@ -1039,7 +1040,7 @@ export function KanbanView(props: {
         // refetch), not a full rollback of the rename overlay.
         let columnsLanded = false
         setPendingColOrder(keys)
-        setPendingRemovedCols(prev => new Set(prev).add(from))
+        setPendingRemovedCols(prev => rollbackRemoved(prev, trimmed).add(from))
         setPending(prev => ({ ...prev, ...writtenPending }))
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
@@ -1110,9 +1111,12 @@ export function KanbanView(props: {
             props.onChange()
         } catch (e) {
             setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
-            setPendingRemovedCols(prev =>
-                rollbackRemoved(prev, alreadyRemoved ? null : from),
-            )
+            setPendingRemovedCols(prev => {
+                const s = rollbackRemoved(prev, alreadyRemoved ? null : from)
+                return targetWasRemoved && !columnsLanded
+                    ? new Set(s).add(trimmed)
+                    : s
+            })
             setPending(prev => rollbackPending(prev, writtenPending))
             if (columnsLanded) {
                 props.onChange()

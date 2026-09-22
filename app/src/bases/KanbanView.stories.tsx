@@ -603,6 +603,112 @@ export const RenameColumn: Story = {
     },
 }
 
+// Released by play() once it has driven both renames through their optimistic state — holds
+// every `columns` write open so the second rename's dispatch happens while the first is still
+// in flight, the exact overlap `renameColumn`'s rollback bookkeeping has to survive.
+let releaseRenameRoundTripWrites: () => void = () => {}
+
+/** Rename Todo -> Backlog -> Todo, quickly (task 1's fix): `renameColumn` adds `from` to
+ *  `pendingRemovedCols` on every call but, before the fix, never cleared a PRIOR call's
+ *  removal of the rename's own TARGET — so renaming back to `Todo` while the first `columns`
+ *  write was still in flight left both `Todo` and `Backlog` marked removed, hiding the column
+ *  and its cards until the server groups changed shape. Gating the `columns` write open keeps
+ *  both renames' optimistic state live at once instead of letting the first settle before the
+ *  second starts. */
+export const RenameColumnRoundTrip: Story = {
+    render: () => {
+        const base = fakeTransport()
+        const calls: { path: string; body: unknown }[] = []
+        const gate = new Promise<void>(resolve => {
+            releaseRenameRoundTripWrites = resolve
+        })
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                calls.push({ path, body })
+                if (
+                    path === '/set-property' &&
+                    (body as { key?: string }).key === 'columns'
+                ) {
+                    await gate
+                }
+                return base.post(path, body)
+            },
+            put: async (path, body) => {
+                calls.push({ path, body })
+                return base.put(path, body)
+            },
+        }
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-rename-round-trip.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+
+        async function renameVia(fromKey: string, toName: string) {
+            const col = canvasElement.querySelector<HTMLElement>(
+                `[data-kbcol="${fromKey}"]`,
+            )!
+            const menus = within(col).getAllByLabelText('Column menu')
+            await userEvent.click(menus[0]!)
+            await userEvent.click(await body.findByText(/^rename$/i))
+            const input = await waitFor(
+                () =>
+                    within(
+                        body.getByTestId('kanban-column-menu'),
+                    ).getByDisplayValue(fromKey),
+                { timeout: 3000 },
+            )
+            await userEvent.clear(input)
+            await userEvent.type(input, toName)
+            await userEvent.keyboard('{Enter}')
+        }
+
+        await renameVia('Todo', 'Backlog')
+        expect(
+            canvasElement.querySelector('[data-kbcol="Backlog"]'),
+        ).not.toBeNull()
+        expect(canvasElement.querySelector('[data-kbcol="Todo"]')).toBeNull()
+
+        // The Backlog -> Todo rename dispatches while the FIRST rename's `columns` write is
+        // still gated open — the overlap the fix has to survive.
+        await renameVia('Backlog', 'Todo')
+        expect(
+            canvasElement.querySelector('[data-kbcol="Todo"]'),
+        ).not.toBeNull()
+
+        releaseRenameRoundTripWrites()
+        await waitFor(() =>
+            expect(
+                kanbanCalls.filter(
+                    c =>
+                        c.path === '/set-property' &&
+                        (c.body as { key?: string }).key === 'columns',
+                ).length,
+            ).toBe(2),
+        )
+        expect(
+            canvasElement.querySelector('[data-kbcol="Todo"]'),
+        ).not.toBeNull()
+    },
+}
+
 /** `EditableWithPinnedColumns`' pinned-but-empty "Blocked" column: the `…` menu offers Delete
  *  (`canDelete` — no cards), and picking it removes the column from `columns` and from the
  *  board. */
@@ -798,7 +904,28 @@ const STORED_RENAME_COL_ROWS: Row[] = [
 
 export const StoredRowsRenameColumn: Story = {
     render: () => {
-        const { transport, calls } = spiedTransport()
+        const base = fakeTransport()
+        const calls: { path: string; body: unknown }[] = []
+        // A placeholder add's `/row/update` write that never resolves — the story only needs
+        // it stuck in flight while the rename below fires, never for it to land.
+        const neverResolves = new Promise<void>(() => {})
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                calls.push({ path, body })
+                if (
+                    path === '/row/update' &&
+                    (body as { index: unknown }).index === null
+                ) {
+                    await neverResolves
+                }
+                return base.post(path, body)
+            },
+            put: async (path, body) => {
+                calls.push({ path, body })
+                return base.put(path, body)
+            },
+        }
         kanbanCalls = calls
         setTransport(transport)
         const views = [
@@ -822,7 +949,27 @@ export const StoredRowsRenameColumn: Story = {
         )
     },
     play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
+
+        // A placeholder add, still in flight (its `/row/update` write is gated open) when the
+        // rename below fires — the rename's batched write must exclude it, not send a
+        // negative-index placeholder to the server.
+        const addButton = canvas.getAllByLabelText('Add a card')[0]!
+        await userEvent.click(addButton)
+        const titleInput = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(titleInput, 'not yet saved')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/update' &&
+                        (c.body as { index: unknown }).index === null,
+                ),
+            ).toBe(true),
+        )
+
         const todoBefore = canvasElement.querySelector<HTMLElement>(
             '[data-kbcol="todo"]',
         )!
@@ -842,14 +989,13 @@ export const StoredRowsRenameColumn: Story = {
 
         await waitFor(() =>
             expect(
-                canvasElement.querySelector('[data-kbcol="doing"]'),
-            ).not.toBeNull(),
+                kanbanCalls.filter(c => c.path === '/rows/update').length,
+            ).toBe(1),
         )
 
         const renameManyWrites = kanbanCalls.filter(
             c => c.path === '/rows/update',
         )
-        expect(renameManyWrites.length).toBe(1)
         const write = renameManyWrites[0]!
         const { updates } = write.body as {
             file?: string
@@ -861,12 +1007,15 @@ export const StoredRowsRenameColumn: Story = {
         expect((write.body as { file?: string }).file).toBe(
             STORED_RENAME_COL_PATH,
         )
+        // ONE update per real stored row, the placeholder excluded.
         expect(updates.length).toBe(2)
         for (const u of updates) {
             expect(Number.isInteger(u.index)).toBe(true)
             expect((u.index as number) >= 0).toBe(true)
-            expect(u.note.description).toBeDefined()
-            expect(u.note.status).toBe('doing')
+            expect(u.note).toEqual({
+                ...STORED_RENAME_COL_ROWS[u.index as number]!.note,
+                status: 'doing',
+            })
         }
     },
 }
