@@ -27,7 +27,7 @@ export const Default: Story = {
 // FileTree.stories.tsx's `dragStarts` counter.
 let addedNames: string[] = []
 
-/** Clicking the ghost swaps in the text input, focused, with the `column name` placeholder;
+/** Clicking the ghost swaps in the text input, focused, with the `name` placeholder;
  *  typing a fresh name and hitting Enter fires `onAdd` with the trimmed name and the input
  *  resets back to the ghost trigger. */
 export const Editing: Story = {
@@ -47,7 +47,7 @@ export const Editing: Story = {
         // resting "+ column" text position to hold the input's text to within 1px of.
         const restRect = trigger.getBoundingClientRect()
         await userEvent.click(trigger)
-        const input = await canvas.findByPlaceholderText('column name')
+        const input = await canvas.findByPlaceholderText('name')
         expect(input).toBe(document.activeElement)
         // An <input> has no glyph rect of its own to read — its padding box (rect + its own
         // padding-left/top) is the closest available proxy for where its text starts, and it's
@@ -81,14 +81,14 @@ export const DuplicateRefused: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await userEvent.click(canvas.getByText('+ column'))
-        const input = await canvas.findByPlaceholderText('column name')
+        const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Doing')
         await userEvent.keyboard('{Enter}')
         const error = await canvas.findByText('already a column')
         expect(error).toBeVisible()
         expect(addedNames).toEqual([])
         // input is still open and still holds what was typed
-        expect(canvas.getByPlaceholderText('column name')).toHaveValue(
+        expect(canvas.getByPlaceholderText('name')).toHaveValue(
             'Doing',
         )
     },

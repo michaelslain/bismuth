@@ -1538,7 +1538,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
         )
 
         await userEvent.click(canvas.getByText('+ column'))
-        const input = await canvas.findByPlaceholderText('column name')
+        const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
 
