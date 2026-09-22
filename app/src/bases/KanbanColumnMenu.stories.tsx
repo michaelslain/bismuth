@@ -3,14 +3,29 @@
 // field); persisting a rename/delete is entirely the caller's `onRename`/`onDelete`. The popover
 // is portaled (AnchoredPopover), so play() reads it off `canvasElement.ownerDocument.body`, the
 // same pattern DateFieldEditor.stories.tsx uses.
+import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import KanbanColumnMenu from './KanbanColumnMenu'
+
+// The real trigger (KanbanColumnMenu.module.css `.trigger`) is `position: absolute; right:
+// var(--sp-5); top: 50%` against `.kanbanColHeader`, its `position: relative` ancestor in
+// KanbanView.module.css. Standalone here it has no such ancestor, so it anchors to the nearest
+// positioned ancestor instead — the story root — and its popover opens off that root's right
+// edge rather than the header's. This decorator reproduces just the header's positioning
+// context (relative + the column's own max width, 288px, from KanbanView.module.css) so the
+// trigger — and the popover anchored to it — sit exactly where they do in a real column.
+const headerDecorator = (Story: () => JSX.Element) => (
+    <div style={{ position: 'relative', width: '288px' }}>
+        <Story />
+    </div>
+)
 
 const meta = {
     title: 'Bases/KanbanColumnMenu',
     component: KanbanColumnMenu,
     parameters: { layout: 'padded' },
+    decorators: [headerDecorator],
 } satisfies Meta<typeof KanbanColumnMenu>
 
 export default meta
