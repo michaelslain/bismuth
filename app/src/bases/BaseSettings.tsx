@@ -735,7 +735,7 @@ export function BaseSettings(props: {
                                         <Show when={open()}>
                                             <div class={styles['propset-body']}>
                                                 <div class={styles['propset-fields']}>
-                                                    <div class={styles['propset-input']}>
+                                                    <div class={styles['propset-field']}>
                                                         <TextInput
                                                             value={row().name}
                                                             placeholder="Property name"
@@ -752,7 +752,7 @@ export function BaseSettings(props: {
                                                         </Show>
                                                     </div>
                                                     <Select
-                                                        class={styles['propset-input']}
+                                                        class={styles['propset-kind-select']}
                                                         value={row().kind}
                                                         options={KIND_OPTS}
                                                         onChange={v =>
