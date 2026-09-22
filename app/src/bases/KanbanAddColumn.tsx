@@ -1,7 +1,8 @@
-// The trailing "+ column" ghost column at the end of a kanban board's column row. Click swaps
-// the ghost header for a text input (KanbanColumnNameInput, shared with KanbanColumnMenu's
+// The trailing "+ column" ghost column at the end of a kanban board's column row. Click overlays
+// a text input on the ghost header (KanbanColumnNameInput, shared with KanbanColumnMenu's
 // rename field); Enter adds (refusing a duplicate name inline, matching `appendColumnKey`'s own
-// refusal so the two never disagree), Escape or a blur while empty cancels back to the ghost.
+// refusal so the two never disagree), Escape or a blur while empty cancels back to the ghost. The
+// trigger stays mounted (hidden) under the input so the swap never moves text or reflows the board.
 // Presentational only — KanbanView owns persisting the new column (optimistic `columns` order +
 // the `properties.options` append) via `onAdd`.
 import { createSignal, Show, type Component } from 'solid-js'
@@ -26,24 +27,18 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
             data-editing={editing() ? '' : undefined}
             data-testid="kanban-add-column"
         >
-            <Show
-                when={editing()}
-                fallback={
-                    <PlainButton
-                        class={styles.trigger}
-                        onClick={() => setEditing(true)}
-                    >
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="muted"
-                            weight="inherit"
-                        >
-                            + column
-                        </Text>
-                    </PlainButton>
-                }
+            {/* The trigger stays mounted while editing — hidden, not removed — so the ghost
+                keeps its exact rest footprint and the board never reflows; the input overlays
+                it out of flow (KanbanAddColumn.module.css's `.addField`). */}
+            <PlainButton
+                class={styles.trigger}
+                onClick={() => setEditing(true)}
             >
+                <Text as="span" size="inherit" tone="muted" weight="inherit">
+                    + column
+                </Text>
+            </PlainButton>
+            <Show when={editing()}>
                 <KanbanColumnNameInput
                     placeholder="name"
                     className={styles.addField}

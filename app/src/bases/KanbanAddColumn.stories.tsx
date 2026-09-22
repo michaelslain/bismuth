@@ -5,6 +5,13 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import KanbanAddColumn from './KanbanAddColumn'
+import {
+    boardWidths,
+    fontsSettled,
+    ghostOf,
+    inputTextOrigin,
+    restTextOrigin,
+} from '../ui/_kanbanAddColumnAssertions'
 
 const meta = {
     title: 'Bases/KanbanAddColumn',
@@ -33,31 +40,35 @@ let addedNames: string[] = []
 export const Editing: Story = {
     render: () => {
         addedNames = []
+        // A flex row, as KanbanView's column row is, so the ghost shrinks to its own content
+        // there too — in a block container it would fill the width and no growth could show.
         return (
-            <KanbanAddColumn
-                existing={['Todo', 'Doing', 'Done']}
-                onAdd={name => addedNames.push(name)}
-            />
+            <div style={{ display: 'flex' }}>
+                <KanbanAddColumn
+                    existing={['Todo', 'Doing', 'Done']}
+                    onAdd={name => addedNames.push(name)}
+                />
+            </div>
         )
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        await fontsSettled()
+        const ghost = ghostOf(canvasElement)
         const trigger = canvas.getByText('+ column')
-        // The trigger's own text box IS its glyph box (no extra padding around the <span>) — the
-        // resting "+ column" text position to hold the input's text to within 1px of.
-        const restRect = trigger.getBoundingClientRect()
+        const restOrigin = restTextOrigin(ghost)
+        const restWidths = boardWidths(canvasElement)
         await userEvent.click(trigger)
-        const input = await canvas.findByPlaceholderText('name')
+        const input = (await canvas.findByPlaceholderText(
+            'name',
+        )) as HTMLInputElement
         expect(input).toBe(document.activeElement)
-        // An <input> has no glyph rect of its own to read — its padding box (rect + its own
-        // padding-left/top) is the closest available proxy for where its text starts, and it's
-        // what KanbanAddColumn.module.css's `[data-editing]` padding is tuned against.
-        const cs = getComputedStyle(input)
-        const editRect = input.getBoundingClientRect()
-        const editTextX = editRect.left + parseFloat(cs.paddingLeft)
-        const editTextY = editRect.top + parseFloat(cs.paddingTop)
-        expect(Math.abs(editTextX - restRect.left)).toBeLessThanOrEqual(1)
-        expect(Math.abs(editTextY - restRect.top)).toBeLessThanOrEqual(1)
+        // The swap must neither move the text nor resize the ghost (which would reflow a board's
+        // real columns) — the same measurement KanbanView.stories' AddColumn asserts.
+        const editOrigin = inputTextOrigin(input)
+        expect(Math.abs(editOrigin.x - restOrigin.x)).toBeLessThanOrEqual(1)
+        expect(Math.abs(editOrigin.y - restOrigin.y)).toBeLessThanOrEqual(1)
+        expect(boardWidths(canvasElement)).toEqual(restWidths)
         await userEvent.type(input, '  Blocked  ')
         await userEvent.keyboard('{Enter}')
         expect(addedNames).toEqual(['Blocked'])
