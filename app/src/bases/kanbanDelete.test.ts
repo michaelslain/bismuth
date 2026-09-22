@@ -1,54 +1,114 @@
 import { expect, test, describe } from 'bun:test'
-import { markDeleted, unmarkDeleted, pruneDeleted } from './kanbanDelete'
+import { markDeleted, unmarkDeleted, pruneDeleted, isRowHidden } from './kanbanDelete'
 
 describe('markDeleted', () => {
-    test('adds a path and returns a fresh set (does not mutate prev)', () => {
-        const prev = new Set<string>(['a.md'])
+    test('adds an id (no snapshot — a note row) and returns a fresh map', () => {
+        const prev = new Map<string, string | undefined>([['a.md', undefined]])
         const next = markDeleted(prev, 'b.md')
         expect(next).not.toBe(prev)
-        expect([...next].sort()).toEqual(['a.md', 'b.md'])
-        expect([...prev]).toEqual(['a.md']) // prev untouched
+        expect([...next.keys()].sort()).toEqual(['a.md', 'b.md'])
+        expect(next.get('b.md')).toBeUndefined()
+        expect([...prev.keys()]).toEqual(['a.md']) // prev untouched
     })
-    test('re-adding an already-hidden path is idempotent in content', () => {
-        const prev = new Set<string>(['a.md'])
-        expect([...markDeleted(prev, 'a.md')]).toEqual(['a.md'])
+    test('adds an id WITH a snapshot (a stored row)', () => {
+        const prev = new Map<string, string | undefined>()
+        const next = markDeleted(prev, 'b.md#0', '{"title":"card"}')
+        expect(next.get('b.md#0')).toBe('{"title":"card"}')
+    })
+    test('re-adding an already-hidden id overwrites its entry', () => {
+        const prev = new Map<string, string | undefined>([['a.md#0', 'old']])
+        expect(markDeleted(prev, 'a.md#0', 'new').get('a.md#0')).toBe('new')
     })
 })
 
 describe('unmarkDeleted', () => {
-    test('removes a path and returns a fresh set', () => {
-        const prev = new Set<string>(['a.md', 'b.md'])
+    test('removes an id and returns a fresh map', () => {
+        const prev = new Map<string, string | undefined>([
+            ['a.md', undefined],
+            ['b.md', undefined],
+        ])
         const next = unmarkDeleted(prev, 'a.md')
         expect(next).not.toBe(prev)
-        expect([...next]).toEqual(['b.md'])
+        expect([...next.keys()]).toEqual(['b.md'])
     })
-    test("returns the SAME reference when the path wasn't hidden (no needless re-render)", () => {
-        const prev = new Set<string>(['a.md'])
+    test("returns the SAME reference when the id wasn't hidden (no needless re-render)", () => {
+        const prev = new Map<string, string | undefined>([['a.md', undefined]])
         expect(unmarkDeleted(prev, 'z.md')).toBe(prev)
     })
 })
 
+describe('isRowHidden', () => {
+    test('a note-row entry (no snapshot) hides by id alone', () => {
+        const map = new Map<string, string | undefined>([['a.md', undefined]])
+        expect(isRowHidden(map, 'a.md', undefined)).toBe(true)
+    })
+    test('an id not in the overlay is never hidden', () => {
+        const map = new Map<string, string | undefined>()
+        expect(isRowHidden(map, 'a.md', undefined)).toBe(false)
+    })
+    test('a stored-row entry hides only while the CURRENT snapshot at that id still matches', () => {
+        const map = new Map<string, string | undefined>([['b.md#0', '{"title":"x"}']])
+        expect(isRowHidden(map, 'b.md#0', '{"title":"x"}')).toBe(true)
+    })
+    test('a stored-row entry does NOT hide a different row shifted into the same id', () => {
+        // This is the delete-shifts-indexes bug: row #1 becomes row #0 after an earlier delete.
+        // Its content differs from the snapshot of the row that was actually deleted, so it must
+        // stay visible instead of being permanently swallowed by the stale id.
+        const map = new Map<string, string | undefined>([['b.md#0', '{"title":"deleted"}']])
+        expect(isRowHidden(map, 'b.md#0', '{"title":"shifted-in"}')).toBe(false)
+    })
+})
+
 describe('pruneDeleted', () => {
-    test('drops hidden paths the server data no longer contains', () => {
-        const prev = new Set<string>(['gone.md', 'still.md'])
-        const present = new Set<string>(['still.md', 'other.md'])
+    test('drops a note-row entry once the server no longer has its id (delete confirmed)', () => {
+        const prev = new Map<string, string | undefined>([
+            ['gone.md', undefined],
+            ['still.md', undefined],
+        ])
+        const present = new Map<string, string | undefined>([
+            ['still.md', undefined],
+            ['other.md', undefined],
+        ])
         const next = pruneDeleted(prev, present)
         expect(next).not.toBe(prev)
-        expect([...next]).toEqual(['still.md'])
+        expect([...next.keys()]).toEqual(['still.md'])
     })
-    test('keeps a hidden path still present in server data (delete not yet confirmed)', () => {
-        // Right after the optimistic hide, the deleted card is STILL in props.result until the
-        // refetch lands — pruneDeleted must NOT drop it, or the card would flash back.
-        const prev = new Set<string>(['pending.md'])
-        const present = new Set<string>(['pending.md'])
+    test('keeps a note-row entry still present in server data (delete not yet confirmed)', () => {
+        const prev = new Map<string, string | undefined>([['pending.md', undefined]])
+        const present = new Map<string, string | undefined>([['pending.md', undefined]])
         expect(pruneDeleted(prev, present)).toBe(prev) // unchanged → same reference
     })
-    test('empty set is a no-op returning the same reference', () => {
-        const prev = new Set<string>()
-        expect(pruneDeleted(prev, new Set(['x.md']))).toBe(prev)
+    test('empty map is a no-op returning the same reference', () => {
+        const prev = new Map<string, string | undefined>()
+        expect(pruneDeleted(prev, new Map([['x.md', undefined]]))).toBe(prev)
     })
-    test('prunes every stale path at once', () => {
-        const prev = new Set<string>(['a', 'b', 'c'])
-        expect([...pruneDeleted(prev, new Set(['b']))]).toEqual(['b'])
+    test('keeps a stored-row entry while the id still carries the deleted row\'s exact snapshot', () => {
+        const prev = new Map<string, string | undefined>([['b.md#0', '{"title":"x"}']])
+        const present = new Map<string, string | undefined>([['b.md#0', '{"title":"x"}']])
+        expect(pruneDeleted(prev, present)).toBe(prev)
+    })
+    test('THE BUG: prunes a stored-row entry once a shifted sibling lands at its id, even though the id is still present', () => {
+        // Deleting row #0 splices the array: what was row #1 refetches as row #0, carrying its
+        // OWN content, not the deleted row's. A bare id-presence check would wrongly keep hiding
+        // it forever; comparing the snapshot is what lets the shifted survivor show.
+        const prev = new Map<string, string | undefined>([['b.md#0', '{"title":"deleted"}']])
+        const present = new Map<string, string | undefined>([['b.md#0', '{"title":"shifted-in"}']])
+        const next = pruneDeleted(prev, present)
+        expect(next).not.toBe(prev)
+        expect(next.has('b.md#0')).toBe(false)
+    })
+    test('prunes a stored-row entry once its id disappears entirely (last row deleted, nothing shifted in)', () => {
+        const prev = new Map<string, string | undefined>([['b.md#2', '{"title":"x"}']])
+        const present = new Map<string, string | undefined>()
+        expect(pruneDeleted(prev, present).has('b.md#2')).toBe(false)
+    })
+    test('prunes every stale entry at once', () => {
+        const prev = new Map<string, string | undefined>([
+            ['a', undefined],
+            ['b', undefined],
+            ['c', undefined],
+        ])
+        const present = new Map<string, string | undefined>([['b', undefined]])
+        expect([...pruneDeleted(prev, present).keys()]).toEqual(['b'])
     })
 })

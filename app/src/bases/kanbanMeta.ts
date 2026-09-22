@@ -81,24 +81,32 @@ export function storedTitleColumn(order: string[]): string {
 }
 
 /** Which of a column's CURRENT rows is the real row a stored-row optimistic add resolved
- * to — the one whose id was NOT present before the add was made, and whose written property
- * carries the value the add wrote. Returns that row's id, or `undefined` when the real row
- * hasn't landed yet (nothing new, or nothing new matching).
+ * to — the one whose CONTENT was NOT present before the add was made, and whose written
+ * property carries the value the add wrote. Returns that row's id, or `undefined` when the
+ * real row hasn't landed yet (nothing new, or nothing new matching).
  *
  * Exists because the server APPENDS a stored row to the base file's raw row array
  * (core/src/bases/rowOps.ts `upsertRow`), not at a position this view's filtered/grouped
  * index can predict — a `filters:` block, or any row this view drops, makes a client-guessed
  * index wrong, and a wrong guess means the optimistic placeholder's rowId never matches the
  * real one and lingers forever (a permanent ghost duplicate). Matching by "new since the add"
- * + "carries the written value" needs no index at all. */
+ * + "carries the written value" needs no index at all.
+ *
+ * `priorSnapshots` is a set of the pre-add rows' CONTENT (e.g. `JSON.stringify(storedNote(r))`),
+ * not their ids. Ids are the wrong thing to diff against: `rowOps.ts`'s `rows.splice(index, 1)`
+ * (a delete, possibly of an unrelated row, landing between the add and this resolve) shifts
+ * every later row's id down by one, so the newly-added row can land at an id a PRIOR row already
+ * held — an id-keyed "was this id here before" check then wrongly excludes it forever. A row's
+ * content survives that shift unchanged, so a content-keyed check is immune to it. */
 export function matchedStoredRowId(
-    rows: { id: string; value: unknown }[],
-    priorIds: Set<string>,
+    rows: { id: string; snapshot: string; value: unknown }[],
+    priorSnapshots: Set<string>,
     matchValue: unknown,
 ): string | undefined {
     const want = JSON.stringify(matchValue)
-    return rows.find(r => !priorIds.has(r.id) && JSON.stringify(r.value) === want)
-        ?.id
+    return rows.find(
+        r => !priorSnapshots.has(r.snapshot) && JSON.stringify(r.value) === want,
+    )?.id
 }
 
 /** Resolve the frontmatter key to WRITE for a property id, or null when the id names a

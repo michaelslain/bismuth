@@ -546,7 +546,7 @@ export const RenameColumn: Story = {
         // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
         const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
         await userEvent.click(todoMenus[0]!)
-        await userEvent.click(await body.findByText('Rename'))
+        await userEvent.click(await body.findByText(/^rename$/i))
         // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
         // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
         const input = await waitFor(
@@ -641,7 +641,7 @@ export const DeleteEmptyColumn: Story = {
         )!
         const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
         await userEvent.click(blockedMenu)
-        const del = await body.findByText('Delete')
+        const del = await body.findByText(/^delete$/i)
         await userEvent.click(del)
 
         await waitFor(() =>
