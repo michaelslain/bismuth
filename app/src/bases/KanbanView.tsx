@@ -28,6 +28,11 @@ import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
 import {
+    groupUpdatesByPath,
+    rollbackPending,
+    rollbackRemoved,
+} from './kanbanRollback'
+import {
     flushEditorsAtOrUnder,
     flushSidecarsAtOrUnder,
 } from '../editorRegistry'
@@ -806,9 +811,11 @@ export function KanbanView(props: {
         // `serializeRows` does not strip. Writing `r.note` back would bake all seven
         // computed task columns into the user's file as stale stored data.
         if (canWriteStoredRow(dragged)) {
-            if (!props.basePath) return
-            const basePath = props.basePath
-            const updates = newList.map((r, k) => ({
+            // The row's OWN file, not props.basePath: a `source:` base's rows carry
+            // `syntheticBaseFile(<that base's path>)`, so props.basePath would silently write
+            // this board's own file instead of the board it actually sources from.
+            const items = newList.map((r, k) => ({
+                path: r.file.path,
                 index: r.index!,
                 note: {
                     ...storedNote(r),
@@ -818,7 +825,11 @@ export function KanbanView(props: {
                     [ORDER_KEY]: k,
                 },
             }))
-            await api.rowUpdateMany(basePath, updates)
+            for (const [path, group] of groupUpdatesByPath(items))
+                await api.rowUpdateMany(
+                    path,
+                    group.map(g => ({ index: g.index, note: g.note })),
+                )
             return
         }
 
@@ -928,8 +939,14 @@ export function KanbanView(props: {
         // Optimistic, like reorderColumns: the column appears instantly (empty), settling once
         // the `columns` write's SSE-driven refetch lands. Rolled back on a failed write below —
         // otherwise columnKeys() keeps rendering a phantom column with no server group forever.
+        const trimmedName = name.trim()
         const prevOrder = pendingColOrder()
         setPendingColOrder(keys)
+        // A column removed then re-added inside the refetch window is still in
+        // pendingRemovedCols (its own removal write's refetch hasn't landed yet), and
+        // columnKeys() filters every removed key out — without deleting it here the re-added
+        // column would stay invisible until the OLD removal's refetch happens to clear it.
+        setPendingRemovedCols(prev => rollbackRemoved(prev, trimmedName))
         try {
             await api.setViewProperty(
                 basePath,
@@ -951,7 +968,10 @@ export function KanbanView(props: {
             if (updated)
                 await api.setProperty(basePath, 'properties', updated)
         } catch (e) {
-            setPendingColOrder(prevOrder)
+            // Only-if-still-mine: another column action (reorder/rename/delete) may have
+            // written a newer `pendingColOrder` during this await — restoring `prevOrder`
+            // unconditionally would clobber that action's own in-flight state.
+            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
             pushToast(`Add column failed: ${(e as Error).message}`)
         }
     }
@@ -976,42 +996,68 @@ export function KanbanView(props: {
         const statusKey = gb ? writableKey(gb.property) : null
         if (statusKey === null) return
 
-        // The cards to move, captured BEFORE the optimistic overlay below empties `from`.
-        const movedRows = groupByKey(from).rows
+        // A view `limit` caps every group's rows (`query.ts`'s `applyLimit`), so
+        // `groupByKey(from).rows` can be a TRUNCATED set — renaming would move only the
+        // visible cards and strand the hidden ones under the old key forever. Refuse before
+        // any optimistic state.
+        if (typeof props.result.view.limit === 'number') {
+            pushToast('rename unavailable // this view has a limit')
+            return
+        }
+
+        // The cards to move, captured BEFORE the optimistic overlay below empties `from` — and
+        // excluding stored-row PLACEHOLDERS (a negative `index`, an optimistic add not yet
+        // resolved to a real row): sending one to the server as a rename target 400s, and the
+        // rollback would then fire after `columns` already landed.
+        const movedRows = groupByKey(from).rows.filter(
+            r => !(Number.isInteger(r.index) && r.index! < 0),
+        )
 
         // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly, the old
         // key is hidden (columnKeys() would otherwise re-append it while the server still reports
         // it) and its cards render under the new key through the card overlay. All rolled back on
         // any failed write below — a partial rename otherwise leaves the column showing its new
         // name while the server still has the old one, permanently out of sync.
+        // Whether `from` was ALREADY hidden before this call — if so, this call didn't add it
+        // and must not remove it on rollback (some other in-flight action owns that removal).
+        const alreadyRemoved = pendingRemovedCols().has(from)
         const prevOrder = pendingColOrder()
-        const prevRemoved = pendingRemovedCols()
-        const prevPending = pending()
+        // The exact entries THIS call is about to write into `pending`, so a rollback can undo
+        // only these (by `===` identity) rather than clobbering an overlay entry another
+        // action wrote during this call's await.
+        const writtenPending: Record<string, PendingMove> = {}
+        movedRows.forEach((r, k) => {
+            const o = (r.note as Record<string, unknown>)[ORDER_KEY]
+            writtenPending[rowId(r)] = {
+                key: trimmed,
+                order: typeof o === 'number' ? o : k,
+                keyOnly: true,
+            }
+        })
+        // Whether the `columns` write below has landed — once it has, the column itself is
+        // already renamed server-side, so a failure afterward is a PARTIAL failure (toast +
+        // refetch), not a full rollback of the rename overlay.
+        let columnsLanded = false
         setPendingColOrder(keys)
         setPendingRemovedCols(prev => new Set(prev).add(from))
-        setPending(prev => {
-            const next = { ...prev }
-            movedRows.forEach((r, k) => {
-                const o = (r.note as Record<string, unknown>)[ORDER_KEY]
-                next[rowId(r)] = {
-                    key: trimmed,
-                    order: typeof o === 'number' ? o : k,
-                    keyOnly: true,
-                }
-            })
-            return next
-        })
+        setPending(prev => ({ ...prev, ...writtenPending }))
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
+            columnsLanded = true
 
-            // Move a color override from the old key to the new one, if it had one.
+            // Move a color override from the old key to the new one, if it had one — or, when
+            // there was none, PIN the color it already had: `colColor`'s fallback hashes the
+            // KEY, so leaving `groupColors` untouched would silently recolor the renamed
+            // column via a hash-of-`trimmed` slot instead of keeping `from`'s.
             const colors = groupColors()
+            const next = { ...colors }
             if (colors[from] !== undefined) {
-                const next = { ...colors }
                 next[trimmed] = next[from]!
                 delete next[from]
-                await api.setViewProperty(basePath, idx, 'groupColors', next)
+            } else {
+                next[trimmed] = colColor(from)
             }
+            await api.setViewProperty(basePath, idx, 'groupColors', next)
 
             // Declared select/multiselect option rename — mirrors addColumn's append.
             const t = gb ? propertyType(props.config, gb.property) : null
@@ -1030,17 +1076,28 @@ export function KanbanView(props: {
             }
 
             // Move every card currently in the renamed column — ONE batched write per write
-            // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
-            // statusKey is non-null here — guarded at the top of the function.
+            // TARGET (a file path), same two-target split as dropCard/setMetaProperty
+            // (`canWriteStoredRow`). statusKey is non-null here — guarded at the top of the
+            // function. A stored row's write target is ITS OWN `file.path` (a `source:` base's
+            // rows carry `syntheticBaseFile(<that base's path>)` — never `props.basePath`
+            // blindly, which would land on the wrong base for a `source:` board), so the
+            // updates are grouped by path and issued one `rowUpdateMany` call per path — one
+            // call total for an own-rows board, where every row shares the same path.
             const rows = movedRows
             const storedRows = rows.filter(canWriteStoredRow)
             const noteRows = rows.filter(r => !canWriteStoredRow(r))
             if (storedRows.length > 0) {
-                const updates = storedRows.map(r => ({
+                const items = storedRows.map(r => ({
+                    path: r.file.path,
                     index: r.index!,
                     note: { ...storedNote(r), [statusKey]: trimmed },
                 }))
-                await api.rowUpdateMany(basePath, updates)
+                for (const [path, group] of groupUpdatesByPath(items)) {
+                    await api.rowUpdateMany(
+                        path,
+                        group.map(g => ({ index: g.index, note: g.note })),
+                    )
+                }
             }
             if (noteRows.length > 0) {
                 const writes = noteRows.map(r => ({
@@ -1052,10 +1109,19 @@ export function KanbanView(props: {
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(prevOrder)
-            setPendingRemovedCols(prevRemoved)
-            setPending(prevPending)
-            pushToast(`Rename column failed: ${(e as Error).message}`)
+            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            setPendingRemovedCols(prev =>
+                rollbackRemoved(prev, alreadyRemoved ? null : from),
+            )
+            setPending(prev => rollbackPending(prev, writtenPending))
+            if (columnsLanded) {
+                props.onChange()
+                pushToast(
+                    `Rename column partially applied: ${(e as Error).message}`,
+                )
+            } else {
+                pushToast(`Rename column failed: ${(e as Error).message}`)
+            }
         }
     }
 
@@ -1067,8 +1133,9 @@ export function KanbanView(props: {
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
         const keys = removeColumnKey(columnKeys(), key)
+        const alreadyRemoved = pendingRemovedCols().has(key)
         const prevOrder = pendingColOrder()
-        const prevRemoved = pendingRemovedCols()
+        let columnsLanded = false
         // Optimistic, like add/rename: the column disappears instantly. Both signals rolled back
         // on a failed write — otherwise the column vanishes from the UI for good even though the
         // server still has it, or worse, columnKeys() keeps hiding a key the server never lost.
@@ -1076,6 +1143,7 @@ export function KanbanView(props: {
         setPendingRemovedCols(prev => new Set(prev).add(key))
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
+            columnsLanded = true
             const colors = groupColors()
             if (colors[key] !== undefined) {
                 const next = { ...colors }
@@ -1087,8 +1155,17 @@ export function KanbanView(props: {
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(prevOrder)
-            setPendingRemovedCols(prevRemoved)
+            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            setPendingRemovedCols(prev =>
+                rollbackRemoved(prev, alreadyRemoved ? null : key),
+            )
+            if (columnsLanded) {
+                props.onChange()
+                pushToast(
+                    `Delete column partially applied: ${(e as Error).message}`,
+                )
+                return
+            }
             pushToast(`Delete column failed: ${(e as Error).message}`)
         }
     }
@@ -1118,11 +1195,12 @@ export function KanbanView(props: {
     // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
     async function renameCard(row: Row, newTitle: string): Promise<void> {
         if (canWriteStoredRow(row)) {
-            if (!props.basePath) return
             const key = writableKey(titleCol())
             if (key === null) return
             const note = { ...storedNote(row), [key]: newTitle }
-            await api.rowUpdate(props.basePath, row.index!, note)
+            // The row's OWN file (see `dropCard`'s comment) — never `props.basePath`, which is
+            // the wrong target for a `source:` board's row.
+            await api.rowUpdate(row.file.path, row.index!, note)
             return
         }
         // A rename changes the note's path, so the refetch below re-keys the row and remounts the
@@ -1156,12 +1234,12 @@ export function KanbanView(props: {
         const key = writableKey(id)
         if (key === null) return
         if (canWriteStoredRow(row)) {
-            if (!props.basePath) return
             const note = { ...storedNote(row) }
             if (value === null || value === undefined || value === '')
                 delete note[key]
             else note[key] = value
-            await api.rowUpdate(props.basePath, row.index!, note)
+            // The row's OWN file — see `dropCard`'s comment on why never `props.basePath`.
+            await api.rowUpdate(row.file.path, row.index!, note)
             return
         }
         if (value === null || value === undefined || value === '')
@@ -1245,20 +1323,17 @@ export function KanbanView(props: {
         requestAnimationFrame(playFlip)
 
         if (canWriteStoredRow(row)) {
-            if (!props.basePath) {
-                setDeletedIds(prev => unmarkDeleted(prev, id))
-                return
-            }
-            const basePath = props.basePath
+            // The row's OWN file — see `dropCard`'s comment on why never `props.basePath`.
+            const path = row.file.path
             const note = { ...storedNote(row) }
             const titleKey = writableKey(titleCol())
             const name = String((titleKey ? note[titleKey] : undefined) ?? 'card')
             try {
-                await api.rowDelete(basePath, row.index!)
+                await api.rowDelete(path, row.index!)
                 pushToast(`Deleted "${name}"`, {
                     label: 'Undo',
                     onClick: () =>
-                        void restoreStoredCard(basePath, note, id, name),
+                        void restoreStoredCard(path, note, id, name),
                 })
             } catch (e) {
                 setDeletedIds(prev => unmarkDeleted(prev, id))
@@ -1295,13 +1370,13 @@ export function KanbanView(props: {
      *  drops right away; the prune-effect above clears the `deletedIds` entry for good once
      *  the SSE refetch confirms the row is really back. */
     async function restoreStoredCard(
-        basePath: string,
+        path: string,
         note: Record<string, unknown>,
         id: string,
         name: string,
     ): Promise<void> {
         try {
-            await api.rowCreate(basePath, note)
+            await api.rowCreate(path, note)
             setDeletedIds(prev => unmarkDeleted(prev, id))
             pushToast(`Restored "${name}"`)
         } catch (e) {
@@ -1446,7 +1521,18 @@ export function KanbanView(props: {
                     },
                 },
             ])
-            await api.rowCreate(basePath, front)
+            try {
+                await api.rowCreate(basePath, front)
+            } catch (e) {
+                // Drop exactly this call's placeholder (matched by its own optimistic index —
+                // never "the last pendingAdds entry", which could belong to a different add
+                // that raced in during this await) so a failed add never leaves a permanent
+                // ghost card.
+                setPendingAdds(prev =>
+                    prev.filter(a => a.row.index !== optimistic.index),
+                )
+                pushToast(`Add card failed: ${(e as Error).message}`)
+            }
             return
         }
 
