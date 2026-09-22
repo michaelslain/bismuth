@@ -257,6 +257,14 @@ export function KanbanView(props: {
     const [pendingColOrder, setPendingColOrder] = createSignal<string[] | null>(
         null,
     )
+    // Columns deleted optimistically — the server keeps reporting a deleted key (still pinned
+    // in `groupOrder`/its group) until the `columns` write's refetch lands, and `columnKeys()`
+    // appends every server key its pending order doesn't know about, so without this exclusion
+    // set a just-deleted column would be re-appended and appear to never leave. Cleared once the
+    // server no longer reports the key (same shape as the pendingColOrder clear-effect below).
+    const [pendingRemovedCols, setPendingRemovedCols] = createSignal<Set<string>>(
+        new Set(),
+    )
 
     /** Effective within-column sort order: the pending (optimistic) order if this card has one for
      * this column, else its explicit `order`, else its stable engine position. */
@@ -485,13 +493,17 @@ export function KanbanView(props: {
     // Column KEY order to render (the outer <For> is keyed by these strings, so a reorder MOVES the
     // column DOM instead of re-rendering every column's content). Applies the optimistic order.
     const columnKeys = (): string[] => {
-        const keys = displayGroups().map(g => g.key)
+        const removed = pendingRemovedCols()
+        const keys = displayGroups()
+            .map(g => g.key)
+            .filter(k => !removed.has(k))
         const order = pendingColOrder()
         if (!order) return keys
         // Keep the FULL pending order, including keys with no server group yet (a
         // just-added column) — groupByKey falls back to an empty group for those, so
-        // they still render. Append any server key the pending order doesn't know about.
-        const out = order.slice()
+        // they still render. Append any server key the pending order doesn't know about
+        // (but never a key that was just optimistically deleted).
+        const out = order.filter(k => !removed.has(k))
         for (const k of keys) if (!out.includes(k)) out.push(k)
         return out
     }
@@ -535,6 +547,18 @@ export function KanbanView(props: {
             const b = order.filter(k => serverKeys.includes(k))
             if (a.length === b.length && a.every((k, i) => k === b[i]))
                 setPendingColOrder(null)
+        })
+    })
+
+    // Clear a pending-removed column once the server no longer reports its key.
+    createEffect(() => {
+        const groups = props.result.groups
+        untrack(() => {
+            const removed = pendingRemovedCols()
+            if (removed.size === 0) return
+            const serverKeys = new Set(groups.map(g => g.key))
+            const next = new Set([...removed].filter(k => serverKeys.has(k)))
+            if (next.size !== removed.size) setPendingRemovedCols(next)
         })
     })
 
@@ -863,27 +887,36 @@ export function KanbanView(props: {
         if (!props.basePath) return
         const keys = appendColumnKey(columnKeys(), name)
         if (keys === null) return
+        const basePath = props.basePath
         // Optimistic, like reorderColumns: the column appears instantly (empty), settling once
-        // the `columns` write's SSE-driven refetch lands.
+        // the `columns` write's SSE-driven refetch lands. Rolled back on a failed write below —
+        // otherwise columnKeys() keeps rendering a phantom column with no server group forever.
+        const prevOrder = pendingColOrder()
         setPendingColOrder(keys)
-        await api.setViewProperty(
-            props.basePath,
-            props.viewIndex ?? 0,
-            'columns',
-            keys,
-        )
-        const gb = groupBy()
-        if (!gb) return
-        const t = propertyType(props.config, gb.property)
-        if (t?.kind !== 'select' && t?.kind !== 'multiselect') return
-        const declName = declaredPropertyName(gb.property)
-        if (!declName) return
-        const updated = withPropertyOption(
-            declaredPropertiesRaw(),
-            declName,
-            name.trim(),
-        )
-        if (updated) await api.setProperty(props.basePath, 'properties', updated)
+        try {
+            await api.setViewProperty(
+                basePath,
+                props.viewIndex ?? 0,
+                'columns',
+                keys,
+            )
+            const gb = groupBy()
+            if (!gb) return
+            const t = propertyType(props.config, gb.property)
+            if (t?.kind !== 'select' && t?.kind !== 'multiselect') return
+            const declName = declaredPropertyName(gb.property)
+            if (!declName) return
+            const updated = withPropertyOption(
+                declaredPropertiesRaw(),
+                declName,
+                name.trim(),
+            )
+            if (updated)
+                await api.setProperty(basePath, 'properties', updated)
+        } catch (e) {
+            setPendingColOrder(prevOrder)
+            pushToast(`Add column failed: ${(e as Error).message}`)
+        }
     }
 
     // ── Column rename — rewrites `columns`, moves any `groupColors` override, renames a
@@ -897,60 +930,68 @@ export function KanbanView(props: {
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
 
-        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly.
+        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly. Rolled
+        // back on any failed write below — a partial rename otherwise leaves the column showing
+        // its new name while the server still has the old one, permanently out of sync.
+        const prevOrder = pendingColOrder()
         setPendingColOrder(keys)
-        await api.setViewProperty(basePath, idx, 'columns', keys)
+        try {
+            await api.setViewProperty(basePath, idx, 'columns', keys)
 
-        // Move a color override from the old key to the new one, if it had one.
-        const colors = groupColors()
-        if (colors[from] !== undefined) {
-            const next = { ...colors }
-            next[trimmed] = next[from]!
-            delete next[from]
-            await api.setViewProperty(basePath, idx, 'groupColors', next)
-        }
+            // Move a color override from the old key to the new one, if it had one.
+            const colors = groupColors()
+            if (colors[from] !== undefined) {
+                const next = { ...colors }
+                next[trimmed] = next[from]!
+                delete next[from]
+                await api.setViewProperty(basePath, idx, 'groupColors', next)
+            }
 
-        // Declared select/multiselect option rename — mirrors addColumn's append.
-        const gb = groupBy()
-        const t = gb ? propertyType(props.config, gb.property) : null
-        if (gb && (t?.kind === 'select' || t?.kind === 'multiselect')) {
-            const declName = declaredPropertyName(gb.property)
-            if (declName) {
-                const updated = renamePropertyOption(
-                    declaredPropertiesRaw(),
-                    declName,
-                    from,
-                    trimmed,
-                )
-                if (updated)
-                    await api.setProperty(basePath, 'properties', updated)
+            // Declared select/multiselect option rename — mirrors addColumn's append.
+            const gb = groupBy()
+            const t = gb ? propertyType(props.config, gb.property) : null
+            if (gb && (t?.kind === 'select' || t?.kind === 'multiselect')) {
+                const declName = declaredPropertyName(gb.property)
+                if (declName) {
+                    const updated = renamePropertyOption(
+                        declaredPropertiesRaw(),
+                        declName,
+                        from,
+                        trimmed,
+                    )
+                    if (updated)
+                        await api.setProperty(basePath, 'properties', updated)
+                }
             }
-        }
 
-        // Move every card currently in the renamed column — ONE batched write per write
-        // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
-        const statusKey = gb ? writableKey(gb.property) : null
-        if (statusKey !== null) {
-            const rows = groupByKey(from).rows
-            const storedRows = rows.filter(canWriteStoredRow)
-            const noteRows = rows.filter(r => !canWriteStoredRow(r))
-            if (storedRows.length > 0) {
-                const updates = storedRows.map(r => ({
-                    index: r.index!,
-                    note: { ...storedNote(r), [statusKey]: trimmed },
-                }))
-                await api.rowUpdateMany(basePath, updates)
+            // Move every card currently in the renamed column — ONE batched write per write
+            // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
+            const statusKey = gb ? writableKey(gb.property) : null
+            if (statusKey !== null) {
+                const rows = groupByKey(from).rows
+                const storedRows = rows.filter(canWriteStoredRow)
+                const noteRows = rows.filter(r => !canWriteStoredRow(r))
+                if (storedRows.length > 0) {
+                    const updates = storedRows.map(r => ({
+                        index: r.index!,
+                        note: { ...storedNote(r), [statusKey]: trimmed },
+                    }))
+                    await api.rowUpdateMany(basePath, updates)
+                }
+                if (noteRows.length > 0) {
+                    const writes = noteRows.map(r => ({
+                        path: r.file.path,
+                        key: statusKey,
+                        value: trimmed,
+                    }))
+                    await api.setProperties(writes)
+                }
             }
-            if (noteRows.length > 0) {
-                const writes = noteRows.map(r => ({
-                    path: r.file.path,
-                    key: statusKey,
-                    value: trimmed,
-                }))
-                await api.setProperties(writes)
-            }
+            props.onChange()
+        } catch (e) {
+            setPendingColOrder(prevOrder)
+            pushToast(`Rename column failed: ${(e as Error).message}`)
         }
-        props.onChange()
     }
 
     // ── Column delete — only ever called for an empty column (KanbanColumnMenu gates it via
@@ -961,17 +1002,30 @@ export function KanbanView(props: {
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
         const keys = removeColumnKey(columnKeys(), key)
+        const prevOrder = pendingColOrder()
+        const prevRemoved = pendingRemovedCols()
+        // Optimistic, like add/rename: the column disappears instantly. Both signals rolled back
+        // on a failed write — otherwise the column vanishes from the UI for good even though the
+        // server still has it, or worse, columnKeys() keeps hiding a key the server never lost.
         setPendingColOrder(keys)
-        await api.setViewProperty(basePath, idx, 'columns', keys)
-        const colors = groupColors()
-        if (colors[key] !== undefined) {
-            const next = { ...colors }
-            delete next[key]
-            if (Object.keys(next).length === 0)
-                await api.deleteViewProperty(basePath, idx, 'groupColors')
-            else await api.setViewProperty(basePath, idx, 'groupColors', next)
+        setPendingRemovedCols(prev => new Set(prev).add(key))
+        try {
+            await api.setViewProperty(basePath, idx, 'columns', keys)
+            const colors = groupColors()
+            if (colors[key] !== undefined) {
+                const next = { ...colors }
+                delete next[key]
+                if (Object.keys(next).length === 0)
+                    await api.deleteViewProperty(basePath, idx, 'groupColors')
+                else
+                    await api.setViewProperty(basePath, idx, 'groupColors', next)
+            }
+            props.onChange()
+        } catch (e) {
+            setPendingColOrder(prevOrder)
+            setPendingRemovedCols(prevRemoved)
+            pushToast(`Delete column failed: ${(e as Error).message}`)
         }
-        props.onChange()
     }
 
     // ── Column color — persist/clear an override in `groupColors`. ──

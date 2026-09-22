@@ -542,7 +542,11 @@ export const RenameColumn: Story = {
         )
         expect(cardsBefore.length).toBe(2)
 
-        await userEvent.click(canvas.getAllByLabelText('Column menu')[0]!)
+        // Scope to Todo's own menu trigger rather than assuming it's rendered first — column
+        // order is derived data (groupBy option order), not a layout guarantee this story should
+        // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
+        const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
+        await userEvent.click(todoMenus[0]!)
         await userEvent.click(await body.findByText('Rename'))
         const input = await body.findByDisplayValue('Todo')
         await userEvent.clear(input)
