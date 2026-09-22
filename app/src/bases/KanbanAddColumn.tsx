@@ -24,6 +24,7 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
         <div
             class={[styles.ghost, props.className].filter(Boolean).join(' ')}
             data-editing={editing() ? '' : undefined}
+            data-testid="kanban-add-column"
         >
             <Show
                 when={editing()}
@@ -44,7 +45,8 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
                 }
             >
                 <KanbanColumnNameInput
-                    placeholder="column name"
+                    placeholder="name"
+                    className={styles.addField}
                     existing={props.existing}
                     onSubmit={name => {
                         props.onAdd(name)
