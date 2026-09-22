@@ -44,8 +44,14 @@
 /* expanded editor: full form for exactly one row */
 .panel .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); }
 .panel .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
+/* The name field's own column — wraps its TextInput + the duplicate-name warning below it, so
+   the grid cell grows with the warning instead of it overflowing into the kind Select's column. */
+.panel .propset-input { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
+.panel .propset-dupe { color: var(--danger); }
 .panel .propset-extra { width: 100%; }
-.panel .propset-options { min-height: 46px; resize: vertical; }
+/* Tall enough to show a handful of options at once without immediately needing the resize
+   handle — was 46px (one line), which clipped a select/multiselect's option list to a sliver. */
+.panel .propset-options { min-height: 84px; resize: vertical; }
 .panel .propset-numrow { display: flex; gap: var(--sp-4); }
 .propset-numrow-unit { flex: 1; }
 .panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }

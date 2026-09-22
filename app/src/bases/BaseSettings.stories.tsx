@@ -209,6 +209,116 @@ export const EmptyRows: Story = {
  *  name-first ("status" then "select" then the nested eye button's aria-label — see
  *  `propset-head`'s child order), so anchoring the match to the START of the name picks the
  *  row, not the nested toggle. */
+/** I2 regression: the Properties list keyed `<For each={propRows()}>` by the row OBJECT, and
+ *  `updateRow` replaces that object on every keystroke — so `<For>` unmounted and remounted the
+ *  row's DOM on the FIRST character, dropping focus before a second character could land. Only
+ *  `<Index>` (keyed by position, like the Columns list above) keeps the same input node across
+ *  the update. Types into an expanded row's name field one character at a time and asserts the
+ *  input stays `document.activeElement` throughout AND ends up holding the full string — either
+ *  half failing independently would mean the fix is incomplete (focus kept but value truncated,
+ *  or vice versa). */
+export const TypeIntoPropertyName: Story = {
+    render: () => (
+        <BaseSettings
+            type="table"
+            config={sampleBaseConfig({
+                views: [{ type: 'table', name: 'Table' }],
+            })}
+            viewIdx={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+    play: async () => {
+        const canvas = within(document.body)
+        const doneRow = await canvas.findByRole('button', { name: /^done/i })
+        await userEvent.click(doneRow)
+        const nameInput = (await canvas.findByPlaceholderText(
+            'Property name',
+        )) as HTMLInputElement
+        nameInput.focus()
+        await userEvent.clear(nameInput)
+        await userEvent.type(nameInput, 'abc')
+        await expect(document.activeElement).toBe(nameInput)
+        await expect(nameInput.value).toBe('abc')
+    },
+}
+
+/** Same regression as `TypeIntoPropertyName`, for the options textarea — where it bit hardest:
+ *  a multiselect/select row's options field only ever kept the FIRST typed character, so
+ *  entering a comma-separated option list was impossible through the UI. Expands the
+ *  multiselect "tags" row and types a full comma-separated list into its options textarea. */
+export const TypeOptions: Story = {
+    render: () => (
+        <BaseSettings
+            type="table"
+            config={sampleBaseConfig({
+                views: [{ type: 'table', name: 'Table' }],
+            })}
+            viewIdx={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+    play: async () => {
+        const canvas = within(document.body)
+        const tagsRow = await canvas.findByRole('button', { name: /^tags/i })
+        await userEvent.click(tagsRow)
+        const optionsField = (await canvas.findByPlaceholderText(
+            /Options —/,
+        )) as HTMLTextAreaElement
+        optionsField.focus()
+        await userEvent.clear(optionsField)
+        await userEvent.type(optionsField, 'feature, bug, change')
+        await expect(document.activeElement).toBe(optionsField)
+        await expect(optionsField.value).toBe('feature, bug, change')
+    },
+}
+
+/** `buildPropertiesYaml` keeps only the FIRST of two rows sharing a (trimmed, case-sensitive)
+ *  name and silently drops the rest — so renaming a row to collide with an existing name would
+ *  quietly shrink the saved property set with no feedback. `duplicatePropertyNames` surfaces the
+ *  collision as a warning under the later row's name field, and SAVE disables while any
+ *  duplicate exists. Renames the "priority" row to the already-used name "status". */
+export const DuplicatePropertyName: Story = {
+    render: () => (
+        <BaseSettings
+            type="table"
+            config={sampleBaseConfig({
+                views: [{ type: 'table', name: 'Table' }],
+            })}
+            viewIdx={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+    play: async () => {
+        const canvas = within(document.body)
+        const priorityRow = await canvas.findByRole('button', {
+            name: /^priority/i,
+        })
+        await userEvent.click(priorityRow)
+        const nameInput = (await canvas.findByPlaceholderText(
+            'Property name',
+        )) as HTMLInputElement
+        nameInput.focus()
+        await userEvent.clear(nameInput)
+        await userEvent.type(nameInput, 'status')
+        await expect(
+            canvas.getByText(/already uses this name/i),
+        ).toBeInTheDocument()
+        const saveBtn = canvas.getByText('SAVE').closest('button')
+        await expect(saveBtn).not.toBeNull()
+        await expect(saveBtn!.disabled).toBe(true)
+    },
+}
+
 export const ExpandPropertyRow: Story = {
     render: () => (
         <BaseSettings
