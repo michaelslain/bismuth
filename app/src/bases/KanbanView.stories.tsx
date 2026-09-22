@@ -4,12 +4,13 @@
 // (fired after a write); a no-op here since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { createSignal } from 'solid-js'
 import { KanbanView } from './KanbanView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { runView } from '../../../core/src/bases/query'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row } from '../../../core/src/bases/types'
-import { setTransport } from '../api'
+import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { FakeTransportSeed } from '../ui/_fakeTransport'
 import type { Transport } from '../api'
@@ -658,5 +659,214 @@ export const DeleteEmptyColumn: Story = {
         expect(
             (columnsWrite!.body as { value: string[] }).value,
         ).not.toContain('Blocked')
+    },
+}
+
+// Three rows stored in ONE own-rows base, deleted from row 0 — proves a stored-row delete
+// splices the SERVER-side array (not just the optimistic client-side hide) and a subsequent
+// `/rows` read reflects it: the remaining two rows keep their original titles, shifted down to
+// indexes 0/1.
+const STORED_DELETE_PATH = 'boards/stored-delete.md'
+function storedDeleteRows(): Row[] {
+    return [
+        { description: 'write the spec', status: 'Todo' },
+        { description: 'fix the flake', status: 'Todo' },
+        { description: 'ship the release', status: 'Todo' },
+    ].map((note, index) => ({
+        file: syntheticBaseFile(STORED_DELETE_PATH),
+        note,
+        formula: {},
+        index,
+    }))
+}
+
+// Set by the story's render() once the wrapper component mounts, called by play() AFTER it has
+// observed the `/row/delete` write land — same "capture in render, drive from play" shape as
+// `kanbanCalls` above, but for a refetch trigger rather than a request log. No sleep: play()
+// waits on the captured request, not on a timer.
+let deleteShiftRefetch: () => Promise<void> = async () => {}
+
+/** A stored-row delete's write path (`api.rowDelete` -> `POST /row/delete`) and read path
+ *  (`POST /rows`) share the SAME server-side array — this fake transport splices it on delete so
+ *  the next `/rows` resolve proves the row actually left the store, not just the client's
+ *  optimistic hide. `deleteShiftRefetch` re-runs `api.resolveRows` + `runView` to rebuild the
+ *  board from that fresh read, on demand — never a timer. */
+export const StoredRowsDeleteShift: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        let liveRows = storedDeleteRows()
+        const base = fakeTransport()
+        const calls: { path: string; body: unknown }[] = []
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                calls.push({ path, body })
+                if (path === '/row/delete') {
+                    const { index } = body as { index: number }
+                    liveRows = liveRows
+                        .filter((_, i) => i !== index)
+                        .map((r, i) => ({ ...r, index: i }))
+                    return new Response('ok')
+                }
+                return base.post(path, body)
+            },
+            postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+                if (path === '/rows') return liveRows as unknown as T
+                return base.postJson<T>(path, body)
+            },
+        }
+        setTransport(transport)
+        kanbanCalls = calls
+
+        function Board() {
+            const [result, setResult] = createSignal(
+                runView(config, storedDeleteRows(), 0),
+            )
+            deleteShiftRefetch = async () => {
+                const rows = await api.resolveRows({ kind: 'base' })
+                setResult(runView(config, rows, 0))
+            }
+            return (
+                <KanbanView
+                    result={result()}
+                    config={config}
+                    basePath={STORED_DELETE_PATH}
+                    ownsRows
+                    onChange={() => void deleteShiftRefetch()}
+                />
+            )
+        }
+        return <Board />
+    },
+    play: async ({ canvasElement }) => {
+        const titles = () =>
+            [
+                ...canvasElement.querySelectorAll(
+                    '[data-edit-target="description"]',
+                ),
+            ].map(el => (el.textContent ?? '').trim())
+        expect(titles()).toEqual([
+            'write the spec',
+            'fix the flake',
+            'ship the release',
+        ])
+
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-edit-target="description"]',
+        )!
+        await userEvent.click(title)
+        const deleteButton = await within(document.body).findByText('DELETE')
+        await userEvent.click(deleteButton)
+
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/delete' &&
+                        (c.body as { index: unknown }).index === 0,
+                ),
+            ).toBe(true),
+        )
+        await deleteShiftRefetch()
+
+        await waitFor(() => expect(titles()).toHaveLength(2))
+        expect(titles()).toEqual(['fix the flake', 'ship the release'])
+    },
+}
+
+// Two rows stored in ONE own-rows base, both in `todo` — proves a stored-row column rename
+// sends ONE `rowUpdateMany` (`POST /rows/update`) carrying whole stored rows with integer
+// indexes >= 0 and the new `status`, per task 1's fix to KanbanView's rename path.
+const STORED_RENAME_COL_PATH = 'boards/stored-rename-col.md'
+const STORED_RENAME_COL_ROWS: Row[] = [
+    { description: 'write the spec', status: 'todo' },
+    { description: 'fix the flake', status: 'todo' },
+].map((note, index) => ({
+    file: syntheticBaseFile(STORED_RENAME_COL_PATH),
+    note,
+    formula: {},
+    index,
+}))
+
+export const StoredRowsRenameColumn: Story = {
+    render: () => {
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+                groupOrder: ['todo'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        return (
+            <KanbanView
+                result={runView(config, STORED_RENAME_COL_ROWS, 0)}
+                config={config}
+                basePath={STORED_RENAME_COL_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const todoBefore = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="todo"]',
+        )!
+        const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
+        await userEvent.click(todoMenus[0]!)
+        await userEvent.click(await body.findByText(/^rename$/i))
+        const input = await waitFor(
+            () =>
+                within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
+                    'todo',
+                ),
+            { timeout: 3000 },
+        )
+        await userEvent.clear(input)
+        await userEvent.type(input, 'doing')
+        await userEvent.keyboard('{Enter}')
+
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-kbcol="doing"]'),
+            ).not.toBeNull(),
+        )
+
+        const renameManyWrites = kanbanCalls.filter(
+            c => c.path === '/rows/update',
+        )
+        expect(renameManyWrites.length).toBe(1)
+        const write = renameManyWrites[0]!
+        const { updates } = write.body as {
+            file?: string
+            updates: Array<{
+                index: number | null
+                note: Record<string, unknown>
+            }>
+        }
+        expect((write.body as { file?: string }).file).toBe(
+            STORED_RENAME_COL_PATH,
+        )
+        expect(updates.length).toBe(2)
+        for (const u of updates) {
+            expect(Number.isInteger(u.index)).toBe(true)
+            expect((u.index as number) >= 0).toBe(true)
+            expect(u.note.description).toBeDefined()
+            expect(u.note.status).toBe('doing')
+        }
     },
 }

@@ -42,7 +42,16 @@ export class RowCache<T> {
 
     /** Claim a token for `key` before starting an async fetch. Pass the returned token to the
      *  matching `set()` call so a fetch that settles after a NEWER one was begun (and possibly
-     *  already landed) gets dropped instead of overwriting fresher data. */
+     *  already landed) gets dropped instead of overwriting fresher data.
+     *
+     *  Known behaviour: a newer fetch's token stays "latest" even if that fetch ERRORS and never
+     *  calls `set()` — an erroring caller must not call `set()` on failure, or it would mark a
+     *  fetch that never produced a value as having landed. So an OLDER fetch that later succeeds
+     *  is still dropped by the stale-token check below, and the entry is left exactly as it was
+     *  before either fetch started (possibly stale, possibly missing). This is safe, not lossy:
+     *  the next `invalidate()` (a version bump) re-arms revalidation and the following `begin()`
+     *  gets a fresh shot — self-heals rather than requiring the caller to retry the errored
+     *  fetch itself. */
     begin(key: string): number {
         const next = (this.tokens.get(key) ?? 0) + 1
         this.tokens.set(key, next)
@@ -53,7 +62,14 @@ export class RowCache<T> {
      *  given, the write is dropped — and `false` returned — unless it is still the LATEST token
      *  `begin(key)` issued for this key; an older fetch settling late must not overwrite a newer
      *  value nor mark the entry fresh. Callers that pass no token keep the previous unconditional
-     *  behaviour (always writes, always returns true). */
+     *  behaviour (always writes, always returns true).
+     *
+     *  Known behaviour, paired with `begin()`'s note above: if the newer fetch ERRORS it never
+     *  calls `set()`, so its token is still "latest" and an older fetch's `set()` keeps returning
+     *  `false` — the cache is left stuck on its pre-race value (stale or absent) until the NEXT
+     *  version bump (`invalidate()`) lets a fresh `begin()`/`set()` pair revalidate it. That gap
+     *  is intentional, not a bug to route around here: self-healing on the next vault change beats
+     *  guessing whether a caller's `set()` after failure means "recovered" or "landed stale". */
     set(key: string, value: T, version: number, token?: number): boolean {
         if (token !== undefined && this.tokens.get(key) !== token) return false
         this.store.set(key, { value, version, stale: false })
