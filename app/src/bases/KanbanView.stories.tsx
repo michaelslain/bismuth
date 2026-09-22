@@ -672,7 +672,10 @@ export const RenameColumnRoundTrip: Story = {
                 `[data-kbcol="${fromKey}"]`,
             )!
             const menus = within(col).getAllByLabelText('Column menu')
-            await userEvent.click(menus[0]!)
+            const menu = menus[0]!
+            // The trigger sits `pointer-events: none` until hovered/focused — reach it via keyboard focus.
+            menu.focus()
+            await userEvent.keyboard('{Enter}')
             await userEvent.click(await body.findByText(/^rename$/i))
             const input = await waitFor(
                 () =>
