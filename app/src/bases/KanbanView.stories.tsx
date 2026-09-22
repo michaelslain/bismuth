@@ -1037,7 +1037,7 @@ export const DeleteColumnPartial: Story = {
             ...base,
             post: async (path, body) => {
                 if (
-                    path === '/set-property' &&
+                    (path === '/set-property' || path === '/delete-property') &&
                     (body as { key?: string }).key === 'groupColors'
                 )
                     throw new Error('base file changed underneath')
