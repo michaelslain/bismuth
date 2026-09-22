@@ -638,10 +638,18 @@ export function BaseSettings(props: {
                                 // whenever it opens, so its full body — including DELETE — lands
                                 // above the footer instead of behind it.
                                 createEffect(() => {
-                                    if (open())
-                                        rowEl?.scrollIntoView({
-                                            block: 'nearest',
-                                        })
+                                    if (!open()) return
+                                    // Deferred a frame: this effect fires as soon as `open()`
+                                    // flips, which is BEFORE the sibling <Show> below has
+                                    // inserted/laid out the expanded body — scrolling now would
+                                    // only reveal the still-collapsed head. Waiting a frame lets
+                                    // that insertion (and its layout) land first.
+                                    requestAnimationFrame(() => {
+                                        if (open())
+                                            rowEl?.scrollIntoView({
+                                                block: 'nearest',
+                                            })
+                                    })
                                 })
                                 return (
                                     <div
