@@ -311,7 +311,7 @@ export const DuplicatePropertyName: Story = {
         await userEvent.clear(nameInput)
         await userEvent.type(nameInput, 'status')
         await expect(
-            canvas.getByText(/already uses this name/i),
+            canvas.getByText(/duplicate name/i),
         ).toBeInTheDocument()
         const saveBtn = canvas.getByText('SAVE').closest('button')
         await expect(saveBtn).not.toBeNull()
