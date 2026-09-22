@@ -11,3 +11,4 @@
    bases/CardEditModal.tsx and editor/DatePicker.tsx — hashing it would silently unstyle all of
    those. See .claude/plans/ui-css-ownership.md. */
 .ui-input-plain { width: 100%; border: none; outline: none; background: none; color: var(--fg); font: inherit; }
+.ui-input-plain::placeholder { color: var(--text-muted); }

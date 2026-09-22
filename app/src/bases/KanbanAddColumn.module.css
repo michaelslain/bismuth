@@ -1,0 +1,50 @@
+/* ---- KanbanAddColumn ---- */
+/* The trailing ghost column: no min/max width like .kanbanColumn (KanbanView.module.css) — it
+   shrinks to its own content so it never competes with real columns for board width. */
+.ghost {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  /* Containing block for .addField's out-of-flow overlay below. */
+  position: relative;
+  /* Trimmed to the label's own width + var(--sp-4) each side, so the ghost column no longer
+     eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
+     below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
+  padding: var(--sp-5) 0;
+  /* .kanbanColHeader pins a min-height (calc(22px + 2 * var(--sp-5)), KanbanView.module.css)
+     and centres its title inside it (align-items: center) rather than sitting the title flush
+     at padding-top — and the header itself sits 1px below the column's own top edge (the
+     column's own 1px border, KanbanView.module.css's .kanbanColumn), which this ghost has none
+     of. Measured headless (add-column story, this branch): with the header pin restored, a
+     column title's text-node top sits at document y 51.5, 17.5px below the column's own (and
+     this ghost's) top edge. .trigger's own padding (var(--sp-4)) plus its line-box leading
+     accounts for 11px of that from wherever this padding-top ends, so this padding-top is the
+     remaining 6.5px — not a round token sum, so it's pinned as a measured value rather than
+     forced into an inexact calc. */
+  padding-top: 6.5px;
+}
+/* Editing state (data-editing, set by KanbanAddColumn.tsx while its input is shown). The trigger
+   stays mounted but invisible, so the ghost keeps its exact rest footprint — the swap cannot
+   reflow the board by construction, whatever the input's own intrinsic width. */
+.ghost[data-editing] .trigger { visibility: hidden; }
+/* The input overlays the hidden trigger, out of flow, with its text origin on the "+ column"
+   glyph's. x: the trigger's text sits var(--sp-4) in (its padding), KanbanColumnNameInput's
+   input text var(--sp-2) in (its own padding), so the field starts at the difference. y: the same
+   difference below the trigger's own top (this ghost's rest padding-top) — both centre the same
+   11.5px glyph in an 18px line, so equal content-box tops mean equal glyph tops.
+   `right: 0` pins the field to the ghost's width; the `.ghost` prefix outranks the shared
+   `.field { min-width: 160px }` (equal specificity alone would leave it to bundle order). */
+.ghost .addField {
+  position: absolute;
+  top: calc(6.5px + var(--sp-4) - var(--sp-2));
+  left: calc(var(--sp-4) - var(--sp-2));
+  right: 0;
+  min-width: 0;
+}
+.trigger {
+  padding: var(--sp-4);
+  border-radius: var(--r-0);
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+.trigger:hover { background: var(--surface-2); }

@@ -27,9 +27,33 @@ import type { Row } from '../../../core/src/bases/types'
  * `Number.isInteger`, not `typeof === 'number'`: `typeof NaN` is `'number'`, and so is `2.5`.
  * No producer can mint either today — `Row.index` comes from a loop counter — but "no producer
  * currently does" is a weaker guarantee than the check itself, and the server rejects both.
+ *
+ * A NEGATIVE index is excluded too, and deliberately — it is not the server's grammar, it is
+ * KanbanView's own: a card optimistically added ahead of its `rowCreate` round-trip is given a
+ * negative placeholder index so it can render before the server has assigned it a real slot.
+ * That row is not yet a row the server knows about, so writing to it by index would either hit
+ * nothing or, worse, collide with whatever real index the add eventually resolves to. See
+ * `isStoredPlaceholder` below, which names this case explicitly for callers that need to tell
+ * "not writable because it has no handle" apart from "not writable yet, wait for the add".
  */
 export function canWriteStoredRow(row: Row): boolean {
-    return Number.isInteger(row.index)
+    return Number.isInteger(row.index) && row.index! >= 0
+}
+
+/**
+ * Is this row a pending placeholder — optimistically added, not yet confirmed by the server?
+ * KanbanView mints a negative `Row.index` for a card shown ahead of its `rowCreate` round-trip,
+ * so `Number.isInteger(row.index) && row.index! < 0` names exactly that row and nothing else:
+ * a real stored row's index is always `>= 0` (a loop counter), and a row with no index at all
+ * (a note row, a task-line row) is neither writable nor a placeholder — it is simply not a
+ * stored row. Every KanbanView write entry point checks this FIRST and bails with no write
+ * when it is true, rather than falling through to `canWriteStoredRow`'s `false` branch, which
+ * for some callers (drag, rename, delete) would otherwise fall through to a note-file write
+ * keyed off the row's `file.path` — and a placeholder's `file` is the BASE's own file, so that
+ * write would silently target the base, not the card.
+ */
+export function isStoredPlaceholder(row: Row): boolean {
+    return Number.isInteger(row.index) && row.index! < 0
 }
 
 /** A stored task row's `note`. Every key is whatever the user wrote in the base file. */

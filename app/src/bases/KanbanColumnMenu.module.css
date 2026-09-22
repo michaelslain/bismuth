@@ -1,0 +1,54 @@
+/* Trigger button — visibility is driven from OUTSIDE this file: KanbanView.module.css's
+   `.kanbanColHeader:hover [data-kbcolmenu-trigger]` / `:focus-within` rule shows it (the
+   `data-kbcolmenu-trigger` attribute is the cross-component hook; this file only owns the
+   at-rest/hover/focus-visible states of the button itself). Mirrors .kbDotBtn's sizing so the
+   two header buttons read as a matched pair.
+
+   The trigger sits ABSOLUTELY over the count's slot (`.kanbanColHeader` is the positioning
+   ancestor, set in KanbanView.module.css) rather than pushing layout — at rest it is invisible
+   AND `pointer-events: none`, so it never intercepts clicks meant for the count underneath it.
+   `.kanbanCount` fades out (KanbanView.module.css) exactly when this trigger is revealed, so the
+   two never render on top of each other. `:focus-visible`/`[aria-expanded="true"]` (this file's
+   own states) bring the trigger to `opacity: 1; pointer-events: auto` — no margin trick, since
+   it no longer needs to move in and out of flow. */
+.trigger {
+    --kb-ctl-size: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--kb-ctl-size);
+    min-width: var(--kb-ctl-size);
+    min-height: var(--kb-ctl-size);
+    padding: var(--sp-1);
+    position: absolute;
+    right: var(--sp-5);
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: none;
+    border-radius: var(--r-0);
+    cursor: pointer;
+    color: var(--text-muted);
+    opacity: 0;
+    pointer-events: none;
+    outline-offset: 2px;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.trigger:hover { color: var(--fg); background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
+.trigger:focus-visible,
+.trigger[aria-expanded='true'] {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Layout (flex column, gap, min-width) and field chrome now live in KanbanColumnNameInput's own
+   module.css — this is only the popover's own surface + inset around that shared component.
+   AnchoredPopover's panel is bare (menu mode gets its surface from PopoverList; rename mode has
+   no such wrapper), so without this the input and the "already a column" error print straight
+   over the card beneath. Same surface values as .kbColorPop in KanbanView.module.css. */
+.renaming {
+    padding: var(--sp-4);
+    background: var(--panel);
+    border: var(--rule);
+    border-radius: var(--r-0);
+}

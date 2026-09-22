@@ -72,10 +72,10 @@ export function CardEditModal(props: {
     focusTarget?: string
     /** Every OTHER row's raw value for a property id, across the board — feeds the select fallback. */
     siblingValues: (id: string) => unknown[]
-    /** See KanbanCard's prop of the same name: `false` for a row stored in a base's own body,
-     *  which has no file to rename or delete. Hides the title field and the DELETE button
-     *  rather than wiring either to a write that would land on the base instead of the row.
-     *  Defaults to `true` so every caller that doesn't pass it keeps today's behaviour. */
+    /** See KanbanCard's prop of the same name — whether the title field and DELETE button
+     *  render. Both a real note row and a stored row are write-addressable (by path or by
+     *  index respectively), so this is `true` for every row KanbanCard passes down; kept as
+     *  an opt-out for a genuinely non-writable row. */
     hasFileIdentity?: boolean
     onRename: (newTitle: string) => void
     onSetMeta: (

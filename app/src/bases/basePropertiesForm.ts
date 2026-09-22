@@ -109,6 +109,23 @@ export function moveRow<T>(rows: T[], index: number, dir: -1 | 1): T[] {
     return arr
 }
 
+/** Row indexes whose (trimmed, case-sensitive) name duplicates an EARLIER row's name —
+ *  the same identity `buildPropertiesYaml` uses to drop a later duplicate, surfaced here so
+ *  the panel can warn on the row instead of silently losing it on save. A blank name is never
+ *  flagged as a duplicate of another blank name (both are dropped by `buildPropertiesYaml`
+ *  independently, for being blank, not for colliding with each other). */
+export function duplicatePropertyNames(rows: PropertyFormRow[]): Set<number> {
+    const seen = new Set<string>()
+    const dupes = new Set<number>()
+    rows.forEach((row, i) => {
+        const name = row.name.trim()
+        if (!name) return
+        if (seen.has(name)) dupes.add(i)
+        else seen.add(name)
+    })
+    return dupes
+}
+
 /**
  * Assemble the panel's rows into the flat list-form `properties:` YAML value (an array of
  * plain objects) that `normalizeProperties` (parse.ts) parses back into

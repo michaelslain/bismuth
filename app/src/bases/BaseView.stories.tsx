@@ -1517,3 +1517,143 @@ export const CalendarTasksToggleKeepsPane: Story = {
         ).toBe(scroller)
     },
 }
+
+/** A single-row kanban card, distinguished only by its title — used by
+ *  `KanbanLateStaleResolve` below so an assertion that finds a title can only have come from
+ *  the pre- or post-write /rows resolve, never a coincidence of shared sample data. */
+function raceRow(title: string, status: string): Row {
+    return {
+        file: {
+            name: title,
+            basename: title,
+            path: `boards/${title.toLowerCase().replace(/\s+/g, '-')}.md`,
+            folder: 'boards',
+            ext: 'md',
+            size: 0,
+            ctime: 0,
+            mtime: 0,
+            tags: [],
+            links: [],
+        },
+        note: { status },
+        formula: {},
+    }
+}
+const RACE_PRE_WRITE_ROWS: Row[] = [raceRow('Stale Card', 'Todo')]
+const RACE_POST_WRITE_ROWS: Row[] = [raceRow('Fresh Card', 'Todo')]
+
+/** Orchestration state for `KanbanLateStaleResolve`, module-level so `play()` can drive the
+ *  race the render() sets up (same shape as `toggleTransportPollOnce` above, and for the same
+ *  reason — an assertion against undefined state would fail loudly rather than pass vacuously). */
+let raceRowsCallCount = 0
+let raceResolveFirst: ((rows: Row[]) => void) | undefined
+let racePollOnce: (() => unknown) | undefined
+
+/**
+ * Task 2 regression: an OLDER `/rows` resolve settling AFTER a NEWER one must not clobber the
+ * board with stale pre-write rows. This drives the exact race `api.ts`'s `resolveRows` version
+ * stamp and `rowCache.ts`'s per-key generation token exist for — the fake transport HOLDS the
+ * FIRST `/rows` response, a write bumps the server version (triggering BaseView's
+ * `revalidateAll` → a SECOND `/rows` call, which resolves immediately with the post-write rows),
+ * and only THEN is the FIRST held response released with the pre-write rows.
+ *
+ * Before the fix, either half alone reproduces the bug: (a) `api.ts`'s old spec-only dedup would
+ * have hidden the "second" call behind the SAME in-flight promise as the first, so the board
+ * would only ever see whatever the held response carries (stale); (b) even with a fresh second
+ * POST, `rowCache.set()` had no way to tell the late-settling first response was stale, so it
+ * would unconditionally overwrite the fresh board and mark it "fresh" at the (also stale)
+ * version. Both resolves are driven by explicit promises this story controls — no sleeps.
+ */
+export const KanbanLateStaleResolve: Story = {
+    render: () => {
+        raceRowsCallCount = 0
+        raceResolveFirst = undefined
+        racePollOnce = undefined
+        let fakeVersion = 1
+
+        const disposeVersion = startServerVersion({
+            eventSourceFactory: () => {
+                throw new Error('no SSE in storybook')
+            },
+            fetchVersion: async () => ({ version: fakeVersion }),
+            setIntervalFn: fn => {
+                racePollOnce = fn
+                return 0 as unknown as ReturnType<typeof setInterval>
+            },
+            clearIntervalFn: () => {},
+            setTimeoutFn: (fn, ms) =>
+                setTimeout(fn, ms) as unknown as ReturnType<typeof setTimeout>,
+            clearTimeoutFn: h => clearTimeout(h as unknown as number),
+        })
+
+        const inner = fakeTransport({})
+        setTransport({
+            ...inner,
+            postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+                if (path === '/rows') {
+                    raceRowsCallCount += 1
+                    if (raceRowsCallCount === 1) {
+                        // Held open on purpose — released explicitly by play() below, AFTER
+                        // the second (post-write) call has already landed.
+                        return new Promise<T>(resolve => {
+                            raceResolveFirst = rows =>
+                                resolve(rows as unknown as T)
+                        })
+                    }
+                    return RACE_POST_WRITE_ROWS as unknown as T
+                }
+                return inner.postJson<T>(path, body)
+            },
+        })
+        // Bump the fake version and let it be "discovered" — simulating the server having
+        // already landed a write by the time this story drives the second /rows call, the same
+        // race a fast SSE push wins against a slow initial resolve in production.
+        ;(
+            globalThis as { __raceBumpVersion?: () => Promise<void> }
+        ).__raceBumpVersion = async () => {
+            fakeVersion += 1
+            await racePollOnce?.()
+        }
+
+        onCleanup(() => {
+            disposeVersion()
+            delete (globalThis as { __raceBumpVersion?: () => Promise<void> })
+                .__raceBumpVersion
+        })
+
+        return (
+            <BaseView source={'views:\n  - type: kanban\n    groupBy: status\n'} />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+
+        // Anti-vacuous guard, same reasoning as `toggleTransportPollOnce` above:
+        // `serverVersion.start()` is idempotent, so a prior undisposed story could leave this
+        // render's own `start()` a no-op.
+        await waitFor(() => expect(raceRowsCallCount).toBeGreaterThanOrEqual(1))
+        expect(raceResolveFirst).toBeDefined()
+        expect(racePollOnce).toBeDefined()
+
+        // The write: bumps the fake version and drives BaseView's revalidateAll, which issues
+        // the SECOND /rows call — resolved immediately (RACE_POST_WRITE_ROWS, above).
+        await (
+            globalThis as { __raceBumpVersion?: () => Promise<void> }
+        ).__raceBumpVersion?.()
+
+        await waitFor(() => expect(raceRowsCallCount).toBe(2))
+        await waitFor(() => {
+            expect(canvas.getByText('Fresh Card')).toBeInTheDocument()
+        })
+
+        // NOW release the first (older) held response with the pre-write rows — it must be
+        // dropped, not overwrite the board the second call already painted.
+        raceResolveFirst?.(RACE_PRE_WRITE_ROWS)
+
+        // Give the dropped resolve a turn to (incorrectly) land if the fix is missing.
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        expect(canvas.getByText('Fresh Card')).toBeInTheDocument()
+        expect(canvas.queryByText('Stale Card')).not.toBeInTheDocument()
+    },
+}

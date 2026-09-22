@@ -42,7 +42,15 @@
 .kanbanColHeader {
   display: flex; align-items: center; gap: var(--sp-4); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
   padding: var(--sp-5) var(--sp-5);
-  border-radius: var(--r-0) var(--r-card, 4px) 0 0;
+  box-sizing: border-box;
+  /* Pins the header to the `…` trigger's own size (--kb-ctl-size: 22px, defined in
+     KanbanColumnMenu.module.css) rather than the natural content height, since the trigger is
+     absolutely positioned and so cannot size the header itself. */
+  min-height: calc(22px + (2 * var(--sp-5)));
+  /* Positioning ancestor for the `…` trigger (KanbanColumnMenu.module.css's `.trigger`), which is
+     absolutely positioned over the count's slot instead of pushing it sideways. */
+  position: relative;
+  border-radius: var(--r-0) var(--r-card) 0 0;
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);
   cursor: grab;
@@ -74,7 +82,22 @@
    controller accepts as a token-vs-literal ruling, not real drift. */
 .kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
-.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
+.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); transition: opacity 120ms ease; }
+/* The column menu's `…` trigger (KanbanColumnMenu.tsx) sits absolutely positioned over the
+   count's own slot (see `.kanbanColHeader`'s `position: relative` above) and is shown on header
+   hover or keyboard focus anywhere inside the header — `[data-kbcolmenu-trigger]` is that
+   component's own runtime hook (a data attribute, not a class, so this reaches across the
+   component boundary the same sanctioned way `data-kbcol`/`data-kbcard` already do in this
+   file). Its own at-rest/hover/focus-visible states live in KanbanColumnMenu.module.css. Because
+   the trigger occupies the count's slot rather than pushing it, the count fades out exactly when
+   the trigger is shown — on hover/focus-within, and while the menu itself is open (the
+   `:has([aria-expanded='true'])` rule below covers the case where the pointer has moved off the
+   header but the popover is still open). */
+.kanbanColHeader:hover [data-kbcolmenu-trigger],
+.kanbanColHeader:focus-within [data-kbcolmenu-trigger] { opacity: 1; pointer-events: auto; }
+.kanbanColHeader:hover .kanbanCount,
+.kanbanColHeader:focus-within .kanbanCount { opacity: 0; }
+.kanbanColHeader:has([data-kbcolmenu-trigger][aria-expanded='true']) .kanbanCount { opacity: 0; }
 
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,

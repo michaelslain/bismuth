@@ -226,6 +226,48 @@ export const EscapeReverts: Story = {
     },
 }
 
+/** Interactive: Escape must reach `window` from a plain field (so the card modal's own
+ *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
+ *  NOT reach `window` while a multiselect's own "+ Add" suggestion list is open (that Escape
+ *  belongs to the list: it closes the list and stops there, same as any other open popover). */
+export const EscapeBubbles: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
+            <Harness kind={{ kind: 'text' }} initial="Original" />
+            <Harness
+                kind={{ kind: 'multiselect', options: ['planning', 'frontend'] }}
+                initial={['planning']}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const windowEscapes: string[] = []
+        const onWindowKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') windowEscapes.push('window')
+        }
+        window.addEventListener('keydown', onWindowKeyDown)
+
+        // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
+        const input = canvas.getByDisplayValue('Original')
+        await userEvent.type(input, ' edited')
+        await userEvent.keyboard('{Escape}')
+        await expect(canvas.getAllByText(/committed:/)[0]).toHaveTextContent(
+            '"Original"',
+        )
+        await expect(windowEscapes).toEqual(['window'])
+
+        // Multiselect with its "+ Add" suggestion list open: the first Escape closes ONLY
+        // the list and must not reach window.
+        await userEvent.click(canvas.getByText('+ Add'))
+        await within(document.body).findByText('frontend')
+        await userEvent.keyboard('{Escape}')
+        await expect(windowEscapes).toEqual(['window'])
+
+        window.removeEventListener('keydown', onWindowKeyDown)
+    },
+}
+
 /** Interactive: add a chip via the "+ Add" Select, then remove one by clicking it — each
  *  write commits immediately with `keepOpen: true`, so the editor stays mounted across both
  *  changes instead of closing after the first. */
