@@ -392,8 +392,15 @@ const postJson = <T>(path: string, body: unknown) =>
     transport.postJson<T>(path, body)
 
 // In-flight /rows POSTs, keyed by serialized SourceSpec, so identical concurrent
-// resolutions share one request (dedup) — see `api.resolveRows`.
-const rowsInflight = new Map<string, Promise<Row[]>>()
+// resolutions share one request (dedup) — see `api.resolveRows`. Each entry also carries the
+// server `version` its caller issued it at: a call made once the version has moved on (a write
+// landed) must NOT be handed a promise that was issued before that write, or it silently
+// resolves with pre-write rows. Callers that don't pass a version (undefined) dedupe against
+// each other exactly as before — that's every call site except BaseView.tsx's revalidation path.
+const rowsInflight = new Map<
+    string,
+    { version: number | undefined; promise: Promise<Row[]> }
+>()
 
 export const api = {
     graph: () => getJson<GraphData>('/graph'),
@@ -493,14 +500,18 @@ export const api = {
     // Concurrent identical specs (the same base reopened in a split, or many ```query
     // blocks pointing at one base) collapse onto one in-flight POST — keyed by the
     // serialized spec, cleared once it settles so a later refetch re-hits the server.
-    resolveRows: (spec: SourceSpec) => {
+    // `version`, when passed, is the server version this call is resolving AT — only an
+    // in-flight request issued at that SAME version is reused; a call at a newer version always
+    // issues a fresh POST rather than dedupe onto a stale one. Omitted, it dedupes purely by
+    // spec, matching the historical behaviour (safe for callers with no write/revalidate race).
+    resolveRows: (spec: SourceSpec, version?: number) => {
         const key = JSON.stringify(spec)
         const inflight = rowsInflight.get(key)
-        if (inflight) return inflight
-        const p = postJson<Row[]>('/rows', { spec }).finally(() =>
-            rowsInflight.delete(key),
-        )
-        rowsInflight.set(key, p)
+        if (inflight && inflight.version === version) return inflight.promise
+        const p = postJson<Row[]>('/rows', { spec }).finally(() => {
+            if (rowsInflight.get(key)?.promise === p) rowsInflight.delete(key)
+        })
+        rowsInflight.set(key, { version, promise: p })
         return p
     },
     rowCreate: (file: string, note: Record<string, unknown>) =>

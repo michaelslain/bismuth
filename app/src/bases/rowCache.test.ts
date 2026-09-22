@@ -42,4 +42,25 @@ describe('RowCache', () => {
         expect(c.isFresh('a', 11)).toBe(true)
         expect(c.peek('a')).toBe(2)
     })
+
+    it('an older token settling after a newer token has already landed must not overwrite nor mark fresh', () => {
+        const c = new RowCache<number>()
+        const older = c.begin('a')
+        const newer = c.begin('a')
+        // the newer fetch settles first
+        expect(c.set('a', 2, 10, newer)).toBe(true)
+        expect(c.peek('a')).toBe(2)
+        expect(c.isFresh('a', 10)).toBe(true)
+        // the older fetch settles after — must be dropped, not overwrite the newer value
+        expect(c.set('a', 1, 10, older)).toBe(false)
+        expect(c.peek('a')).toBe(2)
+        expect(c.isFresh('a', 10)).toBe(true)
+    })
+
+    it('set() with no token keeps the old unconditional-write behaviour', () => {
+        const c = new RowCache<number>()
+        c.begin('a')
+        expect(c.set('a', 1, 10)).toBe(true)
+        expect(c.peek('a')).toBe(1)
+    })
 })
