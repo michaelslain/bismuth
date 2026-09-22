@@ -63,4 +63,23 @@ describe('RowCache', () => {
         expect(c.set('a', 1, 10)).toBe(true)
         expect(c.peek('a')).toBe(1)
     })
+
+    it('an erroring newer fetch keeps its token, so an older success settling after is dropped until the next invalidate re-revalidates', () => {
+        const c = new RowCache<number>()
+        const a = c.begin('a')
+        c.begin('a') // B — the newer token. It errors and never calls set().
+        // The older fetch A settles after B started (and after B errored) — still dropped,
+        // because B's token is still the latest one begin() issued for this key.
+        expect(c.set('a', 1, 10, a)).toBe(false)
+        expect(c.peek('a')).toBeUndefined()
+        expect(c.isFresh('a', 10)).toBe(false)
+
+        // Self-heals: a version bump (a vault change) plus a fresh begin/set pair revalidates
+        // normally, with no special-casing of the earlier failed race.
+        c.invalidate(11)
+        const fresh = c.begin('a')
+        expect(c.set('a', 2, 11, fresh)).toBe(true)
+        expect(c.peek('a')).toBe(2)
+        expect(c.isFresh('a', 11)).toBe(true)
+    })
 })

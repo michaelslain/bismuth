@@ -319,6 +319,12 @@ export const DuplicatePropertyName: Story = {
     },
 }
 
+/** Rect assertion instead of `toBeInTheDocument()`: DELETE is meant to be a genuinely visible
+ *  part of the expanded row, not merely present in the DOM (which a clipped, zero-height or
+ *  scrolled-out-of-view element would also satisfy). Proves DELETE's own bounding rect lies
+ *  fully inside the modal body's scroll container's rect — top edge at or below the
+ *  container's, bottom edge at or above it — after scrolling it into view for containers that
+ *  scroll. */
 export const ExpandPropertyRow: Story = {
     render: () => (
         <BaseSettings
@@ -339,6 +345,15 @@ export const ExpandPropertyRow: Story = {
             name: /^status/i,
         })
         await userEvent.click(statusRow)
-        await expect(canvas.getByText('DELETE')).toBeInTheDocument()
+        const deleteButton = canvas.getByText('DELETE').closest('button')!
+        deleteButton.scrollIntoView()
+        const modalBody = document.body.querySelector(
+            '[data-testid="modal-body"]',
+        ) as HTMLElement
+        await expect(modalBody).not.toBeNull()
+        const bodyRect = modalBody.getBoundingClientRect()
+        const buttonRect = deleteButton.getBoundingClientRect()
+        await expect(buttonRect.top).toBeGreaterThanOrEqual(bodyRect.top)
+        await expect(buttonRect.bottom).toBeLessThanOrEqual(bodyRect.bottom)
     },
 }
