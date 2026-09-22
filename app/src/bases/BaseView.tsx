@@ -303,8 +303,11 @@ export function BaseView(props: {
                 pendingBody = undefined
                 return docCache.peek(key)!
             }
+            // Claimed BEFORE the async read, so a slower resolve that started earlier can be
+            // told, once it settles, that a newer one has already landed for this key.
+            const token = docCache.begin(key)
             const doc = await loadDocument()
-            if (!disposed) docCache.set(key, doc, version)
+            if (!disposed) docCache.set(key, doc, version, token)
             return doc
         },
     )
@@ -361,6 +364,10 @@ export function BaseView(props: {
             const version = serverVersion()
             // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
             if (rowCache.isFresh(key, version)) return rowCache.peek(key)!
+            // Claimed BEFORE the resolve so a slower fetch that started earlier — at an older
+            // version — can be told, once it settles, that a newer one already landed for this
+            // key (see rowCache.ts's `begin`/`set(..., token)`).
+            const token = rowCache.begin(key)
             const d = doc()!
             const spec = activeSpec()
             // Own-rows case: `{ kind: 'base' }` with no `ref` is the sentinel this base's
@@ -368,12 +375,14 @@ export function BaseView(props: {
             // it server-side (no ref to follow), so it's read straight off the document
             // instead. A `ref` present means real composition (an embedded ```query block's
             // `of: [[Other]]`, or a base's own `source: base ref: …`) and resolves server-side
-            // via /rows like notes/tasks, which follows base composition + scoped tasks.
+            // via /rows like notes/tasks, which follows base composition + scoped tasks. The
+            // resolve is stamped with `version` so a call issued after a write can't dedupe
+            // onto an in-flight request `api.resolveRows` issued before it (api.ts).
             const rows =
                 spec?.kind === 'base' && !spec.ref
                     ? d.rows
                     : spec
-                      ? await api.resolveRows(spec)
+                      ? await api.resolveRows(spec, version)
                       : []
             const result: LoadedRows = {
                 config: d.config,
@@ -381,7 +390,7 @@ export function BaseView(props: {
                 spec,
                 rows,
             }
-            if (!disposed) rowCache.set(key, result, version)
+            if (!disposed) rowCache.set(key, result, version, token)
             return result
         },
     )
@@ -983,7 +992,6 @@ export function BaseView(props: {
                                                         // means threading that discriminator up from the child.
                                                         onChange={refetchAll}
                                                         mode={activeMode()}
-                                                        ownsRows={ownsRows()}
                                                         onToggle={
                                                             toggleTaskRow
                                                         }
