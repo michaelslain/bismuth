@@ -60,7 +60,13 @@ import {
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyType } from '../../../core/src/bases/properties'
 import { propertyRegistry } from '../propertyRegistry'
-import { markDeleted, unmarkDeleted, pruneDeleted } from './kanbanDelete'
+import {
+    markDeleted,
+    unmarkDeleted,
+    pruneDeleted,
+    isRowHidden,
+    type DeletedMap,
+} from './kanbanDelete'
 import { type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
 import { declaredDefaults } from '../../../core/src/bases/properties'
@@ -242,9 +248,12 @@ export function KanbanView(props: {
             col: string
             /** Set only for a `props.ownsRows` (stored-row) add — see the resolve effect
              *  below. A file-based add still clears by path match (the file write's own
-             *  refetch brings a row at that exact path), so it needs none of this. */
+             *  refetch brings a row at that exact path), so it needs none of this.
+             *  `priorSnapshots` is CONTENT-keyed (`JSON.stringify(storedNote(r))`), not
+             *  id-keyed — an id can be reassigned to a different row by an unrelated delete
+             *  landing between the add and this resolve (`matchedStoredRowId`'s own doc). */
             stored?: {
-                priorIds: Set<string>
+                priorSnapshots: Set<string>
                 matchKey: string
                 matchValue: unknown
             }
@@ -388,6 +397,7 @@ export function KanbanView(props: {
                         const rows = (grp?.rows ?? [])
                             .map(r => ({
                                 id: rowId(r),
+                                snapshot: JSON.stringify(storedNote(r)),
                                 value: (r.note as Record<string, unknown>)[
                                     a.stored!.matchKey
                                 ],
@@ -395,7 +405,7 @@ export function KanbanView(props: {
                             .filter(r => !claimed.has(r.id))
                         const hit = matchedStoredRowId(
                             rows,
-                            a.stored.priorIds,
+                            a.stored.priorSnapshots,
                             a.stored.matchValue,
                         )
                         if (hit) claimed.add(hit)
@@ -491,8 +501,9 @@ export function KanbanView(props: {
     // Cards shown in column: while dragging, lift the dragged card out of EVERY column (the floating
     // ghost represents it) so the placeholder is the only thing marking its new home.
     const visibleRows = (group: ResultGroup): Row[] => {
+        const deleted = deletedIds()
         const rows = sortedRows(group).filter(
-            r => !deletedIds().has(rowId(r)),
+            r => !isRowHidden(deleted, rowId(r), deleteSnapshot(r)),
         )
         return dragActive()
             ? rows.filter(r => rowId(r) !== dragId())
@@ -615,6 +626,12 @@ export function KanbanView(props: {
     function startColDrag(e: PointerEvent, colKey: string): void {
         if (e.button !== 0 || !editable()) return
         if ((e.target as HTMLElement).closest('button')) return // the color-dot picker button
+        // AnchoredPopover portals its panel outside this header's DOM, but Solid delegates
+        // pointerdown through the component tree, so a pointerdown inside the column menu's
+        // popover (the rename TextInput, its padding) still reaches this handler — `closest`
+        // above only exempts buttons. Bail on anything that isn't actually inside the header's
+        // real DOM (the portaled popover content is outside it).
+        if (!(e.currentTarget as Node).contains(e.target as Node)) return
         armMode = 'col'
         armColKey = colKey
         armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
@@ -950,6 +967,15 @@ export function KanbanView(props: {
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
 
+        // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
+        // The column menu's Rename is now gated on `canAdd()` (editable + writable groupBy),
+        // but keep this belt-and-braces: without it, the `columns` write below would still
+        // rename the pinned column while every card's status write is skipped (statusKey
+        // null), leaving an empty new column pinned alongside the untouched old one on reload.
+        const gb = groupBy()
+        const statusKey = gb ? writableKey(gb.property) : null
+        if (statusKey === null) return
+
         // The cards to move, captured BEFORE the optimistic overlay below empties `from`.
         const movedRows = groupByKey(from).rows
 
@@ -988,7 +1014,6 @@ export function KanbanView(props: {
             }
 
             // Declared select/multiselect option rename — mirrors addColumn's append.
-            const gb = groupBy()
             const t = gb ? propertyType(props.config, gb.property) : null
             if (gb && (t?.kind === 'select' || t?.kind === 'multiselect')) {
                 const declName = declaredPropertyName(gb.property)
@@ -1006,26 +1031,24 @@ export function KanbanView(props: {
 
             // Move every card currently in the renamed column — ONE batched write per write
             // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
-            const statusKey = gb ? writableKey(gb.property) : null
-            if (statusKey !== null) {
-                const rows = movedRows
-                const storedRows = rows.filter(canWriteStoredRow)
-                const noteRows = rows.filter(r => !canWriteStoredRow(r))
-                if (storedRows.length > 0) {
-                    const updates = storedRows.map(r => ({
-                        index: r.index!,
-                        note: { ...storedNote(r), [statusKey]: trimmed },
-                    }))
-                    await api.rowUpdateMany(basePath, updates)
-                }
-                if (noteRows.length > 0) {
-                    const writes = noteRows.map(r => ({
-                        path: r.file.path,
-                        key: statusKey,
-                        value: trimmed,
-                    }))
-                    await api.setProperties(writes)
-                }
+            // statusKey is non-null here — guarded at the top of the function.
+            const rows = movedRows
+            const storedRows = rows.filter(canWriteStoredRow)
+            const noteRows = rows.filter(r => !canWriteStoredRow(r))
+            if (storedRows.length > 0) {
+                const updates = storedRows.map(r => ({
+                    index: r.index!,
+                    note: { ...storedNote(r), [statusKey]: trimmed },
+                }))
+                await api.rowUpdateMany(basePath, updates)
+            }
+            if (noteRows.length > 0) {
+                const writes = noteRows.map(r => ({
+                    path: r.file.path,
+                    key: statusKey,
+                    value: trimmed,
+                }))
+                await api.setProperties(writes)
             }
             props.onChange()
         } catch (e) {
@@ -1195,7 +1218,19 @@ export function KanbanView(props: {
     // Ids deleted this session but not yet confirmed gone by a refetch — hidden from every
     // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
     // on the round-trip. Reverted on failure; a successful Undo also drops its entry.
-    const [deletedIds, setDeletedIds] = createSignal<Set<string>>(new Set())
+    //
+    // A STORED row's id (`${basePath}#${index}`) is not stable across a delete — deleting ANY
+    // stored row splices the base's raw row array (`rowOps.ts`), shifting every LATER row's
+    // index/id down by one. Hiding by bare id would then hide the card that shifted INTO the
+    // deleted card's old id, permanently (`kanbanDelete.ts` has the full account). So the map
+    // also carries a snapshot for a stored-row entry — `undefined` for a note row, whose id
+    // (its file path) IS stable — and `isRowHidden`/`pruneDeleted` only keep hiding while the
+    // row currently at that id still matches the snapshot of the row that was actually deleted.
+    const [deletedIds, setDeletedIds] = createSignal<DeletedMap>(new Map())
+    // The value `deletedIds`/`pruneDeleted` compare against for a given row: the stored row's
+    // own content for a writable-by-index row, `undefined` (id-only match) for a note row.
+    const deleteSnapshot = (row: Row): string | undefined =>
+        canWriteStoredRow(row) ? JSON.stringify(storedNote(row)) : undefined
 
     async function deleteCard(row: Row): Promise<void> {
         if (!editable()) return
@@ -1206,7 +1241,7 @@ export function KanbanView(props: {
         // useTransition (stale-while-revalidate) — the SMOOTH path. The deletedIds hide covers the
         // gap until that refetch lands and the prune-effect clears it.
         snapshotRects()
-        setDeletedIds(prev => markDeleted(prev, id))
+        setDeletedIds(prev => markDeleted(prev, id, deleteSnapshot(row)))
         requestAnimationFrame(playFlip)
 
         if (canWriteStoredRow(row)) {
@@ -1292,17 +1327,20 @@ export function KanbanView(props: {
         }
     }
 
-    // Prune a hidden id once the server data no longer contains it (the delete's refetch has landed)
-    // — mirrors the pending/pendingAdds clear-effects. Re-runs only when the server groups change (not
-    // when deletedIds itself changes), so right after an optimistic hide — while the card is STILL in
-    // props.result — nothing is pruned; the id drops only once the refetch removes it for good.
+    // Prune a hidden id once the server data no longer BACKS it (the delete's refetch has
+    // landed, for a note row — or, for a stored row, once the id now belongs to a SHIFTED
+    // sibling whose content no longer matches the row that was actually deleted — see
+    // `kanbanDelete.ts`) — mirrors the pending/pendingAdds clear-effects. Re-runs only when the
+    // server groups change (not when deletedIds itself changes), so right after an optimistic
+    // hide — while the card is STILL in props.result with its OWN snapshot — nothing is pruned;
+    // the entry drops only once the refetch actually removes/replaces it for good.
     createEffect(() => {
         const groups = props.result.groups
         untrack(() => {
             if (deletedIds().size === 0) return
-            const present = new Set<string>()
+            const present = new Map<string, string | undefined>()
             for (const g of groups)
-                for (const r of g.rows) present.add(rowId(r))
+                for (const r of g.rows) present.set(rowId(r), deleteSnapshot(r))
             setDeletedIds(prev => pruneDeleted(prev, present))
         })
     })
@@ -1382,8 +1420,12 @@ export function KanbanView(props: {
         if (props.ownsRows) {
             if (!props.basePath) return
             const basePath = props.basePath
-            const priorIds = new Set(
-                props.result.groups.flatMap(g => g.rows).map(rowId),
+            // Content-keyed, not id-keyed — see `matchedStoredRowId`'s doc for why an id set
+            // breaks under a delete landing between this add and its resolve.
+            const priorSnapshots = new Set(
+                props.result.groups
+                    .flatMap(g => g.rows)
+                    .map(r => JSON.stringify(storedNote(r))),
             )
             const optimistic: Row = {
                 file: syntheticBaseFile(basePath),
@@ -1398,7 +1440,7 @@ export function KanbanView(props: {
                     row: optimistic,
                     col: colKey,
                     stored: {
-                        priorIds,
+                        priorSnapshots,
                         matchKey: statusKey,
                         matchValue: statusValue ?? colKey,
                     },
@@ -1696,7 +1738,7 @@ export function KanbanView(props: {
                                             >
                                                 {group().rows.length}
                                             </Text>
-                                            <Show when={editable()}>
+                                            <Show when={canAdd()}>
                                                 <KanbanColumnMenu
                                                     name={group().key}
                                                     canDelete={
