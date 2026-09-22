@@ -434,8 +434,10 @@ export function KanbanView(props: {
         const keys = displayGroups().map(g => g.key)
         const order = pendingColOrder()
         if (!order) return keys
-        const present = new Set(keys)
-        const out = order.filter(k => present.has(k))
+        // Keep the FULL pending order, including keys with no server group yet (a
+        // just-added column) — groupByKey falls back to an empty group for those, so
+        // they still render. Append any server key the pending order doesn't know about.
+        const out = order.slice()
         for (const k of keys) if (!out.includes(k)) out.push(k)
         return out
     }
@@ -472,6 +474,9 @@ export function KanbanView(props: {
             const order = pendingColOrder()
             if (!order) return
             const serverKeys = groups.map(g => g.key)
+            // Only clear once every pending key has landed on the server (a just-added
+            // column stays pending until its group exists) — then confirm relative order.
+            if (!order.every(k => serverKeys.includes(k))) return
             const a = serverKeys.filter(k => order.includes(k))
             const b = order.filter(k => serverKeys.includes(k))
             if (a.length === b.length && a.every((k, i) => k === b[i]))

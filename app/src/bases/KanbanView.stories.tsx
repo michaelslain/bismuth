@@ -3,12 +3,41 @@
 // with a `groupBy`, rendered by the real KanbanView component. `onChange` is a required prop
 // (fired after a write); a no-op here since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { KanbanView } from './KanbanView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { runView } from '../../../core/src/bases/query'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row } from '../../../core/src/bases/types'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
+import type { FakeTransportSeed } from '../ui/_fakeTransport'
+import type { Transport } from '../api'
+
+// `fakeTransport` gives every route a generic 200 ack with no record of the call — enough for a
+// story that only needs the write to succeed, not enough to ASSERT what was written. Wraps it
+// with a `post` spy (the verb `setViewProperty`/`rowCreate`/`rowUpdate` all go through) so a
+// play() can inspect exactly what was sent, same shared-closure shape as KanbanAddColumn.stories'
+// `addedNames`.
+function spiedTransport(seed: FakeTransportSeed = {}): {
+    transport: Transport
+    calls: { path: string; body: unknown }[]
+} {
+    const calls: { path: string; body: unknown }[] = []
+    const base = fakeTransport(seed)
+    const transport: Transport = {
+        ...base,
+        post: async (path, body) => {
+            calls.push({ path, body })
+            return base.post(path, body)
+        },
+        put: async (path, body) => {
+            calls.push({ path, body })
+            return base.put(path, body)
+        },
+    }
+    return { transport, calls }
+}
 
 const meta = {
     title: 'Bases/KanbanView',
@@ -225,5 +254,126 @@ export const StoredRows: Story = {
         // The whole bug in one line: before re-keying, both cards resolved to the last row
         // and this was ['fix the flake', 'fix the flake'].
         expect(new Set(texts).size).toBe(2)
+    },
+}
+
+// Captured by each story's render() and read back in its play() — same shared-closure shape as
+// `addedNames` in KanbanAddColumn.stories.tsx.
+let kanbanCalls: { path: string; body: unknown }[] = []
+
+/** The trailing "+ column" ghost — clicking it, typing a name and hitting Enter adds a fourth,
+ *  empty column ("Blocked") alongside the 3 status groups the sample rows already produce, and
+ *  persists it via `api.setViewProperty(basePath, viewIndex, 'columns', [...])` (KanbanView's
+ *  `addColumn`, optimistic like `reorderColumns`). `status` is a declared `select` property here
+ *  (`_baseFixtures.ts`), so `addColumn` also appends the option to `properties` — a second write
+ *  the assertion below doesn't care about, only that the `columns` one carries `Blocked`. */
+export const AddColumn: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+            },
+        ]
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const columnsBefore =
+            canvasElement.querySelectorAll('[data-kbcol]').length
+        await userEvent.click(canvas.getByText('+ column'))
+        const input = await canvas.findByPlaceholderText('column name')
+        await userEvent.type(input, 'Blocked')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelectorAll('[data-kbcol]').length,
+            ).toBe(columnsBefore + 1),
+        )
+        const newCol = canvasElement.querySelector('[data-kbcol="Blocked"]')
+        expect(newCol).not.toBeNull()
+        expect(
+            newCol!.querySelectorAll('[data-testid="kanban-card"]').length,
+        ).toBe(0)
+        const columnsWrite = kanbanCalls.find(
+            c =>
+                c.path === '/set-property' &&
+                (c.body as { key?: string }).key === 'columns',
+        )
+        expect(columnsWrite).toBeDefined()
+        expect((columnsWrite!.body as { value: string[] }).value).toContain(
+            'Blocked',
+        )
+    },
+}
+
+// The stored-row rows the composer adds against — same shape as `StoredRows` above.
+const STORED_ADD_PATH = 'boards/stored-add.md'
+const STORED_ADD_ROWS: Row[] = [
+    { description: 'write the spec', status: 'Todo' },
+].map((note, index) => ({
+    file: syntheticBaseFile(STORED_ADD_PATH),
+    note,
+    formula: {},
+    index,
+}))
+
+/** `ownsRows: true` (a `mode: tasks`/own-rows base's own bug this task fixes): the per-column
+ *  "+" composer's add must call `api.rowCreate` (`POST /row/update` with `index: null`) instead
+ *  of writing a new note file — before the fix it always `api.write`d into the base's own
+ *  folder, which for a stored-row board is the base file's own parent. Asserts the transport saw
+ *  the row write and never a `/file` PUT. */
+export const StoredRowsAddCard: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={runView(config, STORED_ADD_ROWS, 0)}
+                config={config}
+                basePath={STORED_ADD_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const addButton = canvas.getAllByLabelText('Add a card')[0]!
+        await userEvent.click(addButton)
+        const input = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(input, 'fix the flake redux')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/update' &&
+                        (c.body as { index: unknown }).index === null,
+                ),
+            ).toBe(true),
+        )
+        expect(kanbanCalls.some(c => c.path === '/file')).toBe(false)
     },
 }
