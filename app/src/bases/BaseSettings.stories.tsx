@@ -355,5 +355,13 @@ export const ExpandPropertyRow: Story = {
         const buttonRect = deleteButton.getBoundingClientRect()
         await expect(buttonRect.top).toBeGreaterThanOrEqual(bodyRect.top)
         await expect(buttonRect.bottom).toBeLessThanOrEqual(bodyRect.bottom)
+        // The rect check alone can't catch an inner `overflow: hidden` clipping the button —
+        // its bounding rect stays intact even while it's visually cut off. Confirm the button
+        // is actually the element painted at its own center point.
+        const cx = (buttonRect.left + buttonRect.right) / 2
+        const cy = (buttonRect.top + buttonRect.bottom) / 2
+        await expect(
+            deleteButton.contains(document.elementFromPoint(cx, cy)),
+        ).toBe(true)
     },
 }
