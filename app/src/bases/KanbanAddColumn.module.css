@@ -9,11 +9,25 @@
      eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
      below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
   padding: var(--sp-5) 0;
-  /* .kanbanColHeader's title sits at padding-top: var(--sp-5) from the column's own top edge.
-     .trigger below already adds var(--sp-4) of its own top padding, so this side's top padding
-     is reduced by that amount — the two add back up to var(--sp-5), keeping the "+ column" text
-     baseline level with a real column's title instead of ~5px lower. */
-  padding-top: calc(var(--sp-5) - var(--sp-4));
+  /* .kanbanColHeader's title sits at padding-top: var(--sp-5) from the column's own top edge,
+     inside a header with no min-height (natural content height) — so the title's own text-box
+     top is exactly var(--sp-5) below the header's top edge. .trigger below adds its own
+     var(--sp-4) top padding around the "+ column" text, so this side only needs to make up the
+     remainder — the two add back up to var(--sp-5), keeping the "+ column" text level with a
+     real column's title instead of sitting higher. */
+  padding-top: calc(var(--sp-5) - var(--sp-4) - var(--sp-1));
+}
+/* Editing state (data-editing, set by KanbanAddColumn.tsx while its input is shown): the shared
+   KanbanColumnNameInput's own `.input` carries var(--sp-2) padding (not .trigger's var(--sp-4)),
+   so without compensating here the input's text would jump left/up relative to where the
+   "+ column" text just was. Subtracting that difference from .ghost's own padding keeps the
+   text's x/y pinned across the swap — the input renders exactly where the trigger's text sat. */
+.ghost[data-editing] {
+  padding-left: calc(var(--sp-4) - var(--sp-2));
+  /* The extra 3px (measured headless, not a token) corrects for the input's own single-line box
+     centering its glyph a touch higher than the button's line box does at the same padding — the
+     token-only value left the input's text ~3px above the "+ column" text it replaced. */
+  padding-top: calc(var(--sp-5) - var(--sp-3) + 3px);
 }
 .trigger {
   padding: var(--sp-4);

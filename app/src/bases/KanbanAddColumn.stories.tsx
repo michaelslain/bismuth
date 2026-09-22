@@ -43,9 +43,21 @@ export const Editing: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const trigger = canvas.getByText('+ column')
+        // The trigger's own text box IS its glyph box (no extra padding around the <span>) — the
+        // resting "+ column" text position to hold the input's text to within 1px of.
+        const restRect = trigger.getBoundingClientRect()
         await userEvent.click(trigger)
         const input = await canvas.findByPlaceholderText('column name')
         expect(input).toBe(document.activeElement)
+        // An <input> has no glyph rect of its own to read — its padding box (rect + its own
+        // padding-left/top) is the closest available proxy for where its text starts, and it's
+        // what KanbanAddColumn.module.css's `[data-editing]` padding is tuned against.
+        const cs = getComputedStyle(input)
+        const editRect = input.getBoundingClientRect()
+        const editTextX = editRect.left + parseFloat(cs.paddingLeft)
+        const editTextY = editRect.top + parseFloat(cs.paddingTop)
+        expect(Math.abs(editTextX - restRect.left)).toBeLessThanOrEqual(1)
+        expect(Math.abs(editTextY - restRect.top)).toBeLessThanOrEqual(1)
         await userEvent.type(input, '  Blocked  ')
         await userEvent.keyboard('{Enter}')
         expect(addedNames).toEqual(['Blocked'])

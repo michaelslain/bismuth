@@ -12,12 +12,13 @@
    own states) bring the trigger to `opacity: 1; pointer-events: auto` — no margin trick, since
    it no longer needs to move in and out of flow. */
 .trigger {
+    --kb-ctl-size: 22px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    min-width: 22px;
-    min-height: 22px;
+    width: var(--kb-ctl-size);
+    min-width: var(--kb-ctl-size);
+    min-height: var(--kb-ctl-size);
     padding: var(--sp-1);
     position: absolute;
     right: var(--sp-5);
