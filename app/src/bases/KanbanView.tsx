@@ -25,7 +25,7 @@ import TaskRow from './TaskRow'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
-import { canWriteStoredRow, storedNote } from './taskWrite'
+import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
 import {
     groupUpdatesByPath,
@@ -200,17 +200,22 @@ export function KanbanView(props: {
             titleCol(),
         )
 
-    // Per-column color: explicit override > known-status palette > a palette slot chosen by a stable
-    // hash of the column KEY (not its position) so reordering columns never recolors them.
-    function colColor(key: string): string {
-        const override = groupColors()[key]
-        if (override) return override
+    // The color a column gets with NO override: known-status palette, then a palette slot
+    // chosen by a stable hash of the column KEY (not its position) so reordering columns never
+    // recolors them. Extracted so a rename can compare "what color would this key get on its
+    // own" for both the old and the new key, without writing an override just to ask.
+    function autoColor(key: string): string {
         if (STATUS_COLOR[key.trim().toLowerCase()])
             return STATUS_COLOR[key.trim().toLowerCase()]
         let h = 0
         for (let i = 0; i < key.length; i++)
             h = (h * 31 + key.charCodeAt(i)) | 0
         return PALETTE[Math.abs(h) % PALETTE.length]
+    }
+
+    // Per-column color: explicit override > auto.
+    function colColor(key: string): string {
+        return groupColors()[key] ?? autoColor(key)
     }
 
     const [overCol, setOverCol] = createSignal<string | null>(null)
@@ -783,6 +788,11 @@ export function KanbanView(props: {
                 .find(r => rowId(r) === id) ??
             pendingAdds().find(a => rowId(a.row) === id)?.row
         if (!dragged) return
+        // A placeholder card is inert until its add resolves — dragging it writes nothing.
+        // Checked FIRST, before any optimistic state: the row's write-back handle (a negative
+        // index) does not name a real server slot yet, so ordering it now would be racing the
+        // add's own eventual index.
+        if (isStoredPlaceholder(dragged)) return
 
         // Target column's new integer ordering — explicit orders for every card keep the sort stable
         // (a fractional-only scheme drifts). Applied OPTIMISTICALLY (see the clear-effect above).
@@ -814,17 +824,27 @@ export function KanbanView(props: {
             // The row's OWN file, not props.basePath: a `source:` base's rows carry
             // `syntheticBaseFile(<that base's path>)`, so props.basePath would silently write
             // this board's own file instead of the board it actually sources from.
-            const items = newList.map((r, k) => ({
-                path: r.file.path,
-                index: r.index!,
-                note: {
-                    ...storedNote(r),
-                    ...(statusKey !== null && r === dragged && from !== targetKey
-                        ? { [statusKey]: targetKey }
-                        : {}),
-                    [ORDER_KEY]: k,
-                },
-            }))
+            // Placeholder SIBLINGS (another pending add sharing this column, dragged around
+            // only in the optimistic `pending` overlay above) are left out here — they have no
+            // real server index yet, so writing one into a batch by its negative `r.index!`
+            // would either 400 or, worse, collide with whatever real index the add eventually
+            // resolves to. Their order stays whatever the `pending` overlay says until their
+            // own add lands; only rows the server already knows about get written.
+            const items = newList
+                .filter(r => !isStoredPlaceholder(r))
+                .map((r, k) => ({
+                    path: r.file.path,
+                    index: r.index!,
+                    note: {
+                        ...storedNote(r),
+                        ...(statusKey !== null &&
+                        r === dragged &&
+                        from !== targetKey
+                            ? { [statusKey]: targetKey }
+                            : {}),
+                        [ORDER_KEY]: k,
+                    },
+                }))
             for (const [path, group] of groupUpdatesByPath(items))
                 await api.rowUpdateMany(
                     path,
@@ -941,6 +961,13 @@ export function KanbanView(props: {
         // otherwise columnKeys() keeps rendering a phantom column with no server group forever.
         const trimmedName = name.trim()
         const prevOrder = pendingColOrder()
+        // Captured BEFORE the rollback below clears it — this is the only place that still
+        // knows the re-add was covering a pending removal, and the catch needs it to restore
+        // that removal if the `columns` write never lands (mirrors renameColumn's catch).
+        const targetWasRemoved = pendingRemovedCols().has(trimmedName)
+        // Whether the `columns` write below has landed — a failure before it lands means the
+        // add never happened server-side, so a removal it was covering must come back.
+        let columnsLanded = false
         setPendingColOrder(keys)
         // A column removed then re-added inside the refetch window is still in
         // pendingRemovedCols (its own removal write's refetch hasn't landed yet), and
@@ -954,6 +981,7 @@ export function KanbanView(props: {
                 'columns',
                 keys,
             )
+            columnsLanded = true
             const gb = groupBy()
             if (!gb) return
             const t = propertyType(props.config, gb.property)
@@ -972,6 +1000,17 @@ export function KanbanView(props: {
             // written a newer `pendingColOrder` during this await — restoring `prevOrder`
             // unconditionally would clobber that action's own in-flight state.
             setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            // Mirrors renameColumn's catch: this call cleared `trimmedName` out of
+            // pendingRemovedCols optimistically (to un-hide the re-added column). If the
+            // `columns` write never landed, the add never happened server-side — the removal
+            // it was covering is still real, so put it back, or the column that was just
+            // deleted reappears (hidden nowhere) until a stale refetch happens to reconcile it.
+            // Once `columnsLanded`, the column genuinely exists again and must stay un-hidden.
+            setPendingRemovedCols(prev =>
+                targetWasRemoved && !columnsLanded
+                    ? new Set(prev).add(trimmedName)
+                    : prev,
+            )
             pushToast(`Add column failed: ${(e as Error).message}`)
         }
     }
@@ -1009,9 +1048,7 @@ export function KanbanView(props: {
         // excluding stored-row PLACEHOLDERS (a negative `index`, an optimistic add not yet
         // resolved to a real row): sending one to the server as a rename target 400s, and the
         // rollback would then fire after `columns` already landed.
-        const movedRows = groupByKey(from).rows.filter(
-            r => !(Number.isInteger(r.index) && r.index! < 0),
-        )
+        const movedRows = groupByKey(from).rows.filter(r => !isStoredPlaceholder(r))
 
         // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly, the old
         // key is hidden (columnKeys() would otherwise re-append it while the server still reports
@@ -1046,19 +1083,26 @@ export function KanbanView(props: {
             await api.setViewProperty(basePath, idx, 'columns', keys)
             columnsLanded = true
 
-            // Move a color override from the old key to the new one, if it had one — or, when
-            // there was none, PIN the color it already had: `colColor`'s fallback hashes the
-            // KEY, so leaving `groupColors` untouched would silently recolor the renamed
-            // column via a hash-of-`trimmed` slot instead of keeping `from`'s.
+            // Move a color override from the old key to the new one, if it had one. When there
+            // was none, a rename-carried color counts as an override ONLY when it has to: the
+            // auto color hashes the KEY, so leaving `groupColors` untouched would silently
+            // recolor the column via a hash-of-`trimmed` slot instead of keeping `from`'s — but
+            // when the new key happens to auto-color the same as the old one, writing an
+            // override would show a plain rename as a custom color the user never chose. Skip
+            // the write entirely when `groupColors` would come out unchanged either way.
             const colors = groupColors()
             const next = { ...colors }
+            let colorsChanged = false
             if (colors[from] !== undefined) {
                 next[trimmed] = next[from]!
                 delete next[from]
-            } else {
-                next[trimmed] = colColor(from)
+                colorsChanged = true
+            } else if (autoColor(trimmed) !== autoColor(from)) {
+                next[trimmed] = autoColor(from)
+                colorsChanged = true
             }
-            await api.setViewProperty(basePath, idx, 'groupColors', next)
+            if (colorsChanged)
+                await api.setViewProperty(basePath, idx, 'groupColors', next)
 
             // Declared select/multiselect option rename — mirrors addColumn's append.
             const t = gb ? propertyType(props.config, gb.property) : null
@@ -1198,6 +1242,11 @@ export function KanbanView(props: {
     // via `api.rowUpdate`, addressed by `row.index` like every other stored-row write
     // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
     async function renameCard(row: Row, newTitle: string): Promise<void> {
+        // A placeholder is not yet a row the server knows about — `canWriteStoredRow` is
+        // `false` for it (negative index), which without this check would fall through to the
+        // note-file branch below and `api.move` the BASE's own file (a placeholder's `file` is
+        // `syntheticBaseFile`, the base's own path, not a note). Bail before either branch.
+        if (isStoredPlaceholder(row)) return
         if (canWriteStoredRow(row)) {
             const key = writableKey(titleCol())
             if (key === null) return
@@ -1237,6 +1286,9 @@ export function KanbanView(props: {
     ): Promise<void> {
         const key = writableKey(id)
         if (key === null) return
+        // See `renameCard`'s comment — a placeholder falling through to the note-file branch
+        // below would `setProperty`/`deleteProperty` the BASE's own file, not the row.
+        if (isStoredPlaceholder(row)) return
         if (canWriteStoredRow(row)) {
             const note = { ...storedNote(row) }
             if (value === null || value === undefined || value === '')
@@ -1316,6 +1368,12 @@ export function KanbanView(props: {
 
     async function deleteCard(row: Row): Promise<void> {
         if (!editable()) return
+        // A placeholder is inert until its add resolves — no delete affordance either. Bailing
+        // here (before the optimistic hide) matters doubly: `canWriteStoredRow` is `false` for
+        // it, so without this check it would fall to the note-file branch below and `api.del`
+        // the BASE's own file (a placeholder's `file` is `syntheticBaseFile`, the base's own
+        // path), trashing the whole board out from under every other card.
+        if (isStoredPlaceholder(row)) return
         const id = rowId(row)
         // Hide the card INSTANTLY (optimistic overlay), FLIP the survivors so they slide up smoothly
         // instead of snapping. No props.onChange(): both delete routes are mutating → they bump the

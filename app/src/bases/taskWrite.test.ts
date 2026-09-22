@@ -3,6 +3,7 @@ import {
     toggleStoredTask,
     setStoredTaskStatus,
     canWriteStoredRow,
+    isStoredPlaceholder,
     storedNote,
 } from './taskWrite'
 import { normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
@@ -290,6 +291,40 @@ test('a row with an index can be written back; one without cannot', () => {
     expect(canWriteStoredRow({ file, note: {}, formula: {}, index: 2.5 })).toBe(
         false,
     )
+})
+
+test('a negative index cannot be written back — it is a pending placeholder, not a handle', () => {
+    const file = syntheticBaseFile('B.md')
+    // Against the OLD implementation (`Number.isInteger(row.index)` alone) this is `true`:
+    // a placeholder's index is a real integer, just a negative one, so the old guard would
+    // hand out a write affordance for a row the server has never assigned a slot to.
+    expect(canWriteStoredRow({ file, note: {}, formula: {}, index: -1 })).toBe(
+        false,
+    )
+    expect(canWriteStoredRow({ file, note: {}, formula: {}, index: -2 })).toBe(
+        false,
+    )
+})
+
+test('isStoredPlaceholder names exactly the negative-index case', () => {
+    const file = syntheticBaseFile('B.md')
+    // Against the OLD taskWrite.ts this test cannot even compile — `isStoredPlaceholder` did
+    // not exist. Its behaviour is the other half of the same ruling as the test above: a
+    // negative index IS a placeholder, a non-negative one is NOT, and a row with no index at
+    // all (unwritable, but not pending — it was never a stored row to begin with) is NOT.
+    expect(
+        isStoredPlaceholder({ file, note: {}, formula: {}, index: -1 }),
+    ).toBe(true)
+    expect(
+        isStoredPlaceholder({ file, note: {}, formula: {}, index: 0 }),
+    ).toBe(false)
+    expect(
+        isStoredPlaceholder({ file, note: {}, formula: {}, index: 4 }),
+    ).toBe(false)
+    expect(isStoredPlaceholder({ file, note: {}, formula: {} })).toBe(false)
+    expect(
+        isStoredPlaceholder({ file, note: {}, formula: {}, index: NaN }),
+    ).toBe(false)
 })
 
 test('storedNote is the exported strip every write path must build its note from', () => {

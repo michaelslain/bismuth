@@ -1313,3 +1313,251 @@ export const StoredRowsRenameColumn: Story = {
         }
     },
 }
+
+// ── Task 1 stories: placeholder guard + addColumn rollback + rename colour ruling ──
+
+/** A stored-row placeholder (an add not yet confirmed by the server) is INERT: opening its
+ *  card and trying to rename or delete it while the add is still pending must write nothing.
+ *  Before the fix, `renameCard`/`deleteCard` fell through to the note-file branch for a row
+ *  with no valid `canWriteStoredRow` handle — a placeholder's `file` is the BASE's own
+ *  synthetic path, so that branch would have written onto the board's own config. Gates the
+ *  add's own `rowCreate` open so the card stays a placeholder for the whole play(). */
+export const StoredAddPendingInert: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['description'],
+            },
+        ]
+        const config = sampleBaseConfig({ views })
+        const base = fakeTransport()
+        const calls: { path: string; body: unknown }[] = []
+        const gate = new Promise<void>(() => {}) // never resolves — the add stays pending forever
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                calls.push({ path, body })
+                if (
+                    path === '/row/update' &&
+                    (body as { index: unknown }).index === null
+                ) {
+                    await gate
+                }
+                return base.post(path, body)
+            },
+            put: async (path, body) => {
+                calls.push({ path, body })
+                return base.put(path, body)
+            },
+        }
+        kanbanCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={runView(config, STORED_ADD_ROWS, 0)}
+                config={config}
+                basePath={STORED_ADD_PATH}
+                ownsRows
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const addButton = canvas.getAllByLabelText('Add a card')[0]!
+        await userEvent.click(addButton)
+        const input = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(input, 'ghost card')
+        await userEvent.keyboard('{Enter}')
+
+        // The gated `rowCreate` call has been SENT (proving the add itself is in flight) but
+        // never resolves, so the card stays a placeholder for the rest of this play().
+        await waitFor(() =>
+            expect(
+                kanbanCalls.some(
+                    c =>
+                        c.path === '/row/update' &&
+                        (c.body as { index: unknown }).index === null,
+                ),
+            ).toBe(true),
+        )
+        const callsAfterAdd = kanbanCalls.length
+
+        const title = await canvas.findByText('ghost card')
+        await userEvent.click(title)
+        const dialog = await body.findByRole('dialog')
+        const titleInput = within(dialog).getByDisplayValue('ghost card')
+        await userEvent.clear(titleInput)
+        await userEvent.type(titleInput, 'renamed ghost')
+        await userEvent.keyboard('{Enter}')
+
+        const deleteButton = within(dialog).getByText('DELETE')
+        await userEvent.click(deleteButton)
+
+        // Neither attempt reached the transport: no write landed for either, and the card is
+        // still showing, still a placeholder, still under its original title.
+        expect(kanbanCalls.length).toBe(callsAfterAdd)
+        expect(
+            kanbanCalls.some(c => c.path === '/row/delete'),
+        ).toBe(false)
+        expect(kanbanCalls.some(c => c.path === '/move')).toBe(false)
+        expect(canvasElement.querySelector('[data-kbcol]')).not.toBeNull()
+    },
+}
+
+/** `addColumn`'s rollback (task 1's fix): delete the empty "Blocked" column, then re-add the
+ *  same name while the delete's own removal is still the only record of it (this story never
+ *  simulates a refetch, so `pendingRemovedCols` never clears on its own) — and make the ADD's
+ *  `columns` write reject. Before the fix, the catch only restored `pendingColOrder`, so the
+ *  removal `addColumn` had optimistically cleared for the re-add never came back: the column
+ *  would show neither as present (the failed add) nor as removed (the lost bookkeeping) —
+ *  invisible until an unrelated refetch happened to reconcile it. */
+export const AddColumnFailsRestoresRemoved: Story = {
+    render: () => {
+        const base = fakeTransport()
+        const calls: { path: string; body: unknown }[] = []
+        let columnsWrites = 0
+        const transport: Transport = {
+            ...base,
+            post: async (path, body) => {
+                calls.push({ path, body })
+                if (
+                    path === '/set-property' &&
+                    (body as { key?: string }).key === 'columns'
+                ) {
+                    columnsWrites++
+                    // The first `columns` write is the DELETE (must land so the column is
+                    // really gone server-side); the second is the re-add, which fails.
+                    if (columnsWrites === 2)
+                        throw new Error('network down')
+                }
+                return base.post(path, body)
+            },
+            put: async (path, body) => {
+                calls.push({ path, body })
+                return base.put(path, body)
+            },
+        }
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-addcolumn-fails.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const before = toasts().length
+
+        const menus = canvas.getAllByLabelText('Column menu')
+        const blockedCol = canvasElement.querySelector(
+            '[data-kbcol="Blocked"]',
+        )!
+        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
+        blockedMenu.focus()
+        await userEvent.keyboard('{Enter}')
+        const del = await body.findByText(/^delete$/i)
+        await userEvent.click(del)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-kbcol="Blocked"]'),
+            ).toBeNull(),
+        )
+
+        await userEvent.click(canvas.getByText('+ column'))
+        const input = await canvas.findByPlaceholderText('column name')
+        await userEvent.type(input, 'Blocked')
+        await userEvent.keyboard('{Enter}')
+
+        // No ToastHost is mounted around a standalone KanbanView story, so the failure's
+        // "Add column failed" toast never reaches the DOM — assert against the toast STORE
+        // instead, which needs no host mounted.
+        await waitFor(() => expect(toasts().length).toBe(before + 1))
+        expect(toasts()[before].message).toMatch(/add column failed/i)
+        // The re-add's failure left the column exactly as removed as the delete left it —
+        // still hidden, not a phantom half-state.
+        expect(
+            canvasElement.querySelector('[data-kbcol="Blocked"]'),
+        ).toBeNull()
+    },
+}
+
+/** A rename that lands on a key whose `autoColor` equals the OLD key's `autoColor` (no
+ *  `groupColors` override on either side) stays Auto — the fix skips the `groupColors` write
+ *  entirely rather than pinning a color the user never chose, which would show a plain rename
+ *  as a custom color. "Todo" and "Todox" both fall through to the same hash-of-key palette slot
+ *  (no `STATUS_COLOR` entry for either), so this rename is exactly that case. */
+export const RenameColumnKeepsAuto: Story = {
+    render: () => {
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-rename-keeps-auto.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const col = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"]',
+        )!
+        const menu = within(col).getAllByLabelText('Column menu')[0]!
+        menu.focus()
+        await userEvent.keyboard('{Enter}')
+        await userEvent.click(await body.findByText(/^rename$/i))
+        const input = await waitFor(() =>
+            within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
+                'Todo',
+            ),
+        )
+        await userEvent.clear(input)
+        // A same-auto-color key that isn't just casing/whitespace of the original, so this
+        // exercises the hash fallback comparison rather than the (trivially equal) identity case.
+        await userEvent.type(input, 'Todox')
+        await userEvent.keyboard('{Enter}')
+
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-kbcol="Todox"]'),
+            ).not.toBeNull(),
+        )
+        expect(
+            kanbanCalls.some(
+                c =>
+                    c.path === '/set-property' &&
+                    (c.body as { key?: string }).key === 'groupColors',
+            ),
+        ).toBe(false)
+    },
+}
