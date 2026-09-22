@@ -81,7 +81,7 @@
    component boundary the same sanctioned way `data-kbcol`/`data-kbcard` already do in this
    file). Its own at-rest/hover/focus-visible states live in KanbanColumnMenu.module.css. */
 .kanbanColHeader:hover [data-kbcolmenu-trigger],
-.kanbanColHeader:focus-within [data-kbcolmenu-trigger] { opacity: 1; }
+.kanbanColHeader:focus-within [data-kbcolmenu-trigger] { opacity: 1; margin-left: 0; }
 
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
