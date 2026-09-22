@@ -2,23 +2,41 @@
    `.kanbanColHeader:hover [data-kbcolmenu-trigger]` / `:focus-within` rule shows it (the
    `data-kbcolmenu-trigger` attribute is the cross-component hook; this file only owns the
    at-rest/hover/focus-visible states of the button itself). Mirrors .kbDotBtn's sizing so the
-   two header buttons read as a matched pair. */
+   two header buttons read as a matched pair.
+
+   At rest the button keeps its REAL 22x22 hit box (an interactive control at width:0 is
+   unclickable and trips the story invariant gate's control-no-hit-area check) but is pulled out
+   of flow with a negative margin equal to its own footprint, so it contributes no dead space to
+   the header layout — the count sits flush against the header's own padding instead of ~31px in.
+   `:focus-visible`/`[aria-expanded="true"]` (this file's own states) cancel the margin to bring
+   it back into flow. The ancestor hover/focus-within reveal in KanbanView.module.css currently
+   only flips opacity — it needs the same `margin-left: 0` added there, or a header-hovered
+   trigger stays opacity:1 but still pulled out of flow (invisible-but-clickable dead zone over
+   the count instead of a visible control next to it). */
 .trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    width: 22px;
+    min-width: 22px;
+    min-height: 22px;
     padding: var(--sp-1);
+    margin-left: calc(-1 * (22px + var(--sp-4)));
     border: none;
     background: none;
     border-radius: var(--r-0);
     cursor: pointer;
-    color: var(--on-scrim);
+    color: var(--text-muted);
     opacity: 0;
-    transition: opacity 120ms ease, background 120ms ease;
+    outline-offset: 2px;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
-.trigger:hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
+.trigger:hover { color: var(--fg); background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .trigger:focus-visible,
-.trigger[aria-expanded='true'] { opacity: 1; }
+.trigger[aria-expanded='true'] {
+    margin-left: 0;
+    opacity: 1;
+}
 
 .renaming { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); min-width: 160px; }
 .input { width: 100%; }

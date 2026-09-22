@@ -6,6 +6,11 @@
   flex-direction: column;
   flex: 0 0 auto;
   padding: var(--sp-5);
+  /* .kanbanColHeader's title sits at padding-top: var(--sp-5) from the column's own top edge.
+     .trigger below already adds var(--sp-4) of its own top padding, so this side's top padding
+     is reduced by that amount — the two add back up to var(--sp-5), keeping the "+ column" text
+     baseline level with a real column's title instead of ~5px lower. */
+  padding-top: calc(var(--sp-5) - var(--sp-4));
 }
 .trigger {
   padding: var(--sp-4) var(--sp-5);

@@ -52,7 +52,7 @@ export const RenameFlow: Story = {
         const body = within(canvasElement.ownerDocument.body)
         const trigger = canvas.getByLabelText('Column menu')
         await userEvent.click(trigger)
-        const rename = await waitFor(() => body.getByText('Rename'))
+        const rename = await waitFor(() => body.getByText('rename'))
         await userEvent.click(rename)
         const input = await waitFor(() => body.getByDisplayValue('Todo'))
         await userEvent.clear(input)
@@ -65,7 +65,7 @@ export const RenameFlow: Story = {
 
         // Reopen + retype a name that collides with an existing column — refused inline.
         await userEvent.click(trigger)
-        await userEvent.click(await waitFor(() => body.getByText('Rename')))
+        await userEvent.click(await waitFor(() => body.getByText('rename')))
         const input2 = await waitFor(() => body.getByDisplayValue('Todo'))
         await userEvent.clear(input2)
         await userEvent.type(input2, 'Doing')
@@ -90,7 +90,7 @@ export const DeleteDisabled: Story = {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
         await userEvent.click(canvas.getByLabelText('Column menu'))
-        await waitFor(() => body.getByText('Delete'))
+        await waitFor(() => body.getByText('delete'))
         await waitFor(() => body.getByText('column not empty'))
     },
 }
@@ -115,7 +115,7 @@ export const DeleteEnabled: Story = {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
         await userEvent.click(canvas.getByLabelText('Column menu'))
-        const del = await waitFor(() => body.getByText('Delete'))
+        const del = await waitFor(() => body.getByText('delete'))
         await userEvent.click(del)
         expect(deleted).toBe(true)
         await waitFor(() =>

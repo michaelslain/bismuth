@@ -89,10 +89,10 @@ const KanbanColumnMenu: Component<KanbanColumnMenuProps> = props => {
                     fallback={
                         <PopoverList
                             items={[
-                                { label: 'Rename' },
+                                { label: 'rename' },
                                 {
-                                    label: 'Delete',
-                                    danger: true,
+                                    label: 'delete',
+                                    danger: props.canDelete,
                                     disabled: !props.canDelete,
                                     detail: props.canDelete
                                         ? undefined
