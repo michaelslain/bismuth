@@ -5,6 +5,8 @@ import {
     hasValue,
     metaVisible,
     writableKey,
+    storedTitleColumn,
+    matchedStoredRowId,
 } from './kanbanMeta'
 import type { Schema } from '../../../core/src/schema/types'
 
@@ -122,6 +124,86 @@ describe('metaVisible', () => {
     test('a non-empty non-boolean property is visible, same as hasValue', () => {
         expect(metaVisible('priority', 'high', {})).toBe(true)
         expect(metaVisible('count', 0, {})).toBe(true)
+    })
+})
+
+describe('storedTitleColumn', () => {
+    test('picks the first writable order id', () => {
+        expect(storedTitleColumn(['description', 'status'])).toBe(
+            'description',
+        )
+        expect(storedTitleColumn(['note.description', 'status'])).toBe(
+            'note.description',
+        )
+    })
+
+    test('skips non-writable ids (file./formula./this.) before a writable one', () => {
+        expect(storedTitleColumn(['file.name', 'description'])).toBe(
+            'description',
+        )
+    })
+
+    test('falls back to "title" when nothing in order is writable', () => {
+        expect(storedTitleColumn([])).toBe('title')
+        expect(storedTitleColumn(['file.name', 'formula.total'])).toBe(
+            'title',
+        )
+    })
+})
+
+describe('matchedStoredRowId', () => {
+    test('finds the new row (content not in priorSnapshots) carrying the matching value', () => {
+        const rows = [
+            { id: 'b.md#0', snapshot: '{"status":"Todo"}', value: 'Todo' },
+            { id: 'b.md#1', snapshot: '{"status":"Todo","title":"new"}', value: 'Todo' },
+        ]
+        expect(
+            matchedStoredRowId(
+                rows,
+                new Set(['{"status":"Todo"}']),
+                'Todo',
+            ),
+        ).toBe('b.md#1')
+    })
+
+    test('a new row present under a filters: block that drops other rows still resolves — index is never consulted', () => {
+        // The whole bug: the server appended past index 4 (filtered rows not shown here at
+        // all), yet the real new row is still findable by "new + matching value" alone.
+        const rows = [{ id: 'b.md#7', snapshot: '{"status":"Doing"}', value: 'Doing' }]
+        expect(matchedStoredRowId(rows, new Set(), 'Doing')).toBe('b.md#7')
+    })
+
+    test('undefined when nothing new yet', () => {
+        const rows = [{ id: 'b.md#0', snapshot: '{"status":"Todo"}', value: 'Todo' }]
+        expect(
+            matchedStoredRowId(
+                rows,
+                new Set(['{"status":"Todo"}']),
+                'Todo',
+            ),
+        ).toBeUndefined()
+    })
+
+    test('undefined when a new row exists but carries a different value (not this add)', () => {
+        const rows = [{ id: 'b.md#1', snapshot: '{"status":"Doing"}', value: 'Doing' }]
+        expect(matchedStoredRowId(rows, new Set(), 'Todo')).toBeUndefined()
+    })
+
+    test('a delete shifting a LATER row down to an id a PRIOR row already held still resolves — priorSnapshots is content-keyed, not id-keyed', () => {
+        // The bug this generalization fixes: an earlier delete shifts the real new row onto an
+        // id that a pre-existing row already occupied at add-time. An id-keyed priorIds set
+        // would wrongly exclude it (the id "was already there"); content survives the shift.
+        const rows = [{ id: 'b.md#1', snapshot: '{"status":"Doing","title":"brand-new"}', value: 'Doing' }]
+        // priorSnapshots holds the OLD row's content that used to sit at some other id — never
+        // the new row's content — so the new row still matches even though its id collides
+        // with whatever pre-existing id space looked occupied.
+        expect(
+            matchedStoredRowId(
+                rows,
+                new Set(['{"status":"Doing","title":"old"}']),
+                'Doing',
+            ),
+        ).toBe('b.md#1')
     })
 })
 

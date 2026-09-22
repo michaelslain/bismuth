@@ -22,6 +22,12 @@ type Entry<T> = { value: T; version: number; stale: boolean }
  *  the version source are injected. */
 export class RowCache<T> {
     private store = new Map<string, Entry<T>>()
+    // The latest token `begin(key)` has issued per key — models core/src/asyncCache.ts's
+    // `generation` counter, one level more granular (per-key instead of whole-cache). A `set()`
+    // carrying an older token than this is a fetch that started before a newer one and settled
+    // after it — exactly the race a fast SSE-driven revalidate wins against a slow initial
+    // resolve — and must be dropped rather than clobbering the newer value.
+    private tokens = new Map<string, number>()
 
     /** Return the cached value for `key` if present (even if stale), else undefined. */
     peek(key: string): T | undefined {
@@ -34,9 +40,33 @@ export class RowCache<T> {
         return !!e && !e.stale && e.version === version
     }
 
-    /** Record a freshly resolved value at `version` (clears any stale flag). */
-    set(key: string, value: T, version: number): void {
+    /** Claim a token for `key` before starting an async fetch. Pass the returned token to the
+     *  matching `set()` call so a fetch that settles after a NEWER one was begun (and possibly
+     *  already landed) gets dropped instead of overwriting fresher data.
+     *
+     *  See `set()`'s doc for the known behaviour around an erroring fetch. */
+    begin(key: string): number {
+        const next = (this.tokens.get(key) ?? 0) + 1
+        this.tokens.set(key, next)
+        return next
+    }
+
+    /** Record a freshly resolved value at `version` (clears any stale flag). When `token` is
+     *  given, the write is dropped — and `false` returned — unless it is still the LATEST token
+     *  `begin(key)` issued for this key; an older fetch settling late must not overwrite a newer
+     *  value nor mark the entry fresh. Callers that pass no token keep the previous unconditional
+     *  behaviour (always writes, always returns true).
+     *
+     *  Known behaviour, paired with `begin()`'s note above: if the newer fetch ERRORS it never
+     *  calls `set()`, so its token is still "latest" and an older fetch's `set()` keeps returning
+     *  `false` — the cache is left stuck on its pre-race value (stale or absent) until the NEXT
+     *  version bump (`invalidate()`) lets a fresh `begin()`/`set()` pair revalidate it. That gap
+     *  is intentional, not a bug to route around here: self-healing on the next vault change beats
+     *  guessing whether a caller's `set()` after failure means "recovered" or "landed stale". */
+    set(key: string, value: T, version: number, token?: number): boolean {
+        if (token !== undefined && this.tokens.get(key) !== token) return false
         this.store.set(key, { value, version, stale: false })
+        return true
     }
 
     /** Mark every entry resolved before `version` stale — a vault change may have

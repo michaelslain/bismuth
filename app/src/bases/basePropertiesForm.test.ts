@@ -6,6 +6,7 @@ import {
     seedPropertyRows,
     moveRow,
     buildPropertiesYaml,
+    duplicatePropertyNames,
     type PropertyFormRow,
 } from './basePropertiesForm'
 import type { BaseConfig } from '../../../core/src/bases/types'
@@ -160,6 +161,29 @@ test('buildPropertiesYaml: formula emits expr and never a default', () => {
     expect(out).toEqual([
         { name: 'total', type: 'formula', expr: 'note.qty * note.price' },
     ])
+})
+
+test('duplicatePropertyNames: flags only the later occurrence, trimmed + case-sensitive', () => {
+    expect(
+        duplicatePropertyNames([
+            row({ name: 'status' }),
+            row({ name: ' status ' }),
+            row({ name: 'Status' }),
+            row({ name: 'other' }),
+        ]),
+    ).toEqual(new Set([1]))
+})
+
+test('duplicatePropertyNames: empty when every name is unique, blanks never collide with each other', () => {
+    expect(
+        duplicatePropertyNames([
+            row({ name: 'a' }),
+            row({ name: 'b' }),
+        ]),
+    ).toEqual(new Set())
+    expect(
+        duplicatePropertyNames([row({ name: '' }), row({ name: '' })]),
+    ).toEqual(new Set())
 })
 
 test('buildPropertiesYaml: hidden + boolean default coercion', () => {
