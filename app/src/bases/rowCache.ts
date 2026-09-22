@@ -44,14 +44,7 @@ export class RowCache<T> {
      *  matching `set()` call so a fetch that settles after a NEWER one was begun (and possibly
      *  already landed) gets dropped instead of overwriting fresher data.
      *
-     *  Known behaviour: a newer fetch's token stays "latest" even if that fetch ERRORS and never
-     *  calls `set()` — an erroring caller must not call `set()` on failure, or it would mark a
-     *  fetch that never produced a value as having landed. So an OLDER fetch that later succeeds
-     *  is still dropped by the stale-token check below, and the entry is left exactly as it was
-     *  before either fetch started (possibly stale, possibly missing). This is safe, not lossy:
-     *  the next `invalidate()` (a version bump) re-arms revalidation and the following `begin()`
-     *  gets a fresh shot — self-heals rather than requiring the caller to retry the errored
-     *  fetch itself. */
+     *  See `set()`'s doc for the known behaviour around an erroring fetch. */
     begin(key: string): number {
         const next = (this.tokens.get(key) ?? 0) + 1
         this.tokens.set(key, next)

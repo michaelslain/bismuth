@@ -1,24 +1,24 @@
 /* ---- KanbanColumnNameInput ---- */
 /* Shared field chrome for both callers (KanbanAddColumn / KanbanColumnMenu): regular weight (not
-   the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting --border-soft bottom
+   the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting --border bottom
    rule, and the error's left edge aligned to the input's own text x via the same horizontal
    padding token on both (.input / .error). */
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  min-width: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    min-width: 160px;
 }
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--sp-2) var(--sp-2);
-  font-size: var(--fs-ui);
-  font-weight: 400;
-  color: var(--fg);
-  border-bottom: 1px solid var(--border-soft);
+.field .input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--sp-2) var(--sp-2);
+    font-size: var(--fs-ui);
+    font-weight: 400;
+    color: var(--fg);
+    border-bottom: 1px solid var(--border);
 }
 .error {
-  padding-left: var(--sp-2);
-  color: var(--danger);
+    padding-left: var(--sp-2);
+    color: var(--danger);
 }

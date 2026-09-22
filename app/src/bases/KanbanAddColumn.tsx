@@ -23,6 +23,7 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
     return (
         <div
             class={[styles.ghost, props.className].filter(Boolean).join(' ')}
+            data-editing={editing() ? '' : undefined}
         >
             <Show
                 when={editing()}
