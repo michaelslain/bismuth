@@ -11,6 +11,13 @@ import { runView } from '../../../core/src/bases/query'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row } from '../../../core/src/bases/types'
 import { api, setTransport } from '../api'
+import {
+    boardWidths,
+    fontsSettled,
+    ghostOf,
+    inputTextOrigin,
+    restTextOrigin,
+} from '../ui/_kanbanAddColumnAssertions'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { FakeTransportSeed } from '../ui/_fakeTransport'
 import type { Transport } from '../api'
@@ -299,57 +306,33 @@ export const AddColumn: Story = {
         // (kanban-polish finding 2/1: the header's min-height pin + the ghost's derived
         // padding-top). Measured via a Range over each text node's own glyph box, not the
         // element's box, so ascender/descender padding can't hide a real mismatch.
-        const textTop = (node: Node) => {
-            const range = document.createRange()
-            range.selectNodeContents(node)
-            return range.getBoundingClientRect()
-        }
-        // The trigger BUTTON itself (not `getByText`, which — since its text lives in a nested
-        // <span> (the Text primitive) rather than directly on the button — resolves ambiguously
-        // between the two), so every later measurement is against the one element that's both
-        // clicked and replaced by the input.
-        const ghostButton = canvasElement.querySelector(
-            '[data-testid="kanban-add-column"] button',
-        ) as HTMLElement
-        const ghostTextNode = ghostButton.querySelector('span')
-            ?.firstChild as Node
+        await fontsSettled()
+        const ghost = ghostOf(canvasElement)
         const firstColumn = canvasElement.querySelector(
             '[data-kbcol]',
         ) as HTMLElement
         const firstColumnKey = firstColumn.getAttribute('data-kbcol') as string
         const titleEl = within(firstColumn).getByText(firstColumnKey)
-        const restGhostRect = textTop(ghostTextNode)
-        const titleRect = textTop(titleEl.firstChild as Node)
-        expect(Math.abs(restGhostRect.top - titleRect.top)).toBeLessThanOrEqual(1)
+        const range = document.createRange()
+        range.selectNodeContents(titleEl.firstChild as Node)
+        const titleTop = range.getBoundingClientRect().top
+        const restOrigin = restTextOrigin(ghost)
+        expect(Math.abs(restOrigin.y - titleTop)).toBeLessThanOrEqual(1)
 
-        const colWidthBefore = firstColumn.getBoundingClientRect().width
+        // Every column's width (and the ghost's), not just the first — a reflow anywhere on the
+        // board changes at least one.
+        const restWidths = boardWidths(canvasElement)
+        await userEvent.click(ghost.querySelector('button') as HTMLElement)
+        const input = (await canvas.findByPlaceholderText(
+            'name',
+        )) as HTMLInputElement
 
-        // The trigger's own content-box origin (its rect plus its padding/border) — the "+
-        // column" text's x/y this swap must preserve. A Range can't be taken on <input>'s
-        // internal text, so both sides of this comparison use the content-box, not a Range,
-        // to stay apples-to-apples (a Range vs a content-box differ by the font's leading).
-        const contentOrigin = (el: Element) => {
-            const cs = getComputedStyle(el)
-            const r = el.getBoundingClientRect()
-            return {
-                x: r.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
-                y: r.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth),
-            }
-        }
-        const restTriggerOrigin = contentOrigin(ghostButton)
-
-        await userEvent.click(ghostButton)
-        const input = await canvas.findByPlaceholderText('name')
-
-        // The swap into the input must not move the text (finding 3) or reflow the board
-        // (KanbanColumnNameInput's shared `.field { min-width: 160px }` would otherwise widen
-        // the ghost and shrink every real column — .addField overrides that to `width: 100%`).
-        const inputOrigin = contentOrigin(input)
-        expect(Math.abs(inputOrigin.x - restTriggerOrigin.x)).toBeLessThanOrEqual(1)
-        expect(Math.abs(inputOrigin.y - restTriggerOrigin.y)).toBeLessThanOrEqual(1)
-        expect(
-            firstColumn.getBoundingClientRect().width,
-        ).toBe(colWidthBefore)
+        // The swap into the input must not move the text or reflow the board — the same
+        // measurement KanbanAddColumn.stories' Editing asserts.
+        const editOrigin = inputTextOrigin(input)
+        expect(Math.abs(editOrigin.x - restOrigin.x)).toBeLessThanOrEqual(1)
+        expect(Math.abs(editOrigin.y - restOrigin.y)).toBeLessThanOrEqual(1)
+        expect(boardWidths(canvasElement)).toEqual(restWidths)
 
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
