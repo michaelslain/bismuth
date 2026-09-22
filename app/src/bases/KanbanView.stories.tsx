@@ -14,6 +14,7 @@ import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { FakeTransportSeed } from '../ui/_fakeTransport'
 import type { Transport } from '../api'
+import { toasts } from '../toastStore'
 
 // `fakeTransport` gives every route a generic 200 ack with no record of the call — enough for a
 // story that only needs the write to succeed, not enough to ASSERT what was written. Wraps it
@@ -1187,6 +1188,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
+        const before = toasts().length
 
         const menus = canvas.getAllByLabelText('Column menu')
         const blockedCol = canvasElement.querySelector(
@@ -1208,11 +1210,11 @@ export const AddColumnFailsRestoresRemoved: Story = {
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
 
-        await waitFor(() =>
-            expect(
-                body.getByText(/add column failed/i),
-            ).toBeInTheDocument(),
-        )
+        // No ToastHost is mounted around a standalone KanbanView story, so the failure's
+        // "Add column failed" toast never reaches the DOM — assert against the toast STORE
+        // instead, which needs no host mounted.
+        await waitFor(() => expect(toasts().length).toBe(before + 1))
+        expect(toasts()[before].message).toMatch(/add column failed/i)
         // The re-add's failure left the column exactly as removed as the delete left it —
         // still hidden, not a phantom half-state.
         expect(
@@ -1224,7 +1226,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
 /** A rename that lands on a key whose `autoColor` equals the OLD key's `autoColor` (no
  *  `groupColors` override on either side) stays Auto — the fix skips the `groupColors` write
  *  entirely rather than pinning a color the user never chose, which would show a plain rename
- *  as a custom color. "Todo" and "Todoo" both fall through to the same hash-of-key palette slot
+ *  as a custom color. "Todo" and "Todox" both fall through to the same hash-of-key palette slot
  *  (no `STATUS_COLOR` entry for either), so this rename is exactly that case. */
 export const RenameColumnKeepsAuto: Story = {
     render: () => {
@@ -1265,12 +1267,12 @@ export const RenameColumnKeepsAuto: Story = {
         await userEvent.clear(input)
         // A same-auto-color key that isn't just casing/whitespace of the original, so this
         // exercises the hash fallback comparison rather than the (trivially equal) identity case.
-        await userEvent.type(input, 'Todoo')
+        await userEvent.type(input, 'Todox')
         await userEvent.keyboard('{Enter}')
 
         await waitFor(() =>
             expect(
-                canvasElement.querySelector('[data-kbcol="Todoo"]'),
+                canvasElement.querySelector('[data-kbcol="Todox"]'),
             ).not.toBeNull(),
         )
         expect(
