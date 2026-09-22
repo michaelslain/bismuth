@@ -18,6 +18,7 @@ import { declaredPropertyKeys } from '../../../core/src/bases/properties'
 import {
     blankPropertyRow,
     buildPropertiesYaml,
+    duplicatePropertyNames,
     moveRow,
     seedPropertyRows,
     type PropertyFormRow,
@@ -298,6 +299,9 @@ export function BaseSettings(props: {
     // Progressive disclosure: at most one row's full editor is open at a time. `null` = every
     // row collapsed to its quiet name/type/visibility line (see the render below).
     const [editingProp, setEditingProp] = createSignal<number | null>(null)
+    // Row indexes whose name duplicates an earlier row's — buildPropertiesYaml silently drops
+    // the later one on save, so warn on the row and block SAVE instead.
+    const duplicateNames = createMemo(() => duplicatePropertyNames(propRows()))
     const addPropRow = () => {
         const next = [
             ...propRows(),
@@ -620,9 +624,11 @@ export function BaseSettings(props: {
                 </SettingsHint>
                 <Show when={propRows().length > 0}>
                     <div class={styles['propset-list']}>
-                        <For each={propRows()}>
+                        <Index each={propRows()}>
                             {(row, i) => {
-                                const open = () => editingProp() === i()
+                                const open = () => editingProp() === i
+                                const dupe = () =>
+                                    duplicateNames().has(i)
                                 return (
                                     <div
                                         class={styles['propset-row']}
@@ -635,7 +641,7 @@ export function BaseSettings(props: {
                                             aria-expanded={open()}
                                             onClick={() =>
                                                 setEditingProp(
-                                                    open() ? null : i(),
+                                                    open() ? null : i,
                                                 )
                                             }
                                             onKeyDown={e => {
@@ -645,7 +651,7 @@ export function BaseSettings(props: {
                                                 ) {
                                                     e.preventDefault()
                                                     setEditingProp(
-                                                        open() ? null : i(),
+                                                        open() ? null : i,
                                                     )
                                                 }
                                             }}
@@ -662,9 +668,9 @@ export function BaseSettings(props: {
                                                 tone="inherit"
                                                 weight="inherit"
                                                 class={styles['propset-name-txt']}
-                                                classList={{ [styles['empty']]: !row.name }}
+                                                classList={{ [styles['empty']]: !row().name }}
                                             >
-                                                {row.name ||
+                                                {row().name ||
                                                     'Untitled property'}
                                             </Text>
                                             <Text
@@ -674,21 +680,21 @@ export function BaseSettings(props: {
                                                 weight="inherit"
                                                 class={styles['propset-kind']}
                                             >
-                                                {row.kind}
+                                                {row().kind}
                                             </Text>
                                             <IconButton
                                                 icon={
-                                                    row.hidden
+                                                    row().hidden
                                                         ? 'eye-off'
                                                         : 'eye'
                                                 }
                                                 label={
-                                                    row.hidden
-                                                        ? `Show ${row.name || 'property'} on cards/table`
-                                                        : `Hide ${row.name || 'property'} from cards/table`
+                                                    row().hidden
+                                                        ? `Show ${row().name || 'property'} on cards/table`
+                                                        : `Hide ${row().name || 'property'} from cards/table`
                                                 }
                                                 title={
-                                                    row.hidden
+                                                    row().hidden
                                                         ? 'Hidden from cards/table — click to show'
                                                         : 'Visible on cards/table — click to hide'
                                                 }
@@ -696,8 +702,8 @@ export function BaseSettings(props: {
                                                 class={styles['propset-eye']}
                                                 onClick={e => {
                                                     e.stopPropagation()
-                                                    updateRow(i(), {
-                                                        hidden: !row.hidden,
+                                                    updateRow(i, {
+                                                        hidden: !row().hidden,
                                                     })
                                                 }}
                                             />
@@ -706,22 +712,28 @@ export function BaseSettings(props: {
                                         <Show when={open()}>
                                             <div class={styles['propset-body']}>
                                                 <div class={styles['propset-fields']}>
-                                                    <TextInput
-                                                        class="propset-input"
-                                                        value={row.name}
-                                                        placeholder="Property name"
-                                                        onInput={v =>
-                                                            updateRow(i(), {
-                                                                name: v,
-                                                            })
-                                                        }
-                                                    />
+                                                    <div class={styles['propset-input']}>
+                                                        <TextInput
+                                                            value={row().name}
+                                                            placeholder="Property name"
+                                                            onInput={v =>
+                                                                updateRow(i, {
+                                                                    name: v,
+                                                                })
+                                                            }
+                                                        />
+                                                        <Show when={dupe()}>
+                                                            <SettingsHint class={styles['propset-dupe']}>
+                                                                Another property already uses this name — rename one before saving.
+                                                            </SettingsHint>
+                                                        </Show>
+                                                    </div>
                                                     <Select
-                                                        class="propset-input"
-                                                        value={row.kind}
+                                                        class={styles['propset-input']}
+                                                        value={row().kind}
                                                         options={KIND_OPTS}
                                                         onChange={v =>
-                                                            updateRow(i(), {
+                                                            updateRow(i, {
                                                                 kind: v as BasePropertyKind,
                                                             })
                                                         }
@@ -730,18 +742,18 @@ export function BaseSettings(props: {
 
                                                 <Show
                                                     when={
-                                                        row.kind === 'select' ||
-                                                        row.kind ===
+                                                        row().kind === 'select' ||
+                                                        row().kind ===
                                                             'multiselect'
                                                     }
                                                 >
                                                     <TextInput
                                                         class={`${styles['propset-extra']} ${styles['propset-options']}`}
                                                         multiline
-                                                        value={row.optionsText}
+                                                        value={row().optionsText}
                                                         placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
                                                         onInput={v =>
-                                                            updateRow(i(), {
+                                                            updateRow(i, {
                                                                 optionsText: v,
                                                             })
                                                         }
@@ -749,39 +761,39 @@ export function BaseSettings(props: {
                                                 </Show>
 
                                                 <Show
-                                                    when={row.kind === 'number'}
+                                                    when={row().kind === 'number'}
                                                 >
                                                     <div class={`${styles['propset-extra']} ${styles['propset-numrow']}`}>
                                                         <Select
-                                                            value={row.number}
+                                                            value={row().number}
                                                             options={
                                                                 NUMBER_FORMAT_OPTS
                                                             }
                                                             onChange={v =>
-                                                                updateRow(i(), {
+                                                                updateRow(i, {
                                                                     number: v as NumberFormat,
                                                                 })
                                                             }
                                                         />
                                                         <Show
                                                             when={
-                                                                row.number ===
+                                                                row().number ===
                                                                     'unit' ||
-                                                                row.number ===
+                                                                row().number ===
                                                                     'currency'
                                                             }
                                                         >
                                                             <TextInput
-                                                                value={row.unit}
+                                                                value={row().unit}
                                                                 placeholder={
-                                                                    row.number ===
+                                                                    row().number ===
                                                                     'currency'
                                                                         ? 'Currency code (e.g. USD)'
                                                                         : 'Unit label (e.g. kg)'
                                                                 }
                                                                 onInput={v =>
                                                                     updateRow(
-                                                                        i(),
+                                                                        i,
                                                                         {
                                                                             unit: v,
                                                                         },
@@ -799,15 +811,15 @@ export function BaseSettings(props: {
 
                                                 <Show
                                                     when={
-                                                        row.kind === 'formula'
+                                                        row().kind === 'formula'
                                                     }
                                                 >
                                                     <TextInput
                                                         class={styles['propset-extra']}
-                                                        value={row.expr}
+                                                        value={row().expr}
                                                         placeholder="Expression, e.g. note.qty * note.price"
                                                         onInput={v =>
-                                                            updateRow(i(), {
+                                                            updateRow(i, {
                                                                 expr: v,
                                                             })
                                                         }
@@ -816,15 +828,15 @@ export function BaseSettings(props: {
 
                                                 <Show
                                                     when={
-                                                        row.kind !== 'formula'
+                                                        row().kind !== 'formula'
                                                     }
                                                 >
                                                     <TextInput
                                                         class={styles['propset-extra']}
-                                                        value={row.defaultText}
+                                                        value={row().defaultText}
                                                         placeholder="Default value (optional)"
                                                         onInput={v =>
-                                                            updateRow(i(), {
+                                                            updateRow(i, {
                                                                 defaultText: v,
                                                             })
                                                         }
@@ -837,9 +849,9 @@ export function BaseSettings(props: {
                                                         label="Move up"
                                                         iconSize={13}
                                                         class={styles['propset-btn']}
-                                                        disabled={i() === 0}
+                                                        disabled={i === 0}
                                                         onClick={() =>
-                                                            moveRowAt(i(), -1)
+                                                            moveRowAt(i, -1)
                                                         }
                                                     />
                                                     <IconButton
@@ -848,12 +860,12 @@ export function BaseSettings(props: {
                                                         iconSize={13}
                                                         class={styles['propset-btn']}
                                                         disabled={
-                                                            i() ===
+                                                            i ===
                                                             propRows().length -
                                                                 1
                                                         }
                                                         onClick={() =>
-                                                            moveRowAt(i(), 1)
+                                                            moveRowAt(i, 1)
                                                         }
                                                     />
                                                     <div class={styles['sp']} />
@@ -863,7 +875,7 @@ export function BaseSettings(props: {
                                                         iconSize={13}
                                                         danger
                                                         onClick={() =>
-                                                            removePropRow(i())
+                                                            removePropRow(i)
                                                         }
                                                     >
                                                         DELETE
@@ -874,7 +886,7 @@ export function BaseSettings(props: {
                                     </div>
                                 )
                             }}
-                        </For>
+                        </Index>
                     </div>
                 </Show>
                 <div class={styles['propset-add']}>
@@ -904,6 +916,7 @@ export function BaseSettings(props: {
                     icon="Check"
                     size="sm"
                     variant="selected"
+                    disabled={duplicateNames().size > 0}
                     onClick={save}
                 >
                     SAVE
