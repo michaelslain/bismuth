@@ -50,8 +50,12 @@ export const RenameFlow: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const trigger = canvas.getByLabelText('Column menu')
-        await userEvent.click(trigger)
+        const trigger = canvas.getByLabelText('Column menu') as HTMLElement
+        // The trigger is `pointer-events: none` at rest (Finding 2 — it sits over the column
+        // count's own slot and must not intercept a pointer click there); a keyboard user still
+        // reaches it via focus + Enter, which is what this drives instead of a pointer click.
+        trigger.focus()
+        await userEvent.keyboard('{Enter}')
         const rename = await waitFor(() => body.getByText('rename'))
         await userEvent.click(rename)
         const input = await waitFor(() => body.getByDisplayValue('Todo'))
@@ -64,7 +68,8 @@ export const RenameFlow: Story = {
         )
 
         // Reopen + retype a name that collides with an existing column — refused inline.
-        await userEvent.click(trigger)
+        trigger.focus()
+        await userEvent.keyboard('{Enter}')
         await userEvent.click(await waitFor(() => body.getByText('rename')))
         const input2 = await waitFor(() => body.getByDisplayValue('Todo'))
         await userEvent.clear(input2)
@@ -89,7 +94,10 @@ export const DeleteDisabled: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        await userEvent.click(canvas.getByLabelText('Column menu'))
+        // pointer-events: none at rest (Finding 2) — reach the trigger via keyboard, as a real
+        // keyboard user would.
+        ;(canvas.getByLabelText('Column menu') as HTMLElement).focus()
+        await userEvent.keyboard('{Enter}')
         await waitFor(() => body.getByText('delete'))
         await waitFor(() => body.getByText('column not empty'))
     },
@@ -114,7 +122,10 @@ export const DeleteEnabled: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        await userEvent.click(canvas.getByLabelText('Column menu'))
+        // pointer-events: none at rest (Finding 2) — reach the trigger via keyboard, as a real
+        // keyboard user would.
+        ;(canvas.getByLabelText('Column menu') as HTMLElement).focus()
+        await userEvent.keyboard('{Enter}')
         const del = await waitFor(() => body.getByText('delete'))
         await userEvent.click(del)
         expect(deleted).toBe(true)
