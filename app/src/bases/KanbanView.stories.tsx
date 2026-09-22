@@ -294,8 +294,63 @@ export const AddColumn: Story = {
         const canvas = within(canvasElement)
         const columnsBefore =
             canvasElement.querySelectorAll('[data-kbcol]').length
-        await userEvent.click(canvas.getByText('+ column'))
-        const input = await canvas.findByPlaceholderText('column name')
+
+        // The `+ column` text-node top must land level with a real column title's, within 1px
+        // (kanban-polish finding 2/1: the header's min-height pin + the ghost's derived
+        // padding-top). Measured via a Range over each text node's own glyph box, not the
+        // element's box, so ascender/descender padding can't hide a real mismatch.
+        const textTop = (node: Node) => {
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            return range.getBoundingClientRect()
+        }
+        // The trigger BUTTON itself (not `getByText`, which — since its text lives in a nested
+        // <span> (the Text primitive) rather than directly on the button — resolves ambiguously
+        // between the two), so every later measurement is against the one element that's both
+        // clicked and replaced by the input.
+        const ghostButton = canvasElement.querySelector(
+            '[data-testid="kanban-add-column"] button',
+        ) as HTMLElement
+        const ghostTextNode = ghostButton.querySelector('span')
+            ?.firstChild as Node
+        const firstColumn = canvasElement.querySelector(
+            '[data-kbcol]',
+        ) as HTMLElement
+        const firstColumnKey = firstColumn.getAttribute('data-kbcol') as string
+        const titleEl = within(firstColumn).getByText(firstColumnKey)
+        const restGhostRect = textTop(ghostTextNode)
+        const titleRect = textTop(titleEl.firstChild as Node)
+        expect(Math.abs(restGhostRect.top - titleRect.top)).toBeLessThanOrEqual(1)
+
+        const colWidthBefore = firstColumn.getBoundingClientRect().width
+
+        // The trigger's own content-box origin (its rect plus its padding/border) — the "+
+        // column" text's x/y this swap must preserve. A Range can't be taken on <input>'s
+        // internal text, so both sides of this comparison use the content-box, not a Range,
+        // to stay apples-to-apples (a Range vs a content-box differ by the font's leading).
+        const contentOrigin = (el: Element) => {
+            const cs = getComputedStyle(el)
+            const r = el.getBoundingClientRect()
+            return {
+                x: r.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
+                y: r.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth),
+            }
+        }
+        const restTriggerOrigin = contentOrigin(ghostButton)
+
+        await userEvent.click(ghostButton)
+        const input = await canvas.findByPlaceholderText('name')
+
+        // The swap into the input must not move the text (finding 3) or reflow the board
+        // (KanbanColumnNameInput's shared `.field { min-width: 160px }` would otherwise widen
+        // the ghost and shrink every real column — .addField overrides that to `width: 100%`).
+        const inputOrigin = contentOrigin(input)
+        expect(Math.abs(inputOrigin.x - restTriggerOrigin.x)).toBeLessThanOrEqual(1)
+        expect(Math.abs(inputOrigin.y - restTriggerOrigin.y)).toBeLessThanOrEqual(1)
+        expect(
+            firstColumn.getBoundingClientRect().width,
+        ).toBe(colWidthBefore)
+
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
         await waitFor(() =>
@@ -1476,7 +1531,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
         )
 
         await userEvent.click(canvas.getByText('+ column'))
-        const input = await canvas.findByPlaceholderText('column name')
+        const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
 

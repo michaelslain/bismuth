@@ -43,6 +43,10 @@
   display: flex; align-items: center; gap: var(--sp-4); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
   padding: var(--sp-5) var(--sp-5);
   box-sizing: border-box;
+  /* Pins the header to the `…` trigger's own size (--kb-ctl-size: 22px, defined in
+     KanbanColumnMenu.module.css) rather than the natural content height, since the trigger is
+     absolutely positioned and so cannot size the header itself. */
+  min-height: calc(22px + (2 * var(--sp-5)));
   /* Positioning ancestor for the `…` trigger (KanbanColumnMenu.module.css's `.trigger`), which is
      absolutely positioned over the count's slot instead of pushing it sideways. */
   position: relative;

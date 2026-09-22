@@ -9,25 +9,39 @@
      eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
      below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
   padding: var(--sp-5) 0;
-  /* .kanbanColHeader's title sits at padding-top: var(--sp-5) from the column's own top edge,
-     inside a header with no min-height (natural content height) — so the title's own text-box
-     top is exactly var(--sp-5) below the header's top edge. .trigger below adds its own
-     var(--sp-4) top padding around the "+ column" text, so this side only needs to make up the
-     remainder — the two add back up to var(--sp-5), keeping the "+ column" text level with a
-     real column's title instead of sitting higher. */
-  padding-top: calc(var(--sp-5) - var(--sp-4) - var(--sp-1));
+  /* .kanbanColHeader pins a min-height (calc(22px + 2 * var(--sp-5)), KanbanView.module.css)
+     and centres its title inside it (align-items: center) rather than sitting the title flush
+     at padding-top — and the header itself sits 1px below the column's own top edge (the
+     column's own 1px border, KanbanView.module.css's .kanbanColumn), which this ghost has none
+     of. Measured headless (add-column story, this branch): with the header pin restored, a
+     column title's text-node top sits at document y 51.5, 17.5px below the column's own (and
+     this ghost's) top edge. .trigger's own padding (var(--sp-4)) plus its line-box leading
+     accounts for 11px of that from wherever this padding-top ends, so this padding-top is the
+     remaining 6.5px — not a round token sum, so it's pinned as a measured value rather than
+     forced into an inexact calc. */
+  padding-top: 6.5px;
 }
 /* Editing state (data-editing, set by KanbanAddColumn.tsx while its input is shown): the shared
    KanbanColumnNameInput's own `.input` carries var(--sp-2) padding (not .trigger's var(--sp-4)),
-   so without compensating here the input's text would jump left/up relative to where the
+   so without compensating here the input's text would jump left relative to where the
    "+ column" text just was. Subtracting that difference from .ghost's own padding keeps the
-   text's x/y pinned across the swap — the input renders exactly where the trigger's text sat. */
+   text's x pinned across the swap — the input renders exactly where the trigger's text sat.
+   KanbanAddColumn.tsx also passes .addField (below) so the field itself doesn't grow the ghost
+   and reflow the real columns while editing. */
 .ghost[data-editing] {
   padding-left: calc(var(--sp-4) - var(--sp-2));
-  /* The extra 3px (measured headless, not a token) corrects for the input's own single-line box
-     centering its glyph a touch higher than the button's line box does at the same padding — the
-     token-only value left the input's text ~3px above the "+ column" text it replaced. */
-  padding-top: calc(var(--sp-5) - var(--sp-3) + 3px);
+  /* Measured headless (add-column story, this branch): the input's own vertical centring of its
+     single-line box sits its text-node top 4px above where the "+ column" text sat at rest, so
+     this adds that back on top of the rest padding-top above. */
+  padding-top: calc(6.5px + var(--sp-2));
+}
+/* The input never grows the ghost past its own "+ column" width while editing — without this,
+   KanbanColumnNameInput's shared `.field { min-width: 160px }` (sized for the rename field in
+   KanbanColumnMenu, a wider context) would widen the ghost from ~73px to ~164px and shrink every
+   real column to make room. */
+.addField {
+  min-width: 0;
+  width: 100%;
 }
 .trigger {
   padding: var(--sp-4);
