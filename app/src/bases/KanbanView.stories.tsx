@@ -532,9 +532,8 @@ export const RenameColumn: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const todoBefore = canvasElement.querySelector(
+        const todoBefore = canvasElement.querySelector<HTMLElement>(
             '[data-kbcol="Todo"]',
         )!
         const cardsBefore = todoBefore.querySelectorAll(
@@ -548,7 +547,15 @@ export const RenameColumn: Story = {
         const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
         await userEvent.click(todoMenus[0]!)
         await userEvent.click(await body.findByText('Rename'))
-        const input = await body.findByDisplayValue('Todo')
+        // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
+        // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
+        const input = await waitFor(
+            () =>
+                within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
+                    'Todo',
+                ),
+            { timeout: 3000 },
+        )
         await userEvent.clear(input)
         await userEvent.type(input, 'Backlog')
         await userEvent.keyboard('{Enter}')
@@ -580,6 +587,10 @@ export const RenameColumn: Story = {
             c => c.path === '/set-properties',
         )
         expect(cardsWrite).toBeDefined()
+        // ONE batched card write, not one request per card.
+        expect(
+            kanbanCalls.filter(c => c.path === '/set-properties').length,
+        ).toBe(1)
         const writes = (
             cardsWrite!.body as {
                 writes: Array<{ path: string; key: string; value: unknown }>

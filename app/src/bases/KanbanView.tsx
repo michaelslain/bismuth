@@ -101,7 +101,9 @@ let draggedId: string | null = null
 
 // An optimistic move: the column key + order a just-dropped card should render at, before the
 // backend write + refetch land. Keyed by rowId (see rowIdentity.ts).
-type PendingMove = { key: string; order: number }
+/** `keyOnly`: clear once the card reaches `key`, whatever its stored order (a column rename
+ *  moves cards without writing an order, so an order match would never come). */
+type PendingMove = { key: string; order: number; keyOnly?: boolean }
 
 function dirOf(path: string): string {
     const i = path.lastIndexOf('/')
@@ -291,7 +293,7 @@ export function KanbanView(props: {
         const byId = new Map<string, Row>()
         for (const g of groups)
             for (const r of g.rows) byId.set(rowId(r), r)
-        return groups.map(g => {
+        const out = groups.map(g => {
             const rows = g.rows.filter(r => {
                 const mv = pend[rowId(r)]
                 return !mv || mv.key === g.key
@@ -313,6 +315,20 @@ export function KanbanView(props: {
             }
             return { key: g.key, rows }
         })
+        // A pending target with no server group yet (a just-renamed column, before the refetch
+        // lands) still gets its cards — otherwise they would vanish until the server catches up.
+        const known = new Set(groups.map(g => g.key))
+        const extra = new Map<string, Row[]>()
+        for (const [id, mv] of Object.entries(pend)) {
+            if (known.has(mv.key)) continue
+            const r = byId.get(id)
+            if (!r) continue
+            const list = extra.get(mv.key) ?? []
+            list.push(r)
+            extra.set(mv.key, list)
+        }
+        for (const [key, rows] of extra) out.push({ key, rows })
+        return out
     }
 
     // Clear each optimistic move once the freshly-resolved server data matches it exactly (the card
@@ -335,7 +351,11 @@ export function KanbanView(props: {
                 const next = { ...prev }
                 for (const [id, mv] of Object.entries(prev)) {
                     const c = cur.get(id)
-                    if (c && c.key === mv.key && c.order === mv.order) {
+                    if (
+                        c &&
+                        c.key === mv.key &&
+                        (mv.keyOnly || c.order === mv.order)
+                    ) {
                         delete next[id]
                         changed = true
                     }
@@ -930,11 +950,31 @@ export function KanbanView(props: {
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
 
-        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly. Rolled
-        // back on any failed write below — a partial rename otherwise leaves the column showing
-        // its new name while the server still has the old one, permanently out of sync.
+        // The cards to move, captured BEFORE the optimistic overlay below empties `from`.
+        const movedRows = groupByKey(from).rows
+
+        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly, the old
+        // key is hidden (columnKeys() would otherwise re-append it while the server still reports
+        // it) and its cards render under the new key through the card overlay. All rolled back on
+        // any failed write below — a partial rename otherwise leaves the column showing its new
+        // name while the server still has the old one, permanently out of sync.
         const prevOrder = pendingColOrder()
+        const prevRemoved = pendingRemovedCols()
+        const prevPending = pending()
         setPendingColOrder(keys)
+        setPendingRemovedCols(prev => new Set(prev).add(from))
+        setPending(prev => {
+            const next = { ...prev }
+            movedRows.forEach((r, k) => {
+                const o = (r.note as Record<string, unknown>)[ORDER_KEY]
+                next[rowId(r)] = {
+                    key: trimmed,
+                    order: typeof o === 'number' ? o : k,
+                    keyOnly: true,
+                }
+            })
+            return next
+        })
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
 
@@ -968,7 +1008,7 @@ export function KanbanView(props: {
             // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
             const statusKey = gb ? writableKey(gb.property) : null
             if (statusKey !== null) {
-                const rows = groupByKey(from).rows
+                const rows = movedRows
                 const storedRows = rows.filter(canWriteStoredRow)
                 const noteRows = rows.filter(r => !canWriteStoredRow(r))
                 if (storedRows.length > 0) {
@@ -990,6 +1030,8 @@ export function KanbanView(props: {
             props.onChange()
         } catch (e) {
             setPendingColOrder(prevOrder)
+            setPendingRemovedCols(prevRemoved)
+            setPending(prevPending)
             pushToast(`Rename column failed: ${(e as Error).message}`)
         }
     }
