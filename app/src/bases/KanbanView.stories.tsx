@@ -958,9 +958,10 @@ export const StoredAddFails: Story = {
 }
 
 /** `renameColumn` writes `columns` first, then moves the column's `groupColors` pin. When
- *  `columns` lands but the `groupColors` write rejects, the rename is already live server-side —
- *  a full rollback would lie about what happened — so the column KEEPS its new name and the user
- *  gets a `Rename column partially applied` toast instead of `Rename column failed`. */
+ *  `columns` lands but the `groupColors` write rejects, the `columns` write already landed, so the
+ *  toast reads `Rename column partially applied`, not `Rename column failed`. The local overlay
+ *  still rolls back, and the app's refetch (`props.onChange`) reconciles the board with the
+ *  server. */
 export const RenameColumnPartial: Story = {
     render: () => {
         const base = fakeTransport()
@@ -1318,10 +1319,9 @@ export const StoredRowsRenameColumn: Story = {
 
 /** A stored-row placeholder (an add not yet confirmed by the server) is INERT: opening its
  *  card and trying to rename or delete it while the add is still pending must write nothing.
- *  Before the fix, `renameCard`/`deleteCard` fell through to the note-file branch for a row
- *  with no valid `canWriteStoredRow` handle — a placeholder's `file` is the BASE's own
- *  synthetic path, so that branch would have written onto the board's own config. Gates the
- *  add's own `rowCreate` open so the card stays a placeholder for the whole play(). */
+ *  Before the fix, `canWriteStoredRow(-1)` was `true`, so rename/delete sent `index: -1` to
+ *  `/row/update` / `/row/delete`. Gates the add's own `rowCreate` open so the card stays a
+ *  placeholder for the whole play(). */
 export const StoredAddPendingInert: Story = {
     render: () => {
         const views = [
@@ -1389,14 +1389,7 @@ export const StoredAddPendingInert: Story = {
 
         const title = await canvas.findByText('ghost card')
         await userEvent.click(title)
-        const dialog = await body.findByRole('dialog')
-        const titleInput = within(dialog).getByDisplayValue('ghost card')
-        await userEvent.clear(titleInput)
-        await userEvent.type(titleInput, 'renamed ghost')
-        await userEvent.keyboard('{Enter}')
-
-        const deleteButton = within(dialog).getByText('DELETE')
-        await userEvent.click(deleteButton)
+        expect(body.queryByRole('dialog')).toBeNull()
 
         // Neither attempt reached the transport: no write landed for either, and the card is
         // still showing, still a placeholder, still under its original title.
@@ -1405,7 +1398,7 @@ export const StoredAddPendingInert: Story = {
             kanbanCalls.some(c => c.path === '/row/delete'),
         ).toBe(false)
         expect(kanbanCalls.some(c => c.path === '/move')).toBe(false)
-        expect(canvasElement.querySelector('[data-kbcol]')).not.toBeNull()
+        expect(canvas.getByText('ghost card')).toBeVisible()
     },
 }
 

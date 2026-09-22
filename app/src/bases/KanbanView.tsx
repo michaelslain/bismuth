@@ -1073,8 +1073,9 @@ export function KanbanView(props: {
             }
         })
         // Whether the `columns` write below has landed — once it has, the column itself is
-        // already renamed server-side, so a failure afterward is a PARTIAL failure (toast +
-        // refetch), not a full rollback of the rename overlay.
+        // already renamed server-side, so a failure afterward is a PARTIAL failure: the overlays
+        // still roll back, but the toast says `partially applied`, `props.onChange()` refetches
+        // the server's already-renamed state, and `trimmed`'s prior removal is not restored.
         let columnsLanded = false
         setPendingColOrder(keys)
         setPendingRemovedCols(prev => rollbackRemoved(prev, trimmed).add(from))
@@ -2062,7 +2063,7 @@ export function KanbanView(props: {
                                                                                     config={
                                                                                         props.config
                                                                                     }
-                                                                                    editable={editable()}
+                                                                                    editable={editable() && !isStoredPlaceholder(r())}
                                                                                     hideLabels={hideLabels()}
                                                                                     onEditingChange={
                                                                                         setEditing
