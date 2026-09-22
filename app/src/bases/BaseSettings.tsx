@@ -1,4 +1,4 @@
-import { createSignal, createMemo, For, Index, Show } from 'solid-js'
+import { createSignal, createMemo, createEffect, For, Index, Show } from 'solid-js'
 import { api } from '../api'
 import type {
     BaseConfig,
@@ -629,8 +629,23 @@ export function BaseSettings(props: {
                                 const open = () => editingProp() === i
                                 const dupe = () =>
                                     duplicateNames().has(i)
+                                let rowEl: HTMLDivElement | undefined
+                                // The list scrolls inside <ModalBody>, but nothing scrolled a
+                                // newly-expanded row into that visible window — so expanding a
+                                // row near the top left its freshly-grown body (name/type/extras/
+                                // DELETE) sitting past the scroll container's own bottom, painted
+                                // under the modal's pinned footer. Scroll the row itself into view
+                                // whenever it opens, so its full body — including DELETE — lands
+                                // above the footer instead of behind it.
+                                createEffect(() => {
+                                    if (open())
+                                        rowEl?.scrollIntoView({
+                                            block: 'nearest',
+                                        })
+                                })
                                 return (
                                     <div
+                                        ref={rowEl}
                                         class={styles['propset-row']}
                                         classList={{ [styles['open']]: open() }}
                                     >
