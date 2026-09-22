@@ -43,3 +43,48 @@ export function reorderColumnKeys(
     const ti = columnDropIndex(keys, from, over, after)
     return [...others.slice(0, ti), from, ...others.slice(ti)]
 }
+
+/** The column-key order after adding a new column named `name` at the end (pinned, empty).
+ *  Trims `name`; refuses (returns `null`) an empty/whitespace-only name or one that already
+ *  matches an existing key (post-trim). Pure — the caller persists the result the same way
+ *  `reorderColumns` does (optimistic set, then `setViewProperty(..., 'columns', keys)`). */
+export function appendColumnKey(keys: string[], name: string): string[] | null {
+    const trimmed = name.trim()
+    if (trimmed === '' || keys.includes(trimmed)) return null
+    return [...keys, trimmed]
+}
+
+/** One entry of a base's `properties:` LIST form, in the FLAT shape
+ *  `normalizeProperties`/`normalizePropertyDef` (core/src/bases/parse.ts) read — a bare name
+ *  string, or `{name, type, options?, ...other fields}`. Untyped here on purpose: this module
+ *  round-trips the raw YAML shape, not the engine's normalized `BasePropertyType`. */
+type RawPropertyEntry = string | Record<string, unknown>
+
+/** Appends `value` to a declared `select`/`multiselect` property's `options`, returning a NEW
+ *  `properties` array with every other entry (and every other field of the matched entry)
+ *  preserved untouched — the caller writes the whole array back with
+ *  `api.setProperty(basePath, 'properties', ...)`. Refuses (returns `null`, writes nothing)
+ *  when `name` isn't declared, isn't a `select`/`multiselect` `type`, or already has `value`
+ *  among its options. */
+export function withPropertyOption(
+    properties: unknown[],
+    name: string,
+    value: string,
+): unknown[] | null {
+    const idx = properties.findIndex(
+        entry =>
+            entry !== null &&
+            typeof entry === 'object' &&
+            (entry as Record<string, unknown>).name === name,
+    )
+    if (idx < 0) return null
+    const entry = properties[idx] as Record<string, unknown>
+    if (entry.type !== 'select' && entry.type !== 'multiselect') return null
+    const options = Array.isArray(entry.options)
+        ? (entry.options as unknown[]).map(v => String(v))
+        : []
+    if (options.includes(value)) return null
+    const out = [...properties] as RawPropertyEntry[]
+    out[idx] = { ...entry, options: [...options, value] }
+    return out
+}

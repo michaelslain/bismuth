@@ -1,0 +1,28 @@
+/* ---- KanbanAddColumn ---- */
+/* The trailing ghost column: no min/max width like .kanbanColumn (KanbanView.module.css) — it
+   shrinks to its own content so it never competes with real columns for board width. */
+.ghost {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  padding: var(--sp-5);
+}
+.trigger {
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-0);
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+.trigger:hover { background: var(--surface-2); }
+.editing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 160px;
+}
+.input {
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  color: var(--fg);
+}
+.error { color: var(--danger); }
