@@ -75,6 +75,13 @@
 .kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
+/* The column menu's `…` trigger (KanbanColumnMenu.tsx) is faint at rest and shown on header
+   hover or keyboard focus anywhere inside the header — `[data-kbcolmenu-trigger]` is that
+   component's own runtime hook (a data attribute, not a class, so this reaches across the
+   component boundary the same sanctioned way `data-kbcol`/`data-kbcard` already do in this
+   file). Its own at-rest/hover/focus-visible states live in KanbanColumnMenu.module.css. */
+.kanbanColHeader:hover [data-kbcolmenu-trigger],
+.kanbanColHeader:focus-within [data-kbcolmenu-trigger] { opacity: 1; }
 
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,

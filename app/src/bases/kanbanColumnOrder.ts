@@ -54,6 +54,33 @@ export function appendColumnKey(keys: string[], name: string): string[] | null {
     return [...keys, trimmed]
 }
 
+/** The column-key order after renaming `from` to `to` (trimmed). Refuses (returns `null`,
+ *  no mutation) an empty/whitespace-only `to`, an unknown `from`, or a `to` that already
+ *  matches an existing key — which also catches a no-op rename (`to === from`), since `from`
+ *  is itself among `keys`. Caller persists the same way `reorderColumns` does (optimistic
+ *  `pendingColOrder`, then `setViewProperty(..., 'columns', keys)`). */
+export function renameColumnKey(
+    keys: string[],
+    from: string,
+    to: string,
+): string[] | null {
+    const trimmed = to.trim()
+    if (trimmed === '') return null
+    const idx = keys.indexOf(from)
+    if (idx < 0) return null
+    if (keys.includes(trimmed)) return null
+    const out = [...keys]
+    out[idx] = trimmed
+    return out
+}
+
+/** The column-key order after removing `key` — a plain filter, since (unlike a rename) there's
+ *  no collision to refuse and no index to preserve. Caller is expected to have already checked
+ *  the column is empty; this does not re-check row membership (it's pure over keys only). */
+export function removeColumnKey(keys: string[], key: string): string[] {
+    return keys.filter(k => k !== key)
+}
+
 /** One entry of a base's `properties:` LIST form, in the FLAT shape
  *  `normalizeProperties`/`normalizePropertyDef` (core/src/bases/parse.ts) read — a bare name
  *  string, or `{name, type, options?, ...other fields}`. Untyped here on purpose: this module
@@ -86,5 +113,39 @@ export function withPropertyOption(
     if (options.includes(value)) return null
     const out = [...properties] as RawPropertyEntry[]
     out[idx] = { ...entry, options: [...options, value] }
+    return out
+}
+
+/** Renames `from` to `to` (trimmed) among a declared `select`/`multiselect` property's
+ *  `options`, preserving every other entry/field untouched — the sibling of
+ *  `withPropertyOption` for a column rename rather than a column add. Refuses (returns `null`,
+ *  writes nothing) when `name` isn't declared, isn't a `select`/`multiselect` `type`, `from`
+ *  isn't currently an option, or `to` already is one (and isn't just `from` itself). */
+export function renamePropertyOption(
+    properties: unknown[],
+    name: string,
+    from: string,
+    to: string,
+): unknown[] | null {
+    const idx = properties.findIndex(
+        entry =>
+            entry !== null &&
+            typeof entry === 'object' &&
+            (entry as Record<string, unknown>).name === name,
+    )
+    if (idx < 0) return null
+    const entry = properties[idx] as Record<string, unknown>
+    if (entry.type !== 'select' && entry.type !== 'multiselect') return null
+    const options = Array.isArray(entry.options)
+        ? (entry.options as unknown[]).map(v => String(v))
+        : []
+    const trimmed = to.trim()
+    const oi = options.indexOf(from)
+    if (oi < 0) return null
+    if (trimmed !== from && options.includes(trimmed)) return null
+    const nextOptions = [...options]
+    nextOptions[oi] = trimmed
+    const out = [...properties] as RawPropertyEntry[]
+    out[idx] = { ...entry, options: nextOptions }
     return out
 }

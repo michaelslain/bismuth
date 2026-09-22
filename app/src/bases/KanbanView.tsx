@@ -35,10 +35,14 @@ import { appendOrder } from './kanbanOrder'
 import {
     appendColumnKey,
     columnDropIndex,
+    removeColumnKey,
+    renameColumnKey,
+    renamePropertyOption,
     reorderColumnKeys,
     withPropertyOption,
 } from './kanbanColumnOrder'
 import KanbanAddColumn from './KanbanAddColumn'
+import KanbanColumnMenu from './KanbanColumnMenu'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
     appendEmbedToValue,
@@ -882,6 +886,94 @@ export function KanbanView(props: {
         if (updated) await api.setProperty(props.basePath, 'properties', updated)
     }
 
+    // ── Column rename — rewrites `columns`, moves any `groupColors` override, renames a
+    // declared select/multiselect option, and moves every card in the column in one batched
+    // write. ──
+    async function renameColumn(from: string, to: string): Promise<void> {
+        if (!props.basePath) return
+        const keys = renameColumnKey(columnKeys(), from, to)
+        if (keys === null) return
+        const trimmed = to.trim()
+        const basePath = props.basePath
+        const idx = props.viewIndex ?? 0
+
+        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly.
+        setPendingColOrder(keys)
+        await api.setViewProperty(basePath, idx, 'columns', keys)
+
+        // Move a color override from the old key to the new one, if it had one.
+        const colors = groupColors()
+        if (colors[from] !== undefined) {
+            const next = { ...colors }
+            next[trimmed] = next[from]!
+            delete next[from]
+            await api.setViewProperty(basePath, idx, 'groupColors', next)
+        }
+
+        // Declared select/multiselect option rename — mirrors addColumn's append.
+        const gb = groupBy()
+        const t = gb ? propertyType(props.config, gb.property) : null
+        if (gb && (t?.kind === 'select' || t?.kind === 'multiselect')) {
+            const declName = declaredPropertyName(gb.property)
+            if (declName) {
+                const updated = renamePropertyOption(
+                    declaredPropertiesRaw(),
+                    declName,
+                    from,
+                    trimmed,
+                )
+                if (updated)
+                    await api.setProperty(basePath, 'properties', updated)
+            }
+        }
+
+        // Move every card currently in the renamed column — ONE batched write per write
+        // target, same two-target split as dropCard/setMetaProperty (`canWriteStoredRow`).
+        const statusKey = gb ? writableKey(gb.property) : null
+        if (statusKey !== null) {
+            const rows = groupByKey(from).rows
+            const storedRows = rows.filter(canWriteStoredRow)
+            const noteRows = rows.filter(r => !canWriteStoredRow(r))
+            if (storedRows.length > 0) {
+                const updates = storedRows.map(r => ({
+                    index: r.index!,
+                    note: { ...storedNote(r), [statusKey]: trimmed },
+                }))
+                await api.rowUpdateMany(basePath, updates)
+            }
+            if (noteRows.length > 0) {
+                const writes = noteRows.map(r => ({
+                    path: r.file.path,
+                    key: statusKey,
+                    value: trimmed,
+                }))
+                await api.setProperties(writes)
+            }
+        }
+        props.onChange()
+    }
+
+    // ── Column delete — only ever called for an empty column (KanbanColumnMenu gates it via
+    // `canDelete`); removes the key from `columns` and any `groupColors` override. ──
+    async function deleteColumn(key: string): Promise<void> {
+        if (!props.basePath) return
+        if (groupByKey(key).rows.length > 0) return
+        const basePath = props.basePath
+        const idx = props.viewIndex ?? 0
+        const keys = removeColumnKey(columnKeys(), key)
+        setPendingColOrder(keys)
+        await api.setViewProperty(basePath, idx, 'columns', keys)
+        const colors = groupColors()
+        if (colors[key] !== undefined) {
+            const next = { ...colors }
+            delete next[key]
+            if (Object.keys(next).length === 0)
+                await api.deleteViewProperty(basePath, idx, 'groupColors')
+            else await api.setViewProperty(basePath, idx, 'groupColors', next)
+        }
+        props.onChange()
+    }
+
     // ── Column color — persist/clear an override in `groupColors`. ──
     async function setColColor(
         key: string,
@@ -1508,6 +1600,29 @@ export function KanbanView(props: {
                                             >
                                                 {group().rows.length}
                                             </Text>
+                                            <Show when={editable()}>
+                                                <KanbanColumnMenu
+                                                    name={group().key}
+                                                    canDelete={
+                                                        group().rows
+                                                            .length === 0
+                                                    }
+                                                    existing={columnKeys().filter(
+                                                        k => k !== group().key,
+                                                    )}
+                                                    onRename={to =>
+                                                        void renameColumn(
+                                                            group().key,
+                                                            to,
+                                                        )
+                                                    }
+                                                    onDelete={() =>
+                                                        void deleteColumn(
+                                                            group().key,
+                                                        )
+                                                    }
+                                                />
+                                            </Show>
                                         </div>
 
                                         {/* Color picker popover */}

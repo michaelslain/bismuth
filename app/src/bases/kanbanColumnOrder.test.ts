@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import {
     appendColumnKey,
     columnDropIndex,
+    removeColumnKey,
+    renameColumnKey,
+    renamePropertyOption,
     reorderColumnKeys,
     withPropertyOption,
 } from './kanbanColumnOrder'
@@ -150,6 +153,57 @@ describe('appendColumnKey', () => {
     })
 })
 
+describe('renameColumnKey', () => {
+    test('renames a key to a trimmed new name, preserving position', () => {
+        expect(renameColumnKey(KEYS, 'doing', '  Doing Now  ')).toEqual([
+            'todo',
+            'Doing Now',
+            'done',
+        ])
+    })
+
+    test('empty (or all-whitespace) name refuses with null', () => {
+        expect(renameColumnKey(KEYS, 'todo', '')).toBeNull()
+        expect(renameColumnKey(KEYS, 'todo', '   ')).toBeNull()
+    })
+
+    test('a name matching an existing OTHER key refuses with null', () => {
+        expect(renameColumnKey(KEYS, 'todo', 'done')).toBeNull()
+        expect(renameColumnKey(KEYS, 'todo', '  done  ')).toBeNull()
+    })
+
+    test('renaming to its own current name refuses with null (no-op)', () => {
+        expect(renameColumnKey(KEYS, 'todo', 'todo')).toBeNull()
+        expect(renameColumnKey(KEYS, 'todo', '  todo  ')).toBeNull()
+    })
+
+    test('an unknown `from` key refuses with null', () => {
+        expect(renameColumnKey(KEYS, 'ghost', 'new')).toBeNull()
+    })
+
+    test('does not mutate the input array', () => {
+        const keys = [...KEYS]
+        renameColumnKey(keys, 'todo', 'new')
+        expect(keys).toEqual(KEYS)
+    })
+})
+
+describe('removeColumnKey', () => {
+    test('removes the matching key, preserving the rest in order', () => {
+        expect(removeColumnKey(KEYS, 'doing')).toEqual(['todo', 'done'])
+    })
+
+    test('an unknown key is a no-op copy', () => {
+        expect(removeColumnKey(KEYS, 'ghost')).toEqual(KEYS)
+    })
+
+    test('does not mutate the input array', () => {
+        const keys = [...KEYS]
+        removeColumnKey(keys, 'todo')
+        expect(keys).toEqual(KEYS)
+    })
+})
+
 describe('withPropertyOption', () => {
     const SELECT_PROPS = [
         { name: 'status', type: 'select', options: ['todo', 'doing'] },
@@ -203,6 +257,74 @@ describe('withPropertyOption', () => {
         const props = [{ name: 'status', type: 'select', options: ['todo'] }]
         const snapshot = JSON.parse(JSON.stringify(props))
         withPropertyOption(props, 'status', 'doing')
+        expect(props).toEqual(snapshot)
+    })
+})
+
+describe('renamePropertyOption', () => {
+    const SELECT_PROPS = [
+        { name: 'status', type: 'select', options: ['todo', 'doing'] },
+        { name: 'priority', type: 'select', options: ['low', 'high'] },
+        'bare-name-entry',
+    ]
+
+    test('renames an option in place, preserving position + other entries', () => {
+        const out = renamePropertyOption(SELECT_PROPS, 'status', 'todo', 'Backlog')
+        expect(out).toEqual([
+            { name: 'status', type: 'select', options: ['Backlog', 'doing'] },
+            { name: 'priority', type: 'select', options: ['low', 'high'] },
+            'bare-name-entry',
+        ])
+        // the original array + entry objects are untouched
+        expect(SELECT_PROPS[0]).toEqual({
+            name: 'status',
+            type: 'select',
+            options: ['todo', 'doing'],
+        })
+    })
+
+    test('trims the new value', () => {
+        const props = [{ name: 'status', type: 'select', options: ['todo'] }]
+        expect(renamePropertyOption(props, 'status', 'todo', '  Backlog  ')).toEqual([
+            { name: 'status', type: 'select', options: ['Backlog'] },
+        ])
+    })
+
+    test('works on a declared multiselect property too', () => {
+        const props = [{ name: 'tags', type: 'multiselect', options: ['a', 'b'] }]
+        expect(renamePropertyOption(props, 'tags', 'a', 'c')).toEqual([
+            { name: 'tags', type: 'multiselect', options: ['c', 'b'] },
+        ])
+    })
+
+    test('renaming to its own current name is allowed (no-op options array)', () => {
+        const props = [{ name: 'status', type: 'select', options: ['todo', 'doing'] }]
+        expect(renamePropertyOption(props, 'status', 'todo', 'todo')).toEqual([
+            { name: 'status', type: 'select', options: ['todo', 'doing'] },
+        ])
+    })
+
+    test('refuses (null) when `from` is not currently an option', () => {
+        expect(renamePropertyOption(SELECT_PROPS, 'status', 'ghost', 'new')).toBeNull()
+    })
+
+    test('refuses (null) when `to` already names a DIFFERENT existing option', () => {
+        expect(renamePropertyOption(SELECT_PROPS, 'status', 'todo', 'doing')).toBeNull()
+    })
+
+    test('refuses (null) when the property is not declared select/multiselect', () => {
+        const props = [{ name: 'status', type: 'text', options: ['todo'] }]
+        expect(renamePropertyOption(props, 'status', 'todo', 'new')).toBeNull()
+    })
+
+    test('refuses (null) when the named property is not declared at all', () => {
+        expect(renamePropertyOption(SELECT_PROPS, 'ghost', 'todo', 'new')).toBeNull()
+    })
+
+    test('does not mutate the input array or entries', () => {
+        const props = [{ name: 'status', type: 'select', options: ['todo'] }]
+        const snapshot = JSON.parse(JSON.stringify(props))
+        renamePropertyOption(props, 'status', 'todo', 'new')
         expect(props).toEqual(snapshot)
     })
 })
