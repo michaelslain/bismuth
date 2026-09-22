@@ -546,7 +546,13 @@ export const RenameColumn: Story = {
         // order is derived data (groupBy option order), not a layout guarantee this story should
         // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
         const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
-        await userEvent.click(todoMenus[0]!)
+        const todoMenu = todoMenus[0]!
+        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
+        // the count's own slot at rest) — reach it via keyboard focus, same as a real keyboard
+        // user would, rather than a pointer click on an element the CSS may not yet have
+        // revealed for the pointer.
+        todoMenu.focus()
+        await userEvent.keyboard('{Enter}')
         await userEvent.click(await body.findByText(/^rename$/i))
         // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
         // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
@@ -747,7 +753,10 @@ export const DeleteEmptyColumn: Story = {
             '[data-kbcol="Blocked"]',
         )!
         const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
-        await userEvent.click(blockedMenu)
+        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
+        // the count's own slot at rest) — reach it via keyboard focus.
+        blockedMenu.focus()
+        await userEvent.keyboard('{Enter}')
         const del = await body.findByText(/^delete$/i)
         await userEvent.click(del)
 
@@ -974,7 +983,11 @@ export const StoredRowsRenameColumn: Story = {
             '[data-kbcol="todo"]',
         )!
         const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
-        await userEvent.click(todoMenus[0]!)
+        const todoMenu = todoMenus[0]!
+        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
+        // the count's own slot at rest) — reach it via keyboard focus.
+        todoMenu.focus()
+        await userEvent.keyboard('{Enter}')
         await userEvent.click(await body.findByText(/^rename$/i))
         const input = await waitFor(
             () =>

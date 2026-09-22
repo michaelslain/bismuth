@@ -3,14 +3,29 @@
 // field); persisting a rename/delete is entirely the caller's `onRename`/`onDelete`. The popover
 // is portaled (AnchoredPopover), so play() reads it off `canvasElement.ownerDocument.body`, the
 // same pattern DateFieldEditor.stories.tsx uses.
+import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import KanbanColumnMenu from './KanbanColumnMenu'
+
+// The real trigger (KanbanColumnMenu.module.css `.trigger`) is `position: absolute; right:
+// var(--sp-5); top: 50%` against `.kanbanColHeader`, its `position: relative` ancestor in
+// KanbanView.module.css. Standalone here it has no such ancestor, so it anchors to the nearest
+// positioned ancestor instead — the story root — and its popover opens off that root's right
+// edge rather than the header's. This decorator reproduces just the header's positioning
+// context (relative + the column's own max width, 288px, from KanbanView.module.css) so the
+// trigger — and the popover anchored to it — sit exactly where they do in a real column.
+const headerDecorator = (Story: () => JSX.Element) => (
+    <div style={{ position: 'relative', width: '288px' }}>
+        <Story />
+    </div>
+)
 
 const meta = {
     title: 'Bases/KanbanColumnMenu',
     component: KanbanColumnMenu,
     parameters: { layout: 'padded' },
+    decorators: [headerDecorator],
 } satisfies Meta<typeof KanbanColumnMenu>
 
 export default meta
@@ -50,8 +65,12 @@ export const RenameFlow: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const trigger = canvas.getByLabelText('Column menu')
-        await userEvent.click(trigger)
+        const trigger = canvas.getByLabelText('Column menu') as HTMLElement
+        // The trigger is `pointer-events: none` at rest (Finding 2 — it sits over the column
+        // count's own slot and must not intercept a pointer click there); a keyboard user still
+        // reaches it via focus + Enter, which is what this drives instead of a pointer click.
+        trigger.focus()
+        await userEvent.keyboard('{Enter}')
         const rename = await waitFor(() => body.getByText('rename'))
         await userEvent.click(rename)
         const input = await waitFor(() => body.getByDisplayValue('Todo'))
@@ -64,7 +83,8 @@ export const RenameFlow: Story = {
         )
 
         // Reopen + retype a name that collides with an existing column — refused inline.
-        await userEvent.click(trigger)
+        trigger.focus()
+        await userEvent.keyboard('{Enter}')
         await userEvent.click(await waitFor(() => body.getByText('rename')))
         const input2 = await waitFor(() => body.getByDisplayValue('Todo'))
         await userEvent.clear(input2)
@@ -89,7 +109,10 @@ export const DeleteDisabled: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        await userEvent.click(canvas.getByLabelText('Column menu'))
+        // pointer-events: none at rest (Finding 2) — reach the trigger via keyboard, as a real
+        // keyboard user would.
+        ;(canvas.getByLabelText('Column menu') as HTMLElement).focus()
+        await userEvent.keyboard('{Enter}')
         await waitFor(() => body.getByText('delete'))
         await waitFor(() => body.getByText('column not empty'))
     },
@@ -114,7 +137,10 @@ export const DeleteEnabled: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        await userEvent.click(canvas.getByLabelText('Column menu'))
+        // pointer-events: none at rest (Finding 2) — reach the trigger via keyboard, as a real
+        // keyboard user would.
+        ;(canvas.getByLabelText('Column menu') as HTMLElement).focus()
+        await userEvent.keyboard('{Enter}')
         const del = await waitFor(() => body.getByText('delete'))
         await userEvent.click(del)
         expect(deleted).toBe(true)
