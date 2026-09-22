@@ -5,9 +5,10 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  /* Trimmed to the label's own width + var(--sp-4) each side (was var(--sp-5)), so the ghost
-     column no longer eats board width beyond its "+ column" text. */
-  padding: var(--sp-5) var(--sp-4);
+  /* Trimmed to the label's own width + var(--sp-4) each side, so the ghost column no longer
+     eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
+     below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
+  padding: var(--sp-5) 0;
   /* .kanbanColHeader's title sits at padding-top: var(--sp-5) from the column's own top edge.
      .trigger below already adds var(--sp-4) of its own top padding, so this side's top padding
      is reduced by that amount — the two add back up to var(--sp-5), keeping the "+ column" text
@@ -15,7 +16,7 @@
   padding-top: calc(var(--sp-5) - var(--sp-4));
 }
 .trigger {
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--sp-4);
   border-radius: var(--r-0);
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease;
