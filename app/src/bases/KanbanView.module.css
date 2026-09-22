@@ -42,6 +42,10 @@
 .kanbanColHeader {
   display: flex; align-items: center; gap: var(--sp-4); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
   padding: var(--sp-5) var(--sp-5);
+  /* Pinned to its own tallest state (the 22x22 `…` trigger revealed) so revealing the trigger on
+     hover/focus never changes the header's height. */
+  min-height: calc(22px + (2 * var(--sp-5)));
+  box-sizing: border-box;
   border-radius: var(--r-0) var(--r-card, 4px) 0 0;
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);

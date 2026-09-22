@@ -38,6 +38,6 @@
     opacity: 1;
 }
 
-.renaming { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); min-width: 160px; }
-.input { width: 100%; }
-.error { color: var(--danger); }
+/* Layout (flex column, gap, min-width) and field chrome now live in KanbanColumnNameInput's own
+   module.css — this is only the popover's own inset around that shared component. */
+.renaming { padding: var(--sp-2); }
