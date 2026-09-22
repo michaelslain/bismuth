@@ -502,3 +502,161 @@ export const StoredRowsRenameDelete: Story = {
         )
     },
 }
+
+/** A NOTE board (SAMPLE_ROWS, two cards in "Todo"): the column header's `…` menu → Rename →
+ *  `Backlog` rewrites `columns` (Todo → Backlog) AND moves both "Todo" cards there in ONE
+ *  batched `/set-properties` write — `status` is a declared `select` property here
+ *  (`_baseFixtures.tsx`), so this also proves the two writes (columns, cards) both land without
+ *  asserting on the option-rename write the same way `AddColumn` doesn't assert its `properties`
+ *  write. */
+export const RenameColumn: Story = {
+    render: () => {
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const todoBefore = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"]',
+        )!
+        const cardsBefore = todoBefore.querySelectorAll(
+            '[data-testid="kanban-card"]',
+        )
+        expect(cardsBefore.length).toBe(2)
+
+        // Scope to Todo's own menu trigger rather than assuming it's rendered first — column
+        // order is derived data (groupBy option order), not a layout guarantee this story should
+        // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
+        const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
+        await userEvent.click(todoMenus[0]!)
+        await userEvent.click(await body.findByText('Rename'))
+        // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
+        // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
+        const input = await waitFor(
+            () =>
+                within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
+                    'Todo',
+                ),
+            { timeout: 3000 },
+        )
+        await userEvent.clear(input)
+        await userEvent.type(input, 'Backlog')
+        await userEvent.keyboard('{Enter}')
+
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-kbcol="Backlog"]'),
+            ).not.toBeNull(),
+        )
+        expect(canvasElement.querySelector('[data-kbcol="Todo"]')).toBeNull()
+        const backlogCol = canvasElement.querySelector(
+            '[data-kbcol="Backlog"]',
+        )!
+        expect(
+            backlogCol.querySelectorAll('[data-testid="kanban-card"]').length,
+        ).toBe(2)
+
+        const columnsWrite = kanbanCalls.find(
+            c =>
+                c.path === '/set-property' &&
+                (c.body as { key?: string }).key === 'columns',
+        )
+        expect(columnsWrite).toBeDefined()
+        const newColumns = (columnsWrite!.body as { value: string[] }).value
+        expect(newColumns).toContain('Backlog')
+        expect(newColumns).not.toContain('Todo')
+
+        const cardsWrite = kanbanCalls.find(
+            c => c.path === '/set-properties',
+        )
+        expect(cardsWrite).toBeDefined()
+        // ONE batched card write, not one request per card.
+        expect(
+            kanbanCalls.filter(c => c.path === '/set-properties').length,
+        ).toBe(1)
+        const writes = (
+            cardsWrite!.body as {
+                writes: Array<{ path: string; key: string; value: unknown }>
+            }
+        ).writes
+        const statusWrites = writes.filter(w => w.key === 'status')
+        expect(statusWrites.length).toBe(2)
+        for (const w of statusWrites) expect(w.value).toBe('Backlog')
+    },
+}
+
+/** `EditableWithPinnedColumns`' pinned-but-empty "Blocked" column: the `…` menu offers Delete
+ *  (`canDelete` — no cards), and picking it removes the column from `columns` and from the
+ *  board. */
+export const DeleteEmptyColumn: Story = {
+    render: () => {
+        const { transport, calls } = spiedTransport()
+        kanbanCalls = calls
+        setTransport(transport)
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
+            },
+        ]
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        expect(
+            canvasElement.querySelector('[data-kbcol="Blocked"]'),
+        ).not.toBeNull()
+
+        const menus = canvas.getAllByLabelText('Column menu')
+        const blockedCol = canvasElement.querySelector(
+            '[data-kbcol="Blocked"]',
+        )!
+        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
+        await userEvent.click(blockedMenu)
+        const del = await body.findByText('Delete')
+        await userEvent.click(del)
+
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-kbcol="Blocked"]'),
+            ).toBeNull(),
+        )
+        const columnsWrite = kanbanCalls.find(
+            c =>
+                c.path === '/set-property' &&
+                (c.body as { key?: string }).key === 'columns',
+        )
+        expect(columnsWrite).toBeDefined()
+        expect(
+            (columnsWrite!.body as { value: string[] }).value,
+        ).not.toContain('Blocked')
+    },
+}

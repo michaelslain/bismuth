@@ -1,0 +1,25 @@
+/* Trigger button — visibility is driven from OUTSIDE this file: KanbanView.module.css's
+   `.kanbanColHeader:hover [data-kbcolmenu-trigger]` / `:focus-within` rule shows it (the
+   `data-kbcolmenu-trigger` attribute is the cross-component hook; this file only owns the
+   at-rest/hover/focus-visible states of the button itself). Mirrors .kbDotBtn's sizing so the
+   two header buttons read as a matched pair. */
+.trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-1);
+    border: none;
+    background: none;
+    border-radius: var(--r-0);
+    cursor: pointer;
+    color: var(--on-scrim);
+    opacity: 0;
+    transition: opacity 120ms ease, background 120ms ease;
+}
+.trigger:hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
+.trigger:focus-visible,
+.trigger[aria-expanded='true'] { opacity: 1; }
+
+.renaming { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); min-width: 160px; }
+.input { width: 100%; }
+.error { color: var(--danger); }
