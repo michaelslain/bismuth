@@ -122,6 +122,9 @@ export function KanbanView(props: {
     /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
      *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
     onOpen?: (path: string) => void
+    /** The board owns its rows (no `source:`): a new card is a row in the base file's body,
+     *  not a note file. Computed by BaseView (`ownsRows`), the same flag CalendarView gets. */
+    ownsRows?: boolean
 }) {
     const groupBy = () => props.result.view.groupBy
     // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on

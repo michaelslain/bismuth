@@ -983,6 +983,7 @@ export function BaseView(props: {
                                                         // means threading that discriminator up from the child.
                                                         onChange={refetchAll}
                                                         mode={activeMode()}
+                                                        ownsRows={ownsRows()}
                                                         onToggle={
                                                             toggleTaskRow
                                                         }
