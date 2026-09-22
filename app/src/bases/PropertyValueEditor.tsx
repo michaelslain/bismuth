@@ -163,7 +163,10 @@ export function PropertyValueEditor(props: {
                                             e.preventDefault()
                                             e.currentTarget.blur()
                                         } else if (isDismissKey(e)) {
-                                            e.stopPropagation()
+                                            // No dropdown of our own — revert and let the
+                                            // keydown BUBBLE, so the modal's own Escape
+                                            // listener (ui/Modal.tsx) sees it too and closes
+                                            // the whole card, not just this field.
                                             setDraft(toDraft())
                                             e.currentTarget.blur()
                                         }
@@ -191,8 +194,9 @@ export function PropertyValueEditor(props: {
                                 onBlur={commit}
                                 onKeyDown={e => {
                                     // Enter inserts a newline (multiline body) — only Escape/blur leave the editor.
+                                    // No dropdown of our own — revert and let it bubble (see
+                                    // the sibling text-input branch above).
                                     if (isDismissKey(e)) {
-                                        e.stopPropagation()
                                         setDraft(toDraft())
                                         e.currentTarget.blur()
                                     }
@@ -296,8 +300,14 @@ function MultiSelectEditor(props: {
             class={styles.kbMetaMultiselect}
             ref={rootRef}
             onKeyDown={e => {
+                // If the "+ Add" Select's own suggestion list is open, ITS trigger already
+                // stops propagation on Escape (Select.tsx's own onKeyDown, called on the
+                // button before it ever bubbles up to this div) and closes just the list —
+                // this handler never runs for that press. Reached at all, there's no open
+                // dropdown to close: cancel (every write already committed, so this is a
+                // plain close) and let the keydown keep bubbling so the modal's own Escape
+                // listener also sees it and closes the card.
                 if (isDismissKey(e)) {
-                    e.stopPropagation()
                     props.onCancel()
                 }
             }}
