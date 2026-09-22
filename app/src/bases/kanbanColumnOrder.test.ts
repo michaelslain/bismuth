@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
+import {
+    appendColumnKey,
+    columnDropIndex,
+    reorderColumnKeys,
+    withPropertyOption,
+} from './kanbanColumnOrder'
 
 const KEYS = ['todo', 'doing', 'done']
 
@@ -114,5 +119,90 @@ describe('reorderColumnKeys', () => {
                 }
             }
         }
+    })
+})
+
+describe('appendColumnKey', () => {
+    test('appends a trimmed name to the end', () => {
+        expect(appendColumnKey(KEYS, '  Blocked  ')).toEqual([
+            'todo',
+            'doing',
+            'done',
+            'Blocked',
+        ])
+    })
+
+    test('empty (or all-whitespace) name refuses with null', () => {
+        expect(appendColumnKey(KEYS, '')).toBeNull()
+        expect(appendColumnKey(KEYS, '   ')).toBeNull()
+    })
+
+    test('a name matching an existing key refuses with null', () => {
+        expect(appendColumnKey(KEYS, 'todo')).toBeNull()
+        // trimming still applies before the collision check
+        expect(appendColumnKey(KEYS, '  todo  ')).toBeNull()
+    })
+
+    test('does not mutate the input array', () => {
+        const keys = [...KEYS]
+        appendColumnKey(keys, 'new')
+        expect(keys).toEqual(KEYS)
+    })
+})
+
+describe('withPropertyOption', () => {
+    const SELECT_PROPS = [
+        { name: 'status', type: 'select', options: ['todo', 'doing'] },
+        { name: 'priority', type: 'select', options: ['low', 'high'] },
+        'bare-name-entry',
+    ]
+
+    test('appends the value to a declared select property, preserving other entries', () => {
+        const out = withPropertyOption(SELECT_PROPS, 'status', 'Blocked')
+        expect(out).toEqual([
+            { name: 'status', type: 'select', options: ['todo', 'doing', 'Blocked'] },
+            { name: 'priority', type: 'select', options: ['low', 'high'] },
+            'bare-name-entry',
+        ])
+        // the original array + entry objects are untouched
+        expect(SELECT_PROPS[0]).toEqual({
+            name: 'status',
+            type: 'select',
+            options: ['todo', 'doing'],
+        })
+    })
+
+    test('works on a declared multiselect property too', () => {
+        const props = [{ name: 'tags', type: 'multiselect', options: ['a'] }]
+        expect(withPropertyOption(props, 'tags', 'b')).toEqual([
+            { name: 'tags', type: 'multiselect', options: ['a', 'b'] },
+        ])
+    })
+
+    test('a property with no options yet gets a fresh options array', () => {
+        const props = [{ name: 'status', type: 'select' }]
+        expect(withPropertyOption(props, 'status', 'todo')).toEqual([
+            { name: 'status', type: 'select', options: ['todo'] },
+        ])
+    })
+
+    test('refuses (null) when the property is not declared select/multiselect', () => {
+        const props = [{ name: 'status', type: 'text' }]
+        expect(withPropertyOption(props, 'status', 'todo')).toBeNull()
+    })
+
+    test('refuses (null) when the named property is not declared at all', () => {
+        expect(withPropertyOption(SELECT_PROPS, 'ghost', 'x')).toBeNull()
+    })
+
+    test('refuses (null) when the value is already an option', () => {
+        expect(withPropertyOption(SELECT_PROPS, 'status', 'doing')).toBeNull()
+    })
+
+    test('does not mutate the input array or entries', () => {
+        const props = [{ name: 'status', type: 'select', options: ['todo'] }]
+        const snapshot = JSON.parse(JSON.stringify(props))
+        withPropertyOption(props, 'status', 'doing')
+        expect(props).toEqual(snapshot)
     })
 })

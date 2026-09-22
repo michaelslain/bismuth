@@ -17,7 +17,7 @@ import type {
     Row,
     ResultGroup,
 } from '../../../core/src/bases/types'
-import { placeholderFile } from '../../../core/src/bases/types'
+import { placeholderFile, syntheticBaseFile } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
@@ -31,7 +31,13 @@ import {
     flushSidecarsAtOrUnder,
 } from '../editorRegistry'
 import { appendOrder } from './kanbanOrder'
-import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
+import {
+    appendColumnKey,
+    columnDropIndex,
+    reorderColumnKeys,
+    withPropertyOption,
+} from './kanbanColumnOrder'
+import KanbanAddColumn from './KanbanAddColumn'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
     appendEmbedToValue,
@@ -750,6 +756,77 @@ export function KanbanView(props: {
         )
     }
 
+    // The exact declared name (as it appears in `properties:`) that `propertyType` matched for
+    // `property` — mirrors ITS OWN [name, bare, note.<bare>] lookup order (properties.ts) so
+    // `withPropertyOption` edits the SAME entry `propertyType` just read the type off of.
+    function declaredPropertyName(property: string): string | null {
+        const declared = props.config.properties
+        if (!declared) return null
+        const bare = property.startsWith('note.') ? property.slice(5) : property
+        for (const candidate of [property, bare, `note.${bare}`])
+            if (declared[candidate]) return candidate
+        return null
+    }
+
+    // The base's declared `properties:` reconstructed in the FLAT list-YAML shape
+    // (`{name, type, options?, ...}`) `normalizeProperties` reads back — the shape
+    // `withPropertyOption` edits and `api.setProperty(basePath, 'properties', ...)` writes.
+    // `props.config.properties` already carries every field the flat form has (parsed by
+    // `normalizePropertyDef`), so this round-trips losslessly at the level the engine models —
+    // the same reconstruction `basePropertiesForm.ts`'s save path performs from its rows.
+    function declaredPropertiesRaw(): unknown[] {
+        const names = props.config.declaredProperties
+        const defs = props.config.properties
+        if (!names || !defs) return []
+        return names.map(name => {
+            const def = defs[name]
+            const out: Record<string, unknown> = { name }
+            if (def?.displayName !== undefined) out.displayName = def.displayName
+            if (def?.hidden) out.hidden = true
+            if (def?.type) {
+                out.type = def.type.kind
+                if (def.type.options) out.options = def.type.options
+                if (def.type.number) out.number = def.type.number
+                if (def.type.unit) out.unit = def.type.unit
+                if (def.type.expr) out.expr = def.type.expr
+            }
+            if (def?.default !== undefined) out.default = def.default
+            return out
+        })
+    }
+
+    // ── Add column — pin a new, empty column at the end of `columns`. ──
+    // Only rendered when `canAdd()` (editable + a writable groupBy) — see the trailing
+    // <KanbanAddColumn> below. If the groupBy property is declared select/multiselect, the new
+    // column's value is ALSO appended to that declaration's `options` so a future card dropped
+    // into it (or picked from a select editor) matches the same vocabulary the column shows.
+    async function addColumn(name: string): Promise<void> {
+        if (!props.basePath) return
+        const keys = appendColumnKey(columnKeys(), name)
+        if (keys === null) return
+        // Optimistic, like reorderColumns: the column appears instantly (empty), settling once
+        // the `columns` write's SSE-driven refetch lands.
+        setPendingColOrder(keys)
+        await api.setViewProperty(
+            props.basePath,
+            props.viewIndex ?? 0,
+            'columns',
+            keys,
+        )
+        const gb = groupBy()
+        if (!gb) return
+        const t = propertyType(props.config, gb.property)
+        if (t?.kind !== 'select' && t?.kind !== 'multiselect') return
+        const declName = declaredPropertyName(gb.property)
+        if (!declName) return
+        const updated = withPropertyOption(
+            declaredPropertiesRaw(),
+            declName,
+            name.trim(),
+        )
+        if (updated) await api.setProperty(props.basePath, 'properties', updated)
+    }
+
     // ── Column color — persist/clear an override in `groupColors`. ──
     async function setColColor(
         key: string,
@@ -961,7 +1038,6 @@ export function KanbanView(props: {
         const gb = groupBy()
         const statusKey = gb ? writableKey(gb.property) : null
         if (!title || !statusKey) return
-        const folder = boardFolder()
 
         // Use an existing card's actual (typed) status value for this column when there is one, so a
         // numeric/boolean groupBy writes the same type as its siblings (a stringified key would fail
@@ -980,16 +1056,49 @@ export function KanbanView(props: {
         const grp = groupByKey(colKey)
         const orderVal = appendOrder(grp.rows.map(r => effOrder(r, grp)))
 
+        // The title column's writable key — today always null (titleCol() is 'file.name', a
+        // computed pseudo-property, never a frontmatter key), so this is a no-op in practice.
+        // Written generically rather than assuming that forever, exactly like the groupBy/order
+        // keys above.
+        const titleKey = writableKey(titleCol())
+        const exclude = new Set([statusKey, ORDER_KEY])
+        if (titleKey) exclude.add(titleKey)
+
         // Declared property defaults (list-form `properties:`) seed first; frontmatter shared by
         // every existing card overrides them (a new card must keep matching the base's filter),
         // the clicked column's status value wins, and the appended `order` pins it to the bottom.
-        const exclude = new Set([statusKey, ORDER_KEY])
         const front: Record<string, unknown> = {
             ...declaredDefaults(props.config, exclude),
             ...constProps(exclude),
             [statusKey]: statusValue ?? colKey,
             [ORDER_KEY]: orderVal,
+            ...(titleKey ? { [titleKey]: title } : {}),
         }
+
+        // The board owns its rows (no `source:`): a new card is a ROW in the base file's own
+        // body, not a note file — same split as `dropCard`/`setMetaProperty` (`canWriteStoredRow`,
+        // never "this looks like an own-rows base"). The optimistic placeholder must NOT claim a
+        // file path (there is no note being created): it shares the base's own synthetic file,
+        // same as every other stored row (`rowIdentity.ts`), so `rowId` addresses it consistently.
+        if (props.ownsRows) {
+            if (!props.basePath) return
+            const basePath = props.basePath
+            const index =
+                props.result.groups.flatMap(g => g.rows).length +
+                pendingAdds().filter(a => a.row.file.path === basePath).length
+            const optimistic: Row = {
+                file: syntheticBaseFile(basePath),
+                note: { ...front },
+                formula: {},
+                index,
+            }
+            setDraft('')
+            setPendingAdds(prev => [...prev, { row: optimistic, col: colKey }])
+            await api.rowCreate(basePath, front)
+            return
+        }
+
+        const folder = boardFolder()
         const content = `---\n${yamlStringify(front)}---\n`
         const path = dedupe(
             `${folder ? folder + '/' : ''}${safeFilename(title)}.md`,
@@ -1588,6 +1697,15 @@ export function KanbanView(props: {
                 {/* Trailing drop-gap: the dragged column lands past the last column. */}
                 <Show when={colGap().trailing}>
                     <div class={styles.kanbanColPlaceholder} />
+                </Show>
+                {/* Add-column ghost — same gate as the per-column add-card composer: editable +
+                    a writable groupBy (a new column has nowhere writable to place its value
+                    otherwise). */}
+                <Show when={canAdd()}>
+                    <KanbanAddColumn
+                        existing={columnKeys()}
+                        onAdd={name => void addColumn(name)}
+                    />
                 </Show>
             </div>
         </Show>
