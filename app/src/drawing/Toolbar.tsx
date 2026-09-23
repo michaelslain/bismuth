@@ -237,6 +237,7 @@ export function Toolbar(props: {
             <div class={styles['draw-row']}>
                 <div class={styles['draw-group']}>
                     <SegmentedToggle
+                        look="segment"
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
@@ -260,6 +261,7 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
+                            look="segment"
                             options={colorOpts()}
                             value={t().color}
                             onChange={c => props.setTools({ color: c })}
@@ -267,6 +269,7 @@ export function Toolbar(props: {
                             segmentClass={styles['draw-colorseg']}
                         />
                         <SegmentedToggle
+                            look="segment"
                             options={sizeOpts}
                             value={t().size}
                             onChange={s => props.setTools({ size: s })}
@@ -278,6 +281,7 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
+                            look="segment"
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
@@ -285,6 +289,7 @@ export function Toolbar(props: {
                         />
                         <Show when={props.bg && props.setBackground}>
                             <SegmentedToggle
+                                look="segment"
                                 options={paperOpts}
                                 value={props.bg!()}
                                 onChange={id => props.setBackground!(id)}
@@ -302,6 +307,7 @@ export function Toolbar(props: {
                             ever "selected" and this composes the real component instead of a raw
                             duplicate of its markup. */}
                         <SegmentedToggle
+                            look="segment"
                             value={undefined}
                             onChange={id =>
                                 id === 'undo' ? props.onUndo() : props.onRedo()
@@ -332,6 +338,7 @@ export function Toolbar(props: {
                         >
                             <div class={styles['draw-zoomrow']}>
                                 <SegmentedToggle
+                                    look="segment"
                                     value={undefined}
                                     onChange={() => props.onZoomOut!()}
                                     segmentClass={styles['draw-iconseg']}
@@ -364,6 +371,7 @@ export function Toolbar(props: {
                                     {`${zoomPct()}%`}
                                 </PlainButton>
                                 <SegmentedToggle
+                                    look="segment"
                                     value={undefined}
                                     onChange={() => props.onZoomIn!()}
                                     segmentClass={styles['draw-iconseg']}

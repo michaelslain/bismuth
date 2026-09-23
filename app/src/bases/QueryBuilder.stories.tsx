@@ -161,7 +161,7 @@ export const SwitchSource: Story = {
     play: async () => {
         const canvas = within(document.body)
         await expect(canvas.getByText('add filter')).toBeInTheDocument()
-        await userEvent.click(canvas.getByText('Tasks'))
+        await userEvent.click(canvas.getByText('tasks'))
         await expect(canvas.queryByText('add filter')).not.toBeInTheDocument()
     },
 }
