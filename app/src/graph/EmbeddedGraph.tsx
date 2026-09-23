@@ -274,16 +274,19 @@ export function EmbeddedGraph(props: {
                             value={directed() ? 'dir' : 'undir'}
                             onChange={v => setDirected(v === 'dir')}
                             size="sm"
+                            look="segment"
                             options={[
                                 {
                                     id: 'dir',
                                     title: 'New edges are directed (->)',
                                     label: <Icon value="ArrowRight" />,
+                                    ariaLabel: 'directed',
                                 },
                                 {
                                     id: 'undir',
                                     title: 'New edges are undirected (--)',
                                     label: <Icon value="Minus" />,
+                                    ariaLabel: 'undirected',
                                 },
                             ]}
                         />
@@ -300,16 +303,19 @@ export function EmbeddedGraph(props: {
                     value={dim()}
                     onChange={setDim}
                     size="sm"
+                    look="segment"
                     options={[
                         {
                             id: '2d',
                             title: 'Flat layout',
                             label: <Icon value="Square" />,
+                            ariaLabel: '2d',
                         },
                         {
                             id: '3d',
                             title: 'Orbit layout',
                             label: <Icon value="Box" />,
+                            ariaLabel: '3d',
                         },
                     ]}
                 />

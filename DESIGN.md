@@ -350,7 +350,7 @@ the accent. An outline appears only when it means something.
   ring never touches the next `[`.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
-  groups (the drawing dock) keep the butted `segment` look.
+  groups (the drawing dock, the embedded-graph icon groups) keep the butted `segment` look.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
