@@ -166,3 +166,22 @@ test('forgetDaemonMemory 404s (ENOENT) on an unknown note', async () => {
         expect.objectContaining({ code: 'ENOENT', statusCode: 404 }),
     )
 })
+
+test('forgetDaemonMemory rejects a leading-dash name with a 400 EINVAL instead of deleting the sanitized-collision note', async () => {
+    await writeNote('housing', fm(), 'body', dir)
+    await expect(
+        forgetDaemonMemory(dir, '.daemon/memory/-housing.md'),
+    ).rejects.toThrow(
+        expect.objectContaining({ code: 'EINVAL', statusCode: 400 }),
+    )
+    const list = await listDaemonMemory(dir, '', 50)
+    expect(list.items.map(i => i.name)).toContain('housing')
+})
+
+test('forgetDaemonMemory rejects an empty name (".md") with a 400 EINVAL', async () => {
+    await expect(
+        forgetDaemonMemory(dir, '.daemon/memory/.md'),
+    ).rejects.toThrow(
+        expect.objectContaining({ code: 'EINVAL', statusCode: 400 }),
+    )
+})

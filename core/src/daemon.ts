@@ -981,7 +981,8 @@ export function createCron(name: string, home: string): { file: string } {
 export function createProcess(name: string, home: string): { file: string } {
     return createDaemonFile('processes', name, home, slug => [
         `name: ${slug}`,
-        `command: echo "replace me"`,
+        `command: echo`,
+        `args: ["replace me"]`,
         `enabled: false`,
     ])
 }

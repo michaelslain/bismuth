@@ -449,6 +449,37 @@ test('GET /chat/sessions, GET /chat/session-messages, POST /chat/search are owne
     }
 })
 
+test('POST /daemon/memory/forget, /daemon/cron/delete, /daemon/process/delete are owner-only', async () => {
+    const { vault } = await makeSampleVault()
+    const server = createServer({ vault, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = tokenFor(vault)
+        const post = (path: string, body: unknown, headers?: Record<string, string>) =>
+            fetch(`${base}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...headers },
+                body: JSON.stringify(body),
+            })
+
+        expect((await post('/daemon/memory/forget', { path: '.daemon/memory/x.md' })).status).toBe(403)
+        expect(
+            (
+                await post(
+                    '/daemon/memory/forget',
+                    { path: '.daemon/memory/x.md' },
+                    { 'X-Bismuth-Token': token },
+                )
+            ).status,
+        ).not.toBe(403)
+
+        expect((await post('/daemon/cron/delete', { name: 'nope' })).status).toBe(403)
+        expect((await post('/daemon/process/delete', { name: 'nope' })).status).toBe(403)
+    } finally {
+        server.stop(true)
+    }
+})
+
 // ---- The token file vs. the OS sandbox the Claude paths actually spawn under -------------------
 //
 // Everything above proves the HTTP gate refuses a tokenless caller. This proves the other half:

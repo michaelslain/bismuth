@@ -94,6 +94,13 @@ export async function forgetDaemonMemory(
     if (!relPath.startsWith(PREFIX) || relPath.includes('..'))
         throw new AppError('EINVAL', `Invalid memory path "${relPath}"`, 400)
     const name = relPath.slice(PREFIX.length).replace(/\.md$/, '')
+    if (
+        !/^([a-zA-Z0-9][a-zA-Z0-9._-]*\/)?[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(
+            name,
+        ) ||
+        /[.-]$/.test(name)
+    )
+        throw new AppError('EINVAL', `Invalid memory note name "${name}"`, 400)
     const deleted = await deleteNote(name, dir)
     if (!deleted)
         throw new AppError(

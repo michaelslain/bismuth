@@ -2059,7 +2059,7 @@ export function createServer(cfg: CoreConfig) {
                 name?: string
                 enabled?: boolean
             }
-            if (!name || typeof enabled !== 'boolean')
+            if (typeof name !== 'string' || !name || typeof enabled !== 'boolean')
                 return error('missing name/enabled', 400)
             setCronEnabled(name, enabled, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
@@ -2077,7 +2077,7 @@ export function createServer(cfg: CoreConfig) {
                 name?: string
                 enabled?: boolean
             }
-            if (!name || typeof enabled !== 'boolean')
+            if (typeof name !== 'string' || !name || typeof enabled !== 'boolean')
                 return error('missing name/enabled', 400)
             setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
@@ -2090,7 +2090,7 @@ export function createServer(cfg: CoreConfig) {
         // catch, same as the toggle/run routes above.
         'POST /daemon/cron/create': async req => {
             const { name } = (await req.json()) as { name?: string }
-            if (!name) return error('missing name', 400)
+            if (typeof name !== 'string' || !name) return error('missing name', 400)
             return ok({
                 ok: true,
                 ...createCron(name, vaultDaemonDir(cfg.vault)),
@@ -2099,7 +2099,7 @@ export function createServer(cfg: CoreConfig) {
 
         'POST /daemon/process/create': async req => {
             const { name } = (await req.json()) as { name?: string }
-            if (!name) return error('missing name', 400)
+            if (typeof name !== 'string' || !name) return error('missing name', 400)
             return ok({
                 ok: true,
                 ...createProcess(name, vaultDaemonDir(cfg.vault)),
@@ -2108,16 +2108,19 @@ export function createServer(cfg: CoreConfig) {
 
         // Delete a cron/process definition. Response `{ ok: true }`. Unknown name → 404; a
         // running cron → 409 (EBUSY) via the dispatch catch, same as the routes above.
+        // Owner-gated: CORS is `*`, so any local page could otherwise delete a service/cron.
         'POST /daemon/cron/delete': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
-            if (!name) return error('missing name', 400)
+            if (typeof name !== 'string' || !name) return error('missing name', 400)
             deleteCron(name, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
         },
 
         'POST /daemon/process/delete': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
-            if (!name) return error('missing name', 400)
+            if (typeof name !== 'string' || !name) return error('missing name', 400)
             deleteProcess(name, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
         },
@@ -2126,9 +2129,11 @@ export function createServer(cfg: CoreConfig) {
         // Uses the server's own memory dir — 404 when the daemon is disabled (no 3rd brain to
         // forget from), same status a genuinely-unknown note gets. Path traversal is rejected
         // by forgetDaemonMemory itself before it ever reaches the filesystem.
+        // Owner-gated: CORS is `*`, so any local page could otherwise forget memory.
         'POST /daemon/memory/forget': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { path } = (await req.json()) as { path?: string }
-            if (!path) return error('missing path', 400)
+            if (typeof path !== 'string' || !path) return error('missing path', 400)
             const memDir = effectiveMemoryDir()
             if (!memDir) return error('daemon disabled', 404)
             await forgetDaemonMemory(memDir, path)
