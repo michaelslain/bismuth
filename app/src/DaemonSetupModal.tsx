@@ -7,10 +7,15 @@
 // anything; they just (re-)register the launchd/systemd service pointing at
 // that already-staged binary. Safe to run even when the daemon is already
 // live (no clobber, no restart of a running service). Reuses the shared
-// PromptModal + TextButton chrome, same as DaemonOwnerModal / FolderPrompt.
+// FormModal + TextButton chrome, same as DaemonOwnerModal / FolderPrompt.
 import { createSignal, onMount, Show } from 'solid-js'
-import PromptModal from './ui/PromptModal'
-import PromptHint from './ui/PromptHint'
+import FormModal from './ui/FormModal'
+import ModalHeader from './ui/ModalHeader'
+import ModalBody from './ui/ModalBody'
+import ModalFooter from './ui/ModalFooter'
+import SettingsGrid from './ui/SettingsGrid'
+import SettingsField from './ui/SettingsField'
+import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
 import { pushToast } from './Toast'
@@ -87,59 +92,78 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
     const yn = (b: boolean | undefined) => (b ? 'yes' : 'no')
 
     return (
-        <PromptModal
+        <FormModal
             onClose={props.onClose}
-            title="Set up daemon"
-            actions={
-                <>
-                    <TextButton onClick={props.onClose}>close</TextButton>
-                    <TextButton
-                        onClick={update}
-                        disabled={loading() || running()}
-                    >
-                        {running() ? 'working…' : 'update'}
-                    </TextButton>
-                    <TextButton
-                        primary
-                        onClick={setup}
-                        disabled={loading() || running()}
-                    >
-                        {running() ? 'working…' : 'set up / repair'}
-                    </TextButton>
-                </>
-            }
+            width={460}
+            closeOnBackdrop={false}
+            label="set up daemon"
         >
-            <PromptHint>
-                The daemon runs crons and the persistent bot session in the
-                background.
-                <strong> Set up</strong> is idempotent — it registers the
-                background service for the daemon binary bundled with this app;
-                if already installed, it adopts the existing install without
-                changing anything.
-                <strong> Update</strong> re-registers that service (the daemon
-                binary itself updates with the app, not here).
-            </PromptHint>
-            <Show when={busy()}>
-                <PromptHint>{busy()}</PromptHint>
-            </Show>
-            <Show
-                when={!loading()}
-                fallback={<PromptHint>Loading daemon status…</PromptHint>}
-            >
-                <PromptHint>
-                    <div>Installed: {yn(status()?.installed)}</div>
-                    <div>Running: {yn(status()?.running)}</div>
-                    <div>
-                        Owner:{' '}
-                        {owner()
-                            ? owner()!.ownerLabel || owner()!.ownerDeviceId
-                            : 'unclaimed'}
-                    </div>
-                    <Show when={status()?.binPath}>
-                        <div>Binary: {status()!.binPath}</div>
-                    </Show>
-                </PromptHint>
-            </Show>
-        </PromptModal>
+            <ModalHeader title="set up daemon" onClose={props.onClose} />
+            <ModalBody>
+                <Text size="ui" tone="faint">
+                    the daemon runs crons and the persistent bot session in the
+                    background — <strong>set up</strong> is idempotent (it
+                    registers the background service for the daemon binary
+                    bundled with this app; if already installed, it adopts the
+                    existing install without changing anything) and{' '}
+                    <strong>update</strong> re-registers that service (the
+                    daemon binary itself updates with the app, not here)
+                </Text>
+                <Show when={busy()}>
+                    <Text size="ui" tone="faint">
+                        {busy()}
+                    </Text>
+                </Show>
+                <Show
+                    when={!loading()}
+                    fallback={
+                        <Text size="ui" tone="faint">
+                            loading daemon status…
+                        </Text>
+                    }
+                >
+                    <SettingsGrid>
+                        <SettingsField label="installed">
+                            <Text as="span" size="ui">
+                                {yn(status()?.installed)}
+                            </Text>
+                        </SettingsField>
+                        <SettingsField label="running">
+                            <Text as="span" size="ui">
+                                {yn(status()?.running)}
+                            </Text>
+                        </SettingsField>
+                        <SettingsField label="owner">
+                            <Text as="span" size="ui">
+                                {owner()
+                                    ? owner()!.ownerLabel ||
+                                      owner()!.ownerDeviceId
+                                    : 'unclaimed'}
+                            </Text>
+                        </SettingsField>
+                        <Show when={status()?.binPath}>
+                            <SettingsField label="binary">
+                                <Text as="span" size="ui">
+                                    {status()!.binPath}
+                                </Text>
+                            </SettingsField>
+                        </Show>
+                    </SettingsGrid>
+                </Show>
+            </ModalBody>
+            <ModalFooter hint="close">
+                <TextButton onClick={props.onClose}>close</TextButton>
+                <TextButton onClick={update} disabled={loading() || running()}>
+                    {running() ? 'working…' : 'update'}
+                </TextButton>
+                <TextButton
+                    primary
+                    onClick={setup}
+                    disabled={loading() || running()}
+                >
+                    {running() ? 'working…' : 'set up / repair'}
+                </TextButton>
+            </ModalFooter>
+        </FormModal>
     )
 }

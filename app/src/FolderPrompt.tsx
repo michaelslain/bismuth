@@ -3,10 +3,14 @@
 // avoid window.prompt (a blocking native dialog freezes in-app automation), and the
 // browser can't offer a real folder picker that yields a server-accessible path. The
 // native OS picker is a desktop-build enhancement; the typed path works everywhere.
-import { createSignal, onMount } from 'solid-js'
-import PromptModal from './ui/PromptModal'
-import PromptHint from './ui/PromptHint'
-import PromptInput from './ui/PromptInput'
+import { createSignal } from 'solid-js'
+import FormModal from './ui/FormModal'
+import ModalHeader from './ui/ModalHeader'
+import ModalBody from './ui/ModalBody'
+import ModalFooter from './ui/ModalFooter'
+import SettingsField from './ui/SettingsField'
+import Text from './ui/Text'
+import TextInput from './ui/TextInput'
 import { TextButton } from './ui/TextButton'
 import { isConfirmKey } from './ui/widgetKeys'
 
@@ -15,8 +19,6 @@ export function FolderPrompt(props: {
     onOpen: (folder: string) => void
 }) {
     const [value, setValue] = createSignal('')
-    let inputRef: HTMLInputElement | undefined
-    onMount(() => inputRef?.focus())
 
     const submit = () => {
         const v = value().trim()
@@ -24,41 +26,45 @@ export function FolderPrompt(props: {
     }
 
     return (
-        <PromptModal
+        <FormModal
             onClose={props.onClose}
-            title="Open folder"
-            actions={
-                <>
-                    <TextButton onClick={props.onClose}>cancel</TextButton>
-                    <TextButton
-                        primary
-                        onClick={submit}
-                        disabled={value().trim() === ''}
-                    >
-                        open
-                    </TextButton>
-                </>
-            }
+            width={460}
+            closeOnBackdrop={false}
+            label="open folder"
         >
-            <PromptHint>
-                Absolute path to a folder. It opens as its own brain in a new
-                window.
-            </PromptHint>
-            <PromptInput
-                ref={el => (inputRef = el)}
-                placeholder="/Users/you/notes"
-                value={value()}
-                spellcheck={false}
-                autocapitalize="off"
-                autocorrect="off"
-                onInput={e => setValue(e.currentTarget.value)}
-                onKeyDown={e => {
-                    if (isConfirmKey(e)) {
-                        e.preventDefault()
-                        submit()
-                    }
-                }}
-            />
-        </PromptModal>
+            <ModalHeader title="open folder" onClose={props.onClose} />
+            <ModalBody>
+                <Text size="ui" tone="faint">
+                    absolute path to a folder — it opens as its own brain in a new
+                    window
+                </Text>
+                <SettingsField label="path">
+                    <TextInput
+                        placeholder="/Users/you/notes"
+                        value={value()}
+                        onInput={setValue}
+                        spellcheck={false}
+                        autocapitalize="off"
+                        autocorrect="off"
+                        onKeyDown={e => {
+                            if (isConfirmKey(e)) {
+                                e.preventDefault()
+                                submit()
+                            }
+                        }}
+                    />
+                </SettingsField>
+            </ModalBody>
+            <ModalFooter hint="cancel">
+                <TextButton onClick={props.onClose}>cancel</TextButton>
+                <TextButton
+                    primary
+                    onClick={submit}
+                    disabled={value().trim() === ''}
+                >
+                    open
+                </TextButton>
+            </ModalFooter>
+        </FormModal>
     )
 }
