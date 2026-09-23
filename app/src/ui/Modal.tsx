@@ -127,10 +127,12 @@ function Modal(props: ModalProps) {
     onMount(() => {
         opener = document.activeElement as HTMLElement | null
         window.addEventListener('keydown', handleKey)
-        // Initial focus: the first real control, else the panel. Each pick prefers a form control
-        // (input/select/textarea) over any other focusable, then the first non-close focusable,
-        // then the close button (the last resort for a modal with no body control at all), then
-        // the panel.
+        // Initial focus: the first focusable inside the body (`[data-modal-body]`), in DOM order,
+        // else the first non-close focusable in the panel (a footer action — e.g. daemon setup,
+        // which has no body control), else the close button (the last resort for a modal with
+        // nothing else at all), then the panel. DOM order beats "any form control" — a dialog
+        // whose only input sits near the BOTTOM (QueryBuilder's `limit` field) must still land on
+        // its first body control, not scroll straight to that input.
         //
         // A caller's body can mount AFTER this component does — QueryBuilder's sections sit behind
         // `createResource` + `<Show>`, GcalConnectModal's input mounts a tick late — so the first
@@ -142,19 +144,22 @@ function Modal(props: ModalProps) {
         // DOM changes, for as long as focus is still exactly where THIS component last put it. It
         // is bounded: it stops at the first user keydown/pointerdown, the moment focus moves
         // anywhere this component did not put it (the user, or a component moving focus itself),
-        // once focus sits in a form control (nothing better can appear), after LATE_MOUNT_MS, and
-        // on cleanup. So it can only ever move focus nobody else has touched.
+        // once focus sits inside the body (nothing better can appear), after LATE_MOUNT_MS, and on
+        // cleanup. So it can only ever move focus nobody else has touched.
         const pick = () => {
             const items = focusables()
-            const formControl = items.find(
-                el =>
-                    el.matches('input, select, textarea') &&
-                    !el.matches('[data-modal-close]'),
-            )
+            const body = panelEl?.querySelector('[data-modal-body]')
+            const bodyFirst = body
+                ? items.find(
+                      el =>
+                          body.contains(el) &&
+                          !el.matches('[data-modal-close]'),
+                  )
+                : undefined
             const firstNonClose = items.find(
                 el => !el.matches('[data-modal-close]'),
             )
-            return formControl ?? firstNonClose ?? items[0] ?? panelEl
+            return bodyFirst ?? firstNonClose ?? items[0] ?? panelEl
         }
         let placed: HTMLElement | undefined
         const place = () => {
@@ -163,10 +168,19 @@ function Modal(props: ModalProps) {
                 placed = next
                 next.focus()
             }
-            return !!placed?.matches('input, select, textarea')
+            const body = panelEl?.querySelector('[data-modal-body]')
+            return !!(placed && body && body.contains(placed))
         }
         queueMicrotask(() => {
-            if (disposed || !panelEl || place()) return
+            if (disposed || !panelEl) return
+            const active = document.activeElement as HTMLElement | null
+            // A component already placed focus inside the panel from its OWN render-time
+            // microtask, queued before this one — e.g. CardEditModal focusing a specific
+            // property field via its `focusTarget` prop. Leave it alone: no pick, and no watch
+            // to second-guess a placement this component didn't make.
+            if (active && active !== panelEl && panelEl.contains(active))
+                return
+            if (place()) return
             const panel = panelEl
             const observer = new MutationObserver(() => {
                 const active = document.activeElement

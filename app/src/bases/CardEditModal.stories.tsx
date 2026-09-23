@@ -9,7 +9,7 @@
 // (ui/_baseFixtures.ts) so the property vocabulary (status/priority/done/due/tags) matches what
 // the real board declares, rather than a story-invented shape.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 
@@ -109,5 +109,44 @@ export const EmptyCard: Story = {
         )
         expect(dueTrigger).not.toBeNull()
         expect(dueTrigger!.textContent).toBe('Set date…')
+    },
+}
+
+/** `focusTarget` set to a NON-title property (`due`) — proves CardEditModal's own
+ *  render-time-queued microtask (which focuses `fieldRefs.get(t)`'s control) wins over
+ *  Modal.tsx's initial-focus pick, which runs its OWN queueMicrotask afterward and used to
+ *  unconditionally override whatever was already focused. This is the KanbanCard path
+ *  (`KanbanCard.tsx:373` passes `focusTarget={e().target}` when a property cell is clicked):
+ *  clicking the due-date cell on a kanban card must open this modal focused on THAT field, not
+ *  reset to the title. Fails on the pre-fix Modal.tsx, whose microtask ran with no guard for
+ *  focus a caller had already placed inside the panel — it would re-pick the first form control
+ *  in DOM order (the `status` select, which precedes `due` in `metaCols`) and steal focus onto
+ *  that instead. */
+export const FocusesRequestedProperty: Story = {
+    render: () => (
+        <CardEditModal
+            row={SAMPLE_ROWS[1]}
+            titleCol="file.name"
+            metaCols={metaCols}
+            config={config}
+            focusTarget="due"
+            siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
+            onRename={noop}
+            onSetMeta={noop}
+            onDelete={noop}
+            onClose={noop}
+        />
+    ),
+    play: async () => {
+        // Same Portal caveat as `Default` above: read document.body, not canvasElement. Both
+        // CardEditModal's own microtask and Modal.tsx's run as queued microtasks, so wait for
+        // the dust to settle rather than asserting synchronously.
+        await waitFor(() => {
+            const dueTrigger = document.querySelector<HTMLButtonElement>(
+                '[data-testid="date-field-trigger"]',
+            )
+            expect(dueTrigger).not.toBeNull()
+            expect(document.activeElement).toBe(dueTrigger)
+        })
     },
 }

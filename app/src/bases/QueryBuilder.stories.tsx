@@ -48,18 +48,22 @@ export const NotesFresh: Story = {
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
     play: async () => {
-        // Initial focus lands on a BODY control, never the header's `[x]`. Asserted before the
-        // close check below, which moves focus onto `[x]` itself.
-        await waitFor(() =>
+        // Initial focus lands on the FIRST BODY control in DOM order — never the header's `[x]`,
+        // and never a later form control the dialog would have to scroll down for (QueryBuilder's
+        // `limit` input sits near the bottom). Both checks go in one `waitFor`: the dialog-contains
+        // check on its own could pass transiently mid-pick, before the close-button check has a
+        // chance to run against the settled result.
+        await waitFor(() => {
+            const dialog = document.querySelector('[role="dialog"]')
+            expect(dialog?.contains(document.activeElement)).toBe(true)
             expect(
-                document.querySelector('[role="dialog"]')?.contains(
-                    document.activeElement,
-                ),
-            ).toBe(true),
-        )
-        await expect(
-            document.activeElement?.matches('[data-modal-close]'),
-        ).toBe(false)
+                document.activeElement?.matches('[data-modal-close]'),
+            ).toBe(false)
+            const body = document.querySelector('[data-modal-body]')
+            expect(body?.contains(document.activeElement)).toBe(true)
+            // The source toggle's first button ("notes") — the first focusable the body renders.
+            expect(document.activeElement?.textContent).toBe('notes')
+        })
         const initial = document.activeElement as HTMLElement
         // Was a <div role="button"> with no tabindex — present to a screen reader, unreachable by
         // keyboard (same defect BaseSettings had). ModalHeader makes it a real IconButton. ui/Modal
