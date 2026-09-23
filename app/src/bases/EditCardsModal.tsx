@@ -107,15 +107,6 @@ function CardCell(props: {
                 onInput={setVal}
                 onBlur={() => val() !== props.value && props.onCommit(val())}
             />
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['cell-tag']}
-            >
-                {props.field}
-            </Text>
         </div>
     )
 }

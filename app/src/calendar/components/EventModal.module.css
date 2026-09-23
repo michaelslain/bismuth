@@ -15,16 +15,16 @@
    start → end time). */
 .row { display: flex; align-items: center; gap: var(--sp-5); }
 
-.allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-body); color: var(--fg); cursor: pointer; white-space: nowrap; }
+.allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-ui); color: var(--fg); cursor: pointer; white-space: nowrap; }
 
 .dash { color: var(--faint); font-size: var(--fs-body); }
 
-/* description — live-preview markdown editor (MarkdownField); the box matches the old preview,
-   but padding + min-height sit on .cm-content so the whole box is click-to-cursor. */
-.mdedit { cursor: text; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); transition: border-color var(--dur) var(--ease); }
-.mdedit:hover { border-color: var(--border); }
-.mdedit:focus-within { border-color: var(--accent); }
-.mdedit :global(.cm-content) { padding: var(--sp-4) var(--sp-5); min-height: 76px; box-sizing: border-box; }
+/* description — live-preview markdown editor (MarkdownField); neutral underline field, no fill,
+   no accent ring (modal redesign: Acceptance 5, neutral focus). */
+.mdedit { cursor: text; background: transparent; border: none; border-bottom: var(--rule-soft); transition: border-color var(--dur) var(--ease); }
+.mdedit:hover { border-bottom: var(--rule); }
+.mdedit:focus-within { border-bottom: var(--rule); }
+.mdedit :global(.cm-content) { padding: var(--sp-2) 0; min-height: 76px; box-sizing: border-box; }
 
 /* category chips (selectable) */
 .cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }

@@ -58,7 +58,7 @@
    :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest): .cards-num,
    .cards-row:hover .cards-del .btn--icon. */
 
-.cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-7); }
+.cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 0; }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
 /* Plain `↵` text, no keycap box — the modal redesign drops every bracket-less "key" chip in
    favor of the footer's own `esc cancel` register (ModalFooter). */
@@ -66,15 +66,15 @@
 .sp { flex: 1; }
 
 /* ── Cards list ── */
-.cards-listwrap { flex: 1 1 auto; overflow-y: auto; padding: 0 var(--sp-7) var(--sp-4); }
+.cards-listwrap { flex: 1 1 auto; overflow-y: auto; padding: 0 0 var(--sp-4); }
 .cards-collbl {
   display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: var(--sp-5); align-items: center;
-  padding: var(--sp-3) var(--sp-2) var(--sp-4); position: sticky; top: 0; z-index: 2;
-  background: linear-gradient(180deg, var(--surface-1) 70%, transparent);
+  padding: var(--sp-3) var(--sp-2); position: sticky; top: 0; z-index: 2;
+  background: var(--pop-bg-strong); border-bottom: var(--rule-soft);
   font-size: var(--fs-micro); color: var(--faint);
 }
 .cards-collbl span:first-child { text-align: center; }
-.cards-row { display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: var(--sp-5); align-items: stretch; padding: var(--sp-4) var(--sp-2); border-top: 1px solid var(--border-soft); position: relative; }
+.cards-row { display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: var(--sp-5); align-items: stretch; padding: var(--sp-2); border-top: 1px solid var(--border-soft); position: relative; }
 .cards-row:first-of-type { border-top: 0; }
 .cards-row.dragging { opacity: 0.4; }
 .cards-row.dropbefore::before { content: ""; position: absolute; left: 30px; right: 34px; top: -1px; height: 2px; background: var(--accent); border-radius: var(--r-0); }
@@ -88,8 +88,8 @@
    carry). */
 .cell { position: relative; }
 .cell-md {
-  min-height: 44px; padding: var(--sp-4) var(--sp-2); box-sizing: border-box; overflow: hidden;
-  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.5; color: var(--fg);
+  min-height: var(--h-control); padding: var(--sp-2) 0; box-sizing: border-box; overflow: hidden;
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--fg);
   border-bottom: var(--rule-soft);
   white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
 }
@@ -102,17 +102,15 @@
 .cell-ph { color: var(--faint); }
 .cell textarea {
   position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
-  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.5;
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--lh-ui);
   color: transparent; caret-color: transparent;
   background: transparent; border: none; border-bottom: 1px solid transparent;
-  padding: var(--sp-4) var(--sp-2); outline: none; box-sizing: border-box;
+  padding: var(--sp-2) 0; outline: none; box-sizing: border-box;
 }
-.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); border-bottom: var(--rule-accent); box-shadow: inset 0 -1px 0 var(--accent); }
+.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); border-bottom: var(--rule); box-shadow: none; }
 .cell:focus-within .cell-md { visibility: hidden; }
 .cell textarea::placeholder { color: transparent; }
 .cell:focus-within textarea::placeholder { color: var(--faint); }
-.cell-tag { position: absolute; top: -7px; left: 2px; z-index: 3; font-family: var(--ui-font-stack); font-size: var(--fs-micro); color: var(--accent); padding: 0 var(--sp-2); background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
-.cell:focus-within .cell-tag { opacity: 1; }
 /* Draft row: same underline field as every other row — no dashed placeholder box. */
 /* `height: 44px` (not `auto`) is deliberate: these three TextInput multiline call sites can't
    pass `rows={1}` (TextInputProps types multiline's rest as InputHTMLAttributes, which has no
@@ -120,18 +118,18 @@
    to the HTML default of 2 rows, doubling this to ~58.5px. A fixed height keeps the pre-swap
    single-line size regardless of the missing attribute. */
 .cards-draft .cell textarea {
-  position: relative; height: 44px; min-height: 44px; display: block; overflow: hidden;
+  position: relative; height: var(--h-control); min-height: var(--h-control); display: block; overflow: hidden;
   color: var(--fg); caret-color: var(--accent); background: transparent; border: none;
-  border-bottom: var(--rule-soft); padding: var(--sp-4) var(--sp-2);
+  border-bottom: var(--rule-soft); padding: var(--sp-2) 0;
 }
-.cards-draft .cell textarea:focus { border-bottom: var(--rule-accent); box-shadow: inset 0 -1px 0 var(--accent); }
+.cards-draft .cell textarea:focus { border-bottom: var(--rule); box-shadow: none; }
 .cards-draft .cell textarea::placeholder { color: var(--faint); }
 
 /* Doubling is unconditionally correct (higher specificity always wins, regardless of declaration
    order) — kept even though `.cards-draft`/`.cards-row` are both local to this one module now. */
 .cards-draft.cards-draft { border-top: 1px dashed var(--border); margin-top: var(--sp-3); padding-top: var(--sp-5); }
 
-.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-5); color: var(--faint); font-size: var(--fs-ui); cursor: grab; user-select: none; }
+.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--faint); font-size: var(--fs-ui); cursor: grab; user-select: none; }
 .cards-num:hover { color: var(--text-muted); }
 .cards-num:active { cursor: grabbing; }
 .cards-num-add { color: var(--accent); cursor: default; font-size: var(--fs-lead); }
@@ -143,7 +141,7 @@
 .cards-lefthint { color: var(--faint); font-size: var(--fs-ui); }
 
 /* ── Bulk add ── */
-.cards-bulkwrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: var(--sp-2) var(--sp-7) 0; }
+.cards-bulkwrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: var(--sp-2) 0 0; }
 .cards-bulk-toolbar { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; padding: var(--sp-3) 0 var(--sp-5); }
 .cards-lab { color: var(--faint); font-size: var(--fs-micro); }
 .cards-chiprow { display: inline-flex; gap: var(--sp-3); flex-wrap: wrap; }
