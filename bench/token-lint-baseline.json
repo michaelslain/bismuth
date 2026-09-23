@@ -492,6 +492,12 @@
   "count": 1
  },
  {
+  "file": "preview/FoldedFence.module.css",
+  "rule": "spacing-literal",
+  "detail": "6px",
+  "count": 1
+ },
+ {
   "file": "SearchResultRows.module.css",
   "rule": "spacing-literal",
   "detail": "-1px -4px",
