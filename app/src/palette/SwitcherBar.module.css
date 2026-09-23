@@ -20,8 +20,11 @@
    last touched (folded into `.palette-row`'s base rule — see that file's own header), so there was
    nothing left to retarget there.
 
-   `.search-bar-lead` — was `:global()` here too; SwitcherBar.tsx now hands SearchBar its own
-   `leadClass` prop (`.switcher-lead` below) instead. */
+   `.search-bar-lead` — was `:global()` here too, then a `leadClass` prop; SwitcherBar.tsx now
+   passes SearchBar `size="large"` instead and owns none of the lead glyph's styling (search-prompt
+   Task 4). Same for `.switcher-input` (+ its placeholder rule) and `.switcher-search`, which this
+   file no longer has — SearchBar owns its own root layout/padding for every size, and a caller may
+   style only its OWN wrapper, never SearchBar's lead or input. */
 
 /* The search column: a full-height panel pinned to the LEFT of the editor pane, with the
    knowledge graph filling the region to its right (the floater is inset by this column's width
@@ -49,29 +52,6 @@
 }
 @keyframes switcher-drop { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
-
-/* The search row — big and prominent (this is "the search" that replaced the toolbar). */
-.switcher-search { padding: var(--sp-5) 18px; gap: var(--sp-5); }
-/* Doubled: guarantees this wins over SearchBar's own hashed `.search-bar-lead` default (equal
-   values today, but equal specificity is an import-order tie otherwise — see FlashcardsView's
-   `.fc-empty-title.fc-empty-title` for the same fix against a real conflict). */
-.switcher-lead.switcher-lead { color: var(--accent); opacity: 1; }
-.switcher-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  /* One search-input size (visual-unification audit §7 wave 3, §4.10: this was a bare 17px
-     literal, independent of the command palette's own --palette-input-font-size (15px default,
-     a real user setting — appearance.paletteInputFontSize, settingsCssVars.ts). Both search
-     inputs — the Cmd+P modal and this in-window Cmd+O bar — now read the SAME size, so the
-     user's chosen value governs either place they type a query. */
-  font-size: var(--palette-input-font-size, 15px);
-}
-.switcher-input::placeholder { color: var(--fg); opacity: 0.4; }
 
 /* Small resting "esc" hint on the right edge of the bar — a layout slot only, the Kbd
    primitive (.asc-kbd/.asc-key, ui/ui.css) supplies the cap's own chip look. */
