@@ -10,9 +10,10 @@
 // thing two different ways. Both are now the leading slot's own gap.
 import { Show, type Component, type JSX } from 'solid-js'
 import styles from './ModalFooter.module.css'
+import Text from './Text'
 
 export type ModalFooterProps = {
-    /** Words after the `esc` key cap, e.g. "to close" / "to cancel". Omit for no hint. */
+    /** Words after the plain `esc` text, e.g. "to close" / "to cancel". Omit for no hint. */
     hint?: string
     /** Left-aligned actions, before the spacer (DELETE, RESET). */
     leading?: JSX.Element
@@ -28,9 +29,9 @@ const ModalFooter: Component<ModalFooterProps> = props => (
     >
         <Show when={props.hint}>
             {h => (
-                <span class={styles['modal-hint']}>
-                    <b>esc</b> {h()}
-                </span>
+                <Text as="span" size="micro" tone="faint" class={styles['modal-hint']}>
+                    esc {h()}
+                </Text>
             )}
         </Show>
         <Show when={props.leading}>
