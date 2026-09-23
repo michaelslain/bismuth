@@ -192,6 +192,19 @@ export const KeyboardToggles: Story = {
         await userEvent.keyboard(' ')
         expect(thuBtn).toHaveAttribute('aria-pressed', 'true')
 
+        // Enter on a focused toggle must flip the toggle, not save-and-close the modal.
+        const tueBtn = body.getByRole('button', { name: 'tue' })
+        expect(tueBtn).toHaveAttribute('aria-pressed', 'false')
+        tueBtn.focus()
+        await userEvent.keyboard('{Enter}')
+        expect(tueBtn).toHaveAttribute('aria-pressed', 'true')
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+
+        // Backspace on a focused toggle must not delete the event.
+        tueBtn.focus()
+        await userEvent.keyboard('{Backspace}')
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+
         const allDayBtn = body.getByText('All day').closest('button') as HTMLElement
         expect(allDayBtn).toHaveAttribute('aria-pressed', 'true')
         allDayBtn.focus()

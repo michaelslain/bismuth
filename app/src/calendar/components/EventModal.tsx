@@ -198,6 +198,7 @@ export function EventModal(props: { store: EventStore }) {
             // (tagName 'DIV') — the tag checks below wouldn't spare it, so exclude it explicitly.
             // Otherwise Enter would save and Backspace would delete the event mid-typing.
             const inEditor = !!el?.closest?.('.cm-editor')
+            if (el?.closest?.('button')) return
             if (
                 e.key === 'Enter' &&
                 tag !== 'TEXTAREA' &&
@@ -380,7 +381,6 @@ export function EventModal(props: { store: EventStore }) {
                             variant={
                                 selCats().length === 0 ? 'selected' : 'unselected'
                             }
-                            accent="var(--faint)"
                             aria-pressed={selCats().length === 0}
                             onClick={() => setSelCats([])}
                         >
