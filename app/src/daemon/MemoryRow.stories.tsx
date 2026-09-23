@@ -7,7 +7,6 @@ import type { JSX } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'
 import MemoryRow, { type MemoryRowProps } from './MemoryRow'
 import type { MemoryListItem } from './DaemonMemory'
-import styles from './MemoryRow.module.css'
 
 const meta = {
     title: 'Daemon/MemoryRow',
@@ -18,17 +17,21 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// MemoryRow reads the wall clock itself (memoryAge(item.updated, Date.now())), so its own age
-// fixtures are built off the real Date.now() rather than a fixed instant — the assertions below
-// tolerate the render happening a few ms after this module evaluates, well inside the rounding.
-const HOUR = 60 * 60 * 1000
-const iso = (offsetMs: number) => new Date(Date.now() - offsetMs).toISOString()
+// MemoryRow reads the wall clock itself (memoryAge(item.updated, Date.now())). The real memory
+// API returns a date-only `YYYY-MM-DD` (memory/src/dates.ts's todayISO()), a LOCAL calendar date
+// rather than a UTC instant, so the fixture matches that shape rather than a full ISO timestamp.
+const dateOnly = (daysAgo: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() - daysAgo)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 const ITEM: MemoryListItem = {
     path: '.daemon/memory/notes/ceramics-glaze.md',
     name: 'ceramics glaze notebook',
     type: 'note',
-    updated: iso(4 * HOUR),
+    updated: dateOnly(0),
     excerpt:
         'Cone 6 reduction glazes tend toward warmer breaks at the rim — keep a log of each test tile.',
 }
@@ -66,7 +69,7 @@ export const Default: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(ITEM.name)).toBeInTheDocument()
         await expect(canvas.getByText(ITEM.type)).toBeInTheDocument()
-        await expect(canvas.getByText('4h ago')).toBeInTheDocument()
+        await expect(canvas.getByText('today')).toBeInTheDocument()
         await expect(
             canvas.getByRole('button', { name: 'forget' }),
         ).toBeInTheDocument()
@@ -84,7 +87,7 @@ export const LongName: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(ITEM.type)).toBeInTheDocument()
-        await expect(canvas.getByText('4h ago')).toBeInTheDocument()
+        await expect(canvas.getByText('today')).toBeInTheDocument()
     },
 }
 
@@ -149,9 +152,9 @@ export const Focused: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const openBtn = canvasElement.querySelector<HTMLElement>(
-            `.${styles['memory-row-open']}`,
-        )!
+        const openBtn = within(canvasElement).getByRole('button', {
+            name: `${ITEM.name}, ${ITEM.type}`,
+        })
         openBtn.focus()
         await expect(openBtn).toHaveFocus()
         await userEvent.keyboard('{Enter}')
