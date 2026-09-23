@@ -19,12 +19,12 @@
     border-bottom: var(--rule-soft);
 }
 
-/* Focus ring is the underline itself, doubled to read as the accent rule (~2px): the border
-   flips to --rule-accent and a 1px inset shadow is drawn on top of it. No box outline — a typed
-   prompt line never grows a border on focus, it just changes ink. */
+/* Focus stays in neutral ink: the soft rest rule firms to --rule, and the accent prompt glyph
+   turns bold (below). No accent underline — the palette, switcher and chat history all autofocus,
+   so an accent line under the field read as a permanent coloured divider between query and
+   results. No box outline either: a typed prompt line never grows a border on focus. */
 .search-bar:focus-within {
-    border-bottom: var(--rule-accent);
-    box-shadow: inset 0 -1px 0 var(--accent);
+    border-bottom: var(--rule);
 }
 
 /* The prompt glyph — `/` by default, `>` for command entry. One monospace cell before the input

@@ -81,17 +81,25 @@ export const Large: Story = {
     ),
 }
 
-/** Focused, so the frame captures the accent underline + bold prompt glyph. */
+/** Focused, so the frame captures the firmed neutral underline + bold prompt glyph. The rule must
+ *  change on focus but never turn accent — an accent line read as a coloured divider between the
+ *  query and its results in every autofocusing surface. */
 export const Focused: Story = {
     render: () => <Controlled placeholder="Search notes…" />,
     play: async ({ canvasElement }) => {
         const input = canvasElement.querySelector('input') as HTMLInputElement
-        input.focus()
-        await waitFor(() => expect(document.activeElement).toBe(input))
         const root = input.parentElement as HTMLElement
         const lead = root.firstElementChild as HTMLElement
+        const restRule = getComputedStyle(root).borderBottomColor
+        input.focus()
+        await waitFor(() => expect(document.activeElement).toBe(input))
         await waitFor(() =>
-            expect(getComputedStyle(root).boxShadow).not.toBe('none'),
+            expect(getComputedStyle(root).borderBottomColor).not.toBe(
+                restRule,
+            ),
+        )
+        await expect(getComputedStyle(root).borderBottomColor).not.toBe(
+            getComputedStyle(lead).color,
         )
         await expect(
             parseInt(getComputedStyle(lead).fontWeight, 10),

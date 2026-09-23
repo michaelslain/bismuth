@@ -1321,7 +1321,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 
 /* The glyph + input share one underline, terminal-prompt style (SearchBar.module.css's
-   look) — the focus ring IS the underline flipping to --accent, no box growing on focus. */
+   look) — focus firms the rule to neutral --rule and bolds the glyph; no accent line, no box. */
 .bismuth-find-field {
   display: flex;
   align-items: center;
@@ -1329,8 +1329,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   border-bottom: var(--rule-soft);
 }
 .bismuth-find-field:focus-within {
-  border-bottom: var(--rule-accent);
-  box-shadow: inset 0 -1px 0 var(--accent);
+  border-bottom: var(--rule);
 }
 
 .bismuth-find-prompt {
