@@ -6,7 +6,7 @@
    (label above a full-width control), used for a control too wide to share the row. */
 .field { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--sp-6); row-gap: var(--sp-2); align-items: start; min-width: 0; }
 .field.span { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-4); }
-.label { grid-column: 1; display: flex; align-items: baseline; gap: var(--sp-4); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-muted); min-height: var(--h-control); }
+.label { grid-column: 1; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-3); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-muted); min-height: var(--h-control); }
 .control { grid-column: 2; display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
-.req { margin-left: auto; font-size: var(--fs-micro); color: var(--accent); }
-.opt { margin-left: auto; font-size: var(--fs-micro); color: var(--faint); }
+.req { margin-left: 0; font-size: var(--fs-micro); color: var(--accent); }
+.opt { margin-left: 0; font-size: var(--fs-micro); color: var(--faint); }

@@ -28,7 +28,7 @@ const SettingsField: Component<SettingsFieldProps> = props => (
             <Show when={props.badge}>
                 {b => (
                     <span class={b() === 'required' ? styles.req : styles.opt}>
-                        {b()}
+                        {b() === 'required' ? 'req' : 'opt'}
                     </span>
                 )}
             </Show>

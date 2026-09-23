@@ -26,7 +26,6 @@ interface FieldDef {
     role: string
     def: string
     req?: boolean
-    span?: boolean
     hint: string
 }
 const FIELDS: FieldDef[] = [
@@ -59,7 +58,6 @@ const FIELDS: FieldDef[] = [
         key: 'categoryField',
         role: 'category',
         def: 'category',
-        span: true,
         hint: 'drives the colour each event is drawn in.',
     },
 ]
@@ -142,10 +140,9 @@ export function CalendarSettings(props: {
                     <For each={FIELDS}>
                         {f => (
                             <SettingsField
-                                label={`${f.role} column`}
+                                label={f.role}
                                 badge={f.req ? 'required' : 'optional'}
                                 hint={f.hint}
-                                span={f.span}
                             >
                                 <Select
                                     value={map()[f.key] ?? ''}

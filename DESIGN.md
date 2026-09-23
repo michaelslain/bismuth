@@ -98,7 +98,7 @@ components:
     textColor: "{colors.ink-muted}"
     typography: "{typography.label}"
     rounded: "{rounded.none}"
-    padding: "0 6px"
+    padding: "0"
     height: "24px"
   card:
     backgroundColor: "{colors.surface-1}"
@@ -414,8 +414,9 @@ the accent. An outline appears only when it means something.
   lowercase name in `--faint`, then a `--rule-soft` hairline trailing to the edge.
 - **Hint (`SettingsHint`):** sits under its control, in the same column as the control it
   describes, `--faint`, `--fs-micro`.
-- **Required / optional badge:** plain text on the label line, right-aligned, no box — `req` in
-  `--accent`, `opt` in `--faint`.
+- **Required / optional badge:** plain text on the label line, inline after the label (wraps with
+  it rather than pinning to the row's right edge), no box — `req` in `--accent`, `opt` in
+  `--faint`.
 
 ### Overlays
 - **Modal (`FormModal`):** the one dialog shell in the app — the old `PromptModal`/`CardsModal`
