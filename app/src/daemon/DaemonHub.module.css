@@ -1,0 +1,88 @@
+/* app/src/daemon/DaemonHub.module.css — DaemonHub.tsx is the ONLY importer.
+   The column stacks the face region (face + identity, DaemonFace's own `caption` slot) above its
+   own chat region. Resting, the face region floats centred in the column's upper half — a
+   two-thirds/one-third split, not dead-centre, so the face reads as sitting IN the hub rather
+   than as the hub's whole content. Compact (chatFills), the face rides the top as a one-line
+   header and hands the rest of the column to the chat. */
+
+.hub {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.faceRegion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 0 1 62%;
+    min-height: 0;
+    min-width: 0;
+    padding-block: var(--sp-6);
+}
+
+.faceCompact {
+    flex: none;
+    justify-content: flex-start;
+    padding-block: var(--sp-4) var(--sp-2);
+}
+
+.chatRegion {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.chatFill {
+    flex: 1;
+    min-height: 0;
+}
+
+/* The identity block, passed to DaemonFace as its `caption` slot — DaemonFace centres it under
+   the (resting) face or sits it beside the compact one-line glyph; this file only shapes what's
+   INSIDE that slot. */
+.identity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    /* `width: 100%`, not just `max-width` — `.faceRegion`'s own `align-items: center` otherwise
+       shrink-wraps this to its content, so the blurb's `max-width: 100%` below would resolve
+       against an ever-growing box and never actually clip. */
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.identityCompact {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--sp-3);
+    max-width: none;
+}
+
+.name {
+    white-space: nowrap;
+}
+
+.blurb {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.edit {
+    margin-top: var(--sp-1);
+}
+
+/* Off (`enabled === false`): the face sleeps alone with how to wake it — no identity, no chat. */
+.off {
+    margin: var(--sp-4) 0 0;
+}

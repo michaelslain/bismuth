@@ -3,6 +3,9 @@ import {
     hasRecentFailure,
     faceCaption,
     barReadouts,
+    initialFacet,
+    facetCount,
+    DAEMON_FACETS,
     RECENT_FAILURE_MS,
 } from './daemonPageModel'
 import type { DaemonSnapshot, DaemonCron } from '../../../core/src/daemonGraph'
@@ -24,6 +27,7 @@ const snap = (crons: DaemonCron[], running = true): DaemonSnapshot => ({
     daemon: { label: 'daemon', running, home: '/v/.daemon' },
     crons,
     processes: [{ name: 'sync', file: 'sync', enabled: true, running: false }],
+    identity: { name: 'daemon', blurb: '' },
 })
 
 test('recent failure window', () => {
@@ -138,40 +142,46 @@ test('the watching caption names the MOST RECENT run, with its age', () => {
     ).toBe('watching // last: fresh 2h ago')
 })
 
-test('readouts pluralize and hide an empty inbox', () => {
-    expect(barReadouts(snap([cron({})]), 0)).toEqual(['1 cron', '1 service'])
-    expect(barReadouts(snap([cron({}), cron({ name: 'b' })]), 3)).toEqual([
-        '2 crons',
-        '1 service',
-        '3 in inbox',
+test('facet order', () => {
+    expect(DAEMON_FACETS).toEqual([
+        'inbox',
+        'crons',
+        'services',
+        'memory',
+        'log',
     ])
 })
 
-test('a status is the FIRST readout, ahead of the counts', () => {
-    const s = snap([cron({}), cron({ name: 'b' }), cron({ name: 'c' })])
-    s.processes.push({
-        name: 'watch',
-        file: 'watch',
-        enabled: true,
-        running: false,
-    })
-    expect(barReadouts(s, 0, 'watching // last: x 3h ago')).toEqual([
-        'watching // last: x 3h ago',
-        '3 crons',
-        '2 services',
-    ])
+test('initial facet: anything due wins outright, else the remembered facet, else crons', () => {
+    expect(initialFacet(3, 'log')).toBe('inbox')
+    expect(initialFacet(0, null)).toBe('crons')
+    expect(initialFacet(0, 'memory')).toBe('memory')
+    expect(initialFacet(0, 'services')).toBe('services')
 })
 
-test('an omitted or empty status reproduces todays output exactly', () => {
-    expect(barReadouts(snap([cron({})]), 0, undefined)).toEqual([
-        '1 cron',
-        '1 service',
-    ])
-    expect(barReadouts(snap([cron({})]), 0, '')).toEqual(['1 cron', '1 service'])
+test('initial facet: an unrecognised remembered value falls back to crons, not the value itself', () => {
+    expect(initialFacet(0, 'bogus')).toBe('crons')
+    expect(initialFacet(0, '')).toBe('crons')
 })
 
-test('a status plus a due inbox: status first, inbox last', () => {
+test('facet counts read the matching field, log has none', () => {
+    const c = { due: 3, crons: 4, services: 2, memory: 118 }
+    expect(facetCount('inbox', c)).toBe(3)
+    expect(facetCount('crons', c)).toBe(4)
+    expect(facetCount('services', c)).toBe(2)
+    expect(facetCount('memory', c)).toBe(118)
+    expect(facetCount('log', c)).toBeUndefined()
+})
+
+test('an unknown memory count (not yet fetched) is omitted, not zero', () => {
     expect(
-        barReadouts(snap([cron({})]), 3, 'working // dream +1'),
-    ).toEqual(['working // dream +1', '1 cron', '1 service', '3 in inbox'])
+        facetCount('memory', { due: 0, crons: 0, services: 0 }),
+    ).toBeUndefined()
+})
+
+test('bar readouts are the status alone now — counts moved onto the facet labels', () => {
+    expect(barReadouts('watching // last: dream 4m ago')).toEqual([
+        'watching // last: dream 4m ago',
+    ])
+    expect(barReadouts('')).toEqual([])
 })
