@@ -366,7 +366,7 @@ the accent. An outline appears only when it means something.
 ### Cards / Containers
 - **Card:** `--surface-1` fill, `--rule` hairline, square, `12px 16px` padding, no shadow.
   A `proposal` card adds the 2px accent left edge.
-- **Callout / Frontmatter:** the same accent left edge on a surface fill.
+- **Callout:** the same accent left edge on a surface fill.
 
 ### Inputs / Fields
 - **Field:** a label in `--text-muted` stacked 4px above its control at `--fs-ui`.

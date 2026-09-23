@@ -583,7 +583,7 @@ export const PdfMarginInk: Story = {
         const el = live!
         const r = el.getBoundingClientRect()
 
-        // The margin is the note-styled ScratchPaper (scratch-notes decision 3): `--editor`,
+        // The margin is the note-styled ScratchPaper (scratch-notes decision 3): `--surface-1`,
         // starting at page 1's right edge, as tall as the page and exactly MARGIN_W wide — so the
         // ink below is judged on the look the app really has.
         const page0 = (

@@ -20,7 +20,7 @@
 // and `controller` hands out `scrollToPage` once the scroll element exists. `marginRatio` adds
 // drawable margin paper to the right of every page (pageLayout.ts has the geometry).
 //
-// PAGE FRAME: the stack sits on the scroll element's own `--surface-2` desk with a `pad`-px
+// PAGE FRAME: the stack sits on the scroll element's own `--editor` desk with a `pad`-px
 // gutter on every side (pageLayout.ts's new `pad` parameter), so the desk stays visible around
 // the page even at fit width. `pad` is read ONCE, from `--sp-6`'s resolved computed value on the
 // scroll element itself (falling back to `16` if that ever fails to parse) — never a hand-typed
@@ -68,8 +68,9 @@ const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 
 // The margin is the SCRATCH surface, not more of the page: it takes
-// the note editor's own ground + hairline (ScratchPaper.tsx — `var(--editor)` / `var(--rule-soft)`)
-// rather than matching the PDF page's own fixed white the way it used to. It still gets its
+// the raised `--surface-1` note surface, one step above the `--editor` desk, + hairline
+// (ScratchPaper.tsx — `var(--surface-1)` / `var(--rule-soft)`) rather than matching the PDF
+// page's own fixed white the way it used to. It still gets its
 // position, drop shadow and left-edge clipping from THIS file's `.pdf-margin` class below, since
 // those are page-stack layout concerns, not part of the reusable surface. PageInk resolves ink
 // drawn on the page proper against the LIGHT theme bucket (dark ink on paper) and ink drawn on

@@ -29,7 +29,7 @@ function parseRgb(css: string): [number, number, number] {
     return [parts[0] ?? NaN, parts[1] ?? NaN, parts[2] ?? NaN]
 }
 
-/** Rest state: the surface's background resolves to `--editor`, its left border to `--rule-soft`
+/** Rest state: the surface's background resolves to `--surface-1`, its left border to `--rule-soft`
  *  (`1px solid var(--border-soft)`) — this is what would fail if the component still used the
  *  PDF page's own white/`PDF_PAGE_RULE` instead of the note-editor tokens. */
 export const Default: Story = {
@@ -54,11 +54,11 @@ export const Default: Story = {
         await expect(el).not.toBeNull()
 
         const root = getComputedStyle(document.documentElement)
-        const editorHex = root.getPropertyValue('--editor').trim()
+        const surface1Hex = root.getPropertyValue('--surface-1').trim()
         const borderSoftHex = root.getPropertyValue('--border-soft').trim()
 
         const cs = getComputedStyle(el)
-        await expect(parseRgb(cs.backgroundColor)).toEqual(hexToRgb(editorHex))
+        await expect(parseRgb(cs.backgroundColor)).toEqual(hexToRgb(surface1Hex))
         await expect(parseRgb(cs.borderLeftColor)).toEqual(
             hexToRgb(borderSoftHex),
         )

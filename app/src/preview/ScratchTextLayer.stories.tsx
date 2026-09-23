@@ -117,10 +117,11 @@ function Stage(props: {
                     position: 'relative',
                     width: `${last().rendered.left + last().rendered.w + (last().marginW ?? 0) + GUTTER}px`,
                     height: `${last().rendered.top + last().rendered.h + GUTTER}px`,
-                    // The real desk the page stack sits on. `--bg` and `--editor` (the strip's own
-                    // ground) are near-identical dark tones, so a `--bg` stage made the strip read
-                    // as invisible here even though it's a visibly different surface in the app.
-                    background: 'var(--surface-2)',
+                    // The real desk the page stack sits on. `--bg` and `--editor` (this desk) are
+                    // near-identical dark tones, so the stage paints the real `--editor` desk
+                    // explicitly — a `--bg` stage made the strip read as invisible here even
+                    // though it's a visibly different surface in the app.
+                    background: 'var(--editor)',
                 }}
             >
                 {pages().map(p => (
@@ -142,7 +143,7 @@ function Stage(props: {
                                 top: `${p.rendered.top}px`,
                                 width: `${p.marginW}px`,
                                 height: `${p.rendered.h}px`,
-                                background: 'var(--editor)',
+                                background: 'var(--surface-1)',
                                 'border-left': 'var(--rule-soft)',
                                 'box-sizing': 'border-box',
                             }}

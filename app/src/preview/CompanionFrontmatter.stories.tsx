@@ -1,8 +1,14 @@
 // Visual spec for <CompanionFrontmatter> — the tag-carrying companion note's frontmatter strip,
 // mounted under PreviewView's ViewBar for image/pdf kinds (see PreviewView.stories.tsx's Image
 // and Pdf stories for that mount-point wiring). Exercised directly here, over a fake `api.read`/
-// `api.writeChecked` transport, so these stories prove the strip's OWN load/edit/write behaviour
-// without depending on an image or PDF actually rendering.
+// `api.writeChecked` transport, so these stories prove the strip's OWN load/edit/write/fold
+// behaviour without depending on an image or PDF actually rendering.
+//
+// NOTE-IDENTICAL BY RULING (Task 1): this strip no longer forks livePreview's own frontmatter
+// chrome — it matches the note editor directly (CompanionFrontmatter.module.css only adds the
+// line-height/padding needed to reproduce Editor.tsx's own scroller, nothing that restyles
+// livePreview.ts). `MatchesNoteFrontmatter` below proves that by mounting a real note `Editor` on
+// the SAME frontmatter text next to the strip and comparing their computed styles directly.
 //
 // SIMULATING A KEYSTROKE: MarkdownField is a CodeMirror 6 field (a contenteditable div, not an
 // <input>), so `fireEvent.input` can't drive it the way it drives the plain <input> find bar in
@@ -19,10 +25,12 @@ import { EditorView } from '@codemirror/view'
 import CompanionFrontmatter from './CompanionFrontmatter'
 import createCompanionStore from './createCompanionStore'
 import { companionPathFor } from '../../../core/src/fileKinds'
+import { Editor } from '../Editor'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import styles from './CompanionFrontmatter.module.css'
+import foldedFenceStyles from './FoldedFence.module.css'
 
 /** Builds a real CompanionStore under this story's own Solid owner (createCompanionStore.ts) and
  *  hands it to CompanionFrontmatter as `store` — same "an already-owned store" path PreviewView
@@ -31,9 +39,16 @@ import styles from './CompanionFrontmatter.module.css'
 function Host(props: {
     binaryPath: Accessor<string>
     tagNames: () => string[]
+    foldKey?: string
 }) {
     const store = createCompanionStore(props.binaryPath)
-    return <CompanionFrontmatter store={store} tagNames={props.tagNames} />
+    return (
+        <CompanionFrontmatter
+            store={store}
+            tagNames={props.tagNames}
+            foldKey={props.foldKey}
+        />
+    )
 }
 
 const meta = {
@@ -46,85 +61,31 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const NO_TAGS = () => [] as string[]
+const noop = () => {}
 
-/** WCAG relative luminance of an sRGB colour (same formula PreviewView.stories.tsx uses for its
- *  highlight-contrast probe — duplicated here rather than imported, since story files are each
- *  their own self-contained spec, not a shared module). */
-function luminance(r: number, g: number, b: number): number {
-    const f = (c: number) => {
-        const v = c / 255
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-    }
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
-}
-const contrastRatio = (a: number, b: number) =>
-    (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-/** Parses BOTH computed-colour syntaxes a browser may hand back: legacy `rgb()`/`rgba()` and the
- *  `color(srgb r g b / a)` form Chrome resolves `color-mix()` results to (0-1 per channel, scaled
- *  here to 0-255 to match). Returns alpha too (default 1) — needed below because a `color-mix(...,
- *  transparent)` used value keeps its ORIGINAL rgb and reports a reduced alpha rather than
- *  pre-blending against whatever sits behind it; the actual painted colour still has to be
- *  composited by hand. */
-const rgbaOf = (css: string): [number, number, number, number] => {
-    const rgb = css.match(/rgba?\(([^)]+)\)/)
-    if (rgb) {
-        const [r, g, b, a] = rgb[1].split(',').map(v => parseFloat(v))
-        return [r ?? NaN, g ?? NaN, b ?? NaN, a ?? 1]
-    }
-    const fn = css.match(
-        /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/,
-    )
-    if (fn) {
-        const [r, g, b] = fn.slice(1, 4).map(v => parseFloat(v) * 255)
-        return [r, g, b, fn[4] !== undefined ? parseFloat(fn[4]) : 1]
-    }
-    return [NaN, NaN, NaN, NaN]
-}
-const rgbOf = (css: string): [number, number, number] =>
-    rgbaOf(css).slice(0, 3) as [number, number, number]
-/** Composites a (possibly translucent) foreground colour over an opaque background, so contrast
- *  is measured against what actually paints, not the foreground's own unblended channel values. */
-const compositeOver = (
-    fg: [number, number, number, number],
-    bg: [number, number, number],
-): [number, number, number] => {
-    const [r, g, b, a] = fg
-    return [
-        a * r + (1 - a) * bg[0],
-        a * g + (1 - a) * bg[1],
-        a * b + (1 - a) * bg[2],
-    ]
-}
-
-/** The element actually carrying a line's rendered text colour — walks down through any
- *  single-child wrapper (CodeMirror nests a syntax-highlighter token span inside some marks) so
- *  the colour read back is the one that really paints, not an outer mark a token span overrides. */
-function renderedTextColor(el: Element): string {
-    let node = el
-    while (
-        node.children.length === 1 &&
-        node.textContent === node.children[0].textContent
-    ) {
-        node = node.children[0]
-    }
-    return getComputedStyle(node).color
-}
-
-/** Each numbered line's text left edge — `.getBoundingClientRect().left` plus that line's own
- *  resolved `padding-left`, so a fence row and a property row are compared at their actual text
- *  start, not their (possibly differently-padded) box edge. */
-function textLeftEdge(line: HTMLElement): number {
-    const cs = getComputedStyle(line)
-    return line.getBoundingClientRect().left + parseFloat(cs.paddingLeft)
-}
-
-/** The live CM6 EditorView mounted inside the strip, or throws — same helper Editor.stories.tsx
- *  uses to drive a real doc edit instead of trying to synthesize contenteditable DOM events. */
-function liveView(canvasElement: HTMLElement): EditorView {
-    const dom = canvasElement.querySelector('.cm-editor')
+/** The live CM6 EditorView mounted inside an element — same helper Editor.stories.tsx uses to
+ *  drive a real doc edit instead of trying to synthesize contenteditable DOM events. */
+function liveView(root: HTMLElement): EditorView {
+    const dom = root.querySelector('.cm-editor')
     const v = dom && EditorView.findFromDOM(dom as HTMLElement)
     if (!v) throw new Error('could not find EditorView')
     return v
+}
+
+/** Approximates a `::before` pseudo-element's viewport rect from its host line's own rect plus
+ *  the pseudo's OWN computed `left`/`top`/`width`/`height` (all resolved to px by the browser,
+ *  even for an `em`-relative value like codeLineNumbers.ts's `left: -2.7em`) — a pseudo has no DOM
+ *  node of its own to call `getBoundingClientRect()` on, so this is the only way to get its
+ *  geometry. `top`/`left` default to `auto` here (only `left` is set in codeLineNumberTheme), so
+ *  an unset one falls back to the line's own edge, its static position. */
+function pseudoRect(line: HTMLElement, pseudo: '::before' | '::after') {
+    const lineRect = line.getBoundingClientRect()
+    const cs = getComputedStyle(line, pseudo)
+    const left = lineRect.left + (cs.left === 'auto' ? 0 : parseFloat(cs.left))
+    const top = lineRect.top + (cs.top === 'auto' ? 0 : parseFloat(cs.top))
+    const width = cs.width === 'auto' ? 0 : parseFloat(cs.width)
+    const height = cs.height === 'auto' ? lineRect.height : parseFloat(cs.height)
+    return { left, top, right: left + width, bottom: top + height }
 }
 
 /** No companion note exists yet for this binary. */
@@ -140,132 +101,6 @@ export const NoCompanion: Story = {
         await waitFor(() =>
             expect(canvas.getByText(/tags/)).toBeInTheDocument(),
         )
-        // Compact by default (final review — this used to render ~110px tall: three
-        // full-prose-sized rows for a bare `---`/`tags: []`/`---` template). Measured on the
-        // panel's own root (the div `ui/Frontmatter` renders), not a descendant, so the number
-        // includes its padding — the ruling's "empty default block <= 64px tall" is about the
-        // whole visible strip, not just the text.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            expect(panel).not.toBeNull()
-            expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(64)
-        })
-        // Equal top/bottom padding (final review) — `ui/Frontmatter`'s own padding shorthand
-        // already gives top/bottom the same value; assert it numerically rather than by reading
-        // the CSS, since a future change to either could silently unbalance it.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const cs = getComputedStyle(panel)
-            const top = parseFloat(cs.paddingTop)
-            const bottom = parseFloat(cs.paddingBottom)
-            expect(Math.abs(top - bottom)).toBeLessThanOrEqual(2)
-        })
-        // No line's glyphs render clipped (final review — the fence rows used to render partially
-        // outside their own box at a too-tight line-height): every VISIBLE `.cm-line`'s rect must
-        // sit fully inside `.cm-content`'s own rect. The trailing blank line is `display: none`
-        // (CompanionFrontmatter.module.css), so it is correctly excluded rather than asserted at
-        // (0,0) which would trivially "pass" without proving anything.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const content = panel.querySelector('.cm-content') as HTMLElement
-            const contentRect = content.getBoundingClientRect()
-            const lines = Array.from(
-                content.querySelectorAll<HTMLElement>('.cm-line'),
-            ).filter(l => getComputedStyle(l).display !== 'none')
-            expect(lines.length).toBeGreaterThan(0)
-            for (const line of lines) {
-                const r = line.getBoundingClientRect()
-                expect(r.height).toBeGreaterThan(0)
-                expect(r.top).toBeGreaterThanOrEqual(contentRect.top - 0.5)
-                expect(r.bottom).toBeLessThanOrEqual(contentRect.bottom + 0.5)
-            }
-        })
-        // Exactly one accent-coloured left edge (final review — livePreview's own per-line
-        // accent box-shadow duplicated `ui/Frontmatter`'s panel border, reading as a double rule).
-        // Resolves `--accent` to its canonical `rgb(...)` computed form (a probe element, since
-        // `getPropertyValue('--accent')` returns the raw token string, e.g. a hex code, which
-        // never string-matches a computed `rgb(...)` color) and counts every element (including
-        // `::after` pseudo-elements, where the livePreview box-shadow actually lives) whose
-        // left border or box-shadow resolves to that colour.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const probe = document.createElement('div')
-            probe.style.color = 'var(--accent)'
-            document.body.appendChild(probe)
-            const accentRgb = getComputedStyle(probe).color
-            probe.remove()
-
-            let count = 0
-            for (const el of [
-                panel,
-                ...Array.from(panel.querySelectorAll('*')),
-            ]) {
-                const cs = getComputedStyle(el)
-                if (
-                    cs.borderLeftStyle !== 'none' &&
-                    parseFloat(cs.borderLeftWidth) > 0 &&
-                    cs.borderLeftColor === accentRgb
-                )
-                    count++
-                if (cs.boxShadow.includes(accentRgb)) count++
-                const after = getComputedStyle(el, '::after')
-                if (after.boxShadow.includes(accentRgb)) count++
-            }
-            expect(count).toBe(1)
-        })
-        // No stray in-block gutter number (final review — "1" rendered to the left of the accent
-        // edge). livePreview's `.cm-code-numbered::before` is suppressed inside this field
-        // (CompanionFrontmatter.module.css); assert the pseudo is genuinely gone on every numbered
-        // line, not merely that no "1" text NODE exists (a ::before has no DOM node to query for
-        // text — reading its computed style is the only way to prove it isn't painted).
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const numbered = panel.querySelectorAll('.cm-code-numbered')
-            expect(numbered.length).toBeGreaterThan(0)
-            for (const el of Array.from(numbered))
-                expect(getComputedStyle(el, '::before').display).toBe('none')
-        })
-        // The tags: line's text starts at the SAME left edge as the --- fence lines (final review
-        // — the fence rows' compaction pass zeroed their horizontal padding without zeroing (or
-        // matching) the property row's, so the tags text sat 0.5em right of the fences above/below
-        // it). ±1px for subpixel rounding.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const fence = panel.querySelector('.cm-block-top') as HTMLElement
-            const tags = panel.querySelector('.cm-frontmatter') as HTMLElement
-            expect(fence).not.toBeNull()
-            expect(tags).not.toBeNull()
-            expect(
-                Math.abs(textLeftEdge(fence) - textLeftEdge(tags)),
-            ).toBeLessThanOrEqual(1)
-        })
-        // Fence glyph contrast >= 3:1 against the strip's own background (final review — "they are
-        // structure, but must be legible"). livePreview's default 30%-opacity fence dimming reads
-        // fine inside a full note page but fell under WCAG's non-text floor measured against this
-        // panel's own surface (as low as ~1.8:1 in Paper) — raised to 60% scoped to this field.
-        await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
-            const fence = panel.querySelector('.cm-fence-syntax') as HTMLElement
-            expect(fence).not.toBeNull()
-            const bg = rgbOf(getComputedStyle(panel).backgroundColor)
-            const fg = compositeOver(rgbaOf(renderedTextColor(fence)), bg)
-            const ratio = contrastRatio(luminance(...bg), luminance(...fg))
-            expect(ratio).toBeGreaterThanOrEqual(3)
-        })
         // No write happened just from rendering the strip and leaving it alone — the companion
         // must not spring into existence merely because an image was opened. Waited past the
         // debounce (settings.editor.autoSaveDelay) so this can't pass on a write still in flight.
@@ -308,13 +143,11 @@ export const ExistingCompanionWithBody: Story = {
             expect(canvasElement.textContent).toContain('summer'),
         )
 
-        // The compact sizing above (CompanionFrontmatter.module.css) must never clip a real line
-        // of tags — a strip with 3 tags still shows all of them. Find the TEXT NODE carrying
-        // "summer" (via a Range, not an element query — CodeMirror's own syntax-highlighter spans
-        // nest arbitrarily, so no element is guaranteed to have exactly this textContent) and check
-        // it renders at a real, unclipped size fully inside the panel's own box: nothing here
-        // imposes a fixed height or `overflow: hidden`, but assert it rather than assume it, since
-        // that's exactly the failure mode a future max-height would cause.
+        // Note-identical sizing (Task 1) must never clip a real line of tags — a strip with 3
+        // tags still shows all of them. Find the TEXT NODE carrying "summer" (via a Range, not an
+        // element query — CodeMirror's own syntax-highlighter spans nest arbitrarily, so no
+        // element is guaranteed to have exactly this textContent) and check it renders at a real,
+        // unclipped size fully inside the panel's own box.
         await waitFor(() => {
             const panel = canvasElement.querySelector(
                 `.${styles['companion-frontmatter']}`,
@@ -392,5 +225,428 @@ export const SwitchesBinaryPath: Story = {
         // showing "alpha" (or a stale "beta" if this ran the other way) while the switch settles.
         await waitFor(() => expect(canvasElement.textContent).toContain('beta'))
         await expect(canvasElement.textContent).not.toContain('alpha')
+    },
+}
+
+const MATCH_TEXT = '---\ntags: [trip, 2026]\n---\n'
+
+/** Proves the strip is note-identical (Task 1's whole point) by mounting a real note `Editor` on
+ *  the SAME frontmatter text right next to the strip, then comparing their computed styles
+ *  directly rather than against a hand-copied number — a drift in either side shows up here
+ *  first. Also proves the in-block gutter number, suppressed by the old fork, is back and sits
+ *  inside the strip (Review Focus #3: the number hangs at `-2.7em`, close to this strip's own
+ *  left edge). */
+export const MatchesNoteFrontmatter: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { [EXISTING_PATH]: MATCH_TEXT, 'Match.md': MATCH_TEXT },
+            }),
+        )
+        return (
+            <div>
+                <div data-testid="strip">
+                    <Host binaryPath={() => 'photo.png'} tagNames={NO_TAGS} />
+                </div>
+                <div data-testid="editor" style={{ height: '300px' }}>
+                    <Editor
+                        path="Match.md"
+                        initialText={MATCH_TEXT}
+                        onSaved={noop}
+                        noteNames={() => []}
+                        memoryNames={() => []}
+                        tagNames={() => []}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const strip = canvas.getByTestId('strip')
+        const editor = canvas.getByTestId('editor')
+
+        // Generous timeout: this story mounts a full note Editor (Harper, embeds, the whole
+        // extension stack) ALONGSIDE the strip in one page, and a loaded parallel playCheck run
+        // (several Chrome tabs at once) can push its first paint past the default wait window.
+        // Diagnostic throws (not `.not.toBeNull()`) so a timeout names WHICH side never rendered.
+        await waitFor(
+            () => {
+                if (!strip.querySelector('.cm-frontmatter'))
+                    throw new Error('strip: .cm-frontmatter not found')
+            },
+            { timeout: 5000 },
+        )
+        await waitFor(
+            () => {
+                if (!editor.querySelector('.cm-frontmatter'))
+                    throw new Error('editor: .cm-frontmatter not found')
+            },
+            { timeout: 5000 },
+        )
+
+        const closeEnough = (a: number, b: number) =>
+            expect(Math.abs(a - b)).toBeLessThanOrEqual(0.5)
+
+        // Property-row font-size + line-height.
+        await waitFor(() => {
+            const stripLine = strip.querySelector(
+                '.cm-frontmatter',
+            ) as HTMLElement
+            const editorLine = editor.querySelector(
+                '.cm-frontmatter',
+            ) as HTMLElement
+            const s = getComputedStyle(stripLine)
+            const e = getComputedStyle(editorLine)
+            closeEnough(parseFloat(s.fontSize), parseFloat(e.fontSize))
+            closeEnough(parseFloat(s.lineHeight), parseFloat(e.lineHeight))
+        })
+
+        // Fence-row (`.cm-block-top`) padding.
+        await waitFor(() => {
+            const stripFence = strip.querySelector(
+                '.cm-block-top',
+            ) as HTMLElement
+            const editorFence = editor.querySelector(
+                '.cm-block-top',
+            ) as HTMLElement
+            const s = getComputedStyle(stripFence)
+            const e = getComputedStyle(editorFence)
+            for (const prop of [
+                'paddingTop',
+                'paddingRight',
+                'paddingBottom',
+                'paddingLeft',
+            ] as const) {
+                closeEnough(parseFloat(s[prop]), parseFloat(e[prop]))
+            }
+        })
+
+        // `.cm-block-mid`'s `::after` fill colour (the block's flat background).
+        await waitFor(() => {
+            const stripMid = strip.querySelector(
+                '.cm-block-mid',
+            ) as HTMLElement
+            const editorMid = editor.querySelector(
+                '.cm-block-mid',
+            ) as HTMLElement
+            const s = getComputedStyle(stripMid, '::after').backgroundColor
+            const e = getComputedStyle(editorMid, '::after').backgroundColor
+            expect(s).toBe(e)
+        })
+
+        // No rounding anywhere in the block (ruling: note frontmatter is flat) — checked on the
+        // `::after` fill itself (nothing ever rounds `.cm-block-mid` directly; the flat fill lives
+        // entirely in the pseudo, so a check against the LINE's own `borderRadius` could never
+        // fail regardless of what the fill does).
+        await waitFor(() => {
+            for (const sel of [
+                '.cm-block-top',
+                '.cm-block-mid',
+                '.cm-block-bottom',
+            ]) {
+                const stripLine = strip.querySelector(sel) as HTMLElement
+                const editorLine = editor.querySelector(sel) as HTMLElement
+                expect(
+                    getComputedStyle(stripLine, '::after').borderRadius,
+                ).toBe('0px')
+                expect(
+                    getComputedStyle(editorLine, '::after').borderRadius,
+                ).toBe('0px')
+            }
+        })
+
+        // Fence-glyph colour, property-key colour and block left padding — strip vs editor.
+        await waitFor(() => {
+            const stripFenceSyntax = strip.querySelector(
+                '.cm-fence-syntax',
+            ) as HTMLElement
+            const editorFenceSyntax = editor.querySelector(
+                '.cm-fence-syntax',
+            ) as HTMLElement
+            expect(getComputedStyle(stripFenceSyntax).color).toBe(
+                getComputedStyle(editorFenceSyntax).color,
+            )
+
+            // `.cm-fm-key`, not `.cm-fm-key > span` — CodeMirror only nests an inner highlight
+            // span when a syntax token wins inside the mark (see livePreview.ts ~1919-1924); a
+            // plain key like `tags` has no such child, and `.cm-fm-key` itself already carries
+            // the colour rule either way.
+            const stripKey = strip.querySelector('.cm-fm-key') as HTMLElement
+            const editorKey = editor.querySelector('.cm-fm-key') as HTMLElement
+            expect(getComputedStyle(stripKey).color).toBe(
+                getComputedStyle(editorKey).color,
+            )
+
+            const stripMid = strip.querySelector(
+                '.cm-block-mid',
+            ) as HTMLElement
+            const editorMid = editor.querySelector(
+                '.cm-block-mid',
+            ) as HTMLElement
+            expect(getComputedStyle(stripMid).paddingLeft).toBe(
+                getComputedStyle(editorMid).paddingLeft,
+            )
+        })
+
+        // The `---` text's own left edge sits 40px (this panel's own left padding) + 0.5em (the
+        // fence row's own left padding, `.cm-block-top`'s `0.15em 0.5em`) from the strip's left
+        // edge — the same offset a note's frontmatter fence sits at (measured today 46.75px).
+        await waitFor(() => {
+            const panel = strip.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const fenceTop = strip.querySelector(
+                '.cm-block-top',
+            ) as HTMLElement
+            const walker = document.createTreeWalker(
+                fenceTop,
+                NodeFilter.SHOW_TEXT,
+            )
+            let dashNode: Text | null = null
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                if (n.textContent?.includes('---')) {
+                    dashNode = n as Text
+                    break
+                }
+            }
+            expect(dashNode).toBeTruthy()
+            const range = document.createRange()
+            range.selectNodeContents(dashNode!)
+            const textLeft = range.getBoundingClientRect().left
+            const panelLeft = panel.getBoundingClientRect().left
+            const expected =
+                40 + 0.5 * parseFloat(getComputedStyle(fenceTop).fontSize)
+            expect(
+                Math.abs(textLeft - panelLeft - expected),
+            ).toBeLessThanOrEqual(0.5)
+        })
+
+        // Finding 1: the chevron sits vertically centred on the opening `---` row.
+        await waitFor(() => {
+            const chev = within(strip)
+                .getByLabelText('fold frontmatter')
+                .getBoundingClientRect()
+            const fenceTop = strip
+                .querySelector('.cm-block-top')!
+                .getBoundingClientRect()
+            expect(
+                Math.abs(
+                    chev.top + chev.height / 2 - (fenceTop.top + fenceTop.height / 2),
+                ),
+            ).toBeLessThanOrEqual(1)
+        })
+
+        // The in-block gutter number is BACK (the old fork suppressed it) and non-empty on both
+        // sides.
+        await waitFor(() => {
+            const stripNum = strip.querySelector(
+                '.cm-code-numbered',
+            ) as HTMLElement
+            const editorNum = editor.querySelector(
+                '.cm-code-numbered',
+            ) as HTMLElement
+            expect(stripNum).not.toBeNull()
+            expect(editorNum).not.toBeNull()
+            const s = getComputedStyle(stripNum, '::before')
+            expect(s.display).not.toBe('none')
+            expect(s.content).not.toBe('none')
+            expect(s.content).not.toBe('""')
+        })
+
+        // Review Focus #3: the number's rect sits inside the strip's own root rect — it must not
+        // clip past the strip's left edge the way it did in the pre-Task-1 8px-padding panel.
+        await waitFor(() => {
+            const panel = strip.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const numberedLine = panel.querySelector(
+                '.cm-code-numbered',
+            ) as HTMLElement
+            const panelRect = panel.getBoundingClientRect()
+            const numRect = pseudoRect(numberedLine, '::before')
+            expect(numRect.left).toBeGreaterThanOrEqual(panelRect.left - 1)
+            expect(numRect.right).toBeLessThanOrEqual(panelRect.right + 1)
+        })
+    },
+}
+
+/** Folded: the chevron collapses the strip to FoldedFence's single `--- … ---` row, landing
+ *  exactly where the opening fence row sat before the fold (Review Focus: findings 2 + 3). */
+export const Folded: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { [EXISTING_PATH]: MATCH_TEXT } }),
+        )
+        return <Host binaryPath={() => 'photo.png'} tagNames={NO_TAGS} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByLabelText('fold frontmatter')).toBeInTheDocument(),
+        )
+
+        // Record the UNFOLDED opening fence row's own rect + height, and the panel's own padding,
+        // before folding — these are what the folded row must land back on.
+        const panel = canvasElement.querySelector(
+            `.${styles['companion-frontmatter']}`,
+        ) as HTMLElement
+        const fenceTopBeforeFold = panel
+            .querySelector('.cm-block-top')!
+            .getBoundingClientRect()
+        const fenceH = fenceTopBeforeFold.height
+        const panelPaddingTop = parseFloat(
+            getComputedStyle(panel).paddingTop,
+        )
+
+        await fireEvent.click(canvas.getByLabelText('fold frontmatter'))
+
+        await waitFor(() => {
+            const chevron = canvas.getByLabelText('unfold frontmatter')
+            expect(chevron).toHaveAttribute('aria-expanded', 'false')
+        })
+        await waitFor(() =>
+            expect(canvas.getByText('--- … ---')).toBeInTheDocument(),
+        )
+
+        // The field is hidden and the folded fence lands where the opening fence row was, at its
+        // own unfolded height, and the panel itself shrinks to match (findings 2 + 3).
+        await waitFor(() => {
+            const field = panel.querySelector(`.${styles.field}`) as HTMLElement
+            expect(getComputedStyle(field).display).toBe('none')
+
+            const foldedFenceEl = panel.querySelector(
+                `.${foldedFenceStyles['folded-fence']}`,
+            ) as HTMLElement
+            const foldedRect = foldedFenceEl.getBoundingClientRect()
+            const chevRect = canvas
+                .getByLabelText('unfold frontmatter')
+                .getBoundingClientRect()
+
+            // Chevron centre == FoldedFence root's own centre, ±1px.
+            expect(
+                Math.abs(
+                    chevRect.top +
+                        chevRect.height / 2 -
+                        (foldedRect.top + foldedRect.height / 2),
+                ),
+            ).toBeLessThanOrEqual(1)
+
+            // FoldedFence root's top == the unfolded `.cm-block-top`'s own top, ±1px.
+            expect(
+                Math.abs(foldedRect.top - fenceTopBeforeFold.top),
+            ).toBeLessThanOrEqual(1)
+
+            // FoldedFence itself keeps the fence row's own height.
+            expect(
+                Math.abs(foldedRect.height - fenceH),
+            ).toBeLessThanOrEqual(1)
+
+            // The panel shrinks to exactly: fence height + FoldedFence's 6px margin-top + its own
+            // top/bottom padding (read off the live element, no literal).
+            expect(
+                Math.abs(
+                    panel.getBoundingClientRect().height -
+                        (fenceH + 6 + 2 * panelPaddingTop),
+                ),
+            ).toBeLessThanOrEqual(1)
+        })
+    },
+}
+
+/** Fold state is remembered per `foldKey`, never shared across a different key — a harness that
+ *  switches `foldKey` A -> B -> A and expects each key's own fold state back (Review Focus #2). */
+export const FoldRememberedPerKey: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { [EXISTING_PATH]: MATCH_TEXT } }),
+        )
+        const keyA = `story-fold-a-${Date.now()}`
+        const keyB = `story-fold-b-${Date.now()}`
+        const [key, setKey] = createSignal(keyA)
+        return (
+            <div>
+                <button
+                    type="button"
+                    data-testid="to-b"
+                    onClick={() => setKey(keyB)}
+                >
+                    switch to b
+                </button>
+                <button
+                    type="button"
+                    data-testid="to-a"
+                    onClick={() => setKey(keyA)}
+                >
+                    switch to a
+                </button>
+                <Host
+                    binaryPath={() => 'photo.png'}
+                    tagNames={NO_TAGS}
+                    foldKey={key()}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByLabelText('fold frontmatter')).toBeInTheDocument(),
+        )
+        // Fold key A.
+        await fireEvent.click(canvas.getByLabelText('fold frontmatter'))
+        await waitFor(() =>
+            expect(
+                canvas.getByLabelText('unfold frontmatter'),
+            ).toBeInTheDocument(),
+        )
+
+        // Switch to key B: opens fresh, unfolded.
+        await fireEvent.click(canvas.getByTestId('to-b'))
+        await waitFor(() =>
+            expect(
+                canvas.getByLabelText('fold frontmatter'),
+            ).toBeInTheDocument(),
+        )
+
+        // Back to key A: still folded, as left.
+        await fireEvent.click(canvas.getByTestId('to-a'))
+        await waitFor(() =>
+            expect(
+                canvas.getByLabelText('unfold frontmatter'),
+            ).toBeInTheDocument(),
+        )
+    },
+}
+
+/** Folding and unfolding never write anything — the companion's own persistence stays untouched
+ *  by a purely visual toggle, even against a missing companion (Acceptance #5). */
+export const FoldWritesNothing: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: {} }))
+        return <Host binaryPath={() => 'photo.png'} tagNames={NO_TAGS} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByLabelText('fold frontmatter')).toBeInTheDocument(),
+        )
+        await fireEvent.click(canvas.getByLabelText('fold frontmatter'))
+        await waitFor(() =>
+            expect(
+                canvas.getByLabelText('unfold frontmatter'),
+            ).toBeInTheDocument(),
+        )
+        await fireEvent.click(canvas.getByLabelText('unfold frontmatter'))
+        await waitFor(() =>
+            expect(
+                canvas.getByLabelText('fold frontmatter'),
+            ).toBeInTheDocument(),
+        )
+
+        await new Promise(r =>
+            setTimeout(r, settings.editor.autoSaveDelay + 200),
+        )
+        await expect(await api.read(companionPathFor('photo.png'))).toBe('')
     },
 }

@@ -1,8 +1,9 @@
 // app/src/preview/ScratchPaper.tsx
-// The note-styled surface used for the scratch strip beside a PDF page or image — the note
-// editor's own ground (`--editor`) with a soft hairline (`--rule-soft`) where it meets the page,
-// so the strip reads as a place to write rather than more of the (white) page (scratch-notes
-// decision 3). Positioning, sizing and any page-specific chrome (drop shadow, clip-path) are the
+// The note-styled surface used for the scratch strip beside a PDF page or image — the raised
+// `--surface-1` note surface, one step above the `--editor` desk, with a soft hairline
+// (`--rule-soft`) where it meets the page, so the strip reads as a place to write rather than
+// more of the (white) page (scratch-notes decision 3). Positioning, sizing and any page-specific
+// chrome (drop shadow, clip-path) are the
 // CALLER's: PdfPages.tsx composes this with its own `.pdf-margin` class for a PDF page's strip,
 // and PreviewView's image body does the same for an image's. This component paints the surface
 // and nothing else — the click-to-place blocks living on top of it are ScratchTextLayer's job.

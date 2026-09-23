@@ -128,8 +128,8 @@ export const Default: Story = {
         // Page frame (acceptance 1 + 3): the first page sits the SAME `--sp-6` gutter PdfPages
         // itself reads off the scroll element (not a hand-typed pixel guess — this stays correct
         // if the token's resolved value ever changes) from the container's left/top/right edges
-        // at fit width, and the desk in that gutter is the `--surface-2` token, not the page's
-        // own white raster.
+        // at fit width, and the desk in that gutter is the `--editor` token (the note editor's own
+        // ground), not the page's own white raster.
         const pageEl = canvasElement.querySelector(
             '[data-pdf-page="0"]',
         ) as HTMLElement
@@ -146,11 +146,26 @@ export const Default: Story = {
         await expect(Math.abs(sr.right - pr.right - pad)).toBeLessThanOrEqual(1)
 
         const deskRgb = parseRgb(getComputedStyle(scroller).backgroundColor)
-        const surface2 = hexToRgb(
-            getComputedStyle(scroller).getPropertyValue('--surface-2').trim(),
+        const editorRgb = hexToRgb(
+            getComputedStyle(scroller).getPropertyValue('--editor').trim(),
         )
         for (let i = 0; i < 3; i++) {
-            expect(Math.abs(deskRgb[i]! - surface2[i]!)).toBeLessThanOrEqual(1)
+            expect(Math.abs(deskRgb[i]! - editorRgb[i]!)).toBeLessThanOrEqual(1)
+        }
+
+        // The page itself gets a hairline edge (outline, not border — page boxes are absolutely
+        // sized from layout math) so it reads as a distinct sheet against the desk.
+        const pageCs = getComputedStyle(pageEl)
+        await expect(pageCs.outlineStyle).toBe('solid')
+        await expect(pageCs.outlineWidth).toBe('1px')
+        const outlineRgb = parseRgb(pageCs.outlineColor)
+        const borderSoftRgb = hexToRgb(
+            getComputedStyle(scroller).getPropertyValue('--border-soft').trim(),
+        )
+        for (let i = 0; i < 3; i++) {
+            expect(
+                Math.abs(outlineRgb[i]! - borderSoftRgb[i]!),
+            ).toBeLessThanOrEqual(1)
         }
     },
 }
@@ -416,19 +431,20 @@ export const WithMargin: Story = {
             { timeout: 5000 },
         )
 
-        // Acceptance 1 (scratch-notes decision 3): the strip is the note editor's own ground +
-        // hairline (ScratchPaper.tsx), NOT a continuation of the PDF page's white — so it reads
-        // as a different, note-styled surface at a glance rather than an extra-wide page.
+        // Acceptance 1 (scratch-notes decision 3): the strip is the raised `--surface-1` note
+        // surface, one step above the `--editor` desk, + hairline (ScratchPaper.tsx), NOT a
+        // continuation of the PDF page's white — so it reads as a different, note-styled surface
+        // at a glance rather than an extra-wide page.
         const marginRgb = parseRgb(getComputedStyle(marginEl).backgroundColor)
-        const editorRgb = hexToRgb(
+        const surface1Rgb = hexToRgb(
             getComputedStyle(document.documentElement)
-                .getPropertyValue('--editor')
+                .getPropertyValue('--surface-1')
                 .trim(),
         )
         for (let i = 0; i < 3; i++) {
             expect(
-                Math.abs(marginRgb[i]! - editorRgb[i]!),
-                `channel ${i}: margin ${marginRgb[i]} vs --editor ${editorRgb[i]}`,
+                Math.abs(marginRgb[i]! - surface1Rgb[i]!),
+                `channel ${i}: margin ${marginRgb[i]} vs --surface-1 ${surface1Rgb[i]}`,
             ).toBeLessThanOrEqual(1)
         }
         const marginBorderRgb = parseRgb(
