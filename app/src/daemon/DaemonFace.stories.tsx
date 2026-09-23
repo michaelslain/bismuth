@@ -231,17 +231,20 @@ export const MoodChange: Story = {
         await expect(frames[settledIndex - 1]).toBe('.:[--]:.')
 
         // Burst: go-busy (already settled busy, a no-op) then go-idle three times within one
-        // synchronous tick — only the mood that actually HOLDS may settle. If the burst reached
-        // the face directly, `busy` would still be showing after MOOD_SETTLE_MS; instead the last
-        // raw value (`idle`) is the only one that holds long enough.
+        // synchronous tick — a change away from a settled mood does not paint until it has held
+        // MOOD_SETTLE_MS (the pure settleMood unit tests cover flip-flop bursts).
         const goIdle = canvasElement.querySelector<HTMLButtonElement>(
             '[data-testid="go-idle"]',
         )
         await expect(goIdle).not.toBeNull()
+        const t0 = performance.now()
         goBusy!.click()
         goIdle!.click()
         goIdle!.click()
         goIdle!.click()
+
+        // The held mood must not flip at once — busy is still showing right after the burst.
+        await expect(face!.getAttribute('data-mood')).toBe('busy')
 
         await waitFor(
             () => {
@@ -249,6 +252,9 @@ export const MoodChange: Story = {
                     throw new Error('not settled yet')
             },
             { timeout: MOOD_SETTLE_MS + 2000, interval: 20 },
+        )
+        await expect(performance.now() - t0).toBeGreaterThanOrEqual(
+            MOOD_SETTLE_MS - 50,
         )
     },
 }

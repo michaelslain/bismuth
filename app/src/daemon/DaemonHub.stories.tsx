@@ -114,7 +114,7 @@ export const Conversing: Story = {
         await expect(canvas.getByText('daemon')).toBeInTheDocument()
         // Compact: no blurb, no [ edit ] — nowhere for them to go next to a one-line header.
         await expect(canvas.queryByText(/keeps a living model/)).toBeNull()
-        await expect(canvas.queryByText('[ edit ]')).toBeNull()
+        await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         const hub = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-page-hub"]',
         )!
@@ -173,10 +173,7 @@ export const LongBlurb: Story = {
             '[data-testid="daemon-hub-blurb"]',
         )
         await expect(blurb).not.toBeNull()
-        const overflowing =
-            blurb!.scrollWidth > blurb!.clientWidth ||
-            getComputedStyle(blurb!).textOverflow === 'ellipsis'
-        await expect(overflowing).toBe(true)
+        await expect(blurb!.scrollWidth).toBeGreaterThan(blurb!.clientWidth)
     },
 }
 
@@ -200,7 +197,7 @@ export const Off: Story = {
         await expect(
             canvas.getByRole('heading', { level: 2 }),
         ).toHaveTextContent(/wake it up/i)
-        await expect(canvas.queryByText('[ edit ]')).toBeNull()
+        await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         await expect(
             canvasElement.querySelector('[data-testid="chat-stub"]'),
         ).toBeNull()
