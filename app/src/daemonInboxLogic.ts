@@ -4,9 +4,8 @@
 // bases/flashcardsQueue.ts split (pure queue logic vs. the Solid-facing FlashcardsView).
 import type { DaemonPage, PageStatus } from '../../core/src/daemonPages'
 
-/** Status → the `currentColor` an inbox row's status dot renders in (InboxView.module.css
- *  `.inbox-row-dot { background: currentColor }`) — a pure presentation lookup, not tied to
- *  Solid, so it lives beside the sort/group helpers rather than in InboxView.tsx. Per the ASCII
+/** Status → the colour an inbox row's <StatusDot> renders in (InboxRow.tsx) — a pure
+ *  presentation lookup, not tied to Solid, so it lives beside the sort/group helpers. Per the ASCII
  *  design system's status-dot convention: pending=gold (awaiting review) · working=blue (in
  *  flight) · done=green · failed=danger · dismissed=faint (settled, no longer live). */
 export const STATUS_COLOR: Record<PageStatus, string> = {
@@ -28,9 +27,19 @@ export function isDue(p: DaemonPage, now: number): boolean {
     return Number.isNaN(at) || now >= at // unparseable timestamp => treat as already due
 }
 
-const TERMINAL: ReadonlySet<DaemonPage['status']> = new Set([
+/** Status → the word a screen reader hears in place of the dot's colour. */
+export const STATUS_WORD: Record<PageStatus, string> = {
+    pending: 'needs review',
+    working: 'working',
+    done: 'done',
+    failed: 'failed',
+    dismissed: 'dismissed',
+}
+
+/** Settled for good. `failed` is NOT here: a failed page keeps its actions live and pressing
+ *  again re-runs the round-trip (docs/daemon/pages.md, "Retry"), so it still needs the user. */
+const SETTLED: ReadonlySet<DaemonPage['status']> = new Set([
     'done',
-    'failed',
     'dismissed',
 ])
 
@@ -58,15 +67,27 @@ export function scheduledSorted(
         )
 }
 
-/** "Recently resolved": terminal pages (done/failed/dismissed), most-recently-settled first. */
+const newestSettledFirst = (a: DaemonPage, b: DaemonPage) =>
+    Date.parse(b.completedAt ?? b.pressedAt ?? '') -
+    Date.parse(a.completedAt ?? a.pressedAt ?? '')
+
+/** "Failed": pages whose action the daemon could not complete, newest first — retryable. */
+export function failedSorted(pages: DaemonPage[]): DaemonPage[] {
+    return pages.filter(p => p.status === 'failed').sort(newestSettledFirst)
+}
+
+/** "Recently resolved": settled pages (done/dismissed), most-recently-settled first. */
 export function resolvedSorted(pages: DaemonPage[]): DaemonPage[] {
-    return pages
-        .filter(p => TERMINAL.has(p.status))
-        .sort(
-            (a, b) =>
-                Date.parse(b.completedAt ?? b.pressedAt ?? '') -
-                Date.parse(a.completedAt ?? a.pressedAt ?? ''),
-        )
+    return pages.filter(p => SETTLED.has(p.status)).sort(newestSettledFirst)
+}
+
+/** A row button's label: the action that failed reads RETRY, since pressing it re-runs it;
+ *  every other label is the page's own, uppercased for TextButton. */
+export function actionLabel(page: DaemonPage, actionId: string): string {
+    if (page.status === 'failed' && page.pressedAction === actionId)
+        return 'RETRY'
+    const action = page.actions.find(a => a.id === actionId)
+    return (action?.label ?? actionId).toUpperCase()
 }
 
 /**

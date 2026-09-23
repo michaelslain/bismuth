@@ -1,6 +1,6 @@
 // app/src/daemon/InboxRow.stories.tsx
-// Visual spec for <InboxRow> — one inbox row: status dot, title/source/time, a one-line snippet,
-// and (when due) inline actions. DaemonInbox.tsx is the only importer. Covers every PageStatus
+// Visual spec for <InboxRow> — one inbox row: status dot + title + time, then source // snippet
+// (or the failure note), and (when due or failed) inline actions. DaemonInbox.tsx is the only importer. Covers every PageStatus
 // the fixture set carries (sampleDaemonPages(), ui/_daemonFixtures.ts) plus the keyboard path: a
 // real <button> (PlainButton) wraps only the dot + main text, since a button can never contain
 // another button and the actions render real ones when due — KeyboardOpen proves Enter on that
@@ -95,20 +95,27 @@ export const Done: Story = {
     },
 }
 
+/** Failed keeps its actions live (pressing again re-runs the round-trip): the action that failed
+ *  reads RETRY, and the daemon's failure note replaces the snippet, in the danger tone. */
 export const Failed: Story = {
     render: () => (
         <Frame>
             <InboxRow
                 page={failed}
                 onOpen={noop}
-                showActions={false}
+                showActions
                 onChanged={noop}
             />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText(failed.title)).toBeInTheDocument()
         await expect(
-            within(canvasElement).getByText(failed.title),
+            canvas.getByRole('button', { name: /RETRY/ }),
+        ).toBeInTheDocument()
+        await expect(
+            canvas.getByText(failed.daemonNote!),
         ).toBeInTheDocument()
     },
 }
