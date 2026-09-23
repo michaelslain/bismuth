@@ -78,9 +78,10 @@ export const Resting: Story = {
         const face = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-face"]',
         )!
+        // Resting = the full face, never the one-line compact header (whose glyph caps at 26px).
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
-        ).toBeGreaterThan(40)
+        ).toBeGreaterThan(26)
     },
 }
 
