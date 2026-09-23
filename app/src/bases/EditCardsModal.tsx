@@ -286,7 +286,7 @@ export function EditCardsModal(props: {
                             id: 'list',
                             label: (
                                 <>
-                                    <Icon value="List" size={13} /> CARDS
+                                    <Icon value="List" size={13} /> cards
                                 </>
                             ),
                         },
@@ -294,8 +294,8 @@ export function EditCardsModal(props: {
                             id: 'bulk',
                             label: (
                                 <>
-                                    <Icon value="LayoutGrid" size={13} /> BULK
-                                    ADD
+                                    <Icon value="LayoutGrid" size={13} /> bulk
+                                    add
                                 </>
                             ),
                         },
