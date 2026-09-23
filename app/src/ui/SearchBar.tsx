@@ -1,7 +1,5 @@
 import { splitProps, type JSX } from 'solid-js'
-import { Icon } from '../icons/Icon'
-import { isIconName } from '../icons/registry'
-import { warnBadIcon } from './devWarn'
+import Text from './Text'
 import { isConfirmKey } from './widgetKeys'
 import styles from './SearchBar.module.css'
 
@@ -20,6 +18,7 @@ export type SearchBarProps = {
     onEnter?: () => void
     /** Full keydown passthrough on the input — for list-navigation search boxes (arrows/escape/enter). Takes precedence over `onEnter`. */
     onKeyDown?: (e: KeyboardEvent) => void
+    /** @deprecated No longer rendered — the field leads with `prompt`, never an icon. Ignored at runtime. */
     leadingIcon?: string
     autofocus?: boolean
     inputRef?: (el: HTMLInputElement) => void
@@ -28,13 +27,15 @@ export type SearchBarProps = {
     'aria-label'?: string
     /** Trailing adornments (toggles, buttons) rendered after the input. */
     children?: JSX.Element
-    /** Class on the outer `.search-bar` wrapper. */
+    /** Class on the outer `.search-bar` wrapper. Layout only (position, width, margin) — never
+     *  font, colour, padding, border or background; the field's own look lives in this
+     *  component's stylesheet. */
     class?: string
-    /** Extra class on the leading icon (for call-site-specific lead styling). */
+    /** @deprecated No longer rendered — there is no separate lead element to style. Ignored at runtime. */
     leadClass?: string
-    /** Extra class on the inner `<input>` (for call-site-specific input styling). */
+    /** @deprecated No longer rendered — the input's look is fixed by `size`. Ignored at runtime. */
     inputClass?: string
-    /** Inline style on the inner `<input>`. */
+    /** @deprecated No longer rendered — the input's look is fixed by `size`. Ignored at runtime. */
     inputStyle?: JSX.CSSProperties | string
 }
 
@@ -43,36 +44,34 @@ function SearchBar(props: SearchBarProps) {
         'value',
         'onInput',
         'placeholder',
+        'size',
+        'prompt',
         'onEnter',
         'onKeyDown',
-        'leadingIcon',
         'autofocus',
         'inputRef',
         'aria-label',
         'children',
         'class',
-        'leadClass',
-        'inputClass',
-        'inputStyle',
     ])
-    if (
-        import.meta.env?.DEV &&
-        local.leadingIcon &&
-        !isIconName(local.leadingIcon)
-    ) {
-        warnBadIcon('SearchBar', local.leadingIcon)
-    }
     return (
-        <div class={`${styles['search-bar']} ${local.class ?? ''}`.trim()}>
-            <Icon
-                value={local.leadingIcon ?? 'Search'}
-                size={14}
-                class={`${styles['search-bar-lead']} ${local.leadClass ?? ''}`.trim()}
-            />
+        <div
+            class={`${styles['search-bar']} ${local.class ?? ''}`.trim()}
+            data-size={local.size ?? 'default'}
+        >
+            <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight="inherit"
+                class={styles['search-bar-lead']}
+                aria-hidden="true"
+            >
+                {local.prompt ?? '/'}
+            </Text>
             <input
                 ref={local.inputRef}
-                class={`${styles['search-bar-input']} ${local.inputClass ?? ''}`.trim()}
-                style={local.inputStyle}
+                class={styles['search-bar-input']}
                 placeholder={local.placeholder}
                 aria-label={local['aria-label']}
                 value={local.value}
@@ -83,7 +82,11 @@ function SearchBar(props: SearchBarProps) {
                     else if (isConfirmKey(e)) local.onEnter?.()
                 }}
             />
-            {local.children}
+            {local.children && (
+                <div class={styles['search-bar-trailing']}>
+                    {local.children}
+                </div>
+            )}
         </div>
     )
 }
