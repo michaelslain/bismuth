@@ -32,14 +32,18 @@
    Flush with the body's own left/right edges (final review — a side margin here read as an
    arbitrary inset against the full-bleed `.preview-body` below it, not part of the same surface):
    no margin, so the strip's border-box shares the body's left/right edges exactly. Its own
-   breathing room comes entirely from ui/Frontmatter's internal padding, which sits INSIDE that
-   box and never shifts the outer edges. */
+   breathing room now comes from CompanionFrontmatter.tsx itself, which owns its `--surface-1`
+   ground and its own inset (Task 1) — no longer "ui/Frontmatter's internal padding": this strip
+   stopped using ui/Frontmatter's accent-edge panel in favour of matching the note editor's own
+   frontmatter look. */
 .preview-frontmatter {
   flex: 0 0 auto;
   margin: 0;
 }
 
-/* Body fills the rest and scrolls its own content — never the page. */
+/* Body fills the rest and scrolls its own content — never the page. Desk ground (`--editor`) is
+   applied via `.preview-body--desk` below, only for image/pdf kinds — code/external previews keep
+   this rule's plain `.preview-app` `--bg` behind them. */
 .preview-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -48,20 +52,29 @@
   display: flex;
 }
 
+/* The reading-area desk for image/pdf kinds — the SAME `--editor` ground PdfPages' `.pdf-scroll`
+   and the image host below use, so the whole body reads as one surface behind the page/picture and
+   its raised (`--surface-1`) strip/margin, rather than `.preview-app`'s own `--bg` showing through
+   at the body's edges. Applied via `classList` (a LOCAL class through `styles`, never a bare
+   string) when `inkable()`. */
+.preview-body--desk {
+  background: var(--editor);
+}
+
 /* Image + scratch strip (SCRATCH on): PreviewView.tsx's measureImage lays them out together, in
    HOST px, as one unit (preview/imageScratchLayout.ts) — the same body-relative coordinate space
    PageInk's `pages()` already use. This host mirrors PageInk's own (`inset: 0` over
    `.preview-body`, which is already `position: relative`), so the image's rendered rect and the
    strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. With SCRATCH
    off none of this exists — `.preview-image` below keeps its ordinary CSS auto-centring alone.
-   `background: var(--surface-2)` matches PdfPages' `.pdf-scroll` desk (final review, finding 5) —
-   without it the image sat on `.preview-app`'s own `--bg`, which in the dark theme reads as almost
-   the same tone as the strip's `--editor` ground, so image and strip failed to read as two
-   surfaces the way a PDF page and its strip do. */
+   `background: var(--editor)` (Task 4 — was `--surface-2`) matches PdfPages' `.pdf-scroll` desk
+   AND `.preview-body--desk` above: the desk is the `--editor` ground everywhere, and the strip
+   beside the image is the one thing raised onto `--surface-1` (Task 3) — the same two-surface
+   system a PDF page and its own strip already read as. */
 .preview-image-host {
   position: absolute;
   inset: 0;
-  background: var(--surface-2);
+  background: var(--editor);
 }
 
 /* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
@@ -74,7 +87,13 @@
   clip-path: inset(0 -8px -8px 0);
 }
 
-/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. */
+/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. NO page
+   edge here (Task 4) — this element's own box carries `padding: var(--sp-6)` and the picture is
+   `object-fit: contain`, so unless the image's natural aspect ratio happens to fill that padded
+   box exactly, an outline on THIS box would frame the padding rect, not the picture's own painted
+   edge. The letterboxed case is the common one, so the hairline lives on `.preview-image--scratch`
+   below instead, whose box (JS-positioned from `imagePages()[0].rendered`) IS the picture's exact
+   rendered rect. Non-scratch images are reported as not edged. */
 .preview-image {
   margin: auto;
   max-width: 100%;
@@ -96,13 +115,17 @@
    (imageScratchLayout's `rendered`), so the ordinary auto-centring/object-fit machinery above is
    turned off in favour of explicit left/top/width/height (set inline by PreviewView.tsx) — the
    padding that machinery used to add moves to the AREA the whole unit centres inside (measureImage
-   reads `--sp-6` off the body itself) rather than the image's own box. */
+   reads `--sp-6` off the body itself) rather than the image's own box. Its box has no padding and
+   IS the picture's exact rendered rect, so — unlike `.preview-image` above — a hairline outline
+   here lands precisely on the painted edge; no `outline-offset` needed (there's no inset to
+   subtract). */
 .preview-image--scratch {
   position: absolute;
   margin: 0;
   max-width: none;
   max-height: none;
   padding: 0;
+  outline: var(--rule-soft);
 }
 
 /* PDF: the page stack takes the flexible width of the body's row; `min-width: 0` lets it shrink

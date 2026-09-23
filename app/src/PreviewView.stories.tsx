@@ -162,7 +162,7 @@ export const CodeFindNoResults: Story = {
 /** An image path (`.png`) — see the file-level note: this genuinely fails to load against the
  *  fake transport's `fake://storybook` base, so PreviewView's own `onError` -> "Couldn't load
  *  image" EmptyState is what renders, not a canned broken-image story. */
-export const Image: Story = {
+export const ImageLoadFails: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return <PreviewView path="assets/diagram.png" tagNames={NO_TAGS} />
@@ -203,10 +203,118 @@ export const Image: Story = {
     },
 }
 
+/** A real picture, loaded through the `imageSrc` data seam (see the file-level note on why the
+ *  fake transport can never serve `/asset`) — so this page can be judged as DESIGN, not just "did
+ *  it render": `photoPng()` is a 1600×900 gradient-plus-shapes picture, not a flat colour block.
+ *  Asserts the bar's size readout (Task 2's `imageSize` slot — NOT YET WIRED in this worktree, so
+ *  this assertion is expected RED here per the plan; the controller re-runs it after merging
+ *  Task 2) and the desk ground (`--editor`, Task 4). */
+export const Image: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        return (
+            <PreviewView
+                path="assets/photo.png"
+                tagNames={NO_TAGS}
+                imageSrc={photoPng}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(
+                canvas.queryByText("Couldn't load image"),
+            ).not.toBeInTheDocument(),
+        )
+        const img = await waitFor(() => {
+            const el = canvasElement.querySelector(
+                `.${styles['preview-image']}`,
+            ) as HTMLImageElement | null
+            expect(el).not.toBeNull()
+            expect(el!.naturalWidth).toBeGreaterThan(0)
+            return el!
+        })
+        await expect(img.naturalWidth).toBe(1600)
+        await expect(img.naturalHeight).toBe(900)
+        // Task 2's readout (`imageSize` -> PreviewBar) — EXPECTED RED in this worktree, since
+        // PreviewBar.tsx here only carries the prop TYPE (pre-registered, unused); Task 2 wires
+        // the actual `<Show>` that renders it. Left in per the brief so the controller's re-run
+        // after merging catches a regression, not just a first pass.
+        await expect(canvas.getByText('1600 × 900')).toBeInTheDocument()
+        // Desk ground: the body behind the image is the shared `--editor` desk (Task 4), matching
+        // PdfPages' own `.pdf-scroll` and no longer the old `--surface-2`.
+        const body = canvasElement.querySelector(
+            `.${styles['preview-body']}`,
+        ) as HTMLElement
+        const editorHex = getComputedStyle(document.documentElement)
+            .getPropertyValue('--editor')
+            .trim()
+        await expect(rgbOf(getComputedStyle(body).backgroundColor)).toEqual(
+            hexToRgb(editorHex),
+        )
+    },
+}
+
+// A data URI a browser fails to decode as an image (no valid image bytes), so the `<img>`'s
+// `onError` fires the same as a moved/unresolved real asset — used only to force the FAILED state
+// below, never a stand-in for a real broken-asset URL in production.
+const BROKEN_IMG_SRC = 'data:,'
+let readoutSwitchSetState:
+    | ((fn: (s: { path: string; src: string }) => { path: string; src: string }) => void)
+    | undefined
+
+/** Review Focus 5: the size readout must never show a STALE value across a path switch — neither
+ *  the old image's size while the new one is still loading, nor after the new one fails. Switches
+ *  BOTH `path` and `imageSrc` together (a real file switch, not a parent-churn rebuild) from the
+ *  real `photoPng()` picture to a broken src and back. The readout assertions are expected RED in
+ *  this worktree — see the `Image` story's comment; Task 2 wires PreviewBar's own `<Show>`. */
+export const ImageReadoutResetsOnSwitch: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        const [state, setState] = createSignal({
+            path: 'assets/photo-a.png',
+            src: photoPng(),
+        })
+        readoutSwitchSetState = setState
+        return (
+            <PreviewView
+                path={state().path}
+                tagNames={NO_TAGS}
+                imageSrc={() => state().src}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByText('1600 × 900')).toBeInTheDocument(),
+        )
+        readoutSwitchSetState!(() => ({
+            path: 'assets/broken.png',
+            src: BROKEN_IMG_SRC,
+        }))
+        await waitFor(() =>
+            expect(canvas.getByText("Couldn't load image")).toBeInTheDocument(),
+        )
+        await expect(canvas.queryByText('1600 × 900')).not.toBeInTheDocument()
+        readoutSwitchSetState!(() => ({
+            path: 'assets/photo-a.png',
+            src: photoPng(),
+        }))
+        await waitFor(() =>
+            expect(canvas.getByText('1600 × 900')).toBeInTheDocument(),
+        )
+        await expect(
+            canvas.queryByText("Couldn't load image"),
+        ).not.toBeInTheDocument()
+    },
+}
+
 /** A PDF path — the ViewBar zoom controls plus PdfPages' own load failure (see the header). No
  *  separate ANNOTATE button: ink on a PDF is drawn in place, entered via the bar's own DRAW
  *  toggle (PreviewBar) or the toggle-draw-mode key. */
-export const Pdf: Story = {
+export const PdfLoadFails: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return <PreviewView path="docs/handbook.pdf" tagNames={NO_TAGS} />
@@ -247,6 +355,46 @@ export const Pdf: Story = {
             expect(Math.abs(s.left - b.left)).toBeLessThanOrEqual(1)
             expect(Math.abs(s.right - b.right)).toBeLessThanOrEqual(1)
         })
+    },
+}
+
+/** Real pages, loaded through the `pdfLoad` data seam (reusing `buildChurnTestPdf` — the same
+ *  6-page jsPDF builder `PdfSurvivesParentChurn` below already uses), so this page can be judged
+ *  as DESIGN rather than "did it render": a real rasterized page, not PdfPages' own load-failure
+ *  EmptyState. Asserts the desk ground (`--editor`, Task 4). */
+export const Pdf: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        return (
+            <PreviewView
+                path="docs/real.pdf"
+                tagNames={NO_TAGS}
+                pdfLoad={() => Promise.resolve(buildChurnTestPdf())}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelectorAll('[data-pdf-page]').length,
+            ).toBeGreaterThanOrEqual(1),
+        )
+        await expect(
+            canvas.queryByText("Couldn't load PDF"),
+        ).not.toBeInTheDocument()
+        // Desk ground: the body behind the page stack is the shared `--editor` desk (Task 4) —
+        // PdfPages' own `.pdf-scroll` paints it, not `.preview-body` itself for this kind, but the
+        // body must agree so no seam shows where one ends and the other begins.
+        const body = canvasElement.querySelector(
+            `.${styles['preview-body']}`,
+        ) as HTMLElement
+        const editorHex = getComputedStyle(document.documentElement)
+            .getPropertyValue('--editor')
+            .trim()
+        await expect(rgbOf(getComputedStyle(body).backgroundColor)).toEqual(
+            hexToRgb(editorHex),
+        )
     },
 }
 
@@ -302,6 +450,44 @@ function measuredPhotoPng(): string {
     ctx.fillRect(0, MEASURED_IMG_H / 2, MEASURED_IMG_W, MEASURED_IMG_H / 2)
     measuredPngUrl = c.toDataURL('image/png')
     return measuredPngUrl
+}
+
+// A 1600×900 picture with real content — a diagonal gradient plus a few filled shapes and a line
+// of text — so `Image` below can be judged as design (a flat colour block can't show whether the
+// desk/page-edge/frontmatter strip read as one system; a photo can). Memoised the same way as
+// `measuredPhotoPng` above (module-level cache, built once per Storybook session).
+const PHOTO_PNG_W = 1600
+const PHOTO_PNG_H = 900
+let photoPngUrl: string | undefined
+function photoPng(): string {
+    if (photoPngUrl) return photoPngUrl
+    const c = document.createElement('canvas')
+    c.width = PHOTO_PNG_W
+    c.height = PHOTO_PNG_H
+    const ctx = c.getContext('2d')!
+    const grad = ctx.createLinearGradient(0, 0, PHOTO_PNG_W, PHOTO_PNG_H)
+    grad.addColorStop(0, '#264653')
+    grad.addColorStop(0.5, '#2a9d8f')
+    grad.addColorStop(1, '#e9c46a')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, PHOTO_PNG_W, PHOTO_PNG_H)
+    ctx.fillStyle = '#e76f51'
+    ctx.beginPath()
+    ctx.arc(PHOTO_PNG_W * 0.25, PHOTO_PNG_H * 0.35, 140, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#f4a261'
+    ctx.fillRect(PHOTO_PNG_W * 0.55, PHOTO_PNG_H * 0.5, 360, 220)
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    ctx.moveTo(0, PHOTO_PNG_H * 0.8)
+    ctx.lineTo(PHOTO_PNG_W, PHOTO_PNG_H * 0.65)
+    ctx.stroke()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 64px sans-serif'
+    ctx.fillText('Bismuth', 80, 140)
+    photoPngUrl = c.toDataURL('image/png')
+    return photoPngUrl
 }
 
 const MEASURED_IMAGE_PATH = 'assets/measured.png'
@@ -979,20 +1165,22 @@ export const PdfHighlightMarginBookmarks: Story = {
             { timeout: 5000 },
         )
 
-        // Scratch paper on every page, the note editor's own ground (`--editor`) — never the PDF
-        // page's own white any more (scratch-notes decision 3: the strip is a note surface, not a
-        // continuation of the page) — separated from the page by the `--rule-soft` hairline.
+        // Scratch paper on every page, RAISED off the desk (`--surface-1`, Task 3/4) — never the
+        // PDF page's own white (scratch-notes decision 3: the strip is a note surface, not a
+        // continuation of the page) and never the desk's own `--editor` ground either (Task 4
+        // makes `--editor` the shared desk behind the page AND the image; the strip is the one
+        // thing raised above it) — separated from the page by the `--rule-soft` hairline.
         await expect(
             canvasElement.querySelectorAll('[data-pdf-margin]').length,
         ).toBe(4)
         const marginEl = canvasElement.querySelector(
             '[data-pdf-margin="0"]',
         ) as HTMLElement
-        const editorHex = getComputedStyle(document.documentElement)
-            .getPropertyValue('--editor')
+        const surface1Hex = getComputedStyle(document.documentElement)
+            .getPropertyValue('--surface-1')
             .trim()
         await expect(rgbOf(getComputedStyle(marginEl).backgroundColor)).toEqual(
-            hexToRgb(editorHex),
+            hexToRgb(surface1Hex),
         )
         const borderSoftHex = getComputedStyle(document.documentElement)
             .getPropertyValue('--border-soft')

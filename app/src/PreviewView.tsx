@@ -191,6 +191,15 @@ export function PreviewView(props: {
     // `path()` there.
     const pdfMemoryKey = () => (props.pdfViewKey ?? (props.pdfLoad ? undefined : path()))
 
+    // Fold-state key for the companion frontmatter strip — same leak guard as `pdfMemoryKey`
+    // above, extended to the `imageSrc` seam: several stories share one literal path with
+    // `pdfLoad` OR `imageSrc` set, so persisting fold state under that path would leak one
+    // story's fold into the next mounted at the same path. `props.pdfViewKey` opts back into a
+    // real key (mirroring `pdfMemoryKey`'s own exception). Production never sets `pdfLoad` or
+    // `imageSrc`, so this is always `path()` there.
+    const foldKey = () =>
+        props.pdfViewKey ?? (props.pdfLoad || props.imageSrc ? undefined : path())
+
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
     // — surface a clear state + the Open-externally affordance instead. Reset on every path
     // change so switching to a fresh image re-attempts the load.
@@ -242,6 +251,9 @@ export function PreviewView(props: {
     // the body for an image, over PdfPages' scroll content for a PDF).
     const [imagePages, setImagePages] = createSignal<PageInkPage[]>([])
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
+    // The loaded image's natural pixel size, for PreviewBar's readout slot — absent before load
+    // and after a load error, matching the PDF page-count readout's own absent-until-known shape.
+    const [imageSize, setImageSize] = createSignal<{ w: number; h: number }>()
     const enterDraw = () => {
         setHighlightArmed(false)
         setDrawMode(true)
@@ -488,6 +500,7 @@ export function PreviewView(props: {
         on([path, code], () => {
             setActiveIndex(0)
             setImgFailed(false)
+            setImageSize(undefined)
         }),
     )
     // Keep the active index in range as the query narrows the match set.
@@ -655,6 +668,7 @@ export function PreviewView(props: {
                 onTogglePanel={() => setPanelOpen(v => !v)}
                 nativeActions={nativeActions}
                 onOpenExternal={reveal => void openExternal(reveal)}
+                imageSize={imageSize}
             />
 
             {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
@@ -670,12 +684,16 @@ export function PreviewView(props: {
                     <CompanionFrontmatter
                         store={companion()}
                         tagNames={props.tagNames}
+                        foldKey={foldKey()}
                     />
                 </div>
             </Show>
 
             <div
-                class={styles['preview-body']}
+                classList={{
+                    [styles['preview-body']]: true,
+                    [styles['preview-body--desk']]: inkable(),
+                }}
                 data-testid="preview-body"
                 ref={bodyRef}
                 onWheel={e => {
@@ -847,11 +865,16 @@ export function PreviewView(props: {
                                         class={styles['preview-image']}
                                         src={imgSrc()}
                                         alt={name()}
-                                        onLoad={e =>
+                                        onLoad={e => {
+                                            setImageSize({
+                                                w: e.currentTarget.naturalWidth,
+                                                h: e.currentTarget.naturalHeight,
+                                            })
                                             measureImage(e.currentTarget)
-                                        }
+                                        }}
                                         onError={() => {
                                             setImgFailed(true)
+                                            setImageSize(undefined)
                                             setImagePages([])
                                         }}
                                     />
@@ -863,11 +886,16 @@ export function PreviewView(props: {
                                         class={`${styles['preview-image']} ${styles['preview-image--scratch']}`}
                                         src={imgSrc()}
                                         alt={name()}
-                                        onLoad={e =>
+                                        onLoad={e => {
+                                            setImageSize({
+                                                w: e.currentTarget.naturalWidth,
+                                                h: e.currentTarget.naturalHeight,
+                                            })
                                             measureImage(e.currentTarget)
-                                        }
+                                        }}
                                         onError={() => {
                                             setImgFailed(true)
+                                            setImageSize(undefined)
                                             setImagePages([])
                                         }}
                                         style={
