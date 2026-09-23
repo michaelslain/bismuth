@@ -18,7 +18,7 @@ export const Default: Story = {
     render: () => (
         <div style={{ width: '360px' }}>
             <PromptHint>
-                Absolute path to a folder. It opens as its own brain in a new
+                absolute path to a folder. it opens as its own brain in a new
                 window.
             </PromptHint>
         </div>

@@ -1,2 +1,4 @@
-/* SettingsHint.module.css — was `.evm-modal .set-hint` */
+/* SettingsHint.module.css — was `.evm-modal .set-hint`. Sits under its control, aligned to the
+   control column (Acceptance 7) — SettingsField renders it inside the same `.control` wrapper as
+   the control it describes, so no extra offset is needed here. */
 .hint { font-size: var(--fs-micro); color: var(--faint); line-height: 1.5; }

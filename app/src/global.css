@@ -279,6 +279,12 @@
      existing row consumer reads until each surface is migrated. */
   --h-row: 18px;
   --h-control: 24px;
+  /* NEW (Task 4, modal redesign, 2026-09-23). The settings-form label column width, in whole
+     character cells (--cell-w, the graph's own advance width, but the only shared cell metric in
+     the token layer) so a label column measures in round text units rather than an arbitrary px
+     guess. SettingsField/SettingsGrid/Field all key their label column to this ONE token, so every
+     row across a form starts its control at the same x. */
+  --label-col: calc(var(--cell-w) * 20);
   /* One "band" — the top strip, the view bars, the sidebar toolzone. Two row units, so a
      horizontal ruler through the app still lands on a row boundary.
      NOT shrunk: the bars' HEIGHT was never the problem — the gap BETWEEN their buttons was, and
