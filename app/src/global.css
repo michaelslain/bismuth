@@ -195,6 +195,11 @@
   --fw-medium: 500;
   --fw-bold: 600;
 
+  /* Default for settingsCssVars.ts:209's --palette-input-font-size (appearance.paletteInputFontSize),
+     so ui/SearchBar.module.css can read the token bare instead of carrying its own stand-in
+     fallback — settings still overwrite this at runtime. */
+  --palette-input-font-size: 15px;
+
   /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
   --lh-tight: 1.4;
   --lh-ui: 1.7;
@@ -1310,28 +1315,53 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
+  border: none;
+  padding: var(--sp-2) var(--sp-4);
   background: var(--pop-bg-strong, var(--bg));
 
-
-  border: var(--rule);
   border-radius: var(--r-0);
   box-shadow: var(--lift);
   font-family: var(--ui-font-stack);
   color: var(--fg);
 }
 
+/* The glyph + input share one underline, terminal-prompt style (SearchBar.module.css's
+   look) — the focus ring IS the underline flipping to --accent, no box growing on focus. */
+.bismuth-find-field {
+  display: flex;
+  align-items: center;
+  min-width: calc(var(--sp-7) * 8);
+  border-bottom: var(--rule-soft);
+}
+.bismuth-find-field:focus-within {
+  border-bottom: var(--rule-accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+.bismuth-find-prompt {
+  flex: none;
+  margin-right: var(--sp-4);
+  color: var(--accent);
+  font-family: var(--ui-font-stack);
+  line-height: 1;
+}
+.bismuth-find-field:focus-within .bismuth-find-prompt {
+  font-weight: var(--fw-bold);
+}
+
 .bismuth-find-input {
-  width: 168px;
+  flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
   color: var(--fg);
-  font: inherit;
+  font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
-  padding: var(--sp-1) var(--sp-1);
+  padding: 0;
 }
-.bismuth-find-input::placeholder { color: var(--text-muted); }
+.bismuth-find-input::placeholder { color: var(--faint); }
+.bismuth-find-input:focus-visible { outline: none; }
 
 .bismuth-find-count {
   min-width: 30px;
@@ -1793,9 +1823,11 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  * palette/switcher.css — Cmd+O quick switcher chrome
  * ============================================================================ */
 /* app/src/palette/switcher.css
-   The Cmd+O switcher's OWN chrome (.switcher-bar, .switcher-search, .switcher-input, .switcher-esc,
-   .switcher-list, .switcher-section, .switcher-ask-ai, and the switcher-drop keyframes) moved to
-   the colocated palette/SwitcherBar.module.css during the 2026-09 CSS-modules migration. What
+   The Cmd+O switcher's OWN chrome (.switcher-bar, .switcher-list, .switcher-section,
+   .switcher-ask-ai, and the switcher-drop keyframes) moved to the colocated
+   palette/SwitcherBar.module.css during the 2026-09 CSS-modules migration; .switcher-search and
+   .switcher-input were themselves later deleted by the search-prompt redesign (SwitcherBar now
+   composes ui/SearchBar). What
    remains here are the rules that MUST stay global — they target OTHER components' DOM by
    `[data-*]` attribute precisely BECAUSE the corresponding classes are already CSS-Modules
    locals owned by those other components, and a module class cannot reach another component's
