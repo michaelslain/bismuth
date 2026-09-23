@@ -57,3 +57,29 @@ test('memoryAge falls back for an empty or unparseable timestamp', () => {
     expect(memoryAge('', now)).toBe('never seen')
     expect(memoryAge('not-a-date', now)).toBe('not-a-date')
 })
+
+// Date-only values (todayISO()'s YYYY-MM-DD, what the real memory API returns) are a LOCAL
+// calendar date, not a UTC instant — Date.parse('2026-09-23') parses as UTC midnight, which reads
+// as "0s ago" in a UTC+ zone for a note updated a minute ago. Compare local calendar days instead.
+function localDateOnly(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+test('memoryAge for a date-only value updated today reads today', () => {
+    const now = new Date(2026, 8, 23, 15, 30)
+    expect(memoryAge(localDateOnly(now), now.getTime())).toBe('today')
+})
+
+test('memoryAge for a date-only value updated yesterday reads yesterday', () => {
+    // just after local midnight, so a naive UTC/ms-diff comparison would misread this
+    const now = new Date(2026, 8, 23, 0, 5)
+    const yesterday = new Date(2026, 8, 22, 23, 55)
+    expect(memoryAge(localDateOnly(yesterday), now.getTime())).toBe('yesterday')
+})
+
+test('memoryAge for a date-only value 5 days ago', () => {
+    const now = new Date(2026, 8, 23, 12, 0)
+    const fiveDaysAgo = new Date(2026, 8, 18, 9, 0)
+    expect(memoryAge(localDateOnly(fiveDaysAgo), now.getTime())).toBe('5d ago')
+})

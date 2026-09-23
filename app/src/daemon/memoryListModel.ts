@@ -17,14 +17,31 @@ export function memoryEmptyMessage(
     return q ? `no memory matches "${q}"` : 'nothing remembered yet'
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 /**
  * "Ns/Nm/Nh/Nd ago" from an ISO timestamp, relative to an explicit `nowMs` — the same s → m → h →
  * d chained-rounding ladder as relTime.ts's relTimeISO, restated here with an injectable clock so
  * a test never depends on Date.now(). An empty/unparseable timestamp echoes back the same
  * fallbacks relTimeISO uses (`relTime.ts`).
+ *
+ * A date-only value (`memory/src/dates.ts`'s `todayISO()` → `YYYY-MM-DD`, what the real memory
+ * API returns) is a LOCAL calendar date, not a UTC instant — `Date.parse` reads it as UTC
+ * midnight, which misreads a note updated a minute ago as "17h ago" or "0s ago" depending on the
+ * viewer's timezone. Handle that case at day granularity against the local date of `nowMs`.
  */
 export function memoryAge(updatedIso: string, nowMs: number): string {
     if (!updatedIso) return 'never seen'
+    if (DATE_ONLY.test(updatedIso)) {
+        const [y, m, d] = updatedIso.split('-').map(Number)
+        const now = new Date(nowMs)
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const startOfThat = new Date(y, m - 1, d).getTime()
+        const dayDiff = Math.round((startOfToday - startOfThat) / 86400000)
+        if (dayDiff <= 0) return 'today'
+        if (dayDiff === 1) return 'yesterday'
+        return `${dayDiff}d ago`
+    }
     const t = Date.parse(updatedIso)
     if (Number.isNaN(t)) return updatedIso
     const diffMs = Math.max(0, nowMs - t)

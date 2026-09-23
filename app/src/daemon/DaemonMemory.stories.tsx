@@ -16,16 +16,22 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const HOUR = 60 * 60 * 1000
-const DAY = 24 * HOUR
-const iso = (offsetMs: number) => new Date(Date.now() - offsetMs).toISOString()
+// The real memory API returns a date-only `YYYY-MM-DD` (memory/src/dates.ts's todayISO()), a
+// LOCAL calendar date rather than a UTC instant — fixtures match that shape so this story exercises
+// the same path the app does.
+const dateOnly = (daysAgo: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() - daysAgo)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 const ITEMS: MemoryListItem[] = [
     {
         path: '.daemon/memory/notes/ceramics-glaze.md',
         name: 'ceramics glaze notebook',
         type: 'note',
-        updated: iso(4 * HOUR),
+        updated: dateOnly(0),
         excerpt:
             'Cone 6 reduction glazes tend toward warmer breaks at the rim.',
     },
@@ -33,14 +39,14 @@ const ITEMS: MemoryListItem[] = [
         path: '.daemon/memory/facts/studio-hours.md',
         name: 'studio open hours',
         type: 'fact',
-        updated: iso(DAY),
+        updated: dateOnly(1),
         excerpt: 'East studio kiln room opens at 8am on firing days.',
     },
     {
         path: '.daemon/memory/people/mira.md',
         name: 'mira // glaze supplier contact',
         type: 'person',
-        updated: iso(3 * DAY),
+        updated: dateOnly(3),
         excerpt: 'Prefers text over email; ships cone 6 test batches monthly.',
     },
 ]
