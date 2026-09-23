@@ -36,6 +36,9 @@ export type CompanionFrontmatterProps = {
      *  when `store` is absent: the component then calls createCompanionStore itself. */
     binaryPath?: string
     tagNames: () => string[]
+    /** Remember the strip's fold state under this key for the session; absent = local,
+     *  unremembered, starts open. */
+    foldKey?: string
     class?: string
 }
 

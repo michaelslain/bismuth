@@ -54,6 +54,8 @@ export type PreviewBarProps = {
     /** pdf panel */
     panelOpen?: () => boolean
     onTogglePanel?: () => void
+    /** the loaded image's natural pixel size; undefined = not loaded / failed / not an image */
+    imageSize?: () => { w: number; h: number } | undefined
     /** native file actions; false → group absent */
     nativeActions: () => boolean
     onOpenExternal: (reveal: boolean) => void
