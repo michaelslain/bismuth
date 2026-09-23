@@ -7,12 +7,12 @@
 //
 // Three kinds of entry, deliberately not silently conflated:
 //   - { kind: 'slug' } — resolved against @iconify-json/ph's icons.json by build-icon-svgs.ts.
-//     133 of these, each verified present (`!!data.icons[slug]`) before this file was written.
+//     138 of these, each verified present (`!!data.icons[slug]`) before this file was written.
 //   - { kind: 'custom' } — a hand-authored inline SVG body, for the two names Phosphor genuinely
 //     has no concept for but the app cannot leave blank: Regex ('.*') and WholeWord ('[W]'), both
 //     visible controls in the editor find panel. A monospace-text-mark approach, at Phosphor's
 //     native 0-256 viewBox so they sit at the same visual weight as their mapped neighbours.
-//   - absent from this file entirely — see KNOWN_MISSING below. A GENUINE gap, never invented art.
+//   - absent from this file entirely — see KNOWN_MISSING below (empty today). A GENUINE gap only.
 //
 // PROVENANCE. Each slug was chosen by kebab-casing the canonical name, and where that missed,
 // grepping the real @iconify-json/ph key list by hand for a semantic equivalent, verifying with
@@ -34,12 +34,14 @@ export const SOURCE_PACKAGE = '@iconify-json/ph'
 export const ICON_MAP: Record<string, PhosphorEntry> = {
     AppWindow: { kind: 'slug', slug: 'app-window' },
     Archive: { kind: 'slug', slug: 'archive' },
+    ArchiveX: { kind: 'slug', slug: 'file-archive' },
     ArrowDown: { kind: 'slug', slug: 'arrow-down' },
     ArrowLeft: { kind: 'slug', slug: 'arrow-left' },
     ArrowRight: { kind: 'slug', slug: 'arrow-right' },
     ArrowUp: { kind: 'slug', slug: 'arrow-up' },
     AtSign: { kind: 'slug', slug: 'at' },
     Ban: { kind: 'slug', slug: 'prohibit' },
+    Blend: { kind: 'slug', slug: 'intersect-three' },
     Bold: { kind: 'slug', slug: 'text-b' },
     Book: { kind: 'slug', slug: 'book' },
     BookOpen: { kind: 'slug', slug: 'book-open' },
@@ -79,6 +81,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     FileText: { kind: 'slug', slug: 'file-text' },
     Flame: { kind: 'slug', slug: 'flame' },
     Folder: { kind: 'slug', slug: 'folder' },
+    FolderInput: { kind: 'slug', slug: 'arrow-square-in' },
     FolderOpen: { kind: 'slug', slug: 'folder-open' },
     FolderPlus: { kind: 'slug', slug: 'folder-plus' },
     Gauge: { kind: 'slug', slug: 'gauge' },
@@ -106,6 +109,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     ListChecks: { kind: 'slug', slug: 'list-checks' },
     ListOrdered: { kind: 'slug', slug: 'list-numbers' },
     Lock: { kind: 'slug', slug: 'lock' },
+    Map: { kind: 'slug', slug: 'map-trifold' },
     Megaphone: { kind: 'slug', slug: 'megaphone' },
     Menu: { kind: 'slug', slug: 'hamburger' },
     MessageSquare: { kind: 'slug', slug: 'chat-circle' },
@@ -160,6 +164,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Undo2: { kind: 'slug', slug: 'arrow-counter-clockwise' },
     Ungroup: { kind: 'slug', slug: 'selection-slash' },
     Users: { kind: 'slug', slug: 'users' },
+    Vote: { kind: 'slug', slug: 'check-square-offset' },
     Wrench: { kind: 'slug', slug: 'wrench' },
     X: { kind: 'slug', slug: 'x' },
     Zap: { kind: 'slug', slug: 'lightning' },
@@ -177,17 +182,18 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     },
 }
 
-/** Names genuinely absent from Phosphor's ~9161 icons — confirmed, not merely unmapped. No archive
- *  +remove combination glyph (ArchiveX), no "blend" concept at all (Blend), no "data flowing into a
- *  folder" glyph beyond folder-plus/-minus (FolderInput), only map-PIN variants and no plain
- *  map/atlas glyph (Map), no ballot/vote glyph (Vote). User 2026-08-27: "thats ok, dont worry about
- *  it. 11 'missing' icons, who cares." build-icon-svgs.ts emits the deliberate MISSING marker for
- *  these — never hand-authored art, unlike Regex/WholeWord above, which were the two the user's
- *  own UI (the find panel) actually needs to show something for. */
-export const KNOWN_MISSING: string[] = [
-    'ArchiveX',
-    'Blend',
-    'FolderInput',
-    'Map',
-    'Vote',
-]
+/** Canonical names with no art at all. EMPTY, and meant to stay that way: the five names that used
+ *  to live here (ArchiveX, Blend, FolderInput, Map, Vote) were first recorded as genuine Phosphor
+ *  gaps, which they were not — Phosphor has map-trifold, intersect-three, arrow-square-in,
+ *  check-square-offset and file-archive, and each now maps to its nearest one above. They had been
+ *  rendering the dashed "?" FALLBACK_ART on real surfaces (the map view, "Archive completed tasks
+ *  (all notes)"). Kept as an exported list so build-icon-svgs.ts still has somewhere to declare a
+ *  deliberate gap should a future set swap ever genuinely need one. */
+export const KNOWN_MISSING: string[] = []
+
+/** Where build-icon-svgs.ts reads the set's own NAMES, search TAGS and categories for the full,
+ *  pickable icon library (assets/icons/icon-library.json) — Phosphor's own metadata package. Art
+ *  still comes from SOURCE_PACKAGE; this one only says which icons exist and what they're about
+ *  (`books` is tagged "library", `house` "home"), so the picker's search finds an icon by meaning,
+ *  not only by its exact name. A plain string for the same reason SOURCE_PACKAGE is one. */
+export const LIBRARY_METADATA_PACKAGE = '@phosphor-icons/core'

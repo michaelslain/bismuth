@@ -49,7 +49,7 @@ test('every one of the 140 canonical names resolves to real art or the deliberat
     }
 })
 
-test('the five genuine Phosphor gaps resolve to FALLBACK_ART specifically, not to invented art', () => {
+test('any declared gap resolves to FALLBACK_ART specifically, not to invented art (none today)', () => {
     for (const name of KNOWN_MISSING)
         expect(resolveIcon(name)).toEqual(FALLBACK_ART)
 })

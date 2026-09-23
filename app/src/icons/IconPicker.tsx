@@ -1,7 +1,7 @@
 // app/src/icons/IconPicker.tsx
 //
-// A searchable grid of every icon (icon names; the art is Phosphor Regular SVG, generated into
-// assets/icons/icon-manifest.json — see registry.ts). Used by the file tree's right-click
+// A searchable grid of every Phosphor Regular icon (~1,500, lazily loaded from
+// assets/icons/icon-library.json — see registry.ts + iconLibrary.ts). Used by the file tree's right-click
 // "Set icon" on files (writes the `icon:` frontmatter) and folders (writes the
 // folder-icon override).
 //
@@ -9,6 +9,7 @@
 // search, capping, and "showing X of Y" hint all live there, driven by `iconSource`.
 import SymbolGallery from '../ui/gallery/SymbolGallery'
 import { iconSource } from '../ui/gallery/sources'
+import { libraryNameFor } from './registry'
 
 type Props = {
     /** Placeholder / heading for the search box. */
@@ -26,7 +27,9 @@ export function IconPicker(props: Props) {
         <SymbolGallery
             source={iconSource}
             title={props.title}
-            current={props.current}
+            // A stored value may be a canonical or legacy name (`Bot`, `LiHouse`) — highlight the
+            // library icon it draws as (`Robot`, `House`). Re-evaluated once the library loads.
+            current={libraryNameFor(props.current) ?? props.current}
             onPick={props.onPick}
             onClear={props.onClear}
             clearLabel="reset to default icon"

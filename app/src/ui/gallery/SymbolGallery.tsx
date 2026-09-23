@@ -227,7 +227,7 @@ function SymbolGallery(props: Props) {
                         </Button>
                     )}
                 </For>
-                <Show when={results().items.length === 0}>
+                <Show when={results().items.length === 0 && !results().loading}>
                     <PaletteEmpty>No matches</PaletteEmpty>
                 </Show>
             </div>

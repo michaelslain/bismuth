@@ -25,7 +25,7 @@ Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts
 | `"boolean"` | `true`/`false`. |
 | `"date"`, `"datetime"` | Date / date-time strings (used in frontmatter, not in the settings sections below). |
 | `"file"` | A file reference. |
-| `"icon"` | A Lucide icon name (e.g. `"FilePlus"`) **or** an emoji. |
+| `"icon"` | An icon name — one of the app's own (e.g. `"FilePlus"`) or any Phosphor icon (e.g. `"Books"`) — **or** an emoji. |
 | `"keybind"` | A keyboard combo string (drives order-free shortcut autocomplete + a "record shortcut" option). |
 | `{ kind: "path"; only?: "dir" \| "file"; scope?: "templates" \| "fs" }` | A path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (no current settings key uses `scope: "fs"`, but the kind is supported for filesystem paths). Validated leniently (any string) — the path need not exist yet. |
 | `{ kind: "enum"; values: string[]; caseInsensitive?; allowPrefixes? }` | One of a fixed value list. `allowPrefixes` lets values beginning with a listed prefix (e.g. `daily-note:`) also pass. |
@@ -494,7 +494,7 @@ Per-folder icons — a free-form map `{folderPath: iconName}` (folders have no f
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `folderIcons` | object (free-form map) | `{}` | Per-folder icons: map a folder path to a Lucide icon name or emoji. |
+| `folderIcons` | object (free-form map) | `{}` | Per-folder icons: map a folder path to an icon name or emoji. |
 
 Example:
 
@@ -552,7 +552,7 @@ The sidebar header bar buttons, **in order**. Each button runs a command-palette
 |-------|------|-----|
 | `command` | enum of command ids (allows the `daily-note:` prefix) | Which command this button runs (a catalog id or `daily-note:<id>`). Use `command:` OR `commands:`, not both. |
 | `commands` | list of command-id enums (allows the `daily-note:` prefix) | Fallback list of commands (alternative to the `command:` field) — `ToolbarButton` runs only the FIRST id that resolves, not every id in sequence; the button is disabled when none resolve. Use `command:` OR `commands:`, not both. |
-| `icon` | icon | Lucide icon name (e.g. `"FilePlus"`) or an emoji shown on the button. |
+| `icon` | icon | Icon name (e.g. `"FilePlus"`) or an emoji shown on the button. |
 | `tooltip` | string | Optional hover text (defaults to the command's label). |
 
 > **Rule** — `commands` (plural) wins over `command` if both are set. Unresolved ids are skipped; a button is disabled only if none of its commands resolve. The `daily-note:<id>` form references a daily-note type declared in the `dailyNotes` section below.
@@ -685,7 +685,7 @@ Daily-note types. Each one registers a `daily-note:<id>` command (see `core/comm
 |-------|------|-----|
 | `id` | string | Stable id; forms the command id `daily-note:<id>`. |
 | `label` | string | Command-palette label and default button tooltip. |
-| `icon` | icon | Lucide icon name (e.g. `"BookOpen"`) or an emoji. |
+| `icon` | icon | Icon name (e.g. `"BookOpen"`) or an emoji. |
 | `folder` | path (`only: "dir"`) | Vault folder for entries (`""` = vault root). |
 | `fileName` | string | Filename via `{{...}}` tokens, no `.md`. e.g. `{{date}} journal`. |
 | `template` | path (`scope: "templates"`) | Vault path to a template `.md` to pre-fill the note (optional). |
