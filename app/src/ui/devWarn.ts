@@ -7,7 +7,7 @@ import { labelCaseWarning } from './uiLint'
 
 /**
  * Warn that `icon` is not a icon name. Single canonical message shared by
- * IconButton / IconTextButton / TextButton (matches IconButton/SearchBar).
+ * IconButton / IconTextButton / TextButton.
  */
 export function warnBadIcon(component: string, icon: string): void {
     console.warn(
