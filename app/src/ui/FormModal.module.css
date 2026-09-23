@@ -19,6 +19,7 @@
    plain single-class rule is sufficient. */
 .panel {
     position: relative;
+    z-index: 0;
     width: var(--form-modal-width, 548px);
     max-width: calc(100vw - 32px);
     max-height: calc(100vh - 48px);
@@ -28,4 +29,34 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+}
+
+/* FormModal draws its own frame (below) rather than .asc-modal's plain full border — the top
+   edge has to be a single hairline broken only by the header's title/close, which a border on
+   THIS element can never do (a border is drawn whole, it cannot yield a gap for a sibling to fill
+   in). So the border+background .asc-modal normally paints are turned off here, on this element
+   only (bare <Modal>, e.g. the palette, keeps them) via a same-element compound selector — panelClass
+   and .asc-modal land on the one div Modal.tsx renders, so this wins at equal specificity without
+   reaching into another component's stylesheet. */
+/* design-system-ignore globalReach: same-element compound selector (panelClass + .asc-modal land on the one div Modal.tsx renders) neutralising .asc-modal's border/background on FormModal only, per the modal-redesign frame contract — not a reach into Modal.module.css's own layout, only a specificity tool against its two declarations on this shared element */
+.panel:global(.asc-modal) {
+    background: none;
+    border: none;
+}
+
+/* The frame itself: fill + side/bottom rule, inset from the top by half a row so its top edge
+   lands exactly on ModalHeader's own rule row (ModalHeader is one --row-h tall and draws its rule
+   at vertical center — half of --row-h down from ITS top, which is the panel's top). Negative
+   z-index (with .panel's own stacking context above, z-index:0) keeps this behind the header/body/
+   footer content painted after it in the DOM, while still sitting above whatever the portal's
+   backdrop painted behind the panel. */
+.panel::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: calc(var(--row-h, 18px) / 2) 0 0 0;
+    background: var(--pop-bg-strong);
+    border-left: var(--rule);
+    border-right: var(--rule);
+    border-bottom: var(--rule);
 }
