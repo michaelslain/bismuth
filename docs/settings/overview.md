@@ -156,7 +156,7 @@ interface SchemaEntry {
 | `"date"` | Date string |
 | `"datetime"` | Datetime string |
 | `"file"` | Vault file path |
-| `"icon"` | Lucide icon name or emoji |
+| `"icon"` | Icon name (any Phosphor icon) or emoji |
 | `"keybind"` | Shortcut combo string (e.g. `"Mod+P"`); drives the "Record shortcut" autocomplete |
 | `{ kind: "path", only?: "dir"\|"file", scope?: "templates" }` | Vault path; completion narrows to dirs/files/templates |
 | `{ kind: "enum", values: string[], caseInsensitive?: boolean, allowPrefixes?: string[] }` | One of a fixed set of strings |
@@ -399,7 +399,7 @@ folderVisibility:
 ### `toolbar`
 
 A YAML sequence of button objects. Each button must have:
-- `icon` (required): a Lucide icon name (e.g. `FilePlus`) or an emoji.
+- `icon` (required): an icon name (e.g. `FilePlus`, or any Phosphor icon such as `Books`) or an emoji.
 - Either `command` (single string) or `commands` (list of strings) — not both; `commands` wins when both are present.
 - `tooltip` (optional): hover text; defaults to the command's label.
 
@@ -449,7 +449,7 @@ A YAML sequence of daily-note type configurations. Each entry must have `id` (no
 |---|---|---|---|
 | `id` | yes | — | Stable identifier; forms the command `daily-note:<id>`. |
 | `label` | no | `id` value | Command-palette label and default button tooltip. |
-| `icon` | no | `CalendarDays` | Lucide icon name or emoji. |
+| `icon` | no | `CalendarDays` | Icon name (any Phosphor icon) or emoji. |
 | `folder` | no | `""` | Vault folder for entries (`""` = vault root). |
 | `fileName` | yes | — | Filename pattern using `{{date}}` and other tokens; no `.md` extension. |
 | `template` | no | `""` | Vault path to a template `.md` to pre-fill new notes. |
@@ -601,7 +601,7 @@ Additionally, all color/theme tokens are projected from the selected Bismuth the
 
 When `.settings` is open in the Bismuth editor:
 
-- **Autocomplete** (`editor/settingsComplete.ts`): Ctrl-Space suggests setting keys (scoped to the current section) and values (enum members, `true`/`false`, property type names, Lucide icon names, keybind combos with a "Record shortcut…" option). Each suggestion shows the key's `doc` string and a compact range label (e.g. `11–28` for bounded numbers, `option1 | option2 | …` for enums). The autocomplete is nested-schema-aware (knows which section the cursor is in).
+- **Autocomplete** (`editor/settingsComplete.ts`): Ctrl-Space suggests setting keys (scoped to the current section) and values (enum members, `true`/`false`, property type names, icon names (the full Phosphor library), keybind combos with a "Record shortcut…" option). Each suggestion shows the key's `doc` string and a compact range label (e.g. `11–28` for bounded numbers, `option1 | option2 | …` for enums). The autocomplete is nested-schema-aware (knows which section the cursor is in).
 - **Lint** (`editor/yamlSchema.ts`): inline diagnostics highlight wrong types, out-of-range numbers, and unknown enum values.
 
 The `doc` field on each `SchemaEntry` is the text shown in the autocomplete. A parity test (`app/src/settings.parity.test.ts`) enforces that every settable leaf has both a materialized `default` AND a non-empty `doc`.

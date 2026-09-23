@@ -8,12 +8,13 @@
 // (value/size/class/style/fallback), so the ~100 existing call sites are
 // unchanged; only the rendering moved underneath it.
 //
-// Resolution is synchronous (see registry.ts) — one static map built from a
-// generated JSON manifest, not a lazily-loaded one — so there's no pending/
-// placeholder state to render while a chunk loads. Three cases, in order:
+// The 140 canonical names resolve synchronously (see registry.ts). Any other
+// name — a note's `icon: Books`, picked from the full Phosphor library — resolves
+// once iconLibrary.ts has loaded that library; until then it draws an EMPTY box of
+// the same size (never the fallback), and re-renders when the load lands. Cases:
 //   1. `value` (or `fallback`) is a known name -> its Phosphor SVG (or a
-//      hand-authored custom mark, or the deliberate fallback for a genuine
-//      Phosphor gap — see registry.ts's FALLBACK_ART).
+//      hand-authored custom mark).
+//   1b. A name outside the 140 while the library is loading -> an empty box.
 //   2. It LOOKS like an icon name but isn't mapped at all (e.g. a legacy icon
 //      name from old vault frontmatter) -> the same generic fallback, never
 //      the literal name text (which would just read as a typo on screen).
@@ -37,9 +38,11 @@ import { type Component, type JSX } from 'solid-js'
 import {
     resolveIcon,
     looksLikeIconName,
+    isPendingIconName,
     FALLBACK_ART,
     type IconArt,
 } from './registry'
+import { iconLibraryState, loadIconLibrary } from './iconLibrary'
 import Text from '../ui/Text'
 
 export interface IconProps {
@@ -57,6 +60,9 @@ export interface IconProps {
     fallback?: string
 }
 
+/** Drawn while a library icon loads: the box keeps its size, nothing inside it. */
+const PENDING_ART: IconArt = { kind: 'glyph', text: '' }
+
 export const Icon: Component<IconProps> = props => {
     const spec = () => {
         const v = props.value?.trim()
@@ -64,8 +70,16 @@ export const Icon: Component<IconProps> = props => {
     }
     const art = (): IconArt => {
         const s = spec()
+        // Tracked so a name that was pending re-resolves the moment the library lands.
+        const library = iconLibraryState()
         const known = resolveIcon(s)
         if (known) return known
+        // A name outside the 140 while the full library is still loading: an empty box of the
+        // right size, not a flash of the dashed "?" (see iconLibrary.ts).
+        if (library !== 'failed' && isPendingIconName(s)) {
+            void loadIconLibrary()
+            return PENDING_ART
+        }
         // A name-shaped spec that isn't mapped reads as an unresolved icon, not a literal glyph —
         // show the generic fallback rather than the (broken-looking) raw name text.
         return looksLikeIconName(s) ? FALLBACK_ART : { kind: 'glyph', text: s }

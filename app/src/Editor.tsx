@@ -64,7 +64,7 @@ import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
 import { datePropertyPicker } from './editor/datePickerExtension'
-import { iconNames } from './icons/registry'
+import { completionIconNames } from './icons/iconLibrary'
 import { settingsCompletion, type VaultPath } from './editor/settingsComplete'
 import { editorContextMenu } from './editor/contextMenu'
 import { harperSpellcheck } from './editor/harper'
@@ -1613,7 +1613,7 @@ export function Editor(props: {
                             }),
                             settingsCompletion(
                                 () => SETTINGS_SCHEMA,
-                                iconNames,
+                                completionIconNames,
                                 templatePaths,
                                 vaultPaths,
                                 fsPaths,
@@ -1656,7 +1656,7 @@ export function Editor(props: {
                           getMemories: props.memoryNames,
                           getTags: props.tagNames,
                           getSchema: propertyRegistry,
-                          getIconNames: iconNames,
+                          getIconNames: completionIconNames,
                           inFrontmatter: isInFrontmatter,
                           // `[[Note#heading]]` completion fetches the target note's body to list its headings.
                           readNote: p => api.read(p),

@@ -18,9 +18,41 @@
 // The `AllIcons` story below therefore exists to be LOOKED AT. It is not decoration.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Icon } from './Icon'
-import { iconNames } from './registry'
-import { KNOWN_MISSING } from './iconMap'
+import { iconNames, libraryIconList } from './registry'
+import { loadIconLibrary } from './iconLibrary'
+import { rankIcons } from '../ui/gallery/sources'
 import { Row } from '../ui/_storyKit'
+import Text from '../ui/Text'
+
+const FORMERLY_MISSING = ['ArchiveX', 'Blend', 'FolderInput', 'Map', 'Vote']
+const LIBRARY_SAMPLE = [
+    'Books',
+    'House',
+    'Mountains',
+    'Leaf',
+    'Signpost',
+    'PaintRoller',
+    'Translate',
+    'Car',
+    'DiceSix',
+    'IdentificationCard',
+]
+const OBSIDIAN_NAMES = [
+    'LiHouse',
+    'LiMountain',
+    'LiLeaf',
+    'LiMap',
+    'LiSignPost',
+    'LiDice6',
+    'LiLanguages',
+    'LiCarFront',
+    'LiFence',
+    'LiIdCard',
+]
+const loadLibrary = async () => {
+    await loadIconLibrary()
+    return {}
+}
 
 const meta = {
     title: 'Icons/Icon',
@@ -186,17 +218,75 @@ export const UnknownAndEmoji: Story = {
     ),
 }
 
-/** The five canonical names Phosphor genuinely has no art for (plan §10.2's confirmed gaps —
- *  ArchiveX, Blend, FolderInput, Map, Vote). This is the loud-failure guarantee made visible: each
- *  renders the SAME dashed-box fallback as an unmapped name, on purpose (both mean "no real icon
- *  here" to a viewer), and is a REGISTERED result — `resolveIcon` returns real art for these names,
- *  never null — rather than the empty button a missing Nerd Font codepoint used to draw. */
+/** The five canonical names that used to draw the dashed "?" (ArchiveX on "Archive completed
+ *  tasks (all notes)", Map on the map view, FolderInput, Blend, Vote). They were recorded as
+ *  Phosphor gaps and were not — each now maps to its nearest real Phosphor icon. Nothing here may
+ *  look like the fallback in `UnknownAndEmoji`. (Export name kept so the story id is stable.) */
 export const MissingIcons: Story = {
+    name: 'Formerly missing',
     render: () => (
         <Row gap="24px">
-            {KNOWN_MISSING.map(name => (
+            {FORMERLY_MISSING.map(name => (
                 <Labeled value={name} caption={name} />
             ))}
         </Row>
+    ),
+}
+
+/** Icons from the FULL Phosphor library — outside the app's 140 canonical names — plus the
+ *  Obsidian `Li*` names an imported vault carries in `icon:` frontmatter. The library is a lazy
+ *  chunk; the loader awaits it, so the story renders settled art rather than the empty boxes a
+ *  cold <Icon> draws for the few milliseconds the chunk takes. Every cell must be real art: a
+ *  dashed "?" here is a failure. */
+export const LibraryIcons: Story = {
+    loaders: [loadLibrary],
+    render: () => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '24px' }}
+        >
+            <Row gap="24px">
+                {LIBRARY_SAMPLE.map(name => (
+                    <Labeled value={name} caption={name} />
+                ))}
+            </Row>
+            <Row gap="24px">
+                {OBSIDIAN_NAMES.map(name => (
+                    <Labeled value={name} caption={name} />
+                ))}
+            </Row>
+        </div>
+    ),
+}
+
+/** What the icon picker offers for a search by MEANING rather than by name — the set's own tags
+ *  make "library" find Books, and "home" find House. Rendered statically from the same ranking the
+ *  picker uses (`rankIcons`), so the result is visible without typing into a modal. */
+export const SearchByMeaning: Story = {
+    loaders: [loadLibrary],
+    render: () => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '20px' }}
+        >
+            {['library', 'home', 'money'].map(q => (
+                <div
+                    style={{
+                        display: 'flex',
+                        'flex-direction': 'column',
+                        gap: '8px',
+                    }}
+                >
+                    <Text size="micro" tone="muted">
+                        "{q}"
+                    </Text>
+                    <Row gap="20px">
+                        {rankIcons(libraryIconList(), q)
+                            .slice(0, 10)
+                            .map(i => (
+                                <Labeled value={i.name} caption={i.name} />
+                            ))}
+                    </Row>
+                </div>
+            ))}
+        </div>
     ),
 }

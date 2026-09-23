@@ -10,9 +10,11 @@
 import {
     resolveIcon,
     looksLikeIconName,
+    isPendingIconName,
     FALLBACK_ART,
     type IconArt,
 } from './registry'
+import { loadIconLibrary } from './iconLibrary'
 import { escapeHtml } from '../htmlEscape'
 
 const cache = new Map<string, string>()
@@ -31,12 +33,25 @@ export function iconMarkup(name: string, size = 14): string {
     const hit = cache.get(key)
     if (hit !== undefined) return hit
 
+    // A library icon (outside the 140) before the library has loaded: kick the load and return
+    // the fallback UNCACHED, so the next render after it lands draws the real art.
+    if (isPendingIconName(name)) {
+        void loadIconLibrary()
+        return markupFor(FALLBACK_ART, size)
+    }
+
     const art: IconArt =
         resolveIcon(name) ??
         (looksLikeIconName(name)
             ? FALLBACK_ART
             : { kind: 'glyph' as const, text: name })
 
+    const markup = markupFor(art, size)
+    cache.set(key, markup)
+    return markup
+}
+
+function markupFor(art: IconArt, size: number): string {
     const inner =
         art.kind === 'svg'
             ? // Manifest bodies are generated or hand-authored in this repo, never user-supplied
@@ -44,9 +59,5 @@ export function iconMarkup(name: string, size = 14): string {
               `<svg width="${size}" height="${size}" viewBox="${art.viewBox}" fill="currentColor" style="display:block">${art.body}</svg>`
             : escapeHtml(art.text)
 
-    const markup = inner
-        ? `<span style="${boxStyle(size)}">${inner}</span>`
-        : ''
-    cache.set(key, markup)
-    return markup
+    return inner ? `<span style="${boxStyle(size)}">${inner}</span>` : ''
 }

@@ -23,19 +23,25 @@ test('ICON_MAP has no stray entries beyond the canonical 140', () => {
     expect(stray).toEqual([])
 })
 
-test('counts match the plan record: 133 slug entries, 2 custom, 5 known-missing', () => {
+test('counts: 138 slug entries, 2 custom, 0 known-missing', () => {
     const entries = Object.values(ICON_MAP)
-    expect(entries.filter(e => e.kind === 'slug').length).toBe(133)
+    expect(entries.filter(e => e.kind === 'slug').length).toBe(138)
     expect(entries.filter(e => e.kind === 'custom').length).toBe(2)
-    expect(KNOWN_MISSING.length).toBe(5)
-    // 133 + 2 + 5 === 140, the whole canonical set, asserted directly rather than trusting addition.
+    expect(KNOWN_MISSING.length).toBe(0)
+    // 138 + 2 + 0 === 140, the whole canonical set, asserted directly rather than trusting addition.
     expect(entries.length + KNOWN_MISSING.length).toBe(ICON_NAMES.length)
 })
 
-test('KNOWN_MISSING is exactly the five confirmed Phosphor gaps', () => {
-    expect([...KNOWN_MISSING].sort()).toEqual(
-        ['ArchiveX', 'Blend', 'FolderInput', 'Map', 'Vote'].sort(),
-    )
+test('the five former "gaps" map to real Phosphor art — no canonical name draws the dashed ?', () => {
+    expect(KNOWN_MISSING).toEqual([])
+    expect(ICON_MAP.ArchiveX).toEqual({ kind: 'slug', slug: 'file-archive' })
+    expect(ICON_MAP.Blend).toEqual({ kind: 'slug', slug: 'intersect-three' })
+    expect(ICON_MAP.FolderInput).toEqual({
+        kind: 'slug',
+        slug: 'arrow-square-in',
+    })
+    expect(ICON_MAP.Map).toEqual({ kind: 'slug', slug: 'map-trifold' })
+    expect(ICON_MAP.Vote).toEqual({ kind: 'slug', slug: 'check-square-offset' })
 })
 
 test('Regex and WholeWord are hand-authored custom marks, not slugs', () => {

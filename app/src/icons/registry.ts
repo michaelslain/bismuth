@@ -21,16 +21,14 @@
 // codepoint drew ZERO pixels in Chrome — no `.notdef`, no console warning, an invisibly empty
 // button. SVG can't fail that way by accident (a bad body renders as literally nothing, which is
 // just as bad), so the manifest is built to have NO such gap: every one of the 140 names resolves
-// to either real Phosphor art, a hand-authored custom mark (Regex, WholeWord), or a deliberate
-// "missing" declaration for the five names Phosphor genuinely has no equivalent for (ArchiveX,
-// Blend, FolderInput, Map, Vote) — see iconMap.ts's KNOWN_MISSING. Those five render
-// FALLBACK_ART below: a visible, unmistakable marker, never a blank box. registry.test.ts asserts
-// this for all 140 names, so a name that slips through ungenerated fails a test rather than
-// shipping an empty button.
+// to either real Phosphor art or a hand-authored custom mark (Regex, WholeWord). iconMap.ts's
+// KNOWN_MISSING is where a genuine gap would be declared (and drawn as FALLBACK_ART below) — it is
+// empty. registry-svg.test.ts asserts this for all 140 names, so a name that slips through
+// ungenerated fails a test rather than shipping an empty button.
 //
-// Resolution is entirely SYNCHRONOUS — the map is a static object built from a static JSON import,
-// not ~1,700 lazily imported components — so there is no pending/placeholder state and
-// `resolveIcon` returns art or null immediately.
+// Resolution of the 140 is entirely SYNCHRONOUS — the map is a static object built from a static
+// JSON import — so chrome icons never have a pending state. The full ~1,500-icon library a PERSON
+// picks from is the one lazy part; see "The full icon library" below.
 //
 // All name-normalization (case/separator-insensitive matching, the "…Icon" alias, the legacy
 // "Li"/"Lu" vault-icon prefix) is handled by the pure, framework-free registry-core.ts.
@@ -39,7 +37,8 @@ import {
     type IconEntry,
     type IconRegistry,
 } from './registry-core'
-import { looksLikeIconName } from './registry-core'
+import { looksLikeIconName, normalizeIconKey } from './registry-core'
+import { LUCIDE_ALIASES } from './lucideAliases'
 import manifestJson from '../assets/icons/icon-manifest.json'
 
 export { looksLikeIconName }
@@ -65,10 +64,9 @@ type Manifest = {
 const manifest = manifestJson as unknown as Manifest
 
 /** Generic fallback: both for a value that LOOKS like an icon name (see `looksLikeIconName`) but
- *  isn't in the registry at all (e.g. a legacy icon name left in old vault frontmatter), AND for
- *  the five canonical names iconMap.ts records as a genuine gap (ArchiveX, Blend, FolderInput,
- *  Map, Vote — user 2026-08-27: "thats ok, dont worry about it. 11 'missing' icons, who cares").
- *  Both cases mean the same thing to a viewer — "no real icon here" — so they share one visual: a
+ *  resolves nowhere — not in the 140, not in the full library, not a known Lucide alias — AND for
+ *  any canonical name iconMap.ts declares a genuine gap (none today). Both cases mean the same
+ *  thing to a viewer — "no real icon here" — so they share one visual: a
  *  dashed square around a question mark. Hand-authored rather than any Phosphor icon, so it can
  *  never coincidentally collide with (and impersonate) a real one, which was a LIVE bug in the
  *  Nerd Font era (FALLBACK_GLYPH used to be `▸`, the same character as `Folder`). */
@@ -101,7 +99,98 @@ const iconRegistry: IconRegistry<IconArt> =
  * `looksLikeIconName`).
  */
 export const resolveIcon = (spec: string | null | undefined): IconArt | null =>
-    iconRegistry.resolve(spec)
+    iconRegistry.resolve(spec) ?? resolveFromLibrary(spec)
+
+// ── The full icon library ───────────────────────────────────────────────────────────────────────
+// The 140 names above are the app's own chrome, and stay static + synchronous. Everything a PERSON
+// can pick — every Phosphor Regular icon, ~1,500 of them — lives in a second generated file,
+// assets/icons/icon-library.json, too big (~790 KB) to import statically. iconLibrary.ts loads it
+// on demand and hands it to `installIconLibrary`; until then a name outside the 140 is PENDING
+// (`isPendingIconName`), not missing, so <Icon> can draw an empty box instead of flashing the
+// dashed "?" for the few milliseconds the chunk takes. This half stays framework-free: the Solid
+// signal that re-renders on load lives in iconLibrary.ts.
+
+/** One row of icon-library.json: [PascalCase name, SVG body, lowercase search terms]. */
+export type IconLibraryRow = [string, string, string]
+export type IconLibraryJson = { icons: IconLibraryRow[] }
+
+/** A pickable library icon. `terms` is its slug, canonical aliases and the set's own tags. `core`
+ *  = it is also one of the app's own 140 (same art), which the picker lists first on open. */
+export type LibraryIcon = {
+    name: string
+    art: IconArt
+    terms: string
+    core: boolean
+}
+
+let library: IconRegistry<IconArt> | null = null
+let libraryIcons: LibraryIcon[] = []
+/** SVG body -> library name, so a canonical name (Bot) can be shown as the icon it IS (Robot). */
+let libraryNameByBody = new Map<string, string>()
+
+const LIBRARY_VIEWBOX = '0 0 256 256'
+
+/** Install the loaded library. Idempotent — a second call replaces the first. */
+export const installIconLibrary = (json: IconLibraryJson): void => {
+    const coreBodies = new Set(
+        iconRegistry
+            .all()
+            .map(e => (e.art.kind === 'svg' ? e.art.body : ''))
+            .filter(Boolean),
+    )
+    libraryIcons = json.icons.map(([name, body, terms]) => ({
+        name,
+        art: { kind: 'svg' as const, body, viewBox: LIBRARY_VIEWBOX },
+        terms,
+        core: coreBodies.has(body),
+    }))
+    library = createIconRegistry<IconArt>(
+        Object.fromEntries(libraryIcons.map(i => [i.name, i.art])),
+    )
+    libraryNameByBody = new Map(
+        libraryIcons.map(i => [(i.art as { body: string }).body, i.name]),
+    )
+}
+
+export const iconLibraryInstalled = (): boolean => library !== null
+
+/** Every library icon, alphabetical. Empty until installed. */
+export const libraryIconList = (): LibraryIcon[] => libraryIcons
+
+const aliasByKey = new Map(
+    Object.entries(LUCIDE_ALIASES).map(([k, v]) => [normalizeIconKey(k), v]),
+)
+
+function resolveFromLibrary(spec: string | null | undefined): IconArt | null {
+    if (!library || !spec) return null
+    const direct = library.resolve(spec)
+    if (direct) return direct
+    // A Lucide name Phosphor spells differently (`LiMountain` -> mountains). Try the spec as given,
+    // then with the Obsidian `Li`/`Lu` prefix stripped.
+    const raw = spec.trim()
+    const stripped = /^(?:Li|Lu)(.+)$/.exec(raw)?.[1]
+    for (const candidate of stripped ? [raw, stripped] : [raw]) {
+        const slug = aliasByKey.get(normalizeIconKey(candidate))
+        if (slug) return library.resolve(slug)
+    }
+    return null
+}
+
+/** A name-shaped spec that nothing resolves YET because the library hasn't loaded — the caller
+ *  should load it (iconLibrary.ts) rather than show the fallback. */
+export const isPendingIconName = (spec: string | null | undefined): boolean =>
+    !library && looksLikeIconName(spec) && iconRegistry.resolve(spec) === null
+
+/** The library name `spec` draws as (`Bot` -> `Robot`, `LiHouse` -> `House`), or null. Lets the
+ *  picker highlight the cell for a value that was stored under an older or canonical name. */
+export const libraryNameFor = (
+    spec: string | null | undefined,
+): string | null => {
+    const art = resolveIcon(spec)
+    return art?.kind === 'svg'
+        ? (libraryNameByBody.get(art.body) ?? null)
+        : null
+}
 
 /** True when `spec` names a known icon (vs. an emoji / arbitrary glyph) — used by the ui/
  *  button primitives' DEV-only lint (`warnBadIcon`) to catch a literal glyph hardcoded where a
@@ -109,8 +198,18 @@ export const resolveIcon = (spec: string | null | undefined): IconArt | null =>
 export const isIconName = (spec: string | null | undefined): boolean =>
     resolveIcon(spec) !== null
 
-/** Every mapped icon (canonical name + art), sorted by name. For the icon picker. */
+/** Every canonical icon (name + art), sorted by name — the 140, not the picker's full library. */
 export const allIcons = (): IconEntry<IconArt>[] => iconRegistry.all()
 
-/** All canonical icon names, sorted — for autocomplete suggestions (settings `icon:` completion). */
+/** All canonical icon names, sorted — the 140 the app's own chrome uses. */
 export const iconNames = (): string[] => iconRegistry.names()
+
+/** Every nameable icon, sorted: the 140 canonical names plus the full library once installed.
+ *  For autocomplete (frontmatter + `.settings` `icon:` completion). */
+export const allIconNames = (): string[] => {
+    const canonical = iconRegistry.names()
+    if (!libraryIcons.length) return canonical
+    return [...new Set([...canonical, ...libraryIcons.map(i => i.name)])].sort(
+        (a, b) => a.localeCompare(b),
+    )
+}
