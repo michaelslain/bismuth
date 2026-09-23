@@ -624,7 +624,7 @@ export function EditCardsModal(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="to close"
+                hint="close"
                 leading={
                     <Badge tone="muted" class={styles['cards-count']}>
                         <b>{cards().length}</b>{' '}

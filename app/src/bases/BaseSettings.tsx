@@ -918,7 +918,7 @@ export function BaseSettings(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="to close"
+                hint="close"
                 leading={
                     <IconTextButton
                         icon="RotateCcw"

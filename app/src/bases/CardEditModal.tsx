@@ -411,14 +411,14 @@ export function CardEditModal(props: {
 
                     <Show when={cols().length === 0}>
                         <div class={styles.empty}>
-                            This board declares no editable properties.
+                            this board declares no editable properties.
                         </div>
                     </Show>
                 </SettingsGrid>
             </ModalBody>
 
             <ModalFooter
-                hint="to close"
+                hint="close"
                 leading={
                     <Show when={props.hasFileIdentity ?? true}>
                         <TextButton danger onClick={props.onDelete}>
