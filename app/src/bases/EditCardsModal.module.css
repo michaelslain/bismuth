@@ -37,10 +37,10 @@
    Flashcards.module.css's git history for the full list — .deck-list/.srs-panel/.vs-section
    families never lived in this file's half).
 
-   :global() — NONE left (one-global-stylesheet Task 10). The modebar's per-segment gap and the
-   delete button's hover-reveal used to reach `:global(.segmented) :global(.btn)` /
-   `:global(.btn--icon)` directly; they're now local classes (`.cards-modebtn`, `.cards-del-btn`)
-   handed down through `<SegmentedToggle segmentClass>` / `<IconButton class>`.
+   :global() — NONE left (one-global-stylesheet Task 10). The delete button's hover-reveal used to
+   reach `:global(.btn--icon)` directly; it's now a local class (`.cards-del-btn`) handed down
+   through `<IconButton class>`. The modebar's segments no longer get a per-segment class at all —
+   `.btn--text`'s `gap: 0` is what the bracket toggle idiom wants, so nothing overrides it.
 
    BARE LITERAL (no rule anywhere — hashing it would resolve to `class="undefined"`):
      .cell-front — no dedicated rule; only `.cell-back` overrides the shared `.cell-md`. Left as
@@ -62,7 +62,6 @@
 .cards-meta .dot { color: var(--faint); }
 
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-7); }
-.cards-modebtn { gap: var(--sp-4); }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
 .cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: var(--r-0); padding: 1px var(--sp-2); color: var(--text-muted); font-size: var(--fs-micro); }
 .sp { flex: 1; }
