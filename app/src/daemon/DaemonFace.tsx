@@ -9,9 +9,10 @@
 // so what actually paints (`renderedMood`) only ever changes after the new mood has held
 // MOOD_SETTLE_MS, and does so through one blink frame rather than a hard cut.
 //
-// Motion discipline: every timer stops while the document is hidden and on cleanup; under
-// `prefers-reduced-motion: reduce` the tick never advances (the frame stays at tick 0) but blinks
-// still happen — a blink is a single state change, not movement.
+// Motion discipline: the eye and blink clocks stop while the document is hidden and on cleanup;
+// the one-shot settle/transition timers do not. Under `prefers-reduced-motion: reduce` the tick
+// never advances (the frame stays at tick 0) but blinks still happen — a blink is a single state
+// change, not movement.
 import {
     createEffect,
     createMemo,
@@ -48,6 +49,10 @@ export type DaemonFaceProps = {
     caption?: JSX.Element
     /** Smaller glyph, same caption — the daemon page sets this once a conversation has messages. */
     compact?: boolean
+    /** True while the host has no snapshot yet — the very first `mood` is provisional (derived
+     *  from a NO_SNAPSHOT default), so it must paint immediately with no settle delay once
+     *  `loading` drops rather than being treated as just another mood change. */
+    loading?: boolean
     class?: string
 }
 
@@ -99,11 +104,22 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     )
     const [transitionBlink, setTransitionBlink] = createSignal(false)
 
-    // Feed every raw mood change into the settle machine.
-    createEffect(() => {
+    // Feed every raw mood change into the settle machine — except while `loading`: the mood
+    // derived from a not-yet-loaded snapshot is provisional, so it must not itself settle or
+    // paint. The moment `loading` drops, the first real mood shows immediately (no settle delay,
+    // no blink) rather than waiting out MOOD_SETTLE_MS like an ordinary change.
+    createEffect((wasLoading: boolean) => {
+        const loading = props.loading ?? false
         const next = props.mood
+        if (loading) return true
+        if (wasLoading) {
+            setSettle(initialSettle(next, Date.now()))
+            setRenderedMood(next)
+            return false
+        }
         setSettle(s => settleMood(s, next, Date.now()))
-    })
+        return false
+    }, props.loading ?? false)
 
     // A settle can only flip once its `pending` has held MOOD_SETTLE_MS — that needs a clock of
     // its own, not just a reaction to prop changes, in case the mood stops changing while waiting.
@@ -131,7 +147,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         const shown = settle().shown
         const prev = untrack(renderedMood)
         if (shown === prev) return
-        if (prev === 'asleep' || shown === 'asleep') {
+        if (!canBlink(prev) || !canBlink(shown)) {
             setRenderedMood(shown)
             return
         }

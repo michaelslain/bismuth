@@ -38,6 +38,9 @@ export type DaemonPageProps = {
     blurb: string
     enabled: boolean
     mood: DaemonMood
+    /** True while the host has no snapshot yet — forwarded to DaemonHub/DaemonFace so the first
+     *  real mood paints immediately instead of settling against the provisional one. */
+    loading?: boolean
     /** The ONE trailing readout — the status string, or empty (see daemonPageModel.barReadouts). */
     readouts: string[]
     facet: DaemonFacet
@@ -136,6 +139,7 @@ function DaemonPage(props: DaemonPageProps) {
                     name={props.name}
                     blurb={props.blurb}
                     mood={props.mood}
+                    loading={props.loading}
                     enabled={props.enabled}
                     conversing={props.conversing}
                     chatFills={props.chatFills}

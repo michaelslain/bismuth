@@ -24,6 +24,9 @@ export type DaemonHubProps = {
     name: string
     blurb: string
     mood: DaemonMood
+    /** True while the host has no snapshot yet — forwarded to DaemonFace so the first real mood
+     *  paints immediately instead of settling against the provisional NO_SNAPSHOT-derived one. */
+    loading?: boolean
     enabled: boolean
     /** true once the conversation has any items. No longer drives the face directly — see
      *  `chatFills`, which also covers a full-height pane (like chat history) taking the region. */
@@ -79,6 +82,7 @@ function DaemonHub(props: DaemonHubProps) {
             >
                 <DaemonFace
                     mood={props.mood}
+                    loading={props.loading}
                     compact={compact()}
                     caption={props.enabled ? identity() : undefined}
                 />

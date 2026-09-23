@@ -172,6 +172,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     )
     const [memoryLoading, setMemoryLoading] = createSignal(false)
 
+    // A newer query's response can land before an older one's — guard on `memoryQuery()` still
+    // matching `q` before applying the result (or clearing `loading`), so a stale response never
+    // overwrites what a later keystroke already asked for.
     const fetchMemory = async (q: string) => {
         setMemoryLoading(true)
         try {
@@ -179,12 +182,13 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 q: q || undefined,
                 limit: MEMORY_LIMIT,
             })
+            if (memoryQuery() !== q) return
             setMemoryItems(res.items)
             setMemoryTotal(res.total)
         } catch {
             /* keep the previous list */
         } finally {
-            setMemoryLoading(false)
+            if (memoryQuery() === q) setMemoryLoading(false)
         }
     }
 
@@ -226,10 +230,11 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
 
-    // ── Panel callbacks: every one wired to `api`, a toast on failure. `onCreate` re-throws so
-    // the row's own inline "couldn't create" message (DaemonCrons/DaemonProcesses) still shows;
-    // run/toggle/delete/forget have no such inline surface, so those swallow after the toast —
-    // matching the rows' own commit helpers, which have no catch of their own to feed. ──────────
+    // ── Panel callbacks: every one wired to `api`. `onCreate` re-throws (no toast — the row's own
+    // inline "couldn't create" message, DaemonCrons/DaemonProcesses, already shows it; toasting
+    // too would show the same error twice); run/toggle/delete/forget have no such inline surface,
+    // so those swallow after the toast — matching the rows' own commit helpers, which have no
+    // catch of their own to feed. ────────────────────────────────────────────────────────────
     const onRunCron = async (name: string) => {
         try {
             await api.runCron(name)
@@ -247,14 +252,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         }
     }
     const onCreateCron = async (name: string): Promise<void> => {
-        try {
-            const res = await api.createCron(name)
-            props.onOpen(`.daemon/crons/${res.file}.md`)
-            await fetchSnapshot()
-        } catch (e) {
-            pushToast((e as Error).message || "couldn't create the cron")
-            throw e
-        }
+        const res = await api.createCron(name)
+        props.onOpen(`.daemon/crons/${res.file}.md`)
+        await fetchSnapshot()
     }
     const onDeleteCron = async (name: string): Promise<void> => {
         try {
@@ -273,14 +273,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         }
     }
     const onCreateProcess = async (name: string): Promise<void> => {
-        try {
-            const res = await api.createProcess(name)
-            props.onOpen(`.daemon/processes/${res.file}.md`)
-            await fetchSnapshot()
-        } catch (e) {
-            pushToast((e as Error).message || "couldn't create the service")
-            throw e
-        }
+        const res = await api.createProcess(name)
+        props.onOpen(`.daemon/processes/${res.file}.md`)
+        await fetchSnapshot()
     }
     const onDeleteProcess = async (name: string): Promise<void> => {
         try {
@@ -307,6 +302,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 blurb={snapshot().identity.blurb}
                 enabled={enabled()}
                 mood={mood()}
+                loading={enabled() && !loaded()}
                 readouts={barReadouts(status())}
                 facet={facet()}
                 onFacet={onFacet}
