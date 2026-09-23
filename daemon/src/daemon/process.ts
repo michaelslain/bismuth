@@ -1066,9 +1066,18 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
                 'utf-8',
             )
         } catch {
-            console.warn(
-                `[process] Trigger for unknown process "${name}" — skipping`,
-            )
+            const mp = managed.get(procKey(ctx, name))
+            if (mp) {
+                mp.stopping = true
+                if (mp.proc) await stopProcess(name, ctx)
+                console.log(
+                    `[process] Trigger for deleted process "${name}" — stopped`,
+                )
+            } else {
+                console.warn(
+                    `[process] Trigger for unknown process "${name}" — skipping`,
+                )
+            }
             continue
         }
         const def = parseProcessFrontmatter(
