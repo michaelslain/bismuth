@@ -1,15 +1,16 @@
 /* app/src/daemon/DaemonCrons.module.css — DaemonCrons.tsx is the ONLY importer.
    The list is the grid DaemonRow's rows subgrid into: dot // name // schedule // status //
-   actions. Name gets the flexible track (`minmax(0, 1fr)`); schedule is capped at a character
-   width so it gives up its room to the name before the name itself has to shrink — see
-   DaemonRow.module.css's `.meta` for the truncation half of this. */
+   actions. Name gets the flexible track, floored at 12ch (`minmax(12ch, 1fr)`) so grid sizing
+   gives the fixed-width schedule track its room FIRST; only once the name is at its floor does
+   the name itself start to shrink — see DaemonRow.module.css's `.meta` for the truncation half
+   of this. */
 .daemon-crons {
     height: 100%;
     min-height: 0;
 }
 .list {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 11ch) auto auto;
+    grid-template-columns: auto minmax(12ch, 1fr) minmax(0, 11ch) auto auto;
     row-gap: 0;
 }
 /* The head's create control — the field and its inline error sit on one row (no vertical

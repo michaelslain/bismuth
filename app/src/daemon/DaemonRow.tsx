@@ -55,6 +55,10 @@ function DaemonRow(props: DaemonRowProps) {
             role={props.onOpen ? 'button' : undefined}
             onClick={open}
             onKeyDown={e => {
+                // Only the row's own key events, not ones bubbling up from a focused child
+                // button ([ run ]/[ delete ]/[ cancel ]) — otherwise Enter/Space on a button
+                // both fires the button's click AND opens the row's definition file.
+                if (e.target !== e.currentTarget) return
                 // ui-confirm (rebindable, default Enter) plus a hardcoded Space — Space is this
                 // row's own activation gesture under the WAI-ARIA button pattern (role="button"),
                 // not a named command, same treatment as ui/ToggleRow.tsx's switch.

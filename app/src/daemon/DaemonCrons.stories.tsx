@@ -196,6 +196,11 @@ export const CreateError: Story = {
         await expect(
             canvas.getByText('a cron named "dream" already exists'),
         ).toBeInTheDocument()
+        // The field must still be alive after a rejected create — Esc cancels it.
+        await userEvent.keyboard('{Escape}')
+        await expect(
+            canvas.getByRole('button', { name: 'new cron' }),
+        ).toBeInTheDocument()
     },
 }
 
