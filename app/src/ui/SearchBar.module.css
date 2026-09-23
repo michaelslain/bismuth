@@ -69,9 +69,14 @@
 }
 
 /* ── Densities ──
+   The field is always set in the SAME type size as the results under it — a prompt line that
+   out-sizes its own list reads as a different component bolted on top. Density changes padding,
+   never text size.
    compact: panels, popovers, find bars — --h-control tall, --fs-ui text.
-   default: the plain in-page search field — --fs-body text, --sp-3 vertical padding.
-   large: palette + switcher — the user's editor-font-driven palette size, roomier padding. */
+   default: fields over --fs-body results (chat history) — --fs-body text, --sp-3 vertical padding.
+   large: palette + switcher — --fs-ui text like their rows, roomier padding, and the prompt glyph
+   takes the row icon's cell (1.2em wide, --sp-5 gap) with the same inset as the rows
+   (list --sp-4 + row --sp-5), so `>`/`/` sits on the icon column and the query on the label column. */
 .search-bar[data-size='compact'] {
     height: var(--h-control);
     font-size: var(--fs-ui);
@@ -91,10 +96,15 @@
 }
 
 .search-bar[data-size='large'] {
-    padding: var(--sp-5) var(--sp-6);
-    font-size: var(--palette-input-font-size);
+    padding: var(--sp-4) calc(var(--sp-4) + var(--sp-5));
+    font-size: var(--fs-ui);
 }
 .search-bar[data-size='large'] .search-bar-lead,
 .search-bar[data-size='large'] .search-bar-input {
-    font-size: var(--palette-input-font-size);
+    font-size: var(--fs-ui);
+}
+.search-bar[data-size='large'] .search-bar-lead {
+    width: 1.2em;
+    margin-right: var(--sp-5);
+    text-align: center;
 }

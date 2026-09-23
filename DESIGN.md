@@ -375,8 +375,9 @@ the accent. An outline appears only when it means something.
   no magnifier, no fill. A `/` glyph (`>` for the command palette) in `--accent` leads the input
   by one monospace cell; at rest the field is underlined `--rule-soft` full-width, and on focus
   the underline goes accent and the prompt glyph turns bold, with no full box outline. Placeholder
-  is always `--faint`. Three densities (`compact`/`default`/`large`) cover every caller from a
-  find bar to the command palette.
+  is always `--faint`. The field is set in the same type size as the results under it; its three
+  densities (`compact`/`default`/`large`) change padding, never text size, and in the palette and
+  switcher the prompt glyph sits on the rows' icon column.
 
 ### Overlays
 - **Modal:** `--pop-bg-strong` (translucent editor ground) with a `--rule` hairline over the

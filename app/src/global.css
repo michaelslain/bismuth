@@ -195,11 +195,6 @@
   --fw-medium: 500;
   --fw-bold: 600;
 
-  /* Default for settingsCssVars.ts:209's --palette-input-font-size (appearance.paletteInputFontSize),
-     so ui/SearchBar.module.css can read the token bare instead of carrying its own stand-in
-     fallback — settings still overwrite this at runtime. */
-  --palette-input-font-size: 15px;
-
   /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
   --lh-tight: 1.4;
   --lh-ui: 1.7;

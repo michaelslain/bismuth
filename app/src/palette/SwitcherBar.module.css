@@ -65,8 +65,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-3);
-  border-top: 1px solid var(--border-soft);
+  /* --sp-4 matches the command palette's list inset, so rows line up under SearchBar's large
+     prompt (whose underline is the divider — no border-top of our own). */
+  padding: var(--sp-4);
 }
 
 /* #8 (unified search): content-match + AI result cards reuse the shared .sresult markup

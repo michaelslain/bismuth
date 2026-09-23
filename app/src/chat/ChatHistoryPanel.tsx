@@ -70,7 +70,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
         <div class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}>
             <SearchBar
                 class={styles.search}
-                size="compact"
+                size="default"
                 value={props.history.query()}
                 onInput={props.history.setQuery}
                 placeholder="Search conversations…"
@@ -92,21 +92,30 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     size="sm"
                 />
             </div>
-            <div class={styles.title}>
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                    {searching() ? 'Results' : 'Resume a conversation'}
-                </Text>
-                <Show when={props.onNewChat}>
-                    {onNewChat => (
-                        <TextButton
-                            class={styles['new-chat']}
-                            onClick={() => onNewChat()()}
-                        >
-                            new chat
-                        </TextButton>
-                    )}
-                </Show>
-            </div>
+            {/* No header while searching — the query line IS the header, and a "Results" label
+                over its own hits only restated it. */}
+            <Show when={!searching()}>
+                <div class={styles.title}>
+                    <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        weight="inherit"
+                    >
+                        Resume a conversation
+                    </Text>
+                    <Show when={props.onNewChat}>
+                        {onNewChat => (
+                            <TextButton
+                                class={styles['new-chat']}
+                                onClick={() => onNewChat()()}
+                            >
+                                new chat
+                            </TextButton>
+                        )}
+                    </Show>
+                </div>
+            </Show>
             <Show
                 when={searching()}
                 fallback={
