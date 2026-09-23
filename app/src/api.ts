@@ -692,6 +692,10 @@ export const api = {
         postJson<ResolveResult>('/daemon/pages/resolve', { path, actionId }),
     markDaemonPageFailed: (path: string) =>
         post('/daemon/pages/mark-failed', { path }).then(() => {}),
+    // Archive = delete the page (and its sidecar) outright, whatever its state — refused (409)
+    // only while the daemon is mid-run on it. Owner-only (403 otherwise).
+    archiveDaemonPage: (path: string) =>
+        post('/daemon/pages/archive', { path }).then(() => {}),
     // Re-register the daemon service — no git pull; the binary updates WITH the app.
     daemonUpdate: () => postJson<SetupResult>('/daemon/update', {}),
     // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.

@@ -1,14 +1,12 @@
 /* app/src/daemon/InboxRow.module.css — InboxRow.tsx is the ONLY importer.
-   Two lines, scanned like the crons/services/log rows beside it: dot + title + time, then
-   source // snippet. The row is a three-column grid (dot, text, time) and the open-button and the
-   actions both sit on it through subgrid, so the actions start exactly under the title with no
-   magic indent. */
+   One line: dot + title + time. The row is a three-column grid (dot, text, time) and the
+   open-button and archive action both sit on it through subgrid, so archive overlays exactly
+   the age column with no magic indent. */
 .inbox-row {
     position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: var(--sp-3);
-    row-gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-4);
     border-bottom: var(--rule);
     transition: background var(--dur-fast) var(--ease);
@@ -18,16 +16,15 @@
     background: var(--hover-bg);
 }
 /* The real <button> that opens the page. PlainButton supplies the pointer cursor and the focus
-   ring; this only puts its four children on the row's grid. */
+   ring; this only puts its three children on the row's grid. */
 .inbox-row-open {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: subgrid;
     align-items: center;
     text-align: start;
-    /* Each text line is one row unit tall, the same fixed 18px the cron/service rows use,
-       instead of the ui type's airy 1.7 line-height. The Texts inside pass size="inherit" so
-       this is what they read. */
+    /* One fixed 18px row, the same as the cron/service rows, instead of the ui type's airy
+       1.7 line-height. The Texts inside pass size="inherit" so this is what they read. */
     font-size: var(--fs-ui);
     line-height: var(--row-h, 18px);
 }
@@ -43,28 +40,16 @@
     font-size: var(--fs-micro);
     white-space: nowrap;
 }
-.inbox-row-meta {
-    grid-column: 2 / -1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.inbox-row-failure {
-    color: var(--danger);
-}
-/* Overlaid on the row's first line (over the age text) instead of a third line under it, so it
+/* Overlaid on the row's first line (over the age text) instead of a second line under it, so it
    takes no space at rest and never pushes the rows below it down. `background: var(--bg)` is the
    app's opaque canvas colour (never the translucent --hover-bg the row itself tints with) —
-   anything less than opaque would let the age digits ghost through underneath the buttons. */
+   anything less than opaque would let the age digits ghost through underneath the button. */
 .inbox-row-actions {
     position: absolute;
     top: var(--sp-3);
     right: var(--sp-4);
     display: flex;
-    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: var(--sp-4);
     padding-left: var(--sp-4);
     background: var(--bg);
     opacity: 0;

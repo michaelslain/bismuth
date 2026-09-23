@@ -449,7 +449,7 @@ test('GET /chat/sessions, GET /chat/session-messages, POST /chat/search are owne
     }
 })
 
-test('POST /daemon/cron/delete and /daemon/process/delete are owner-only', async () => {
+test('POST /daemon/cron/delete, /daemon/process/delete and /daemon/pages/archive are owner-only', async () => {
     const { vault } = await makeSampleVault()
     const server = createServer({ vault, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -474,6 +474,9 @@ test('POST /daemon/cron/delete and /daemon/process/delete are owner-only', async
         ).not.toBe(403)
 
         expect((await post('/daemon/process/delete', { name: 'nope' })).status).toBe(403)
+        expect(
+            (await post('/daemon/pages/archive', { path: '.daemon/pages/x.md' })).status,
+        ).toBe(403)
     } finally {
         server.stop(true)
     }

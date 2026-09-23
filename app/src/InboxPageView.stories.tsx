@@ -1,6 +1,7 @@
-// Visual spec for <InboxPageView> — the action-bar HEADER rendered above a `type:
+// Visual spec for <InboxPageView> — the action bar PINNED TO THE BOTTOM of a `type:
 // daemon-page` note's editor: the page's actions[] as buttons, or a status chip/owner
-// warning once there's nothing left to press. Like InboxView, `page()` is looked up by
+// warning once there's nothing left to press. The Editor body fills the space above and
+// scrolls on its own; the bar stays put under it. Like InboxView, `page()` is looked up by
 // `path` in the SAME module-level daemonInbox.ts signal — populated the same way here (a
 // scoped GET /daemon/pages route + refreshDaemonPages() called inside each story's render).
 //
@@ -104,7 +105,7 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-/** A pending page: two live header actions ("Submit" / "Dismiss"). */
+/** A pending page: two live actions ("Submit" / "Dismiss") in the bar pinned to the bottom. */
 export const Pending: Story = {
     render: () => {
         setTransport(pagesTransport())
@@ -119,6 +120,20 @@ export const Pending: Story = {
                 tagNames={() => []}
             />
         )
+    },
+    play: async ({ canvasElement }) => {
+        // The bar sits BELOW the editor body, not above it — buttons at the bottom of the pane,
+        // text above. `.cm-editor` is CodeMirror's own unhashed class (never a project module),
+        // safe to query directly as the body's real top edge.
+        const body = canvasElement.querySelector('.cm-editor')
+        const bar = canvasElement.querySelector(
+            '[data-testid="inbox-page-actions"]',
+        )
+        await expect(body).not.toBeNull()
+        await expect(bar).not.toBeNull()
+        const bodyTop = (body as HTMLElement).getBoundingClientRect().top
+        const barTop = (bar as HTMLElement).getBoundingClientRect().top
+        await expect(barTop).toBeGreaterThan(bodyTop)
     },
 }
 

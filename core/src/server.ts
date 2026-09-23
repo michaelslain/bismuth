@@ -190,6 +190,7 @@ import {
     listDaemonPages,
     resolvePage,
     markPageFailed,
+    archivePage,
     createDaemonPage,
     DAEMON_PAGE_RE,
     type CreatePageInput,
@@ -2143,6 +2144,19 @@ export function createServer(cfg: CoreConfig) {
             const { path } = (await req.json()) as { path?: string }
             if (!path) return error('missing path', 400)
             markPageFailed(cfg.vault, path)
+            return ok({ ok: true })
+        },
+
+        // Archive a page from the daemon page's inbox = delete the page + its sidecar outright
+        // (archivePage). Structural, but the watcher already bumps `tree` for a .daemon/pages
+        // change (DAEMON_PAGE_RE) and the frontend re-polls, so it rides the READ table like the
+        // routes above. Owner-gated: CORS is `*`, so any local page could otherwise delete it.
+        'POST /daemon/pages/archive': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { path } = (await req.json()) as { path?: string }
+            if (typeof path !== 'string' || !path)
+                return error('missing path', 400)
+            archivePage(cfg.vault, path)
             return ok({ ok: true })
         },
 
