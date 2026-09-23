@@ -9,7 +9,7 @@
 // below. Every other story layers a transport seeded with SAMPLE_ROWS so the property/folder/tag
 // pickers have real vocabulary to offer, exactly like a populated vault.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { QueryBuilder } from './QueryBuilder'
 import type { BuilderState } from './queryGen'
 import { defaultBuilderState } from './queryGen'
@@ -48,6 +48,19 @@ export const NotesFresh: Story = {
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
     play: async () => {
+        // Initial focus lands on a BODY control, never the header's `[x]`. Asserted before the
+        // close check below, which moves focus onto `[x]` itself.
+        await waitFor(() =>
+            expect(
+                document.querySelector('[role="dialog"]')?.contains(
+                    document.activeElement,
+                ),
+            ).toBe(true),
+        )
+        await expect(
+            document.activeElement?.matches('[data-modal-close]'),
+        ).toBe(false)
+        const initial = document.activeElement as HTMLElement
         // Was a <div role="button"> with no tabindex — present to a screen reader, unreachable by
         // keyboard (same defect BaseSettings had). ModalHeader makes it a real IconButton. ui/Modal
         // portals to document.body, so query there rather than canvasElement.
@@ -61,6 +74,10 @@ export const NotesFresh: Story = {
         // A real <button> can. This is what makes the control keyboard-reachable at all.
         close!.focus()
         await expect(document.activeElement).toBe(close)
+        // Hand focus back: left on `[x]`, anything reading activeElement after this play (a
+        // focus probe, a screenshot of the focus ring) sees the play's own move, not the modal's
+        // initial focus — which is exactly how this story once read as "[x] steals focus".
+        initial.focus()
     },
 }
 
