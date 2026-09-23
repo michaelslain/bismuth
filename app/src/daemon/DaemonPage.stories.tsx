@@ -28,6 +28,17 @@ import Text from '../ui/Text'
 import ChatComposerBar from '../chat/ChatComposerBar'
 import ChatControls from '../chat/ChatControls'
 import { makeStubChatSession } from '../chat/_stubChatSession'
+import DaemonCrons from './DaemonCrons'
+import DaemonProcesses from './DaemonProcesses'
+import DaemonMemory from './DaemonMemory'
+import DaemonInbox from './DaemonInbox'
+import DaemonLog from './DaemonLog'
+import {
+    sampleDaemonSnapshot,
+    sampleDaemonMemory,
+    sampleDaemonPages,
+    sampleActivity,
+} from '../ui/_daemonFixtures'
 
 const meta = {
     title: 'Daemon/DaemonPage',
@@ -72,6 +83,45 @@ function PanelStub(props: { facet: DaemonFacet }) {
         </div>
     )
 }
+
+/** The per-facet Awake* stories render the REAL presentational panel (their own look is each
+ *  panel's own stories' concern) instead of PanelStub, so these shots actually show what the
+ *  facet looks like — noop callbacks, this is a layout story. */
+const SNAPSHOT = sampleDaemonSnapshot()
+const cronsPanel = (
+    <DaemonCrons
+        crons={SNAPSHOT.crons}
+        daemonRunning
+        onOpen={noop}
+        onRun={noop}
+        onToggle={noop}
+        onCreate={async () => {}}
+        onDelete={async () => {}}
+    />
+)
+const servicesPanel = (
+    <DaemonProcesses
+        processes={SNAPSHOT.processes}
+        daemonRunning
+        onOpen={noop}
+        onToggle={noop}
+        onCreate={async () => {}}
+        onDelete={async () => {}}
+    />
+)
+const memoryPanel = (
+    <DaemonMemory
+        items={sampleDaemonMemory().items}
+        query=""
+        onQuery={noop}
+        onOpen={noop}
+        onForget={async () => {}}
+    />
+)
+const inboxPanel = (
+    <DaemonInbox pages={sampleDaemonPages()} onOpen={noop} onChanged={noop} />
+)
+const logPanel = <DaemonLog events={sampleActivity()} />
 
 /** The hub's `chat` slot for every story: the REAL `ChatComposerBar` with the REAL `ChatControls`
  *  as its `below` — exactly what `daemon/DaemonChat.tsx` renders — driven by a freshly-built stub
@@ -212,11 +262,13 @@ async function assertLayout(
     const h = rect(hub!)
     await expect(f.width).toBeGreaterThan(0)
     // Resting: the face is centred in the hub column. Compact (chatFills) — the one-line header
-    // form, see DaemonHub — it rides left-aligned at the top instead, so this check doesn't apply.
+    // form, see DaemonHub — it rides left-aligned at the top instead, flush with the hub column.
     if (!opts.compact) {
         await expect(
             Math.abs(f.left + f.width / 2 - (h.left + h.width / 2)),
         ).toBeLessThanOrEqual(8)
+    } else {
+        await expect(Math.abs(f.left - h.left)).toBeLessThanOrEqual(24)
     }
 
     const p = rect(page!)
@@ -265,6 +317,7 @@ export const AwakeInbox: Story = {
             <DaemonPage
                 {...pageProps('alert', 'inbox', 'needs you // 2 due', {
                     counts: { ...DEFAULT_COUNTS, due: 2 },
+                    panel: inboxPanel,
                 })}
             />
         </Frame>
@@ -284,7 +337,9 @@ export const AwakeCrons: Story = {
     render: () => (
         <Frame>
             <DaemonPage
-                {...pageProps('idle', 'crons', 'watching // last: dream 4m ago')}
+                {...pageProps('idle', 'crons', 'watching // last: dream 4m ago', {
+                    panel: cronsPanel,
+                })}
             />
         </Frame>
     ),
@@ -295,7 +350,9 @@ export const AwakeServices: Story = {
     render: () => (
         <Frame>
             <DaemonPage
-                {...pageProps('idle', 'services', 'watching // last: dream 4m ago')}
+                {...pageProps('idle', 'services', 'watching // last: dream 4m ago', {
+                    panel: servicesPanel,
+                })}
             />
         </Frame>
     ),
@@ -306,7 +363,9 @@ export const AwakeMemory: Story = {
     render: () => (
         <Frame>
             <DaemonPage
-                {...pageProps('idle', 'memory', 'watching // last: dream 4m ago')}
+                {...pageProps('idle', 'memory', 'watching // last: dream 4m ago', {
+                    panel: memoryPanel,
+                })}
             />
         </Frame>
     ),
@@ -317,7 +376,9 @@ export const AwakeLog: Story = {
     render: () => (
         <Frame>
             <DaemonPage
-                {...pageProps('busy', 'log', 'working // dream')}
+                {...pageProps('busy', 'log', 'working // dream', {
+                    panel: logPanel,
+                })}
             />
         </Frame>
     ),
@@ -437,6 +498,9 @@ export const Narrow: Story = {
             '[data-testid="daemon-page-panel"]',
         )!
         await expect(rect(hub).top).toBeLessThan(rect(panel).top)
+        // The hub must not claim the whole stage height for itself — the panel that follows it
+        // has to start on-screen, not below the fold.
+        await expect(rect(panel).top).toBeLessThan(window.innerHeight)
         const trail = canvasElement.querySelector<HTMLElement>(
             '[data-testid="vb-trail"]',
         )!
