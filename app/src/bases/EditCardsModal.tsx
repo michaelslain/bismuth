@@ -22,7 +22,7 @@ type Mode = 'list' | 'bulk'
 
 // Bulk-add separator presets. "auto" sniffs each line for the first that matches.
 const SEPARATORS: { id: string; label: string; sep: string }[] = [
-    { id: 'tab', label: 'Tab', sep: '\t' },
+    { id: 'tab', label: 'tab', sep: '\t' },
     { id: 'tripcolon', label: ':::', sep: ':::' },
     { id: 'dblcolon', label: '::', sep: '::' },
     { id: 'colon', label: ':', sep: ':' },
@@ -75,7 +75,7 @@ export function parseBulk(
  *  Commits on blur. */
 function CardCell(props: {
     value: string
-    field: 'Front' | 'Back'
+    field: 'front' | 'back'
     placeholder: string
     onCommit: (v: string) => void
 }) {
@@ -86,7 +86,7 @@ function CardCell(props: {
     // EditCardsModal.stories.tsx's play function also queries `.cell-front textarea` directly, so
     // it must stay a real, matchable literal in the DOM.
     const fieldClass =
-        props.field === 'Back' ? styles['cell-back'] : 'cell-front'
+        props.field === 'back' ? styles['cell-back'] : 'cell-front'
     return (
         <div class={`${styles.cell} ${fieldClass}`}>
             <div
@@ -316,10 +316,10 @@ export function EditCardsModal(props: {
                             #
                         </Text>
                         <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                            Front
+                            front
                         </Text>
                         <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                            Back
+                            back
                         </Text>
                         <div />
                     </div>
@@ -350,14 +350,14 @@ export function EditCardsModal(props: {
                                 </div>
                                 <CardCell
                                     value={text(n, ff)}
-                                    field="Front"
-                                    placeholder="Front…"
+                                    field="front"
+                                    placeholder="front…"
                                     onCommit={v => commitCell(i(), ff, v)}
                                 />
                                 <CardCell
                                     value={text(n, bf)}
-                                    field="Back"
-                                    placeholder="Back…"
+                                    field="back"
+                                    placeholder="back…"
                                     onCommit={v => commitCell(i(), bf, v)}
                                 />
                                 <div class={styles['cards-del']}>
@@ -393,7 +393,7 @@ export function EditCardsModal(props: {
                                 multiline
                                 plain
                                 value={draftFront()}
-                                placeholder="Front of new card…"
+                                placeholder="front of new card…"
                                 onInput={setDraftFront}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -411,7 +411,7 @@ export function EditCardsModal(props: {
                                     draftBackRef = el
                                 }}
                                 value={draftBack()}
-                                placeholder="Back…"
+                                placeholder="back…"
                                 onInput={setDraftBack}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -431,7 +431,7 @@ export function EditCardsModal(props: {
                             weight="inherit"
                             class={styles['cards-lefthint']}
                         >
-                            Type above, then{' '}
+                            type above, then{' '}
                             <Text
                                 as="span"
                                 size="inherit"
@@ -467,7 +467,7 @@ export function EditCardsModal(props: {
                             weight="inherit"
                             class={styles['cards-lab']}
                         >
-                            Separator
+                            separator
                         </Text>
                         <div class={styles['cards-chiprow']}>
                             <TextButton
@@ -514,7 +514,7 @@ export function EditCardsModal(props: {
                                 tone="faint"
                                 class={styles['cards-bulk-lab']}
                             >
-                                Paste your cards
+                                paste your cards
                             </Text>
                             <TextInput
                                 multiline
@@ -536,7 +536,7 @@ export function EditCardsModal(props: {
                                     weight="inherit"
                                     class={styles['cards-lab']}
                                 >
-                                    Preview
+                                    preview
                                 </Text>
                                 <Text
                                     as="span"
@@ -554,7 +554,7 @@ export function EditCardsModal(props: {
                                     when={parsed().length > 0}
                                     fallback={
                                         <div class={styles['cards-pvempty']}>
-                                            Parsed cards appear here as you
+                                            parsed cards appear here as you
                                             paste.
                                         </div>
                                     }

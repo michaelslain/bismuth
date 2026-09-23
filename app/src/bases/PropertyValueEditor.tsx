@@ -143,7 +143,6 @@ export function PropertyValueEditor(props: {
                             when={props.kind.kind === 'markdown'}
                             fallback={
                                 <TextInput
-                                    plain
                                     class={styles.kbMetaInput}
                                     type={
                                         props.kind.kind === 'number'
@@ -176,7 +175,6 @@ export function PropertyValueEditor(props: {
                         >
                             <TextInput
                                 multiline
-                                plain
                                 class={styles.kbMetaMarkdownArea}
                                 value={draft()}
                                 autofocus={autofocus()}
