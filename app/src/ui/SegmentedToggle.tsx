@@ -23,6 +23,8 @@ export type SegmentedToggleProps<T> = {
     class?: string
     /** Per-segment extra class (e.g. an underline-tab look). */
     segmentClass?: string
+    /** 'bracket' (default) or 'segment' (butted boxes) — pre-registered for bracket-toggles Task 1. */
+    look?: 'bracket' | 'segment'
 }
 
 /**

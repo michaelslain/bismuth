@@ -20,6 +20,8 @@ export type ButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
+    /** Colour for the selected state (a `var(--…)` token) — pre-registered for bracket-toggles Task 1. */
+    accent?: string
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
