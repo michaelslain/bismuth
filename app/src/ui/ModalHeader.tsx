@@ -12,10 +12,8 @@
 // labelled and styled like every other icon button in the app.
 //
 // Redrawn for the modal-redesign (2026-09-23 plan): the old anatomy was an icon mark + Title Case
-// text + a boxed ✕, floating above a separately-bordered panel. The `icon`/`compact` props are
-// deprecated no-ops (Task 12 deletes both once every caller has dropped them) — this header no
-// longer renders a mark at all, so there is nothing left for `compact` to center against. Instead
-// ModalHeader IS exactly `--row-h` tall and draws the top rule itself, as line segments either
+// text + a boxed ✕, floating above a separately-bordered panel. This header renders no mark at
+// all. Instead ModalHeader IS exactly `--row-h` tall and draws the top rule itself, as line segments either
 // side of the title/subtitle/close, at the row's vertical center — the same y FormModal's own
 // frame (`FormModal.module.css`'s `.panel::before`) is inset from the top by, so the two pieces
 // read as one hairline across the whole panel width. No background box masks the text — that
@@ -36,12 +34,6 @@ export type ModalHeaderProps = {
      *  where the destructive signal belongs: on the modal, not on each of its choices. */
     tone?: 'default' | 'danger'
     class?: string
-    /** @deprecated ignored — the redrawn header has no icon mark. Task 12 removes this prop once
-     *  every call site has dropped it. */
-    icon?: string
-    /** @deprecated ignored — there is no mark left to center against `compact` for. Task 12
-     *  removes this prop once every call site has dropped it. */
-    compact?: boolean
 }
 
 const ModalHeader: Component<ModalHeaderProps> = props => {

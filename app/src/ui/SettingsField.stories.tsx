@@ -89,8 +89,7 @@ export const Grid: Story = {
     },
 }
 
-/** Every SettingsField prop shape: required, optional, spanning + hint, and the deprecated
- *  `icon` prop passed but ignored (no icon renders). */
+/** Every SettingsField prop shape: required, optional, spanning + hint. */
 export const AllShapes: Story = {
     render: () => {
         const [a, setA] = createSignal('team sync')
@@ -99,7 +98,7 @@ export const AllShapes: Story = {
         return (
             <div style={{ width: '460px' }}>
                 <SettingsGrid>
-                    <SettingsField label="title" icon="Tag" badge="required">
+                    <SettingsField label="title" badge="required">
                         <TextInput value={a()} onInput={setA} />
                     </SettingsField>
                     <SettingsField label="start" badge="optional">
