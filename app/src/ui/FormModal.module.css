@@ -44,19 +44,34 @@
     border: none;
 }
 
-/* The frame itself: fill + side/bottom rule, inset from the top by half a row so its top edge
-   lands exactly on ModalHeader's own rule row (ModalHeader is one --row-h tall and draws its rule
-   at vertical center — half of --row-h down from ITS top, which is the panel's top). Negative
-   z-index (with .panel's own stacking context above, z-index:0) keeps this behind the header/body/
-   footer content painted after it in the DOM, while still sitting above whatever the portal's
-   backdrop painted behind the panel. */
+/* The fill covers the WHOLE panel (top edge included) so the paper theme's low-contrast
+   `--pop-bg-strong` sits under the header row too — a fill that started half a row down left the
+   header's top half painting straight onto the scrim. Negative z-index (with .panel's own
+   stacking context above, z-index:0) keeps this behind the header/body/footer content painted
+   after it in the DOM, while still sitting above whatever the portal's backdrop painted behind
+   the panel. */
 .panel::before {
     content: '';
     position: absolute;
     z-index: -1;
-    inset: calc(var(--row-h, 18px) / 2) 0 0 0;
+    inset: 0;
     background: var(--pop-bg-strong);
+}
+
+/* The frame LINES, separate from the fill above: inset from the top by half a row so the top
+   edge lands exactly on ModalHeader's own rule row (ModalHeader is one --row-h tall and draws its
+   rule at vertical center — half of --row-h down from ITS top, which is the panel's top). Same
+   z-index as .panel::before — later in the stylesheet/DOM so it paints on top of the fill, both
+   still below the header/body/footer content (z-index: auto, painted after both pseudo-elements
+   in .panel's stacking context). pointer-events: none so it never intercepts clicks meant for the
+   header/body/footer above it. */
+.panel::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: calc(var(--row-h) / 2) 0 0 0;
     border-left: var(--rule);
     border-right: var(--rule);
     border-bottom: var(--rule);
+    pointer-events: none;
 }
