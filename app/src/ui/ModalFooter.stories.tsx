@@ -24,7 +24,7 @@ const shell = { width: '440px', border: '1px solid var(--border-soft)' }
 export const HintAndActions: Story = {
     render: () => (
         <div style={shell}>
-            <ModalFooter hint="to close">
+            <ModalFooter hint="close">
                 <TextButton variant="selected" data-testid="mf-done">
                     done
                 </TextButton>
@@ -34,7 +34,7 @@ export const HintAndActions: Story = {
     play: async ({ canvasElement }) => {
         const hint = canvasElement.querySelector('[class*="modal-hint"]')
         expect(hint).not.toBeNull()
-        expect(hint!.textContent).toBe('esc to close')
+        expect(hint!.textContent).toBe('esc close')
         const done = canvasElement.querySelector('[data-testid="mf-done"]')
         expect(done).not.toBeNull()
         expect(done!.textContent).toBe('done')
@@ -49,7 +49,7 @@ export const LeadingAndTrailing: Story = {
     render: () => (
         <div style={shell}>
             <ModalFooter
-                hint="to close"
+                hint="close"
                 leading={
                     <TextButton data-testid="mf-reset">
                         reset

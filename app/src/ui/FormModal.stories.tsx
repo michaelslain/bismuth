@@ -50,7 +50,7 @@ export const Default: Story = {
                 </Text>
                 <Text>Third and last paragraph, closing things out.</Text>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter hint="cancel">
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>
@@ -72,7 +72,7 @@ export const NarrowWidth420: Story = {
                     default.
                 </Text>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter hint="cancel">
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>
@@ -96,7 +96,7 @@ export const WideWidth600: Story = {
             <ModalBody>
                 <Text>This panel is pinned to 600px.</Text>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter hint="cancel">
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>
@@ -122,7 +122,7 @@ export const FocusLandsInBody: Story = {
                         <TextInput value={value()} onInput={setValue} />
                     </SettingsField>
                 </ModalBody>
-                <ModalFooter hint="to cancel">
+                <ModalFooter hint="cancel">
                     <TextButton onClick={noop}>
                         cancel
                     </TextButton>
@@ -167,7 +167,7 @@ const LateBodyModal = (props: { withFooter?: boolean }) => {
                 </Show>
             </ModalBody>
             <Show when={props.withFooter}>
-                <ModalFooter hint="to cancel">
+                <ModalFooter hint="cancel">
                     <TextButton onClick={noop}>cancel</TextButton>
                 </ModalFooter>
             </Show>

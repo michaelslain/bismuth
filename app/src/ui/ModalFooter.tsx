@@ -13,7 +13,7 @@ import styles from './ModalFooter.module.css'
 import Text from './Text'
 
 export type ModalFooterProps = {
-    /** Words after the plain `esc` text, e.g. "to close" / "to cancel". Omit for no hint. */
+    /** Words after the plain `esc` text, e.g. "close" / "cancel". Omit for no hint. */
     hint?: string
     /** Left-aligned actions, before the spacer (DELETE, RESET). */
     leading?: JSX.Element

@@ -42,7 +42,7 @@ export const ScrollsWhenTall: Story = {
                     )}
                 </For>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter hint="cancel">
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>
