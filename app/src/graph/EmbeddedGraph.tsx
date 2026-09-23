@@ -226,7 +226,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            SELECT
+                                            select
                                         </Text>
                                     </>
                                 ),
@@ -244,7 +244,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            CONNECT
+                                            connect
                                         </Text>
                                     </>
                                 ),
@@ -262,7 +262,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            ERASE
+                                            erase
                                         </Text>
                                     </>
                                 ),
