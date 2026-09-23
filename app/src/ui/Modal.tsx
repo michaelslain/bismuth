@@ -115,17 +115,48 @@ function Modal(props: ModalProps) {
     onMount(() => {
         opener = document.activeElement as HTMLElement | null
         window.addEventListener('keydown', handleKey)
-        // Focus the first real control if there is one, else the panel. Deferred a frame because a
-        // caller's children may still be mounting on the same tick. Skips the header's close
-        // control (`[data-modal-close]`) so a modal with no body control focuses the panel rather
-        // than landing an accent focus ring on the close button at open — a body control (or the
-        // close, as the last resort) is what the eye expects to light up on mount.
-        queueMicrotask(() => {
+        // Focus the first real control if there is one, else the panel. A caller's body controls
+        // (form fields, a QueryBuilder's inputs) can still be mounting after this component's own
+        // microtask, so a single queueMicrotask pick sometimes sees only header/footer buttons and
+        // lands focus on `[x]` (QueryBuilder) or a footer action (GcalConnectModal) instead of the
+        // body control the eye expects.
+        //
+        // So the pick runs twice: once on the microtask (covers the common case — an already-mounted
+        // body, e.g. the event modal's title input), and again after two chained
+        // requestAnimationFrames (covers a body that mounts late). The second pass only moves focus
+        // if focus is still exactly where THIS component put it on the first pass — i.e. nothing else
+        // (the user tabbing away, a component moving focus itself) has touched it since. That is a
+        // stronger guarantee than matching against a fixed set of "default" selectors (which would
+        // have to know what a footer action looks like, and nothing in this file owns that markup):
+        // it can never steal focus the user or the component already moved into the body.
+        //
+        // Each pass prefers a form control (input/select/textarea) over any other focusable, then
+        // falls back to the first non-close focusable, then the close button (the last resort for a
+        // modal with no body control at all, e.g. daemon setup), then the panel.
+        const pick = () => {
             const items = focusables()
+            const formControl = items.find(
+                el =>
+                    el.matches('input, select, textarea') &&
+                    !el.matches('[data-modal-close]'),
+            )
             const firstNonClose = items.find(
                 el => !el.matches('[data-modal-close]'),
             )
-            ;(firstNonClose ?? items[0] ?? panelEl)?.focus()
+            return formControl ?? firstNonClose ?? items[0] ?? panelEl
+        }
+        queueMicrotask(() => {
+            const firstPick = pick()
+            firstPick?.focus()
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    const active = document.activeElement as HTMLElement | null
+                    const untouchedSinceFirstPass =
+                        active === (firstPick ?? panelEl) ||
+                        (!firstPick && (!active || active === panelEl))
+                    if (untouchedSinceFirstPass) pick()?.focus()
+                })
+            })
         })
         if (import.meta.env?.DEV && !props.label)
             console.warn(
