@@ -52,6 +52,7 @@ import { publishChatOrigin } from '../chatOrigin'
 import {
     publishChatBusy,
     publishChatComposing,
+    publishChatSpeaking,
     clearChatActivity,
 } from '../chatActivity'
 import { setChatColor, resolveChatColorArg } from '../chatColors'
@@ -297,6 +298,15 @@ export function createChatSession(chatId: string): ChatSession {
     // Busy/composing signals for any surface animating on this chat's liveness (the daemon face).
     createEffect(() => publishChatBusy(chatId, streaming()))
     createEffect(() => publishChatComposing(chatId, draft().trim().length > 0))
+    // Speaking = busy AND the trailing part of the last assistant turn is actual streamed text —
+    // distinguishes `thinking` (a reply is pending, nothing written yet) from `talking` (text is
+    // flowing) for the daemon face's mood.
+    createEffect(() => {
+        const last = transcript[transcript.length - 1]
+        const lastPart =
+            last?.role === 'assistant' ? last.parts[last.parts.length - 1] : undefined
+        publishChatSpeaking(chatId, streaming() && lastPart?.kind === 'text')
+    })
 
     // ── onAppend: the one scroll seam ─────────────────────────────────────────────────────────
     const appendListeners = new Set<(force: boolean) => void>()
