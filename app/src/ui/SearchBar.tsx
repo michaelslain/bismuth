@@ -18,8 +18,6 @@ export type SearchBarProps = {
     onEnter?: () => void
     /** Full keydown passthrough on the input — for list-navigation search boxes (arrows/escape/enter). Takes precedence over `onEnter`. */
     onKeyDown?: (e: KeyboardEvent) => void
-    /** @deprecated No longer rendered — the field leads with `prompt`, never an icon. Ignored at runtime. */
-    leadingIcon?: string
     autofocus?: boolean
     inputRef?: (el: HTMLInputElement) => void
     /** Accessible name for the input, when the placeholder alone isn't enough (e.g. a find-in-file
@@ -31,12 +29,6 @@ export type SearchBarProps = {
      *  font, colour, padding, border or background; the field's own look lives in this
      *  component's stylesheet. */
     class?: string
-    /** @deprecated No longer rendered — there is no separate lead element to style. Ignored at runtime. */
-    leadClass?: string
-    /** @deprecated No longer rendered — the input's look is fixed by `size`. Ignored at runtime. */
-    inputClass?: string
-    /** @deprecated No longer rendered — the input's look is fixed by `size`. Ignored at runtime. */
-    inputStyle?: JSX.CSSProperties | string
 }
 
 function SearchBar(props: SearchBarProps) {
