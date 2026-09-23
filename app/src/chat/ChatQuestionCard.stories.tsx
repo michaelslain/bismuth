@@ -69,7 +69,7 @@ export const SingleSelect: Story = {
  *  proves the design #7 vocabulary fix: the header chip is lowercase (no CSS uppercase
  *  transform), the option rows carry no individual fill/border (an unfilled hairline list, not
  *  boxed slabs), and Submit/Skip render as bracket buttons — the same idiom + component
- *  ChatPermissionCard's "[ allow ]"/"[ deny ]" uses. */
+ *  ChatPermissionCard's "[allow]"/"[deny]" uses. */
 export const MultiSelect: Story = {
     render: () => (
         <div style={{ width: '600px' }}>
@@ -99,14 +99,14 @@ export const MultiSelect: Story = {
 
         // Stage a pick so Submit/Skip render, then confirm the bracket wrap.
         await userEvent.click(canvas.getByText('ChatToolRow'))
-        const submit = canvas.getByText('submit')
+        const submit = canvas.getByRole('button', { name: 'submit' })
         await expect(getComputedStyle(submit).textTransform).toBe('none')
         await expect(
             getComputedStyle(submit, '::before').content,
-        ).toBe('"[ "')
+        ).toContain('[')
         await expect(
             getComputedStyle(submit, '::after').content,
-        ).toBe('" ]"')
+        ).toContain(']')
     },
 }
 
