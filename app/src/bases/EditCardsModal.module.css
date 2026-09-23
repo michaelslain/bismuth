@@ -56,7 +56,7 @@
    .cards-pvcard).
 
    :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest): .cards-num,
-   .cards-row:hover .cards-del .btn--icon. */
+   (none left for the delete control — it is always visible). */
 
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 0; }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
@@ -92,6 +92,10 @@
 }
 .cell:hover .cell-md { border-bottom-color: var(--border); }
 .cell-back .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
+/* renderMarkdown wraps text in block elements whose default margins would push the text off the
+   cell's first line and leave dead space above the underline; blocks stack with one small gap. */
+.cell-md p, .cell-md ul, .cell-md ol, .cell-md pre, .cell-md blockquote { margin: 0; }
+.cell-md > * + * { margin-top: var(--sp-2); }
 .cell-md strong { color: var(--fg); font-weight: 600; }
 .cell-md em { font-style: italic; }
 .cell-md code { font-size: var(--fs-rel-code); background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px var(--sp-2); border-radius: var(--r-0); }
@@ -131,9 +135,10 @@
 .cards-num:active { cursor: grabbing; }
 .cards-num-add { color: var(--accent); cursor: default; font-size: var(--fs-lead); }
 
-.cards-del { display: flex; align-items: flex-start; padding-top: var(--sp-4); }
-.cards-del-btn { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
-.cards-row:hover .cards-del-btn { opacity: 1; }
+.cards-del { display: flex; align-items: flex-start; justify-content: flex-end; padding-top: var(--sp-2); }
+/* `[x]` sits on the card text's first line: auto height at the cell's line-height, so its
+   baseline matches the front/back text beside it. */
+.cards-del-btn { height: auto; line-height: var(--lh-ui); padding: 0; }
 .cards-addrow { display: flex; justify-content: flex-end; align-items: center; padding: var(--sp-4) var(--sp-2) var(--sp-3); }
 
 /* ── Bulk add ── */

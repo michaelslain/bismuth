@@ -1,6 +1,5 @@
 import { createSignal, createMemo, For, Show } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
@@ -92,7 +91,9 @@ function CardCell(props: {
             <div
                 class={styles['cell-md']}
                 innerHTML={
-                    renderMarkdown(val()) ||
+                    // trim: renderMarkdown ends every block with "\n", which `.cell-md`'s
+                    // pre-wrap would paint as an extra blank line under the card text.
+                    renderMarkdown(val()).trim() ||
                     cardCellPlaceholder(
                         styles['cell-ph'],
                         props.placeholder,
@@ -343,15 +344,16 @@ export function EditCardsModal(props: {
                                     onCommit={v => commitCell(i(), bf, v)}
                                 />
                                 <div class={styles['cards-del']}>
-                                    <IconButton
-                                        icon="Trash2"
-                                        label="Delete card"
-                                        iconSize={15}
+                                    <TextButton
+                                        aria-label="Delete card"
+                                        title="Delete card"
                                         danger
                                         disabled={busy()}
                                         onClick={() => removeCard(i())}
                                         class={styles['cards-del-btn']}
-                                    />
+                                    >
+                                        x
+                                    </TextButton>
                                 </div>
                             </div>
                         )}
