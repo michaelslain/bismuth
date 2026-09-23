@@ -15,5 +15,11 @@ export type GalleryItem = { id: string; label: string; value: string }
 export type GallerySource = {
     /** Search-box placeholder, e.g. "Search icons…". */
     placeholder: string
-    search: (query: string) => { items: GalleryItem[]; total: number }
+    /** `loading` = the source's data isn't there yet (the icon library's lazy chunk) — the modal
+     *  shows nothing rather than "No matches" until it lands. */
+    search: (query: string) => {
+        items: GalleryItem[]
+        total: number
+        loading?: boolean
+    }
 }

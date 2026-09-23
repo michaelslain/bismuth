@@ -10,21 +10,25 @@ current icon system — it replaced the Nerd Font subset described below as of t
 Phosphor migration (plan §10).
 
 - **Source**: <https://github.com/phosphor-icons/core>, consumed via the Iconify JSON
-  distribution package `@iconify-json/ph` (npm), version `1.2.2`, icon-set version `2.1.1`
+  distribution package `@iconify-json/ph` (npm), version `1.2.2`, icon-set version `2.1.1` (the
+  SVG art), and `@phosphor-icons/core` (npm), version `2.1.1` (icon names, tags and categories)
 - **Copyright**: Phosphor Icons
 - **License**: MIT — see the upstream repository's `LICENSE`
 
-**Changes made.** `app/src/icons/iconNames.ts` declares 140 canonical, set-independent icon
-names; `app/src/icons/iconMap.ts` maps each to either a Phosphor Regular slug or a hand-authored
-custom mark. `bun run icons:svg` (`app/scripts/build-icon-svgs.ts`) resolves that mapping against
-`@iconify-json/ph`'s `icons.json` (~9,161 icons) and writes only the referenced subset to
-`app/src/assets/icons/icon-manifest.json`, so the app ships 140 icons' worth of SVG data rather
-than the whole set. Of the 140 names, 133 resolve to unmodified Phosphor Regular SVG bodies; 2
-(`Regex`, `WholeWord`) are hand-authored custom marks with no Phosphor equivalent, used by the
-editor find panel; and 5 (`ArchiveX`, `Blend`, `FolderInput`, `Map`, `Vote`) are deliberate
-"missing" declarations for names Phosphor has no equivalent for, which `registry.ts` renders with
-its own hand-authored `FALLBACK_ART` rather than an empty icon. `icon-manifest.json`'s own
-`source`/`counts` fields record the package version and this breakdown at generation time.
+**Changes made.** `bun run icons:svg` (`app/scripts/build-icon-svgs.ts`) writes two files, both
+of unmodified Phosphor Regular SVG bodies:
+
+- `app/src/assets/icons/icon-manifest.json` — the app's own chrome. `app/src/icons/iconNames.ts`
+  declares 140 canonical, set-independent icon names and `app/src/icons/iconMap.ts` maps each to a
+  Phosphor Regular slug (138) or a hand-authored custom mark (2: `Regex`, `WholeWord`, used by the
+  editor find panel). Imported statically, so chrome icons resolve synchronously.
+- `app/src/assets/icons/icon-library.json` — every icon `@phosphor-icons/core` lists (~1,500), each
+  with its search terms (slug, tags, categories). Loaded lazily by `app/src/icons/iconLibrary.ts`
+  only when the icon picker opens or a note names an icon outside the 140 — this is what a person
+  picks from.
+
+`icon-manifest.json`'s own `source`/`counts` fields record the package version and breakdown at
+generation time.
 
 ## Symbols Nerd Font Mono (retired, removed)
 

@@ -1,42 +1,54 @@
 // app/src/ui/gallery/sources.ts
-// The concrete gallery sources. Each adapts an existing dataset (the icon registry —
-// icon-named, backed by generated Phosphor SVG art, see icons/registry.ts — and the
-// emoji search) to the generic GallerySource contract — so the SymbolGallery modal
-// renders both without knowing which it's showing.
-import { allIcons } from '../../icons/registry'
+// The concrete gallery sources. Each adapts an existing dataset (the full Phosphor icon library —
+// see icons/registry.ts + icons/iconLibrary.ts — and the emoji search) to the generic
+// GallerySource contract — so the SymbolGallery modal renders both without knowing which it's
+// showing.
+import { libraryIconList, type LibraryIcon } from '../../icons/registry'
+import { iconLibraryState, loadIconLibrary } from '../../icons/iconLibrary'
 import { searchEmoji } from '../../editor/emoji'
 import type { GallerySource, GalleryItem } from './types'
 
-// Cap rendered cells so a large source can't jank the grid by painting every item at once.
-// The icon set is ~140 and so never reaches this; the emoji source does. (The cap was sized for
-// the ~1,700-icon third-party set this used to import — kept because emoji still needs it.)
+// Cap rendered cells so a large source can't jank the grid by painting every item at once. The
+// icon library (~1,500) and emoji both reach it; the "showing X of Y" hint covers the rest.
 const MAX_CELLS = 300
 
-/** Every icon (icon name), prefix-matches first then substring — value = icon name. */
+/** Every Phosphor icon (empty query: the app's own icons first), ranked: name prefix, then name substring, then a search-term hit (the
+ *  set's own tags — "library" finds Books — and the app's canonical aliases — "bot" finds Robot).
+ *  value = the library name, which is what gets written to `icon:`. Reads the library's load
+ *  signal, so the gallery's memo re-runs when the lazily-loaded chunk lands. */
 export const iconSource: GallerySource = {
     placeholder: 'Search icons…',
     search(query: string) {
-        const q = query.trim().toLowerCase()
-        const all = allIcons()
-        if (!q) {
-            return {
-                items: all.slice(0, MAX_CELLS).map(iconItem),
-                total: all.length,
-            }
+        const state = iconLibraryState()
+        if (state !== 'loaded') {
+            void loadIconLibrary()
+            return { items: [], total: 0, loading: state !== 'failed' }
         }
-        const starts: typeof all = []
-        const includes: typeof all = []
-        for (const e of all) {
-            const n = e.name.toLowerCase()
-            if (n.startsWith(q)) starts.push(e)
-            else if (n.includes(q)) includes.push(e)
-        }
-        const ranked = starts.concat(includes)
+        const ranked = rankIcons(libraryIconList(), query)
         return {
             items: ranked.slice(0, MAX_CELLS).map(iconItem),
             total: ranked.length,
         }
     },
+}
+
+/** Pure ranking over library icons — exported for the unit test. */
+export function rankIcons(all: LibraryIcon[], query: string): LibraryIcon[] {
+    const q = query.trim().toLowerCase()
+    // On open, the icons the app itself uses come first (a familiar screen, not a wall of
+    // `ArrowBendDownLeft`…), then the rest of the library, each half alphabetical.
+    if (!q) return all.filter(e => e.core).concat(all.filter(e => !e.core))
+    const starts: LibraryIcon[] = []
+    const includes: LibraryIcon[] = []
+    const tagged: LibraryIcon[] = []
+    const qWords = q.split(/\s+/)
+    for (const e of all) {
+        const n = e.name.toLowerCase()
+        if (n.startsWith(q)) starts.push(e)
+        else if (n.includes(q.replace(/[\s-]+/g, ''))) includes.push(e)
+        else if (qWords.every(w => e.terms.includes(w))) tagged.push(e)
+    }
+    return starts.concat(includes, tagged)
 }
 
 const iconItem = (e: { name: string }): GalleryItem => ({

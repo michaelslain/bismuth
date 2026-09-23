@@ -93,6 +93,7 @@
     "@iconify-json/iconoir": "^1.2.11",
     "@iconify-json/ph": "^1.2.2",
     "@iconify-json/radix-icons": "^1.2.6",
+    "@phosphor-icons/core": "2.1.1",
     "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2",
     "@types/bun": "latest",
