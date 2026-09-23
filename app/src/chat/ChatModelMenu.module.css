@@ -9,8 +9,8 @@
 }
 
 /* The trigger is a ui/PlainButton (an unstyled real `<button>`) — this class is its ENTIRE look,
-   lowercase and faint with no button chrome, since PlainButton carries none of ui/Button's KIND
-   classes to override in the first place. */
+   lowercase with no button chrome, since PlainButton carries none of ui/Button's KIND classes to
+   override in the first place. It inherits the row's own ink rather than setting its own colour. */
 .model-menu .word {
     display: inline-block;
     /* `min-width: 0`, not just `max-width: 100%` — this is a flex ITEM of `.model-menu`, and a
@@ -29,5 +29,5 @@
     letter-spacing: normal;
     font-family: inherit;
     font-size: inherit;
-    color: var(--faint);
+    color: inherit;
 }

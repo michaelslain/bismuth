@@ -346,6 +346,10 @@ the accent. An outline appears only when it means something.
   `danger` `--danger`; disabled `--faint` with no hover.
 - **Hover:** `unselected` lifts to `--text-muted`; states already at full ink underline the label
   (1px) instead of changing colour.
+- **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
+  ring never touches the next `[`.
+- **Hierarchy:** the one confirming action in a footer or view is `primary`; `selected` is only for
+  a toggle member that is on. A `[cancel]` is `normal`.
 - **Focus:** a 2px accent outline (`--focus-ring`) around the glyphs, on `:focus-visible` only.
 - **Icon button:** a separate register — a 24px square with no border; `normal` sits at full
   opacity. It keeps its own sizes.
