@@ -935,7 +935,7 @@ function createDaemonFile(
     subdir: 'crons' | 'processes',
     name: string,
     home: string,
-    frontmatterLines: string[],
+    buildFrontmatterLines: (slug: string) => string[],
 ): { file: string } {
     const slug = slugify(name)
     if (!slug) {
@@ -956,27 +956,31 @@ function createDaemonFile(
     const body = placeholderBody(subdir === 'crons' ? 'cron' : 'process', name)
     writeFileSync(
         file,
-        `---\n${frontmatterLines.join('\n')}\n---\n\n${body}`,
+        `---\n${buildFrontmatterLines(slug).join('\n')}\n---\n\n${body}`,
     )
     return { file: slug }
 }
 
 /** Create `<home>/crons/<slug>.md` from a template: `name`, a daily 9am `schedule`,
- *  `enabled: false`, and a placeholder prompt body. See `createDaemonFile` for the
- *  slug/EINVAL/EEXIST contract. */
+ *  `enabled: false`, and a placeholder prompt body. `name` and `schedule` are written
+ *  bare (unquoted) — the cron's name IS its slug (`[a-z0-9-]` only), and the daemon's
+ *  own frontmatter reader (`daemon/src/lib/frontmatter.ts`) splits on the first colon
+ *  and keeps quote characters, so a quoted value round-trips as a literal `"…"` string.
+ *  See `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
 export function createCron(name: string, home: string): { file: string } {
-    return createDaemonFile('crons', name, home, [
-        `name: ${JSON.stringify(name)}`,
-        `schedule: "0 9 * * *"`,
+    return createDaemonFile('crons', name, home, slug => [
+        `name: ${slug}`,
+        `schedule: 0 9 * * *`,
         `enabled: false`,
     ])
 }
 
 /** Create `<home>/processes/<slug>.md` from a template: `name`, a placeholder `command`,
- *  `enabled: false`. See `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
+ *  `enabled: false`. `name` is written bare, same reason as `createCron`. See
+ *  `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
 export function createProcess(name: string, home: string): { file: string } {
-    return createDaemonFile('processes', name, home, [
-        `name: ${JSON.stringify(name)}`,
+    return createDaemonFile('processes', name, home, slug => [
+        `name: ${slug}`,
         `command: echo "replace me"`,
         `enabled: false`,
     ])
