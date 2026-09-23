@@ -1,7 +1,7 @@
 // Visual spec for <FormModal> — the settings/editor modal shell (a <Modal> panel sized as a
 // column, was `.evm-modal` in calendar/Calendar.module.css, shared by six modals). Wraps its own
 // <Modal>, so the story just needs a fullscreen canvas for the backdrop to fill — same pattern as
-// ui/PromptModal.stories.tsx and calendar/components/RecurrenceDialog.stories.tsx.
+// calendar/components/RecurrenceDialog.stories.tsx.
 //
 // <Modal> mounts via a Solid <Portal> straight onto document.body — outside
 // canvasElement/#storybook-root entirely (see Modal.tsx). So the width play below queries
