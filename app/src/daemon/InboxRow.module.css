@@ -9,12 +9,9 @@
     column-gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-4);
     border-bottom: var(--rule);
-    transition: background var(--dur-fast) var(--ease);
 }
-.inbox-row:hover,
-.inbox-row:focus-within {
-    background: var(--hover-bg);
-}
+/* No hover/focus fill — the row is a button, and buttons never paint a background (user
+   request, 2026-09-23). Hover reveals [ archive ] instead. */
 /* The real <button> that opens the page. PlainButton supplies the pointer cursor and the focus
    ring; this only puts its three children on the row's grid. */
 .inbox-row-open {
@@ -40,10 +37,9 @@
     font-size: var(--fs-micro);
     white-space: nowrap;
 }
-/* Overlaid on the row's first line (over the age text) instead of a second line under it, so it
-   takes no space at rest and never pushes the rows below it down. `background: var(--bg)` is the
-   app's opaque canvas colour (never the translucent --hover-bg the row itself tints with) —
-   anything less than opaque would let the age digits ghost through underneath the button. */
+/* Overlaid on the row's first line, in the age's place, instead of a second line under it, so it
+   takes no space at rest and never pushes the rows below it down. No background of its own
+   (buttons never paint one): the age is hidden instead while the button shows, below. */
 .inbox-row-actions {
     position: absolute;
     top: var(--sp-3);
@@ -51,10 +47,13 @@
     display: flex;
     justify-content: flex-end;
     padding-left: var(--sp-4);
-    background: var(--bg);
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-fast) var(--ease);
+}
+.inbox-row:has(.inbox-row-actions):hover .inbox-row-time,
+.inbox-row:has(.inbox-row-actions):focus-within .inbox-row-time {
+    visibility: hidden;
 }
 .inbox-row:hover .inbox-row-actions,
 .inbox-row:focus-within .inbox-row-actions {
@@ -65,5 +64,8 @@
     .inbox-row-actions {
         opacity: 1;
         pointer-events: auto;
+    }
+    .inbox-row:has(.inbox-row-actions) .inbox-row-time {
+        visibility: hidden;
     }
 }

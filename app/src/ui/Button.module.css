@@ -79,7 +79,12 @@
 /* ── Keyboard focus ────────────────────────────────────────────────────────────
    No focus ring on buttons: removed at the user's request (2026-09-23) — the ring read as a stray
    "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
-   has no visible indicator beyond its own hover/selected tones. */
+   has no visible indicator beyond its own hover/selected tones. `outline: none` must be stated:
+   with the app's ring gone the UA's own `:focus-visible` ring (Chrome's light-blue `auto`) shows.
+   Buttons never paint a background fill either — hover/selected are carried by ink colour and,
+   for segments, the accent border (user request, 2026-09-23). */
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn:focus), :global(.btn:focus-visible) { outline: none; }
 /* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
    an all-caps label next to an icon reads as floating above the icon's center.
    Nudge label text down 1px so the caps center on the icon. (Label is wrapped in
@@ -117,13 +122,11 @@
 /* normal — standalone, full-strength neutral */
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
 :global(.btn--segment.btn--normal) { color: var(--fg); }
-/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
-:global(.btn--segment.btn--normal:hover:not(:disabled)) { background: var(--hover-bg); }
 /* unselected — toggle member, off: structure-dim, no outline emphasis */
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
 :global(.btn--segment.btn--unselected) { color: var(--faint); }
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
-:global(.btn--segment.btn--unselected:hover:not(:disabled)) { color: var(--fg); background: var(--hover-bg); }
+:global(.btn--segment.btn--unselected:hover:not(:disabled)) { color: var(--fg); }
 /* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
    --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
    visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
@@ -133,12 +136,10 @@
 :global(.btn--segment.btn--selected) { color: var(--accent); background: transparent; border-color: var(--accent); }
 /* primary — selected + a glow rim. Max one per view. */
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
-:global(.btn--segment.btn--primary) { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--glow-accent); }
+:global(.btn--segment.btn--primary) { color: var(--accent); background: transparent; border-color: var(--accent); box-shadow: var(--glow-accent); }
 /* danger tone — destructive actions */
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
 :global(.btn--segment.btn--danger) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
-:global(.btn--segment.btn--danger:hover:not(:disabled)) { background: var(--hover-bg); }
 /* sizes */
 /* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
 :global(.btn--segment.btn--sm) { padding: var(--sp-2) var(--sp-4); }
@@ -208,13 +209,11 @@
 /* normal — standalone, full opacity */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--normal) { opacity: 1; }
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon.btn--normal:hover:not(:disabled)) { background: var(--hover-bg); }
 /* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--unselected) { opacity: 0.5; }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon.btn--unselected:hover:not(:disabled)) { opacity: 1; background: var(--hover-bg); }
+:global(.btn--icon.btn--unselected:hover:not(:disabled)) { opacity: 1; }
 /* selected — toggle member, on: accent icon on an accent-soft fill */
 /* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
    lighter tile against its container. */
@@ -257,4 +256,4 @@
   color: var(--text-muted);
 }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon.btn--sm:hover:not(:disabled)) { color: var(--fg); background: var(--state-hover-bg); }
+:global(.btn--icon.btn--sm:hover:not(:disabled)) { color: var(--fg); }

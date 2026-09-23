@@ -12,14 +12,10 @@
     padding: 0 var(--sp-4);
     border-radius: var(--r-0);
     cursor: pointer;
-    transition:
-        background var(--dur-fast) var(--ease),
-        color var(--dur-fast) var(--ease);
+    transition: color var(--dur-fast) var(--ease);
 }
-.row:hover,
-.row:focus-visible {
-    background: var(--hover-bg);
-}
+/* No hover/focus fill — clickable rows are buttons, and buttons never paint a background
+   (user request, 2026-09-23). Hover reveals the row's actions instead. */
 .row:focus-visible {
     outline: none;
 }
