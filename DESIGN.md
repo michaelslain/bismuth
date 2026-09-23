@@ -371,6 +371,12 @@ the accent. An outline appears only when it means something.
 ### Inputs / Fields
 - **Field:** a label in `--text-muted` stacked 4px above its control at `--fs-ui`.
 - **Inputs, selects, text inputs:** square, hairline, 24px control height; focus is the shared accent outline.
+- **Search field (`SearchBar`):** a typed terminal prompt line, not a boxed input — transparent,
+  no magnifier, no fill. A `/` glyph (`>` for the command palette) in `--accent` leads the input
+  by one monospace cell; at rest the field is underlined `--rule-soft` full-width, and on focus
+  the underline goes accent and the prompt glyph turns bold, with no full box outline. Placeholder
+  is always `--faint`. Three densities (`compact`/`default`/`large`) cover every caller from a
+  find bar to the command palette.
 
 ### Overlays
 - **Modal:** `--pop-bg-strong` (translucent editor ground) with a `--rule` hairline over the
