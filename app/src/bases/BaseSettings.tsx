@@ -50,7 +50,6 @@ interface FieldDef {
     key: string
     /** Short role label shown next to the column dropdown. */
     role: string
-    icon: string
     def: string
     /** Optional fields offer a "Not set" choice. */
     optional?: boolean
@@ -63,17 +62,15 @@ const CHART_FIELDS: FieldDef[] = [
     {
         key: 'x',
         role: 'X axis',
-        icon: 'calendar',
         def: 'date',
-        hint: 'Column plotted along the X axis — a date or a category.',
+        hint: 'column plotted along the x axis — a date or a category.',
     },
     {
         key: 'y',
         role: 'Value',
-        icon: 'hash',
         def: '',
         optional: true,
-        hint: 'Numeric column to aggregate. Leave unset to count rows.',
+        hint: 'numeric column to aggregate. leave unset to count rows.',
     },
 ]
 
@@ -83,24 +80,21 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
         {
             key: 'frontField',
             role: 'Front',
-            icon: 'CircleHelp',
             def: 'front',
-            hint: 'Column shown as the card front (the prompt).',
+            hint: 'column shown as the card front (the prompt).',
         },
         {
             key: 'backField',
             role: 'Back',
-            icon: 'circle-check',
             def: 'back',
-            hint: 'Column revealed as the answer.',
+            hint: 'column revealed as the answer.',
         },
         {
             key: 'dueField',
             role: 'Due',
-            icon: 'Calendar',
             def: 'due',
             span: true,
-            hint: "Column holding each card's next-review date.",
+            hint: "column holding each card's next-review date.",
         },
     ],
     heatmap: CHART_FIELDS,
@@ -407,12 +401,11 @@ export function BaseSettings(props: {
     return (
         <FormModal
             onClose={props.onClose}
-            label={`${capitalize(props.type)} settings`}
+            label={`${props.type} settings`}
             class={styles.panel}
         >
             <ModalHeader
-                icon="Settings2"
-                title={`${capitalize(props.type)} settings`}
+                title={`${props.type} settings`}
                 subtitle={props.basePath ? noteLabel(props.basePath) : undefined}
                 onClose={props.onClose}
             />
@@ -420,13 +413,12 @@ export function BaseSettings(props: {
             <ModalBody>
                 {/* Field-binding types: flashcards / chart axes */}
                 <Show when={fields().length > 0}>
-                    <SettingsSection>Column mapping</SettingsSection>
+                    <SettingsSection>column mapping</SettingsSection>
                     <SettingsGrid>
                         <For each={fields()}>
                             {f => (
                                 <SettingsField
-                                    icon={f.icon}
-                                    label={`${f.role} column`}
+                                    label={`${f.role.toLowerCase()} column`}
                                     badge={f.optional ? 'optional' : 'required'}
                                     hint={f.hint}
                                     span={f.span}
@@ -454,18 +446,18 @@ export function BaseSettings(props: {
                         <ToggleRow
                             class={styles.spaced}
                             wrap
-                            label="Bidirectional — review each card both ways (front ↔ back)"
+                            label="bidirectional — review each card both ways (front ↔ back)"
                             checked={bidi()}
                             onToggle={() => setBidi(!bidi())}
                         />
                         <SettingsHint>
-                            Scheduling uses the standard SM-2 algorithm (fixed,
-                            not configurable). Use <strong>Cram</strong> in the
+                            scheduling uses the standard SM-2 algorithm (fixed,
+                            not configurable). use <strong>cram</strong> in the
                             deck to review everything without affecting
                             scheduling.
                             <Show when={bidi()}>
                                 {' '}
-                                Each direction is scheduled independently
+                                each direction is scheduled independently
                                 (reverse state lives in <code>
                                     dueBack
                                 </code> / <code>easeBack</code> /{' '}
@@ -477,12 +469,11 @@ export function BaseSettings(props: {
 
                 {/* Chart types: aggregate + (non-heatmap) date bucket */}
                 <Show when={isChart()}>
-                    <SettingsSection>Aggregation</SettingsSection>
+                    <SettingsSection>aggregation</SettingsSection>
                     <SettingsGrid>
                         <SettingsField
-                            icon="sigma"
-                            label="Aggregate"
-                            hint="How values are combined per X-axis bucket."
+                            label="aggregate"
+                            hint="how values are combined per x-axis bucket."
                         >
                             <Select
                                 value={aggregate()}
@@ -501,9 +492,8 @@ export function BaseSettings(props: {
                         </SettingsField>
                         <Show when={props.type !== 'heatmap'}>
                             <SettingsField
-                                icon="Calendar"
-                                label="Date bucket"
-                                hint="Group date values by day, week, or month."
+                                label="date bucket"
+                                hint="group date values by day, week, or month."
                             >
                                 <Select
                                     value={bin()}
@@ -520,9 +510,9 @@ export function BaseSettings(props: {
                 {/* Record types: columns + sort + group */}
                 <Show when={isRecord()}>
                     <Show when={showColumns()}>
-                        <SettingsSection>Columns</SettingsSection>
+                        <SettingsSection>columns</SettingsSection>
                         <SettingsHint>
-                            Toggle to show or hide. Drag the column headers in
+                            toggle to show or hide. drag the column headers in
                             the table to reorder.
                         </SettingsHint>
                         <ToggleList>
@@ -542,7 +532,7 @@ export function BaseSettings(props: {
                                             locked={locked()}
                                             title={
                                                 locked()
-                                                    ? 'At least one column must stay visible'
+                                                    ? 'at least one column must stay visible'
                                                     : undefined
                                             }
                                         />
@@ -552,9 +542,9 @@ export function BaseSettings(props: {
                         </ToggleList>
                     </Show>
 
-                    <SettingsSection>Sort &amp; group</SettingsSection>
+                    <SettingsSection>sort &amp; group</SettingsSection>
                     <SettingsGrid>
-                        <SettingsField icon="ListOrdered" label="Sort by">
+                        <SettingsField label="sort by">
                             <Select
                                 value={sortProp()}
                                 options={propOptions()}
@@ -563,10 +553,7 @@ export function BaseSettings(props: {
                             />
                         </SettingsField>
                         <Show when={sortProp()}>
-                            <SettingsField
-                                icon="arrow-down"
-                                label="Sort direction"
-                            >
+                            <SettingsField label="sort direction">
                                 <Select
                                     value={sortDir()}
                                     options={DIR_OPTS}
@@ -576,7 +563,7 @@ export function BaseSettings(props: {
                                 />
                             </SettingsField>
                         </Show>
-                        <SettingsField icon="Layers" label="Group by">
+                        <SettingsField label="group by">
                             <Select
                                 value={groupProp()}
                                 options={propOptions()}
@@ -585,10 +572,7 @@ export function BaseSettings(props: {
                             />
                         </SettingsField>
                         <Show when={groupProp()}>
-                            <SettingsField
-                                icon="arrow-down"
-                                label="Group direction"
-                            >
+                            <SettingsField label="group direction">
                                 <Select
                                     value={groupDir()}
                                     options={DIR_OPTS}
@@ -603,7 +587,7 @@ export function BaseSettings(props: {
                     <Show when={props.type === 'kanban'}>
                         <ToggleRow
                             class={styles.spaced}
-                            label="Hide meta labels — show property values only"
+                            label="hide meta labels — show property values only"
                             checked={hideLabels()}
                             onToggle={() => setHideLabels(!hideLabels())}
                         />
@@ -616,11 +600,11 @@ export function BaseSettings(props: {
             (name/type/type-specific extras/reorder/delete), collapsing whichever else was
             open. Keeps a base with a dozen+ properties readable as a scannable list instead
             of a wall of controls. */}
-                <SettingsSection>Properties</SettingsSection>
+                <SettingsSection>properties</SettingsSection>
                 <SettingsHint>
-                    Declare this base's own fields — name, type, and whether it
-                    shows on cards/table. Order here drives card/table field
-                    order. Click a row to edit it.
+                    declare this base's own fields — name, type, and whether it
+                    shows on cards/table. order here drives card/table field
+                    order. click a row to edit it.
                 </SettingsHint>
                 <Show when={propRows().length > 0}>
                     <div class={styles['propset-list']}>
@@ -694,7 +678,7 @@ export function BaseSettings(props: {
                                                 classList={{ [styles['empty']]: !row().name }}
                                             >
                                                 {row().name ||
-                                                    'Untitled property'}
+                                                    'untitled property'}
                                             </Text>
                                             <Text
                                                 as="span"
