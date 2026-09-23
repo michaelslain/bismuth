@@ -105,8 +105,8 @@ export function CategoryPanel(props: { store: EventStore }) {
 
     return (
         <Show when={showCategoryPanel.value}>
-            <FormModal onClose={close} label="Categories" class={styles.panel}>
-                <ModalHeader icon="Tag" title="Categories" compact onClose={close} />
+            <FormModal onClose={close} label="categories" class={styles.panel}>
+                <ModalHeader title="categories" onClose={close} />
 
                 <ModalBody>
                     {/* existing categories — compact rows, one chip each */}
@@ -203,7 +203,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                     <div class={styles['cat-add']}>
                         <div class={styles['cat-add-head']}>
                             <Icon value="plus" size={12} strokeWidth={2.2} />
-                            New category
+                            new category
                         </div>
                         <div class={styles['cat-newrow']}>
                             <ColorChip
@@ -220,7 +220,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                             />
                             <TextInput
                                 class={styles['cat-input']}
-                                placeholder="Category name"
+                                placeholder="category name"
                                 value={newName()}
                                 onInput={setNewName}
                                 onKeyDown={e => {
@@ -238,7 +238,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                     </div>
                 </ModalBody>
 
-                <ModalFooter hint="to close">
+                <ModalFooter hint="close">
                     <TextButton primary onClick={close}>
                         done
                     </TextButton>

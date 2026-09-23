@@ -59,7 +59,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
 
     const close = () => (recurrenceAction.value = null)
     const isDelete = () => recurrenceAction.value!.type === 'delete'
-    const verb = () => (isDelete() ? 'Delete' : 'Edit')
+    const verb = () => (isDelete() ? 'delete' : 'edit')
     const eventTitle = () =>
         events.value.find(e => e.id === recurrenceAction.value!.masterId)?.title
 
@@ -75,20 +75,20 @@ export function RecurrenceDialog(props: { store: EventStore }) {
             {
                 scope: 'one',
                 icon: 'CircleCheck',
-                label: 'This event',
-                sub: `Only ${when}`,
+                label: 'this event',
+                sub: `only ${when}`,
             },
             {
                 scope: 'following',
                 icon: 'ArrowRight',
-                label: 'This and following events',
+                label: 'this and following events',
                 sub: `${when} onward`,
             },
             {
                 scope: 'all',
                 icon: 'Calendar',
-                label: 'All events',
-                sub: 'The entire series',
+                label: 'all events',
+                sub: 'the entire series',
             },
         ]
     }
@@ -101,13 +101,11 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                 width={420}
             >
                 <ModalHeader
-                    icon={isDelete() ? 'trash-2' : 'repeat'}
                     tone={isDelete() ? 'danger' : 'default'}
                     title={`${verb()} recurring event`}
                     subtitle={
-                        eventTitle() ?? 'Choose which occurrences to apply this to'
+                        eventTitle() ?? 'choose which occurrences to apply this to'
                     }
-                    compact
                     onClose={close}
                 />
 
@@ -127,7 +125,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                     </OptionList>
                 </ModalBody>
 
-                <ModalFooter hint="to cancel">
+                <ModalFooter hint="cancel">
                     <TextButton onClick={close}>
                         cancel
                     </TextButton>

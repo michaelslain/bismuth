@@ -24,7 +24,6 @@ import { GcalSyncPanel } from './GcalSyncPanel'
 interface FieldDef {
     key: string
     role: string
-    icon: string
     def: string
     req?: boolean
     span?: boolean
@@ -33,40 +32,35 @@ interface FieldDef {
 const FIELDS: FieldDef[] = [
     {
         key: 'dateField',
-        role: 'Date',
-        icon: 'calendar',
+        role: 'date',
         def: 'date',
         req: true,
-        hint: 'Which day each event lands on. Required.',
+        hint: 'which day each event lands on. required.',
     },
     {
         key: 'startTimeField',
-        role: 'Start-time',
-        icon: 'Gauge',
+        role: 'start-time',
         def: 'startTime',
-        hint: 'When the event begins (week / day views).',
+        hint: 'when the event begins (week / day views).',
     },
     {
         key: 'endTimeField',
-        role: 'End-time',
-        icon: 'Gauge',
+        role: 'end-time',
         def: 'endTime',
-        hint: 'When the event ends — sets the block height.',
+        hint: 'when the event ends — sets the block height.',
     },
     {
         key: 'recurrenceField',
-        role: 'Recurrence',
-        icon: 'repeat',
+        role: 'recurrence',
         def: 'recurrence',
-        hint: 'Holds the repeat rule (daily, weekly, …).',
+        hint: 'holds the repeat rule (daily, weekly, …).',
     },
     {
         key: 'categoryField',
-        role: 'Category',
-        icon: 'tag',
+        role: 'category',
         def: 'category',
         span: true,
-        hint: 'Drives the colour each event is drawn in.',
+        hint: 'drives the colour each event is drawn in.',
     },
 ]
 // Columns always offered, unioned with whatever the note's events actually use.
@@ -126,7 +120,7 @@ export function CalendarSettings(props: {
         setMap(Object.fromEntries(FIELDS.map(f => [f.key, f.def])))
 
     const optionsFor = (optional: boolean) => [
-        ...(optional ? [{ value: '', label: 'Not set' }] : []),
+        ...(optional ? [{ value: '', label: 'not set' }] : []),
         ...columns().map(c => ({ value: c, label: c })),
     ]
 
@@ -139,16 +133,15 @@ export function CalendarSettings(props: {
     }
 
     return (
-        <FormModal onClose={close} label="Calendar settings">
-            <ModalHeader icon="settings-2" title="Calendar settings" compact onClose={close} />
+        <FormModal onClose={close} label="calendar settings">
+            <ModalHeader title="calendar settings" onClose={close} />
 
             <ModalBody>
-                <SettingsSection>Column mapping</SettingsSection>
+                <SettingsSection>column mapping</SettingsSection>
                 <SettingsGrid>
                     <For each={FIELDS}>
                         {f => (
                             <SettingsField
-                                icon={f.icon}
                                 label={`${f.role} column`}
                                 badge={f.req ? 'required' : 'optional'}
                                 hint={f.hint}
@@ -157,7 +150,7 @@ export function CalendarSettings(props: {
                                 <Select
                                     value={map()[f.key] ?? ''}
                                     options={optionsFor(!f.req)}
-                                    placeholder="Not set"
+                                    placeholder="not set"
                                     onChange={c =>
                                         setMap(m => ({ ...m, [f.key]: c }))
                                     }
@@ -171,7 +164,7 @@ export function CalendarSettings(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="to close"
+                hint="close"
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
