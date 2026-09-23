@@ -1,16 +1,14 @@
 /* app/src/daemon/DaemonPanel.module.css — DaemonPanel.tsx is the ONLY importer.
-   The shared frame: hairline border (--rule, radius --r-0 — the flattened §9.2 register the rest
-   of the app's chrome uses; no drop shadow), a fixed head (eyebrow title + count + optional
-   actions), and a body that owns the ONLY scrollbar. The panel itself never scrolls — it fills
-   its grid cell at 100% height (Task 6's three-column layout) and stays that size regardless of
-   how much the body holds. */
+   With only one panel visible at a time and the ViewBar facet acting as its heading, this carries
+   NO border box and NO letter-spaced eyebrow. The head row (plain title + count + optional
+   actions) is the only chrome, and it renders only when the panel has one of those. The body owns
+   the ONLY scrollbar — the panel itself never scrolls, it fills its grid cell at 100% height
+   (Task 6's three-column layout) and stays that size regardless of how much the body holds. */
 .daemon-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    border: var(--rule);
-    border-radius: var(--r-0);
 }
 .daemon-panel-head {
     display: flex;
@@ -26,8 +24,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* A token step, not an opacity: 0.6 over the eyebrow's --faint measured ~2.6:1 on ink. The count
-   reads one step up from its title (--text-muted), which is what the dimming was reaching for. */
 .daemon-panel-count {
     color: var(--text-muted);
     flex-shrink: 0;

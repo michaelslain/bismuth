@@ -1,17 +1,21 @@
 // app/src/daemon/DaemonPanel.tsx
-// The one shared panel frame for every daemon-page panel (crons, services, inbox, log): an
-// eyebrow title + count badge + optional trailing actions in a fixed head, over a body that
-// scrolls internally. THE ONLY OWNER of panel chrome styles (border, head, scroll) — every other
-// daemon component composes this rather than growing its own hairline box. Task 6 lays four of
-// these into a three-column grid; each must fill its cell's height and never grow the page, which
-// is why the body — not the panel — carries `overflow-y: auto`.
+// The one shared frame a daemon-page panel (crons, services, inbox, log) can compose: an
+// optional plain title + count badge + optional trailing actions in a head row, over a body that
+// scrolls internally. With only ONE panel showing at a time and the ViewBar facet acting as its
+// heading, there is no border box and no letter-spaced eyebrow here any more — the head row
+// itself only renders when `title` or `actions` is given, so a panel with neither (most of
+// DaemonInbox/DaemonLog now) is chromeless top to bottom. Task 6 lays these into a three-column
+// grid; each must fill its cell's height and never grow the page, which is why the body — not the
+// panel — carries `overflow-y: auto`.
 import { Show, type JSX } from 'solid-js'
 import Text from '../ui/Text'
 import Badge from '../ui/Badge'
 import styles from './DaemonPanel.module.css'
 
 export type DaemonPanelProps = {
-    title: string
+    /** A small plain label, no eyebrow tracking. Optional — DaemonInbox/DaemonLog no longer pass
+     *  one (the ViewBar facet is their heading); DaemonServices still does until task 6 drops it. */
+    title?: string
     count?: number
     actions?: JSX.Element
     children: JSX.Element
@@ -21,32 +25,36 @@ export type DaemonPanelProps = {
 }
 
 function DaemonPanel(props: DaemonPanelProps) {
+    const hasHead = () => props.title !== undefined || props.actions !== undefined
     return (
         <div
             class={`${styles['daemon-panel']} ${props.class ?? ''}`}
             classList={{ [styles['pack-to-content']]: props.packToContent }}
         >
-            <div class={styles['daemon-panel-head']}>
-                <Text
-                    as="div"
-                    eyebrow
-                    size="micro"
-                    tone="faint"
-                    class={styles['daemon-panel-title']}
-                >
-                    {props.title}
-                </Text>
-                <Show when={props.count !== undefined}>
-                    <Badge class={styles['daemon-panel-count']}>
-                        {props.count}
-                    </Badge>
-                </Show>
-                <Show when={props.actions}>
-                    <div class={styles['daemon-panel-actions']}>
-                        {props.actions}
-                    </div>
-                </Show>
-            </div>
+            <Show when={hasHead()}>
+                <div class={styles['daemon-panel-head']}>
+                    <Show when={props.title !== undefined}>
+                        <Text
+                            as="div"
+                            size="micro"
+                            tone="faint"
+                            class={styles['daemon-panel-title']}
+                        >
+                            {props.title}
+                        </Text>
+                    </Show>
+                    <Show when={props.count !== undefined}>
+                        <Badge class={styles['daemon-panel-count']}>
+                            {props.count}
+                        </Badge>
+                    </Show>
+                    <Show when={props.actions}>
+                        <div class={styles['daemon-panel-actions']}>
+                            {props.actions}
+                        </div>
+                    </Show>
+                </div>
+            </Show>
             <div class={styles['daemon-panel-body']}>{props.children}</div>
         </div>
     )
