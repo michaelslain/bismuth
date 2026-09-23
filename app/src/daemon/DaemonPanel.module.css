@@ -16,7 +16,8 @@
     gap: var(--sp-3);
     flex-shrink: 0;
     padding: var(--sp-3) var(--sp-4);
-    border-bottom: var(--rule-soft);
+    /* No rule under the head: its actions hide until the panel is hovered/focused, and a rule
+       left alone at rest reads as a stray hairline over an empty row. */
 }
 .daemon-panel-title {
     min-width: 0;
@@ -28,12 +29,25 @@
     color: var(--text-muted);
     flex-shrink: 0;
 }
+/* Hidden at rest, revealed on panel hover/focus-within — opacity only, so the head row's height
+   never shifts and a create field that already has focus (focus-within) stays visible on its own. */
 .daemon-panel-actions {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: var(--sp-3);
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.daemon-panel:hover .daemon-panel-actions,
+.daemon-panel:focus-within .daemon-panel-actions {
+    opacity: 1;
+}
+@media (hover: none) {
+    .daemon-panel-actions {
+        opacity: 1;
+    }
 }
 /* A soft fade on the last 16px, always on: when the body's content is shorter than its box the
    fade just dissolves into empty background (invisible), and when it overflows the fade replaces a

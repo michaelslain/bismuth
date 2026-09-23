@@ -6,7 +6,6 @@
 import type { DaemonPage, PageAction } from '../../../core/src/daemonPages'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
-import type { DaemonMemoryList } from '../../../core/src/daemonMemory'
 
 const APPROVE: PageAction = {
     id: 'approve',
@@ -293,75 +292,5 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             event: 'brain-started',
         },
     ]
-}
-
-/**
- * Sample daemon memory notes for the daemon page's memory panel — ~8 items across mixed
- * `type`s and ages, mirroring `DaemonMemoryItem` (core/src/daemonMemory.ts). Pass `overrides`
- * to replace the whole list.
- */
-export function sampleDaemonMemory(
-    overrides?: DaemonMemoryList,
-): DaemonMemoryList {
-    if (overrides) return overrides
-    const items = [
-        {
-            path: '.daemon/memory/housing.md',
-            name: 'housing',
-            type: 'fact',
-            updated: iso(-1 * HOUR),
-            excerpt: 'Signed the lease on the new apartment, move-in is the 1st.',
-        },
-        {
-            path: '.daemon/memory/michael-profile.md',
-            name: 'michael-profile',
-            type: 'person',
-            updated: iso(-3 * HOUR),
-            excerpt: 'Works on Bismuth; prefers terse replies and dry humor.',
-        },
-        {
-            path: '.daemon/memory/morning-routine.md',
-            name: 'morning-routine',
-            type: 'workflow',
-            updated: iso(-1 * DAY),
-            excerpt: 'Checks the daemon inbox first, then email, then calendar.',
-        },
-        {
-            path: '.daemon/memory/coffee-preference.md',
-            name: 'coffee-preference',
-            type: 'preference',
-            updated: iso(-2 * DAY),
-            excerpt: 'Pour-over, medium roast, no sugar.',
-        },
-        {
-            path: '.daemon/memory/internship-project.md',
-            name: 'internship-project',
-            type: 'project',
-            updated: iso(-4 * DAY),
-            excerpt: 'Depends on housing being finalized before the start date.',
-        },
-        {
-            path: '.daemon/memory/2026-09-01.md',
-            name: '2026-09-01',
-            type: 'daily',
-            updated: iso(-6 * DAY),
-            excerpt: 'Reviewed the vault, merged two duplicate notes.',
-        },
-        {
-            path: '.daemon/memory/essay-notes.md',
-            name: 'essay-notes',
-            type: 'fact',
-            updated: iso(-10 * DAY),
-            excerpt: 'Religion and historical materialism — draft outline.',
-        },
-        {
-            path: '.daemon/memory/gcal-quirks.md',
-            name: 'gcal-quirks',
-            type: 'auto',
-            updated: iso(-20 * DAY),
-            excerpt: 'Google Calendar sync token expires after ~7 days idle.',
-        },
-    ]
-    return { total: items.length, items }
 }
 

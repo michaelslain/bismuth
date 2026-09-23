@@ -1,12 +1,12 @@
 // app/src/daemon/DaemonPage.tsx
 // The daemon page — "hub + one panel". Presentational only: DaemonPageHost fetches and derives,
-// this lays it out. A ViewBar on top — identity, a SegmentedToggle across the five facets
-// (inbox/crons/services/memory/log, each labelled with its own count), and the status readout
+// this lays it out. A ViewBar on top — identity, a SegmentedToggle across the four facets
+// (inbox/crons/services/log, each labelled with its own count), and the status readout
 // alone (the old cron/service COUNTS moved onto the facet labels, see daemonPageModel.ts's
 // facetCount). Below it, a two-column stage: DaemonHub (the face, its identity, its own chat) on
 // the left, whichever ONE panel the current facet names on the right — handed in as a slot
-// (`props.panel`) so this file never imports DaemonCrons/DaemonProcesses/DaemonMemory/
-// DaemonInbox/DaemonLog directly; the host picks the panel for the facet and wires its callbacks.
+// (`props.panel`) so this file never imports DaemonCrons/DaemonProcesses/DaemonInbox/
+// DaemonLog directly; the host picks the panel for the facet and wires its callbacks.
 //
 // Off (`enabled === false`): DaemonHub itself sleeps (no identity, no chat) and this file drops
 // the facet toggle and the panel entirely — there's nothing to facet over while the daemon is
@@ -29,7 +29,6 @@ export type DaemonFacetCounts = {
     due: number
     crons: number
     services: number
-    memory?: number
 }
 
 export type DaemonPageProps = {
@@ -47,7 +46,7 @@ export type DaemonPageProps = {
     onFacet: (f: DaemonFacet) => void
     counts: DaemonFacetCounts
     /** The current facet's panel — the host picks + wires it (DaemonCrons/DaemonProcesses/
-     *  DaemonMemory/DaemonInbox/DaemonLog). */
+     *  DaemonInbox/DaemonLog). */
     panel: JSX.Element
     /** The hub's own chat, rendered under the face/identity. Host passes <DaemonChat/>; stories
      *  a stub. Expected to fill the height it's given. */
@@ -65,7 +64,6 @@ const FACET_WORD: Record<DaemonFacet, string> = {
     inbox: 'inbox',
     crons: 'crons',
     services: 'services',
-    memory: 'memory',
     log: 'log',
 }
 

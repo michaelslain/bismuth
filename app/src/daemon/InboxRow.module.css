@@ -4,6 +4,7 @@
    actions both sit on it through subgrid, so the actions start exactly under the title with no
    magic indent. */
 .inbox-row {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: var(--sp-3);
@@ -12,7 +13,8 @@
     border-bottom: var(--rule);
     transition: background var(--dur-fast) var(--ease);
 }
-.inbox-row:hover {
+.inbox-row:hover,
+.inbox-row:focus-within {
     background: var(--hover-bg);
 }
 /* The real <button> that opens the page. PlainButton supplies the pointer cursor and the focus
@@ -51,9 +53,32 @@
 .inbox-row-failure {
     color: var(--danger);
 }
+/* Overlaid on the row's first line (over the age text) instead of a third line under it, so it
+   takes no space at rest and never pushes the rows below it down. `background: var(--bg)` is the
+   app's opaque canvas colour (never the translucent --hover-bg the row itself tints with) —
+   anything less than opaque would let the age digits ghost through underneath the buttons. */
 .inbox-row-actions {
-    grid-column: 2 / -1;
+    position: absolute;
+    top: var(--sp-3);
+    right: var(--sp-4);
     display: flex;
     flex-wrap: wrap;
+    justify-content: flex-end;
     gap: var(--sp-4);
+    padding-left: var(--sp-4);
+    background: var(--bg);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.inbox-row:hover .inbox-row-actions,
+.inbox-row:focus-within .inbox-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+@media (hover: none) {
+    .inbox-row-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }

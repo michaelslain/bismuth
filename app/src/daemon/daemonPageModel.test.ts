@@ -147,7 +147,6 @@ test('facet order', () => {
         'inbox',
         'crons',
         'services',
-        'memory',
         'log',
     ])
 })
@@ -155,28 +154,23 @@ test('facet order', () => {
 test('initial facet: anything due wins outright, else the remembered facet, else crons', () => {
     expect(initialFacet(3, 'log')).toBe('inbox')
     expect(initialFacet(0, null)).toBe('crons')
-    expect(initialFacet(0, 'memory')).toBe('memory')
+    expect(initialFacet(0, 'log')).toBe('log')
     expect(initialFacet(0, 'services')).toBe('services')
 })
 
 test('initial facet: an unrecognised remembered value falls back to crons, not the value itself', () => {
     expect(initialFacet(0, 'bogus')).toBe('crons')
+    // `memory` was a facet until the memory list was dropped — a window that remembered it opens on crons.
+    expect(initialFacet(0, 'memory')).toBe('crons')
     expect(initialFacet(0, '')).toBe('crons')
 })
 
 test('facet counts read the matching field, log has none', () => {
-    const c = { due: 3, crons: 4, services: 2, memory: 118 }
+    const c = { due: 3, crons: 4, services: 2 }
     expect(facetCount('inbox', c)).toBe(3)
     expect(facetCount('crons', c)).toBe(4)
     expect(facetCount('services', c)).toBe(2)
-    expect(facetCount('memory', c)).toBe(118)
     expect(facetCount('log', c)).toBeUndefined()
-})
-
-test('an unknown memory count (not yet fetched) is omitted, not zero', () => {
-    expect(
-        facetCount('memory', { due: 0, crons: 0, services: 0 }),
-    ).toBeUndefined()
 })
 
 test('bar readouts are the status alone now — counts moved onto the facet labels', () => {

@@ -86,12 +86,24 @@ const manyDue = (): DaemonPage[] => [
         },
     ]
 
+/** `[ approve all 3 ]` is hidden at rest and reveals only on the inbox panel's own :hover/
+ *  :focus-within — the same ladder DaemonPanel's own head actions use, but this button lives in
+ *  the "Needs review" section head inside the panel's body, not DaemonPanel's `actions` slot. */
 export const ManyDueWithApproveAll: Story = {
     render: () => (
         <div style={{ width: '360px', height: '480px' }}>
             <DaemonInbox pages={manyDue()} onOpen={() => {}} onChanged={() => {}} />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const button = canvas.getByRole('button', { name: /approve all 3/ })
+        await expect(button).toBeInTheDocument()
+        const actions = button.closest<HTMLElement>('[class*="inbox-section-actions"]')!
+        await expect(getComputedStyle(actions).opacity).toBe('0')
+        button.focus()
+        await waitFor(() => expect(getComputedStyle(actions).opacity).toBe('1'))
+    },
 }
 
 /** The first APPROVE ALL press only asks: the button becomes CANCEL + CONFIRM 3 with a note

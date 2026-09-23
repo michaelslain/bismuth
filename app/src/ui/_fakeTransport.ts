@@ -17,7 +17,6 @@ import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
     sampleDaemonSnapshot,
     sampleActivity,
-    sampleDaemonMemory,
 } from './_daemonFixtures'
 
 export interface FakeTransportSeed {
@@ -119,20 +118,6 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     sampleDaemonSnapshot()) as unknown as T
             if (pathname === '/daemon/logs')
                 return (seed.daemonLogs ?? sampleActivity()) as unknown as T
-            // The memory panel: filter the sample set by a `q` substring against name/excerpt,
-            // same shape as the real GET /daemon/memory (total is always the full sample count).
-            if (pathname === '/daemon/memory') {
-                const q = (params.get('q') ?? '').toLowerCase()
-                const all = sampleDaemonMemory()
-                const items = q
-                    ? all.items.filter(
-                          i =>
-                              i.name.toLowerCase().includes(q) ||
-                              i.excerpt.toLowerCase().includes(q),
-                      )
-                    : all.items
-                return { total: all.total, items } as unknown as T
-            }
             if (pathname === '/graph') {
                 return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T
             }

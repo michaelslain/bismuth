@@ -59,14 +59,13 @@ export function faceCaption(
 }
 
 /** The one panel the page shows at a time. */
-export type DaemonFacet = 'inbox' | 'crons' | 'services' | 'memory' | 'log'
+export type DaemonFacet = 'inbox' | 'crons' | 'services' | 'log'
 
 /** In the order the ViewBar's SegmentedToggle renders them. */
 export const DAEMON_FACETS: DaemonFacet[] = [
     'inbox',
     'crons',
     'services',
-    'memory',
     'log',
 ]
 
@@ -84,12 +83,12 @@ export function initialFacet(due: number, remembered: string | null): DaemonFace
     return 'crons'
 }
 
-/** The segment count for one facet's label — `undefined` when nothing is known yet (`memory`
- *  before its first fetch) or the facet has no natural count (`log`), which the label renders by
- *  omitting the count entirely rather than showing a false zero. */
+/** The segment count for one facet's label — `undefined` when the facet has no natural count
+ *  (`log`), which the label renders by omitting the count entirely rather than showing a false
+ *  zero. */
 export function facetCount(
     f: DaemonFacet,
-    c: { due: number; crons: number; services: number; memory?: number },
+    c: { due: number; crons: number; services: number },
 ): number | undefined {
     switch (f) {
         case 'inbox':
@@ -98,8 +97,6 @@ export function facetCount(
             return c.crons
         case 'services':
             return c.services
-        case 'memory':
-            return c.memory
         case 'log':
             return undefined
     }

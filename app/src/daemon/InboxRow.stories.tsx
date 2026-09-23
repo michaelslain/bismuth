@@ -7,7 +7,7 @@
 // button opens the row and that a press on a nested action button does NOT also open it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import InboxRow from './InboxRow'
 import styles from './InboxRow.module.css'
 import { sampleDaemonPages } from '../ui/_daemonFixtures'
@@ -43,12 +43,18 @@ export const Pending: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(pending.title)).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'submit' }),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'dismiss' }),
-        ).toBeInTheDocument()
+        const submitBtn = canvas.getByRole('button', { name: 'submit' })
+        const dismissBtn = canvas.getByRole('button', { name: 'dismiss' })
+        await expect(submitBtn).toBeInTheDocument()
+        await expect(dismissBtn).toBeInTheDocument()
+        // Overlaid on the row's first line, hidden and out of the flow at rest — no third-line
+        // gap — until the row is hovered or a control inside it is focused.
+        const actionsBox = canvasElement.querySelector<HTMLElement>(
+            `.${styles['inbox-row-actions']}`,
+        )!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        submitBtn.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }
 

@@ -36,6 +36,8 @@ export type DaemonRowProps = {
     dim?: boolean
     /** Trailing slot ('[ run ]', or '[ delete ] [ cancel ]' while confirming). */
     actions?: JSX.Element
+    /** The row is mid inline-delete-confirm — keeps `actions` visible even off hover/focus. */
+    confirming?: boolean
     onOpen?: () => void
     onContextMenu?: (e: MouseEvent) => void
     class?: string
@@ -51,6 +53,7 @@ function DaemonRow(props: DaemonRowProps) {
         <div
             class={`${styles.row} ${props.class ?? ''}`}
             classList={{ [styles.dim]: props.dim }}
+            data-confirming={props.confirming ? '' : undefined}
             tabIndex={props.onOpen ? 0 : undefined}
             role={props.onOpen ? 'button' : undefined}
             onClick={open}

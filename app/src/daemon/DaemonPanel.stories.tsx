@@ -3,7 +3,7 @@
 // appears only when it has a title or actions. No border box, no eyebrow — the ViewBar facet is
 // the panel's heading now.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import DaemonPanel from './DaemonPanel'
 import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
@@ -81,6 +81,11 @@ export const WithActions: Story = {
         const canvas = within(canvasElement)
         const button = canvas.getByRole('button', { name: 'approve all' })
         await expect(button).toBeInTheDocument()
+        // Hidden at rest — opacity, so the button stays a real tab stop even while invisible.
+        const actions = byModuleClass(canvasElement, 'daemon-panel-actions')!
+        await expect(getComputedStyle(actions).opacity).toBe('0')
+        button.focus()
+        await waitFor(() => expect(getComputedStyle(actions).opacity).toBe('1'))
         // The head row exists because of `actions` alone — there is no title here.
         const head = byModuleClass(canvasElement, 'daemon-panel-head')
         await expect(head?.contains(button)).toBe(true)

@@ -17,10 +17,25 @@
     opacity: 0.65;
     font-weight: 400;
 }
+/* `[ approve all ]` — a marker class on DaemonPanel's own root (passed through its `class` prop,
+   never DaemonPanel.module.css reached directly: that stays a one-importer stylesheet) so the
+   whole inbox panel's hover/focus-within can gate this button the same way DaemonPanel gates its
+   own head actions. */
 .inbox-section-actions {
     display: flex;
     gap: var(--sp-4);
     margin-left: auto;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.inbox-panel:hover .inbox-section-actions,
+.inbox-panel:focus-within .inbox-section-actions {
+    opacity: 1;
+}
+@media (hover: none) {
+    .inbox-section-actions {
+        opacity: 1;
+    }
 }
 .inbox-section-toggle {
     margin-left: auto;

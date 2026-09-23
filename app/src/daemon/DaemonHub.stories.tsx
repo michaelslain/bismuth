@@ -69,12 +69,14 @@ export const Resting: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('daemon')).toBeInTheDocument()
-        await expect(
-            canvas.getByText(/keeps a living model/),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'edit' }),
-        ).toBeInTheDocument()
+        // At rest the hub shows ONLY the face + name — the blurb + [ edit ] live in a card
+        // hidden until the name is hovered/focused (see DaemonIdentity.stories.tsx for that
+        // reveal in isolation).
+        const card = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-identity-card"]',
+        )!
+        await expect(getComputedStyle(card).visibility).toBe('hidden')
+        await expect(getComputedStyle(card).opacity).toBe('0')
         const face = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-face"]',
         )!
@@ -82,6 +84,41 @@ export const Resting: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeGreaterThan(26)
+    },
+}
+
+/** Focusing the name reveals the card holding the blurb + [ edit ] — nothing else in the column
+ *  moves, since the card is absolutely positioned over whatever sits below it. */
+export const IdentityFocused: Story = {
+    render: () => (
+        <Frame>
+            <DaemonHub
+                name="daemon"
+                blurb="keeps a living model of the vault + reviews it every few hours"
+                mood="idle"
+                enabled
+                conversing={false}
+                chatFills={false}
+                chat={<ChatStub />}
+                onEditIdentity={noop}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const name = canvas.getByRole('button', { name: 'daemon' })
+        name.focus()
+        const card = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-identity-card"]',
+        )!
+        await expect(getComputedStyle(card).visibility).toBe('visible')
+        await expect(getComputedStyle(card).opacity).toBe('1')
+        await expect(
+            canvas.getByText(/keeps a living model/),
+        ).toBeInTheDocument()
+        await expect(
+            canvas.getByRole('button', { name: 'edit' }),
+        ).toBeInTheDocument()
     },
 }
 
@@ -146,13 +183,20 @@ export const NoBlurb: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('daemon')).toBeInTheDocument()
+        // [ edit ] is not in the accessibility tree at rest — it lives inside the hidden card.
+        await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
+        // Focusing the name still reveals the card, holding just [ edit ] (empty blurb).
+        canvas.getByRole('button', { name: 'daemon' }).focus()
         await expect(
             canvas.getByRole('button', { name: 'edit' }),
         ).toBeInTheDocument()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-identity-blurb"]'),
+        ).toBeNull()
     },
 }
 
-/** A blurb longer than the column ellipsizes to one line instead of wrapping or overflowing. */
+/** A blurb longer than the card's 40ch cap wraps across lines instead of overflowing. */
 export const LongBlurb: Story = {
     render: () => (
         <Frame>
@@ -169,11 +213,14 @@ export const LongBlurb: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        canvas.getByRole('button', { name: 'daemon' }).focus()
         const blurb = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-hub-blurb"]',
+            '[data-testid="daemon-identity-blurb"]',
         )
         await expect(blurb).not.toBeNull()
-        await expect(blurb!.scrollWidth).toBeGreaterThan(blurb!.clientWidth)
+        const lineHeight = parseFloat(getComputedStyle(blurb!).lineHeight)
+        await expect(blurb!.scrollHeight).toBeGreaterThan(lineHeight * 1.5)
     },
 }
 

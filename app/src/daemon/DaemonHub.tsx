@@ -1,22 +1,23 @@
 // app/src/daemon/DaemonHub.tsx
-// The daemon page's left column — the hub: the living face, the daemon's name + one-line
-// personality blurb, an `[ edit ]` bracket button to its identity note, and its own chat
-// underneath. Presentational: the host derives mood/blurb and owns the chat session; this only
-// lays the column out.
+// The daemon page's left column — the hub: the living face, the daemon's name (a DaemonIdentity
+// trigger hiding its blurb + `[ edit ]` behind hover/focus), and its own chat underneath.
+// Presentational: the host derives mood/blurb and owns the chat session; this only lays the
+// column out.
 //
-// Resting, the identity block sits centred under the full-size face. Once the chat has taken the
-// column (conversing, or a full-height pane like chat history — see `chatFills`), the face
-// collapses to DaemonFace's own `compact` one-line-header form and the identity shrinks to just
-// the name, riding beside it — the blurb and `[ edit ]` drop out, there's no room for them next
-// to a one-line header and nothing productive they'd do there.
+// Resting, DaemonIdentity sits centred under the full-size face, showing only the name — its
+// blurb + `[ edit ]` card stays hidden until hovered or focused (see DaemonIdentity.tsx). Once the
+// chat has taken the column (conversing, or a full-height pane like chat history — see
+// `chatFills`), the face collapses to DaemonFace's own `compact` one-line-header form and the
+// identity shrinks to a bare name riding beside it — no hover card, there's no room for it next
+// to a one-line header.
 //
 // Off (`enabled === false`): no identity, no chat — DaemonFace stays asleep and the caller
 // (DaemonPage) is the one that decides what replaces this column's usual content.
 import { Show, type JSX } from 'solid-js'
 import Text from '../ui/Text'
-import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
 import DaemonFace from './DaemonFace'
+import DaemonIdentity from './DaemonIdentity'
 import type { DaemonMood } from './daemonFaceModel'
 import styles from './DaemonHub.module.css'
 
@@ -45,34 +46,24 @@ export type DaemonHubProps = {
 function DaemonHub(props: DaemonHubProps) {
     const compact = () => props.chatFills
 
+    // Compact (conversing / chatFills): keep today's one-line-header behaviour — name only, no
+    // hover card, there's no room next to a one-line header for either. Resting: the name is a
+    // DaemonIdentity trigger, whose blurb + [ edit ] live in a card hidden until hovered/focused.
     const identity = () => (
-        <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            class={styles.identity}
-            classList={{ [styles.identityCompact]: compact() }}
-        >
-            <Text as="span" size="ui" tone="default" class={styles.name}>
-                {props.name}
-            </Text>
-            <Show when={!compact() && props.blurb}>
-                <Text
-                    as="span"
-                    size="ui"
-                    tone="muted"
-                    class={styles.blurb}
-                    data-testid="daemon-hub-blurb"
-                >
-                    {props.blurb}
+        <Show
+            when={!compact()}
+            fallback={
+                <Text as="span" size="ui" tone="default" class={styles.name}>
+                    {props.name}
                 </Text>
-            </Show>
-            <Show when={!compact()}>
-                <TextButton onClick={props.onEditIdentity} class={styles.edit}>
-                    edit
-                </TextButton>
-            </Show>
-        </Text>
+            }
+        >
+            <DaemonIdentity
+                name={props.name}
+                blurb={props.blurb}
+                onEdit={props.onEditIdentity}
+            />
+        </Show>
     )
 
     return (

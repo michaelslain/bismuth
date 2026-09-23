@@ -111,7 +111,7 @@ function DaemonInbox(props: DaemonInboxProps) {
             // the crons/services panels." DaemonPanel's own `packToContent` (DaemonPanel.tsx) —
             // sizes to its rows instead of stretching to fill the grid cell.
             packToContent
-            class={props.class}
+            class={`${styles['inbox-panel']} ${props.class ?? ''}`}
         >
             <Show
                 when={

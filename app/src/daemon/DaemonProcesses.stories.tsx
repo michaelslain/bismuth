@@ -35,6 +35,8 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('on')).toBeInTheDocument()
+        // DaemonProcesses rows have no `[ run ]`, but a row's actions cell is still the same
+        // DaemonRow.tsx primitive — no reveal to test without an `actions` prop supplied.
     },
 }
 
@@ -86,9 +88,13 @@ export const Creating: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(
-            canvas.getByRole('button', { name: 'new service' }),
-        )
+        const newServiceBtn = canvas.getByRole('button', { name: 'new service' })
+        // The panel head's own actions are hidden at rest too.
+        const actions = canvasElement.querySelector<HTMLElement>(
+            '[class*="daemon-panel-actions"]',
+        )!
+        await expect(getComputedStyle(actions).opacity).toBe('0')
+        await userEvent.click(newServiceBtn)
         await expect(
             canvas.getByRole('textbox', { name: 'new service name' }),
         ).toBeInTheDocument()
@@ -152,12 +158,14 @@ export const ConfirmDelete: Story = {
         })
         const menuDelete = await waitFor(() => body.getByText('Delete'))
         await userEvent.click(menuDelete)
-        await expect(
-            canvas.getByRole('button', { name: 'delete' }),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'cancel' }),
-        ).toBeInTheDocument()
+        const deleteBtn = canvas.getByRole('button', { name: 'delete' })
+        const cancelBtn = canvas.getByRole('button', { name: 'cancel' })
+        await expect(deleteBtn).toBeInTheDocument()
+        await expect(cancelBtn).toBeInTheDocument()
+        // The exception: a row mid inline-delete-confirm keeps its actions visible, no hover
+        // or focus needed — DaemonRow's `data-confirming`.
+        const actionsBox = deleteBtn.closest<HTMLElement>('[class*="actions"]')!
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }
 

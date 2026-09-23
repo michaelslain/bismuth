@@ -449,7 +449,7 @@ test('GET /chat/sessions, GET /chat/session-messages, POST /chat/search are owne
     }
 })
 
-test('POST /daemon/memory/forget, /daemon/cron/delete, /daemon/process/delete are owner-only', async () => {
+test('POST /daemon/cron/delete and /daemon/process/delete are owner-only', async () => {
     const { vault } = await makeSampleVault()
     const server = createServer({ vault, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -462,18 +462,17 @@ test('POST /daemon/memory/forget, /daemon/cron/delete, /daemon/process/delete ar
                 body: JSON.stringify(body),
             })
 
-        expect((await post('/daemon/memory/forget', { path: '.daemon/memory/x.md' })).status).toBe(403)
+        expect((await post('/daemon/cron/delete', { name: 'nope' })).status).toBe(403)
         expect(
             (
                 await post(
-                    '/daemon/memory/forget',
-                    { path: '.daemon/memory/x.md' },
+                    '/daemon/cron/delete',
+                    { name: 'nope' },
                     { 'X-Bismuth-Token': token },
                 )
             ).status,
         ).not.toBe(403)
 
-        expect((await post('/daemon/cron/delete', { name: 'nope' })).status).toBe(403)
         expect((await post('/daemon/process/delete', { name: 'nope' })).status).toBe(403)
     } finally {
         server.stop(true)

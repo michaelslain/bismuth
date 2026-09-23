@@ -3,7 +3,7 @@
 // real tracks to inherit and the alignment claim is actually demonstrable, not just a single row
 // floating with no shared columns to prove.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { For } from 'solid-js'
 import DaemonRow, { type DaemonRowProps } from './DaemonRow'
 import { TextButton } from '../ui/TextButton'
@@ -186,7 +186,9 @@ export const WithMeta: Story = {
     ),
 }
 
-/** A trailing action in the row's last column — `[ run ]`, the crons list's default action. */
+/** A trailing action in the row's last column — `[ run ]`, the crons list's default action.
+ *  Hidden at rest and revealed by :hover/:focus-within — opacity, not visibility, so it stays a
+ *  real tab stop the whole time. */
 export const WithActions: Story = {
     render: () => (
         <List
@@ -204,8 +206,39 @@ export const WithActions: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(
-            canvas.getByRole('button', { name: 'run' }),
-        ).toBeInTheDocument()
+        const button = canvas.getByRole('button', { name: 'run' })
+        await expect(button).toBeInTheDocument()
+        const actionsBox = canvasElement.querySelector<HTMLElement>('[class*="actions"]')!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        // Tabbing straight to the button (as a keyboard user would) reveals it via :focus-within.
+        button.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+    },
+}
+
+/** Focusing the ROW ITSELF (not a control inside it) also reveals its actions — :focus-within
+ *  fires from the host element being focused too, not only from a focused descendant, so tabbing
+ *  onto the row before its buttons still shows what's about to be reachable. */
+export const ActionsRevealOnRowFocus: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'morning-brief',
+                    tone: 'ok',
+                    status: 'ok 4m ago',
+                    meta: 'daily',
+                    onOpen: () => {},
+                    actions: <TextButton onClick={() => {}}>run</TextButton>,
+                },
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const actionsBox = canvasElement.querySelector<HTMLElement>('[class*="actions"]')!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        const row = canvasElement.querySelector<HTMLElement>('[tabindex="0"]')!
+        row.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }

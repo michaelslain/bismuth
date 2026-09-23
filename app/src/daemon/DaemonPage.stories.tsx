@@ -1,11 +1,11 @@
 // Visual spec for <DaemonPage> — the daemon's own page, "hub + one panel": a ViewBar carrying the
-// facet toggle (inbox/crons/services/memory/log, each with its own count) and the status readout
+// facet toggle (inbox/crons/services/log, each with its own count) and the status readout
 // alone, then a two-column stage — DaemonHub (the face, its identity, its own chat) on the left,
 // whichever ONE panel the current facet names on the right.
 //
 // DaemonPage is presentational, so every story feeds it fixtures + a stand-in `panel` (a plain
 // block naming the facet — the real panels' own looks are DaemonCrons/DaemonProcesses/
-// DaemonMemory/DaemonInbox/DaemonLog's own stories, not this layout story's concern) and a local
+// DaemonInbox/DaemonLog's own stories, not this layout story's concern) and a local
 // `ChatStub` standing in for the hub's own chat: the REAL `chat/ChatComposerBar.tsx` +
 // `chat/ChatControls.tsx` driven by a stub session (`chat/_stubChatSession.ts`), so a layout story
 // shows the shipped composer/controls look — never a hand-drawn mono placeholder — plus a plain
@@ -30,12 +30,10 @@ import ChatControls from '../chat/ChatControls'
 import { makeStubChatSession } from '../chat/_stubChatSession'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
-import DaemonMemory from './DaemonMemory'
 import DaemonInbox from './DaemonInbox'
 import DaemonLog from './DaemonLog'
 import {
     sampleDaemonSnapshot,
-    sampleDaemonMemory,
     sampleDaemonPages,
     sampleActivity,
 } from '../ui/_daemonFixtures'
@@ -107,15 +105,6 @@ const servicesPanel = (
         onToggle={noop}
         onCreate={async () => {}}
         onDelete={async () => {}}
-    />
-)
-const memoryPanel = (
-    <DaemonMemory
-        items={sampleDaemonMemory().items}
-        query=""
-        onQuery={noop}
-        onOpen={noop}
-        onForget={async () => {}}
     />
 )
 const inboxPanel = (
@@ -206,7 +195,6 @@ const DEFAULT_COUNTS: DaemonFacetCounts = {
     due: 0,
     crons: 4,
     services: 2,
-    memory: 118,
 }
 
 function pageProps(
@@ -352,19 +340,6 @@ export const AwakeServices: Story = {
             <DaemonPage
                 {...pageProps('idle', 'services', 'watching // last: dream 4m ago', {
                     panel: servicesPanel,
-                })}
-            />
-        </Frame>
-    ),
-    play: ({ canvasElement }) => assertLayout(canvasElement, { chat: true }),
-}
-
-export const AwakeMemory: Story = {
-    render: () => (
-        <Frame>
-            <DaemonPage
-                {...pageProps('idle', 'memory', 'watching // last: dream 4m ago', {
-                    panel: memoryPanel,
                 })}
             />
         </Frame>

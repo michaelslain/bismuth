@@ -125,7 +125,6 @@ import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
-import type { DaemonMemoryList } from '../../core/src/daemonMemory'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
 import type { MigrationReport } from '../../core/src/taskMigrateRun'
@@ -444,17 +443,6 @@ export const api = {
         post('/daemon/cron/delete', { name }).then(() => {}),
     deleteProcess: (name: string) =>
         post('/daemon/process/delete', { name }).then(() => {}),
-    // The daemon page's memory panel: list (no `q`) or search (`q`) this vault's 3rd-brain
-    // notes. `total` is always the full visible count, independent of `q`/`limit`.
-    daemonMemory: (q?: { q?: string; limit?: number }) => {
-        const params = new URLSearchParams()
-        if (q?.q) params.set('q', q.q)
-        if (q?.limit !== undefined) params.set('limit', String(q.limit))
-        const qs = params.toString()
-        return getJson<DaemonMemoryList>(`/daemon/memory${qs ? `?${qs}` : ''}`)
-    },
-    forgetMemory: (path: string) =>
-        post('/daemon/memory/forget', { path }).then(() => {}),
     graphViews: () =>
         getJson<{ second: ViewLayout; third: ViewLayout }>('/graph/views'),
     tree: () => getJson<TreeEntry[]>('/tree'),

@@ -80,10 +80,26 @@
     color: var(--faint);
 }
 
+/* Hidden at rest, revealed on row hover/focus-within (or mid inline-confirm) — opacity, never
+   `visibility`/`display`, so the row's actions column keeps its reserved grid track (no layout
+   shift) and a tabbed-to button stays in tab order even while invisible. */
 .actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--sp-3);
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.row:hover .actions,
+.row:focus-within .actions,
+.row[data-confirming] .actions {
+    opacity: 1;
+}
+/* No hover on touch — actions stay visible as before. */
+@media (hover: none) {
+    .actions {
+        opacity: 1;
+    }
 }

@@ -203,6 +203,7 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                                     }
                                     onContextMenu={e => openMenu(process, e)}
                                     actions={rowActions(process)}
+                                    confirming={deletingName() === process.name}
                                 />
                             )}
                         </For>

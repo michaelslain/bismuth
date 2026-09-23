@@ -47,43 +47,11 @@
     min-height: 0;
 }
 
-/* The identity block, passed to DaemonFace as its `caption` slot — DaemonFace centres it under
-   the (resting) face or sits it beside the compact one-line glyph; this file only shapes what's
-   INSIDE that slot. */
-.identity {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--sp-2);
-    /* `width: 100%`, not just `max-width` — `.faceRegion`'s own `align-items: center` otherwise
-       shrink-wraps this to its content, so the blurb's `max-width: 100%` below would resolve
-       against an ever-growing box and never actually clip. */
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-}
-
-.identityCompact {
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--sp-3);
-    max-width: none;
-}
-
+/* The compact (chatFills) one-line-header form's bare name, passed to DaemonFace as its `caption`
+   slot beside the small glyph. Resting, DaemonIdentity.tsx owns the whole slot and its own
+   layout instead — see that file. */
 .name {
     white-space: nowrap;
-}
-
-.blurb {
-    max-width: 100%;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.edit {
-    margin-top: var(--sp-1);
 }
 
 /* Off (`enabled === false`): the face sleeps alone with how to wake it — no identity, no chat. */

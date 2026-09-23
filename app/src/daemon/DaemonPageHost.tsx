@@ -2,9 +2,9 @@
 // The daemon page's container (routed by PaneContent for DAEMON_TAB). It owns everything
 // DaemonPage/DaemonHub deliberately do not: polling the snapshot + activity log, reading the
 // shared inbox store App already polls, deriving the face's mood/caption/facet-counts, which
-// facet is showing (remembered per window in localStorage), the debounced memory search, wiring
-// every panel's callbacks to `api` with a toast on failure, and looking up the daemon's chat
-// session (if any) to hand DaemonHub as its `chat` slot.
+// facet is showing (remembered per window in localStorage), wiring every panel's callbacks to
+// `api` with a toast on failure, and looking up the daemon's chat session (if any) to hand
+// DaemonHub as its `chat` slot.
 //
 // The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin
 // lands on the composer, `chatSession(DAEMON_CHAT_ID)` is undefined and DaemonChat renders its
@@ -13,7 +13,6 @@
 //
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
-// The memory facet's search is debounced ~200ms and only fetches while that facet is showing.
 import { createEffect, createMemo, createSignal, Match, onCleanup, Switch } from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
@@ -36,7 +35,6 @@ import DaemonChat from './DaemonChat'
 import DaemonInbox from './DaemonInbox'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
-import DaemonMemory, { type MemoryListItem } from './DaemonMemory'
 import DaemonLog from './DaemonLog'
 import { deriveMood } from './daemonFaceModel'
 import {
@@ -60,8 +58,6 @@ export type DaemonPageHostProps = {
 const SNAPSHOT_POLL_MS = 4000
 const LOGS_POLL_MS = 5000
 const LOG_LIMIT = 60
-const MEMORY_LIMIT = 60
-const MEMORY_DEBOUNCE_MS = 200
 
 /** Before the first snapshot lands: nothing configured, not (yet) known to be running. */
 const NO_SNAPSHOT: DaemonSnapshot = {
@@ -164,43 +160,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         writeRememberedFacet(f)
     }
 
-    // ── Memory: debounced search, fetched only while its facet is showing ──────────────────
-    const [memoryQuery, setMemoryQuery] = createSignal('')
-    const [memoryItems, setMemoryItems] = createSignal<MemoryListItem[]>([])
-    const [memoryTotal, setMemoryTotal] = createSignal<number | undefined>(
-        undefined,
-    )
-    const [memoryLoading, setMemoryLoading] = createSignal(false)
-
-    // A newer query's response can land before an older one's — guard on `memoryQuery()` still
-    // matching `q` before applying the result (or clearing `loading`), so a stale response never
-    // overwrites what a later keystroke already asked for.
-    const fetchMemory = async (q: string) => {
-        setMemoryLoading(true)
-        try {
-            const res = await api.daemonMemory({
-                q: q || undefined,
-                limit: MEMORY_LIMIT,
-            })
-            if (memoryQuery() !== q) return
-            setMemoryItems(res.items)
-            setMemoryTotal(res.total)
-        } catch {
-            /* keep the previous list */
-        } finally {
-            if (memoryQuery() === q) setMemoryLoading(false)
-        }
-    }
-
-    createEffect(() => {
-        if (!enabled() || facet() !== 'memory') return
-        const q = memoryQuery()
-        const id = setTimeout(() => {
-            if (!isHidden()) void fetchMemory(q)
-        }, MEMORY_DEBOUNCE_MS)
-        onCleanup(() => clearTimeout(id))
-    })
-
     const mood = createMemo(() => {
         const snap = snapshot()
         return deriveMood({
@@ -285,14 +244,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             pushToast((e as Error).message || "couldn't delete the service")
         }
     }
-    const onForgetMemory = async (path: string): Promise<void> => {
-        try {
-            await api.forgetMemory(path)
-            await fetchMemory(memoryQuery())
-        } catch (e) {
-            pushToast((e as Error).message || "couldn't forget")
-        }
-    }
     const onEditIdentity = () => props.onOpen('.daemon/identity.md')
 
     return (
@@ -310,7 +261,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     due: dueCount(),
                     crons: snapshot().crons.length,
                     services: snapshot().processes.length,
-                    memory: memoryTotal(),
                 }}
                 panel={
                     <Switch>
@@ -344,16 +294,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 }
                                 onCreate={onCreateProcess}
                                 onDelete={onDeleteProcess}
-                            />
-                        </Match>
-                        <Match when={facet() === 'memory'}>
-                            <DaemonMemory
-                                items={memoryItems()}
-                                query={memoryQuery()}
-                                onQuery={setMemoryQuery}
-                                loading={memoryLoading()}
-                                onOpen={props.onOpen}
-                                onForget={onForgetMemory}
                             />
                         </Match>
                         <Match when={facet() === 'log'}>

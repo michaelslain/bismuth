@@ -185,7 +185,6 @@ import {
     registerVaultRoot,
 } from './daemon'
 import { daemonSnapshot } from './daemonGraph'
-import { listDaemonMemory, forgetDaemonMemory } from './daemonMemory'
 import { readActivity } from './daemonActivity'
 import {
     listDaemonPages,
@@ -1985,24 +1984,6 @@ export function createServer(cfg: CoreConfig) {
         // NOT vault mutations, so they live in the READ routes (like POST /open-folder),
         // never through mutatingHandler. installStatus() never throws; runSetup() is
         // adopt-only (it does nothing when the daemon is already installed/running).
-        // This vault's daemon-visible 3rd-brain notes for the daemon page's memory panel — the
-        // server's OWN memory dir (`effectiveMemoryDir()`, the same one it passes the engine:
-        // <vault>/.daemon/memory when the daemon is enabled, else there is no 3rd brain at all).
-        // `?q=` searches by relevance instead of listing by recency; `limit` defaults to 50,
-        // capped at 500. Degrades to `{ total: 0, items: [] }` — both when the daemon is
-        // disabled and on any underlying read failure (listDaemonMemory never throws).
-        'GET /daemon/memory': async (_, url) => {
-            const memDir = effectiveMemoryDir()
-            if (!memDir) return ok({ total: 0, items: [] })
-            const q = url.searchParams.get('q') ?? ''
-            const rawLimit = Number(url.searchParams.get('limit'))
-            const limit =
-                Number.isFinite(rawLimit) && rawLimit > 0
-                    ? Math.min(rawLimit, 500)
-                    : 50
-            return ok(await listDaemonMemory(memDir, q, limit))
-        },
-
         'GET /daemon/install': async (_, __) => {
             return ok(await installStatus())
         },
@@ -2122,21 +2103,6 @@ export function createServer(cfg: CoreConfig) {
             const { name } = (await req.json()) as { name?: string }
             if (typeof name !== 'string' || !name) return error('missing name', 400)
             deleteProcess(name, vaultDaemonDir(cfg.vault))
-            return ok({ ok: true })
-        },
-
-        // Forget a memory note by its VAULT-relative path (as returned by GET /daemon/memory).
-        // Uses the server's own memory dir — 404 when the daemon is disabled (no 3rd brain to
-        // forget from), same status a genuinely-unknown note gets. Path traversal is rejected
-        // by forgetDaemonMemory itself before it ever reaches the filesystem.
-        // Owner-gated: CORS is `*`, so any local page could otherwise forget memory.
-        'POST /daemon/memory/forget': async req => {
-            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
-            const { path } = (await req.json()) as { path?: string }
-            if (typeof path !== 'string' || !path) return error('missing path', 400)
-            const memDir = effectiveMemoryDir()
-            if (!memDir) return error('daemon disabled', 404)
-            await forgetDaemonMemory(memDir, path)
             return ok({ ok: true })
         },
 

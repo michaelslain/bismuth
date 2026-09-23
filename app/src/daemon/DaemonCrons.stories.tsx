@@ -36,6 +36,12 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('morning-brief')).toBeInTheDocument()
+        // `[ run ]` is hidden at rest and reveals on that row's own :focus-within.
+        const row = canvasElement.querySelector<HTMLElement>('[tabindex="0"]')!
+        const actionsBox = row.querySelector<HTMLElement>('[class*="actions"]')!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        row.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }
 
@@ -164,7 +170,13 @@ export const Creating: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByRole('button', { name: 'new cron' }))
+        const newCronBtn = canvas.getByRole('button', { name: 'new cron' })
+        // The panel head's own actions are hidden at rest too.
+        const actions = canvasElement.querySelector<HTMLElement>(
+            '[class*="daemon-panel-actions"]',
+        )!
+        await expect(getComputedStyle(actions).opacity).toBe('0')
+        await userEvent.click(newCronBtn)
         await expect(
             canvas.getByRole('textbox', { name: 'new cron name' }),
         ).toBeInTheDocument()
@@ -238,12 +250,14 @@ export const ConfirmDelete: Story = {
         })
         const menuDelete = await waitFor(() => body.getByText('Delete'))
         await userEvent.click(menuDelete)
-        await expect(
-            canvas.getByRole('button', { name: 'delete' }),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'cancel' }),
-        ).toBeInTheDocument()
+        const deleteBtn = canvas.getByRole('button', { name: 'delete' })
+        const cancelBtn = canvas.getByRole('button', { name: 'cancel' })
+        await expect(deleteBtn).toBeInTheDocument()
+        await expect(cancelBtn).toBeInTheDocument()
+        // The exception: a row mid inline-delete-confirm keeps its actions visible, no hover
+        // or focus needed — DaemonRow's `data-confirming`.
+        const actionsBox = deleteBtn.closest<HTMLElement>('[class*="actions"]')!
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }
 

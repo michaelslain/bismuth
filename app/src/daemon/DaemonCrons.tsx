@@ -245,6 +245,7 @@ function DaemonCrons(props: DaemonCronsProps) {
                                     }
                                     onContextMenu={e => openMenu(cron, e)}
                                     actions={rowActions(cron)}
+                                    confirming={deletingName() === cron.name}
                                 />
                             )}
                         </For>
