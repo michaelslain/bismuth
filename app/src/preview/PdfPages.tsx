@@ -20,7 +20,7 @@
 // and `controller` hands out `scrollToPage` once the scroll element exists. `marginRatio` adds
 // drawable margin paper to the right of every page (pageLayout.ts has the geometry).
 //
-// PAGE FRAME: the stack sits on the scroll element's own `--surface-2` desk with a `pad`-px
+// PAGE FRAME: the stack sits on the scroll element's own `--editor` desk with a `pad`-px
 // gutter on every side (pageLayout.ts's new `pad` parameter), so the desk stays visible around
 // the page even at fit width. `pad` is read ONCE, from `--sp-6`'s resolved computed value on the
 // scroll element itself (falling back to `16` if that ever fails to parse) — never a hand-typed
