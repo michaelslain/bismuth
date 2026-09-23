@@ -317,12 +317,12 @@ export function EventModal(props: { store: EventStore }) {
                     </SettingsField>
 
                     {/* description — live-preview markdown, editable exactly like the note editor */}
-                    <SettingsField label="description" hint="markdown">
+                    <SettingsField label="description">
                         <MarkdownField
                             class={styles.mdedit}
                             value={description()}
                             onInput={setDescription}
-                            placeholder="notes, agenda, links to vault… (markdown)"
+                            placeholder="markdown"
                         />
                     </SettingsField>
 

@@ -166,38 +166,37 @@ export function GcalConnectModal(props: {
                         fallback={
                             <>
                                 <Text size="ui" tone="faint">
-                                    two-way sync requests a single scope —{' '}
-                                    <code>calendar.events</code> (view &amp;
-                                    edit events only) — it can't read your
-                                    gmail, drive, or contacts. create an oauth{' '}
-                                    <strong>desktop app</strong> client in
-                                    google cloud console and paste its
-                                    credentials below; they're stored outside
-                                    your vault, never in git
+                                    events only — never gmail, drive or
+                                    contacts
                                 </Text>
-                                <SettingsGrid>
-                                    <SettingsField label="client id">
-                                        <TextInput
-                                            placeholder="…apps.googleusercontent.com"
-                                            value={clientId()}
-                                            onInput={setClientId}
-                                            spellcheck={false}
-                                            autocapitalize="off"
-                                            autocorrect="off"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label="client secret">
-                                        <TextInput
-                                            type="password"
-                                            placeholder="client secret"
-                                            value={clientSecret()}
-                                            onInput={setClientSecret}
-                                            spellcheck={false}
-                                            autocapitalize="off"
-                                            autocorrect="off"
-                                        />
-                                    </SettingsField>
-                                </SettingsGrid>
+                                <Show when={status()?.needsCredentials ?? true}>
+                                    <SettingsGrid>
+                                        <SettingsField
+                                            label="client id"
+                                            hint="a google cloud desktop-app client"
+                                        >
+                                            <TextInput
+                                                placeholder="…apps.googleusercontent.com"
+                                                value={clientId()}
+                                                onInput={setClientId}
+                                                spellcheck={false}
+                                                autocapitalize="off"
+                                                autocorrect="off"
+                                            />
+                                        </SettingsField>
+                                        <SettingsField label="client secret">
+                                            <TextInput
+                                                type="password"
+                                                placeholder="client secret"
+                                                value={clientSecret()}
+                                                onInput={setClientSecret}
+                                                spellcheck={false}
+                                                autocapitalize="off"
+                                                autocorrect="off"
+                                            />
+                                        </SettingsField>
+                                    </SettingsGrid>
+                                </Show>
                             </>
                         }
                     >
@@ -228,7 +227,7 @@ export function GcalConnectModal(props: {
                             onClick={connect}
                             disabled={loading() || busy()}
                         >
-                            {busy() ? 'connecting…' : 'connect'}
+                            {busy() ? 'waiting for google…' : 'sign in with google'}
                         </TextButton>
                     }
                 >

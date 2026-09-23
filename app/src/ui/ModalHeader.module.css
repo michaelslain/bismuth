@@ -76,12 +76,9 @@
 .close {
     flex: 0 0 auto;
 }
-/* Container-scoped size override on IconButton's own global `.btn--icon` class — the same pattern
-   Sidebar/TabRail/TopStrip already use to fit a button inside a band shorter than --h-control (see
-   Button.module.css's header comment). Not a reach into another component's stylesheet: this is
-   ModalHeader shrinking a child IT renders to fit the row it owns. */
-/* design-system-ignore globalReach: container-scoped size override on IconButton's own global .btn--icon, shrinking the close control to fit the --row-h header this component owns — same pattern as Sidebar/TabRail/TopStrip */
-.modal-head :global(.btn--icon) {
+/* The close is a TextButton (`[x]`, a letter, not an icon), whose own height is --h-control; the
+   header row is --row-h, so the close is sized to the row it sits in. Scoped through this
+   component's own `.close` class on the element it renders — no reach into Button's globals. */
+.modal-head .close {
     height: var(--row-h);
-    min-width: var(--row-h);
 }
