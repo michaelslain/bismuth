@@ -170,7 +170,8 @@ function PageInk(props: PageInkProps) {
     // the dark bucket here would pick the dark theme's light-coloured ink, nearly invisible on a
     // white page (fix 1). So the page proper is treated as paper: light bucket, always —
     // independent of the app's own live appearance. The STRIP beside it is a different surface
-    // (ScratchPaper: the note editor's own `--editor` ground) and resolves ink like NOTE ink does
+    // (ScratchPaper: the raised `--surface-1` note surface, one step above the `--editor` desk)
+    // and resolves ink like NOTE ink does
     // — dark bucket, the same as InkOverlay.tsx — so a stroke drawn there is legible against that
     // ground instead of nearly vanishing (the scratch strip's ink resolves like note ink, not
     // page ink). `paintSplit` paints every
