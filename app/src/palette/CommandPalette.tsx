@@ -49,6 +49,7 @@ export function CommandPalette(props: Props) {
     return (
         <PaletteModal
             placeholder="Select a command..."
+            prompt=">"
             items={items()}
             frecency={id => scoreOf(store[commandKey(id)], now)}
             emptyText="No matching commands"
