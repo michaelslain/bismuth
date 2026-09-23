@@ -99,8 +99,8 @@ export const MultiSelect: Story = {
 
         // Stage a pick so Submit/Skip render, then confirm the bracket wrap.
         await userEvent.click(canvas.getByText('ChatToolRow'))
-        const submit = canvas.getByText('SUBMIT')
-        await expect(getComputedStyle(submit).textTransform).toBe('lowercase')
+        const submit = canvas.getByText('submit')
+        await expect(getComputedStyle(submit).textTransform).toBe('none')
         await expect(
             getComputedStyle(submit, '::before').content,
         ).toBe('"[ "')

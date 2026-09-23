@@ -44,10 +44,10 @@ export const Pending: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(pending.title)).toBeInTheDocument()
         await expect(
-            canvas.getByRole('button', { name: 'SUBMIT' }),
+            canvas.getByRole('button', { name: 'submit' }),
         ).toBeInTheDocument()
         await expect(
-            canvas.getByRole('button', { name: 'DISMISS' }),
+            canvas.getByRole('button', { name: 'dismiss' }),
         ).toBeInTheDocument()
     },
 }
@@ -67,7 +67,7 @@ export const Working: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(
-            canvas.getByRole('button', { name: 'RUN NOW' }),
+            canvas.getByRole('button', { name: 'run now' }),
         ).toBeDisabled()
     },
 }
@@ -112,7 +112,7 @@ export const Failed: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(failed.title)).toBeInTheDocument()
         await expect(
-            canvas.getByRole('button', { name: /RETRY/ }),
+            canvas.getByRole('button', { name: /retry/ }),
         ).toBeInTheDocument()
         await expect(
             canvas.getByText(failed.daemonNote!),
@@ -171,7 +171,7 @@ export const KeyboardOpen: Story = {
         await expect(openedCount).toBe(1)
 
         const actionBtn = within(canvasElement).getByRole('button', {
-            name: 'SUBMIT',
+            name: 'submit',
         })
         actionBtn.focus()
         await userEvent.keyboard('{Enter}')
