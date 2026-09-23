@@ -4,9 +4,6 @@ import styles from './SettingsField.module.css'
 
 export type SettingsFieldProps = {
     label: JSX.Element
-    /** @deprecated ignored — labels are text only now (modal redesign Task 4/12). Task 12 removes
-     *  this prop from every caller and deletes it here. */
-    icon?: string
     /** Right-aligned badge on the label line, rendered as plain text (no box). */
     badge?: 'required' | 'optional'
     hint?: JSX.Element

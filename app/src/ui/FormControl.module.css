@@ -2,9 +2,13 @@
    Select's trigger. MOVED from ui/ui.css (2026-09-20, CSS modules migration continuation, Task
    3, revised after review). Redesigned by the modal redesign (2026-09-23, Task 3): the filled
    well is gone — every field is now transparent with just an underline rule (`--rule-soft` at
-   rest, `--rule-accent` + an inset accent shadow on focus, no outline box). Values copied
-   exactly from the search-prompt branch's SearchBar (app/src/ui/SearchBar.module.css, read-only
-   reference for this task) so every field in the app reads as one prompt-line idiom.
+   rest, firming to `--rule` on focus, no outline box). Focus treatment revised in Task 12 to
+   match the search field as it landed on main (app/src/ui/SearchBar.module.css, read-only
+   reference for this task): a modal's first field autofocuses on open the same way the search
+   fields do, so the accent underline this file used to draw on focus read as a permanent
+   coloured divider rather than a transient state — same reasoning that dropped it from
+   SearchBar. The rest/focus rule pair is now identical to SearchBar's, so every field in the app
+   reads as one prompt-line idiom.
 
    `.ui-input` is applied by BOTH TextInput.tsx (the field itself) and Select.tsx (composed onto
    its trigger button via FormControl's `as="button"` branch) — two real components sharing one
@@ -30,8 +34,9 @@
    zero local classes reads as dead to `bench/moduleClassCheck.ts`, which this isn't. */
 .control { --form-control: true; }
 
-/* One look for every text field and dropdown trigger: transparent, an underline rule at rest, an
-   accent underline + inset shadow on focus. Mono UI font — value and hint are both mono now. */
+/* One look for every text field and dropdown trigger: transparent, an underline rule at rest, the
+   same rule firmed to neutral on focus — no accent, no outline box. Mono UI font — value and
+   hint are both mono now. */
 :global(.ui-input) { /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
   width: 100%;
   box-sizing: border-box;
@@ -49,10 +54,11 @@
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 :global(.ui-input)::placeholder { color: var(--faint); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-/* Signature focus treatment: the underline itself flips to the accent rule, doubled by a 1px
-   inset shadow drawn on top of it — no outline box. Applies to every `.ui-input`, so Select's
-   trigger (which composes this same class) gets it for free, matching the SearchBar idiom. */
-:global(.ui-input):focus, :global(.ui-input):focus-within { border-bottom: var(--rule-accent); box-shadow: inset 0 -1px 0 var(--accent); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* Focus treatment: the soft rest rule firms to the neutral --rule — no accent underline, no
+   inset shadow, no outline box. Matches SearchBar's :focus-within exactly (an autofocused field
+   reading a permanent accent line was the reason that branch dropped the accent). Applies to
+   every `.ui-input`, so Select's trigger (which composes this same class) gets it for free. */
+:global(.ui-input):focus, :global(.ui-input):focus-within { border-bottom: var(--rule); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
 :global(.ui-input):disabled { color: var(--faint); border-bottom: var(--rule-soft-dashed); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
 /* Multiline: the SAME underline sits under the last line, not a box around the whole field —
    `border` stays `none`/`border-bottom` only, exactly as the single-line branch above. */
