@@ -175,12 +175,17 @@ import {
     setCronEnabled,
     setProcessEnabled,
     runCron,
+    createCron,
+    createProcess,
+    deleteCron,
+    deleteProcess,
     migrateDaemonState,
     vaultDaemonDir,
     daemonIdentityName,
     registerVaultRoot,
 } from './daemon'
 import { daemonSnapshot } from './daemonGraph'
+import { listDaemonMemory, forgetDaemonMemory } from './daemonMemory'
 import { readActivity } from './daemonActivity'
 import {
     listDaemonPages,
@@ -1980,6 +1985,24 @@ export function createServer(cfg: CoreConfig) {
         // NOT vault mutations, so they live in the READ routes (like POST /open-folder),
         // never through mutatingHandler. installStatus() never throws; runSetup() is
         // adopt-only (it does nothing when the daemon is already installed/running).
+        // This vault's daemon-visible 3rd-brain notes for the daemon page's memory panel — the
+        // server's OWN memory dir (`effectiveMemoryDir()`, the same one it passes the engine:
+        // <vault>/.daemon/memory when the daemon is enabled, else there is no 3rd brain at all).
+        // `?q=` searches by relevance instead of listing by recency; `limit` defaults to 50,
+        // capped at 500. Degrades to `{ total: 0, items: [] }` — both when the daemon is
+        // disabled and on any underlying read failure (listDaemonMemory never throws).
+        'GET /daemon/memory': async (_, url) => {
+            const memDir = effectiveMemoryDir()
+            if (!memDir) return ok({ total: 0, items: [] })
+            const q = url.searchParams.get('q') ?? ''
+            const rawLimit = Number(url.searchParams.get('limit'))
+            const limit =
+                Number.isFinite(rawLimit) && rawLimit > 0
+                    ? Math.min(rawLimit, 500)
+                    : 50
+            return ok(await listDaemonMemory(memDir, q, limit))
+        },
+
         'GET /daemon/install': async (_, __) => {
             return ok(await installStatus())
         },
@@ -2057,6 +2080,58 @@ export function createServer(cfg: CoreConfig) {
             if (!name || typeof enabled !== 'boolean')
                 return error('missing name/enabled', 400)
             setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault))
+            return ok({ ok: true })
+        },
+
+        // Create a new cron/process definition from a template (slug = kebab-case of `name`).
+        // Response `{ ok: true, file }` — `file` is the slug, matching every other accessor's
+        // `file` field. Empty/invalid slug → `createCron`/`createProcess` throw AppError
+        // ("EINVAL") → 400; a clashing slug → AppError("EEXIST") → 409, both via the dispatch
+        // catch, same as the toggle/run routes above.
+        'POST /daemon/cron/create': async req => {
+            const { name } = (await req.json()) as { name?: string }
+            if (!name) return error('missing name', 400)
+            return ok({
+                ok: true,
+                ...createCron(name, vaultDaemonDir(cfg.vault)),
+            })
+        },
+
+        'POST /daemon/process/create': async req => {
+            const { name } = (await req.json()) as { name?: string }
+            if (!name) return error('missing name', 400)
+            return ok({
+                ok: true,
+                ...createProcess(name, vaultDaemonDir(cfg.vault)),
+            })
+        },
+
+        // Delete a cron/process definition. Response `{ ok: true }`. Unknown name → 404; a
+        // running cron → 409 (EBUSY) via the dispatch catch, same as the routes above.
+        'POST /daemon/cron/delete': async req => {
+            const { name } = (await req.json()) as { name?: string }
+            if (!name) return error('missing name', 400)
+            deleteCron(name, vaultDaemonDir(cfg.vault))
+            return ok({ ok: true })
+        },
+
+        'POST /daemon/process/delete': async req => {
+            const { name } = (await req.json()) as { name?: string }
+            if (!name) return error('missing name', 400)
+            deleteProcess(name, vaultDaemonDir(cfg.vault))
+            return ok({ ok: true })
+        },
+
+        // Forget a memory note by its VAULT-relative path (as returned by GET /daemon/memory).
+        // Uses the server's own memory dir — 404 when the daemon is disabled (no 3rd brain to
+        // forget from), same status a genuinely-unknown note gets. Path traversal is rejected
+        // by forgetDaemonMemory itself before it ever reaches the filesystem.
+        'POST /daemon/memory/forget': async req => {
+            const { path } = (await req.json()) as { path?: string }
+            if (!path) return error('missing path', 400)
+            const memDir = effectiveMemoryDir()
+            if (!memDir) return error('daemon disabled', 404)
+            await forgetDaemonMemory(memDir, path)
             return ok({ ok: true })
         },
 

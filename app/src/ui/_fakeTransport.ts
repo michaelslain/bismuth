@@ -14,7 +14,11 @@ import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
-import { sampleDaemonSnapshot, sampleActivity } from './_daemonFixtures'
+import {
+    sampleDaemonSnapshot,
+    sampleActivity,
+    sampleDaemonMemory,
+} from './_daemonFixtures'
 
 export interface FakeTransportSeed {
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
@@ -115,6 +119,20 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     sampleDaemonSnapshot()) as unknown as T
             if (pathname === '/daemon/logs')
                 return (seed.daemonLogs ?? sampleActivity()) as unknown as T
+            // The memory panel: filter the sample set by a `q` substring against name/excerpt,
+            // same shape as the real GET /daemon/memory (total is always the full sample count).
+            if (pathname === '/daemon/memory') {
+                const q = (params.get('q') ?? '').toLowerCase()
+                const all = sampleDaemonMemory()
+                const items = q
+                    ? all.items.filter(
+                          i =>
+                              i.name.toLowerCase().includes(q) ||
+                              i.excerpt.toLowerCase().includes(q),
+                      )
+                    : all.items
+                return { total: all.total, items } as unknown as T
+            }
             if (pathname === '/graph') {
                 return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T
             }
@@ -192,6 +210,19 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             if (pathname === '/delete') {
                 const { path: p } = body as { path: string }
                 return { trashPath: `.trash/${p}` } as unknown as T
+            }
+            // Create routes: ack with a slugged `file`, mirroring core/src/daemon.ts's slugify.
+            if (
+                pathname === '/daemon/cron/create' ||
+                pathname === '/daemon/process/create'
+            ) {
+                const { name } = body as { name: string }
+                const file = name
+                    .toLowerCase()
+                    .replace(/[^a-z0-9-]+/g, '-')
+                    .replace(/-+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                return { ok: true, file } as unknown as T
             }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
         },

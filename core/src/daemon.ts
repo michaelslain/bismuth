@@ -29,10 +29,11 @@ import {
     statSync,
     renameSync,
     appendFileSync,
+    unlinkSync,
 } from 'node:fs'
 import { parse } from 'yaml'
 import { parseFrontmatter, setFrontmatterKey } from './frontmatter'
-import { isDaemonAlive, readFrontmatter } from './daemonState'
+import { isDaemonAlive, readFrontmatter, readJsonObj } from './daemonState'
 import { isTempPath } from './tempPath'
 import { SETTINGS_FILE } from './settings'
 import { AppError } from './error'
@@ -896,5 +897,119 @@ export function runCron(name: string, home: string): void {
     const dir = join(home, 'crons')
     const base = resolveDaemonFile(dir, name)
     if (!base) throw new AppError('ENOENT', `Cron "${name}" not found`, 404)
+    writeTrigger(dir, base)
+}
+
+// ── Daemon supervision: create / delete ──────────────────────────────────────
+// The daemon page's "new cron"/"new service" + row-context "delete" actions. Like the
+// enable/disable/run writes above, these edit the SAME shared files the daemon reads —
+// nothing here talks to a running daemon process directly.
+
+/** Lowercase, `[a-z0-9-]`-only slug: any other character becomes a dash, runs of dashes
+ *  collapse to one, and leading/trailing dashes are trimmed. `''` for a name with no
+ *  letters or digits at all (e.g. "!!!"). */
+function slugify(name: string): string {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+}
+
+/** A cron/process definition's placeholder body: tells the user what to write, without
+ *  presuming any real content. Shared by createCron/createProcess. */
+function placeholderBody(kind: 'cron' | 'process', name: string): string {
+    return kind === 'cron'
+        ? `<!-- Write what you want "${name}" to do here — this note's body is the prompt sent to\n` +
+              `     the daemon's Claude session when the cron fires. Adjust \`schedule\` above (a\n` +
+              `     5-field cron expression) and flip \`enabled: true\` when ready. -->\n`
+        : `<!-- Describe what "${name}" does here. Set \`command\` above to the shell command this\n` +
+              `     background service should run, then flip \`enabled: true\` to start it. -->\n`
+}
+
+/** Create a new cron/process definition under `<home>/<subdir>/<slug>.md`. `slug` is the
+ *  kebab-cased `name` — empty (a name with no letters/digits) → `AppError("EINVAL", …, 400)`;
+ *  an existing file at that slug → `AppError("EEXIST", …, 409)`. Returns the slug as `file`,
+ *  matching the shape every other accessor here keys crons/processes by. */
+function createDaemonFile(
+    subdir: 'crons' | 'processes',
+    name: string,
+    home: string,
+    frontmatterLines: string[],
+): { file: string } {
+    const slug = slugify(name)
+    if (!slug) {
+        const what = subdir === 'crons' ? 'Cron' : 'Process'
+        throw new AppError(
+            'EINVAL',
+            `${what} name "${name}" has no letters or digits to slug from`,
+            400,
+        )
+    }
+    const dir = join(home, subdir)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, `${slug}.md`)
+    if (existsSync(file)) {
+        const what = subdir === 'crons' ? 'Cron' : 'Process'
+        throw new AppError('EEXIST', `${what} "${slug}" already exists`, 409)
+    }
+    const body = placeholderBody(subdir === 'crons' ? 'cron' : 'process', name)
+    writeFileSync(
+        file,
+        `---\n${frontmatterLines.join('\n')}\n---\n\n${body}`,
+    )
+    return { file: slug }
+}
+
+/** Create `<home>/crons/<slug>.md` from a template: `name`, a daily 9am `schedule`,
+ *  `enabled: false`, and a placeholder prompt body. See `createDaemonFile` for the
+ *  slug/EINVAL/EEXIST contract. */
+export function createCron(name: string, home: string): { file: string } {
+    return createDaemonFile('crons', name, home, [
+        `name: ${JSON.stringify(name)}`,
+        `schedule: "0 9 * * *"`,
+        `enabled: false`,
+    ])
+}
+
+/** Create `<home>/processes/<slug>.md` from a template: `name`, a placeholder `command`,
+ *  `enabled: false`. See `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
+export function createProcess(name: string, home: string): { file: string } {
+    return createDaemonFile('processes', name, home, [
+        `name: ${JSON.stringify(name)}`,
+        `command: echo "replace me"`,
+        `enabled: false`,
+    ])
+}
+
+/**
+ * Delete a cron's definition file. Unknown `name` → `AppError("ENOENT", …, 404)`. A cron
+ * listed as running in `<home>/crons/.running.json` (keyed the same way daemonSnapshot()
+ * reads it — frontmatter `name`, else the file basename) → `AppError("EBUSY", …, 409)`,
+ * leaving the file in place. Unlinks the `.md` only — recoverable via the vault's own git
+ * backup (`.daemon/crons` is on the backup allow-list).
+ */
+export function deleteCron(name: string, home: string): void {
+    const dir = join(home, 'crons')
+    const base = resolveDaemonFile(dir, name)
+    if (!base) throw new AppError('ENOENT', `Cron "${name}" not found`, 404)
+    const data = readFrontmatter(join(dir, `${base}.md`))
+    const fm = (typeof data.name === 'string' && data.name) || base
+    const runningMap = readJsonObj(join(dir, '.running.json'))
+    if (runningMap[fm])
+        throw new AppError('EBUSY', `Cron "${name}" is running`, 409)
+    unlinkSync(join(dir, `${base}.md`))
+}
+
+/**
+ * Delete a background process's definition file, then drop a reconcile trigger (the same
+ * general process-trigger port `setProcessEnabled` uses) so a running daemon stops it.
+ * Unknown `name` → `AppError("ENOENT", …, 404)`.
+ */
+export function deleteProcess(name: string, home: string): void {
+    const dir = join(home, 'processes')
+    const base = resolveDaemonFile(dir, name)
+    if (!base) throw new AppError('ENOENT', `Process "${name}" not found`, 404)
+    unlinkSync(join(dir, `${base}.md`))
     writeTrigger(dir, base)
 }
