@@ -2,7 +2,7 @@
 // `esc` hint, optional leading actions, a spacer, trailing actions), extracted onto
 // calendar/Calendar.module.css's `.evm-foot` family. See ModalFooter.tsx's header comment.
 //
-// Props: hint (optional, words after the `esc` key cap), leading (left-aligned actions before
+// Props: hint (optional, words after a plain `esc`), leading (left-aligned actions before
 // the spacer), children (right-aligned trailing actions), class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
@@ -71,10 +71,10 @@ export const LeadingAndTrailing: Story = {
         ) as HTMLElement
         expect(foot).not.toBeNull()
         const kids = [...foot.children] as HTMLElement[]
-        // hint (span carrying the <b>esc</b>), leading wrapper, spacer, then the two trailing
+        // hint (plain "esc …" text span), leading wrapper, spacer, then the two trailing
         // buttons — a flat DOM order check catches a slot ever landing in the wrong place.
         const order = kids.map(k => {
-            if (k.querySelector('b')) return 'hint'
+            if (k.matches('[class*="modal-hint"]')) return 'hint'
             if (k.querySelector('[data-testid="mf-reset"]')) return 'leading'
             if (k.matches('[class*="modal-foot-sp"]')) return 'spacer'
             return k.getAttribute('data-testid') ?? k.tagName
