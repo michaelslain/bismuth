@@ -206,18 +206,20 @@ export const ImageLoadFails: Story = {
 /** A real picture, loaded through the `imageSrc` data seam (see the file-level note on why the
  *  fake transport can never serve `/asset`) — so this page can be judged as DESIGN, not just "did
  *  it render": `photoPng()` is a 1600×900 gradient-plus-shapes picture, not a flat colour block.
- *  Asserts the bar's size readout (Task 2's `imageSize` slot — NOT YET WIRED in this worktree, so
- *  this assertion is expected RED here per the plan; the controller re-runs it after merging
- *  Task 2) and the desk ground (`--editor`, Task 4). */
+ *  Asserts the bar's size readout (Task 2's `imageSize` slot) and the desk ground (`--editor`,
+ *  Task 4). Wrapped in a height-bounded div like its siblings, so the image is height-constrained
+ *  as it is in a real pane. */
 export const Image: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return (
-            <PreviewView
-                path="assets/photo.png"
-                tagNames={NO_TAGS}
-                imageSrc={photoPng}
-            />
+            <div style={{ height: '100vh' }}>
+                <PreviewView
+                    path="assets/photo.png"
+                    tagNames={NO_TAGS}
+                    imageSrc={photoPng}
+                />
+            </div>
         )
     },
     play: async ({ canvasElement }) => {
@@ -237,11 +239,12 @@ export const Image: Story = {
         })
         await expect(img.naturalWidth).toBe(1600)
         await expect(img.naturalHeight).toBe(900)
-        // Task 2's readout (`imageSize` -> PreviewBar) — EXPECTED RED in this worktree, since
-        // PreviewBar.tsx here only carries the prop TYPE (pre-registered, unused); Task 2 wires
-        // the actual `<Show>` that renders it. Left in per the brief so the controller's re-run
-        // after merging catches a regression, not just a first pass.
-        await expect(canvas.getByText('1600 × 900')).toBeInTheDocument()
+        // The size readout (`imageSize` -> PreviewBar) fires off the `load` event, which lands
+        // after `naturalWidth` is already set — so it must be awaited on its own, not assumed
+        // ready the instant naturalWidth is.
+        await waitFor(() =>
+            expect(canvas.getByText('1600 × 900')).toBeInTheDocument(),
+        )
         // Desk ground: the body behind the image is the shared `--editor` desk (Task 4), matching
         // PdfPages' own `.pdf-scroll` and no longer the old `--surface-2`.
         const body = canvasElement.querySelector(
@@ -267,8 +270,9 @@ let readoutSwitchSetState:
 /** Review Focus 5: the size readout must never show a STALE value across a path switch — neither
  *  the old image's size while the new one is still loading, nor after the new one fails. Switches
  *  BOTH `path` and `imageSrc` together (a real file switch, not a parent-churn rebuild) from the
- *  real `photoPng()` picture to a broken src and back. The readout assertions are expected RED in
- *  this worktree — see the `Image` story's comment; Task 2 wires PreviewBar's own `<Show>`. */
+ *  real `photoPng()` picture to a broken src, then to a SECOND real picture of a different size
+ *  (`measuredPhotoPng()`, 200×150) — proving the readout picks up the new image's own size rather
+ *  than replaying the first path's 1600×900. */
 export const ImageReadoutResetsOnSwitch: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -299,12 +303,15 @@ export const ImageReadoutResetsOnSwitch: Story = {
         )
         await expect(canvas.queryByText('1600 × 900')).not.toBeInTheDocument()
         readoutSwitchSetState!(() => ({
-            path: 'assets/photo-a.png',
-            src: photoPng(),
+            path: 'assets/other.png',
+            src: measuredPhotoPng(),
         }))
         await waitFor(() =>
-            expect(canvas.getByText('1600 × 900')).toBeInTheDocument(),
+            expect(
+                canvas.getByText(`${MEASURED_IMG_W} × ${MEASURED_IMG_H}`),
+            ).toBeInTheDocument(),
         )
+        await expect(canvas.queryByText('1600 × 900')).not.toBeInTheDocument()
         await expect(
             canvas.queryByText("Couldn't load image"),
         ).not.toBeInTheDocument()
@@ -361,16 +368,20 @@ export const PdfLoadFails: Story = {
 /** Real pages, loaded through the `pdfLoad` data seam (reusing `buildChurnTestPdf` — the same
  *  6-page jsPDF builder `PdfSurvivesParentChurn` below already uses), so this page can be judged
  *  as DESIGN rather than "did it render": a real rasterized page, not PdfPages' own load-failure
- *  EmptyState. Asserts the desk ground (`--editor`, Task 4). */
+ *  EmptyState. Asserts the desk ground (`--editor`, Task 4) and the page readout. Wrapped in a
+ *  height-bounded div like its siblings, so the page stack actually scrolls instead of showing
+ *  every page at once. */
 export const Pdf: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return (
-            <PreviewView
-                path="docs/real.pdf"
-                tagNames={NO_TAGS}
-                pdfLoad={() => Promise.resolve(buildChurnTestPdf())}
-            />
+            <div style={{ height: '100vh' }}>
+                <PreviewView
+                    path="docs/real.pdf"
+                    tagNames={NO_TAGS}
+                    pdfLoad={() => Promise.resolve(buildChurnTestPdf())}
+                />
+            </div>
         )
     },
     play: async ({ canvasElement }) => {
@@ -383,6 +394,11 @@ export const Pdf: Story = {
         await expect(
             canvas.queryByText("Couldn't load PDF"),
         ).not.toBeInTheDocument()
+        const readoutBtn = () =>
+            canvasElement.querySelector(
+                '[data-testid="page-readout"] button',
+            ) as HTMLButtonElement | null
+        await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 1 / 6'))
         // Desk ground: the body behind the page stack is the shared `--editor` desk (Task 4) —
         // PdfPages' own `.pdf-scroll` paints it, not `.preview-body` itself for this kind, but the
         // body must agree so no seam shows where one ends and the other begins.
@@ -1088,8 +1104,9 @@ function SeededAnnotatedPreview(props: { width: string }) {
 /** The measured first-line highlight the last SeededAnnotatedPreview seeded. */
 let seededLine: DrawingDoc | undefined
 
-/** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is the note
- *  editor's own ground with ink in it that actually CONTRASTS (scratch-notes decision 3 — note
+/** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is the raised
+ *  `--surface-1` note surface, one step above the `--editor` desk, with ink in it that actually
+ *  CONTRASTS (scratch-notes decision 3 — note
  *  ink, not the page's own light bucket), the pages rasterize, and the bookmarks panel lists the
  *  bookmark above the PDF's own outline — clicking either scrolls the page stack to that page. */
 export const PdfHighlightMarginBookmarks: Story = {
