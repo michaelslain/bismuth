@@ -1,6 +1,6 @@
 // Visual spec for <IconPicker> — the file-tree "Set icon" picker. This is a thin preset over
 // the shared <SymbolGallery> (see IconPicker.tsx's header): it fixes `source={iconSource}` and
-// `clearLabel="RESET TO DEFAULT ICON"`, nothing else. `ui/gallery/SymbolGallery.stories.tsx`
+// `clearLabel="reset to default icon"`, nothing else. `ui/gallery/SymbolGallery.stories.tsx`
 // already covers the gallery's generic behaviour in depth (search, keyboard nav, the WebKit
 // focus-guard regression, current-highlight, clear) — this file's job is narrower: prove the
 // PRESET itself wires those shared pieces correctly with IconPicker's own props/labels, matching
@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, within } from 'storybook/test'
 import { IconPicker } from './IconPicker'
-import { Button } from '../ui/Button'
+import { TextButton } from '../ui/TextButton'
 
 const meta = {
     title: 'App/IconPicker',
@@ -41,13 +41,13 @@ export const Default: Story = {
             body.getByPlaceholderText('Set icon — Untitled.md'),
         ).toBeInTheDocument()
         await expect(
-            body.queryByText('RESET TO DEFAULT ICON'),
+            body.queryByText('reset to default icon'),
         ).not.toBeInTheDocument()
     },
 }
 
 /** The real FileTree.tsx shape: a note that already carries an icon override, so the picker
- *  opens with that icon highlighted AND a "RESET TO DEFAULT ICON" action to clear it. */
+ *  opens with that icon highlighted AND a "reset to default icon" action to clear it. */
 export const WithCurrentIconAndReset: Story = {
     render: () => (
         <IconPicker
@@ -61,7 +61,7 @@ export const WithCurrentIconAndReset: Story = {
     play: async () => {
         const body = within(document.body)
         await expect(
-            body.getByText('RESET TO DEFAULT ICON'),
+            body.getByText('reset to default icon'),
         ).toBeInTheDocument()
     },
 }
@@ -82,13 +82,12 @@ export const Interactive: Story = {
                     'align-items': 'flex-start',
                 }}
             >
-                <Button
-                    kind="text"
-                    state="selected"
+                <TextButton
+                    variant="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Set icon…
-                </Button>
+                    set icon…
+                </TextButton>
                 <span
                     style={{
                         'font-family': 'var(--ui-font-stack)',

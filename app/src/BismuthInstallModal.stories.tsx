@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { BismuthInstallModal } from './BismuthInstallModal'
-import { Button } from './ui/Button'
+import { TextButton } from './ui/TextButton'
 
 const meta = {
     title: 'Modals/BismuthInstallModal',
@@ -37,13 +37,12 @@ export const Interactive: Story = {
         const [open, setOpen] = createSignal(true)
         return (
             <div style={{ padding: '40px' }}>
-                <Button
-                    kind="text"
-                    state="selected"
+                <TextButton
+                    variant="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Open install panel
-                </Button>
+                    open install panel
+                </TextButton>
                 {open() && (
                     <BismuthInstallModal onClose={() => setOpen(false)} />
                 )}

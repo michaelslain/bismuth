@@ -313,7 +313,7 @@ export const DuplicatePropertyName: Story = {
         await expect(
             canvas.getByText(/duplicate name/i),
         ).toBeInTheDocument()
-        const saveBtn = canvas.getByText('SAVE').closest('button')
+        const saveBtn = canvas.getByText('save').closest('button')
         await expect(saveBtn).not.toBeNull()
         await expect(saveBtn!.disabled).toBe(true)
     },
@@ -345,7 +345,7 @@ export const ExpandPropertyRow: Story = {
             name: /^status/i,
         })
         await userEvent.click(statusRow)
-        const deleteButton = canvas.getByText('DELETE').closest('button')!
+        const deleteButton = canvas.getByText('delete').closest('button')!
         deleteButton.scrollIntoView()
         const modalBody = document.body.querySelector(
             '[data-testid="modal-body"]',

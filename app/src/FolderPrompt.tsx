@@ -29,13 +29,13 @@ export function FolderPrompt(props: {
             title="Open folder"
             actions={
                 <>
-                    <TextButton onClick={props.onClose}>CANCEL</TextButton>
+                    <TextButton onClick={props.onClose}>cancel</TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={submit}
                         disabled={value().trim() === ''}
                     >
-                        OPEN
+                        open
                     </TextButton>
                 </>
             }

@@ -70,13 +70,13 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
             title="Install Bismuth CLI + MCP"
             actions={
                 <>
-                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <TextButton onClick={props.onClose}>close</TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={install}
                         disabled={loading() || running()}
                     >
-                        {running() ? 'WORKING…' : 'INSTALL / UPDATE'}
+                        {running() ? 'working…' : 'install / update'}
                     </TextButton>
                 </>
             }

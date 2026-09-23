@@ -11,6 +11,8 @@ import BracketToggle from '../../ui/BracketToggle'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
+import PlainButton from '../../ui/PlainButton'
+import StatusDot from '../../ui/StatusDot'
 import Text from '../../ui/Text'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
@@ -20,20 +22,20 @@ import styles from './EventModal.module.css'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [
-    ['None', ''],
-    ['Daily', 'daily'],
-    ['Weekly', 'weekly'],
-    ['Biweekly', 'biweekly'],
-    ['Monthly', 'monthly'],
+    ['none', ''],
+    ['daily', 'daily'],
+    ['weekly', 'weekly'],
+    ['biweekly', 'biweekly'],
+    ['monthly', 'monthly'],
 ]
 const DOW: [string, number][] = [
-    ['Mon', 1],
-    ['Tue', 2],
-    ['Wed', 3],
-    ['Thu', 4],
-    ['Fri', 5],
-    ['Sat', 6],
-    ['Sun', 0],
+    ['mon', 1],
+    ['tue', 2],
+    ['wed', 3],
+    ['thu', 4],
+    ['fri', 5],
+    ['sat', 6],
+    ['sun', 0],
 ]
 
 export function EventModal(props: { store: EventStore }) {
@@ -196,6 +198,7 @@ export function EventModal(props: { store: EventStore }) {
             // (tagName 'DIV') — the tag checks below wouldn't spare it, so exclude it explicitly.
             // Otherwise Enter would save and Backspace would delete the event mid-typing.
             const inEditor = !!el?.closest?.('.cm-editor')
+            if (el?.closest?.('button')) return
             if (
                 e.key === 'Enter' &&
                 tag !== 'TEXTAREA' &&
@@ -267,14 +270,14 @@ export function EventModal(props: { store: EventStore }) {
                         </div>
                         <div>
                             <div class={`${styles['evm-lab']} ${styles['evm-lab-spacer']}`}>x</div>
-                            <div
+                            <PlainButton
                                 class={styles['evm-allday']}
-                                role="button"
+                                aria-pressed={allDay()}
                                 onClick={() => setAllDay(v => !v)}
                             >
                                 <BracketToggle checked={allDay()} />
                                 All day
-                            </div>
+                            </PlainButton>
                         </div>
                     </div>
                     <Show when={!allDay()}>
@@ -374,41 +377,32 @@ export function EventModal(props: { store: EventStore }) {
                         </Text>
                     </div>
                     <div class={styles['evm-cats']}>
-                        <div
-                            class={`${styles['evm-cat']}${selCats().length === 0 ? ` ${styles['on']}` : ''}`}
-                            role="button"
-                            style={{ '--cc': 'var(--faint)' }}
+                        <TextButton
+                            variant={
+                                selCats().length === 0 ? 'selected' : 'unselected'
+                            }
+                            aria-pressed={selCats().length === 0}
                             onClick={() => setSelCats([])}
                         >
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles['dot']}
-                            />
-                            None
-                        </div>
+                            <StatusDot color="var(--faint)" /> none
+                        </TextButton>
                         <For each={categories.value}>
-                            {c => (
-                                <div
-                                    class={`${styles['evm-cat']}${selCats().includes(c.name) ? ` ${styles['on']}` : ''}`}
-                                    role="button"
-                                    style={{
-                                        '--cc': resolveCategoryColor(c.color),
-                                    }}
-                                    onClick={() => toggleCat(c.name)}
-                                >
-                                    <Text
-                                        as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
-                                        class={styles['dot']}
-                                    />
-                                    {c.name}
-                                </div>
-                            )}
+                            {c => {
+                                const color = () => resolveCategoryColor(c.color)
+                                const picked = () => selCats().includes(c.name)
+                                return (
+                                    <TextButton
+                                        variant={
+                                            picked() ? 'selected' : 'unselected'
+                                        }
+                                        accent={color()}
+                                        aria-pressed={picked()}
+                                        onClick={() => toggleCat(c.name)}
+                                    >
+                                        <StatusDot color={color()} /> {c.name}
+                                    </TextButton>
+                                )
+                            }}
                         </For>
                     </div>
                 </div>
@@ -422,7 +416,6 @@ export function EventModal(props: { store: EventStore }) {
                     <SegmentedToggle
                         value={recType()}
                         onChange={v => setRecType(v)}
-                        size="sm"
                         options={RECUR.map(([label, val]) => ({
                             id: val,
                             label,
@@ -436,9 +429,13 @@ export function EventModal(props: { store: EventStore }) {
                         <div class={styles['evm-dows']}>
                             <For each={DOW}>
                                 {([label, i]) => (
-                                    <div
-                                        class={`${styles['evm-dow']}${recDays().includes(i) ? ` ${styles['on']}` : ''}`}
-                                        role="button"
+                                    <TextButton
+                                        variant={
+                                            recDays().includes(i)
+                                                ? 'selected'
+                                                : 'unselected'
+                                        }
+                                        aria-pressed={recDays().includes(i)}
                                         onClick={() =>
                                             setRecDays(prev =>
                                                 prev.includes(i)
@@ -448,7 +445,7 @@ export function EventModal(props: { store: EventStore }) {
                                         }
                                     >
                                         {label}
-                                    </div>
+                                    </TextButton>
                                 )}
                             </For>
                         </div>
@@ -485,20 +482,20 @@ export function EventModal(props: { store: EventStore }) {
             <ModalFooter
                 leading={
                     <Show when={editing}>
-                        <TextButton size="sm" danger onClick={handleDelete}>
-                            DELETE
+                        <TextButton danger onClick={handleDelete}>
+                            delete
                         </TextButton>
-                        <TextButton size="sm" onClick={handleDuplicate}>
-                            DUPLICATE
+                        <TextButton onClick={handleDuplicate}>
+                            duplicate
                         </TextButton>
                     </Show>
                 }
             >
-                <TextButton size="sm" onClick={close}>
-                    CANCEL
+                <TextButton onClick={close}>
+                    cancel
                 </TextButton>
-                <TextButton size="sm" variant="selected" onClick={handleSave}>
-                    {editing ? 'SAVE' : 'CREATE EVENT'}
+                <TextButton primary onClick={handleSave}>
+                    {editing ? 'save' : 'create event'}
                 </TextButton>
             </ModalFooter>
         </FormModal>

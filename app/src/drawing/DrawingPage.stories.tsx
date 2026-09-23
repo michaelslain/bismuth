@@ -118,7 +118,7 @@ export const Blank: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(await canvas.findByText('ADD PAGE')).toBeInTheDocument()
+        await expect(await canvas.findByText('add page')).toBeInTheDocument()
         const drawCanvas = canvasElement.querySelector<HTMLCanvasElement>(
             `.${canvasStyles['draw-canvas']}:not(.${canvasStyles['draw-live']})`,
         )
@@ -144,7 +144,7 @@ export const Populated: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(await canvas.findByText('ADD PAGE')).toBeInTheDocument()
+        await expect(await canvas.findByText('add page')).toBeInTheDocument()
         const drawCanvas = canvasElement.querySelector<HTMLCanvasElement>(
             `.${canvasStyles['draw-canvas']}:not(.${canvasStyles['draw-live']})`,
         )

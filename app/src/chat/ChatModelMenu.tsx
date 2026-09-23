@@ -14,7 +14,7 @@ import { createSignal, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import styles from './ChatModelMenu.module.css'
 import type { ChatSession } from './chatSession'
-import { Button } from '../ui/Button'
+import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { modelLabelFor } from '../chatModelResolution'
@@ -112,8 +112,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                     </Text>
                 }
             >
-                <Button
-                    kind="text"
+                <PlainButton
                     class={styles.word}
                     title="Provider, model and effort"
                     onClick={e => {
@@ -122,7 +121,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                     }}
                 >
                     {word()}
-                </Button>
+                </PlainButton>
                 <Show when={menu()}>
                     {m => (
                         <Portal>

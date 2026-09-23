@@ -229,19 +229,18 @@ export function CategoryPanel(props: { store: EventStore }) {
                             />
                             <IconTextButton
                                 icon="Plus"
-                                size="sm"
                                 variant="selected"
                                 onClick={handleAdd}
                             >
-                                ADD
+                                add
                             </IconTextButton>
                         </div>
                     </div>
                 </ModalBody>
 
                 <ModalFooter hint="to close">
-                    <TextButton size="sm" variant="selected" onClick={close}>
-                        DONE
+                    <TextButton primary onClick={close}>
+                        done
                     </TextButton>
                 </ModalFooter>
             </FormModal>

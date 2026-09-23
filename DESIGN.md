@@ -80,9 +80,9 @@ components:
   button-text:
     backgroundColor: "transparent"
     textColor: "{colors.ink-paper}"
-    typography: "{typography.label}"
+    typography: "{typography.ui}"
     rounded: "{rounded.none}"
-    padding: "4px 8px"
+    padding: "0"
     height: "24px"
   button-text-unselected:
     textColor: "{colors.ink-faint}"
@@ -90,6 +90,7 @@ components:
     textColor: "{colors.accent-sage}"
   button-text-primary:
     textColor: "{colors.accent-sage}"
+    fontWeight: 600
   button-text-danger:
     textColor: "{colors.danger}"
   chip-toggle:
@@ -250,9 +251,10 @@ person actually wrote. The two never mix within one register.
 - **Title** (600, 19px `--fs-title`): panel titles.
 - **Lead** (15px `--fs-lead`): section heads in chrome; also the editor's first-paint size.
 - **Body** (13px `--fs-body`): prose inside panels.
-- **UI** (11.5px `--fs-ui`, line-height 1.7): the workhorse. Rail, tabs, tables, menus, popovers.
+- **UI** (11.5px `--fs-ui`, line-height 1.7): the workhorse. Rail, tabs, tables, menus, popovers,
+  and every `[text button]`.
 - **Label / Micro** (10.5px `--fs-micro`, uppercase, `.06em`–`.14em` tracking): eyebrows,
-  button labels, status bar, legends. Nothing in the app is set smaller.
+  status bar, legends. Nothing in the app is set smaller.
 - **Prose** (`--prose-font-size` = the user's editor size × 1.04): note body, note headings,
   note tables, chat messages and the chat composer.
 
@@ -335,15 +337,27 @@ the accent. An outline appears only when it means something.
 
 ### Buttons
 - **Shape:** square (`--r-0`), fixed 24px height in every variant, so text and icon buttons line up.
-- **Text button:** uppercase `--fs-micro` label, `.06em` tracking, `4px 8px` padding, transparent
-  and borderless at rest (a transparent 1px border is reserved so selection never shifts the label).
-- **States:** `normal` is full ink with a `--hover-bg` wash on hover; `unselected` (a toggle member
-  that is off) is `--faint` and lifts to `--fg` on hover; `selected` gets an accent border and
-  accent text; `primary` is selected plus an `--accent-soft` fill and `--glow-accent` rim, at most
-  one per view; `danger` is danger text with a 45% danger border.
-- **Focus:** a 2px accent outline (`--focus-ring`) outside the border box, on `:focus-visible` only.
-- **Icon button:** the same box with no border; `normal` sits at full opacity.
-- **Bracketed labels** (`[ accept ]`) are the shared idiom across chat, toasts and the daemon inbox.
+- **Text button:** `[label]` — a lowercase `--fs-ui` label, untracked, with the brackets tight to
+  the word and no space inside. No border, no fill, no horizontal padding: **the brackets are the
+  edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
+  goes inside the brackets: `[✓ label]`. One size only.
+- **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
+  that is off) `--faint`; `selected` `--accent` + bold (or `accent`, if set); `primary` `--accent`
+  + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
+- **Hover:** `unselected` lifts to `--text-muted`; states already at full ink underline the label
+  (1px) instead of changing colour.
+- **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
+  ring never touches the next `[`.
+- **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
+  apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
+  groups (the drawing dock, the embedded-graph icon groups) keep the butted `segment` look.
+- **`accent` recolours a selected toggle** (a category's own colour).
+- **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
+  confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
+  is `normal`.
+- **Focus:** a 2px accent outline (`--focus-ring`) around the glyphs, on `:focus-visible` only.
+- **Icon button:** a separate register — a 24px square with no border; `normal` sits at full
+  opacity. It keeps its own sizes.
 
 ### Chips
 - **Chip toggle:** square, 24px, `--rule` hairline, muted ink lifting to `--fg` on hover; its glyph

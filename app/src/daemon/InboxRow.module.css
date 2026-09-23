@@ -55,5 +55,5 @@
     grid-column: 2 / -1;
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
 }

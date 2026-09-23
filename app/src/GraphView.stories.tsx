@@ -109,7 +109,7 @@ export const FindPanelOpen: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const findButton = await canvas.findByText('FIND')
+        const findButton = await canvas.findByText('find')
         findButton.click()
         await canvas.findByPlaceholderText(/search/i)
     },
@@ -183,7 +183,7 @@ export const MiniLocal: Story = {
         )
         if (!leftCluster) throw new Error('no left cluster rendered')
         const modeButtons = [...leftCluster.querySelectorAll('button')].filter(
-            b => /^(2D|3D)$/.test(b.textContent?.trim() ?? ''),
+            b => /^(2d|3d)$/.test(b.textContent?.trim() ?? ''),
         )
         expect(modeButtons).toHaveLength(1)
         const modeButton = modeButtons[0]!
@@ -192,7 +192,7 @@ export const MiniLocal: Story = {
         // title is the "showing…" string only in that state. Exactly one, so a second LOCAL control
         // (or an icon regressing back in beside it) fails the count.
         const localButtons = [...bottomBar.querySelectorAll('button')].filter(
-            b => b.textContent?.trim() === 'LOCAL',
+            b => b.textContent?.trim() === 'local',
         )
         expect(localButtons).toHaveLength(1)
         expect(localButtons[0]!.getAttribute('title') ?? '').toMatch(
@@ -203,10 +203,10 @@ export const MiniLocal: Story = {
         // TO, so after one click it must read the opposite of what it read before. Scoped to
         // `modeButton` itself, not a canvas-wide text query: the FULL-PANE ViewBar's own
         // SegmentedToggle (hidden at this width by a `@container` rule, not by unmounting) still
-        // renders its OWN "2D"/"3D" buttons in the DOM, so a bare findByText('2D') matches two
+        // renders its OWN "2D"/"3D" buttons in the DOM, so a bare findByText('2d') matches two
         // elements and throws.
         const before = modeButton.textContent?.trim()
-        const after = before === '3D' ? '2D' : '3D'
+        const after = before === '3d' ? '2d' : '3d'
         modeButton.click()
         await waitFor(() => {
             expect(modeButton.textContent?.trim()).toBe(after)

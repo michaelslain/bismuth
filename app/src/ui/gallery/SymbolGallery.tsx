@@ -43,7 +43,7 @@ type Props = {
     onPick: (value: string) => void
     /** When provided, shows a reset action that clears the current selection. */
     onClear?: () => void
-    /** Label for the clear action (must be ALL CAPS per TextButton). */
+    /** Label for the clear action (must be lowercase per TextButton). */
     clearLabel?: string
     onClose: () => void
 }
@@ -199,7 +199,7 @@ function SymbolGallery(props: Props) {
                         props.onClose()
                     }}
                 >
-                    {props.clearLabel ?? 'RESET TO DEFAULT'}
+                    {props.clearLabel ?? 'reset to default'}
                 </TextButton>
             </Show>
             <div class={styles['icon-picker-grid']} ref={el => (gridRef = el)}>

@@ -32,7 +32,7 @@ export const ClaudeMissing: Story = {
                         Claude Code and sign in, then reopen this tab.
                     </p>
                 }
-                actionLabel="USE OPENCODE INSTEAD"
+                actionLabel="use opencode instead"
                 onAction={() => {}}
             />,
         ),
@@ -55,7 +55,7 @@ export const OpencodeMissing: Story = {
                         reopen this tab.
                     </p>
                 }
-                actionLabel="USE CLAUDE CODE INSTEAD"
+                actionLabel="use claude code instead"
                 onAction={() => {}}
             />,
         ),
@@ -77,7 +77,7 @@ export const VisibilityRefused: Story = {
                         context. Switch to Claude Code, which does.
                     </p>
                 }
-                actionLabel="USE CLAUDE CODE INSTEAD"
+                actionLabel="use claude code instead"
                 onAction={() => {}}
             />,
         ),

@@ -226,7 +226,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            SELECT
+                                            select
                                         </Text>
                                     </>
                                 ),
@@ -244,7 +244,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            CONNECT
+                                            connect
                                         </Text>
                                     </>
                                 ),
@@ -262,7 +262,7 @@ export function EmbeddedGraph(props: {
                                             weight="inherit"
                                             class="btn-label"
                                         >
-                                            ERASE
+                                            erase
                                         </Text>
                                     </>
                                 ),
@@ -274,26 +274,28 @@ export function EmbeddedGraph(props: {
                             value={directed() ? 'dir' : 'undir'}
                             onChange={v => setDirected(v === 'dir')}
                             size="sm"
+                            look="segment"
                             options={[
                                 {
                                     id: 'dir',
                                     title: 'New edges are directed (->)',
                                     label: <Icon value="ArrowRight" />,
+                                    ariaLabel: 'directed',
                                 },
                                 {
                                     id: 'undir',
                                     title: 'New edges are undirected (--)',
                                     label: <Icon value="Minus" />,
+                                    ariaLabel: 'undirected',
                                 },
                             ]}
                         />
                     </Show>
                     <IconTextButton
                         icon="Plus"
-                        size="sm"
                         onClick={() => commit(addNode(spec).spec)}
                     >
-                        NODE
+                        node
                     </IconTextButton>
                 </Show>
                 <div class={styles['graph-block-spacer']} />
@@ -301,16 +303,19 @@ export function EmbeddedGraph(props: {
                     value={dim()}
                     onChange={setDim}
                     size="sm"
+                    look="segment"
                     options={[
                         {
                             id: '2d',
                             title: 'Flat layout',
                             label: <Icon value="Square" />,
+                            ariaLabel: '2d',
                         },
                         {
                             id: '3d',
                             title: 'Orbit layout',
                             label: <Icon value="Box" />,
+                            ariaLabel: '3d',
                         },
                     ]}
                 />
@@ -361,16 +366,15 @@ export function EmbeddedGraph(props: {
                             }}
                         />
                     </Field>
-                    <IconTextButton icon="Check" size="sm" onClick={applyEdit}>
-                        APPLY
+                    <IconTextButton icon="Check" onClick={applyEdit}>
+                        apply
                     </IconTextButton>
                     <IconTextButton
                         icon="Trash2"
-                        size="sm"
                         danger
                         onClick={() => commit(removeNode(spec, selected()!))}
                     >
-                        DELETE
+                        delete
                     </IconTextButton>
                 </div>
             </Show>

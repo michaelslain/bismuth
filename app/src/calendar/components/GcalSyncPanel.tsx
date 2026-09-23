@@ -124,11 +124,10 @@ export function GcalSyncPanel(props: { basePath: string }) {
                         </SettingsHint>
                         <IconTextButton
                             icon="Calendar"
-                            size="sm"
                             variant="selected"
                             onClick={() => setShowConnect(true)}
                         >
-                            CONNECT GOOGLE CALENDAR
+                            connect google calendar
                         </IconTextButton>
                     </div>
                 }
@@ -145,12 +144,11 @@ export function GcalSyncPanel(props: { basePath: string }) {
                         {status()!.account}
                     </Text>
                     <TextButton
-                        size="sm"
                         danger
                         onClick={disconnect}
                         disabled={busy()}
                     >
-                        DISCONNECT
+                        disconnect
                     </TextButton>
                 </div>
 
@@ -222,12 +220,11 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 <div class={styles['gcal-actions']}>
                     <IconTextButton
                         icon="RefreshCw"
-                        size="sm"
                         variant="selected"
                         onClick={syncNow}
                         disabled={busy()}
                     >
-                        {busy() ? 'SYNCING…' : 'SYNC NOW'}
+                        {busy() ? 'syncing…' : 'sync now'}
                     </IconTextButton>
                 </div>
             </Show>

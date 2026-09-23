@@ -11,11 +11,17 @@
    the outside reach-ins to SegmentedToggle's own `class`/`segmentClass` props; the wave after that
    deletes every `:global()` wrapper and ignore comment here in one pass.
 
-   `.segmented .btn--text` is a cross-primitive compound: it styles Button.tsx's `.btn--text`
+   BRACKET TOGGLES (bracket-toggles Task 1): `look` picks between two renders. The default,
+   `look="bracket"`, is plain `kind="text"` buttons — no box, no butted border — spaced by the
+   `[data-look="bracket"]` gap rule below; it needs no `.btn--segment` override at all. The BUTTED
+   `.btn--segment` family below is scoped to `[data-look="segment"]` and applies ONLY to the
+   drawing toolbar's icon-only tool groups, the one caller that still opts into `look="segment"`.
+
+   `.segmented .btn--segment` is a cross-primitive compound: it styles Button.tsx's `.btn--segment`
    class, but only in the context of being inside SegmentedToggle's own wrapper — it is
    SegmentedToggle's layout rule (the butted-border overlap), not Button's, so it stays here
    rather than in Button.module.css. Both halves of the selector are still global class names
-   (Button's `.btn--text` is itself a `:global()` bridge in Button.module.css per Task 1), so the
+   (Button's `.btn--segment` is itself a `:global()` bridge in Button.module.css per Task 1), so the
    whole compound is wrapped in `:global()` too. `drawing/Toolbar.tsx`'s undo/redo AND zoom groups
    now compose this component (one-global-followups Task 3) — the zoom group's percent readout
    gets its fixed width through `SegmentedOption.class`, now that the option carries one. */
@@ -28,17 +34,22 @@
 
 /* design-system-ignore globalReach: SegmentedToggle's own class, temporary :global() bridge to the four outside callers above, until a later wave */
 :global(.segmented) { display: inline-flex; align-items: center; }
+/* Bracket look (the default): plain [label] buttons, no box, no butted border — just spaced
+   apart. `--sp-4` is the same sibling gap every other bracket button family uses. */
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text) { border-radius: 0; position: relative; }
+:global(.segmented)[data-look="bracket"] { gap: var(--sp-4); }
+/* Segment look (the drawing dock's icon-only tool groups only): today's butted boxes, unchanged. */
+/* design-system-ignore globalReach: same bridge as above, until a later wave */
+:global(.segmented[data-look="segment"] .btn--segment) { border-radius: 0; position: relative; }
 /* Segments share ONE rule between them by overlapping borders, not by dropping the
    left one — a dropped border leaves the selected segment's accent outline open on
    its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
    so its own border draws the full box. */
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text + .btn--text) { margin-left: -1px; }
+:global(.segmented[data-look="segment"] .btn--segment + .btn--segment) { margin-left: -1px; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text.btn--selected), :global(.segmented .btn--text.btn--primary), :global(.segmented .btn--text:hover:not(:disabled)) { z-index: 1; }
+:global(.segmented[data-look="segment"] .btn--segment.btn--selected), :global(.segmented[data-look="segment"] .btn--segment.btn--primary), :global(.segmented[data-look="segment"] .btn--segment:hover:not(:disabled)) { z-index: 1; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text:first-child) { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
+:global(.segmented[data-look="segment"] .btn--segment:first-child) { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text:last-child) { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+:global(.segmented[data-look="segment"] .btn--segment:last-child) { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }

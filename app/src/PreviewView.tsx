@@ -85,7 +85,7 @@ import {
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
-import { Button } from './ui/Button'
+import PlainButton from './ui/PlainButton'
 import { IconTextButton } from './ui/IconTextButton'
 import SearchBar from './ui/SearchBar'
 import Text from './ui/Text'
@@ -751,14 +751,13 @@ export function PreviewView(props: {
                                             inputRef?.focus()
                                         }}
                                     />
-                                    <Button
-                                        kind="text"
-                                        state={
+                                    <PlainButton
+                                        class={styles['preview-find-case']}
+                                        data-state={
                                             caseSensitive()
                                                 ? 'selected'
                                                 : 'unselected'
                                         }
-                                        class={styles['preview-find-case']}
                                         title="Match case"
                                         aria-label="Match case"
                                         aria-pressed={caseSensitive()}
@@ -768,7 +767,7 @@ export function PreviewView(props: {
                                         }}
                                     >
                                         Aa
-                                    </Button>
+                                    </PlainButton>
                                     <IconButton
                                         icon="X"
                                         label="Close (Esc)"
@@ -826,7 +825,7 @@ export function PreviewView(props: {
                                                 void openExternal(false)
                                             }
                                         >
-                                            OPEN IN DEFAULT APP
+                                            open in default app
                                         </IconTextButton>
                                     </Show>
                                 </div>
@@ -981,7 +980,7 @@ export function PreviewView(props: {
                                         icon="ExternalLink"
                                         onClick={() => void openExternal(false)}
                                     >
-                                        OPEN IN DEFAULT APP
+                                        open in default app
                                     </IconTextButton>
                                 ) : undefined
                             }
@@ -1078,7 +1077,7 @@ export function PreviewView(props: {
                                     icon="ExternalLink"
                                     onClick={() => void openExternal(false)}
                                 >
-                                    OPEN IN DEFAULT APP
+                                    open in default app
                                 </IconTextButton>
                             </Show>
                         </div>

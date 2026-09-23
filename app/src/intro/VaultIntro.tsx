@@ -440,11 +440,10 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     <div class={styles['vi-cta']}>
                         <TextButton
                             primary
-                            size="md"
                             onClick={next}
                             disabled={busy()}
                         >
-                            [ {busy() ? 'OPENING…' : 'ENTER YOUR VAULT'} ]
+                            {busy() ? 'opening…' : 'enter your vault'}
                         </TextButton>
                     </div>
                 </Show>

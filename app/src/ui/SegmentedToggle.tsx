@@ -23,27 +23,45 @@ export type SegmentedToggleProps<T> = {
     class?: string
     /** Per-segment extra class (e.g. an underline-tab look). */
     segmentClass?: string
+    /** 'bracket' (default): each option is a borderless `[label]` bracket button, `--sp-4`
+     *  apart, `size` ignored. 'segment' (butted boxes): today's boxed look, `size` honoured —
+     *  the drawing dock's icon-only tool groups only. */
+    look?: 'bracket' | 'segment'
 }
 
 /**
  * A row of mutually-exclusive buttons: the active one is `selected`, the rest
  * `unselected`. This is THE canonical selected/unselected consumer — graph mode
  * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
+ *
+ * `look="bracket"` (the default) renders every option as `kind="text"` — the same `[label]`
+ * bracket button as everywhere else in the app, spaced `--sp-4` apart, no box. `look="segment"`
+ * keeps `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, butted, sized) — for
+ * the drawing toolbar's icon-only tool groups.
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
+    const look = () => props.look ?? 'bracket'
     return (
         // `styles.wrap` is a no-op marker local (see SegmentedToggle.module.css) — without a
         // real local class referenced from here, the module has zero locals and Rollup
         // tree-shakes its whole CSS output, same trap as ui/FormControl.module.css.
-        <div class={`segmented ${styles.wrap} ${props.class ?? ''}`}>
+        <div
+            class={`segmented ${styles.wrap} ${props.class ?? ''}`}
+            data-look={look()}
+        >
             <For each={props.options}>
                 {opt => (
                     <Button
-                        kind="text"
+                        kind={look() === 'segment' ? 'segment' : 'text'}
                         state={
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
-                        size={props.size}
+                        size={look() === 'segment' ? props.size : undefined}
+                        aria-pressed={
+                            look() === 'bracket'
+                                ? opt.id === props.value
+                                : undefined
+                        }
                         class={`${props.segmentClass ?? ''} ${opt.class ?? ''}`}
                         title={opt.title}
                         aria-label={opt.ariaLabel}
