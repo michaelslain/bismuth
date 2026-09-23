@@ -1,0 +1,253 @@
+// app/src/daemon/DaemonCrons.tsx
+// Presentational crons panel — the "crons" facet's panel. Takes data + callbacks only (no
+// `api`/`pushToast`/store imports — the host wires those, same seam DaemonInbox/DaemonServices
+// already use). Status/tone derivation ports today's DaemonServices.tsx behaviour: cronStatus.ts
+// for the enabled/running/failed/idle base key, failedResult.ts (via cronStatus) for the
+// killed-counts-as-failed unification, cronFrequency.ts for the schedule string, relTimeISO for
+// ages — refined into the row-per-tone/labelled-status text the redesign asks for ('ok 4m ago',
+// 'failed 2h ago', not colour alone). The dot only glows 'running' while the daemon PROCESS
+// itself is up (`daemonRunning`) — a cron can't really be live if the machine daemon is down,
+// whatever its stale `running` flag says.
+import { createSignal, For, Show } from 'solid-js'
+import { Portal } from 'solid-js/web'
+import type { DaemonCron } from '../../../core/src/daemonGraph'
+import { openContextMenu } from '../nativeMenu'
+import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { relTimeISO } from '../relTime'
+import { TextButton } from '../ui/TextButton'
+import EmptyState from '../ui/EmptyState'
+import Text from '../ui/Text'
+import InlineTextInput from '../ui/InlineTextInput'
+import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
+import DaemonRow, { type DaemonRowTone } from './DaemonRow'
+import { cronStatus } from './cronStatus'
+import cronFrequency from './cronFrequency'
+import styles from './DaemonCrons.module.css'
+
+export type DaemonCronsProps = {
+    crons: DaemonCron[]
+    daemonRunning: boolean
+    onOpen: (file: string) => void
+    onRun: (name: string) => void
+    onToggle: (name: string, enabled: boolean) => void
+    onCreate: (name: string) => Promise<void>
+    onDelete: (name: string) => Promise<void>
+    class?: string
+}
+
+function toneFor(cron: DaemonCron, daemonRunning: boolean): DaemonRowTone {
+    const key = cronStatus(cron)
+    if (key === 'disabled') return 'off'
+    if (key === 'failed') return 'failed'
+    if (key === 'running') return daemonRunning ? 'running' : 'idle'
+    return cron.lastFired ? 'ok' : 'idle'
+}
+
+function statusFor(cron: DaemonCron, daemonRunning: boolean): string {
+    const tone = toneFor(cron, daemonRunning)
+    if (tone === 'off') return 'off'
+    if (tone === 'running') return 'running'
+    if (tone === 'failed')
+        return `failed ${relTimeISO(cron.lastFired!.timestamp)}`
+    if (tone === 'ok') return `ok ${relTimeISO(cron.lastFired!.timestamp)}`
+    return 'never'
+}
+
+/** A file-change cron has no cron expression to summarize — show what it watches instead. */
+function metaFor(cron: DaemonCron): string {
+    if (cron.on === 'file-change')
+        return cron.watch ? `on change: ${cron.watch}` : 'on change'
+    return cron.schedule ? cronFrequency(cron.schedule) : ''
+}
+
+function DaemonCrons(props: DaemonCronsProps) {
+    const [menu, setMenu] = createSignal<{
+        x: number
+        y: number
+        items: MenuItem[]
+    } | null>(null)
+    const [creating, setCreating] = createSignal(false)
+    const [createError, setCreateError] = createSignal<string | null>(null)
+    const [deletingName, setDeletingName] = createSignal<string | null>(null)
+    const [busyName, setBusyName] = createSignal<string | null>(null)
+
+    async function commitCreate(name: string): Promise<void> {
+        if (!name) {
+            setCreating(false)
+            return
+        }
+        setCreateError(null)
+        try {
+            await props.onCreate(name)
+            setCreating(false)
+        } catch (e) {
+            setCreateError((e as Error).message || "couldn't create")
+        }
+    }
+
+    async function commitDelete(name: string): Promise<void> {
+        setBusyName(name)
+        try {
+            await props.onDelete(name)
+        } finally {
+            setBusyName(null)
+            setDeletingName(null)
+        }
+    }
+
+    function menuItems(cron: DaemonCron): MenuItem[] {
+        const toggle: MenuItem = cron.enabled
+            ? {
+                  label: 'Disable',
+                  icon: 'PowerOff',
+                  onSelect: () => props.onToggle(cron.name, false),
+              }
+            : {
+                  label: 'Enable',
+                  icon: 'Power',
+                  onSelect: () => props.onToggle(cron.name, true),
+              }
+        return [
+            {
+                label: 'Run now',
+                icon: 'Play',
+                disabled: cron.running,
+                onSelect: () => props.onRun(cron.name),
+            },
+            { ...toggle, separatorBefore: true },
+            {
+                label: 'Delete',
+                icon: 'Trash2',
+                danger: true,
+                disabled: cron.running,
+                separatorBefore: true,
+                onSelect: () => setDeletingName(cron.name),
+            },
+        ]
+    }
+
+    const openMenu = (cron: DaemonCron, e: MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openContextMenu(e.clientX, e.clientY, menuItems(cron), setMenu)
+    }
+
+    const rowActions = (cron: DaemonCron) => {
+        if (deletingName() === cron.name) {
+            const busy = busyName() === cron.name
+            return (
+                <>
+                    <TextButton
+                        danger
+                        disabled={busy}
+                        aria-busy={busy}
+                        onClick={e => {
+                            e.stopPropagation()
+                            void commitDelete(cron.name)
+                        }}
+                    >
+                        {busy ? '…' : 'delete'}
+                    </TextButton>
+                    <TextButton
+                        disabled={busy}
+                        onClick={e => {
+                            e.stopPropagation()
+                            setDeletingName(null)
+                        }}
+                    >
+                        cancel
+                    </TextButton>
+                </>
+            )
+        }
+        return (
+            <TextButton
+                disabled={cron.running}
+                onClick={e => {
+                    e.stopPropagation()
+                    props.onRun(cron.name)
+                }}
+            >
+                run
+            </TextButton>
+        )
+    }
+
+    const head = () => (
+        <Show
+            when={!creating()}
+            fallback={
+                <div class={styles['create-field']}>
+                    <InlineTextInput
+                        value=""
+                        label="new cron name"
+                        onCommit={name => void commitCreate(name)}
+                        onCancel={() => {
+                            setCreating(false)
+                            setCreateError(null)
+                        }}
+                    />
+                    <Show when={createError()}>
+                        <Text as="span" size="micro" class={styles['create-error']}>
+                            {createError()}
+                        </Text>
+                    </Show>
+                </div>
+            }
+        >
+            <TextButton onClick={() => setCreating(true)}>
+                new cron
+            </TextButton>
+        </Show>
+    )
+
+    return (
+        <div class={`${styles['daemon-crons']} ${props.class ?? ''}`}>
+            <DaemonPanel actions={head()}>
+                <Show
+                    when={props.crons.length > 0}
+                    fallback={
+                        <EmptyState blockClass={daemonPanelEmptyClass}>
+                            no crons
+                        </EmptyState>
+                    }
+                >
+                    <div class={styles.list}>
+                        <For each={props.crons}>
+                            {cron => (
+                                <DaemonRow
+                                    name={cron.name}
+                                    tone={toneFor(cron, props.daemonRunning)}
+                                    status={statusFor(cron, props.daemonRunning)}
+                                    meta={metaFor(cron)}
+                                    dim={!cron.enabled}
+                                    onOpen={() =>
+                                        props.onOpen(
+                                            `.daemon/crons/${cron.file}.md`,
+                                        )
+                                    }
+                                    onContextMenu={e => openMenu(cron, e)}
+                                    actions={rowActions(cron)}
+                                />
+                            )}
+                        </For>
+                    </div>
+                </Show>
+            </DaemonPanel>
+            <Show when={menu()}>
+                {m => (
+                    <Portal>
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={m().items}
+                            onClose={() => setMenu(null)}
+                        />
+                    </Portal>
+                )}
+            </Show>
+        </div>
+    )
+}
+
+export default DaemonCrons
