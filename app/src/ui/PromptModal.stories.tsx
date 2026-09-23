@@ -27,9 +27,9 @@ export const Default: Story = {
             title="Open folder"
             actions={
                 <>
-                    <TextButton onClick={noop}>CANCEL</TextButton>
+                    <TextButton onClick={noop}>cancel</TextButton>
                     <TextButton variant="selected" onClick={noop}>
-                        OPEN
+                        open
                     </TextButton>
                 </>
             }
@@ -52,10 +52,10 @@ export const MultipleHintsNoInput: Story = {
             title="Set up daemon"
             actions={
                 <>
-                    <TextButton onClick={noop}>CLOSE</TextButton>
-                    <TextButton onClick={noop}>UPDATE</TextButton>
+                    <TextButton onClick={noop}>close</TextButton>
+                    <TextButton onClick={noop}>update</TextButton>
                     <TextButton variant="selected" onClick={noop}>
-                        SET UP / REPAIR
+                        set up / repair
                     </TextButton>
                 </>
             }

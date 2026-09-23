@@ -3,7 +3,7 @@
    The `.btn`/`.btn--*` family moved IN from `ui.css` (one-global-stylesheet Task 1). It stays a
    `:global()` re-export bridge, not fully local: it is reached via `:global()` from 8+ OTHER
    modules (ChatComposer, ChatSetup, ChatTurnParts, Toast, InboxView, PaneTree, Sidebar, TabRail,
-   TopStrip, ChatTranscript, Graph, Flashcards, SymbolGallery) plus `.segmented .btn--text`, and
+   TopStrip, ChatTranscript, Graph, Flashcards, SymbolGallery) plus `.segmented .btn--segment`, and
    this repo's design-system gate (`globalReach`) flags ANY `:global()` reach inside a
    `*.module.css` file unconditionally, with no self-ownership exemption. The ruling (see
    .claude/plans/ui-css-ownership.md and the wave-4 EmptyState/ViewBar precedent): keep the
@@ -28,44 +28,12 @@
    Converting `.btn*` to real hashed locals is a later wave's job, once the ~21 outside stylesheets
    that reach `.btn*` have been re-pointed — see buttonClass.test.ts.
 
-   What is ALSO genuinely locally owned, no bridge needed: the "[ label ]" bracket look. `bracket`
-   is a plain `ButtonProps` boolean with no `kind` restriction — Button.tsx's own doc comment used
-   to say "text buttons only", which was true of the CSS but not of the type, and Task 11 needs it
-   on `kind="icon"` too (`[ approve all ]`). Fixed both ways here: `.bracket::before`/`::after`
-   already paint the brackets unconditionally regardless of kind, and the two rules below now
-   cover every register that could ever carry a `text-transform`, not just the one that does
-   today — see each rule's own comment. */
-/* compound with :global(.btn--text): both classes land on the same <button> (buttonClass()
-   joins them into one class string), so a bare `.bracket` ties on specificity with the later
-   `:global(.btn--text) { text-transform: uppercase }` rule and loses to source order. A COMPOUND
-   selector with 2 classes (0,2,0) beats a single-class rule (0,1,0) regardless of source order, so
-   this already wins against `:global(.btn--text)` for every state modifier riding alongside it
-   (normal/selected/unselected/primary/danger) — none of those add a second `text-transform`
-   rule to out-specify. Same temporary bridge as `.btn`/`.btn--*` above — this is Button's own
-   class, not a foreign reach. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text).bracket { text-transform: lowercase; }
-/* Icon buttons carry no `text-transform` of their own — nothing to override — but this rule
-   documents that fact rather than leaving it implicit, and keeps `.bracket` correct if a future
-   icon variant ever adds one. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon).bracket { text-transform: lowercase; }
-/* Both registers of a bracket button render at ONE size — --fs-ui, not the text register's
-   default --fs-micro (`.btn--text` above) nor the icon register's default --fs-body-lg
-   (`.btn--icon` above) — plus a 1px --border hairline box, so `[ approve ]` and `[ ✓ approve ]`
-   read as the same control regardless of kind (one-global-followups Task 1 acceptance line 1).
-   Two classes (0,2,0) still beats `:global(.btn--text)`'s/`:global(.btn--icon)`'s own (0,1,0)
-   rules above, so this always wins regardless of source order. Same temporary bridge as the two
-   text-transform rules above — Button's own class, not a foreign reach. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text).bracket,
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon).bracket {
-  font-size: var(--fs-ui);
-  border: 1px solid var(--border);
-}
-.bracket::before { content: "[ "; }
-.bracket::after { content: " ]"; }
+   BRACKET RETIRED (bracket-buttons Task 1): the "[ label ]" CLI-confirm look used to be an opt-in
+   `.bracket` modifier layered on top of either register via a specificity trick. It is now simply
+   what `kind="text"` (the default kind) IS — every text button is `[ label ]`, lowercase, no
+   opt-in prop and no hidden text-transform. `ButtonKind` gained a THIRD kind, `'segment'`, which is
+   the OLD `.btn--text` look (uppercase, bordered, sized) kept verbatim below for SegmentedToggle
+   only — see the `.btn--segment` family's own comment. */
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
 /* Every button is one of two KINDS (text | icon) in one of three STATES
@@ -125,7 +93,7 @@
    segment has its ring painted over by the NEXT segment's border. Raise it for the same reason
    :hover and .btn--selected are raised. */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.segmented .btn--text:focus-visible) { z-index: 2; }
+:global(.segmented .btn--segment:focus-visible) { z-index: 2; }
 /* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
    an all-caps label next to an icon reads as floating above the icon's center.
    Nudge label text down 1px so the caps center on the icon. (Label is wrapped in
@@ -139,17 +107,14 @@
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--selected .btn-glyph), :global(.btn--primary .btn-glyph) { color: currentColor; opacity: .7; }
 
-/* ── text buttons ─────────────────────────────────────────────────────────────
-   BORDERLESS AT REST, exactly like .btn--icon, and for the same reason: resting state is a plain
-   surface, and STATE IS A BACKGROUND SWAP (the reference surface's rule — see the audit §3). These
-   used to carry a hairline border in every state, which made a text button read as a bordered BOX
-   next to a borderless icon button and was the main thing that made the two look like different
-   design systems in the same toolbar.
-   The border did not disappear, it moved to where it carries information: `selected` and `primary`
-   draw an accent border, `danger` a danger-tinted one. So an outline now MEANS something rather
-   than being the family's default chrome. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text) {
+/* ── segment buttons (SegmentedToggle only) ───────────────────────────────────
+   The pre-2026-09-22 `.btn--text` look, kept byte-for-byte so SegmentedToggle continues to render
+   exactly as before bracket-buttons Task 1 changed what `kind="text"` means. Every rule below is a
+   verbatim copy of the old `.btn--text` family, renamed `.btn--segment`. `kind="segment"` is the
+   ONLY register that ever gets this look; do not hand-edit these to "improve" them —
+   SegmentedToggle's own story is graded against the pre-task baseline pixel-for-pixel. */
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment) {
   /* Vertical padding must clear the cap-height of an UPPERCASE Monaspace label at
      --fs-micro/--lh-tight — at 1–2px the caps sit on the hairline border and read
      as clipped (the graph-mode switcher made this obvious). 4px is the floor. */
@@ -161,33 +126,88 @@
   text-transform: uppercase;
   font-size: var(--fs-micro);
   letter-spacing: var(--ls-label);
-  color: var(--fg); /* variant-less .btn--text must not inherit UA black */
+  color: var(--fg); /* variant-less .btn--segment must not inherit UA black */
 }
 /* normal — standalone, full-strength neutral */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--normal) { color: var(--fg); }
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--normal:hover:not(:disabled)) { background: var(--hover-bg); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--normal) { color: var(--fg); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--normal:hover:not(:disabled)) { background: var(--hover-bg); }
 /* unselected — toggle member, off: structure-dim, no outline emphasis */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--unselected) { color: var(--faint); }
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--unselected:hover:not(:disabled)) { color: var(--fg); background: var(--hover-bg); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--unselected) { color: var(--faint); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--unselected:hover:not(:disabled)) { color: var(--fg); background: var(--hover-bg); }
 /* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
    --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
    visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
    selected segment looked like a different surface rather than the same surface, selected. The
    accent border + accent ink already carry "on" unambiguously. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--selected) { color: var(--accent); background: transparent; border-color: var(--accent); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--selected) { color: var(--accent); background: transparent; border-color: var(--accent); }
 /* primary — selected + a glow rim. Max one per view. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--primary) { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--glow-accent); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--primary) { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--glow-accent); }
 /* danger tone — destructive actions */
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--danger) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--danger:hover:not(:disabled)) { background: var(--hover-bg); }
+/* sizes */
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--sm) { padding: var(--sp-2) var(--sp-4); }
+/* design-system-ignore globalReach: the pre-2026-09-22 text register, kept verbatim for SegmentedToggle only */
+:global(.btn--segment.btn--lg) { padding: var(--sp-2) var(--sp-5); font-size: var(--fs-ui); }
+
+/* ── text buttons: the bracket register ──────────────────────────────────────
+   Every `kind="text"` button (the default kind) renders as `[ label ]` — lowercase, borderless,
+   no uppercase transform. This IS the "bracket" look bracket-buttons Task 1 retired as an opt-in
+   `.bracket` modifier; it is now simply what kind="text" means, unconditionally. The `::before`/
+   `::after` brackets use `content: '[' / ''` (the `/ ''` empty alt text keeps the glyph out of the
+   accessible name, so `getByRole('button', { name: 'label' })` still matches on just the label).
+   `kind="segment"` is the one register that still needs the OLD look — see `.btn--segment` above,
+   kept verbatim for SegmentedToggle. */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--danger) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+:global(.btn--text) {
+  gap: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--fs-ui);
+  color: var(--fg);
+}
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--danger:hover:not(:disabled)) { background: var(--hover-bg); }
+:global(.btn--text)::before { content: '[' / ''; }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text)::after { content: ']' / ''; }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--normal) { color: var(--fg); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--unselected) { color: var(--faint); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--unselected:hover:not(:disabled)) { color: var(--text-muted); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--selected) { color: var(--accent); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--primary) { color: var(--accent); font-weight: var(--fw-bold); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text.btn--danger) { color: var(--danger); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text:disabled) { color: var(--faint); opacity: 1; }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--text:not(.btn--unselected):hover:not(:disabled)) .textLabel {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--sp-1);
+}
+/* Named `.textLabel`, not `.label`: this repo's CSS-module hash space is short enough that a
+   second module also named `.label` (BarLabel.module.css) collided with this one under
+   bench/moduleClassCheck.ts's hash-to-module attribution, making BarLabel misreport as a dead
+   module. Renaming the local (an implementation-only identifier — nothing outside Button.tsx
+   reads it) sidesteps the collision without touching BarLabel, which is out of this task. */
+.textLabel { display: inline-flex; align-items: center; gap: var(--sp-2); }
 
 /* ── icon buttons: borderless; state changes opacity / fill ───────────────── */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
@@ -252,9 +272,3 @@
 }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--sm:hover:not(:disabled)) { color: var(--fg); background: var(--state-hover-bg); }
-
-/* sizes (text buttons) */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--sm) { padding: var(--sp-2) var(--sp-4); }
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--text.btn--lg) { padding: var(--sp-2) var(--sp-5); font-size: var(--fs-ui); }

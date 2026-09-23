@@ -11,11 +11,11 @@
    the outside reach-ins to SegmentedToggle's own `class`/`segmentClass` props; the wave after that
    deletes every `:global()` wrapper and ignore comment here in one pass.
 
-   `.segmented .btn--text` is a cross-primitive compound: it styles Button.tsx's `.btn--text`
+   `.segmented .btn--segment` is a cross-primitive compound: it styles Button.tsx's `.btn--segment`
    class, but only in the context of being inside SegmentedToggle's own wrapper — it is
    SegmentedToggle's layout rule (the butted-border overlap), not Button's, so it stays here
    rather than in Button.module.css. Both halves of the selector are still global class names
-   (Button's `.btn--text` is itself a `:global()` bridge in Button.module.css per Task 1), so the
+   (Button's `.btn--segment` is itself a `:global()` bridge in Button.module.css per Task 1), so the
    whole compound is wrapped in `:global()` too. `drawing/Toolbar.tsx`'s undo/redo AND zoom groups
    now compose this component (one-global-followups Task 3) — the zoom group's percent readout
    gets its fixed width through `SegmentedOption.class`, now that the option carries one. */
@@ -29,16 +29,16 @@
 /* design-system-ignore globalReach: SegmentedToggle's own class, temporary :global() bridge to the four outside callers above, until a later wave */
 :global(.segmented) { display: inline-flex; align-items: center; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text) { border-radius: 0; position: relative; }
+:global(.segmented .btn--segment) { border-radius: 0; position: relative; }
 /* Segments share ONE rule between them by overlapping borders, not by dropping the
    left one — a dropped border leaves the selected segment's accent outline open on
    its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
    so its own border draws the full box. */
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text + .btn--text) { margin-left: -1px; }
+:global(.segmented .btn--segment + .btn--segment) { margin-left: -1px; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text.btn--selected), :global(.segmented .btn--text.btn--primary), :global(.segmented .btn--text:hover:not(:disabled)) { z-index: 1; }
+:global(.segmented .btn--segment.btn--selected), :global(.segmented .btn--segment.btn--primary), :global(.segmented .btn--segment:hover:not(:disabled)) { z-index: 1; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text:first-child) { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
+:global(.segmented .btn--segment:first-child) { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented .btn--text:last-child) { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+:global(.segmented .btn--segment:last-child) { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }

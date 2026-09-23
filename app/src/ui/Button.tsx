@@ -15,21 +15,21 @@ export type ButtonProps = {
      *  hook outside callers select on (`.x[data-state="selected"]`) instead of reaching
      *  `:global(.btn--selected)` etc. See one-global-followups Task 1. */
     state?: ButtonState
+    /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`/`segment`. */
     size?: ButtonSize
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
-    /** Renders the "[ label ]" CLI-confirm look — lowercase text wrapped in brackets. Replaces
-     *  the `::before`/`::after` reach into `:global(.btn--text)` that Toast and the chat cards
-     *  used to reimplement themselves. Works on any `kind`: `Button.module.css`'s `.bracket` rule
-     *  wins over every register's own `text-transform`, not just `kind="text"`'s — Task 11's
-     *  `[ approve all ]` uses it on a `kind="icon"` button too. */
+    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
     bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
  * Internal base button: owns the shared .btn chrome. App code should import
  * TextButton / IconButton, not this directly.
+ *
+ * `kind="text"` (the default) renders as `[ label ]` — the bracket look is unconditional now,
+ * not an opt-in prop. `kind="segment"` is the OLD text look, kept verbatim for SegmentedToggle.
  */
 function Button(props: ButtonProps) {
     const [local, rest] = splitProps(props, [
@@ -43,6 +43,7 @@ function Button(props: ButtonProps) {
         'type',
         'children',
     ])
+    const kind = () => local.kind ?? 'text'
     return (
         <button
             type={local.type ?? 'button'}
@@ -53,16 +54,15 @@ function Button(props: ButtonProps) {
                 size: local.size,
                 danger: local.danger,
                 primary: local.primary,
-                class: [
-                    local.bracket ? styles.bracket : '',
-                    local.class,
-                ]
-                    .filter(Boolean)
-                    .join(' '),
+                class: local.class,
             })}
             {...rest}
         >
-            {local.children}
+            {kind() === 'text' ? (
+                <span class={styles.textLabel}>{local.children}</span>
+            ) : (
+                local.children
+            )}
         </button>
     )
 }

@@ -28,7 +28,7 @@ function Demo(props: { accept?: string; multiple?: boolean }) {
                 data-testid="fp-trigger"
                 onClick={() => picker.click()}
             >
-                CHOOSE FILE
+                choose file
             </TextButton>
             <Text tone="muted" data-testid="fp-result">
                 {names().length ? names().join(', ') : 'No file chosen'}
