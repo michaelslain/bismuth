@@ -20,6 +20,8 @@ export interface DaemonMemoryItem {
     path: string
     name: string
     type: string
+    /** The note's `updated` frontmatter — a local calendar date `YYYY-MM-DD`
+     *  (memory/src/dates.ts), not a timestamp. */
     updated: string
     /** First non-empty content line, truncated to `EXCERPT_MAX` chars. */
     excerpt: string

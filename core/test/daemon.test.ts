@@ -1,4 +1,6 @@
 import { tempDir } from './helpers'
+import { parseFrontmatter } from '../../daemon/src/lib/frontmatter.ts'
+import { parseCronExpression } from '../../daemon/src/daemon/cron.ts'
 // core/test/daemon.test.ts
 // Unit-tests core/src/daemon.ts against a TEMP BISMUTH_DAEMON_DIR. Each test points
 // BISMUTH_DAEMON_DIR at a fresh tmp dir and writes fake state files (device-id /
@@ -526,17 +528,23 @@ test('createCron slugifies the name, writes a template, and returns the slug as 
         join(home, 'crons', 'answer-emails.md'),
         'utf8',
     )
-    expect(md).toContain('name: "Answer Emails!"')
-    expect(md).toContain('schedule: "0 9 * * *"')
+    expect(md).toContain('name: answer-emails')
+    expect(md).toContain('schedule: 0 9 * * *')
     expect(md).toContain('enabled: false')
     // Bismuth's own reader can see the new cron immediately.
     const snap = daemonSnapshot(home)
     const cron = snap.crons.find(c => c.file === 'answer-emails')
     expect(cron).toMatchObject({
-        name: 'Answer Emails!',
+        name: 'answer-emails',
         schedule: '0 9 * * *',
         enabled: false,
     })
+    // The daemon's own frontmatter reader must see the same bare, unquoted values —
+    // a quoted name/schedule round-trips as a literal `"…"` string there (see
+    // daemon/src/lib/frontmatter.ts) and silently breaks lookups + cron matching.
+    const { frontmatter } = parseFrontmatter(md)
+    expect(frontmatter.name).toBe('answer-emails')
+    expect(parseCronExpression(frontmatter.schedule!)?.minute).toBe('0')
 })
 
 test('createCron slug: lowercases, collapses runs of invalid chars into one dash, trims edges', () => {
@@ -571,13 +579,15 @@ test('createProcess slugifies the name, writes a template with a command placeho
     const result = createProcess('Web Search', home)
     expect(result).toEqual({ file: 'web-search' })
     const md = readFileSync(join(home, 'processes', 'web-search.md'), 'utf8')
-    expect(md).toContain('name: "Web Search"')
+    expect(md).toContain('name: web-search')
     expect(md).toContain('command: echo "replace me"')
     expect(md).toContain('enabled: false')
+    const { frontmatter } = parseFrontmatter(md)
+    expect(frontmatter.name).toBe('web-search')
     const snap = daemonSnapshot(home)
     expect(
         snap.processes.find(p => p.file === 'web-search'),
-    ).toMatchObject({ name: 'Web Search', enabled: false })
+    ).toMatchObject({ name: 'web-search', enabled: false })
 })
 
 test('createProcess rejects empty/invalid slug (400) and a clashing slug (409)', () => {
