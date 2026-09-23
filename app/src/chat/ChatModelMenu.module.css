@@ -23,7 +23,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 0;
-    border-color: transparent;
+    border: 1px solid transparent;
     background: transparent;
     text-transform: lowercase;
     letter-spacing: normal;

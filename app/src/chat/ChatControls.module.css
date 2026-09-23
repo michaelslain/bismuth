@@ -162,16 +162,26 @@
 /* The RowAction / auth-pill controls (ChatControls.tsx's `<PlainButton class={styles.action}>`)
    — a caption-register control, not a toolbar button, so it carries none of `.btn--text`'s usual
    chrome (UPPERCASE, padding, reserved border, hover fill) in the first place; this class is its
-   entire look, matching the Selects above (plain lowercase text). */
+   entire look, matching the Selects above (plain lowercase text).
+   `color: var(--fg)`, NOT `inherit`: the old `.row :global(.btn--text) { color: inherit }` rule
+   tied in specificity with Button's own `.btn--text.btn--normal { color: var(--fg) }`
+   (both 0,2,0), and that tie was actually won by Button's rule on CSS-module import order —
+   confirmed against the baseline screenshot, where "history"/"new chat" render at full `--fg`
+   strength, not `.row`'s own dimmer `--faint`. PlainButton carries no competing Button class to
+   tie against, so the value has to be written explicitly here to reproduce that same look.
+   `border: 1px solid transparent` (reserved, not drawn — same idiom as ui/Button.module.css's own
+   `.btn--text`) is written explicitly too: PlainButton's reset sets `border: 0`, and without this
+   the control loses the 1px-per-side layout space Button used to reserve, shifting every sibling
+   after it in the row leftward by 2px — confirmed against the baseline screenshot. */
 .action {
     padding: 0;
-    border-color: transparent;
+    border: 1px solid transparent;
     background: transparent;
     text-transform: none;
     letter-spacing: normal;
     font-family: inherit;
     font-size: inherit;
-    color: inherit;
+    color: var(--fg);
 }
 .action[data-state="normal"]:hover:not(:disabled) {
     color: var(--fg);
