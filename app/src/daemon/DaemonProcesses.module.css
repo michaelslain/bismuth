@@ -2,14 +2,17 @@
    Same grid as DaemonCrons.module.css's `.list` minus the schedule column: dot // name //
    status // actions. No row ever passes DaemonRow a `meta`, so this list genuinely never has a
    schedule track to size — the "same grid minus schedule" the spec asks for, not merely an
-   empty column. */
+   empty column. Name floors at 12ch and sizes to its own content (`minmax(12ch, max-content)`,
+   matching DaemonCrons.module.css); status takes the leftover free space
+   (`minmax(max-content, 1fr)`) so slack in a wide panel lands between status and the trailing
+   actions instead of opening a gap right after a short name. */
 .daemon-processes {
     height: 100%;
     min-height: 0;
 }
 .list {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(12ch, max-content) minmax(max-content, 1fr) auto;
     row-gap: 0;
 }
 .create-field {

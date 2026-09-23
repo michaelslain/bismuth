@@ -19,7 +19,8 @@ type Story = StoryObj<typeof meta>
 
 const listStyle = {
     display: 'grid',
-    'grid-template-columns': 'auto minmax(12ch, 1fr) minmax(0, 11ch) auto auto',
+    'grid-template-columns':
+        'auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto',
     width: '360px',
 } as const
 
@@ -33,7 +34,8 @@ const List = (props: { rows: DaemonRowProps[] }) => (
  *  floor holds and the schedule column gives up its room first (Acceptance 7). */
 const narrowListStyle = {
     display: 'grid',
-    'grid-template-columns': 'auto minmax(12ch, 1fr) minmax(0, 11ch) auto auto',
+    'grid-template-columns':
+        'auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto',
     width: '220px',
 } as const
 
@@ -49,7 +51,7 @@ const NarrowList = (props: { rows: DaemonRowProps[] }) => (
  *  short and misalign (see DaemonRow.tsx's header comment). */
 const noMetaListStyle = {
     display: 'grid',
-    'grid-template-columns': 'auto minmax(0, 1fr) auto auto',
+    'grid-template-columns': 'auto minmax(12ch, max-content) minmax(max-content, 1fr) auto',
     width: '280px',
 } as const
 

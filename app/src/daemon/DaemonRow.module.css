@@ -8,7 +8,7 @@
     grid-template-columns: subgrid;
     align-items: center;
     column-gap: var(--sp-3);
-    height: var(--row-h, 18px);
+    height: var(--row-h);
     padding: 0 var(--sp-4);
     border-radius: var(--r-0);
     cursor: pointer;
@@ -23,10 +23,12 @@
 .row:focus-visible {
     outline: none;
 }
-/* A disabled definition — the whole row steps back, same opacity idiom the old combined
-   DaemonServices rows used for a disabled cron/process. */
-.row.dim {
-    opacity: 0.45;
+/* A disabled definition — name and schedule fall back to --faint, the same tone the status word
+   already gets via `.tone-off` (name gets it through DaemonRow.tsx's `Label tone="faint"`). NOT
+   the old whole-row opacity, which stacked on top of the already-faint tone and dropped disabled
+   text to ~1.8:1 contrast — unreadable. */
+.row.dim .meta {
+    color: var(--faint);
 }
 
 /* A 6px currentColor dot — the shared .status-dot idiom, but the colour is a tone class here
@@ -46,9 +48,9 @@
     min-width: 0;
 }
 
-/* Schedule / trigger. Truncates FIRST — its column is capped at a fixed character width
-   (see the parent list's grid-template-columns), so the grid gives this track's room to the
-   name column before the name itself has to shrink. */
+/* Schedule / trigger. Truncates FIRST — its column floors at 0 width (see the parent list's
+   grid-template-columns), so under pressure the grid shrinks this track toward zero before the
+   name column (floored at 12ch) has to give up any of its own room. */
 .meta {
     min-width: 0;
     overflow: hidden;
