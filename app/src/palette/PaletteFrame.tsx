@@ -23,6 +23,8 @@ export type PaletteFrameProps = {
     onKeyDown?: (e: KeyboardEvent) => void
     inputRef?: (el: HTMLInputElement) => void
     children: JSX.Element
+    /** Prompt glyph; defaults to SearchBar's `/`. The command palette passes `>`. */
+    prompt?: string
 }
 
 function PaletteFrame(props: PaletteFrameProps) {
@@ -35,7 +37,7 @@ function PaletteFrame(props: PaletteFrameProps) {
         >
             <SearchBar
                 size="large"
-                prompt=">"
+                prompt={props.prompt}
                 inputRef={props.inputRef}
                 placeholder={props.placeholder}
                 value={props.value}
