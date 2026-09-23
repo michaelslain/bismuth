@@ -53,7 +53,6 @@ interface FieldDef {
     def: string
     /** Optional fields offer a "Not set" choice. */
     optional?: boolean
-    span?: boolean
     hint: string
 }
 
@@ -93,7 +92,6 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
             key: 'dueField',
             role: 'Due',
             def: 'due',
-            span: true,
             hint: "column holding each card's next-review date.",
         },
     ],
@@ -421,7 +419,6 @@ export function BaseSettings(props: {
                                     label={`${f.role.toLowerCase()} column`}
                                     badge={f.optional ? 'optional' : 'required'}
                                     hint={f.hint}
-                                    span={f.span}
                                 >
                                     <Select
                                         value={form()[f.key] ?? ''}
