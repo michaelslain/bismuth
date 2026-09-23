@@ -8,11 +8,9 @@
     min-width: 0;
 }
 
-/* The trigger owns its own register — lowercase, faint, no button chrome — so it reads the same
-   whether or not a `.row` ancestor happens to also reset `.btn--text`. Specificity (0,2,0) beats
-   `ui.css`'s base `.btn--text` (0,1,0) without colliding with `.row :global(.btn--text)` (0,2,0,
-   which sets the same values); `.row`'s own rule is `color: inherit`, so the row is unaffected by
-   the `--faint` set here. */
+/* The trigger is a ui/PlainButton (an unstyled real `<button>`) — this class is its ENTIRE look,
+   lowercase and faint with no button chrome, since PlainButton carries none of ui/Button's KIND
+   classes to override in the first place. */
 .model-menu .word {
     display: inline-block;
     /* `min-width: 0`, not just `max-width: 100%` — this is a flex ITEM of `.model-menu`, and a
@@ -25,7 +23,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 0;
-    border-color: transparent;
+    border: 1px solid transparent;
     background: transparent;
     text-transform: lowercase;
     letter-spacing: normal;
