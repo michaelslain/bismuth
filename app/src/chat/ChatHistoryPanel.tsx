@@ -10,7 +10,6 @@ import type { ChatHistoryState } from './chatSession'
 import type { ChatScope } from '../api'
 import { relativeTime } from './chatRelativeTime'
 import { chatOriginIcon } from '../chatOrigin'
-import { TextInput } from '../ui/TextInput'
 import Text from '../ui/Text'
 import { SegmentedToggle, type SegmentedOption } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
@@ -18,6 +17,7 @@ import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { Icon } from '../icons/Icon'
 import PlainButton from '../ui/PlainButton'
 import IconButton from '../ui/IconButton'
+import SearchBar from '../ui/SearchBar'
 import { isDismissKey } from '../ui/widgetKeys'
 
 export type ChatHistoryPanelProps = {
@@ -68,22 +68,21 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
 
     return (
         <div class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}>
-            <div class={styles.search}>
-                <Icon value="Search" size={13} class={styles['search-icon']} />
-                <TextInput
-                    class={styles['search-input']}
-                    value={props.history.query()}
-                    onInput={props.history.setQuery}
-                    placeholder="Search conversations…"
-                    autofocus
-                />
+            <SearchBar
+                class={styles.search}
+                size="compact"
+                value={props.history.query()}
+                onInput={props.history.setQuery}
+                placeholder="Search conversations…"
+                autofocus
+            >
                 <IconButton
                     class={styles.close}
                     icon="X"
                     label="Close history"
                     onClick={props.history.close}
                 />
-            </div>
+            </SearchBar>
             <div class={styles.scope}>
                 <SegmentedToggle
                     class={styles['scope-toggle']}
