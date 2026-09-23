@@ -48,6 +48,11 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     const [createError, setCreateError] = createSignal<string | null>(null)
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
+    // InlineTextInput settles (commits or cancels) exactly once, then goes dead — so a rejected
+    // create must remount a fresh input rather than reuse the settled one, or neither Enter
+    // (retry) nor Esc (cancel) does anything afterwards.
+    const [attempt, setAttempt] = createSignal(0)
+    const [draft, setDraft] = createSignal('')
 
     async function commitCreate(name: string): Promise<void> {
         if (!name) {
@@ -60,6 +65,8 @@ function DaemonProcesses(props: DaemonProcessesProps) {
             setCreating(false)
         } catch (e) {
             setCreateError((e as Error).message || "couldn't create")
+            setDraft(name)
+            setAttempt(a => a + 1)
         }
     }
 
@@ -137,15 +144,19 @@ function DaemonProcesses(props: DaemonProcessesProps) {
             when={!creating()}
             fallback={
                 <div class={styles['create-field']}>
-                    <InlineTextInput
-                        value=""
-                        label="new service name"
-                        onCommit={name => void commitCreate(name)}
-                        onCancel={() => {
-                            setCreating(false)
-                            setCreateError(null)
-                        }}
-                    />
+                    <Show when={attempt() + 1} keyed>
+                        {_attempt => (
+                            <InlineTextInput
+                                value={draft()}
+                                label="new service name"
+                                onCommit={name => void commitCreate(name)}
+                                onCancel={() => {
+                                    setCreating(false)
+                                    setCreateError(null)
+                                }}
+                            />
+                        )}
+                    </Show>
                     <Show when={createError()}>
                         <Text as="span" size="micro" class={styles['create-error']}>
                             {createError()}
@@ -154,7 +165,13 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                 </div>
             }
         >
-            <TextButton onClick={() => setCreating(true)}>
+            <TextButton
+                onClick={() => {
+                    setDraft('')
+                    setAttempt(0)
+                    setCreating(true)
+                }}
+            >
                 new service
             </TextButton>
         </Show>

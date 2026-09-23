@@ -121,6 +121,11 @@ export const CreateError: Story = {
         await expect(
             canvas.getByText('a service named "sync-worker" already exists'),
         ).toBeInTheDocument()
+        // The field must still be alive after a rejected create — Esc cancels it.
+        await userEvent.keyboard('{Escape}')
+        await expect(
+            canvas.getByRole('button', { name: 'new service' }),
+        ).toBeInTheDocument()
     },
 }
 

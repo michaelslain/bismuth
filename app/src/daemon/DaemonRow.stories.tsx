@@ -19,12 +19,26 @@ type Story = StoryObj<typeof meta>
 
 const listStyle = {
     display: 'grid',
-    'grid-template-columns': 'auto minmax(0, 1fr) minmax(0, 11ch) auto auto',
+    'grid-template-columns': 'auto minmax(12ch, 1fr) minmax(0, 11ch) auto auto',
     width: '360px',
 } as const
 
 const List = (props: { rows: DaemonRowProps[] }) => (
     <div style={listStyle}>
+        <For each={props.rows}>{row => <DaemonRow {...row} />}</For>
+    </div>
+)
+
+/** A frame narrow enough that BOTH flexible-ish tracks are under pressure — proves the name
+ *  floor holds and the schedule column gives up its room first (Acceptance 7). */
+const narrowListStyle = {
+    display: 'grid',
+    'grid-template-columns': 'auto minmax(12ch, 1fr) minmax(0, 11ch) auto auto',
+    width: '220px',
+} as const
+
+const NarrowList = (props: { rows: DaemonRowProps[] }) => (
+    <div style={narrowListStyle}>
         <For each={props.rows}>{row => <DaemonRow {...row} />}</For>
     </div>
 )
@@ -122,7 +136,7 @@ export const Dim: Story = {
  *  status/actions columns off the edge. */
 export const LongName: Story = {
     render: () => (
-        <List
+        <NarrowList
             rows={[
                 {
                     name: 'reconcile-every-vault-notes-inbound-link-graph-nightly',
