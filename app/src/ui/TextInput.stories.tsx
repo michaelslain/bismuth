@@ -84,6 +84,18 @@ export const Filled: Story = {
     render: () => <Controlled initial="Meeting notes 2026-07-07" />,
 }
 
+/** Focused — the accent underline + inset shadow treatment, no outline box. `play` focuses the
+ *  field so the screenshot captures the state rather than just the CSS existing. */
+export const Focused: Story = {
+    render: () => <Controlled initial="Meeting notes 2026-07-07" />,
+    play: async ({ canvasElement }) => {
+        const el = canvasElement.querySelector<HTMLInputElement>('input')
+        expect(el).not.toBeNull()
+        el!.focus()
+        await expect(document.activeElement).toBe(el)
+    },
+}
+
 /** Multi-line variant → <textarea> (min-height, no resize). */
 export const Multiline: Story = {
     render: () => (

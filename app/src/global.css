@@ -237,6 +237,9 @@
   --rule-soft: 1px solid var(--border-soft);
   --rule-accent: 1px solid var(--accent);
   --rule-dashed: 1px dashed var(--border);
+  /* --rule-soft-dashed: NEW (modal redesign Task 3) — a disabled field's underline: the
+     --rule-soft border color, but dashed, so "disabled" reads distinctly from "resting". */
+  --rule-soft-dashed: 1px dashed var(--border-soft);
 
   /* ── Motion — RECONCILED 2026-08-27 (visual-unification audit §7 wave 2, "shared chrome" —
      the wave that owns nav-chrome motion, per wave 0's own deferral note below). Wave 0 moved
@@ -270,6 +273,12 @@
   --sp-6: 16px;
   --sp-7: 24px;
 
+  /* Optical-alignment nudge — a 1px correction for a glyph whose own em-box sits proud of a
+     neighboring text baseline (line-height: 1 does not self-centre a symbol font). Same value
+     Button.module.css's `.btn-label` already uses as a bare literal; named here so a second
+     site (Select's caret, FormControl.module.css) doesn't repeat the magic number. */
+  --optical-nudge: 1px;
+
   /* ── Control-height rhythm — NEW (§2.2, amended §9.4). Three bands: a list row, a control
      (button/select/input/chip), and a band (toolbar/header). §9.4 answers the two open questions
      from §8.4: the control step is 24 (on the 2/4/6/8 spacing grid, NOT the 18-grid's ugly-to-
@@ -279,6 +288,12 @@
      existing row consumer reads until each surface is migrated. */
   --h-row: 18px;
   --h-control: 24px;
+  /* NEW (Task 4, modal redesign, 2026-09-23). The settings-form label column width, in whole
+     character cells (--cell-w, the graph's own advance width, but the only shared cell metric in
+     the token layer) so a label column measures in round text units rather than an arbitrary px
+     guess. SettingsField/SettingsGrid/Field all key their label column to this ONE token, so every
+     row across a form starts its control at the same x. */
+  --label-col: calc(var(--cell-w) * 20);
   /* One "band" — the top strip, the view bars, the sidebar toolzone. Two row units, so a
      horizontal ruler through the app still lands on a row boundary.
      NOT shrunk: the bars' HEIGHT was never the problem — the gap BETWEEN their buttons was, and
@@ -404,6 +419,11 @@
      two carry the same 18px value on purpose until a later wave migrates call sites
      onto --h-row. */
   --row-h: 18px;
+
+  /* Cap for a scrolling stack of --row-h rows inside a dialog (ToggleList's column-visibility
+     list, and anything shaped like it) — enough rows to browse without the list, and the dialog
+     around it, growing unbounded. */
+  --list-max-h: 320px;
 
   --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
 

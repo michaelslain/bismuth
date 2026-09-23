@@ -1,6 +1,14 @@
 /* app/src/ui/FormControl.module.css — the shared form-control chrome behind TextInput and
    Select's trigger. MOVED from ui/ui.css (2026-09-20, CSS modules migration continuation, Task
-   3, revised after review).
+   3, revised after review). Redesigned by the modal redesign (2026-09-23, Task 3): the filled
+   well is gone — every field is now transparent with just an underline rule (`--rule-soft` at
+   rest, firming to `--rule` on focus, no outline box). Focus treatment revised in Task 12 to
+   match the search field as it landed on main (app/src/ui/SearchBar.module.css, read-only
+   reference for this task): a modal's first field autofocuses on open the same way the search
+   fields do, so the accent underline this file used to draw on focus read as a permanent
+   coloured divider rather than a transient state — same reasoning that dropped it from
+   SearchBar. The rest/focus rule pair is now identical to SearchBar's, so every field in the app
+   reads as one prompt-line idiom.
 
    `.ui-input` is applied by BOTH TextInput.tsx (the field itself) and Select.tsx (composed onto
    its trigger button via FormControl's `as="button"` branch) — two real components sharing one
@@ -26,33 +34,46 @@
    zero local classes reads as dead to `bench/moduleClassCheck.ts`, which this isn't. */
 .control { --form-control: true; }
 
-/* One look for every text field and dropdown trigger: surface fill, soft border, accent focus
-   ring. Mono UI font — value and hint are both mono now. */
+/* One look for every text field and dropdown trigger: transparent, an underline rule at rest, the
+   same rule firmed to neutral on focus — no accent, no outline box. Mono UI font — value and
+   hint are both mono now. */
 :global(.ui-input) { /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
   width: 100%;
   box-sizing: border-box;
+  height: var(--h-control);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--surface-2);
-  border: var(--rule-soft);
+  line-height: var(--lh-ui);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-bottom: var(--rule-soft);
   border-radius: var(--r-0);
   color: var(--fg);
   outline: none;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease);
 }
 :global(.ui-input)::placeholder { color: var(--faint); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-:global(.ui-input):hover:not(:focus) { border-color: var(--border); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-/* Signature focus treatment: accent border + a soft accent glow ring. */
-:global(.ui-input):focus, :global(.ui-input):focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-textarea:global(.ui-input) { resize: none; min-height: 62px; line-height: var(--lh-ui); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* Focus treatment: the soft rest rule firms to the neutral --rule — no accent underline, no
+   inset shadow, no outline box. Matches SearchBar's :focus-within exactly (an autofocused field
+   reading a permanent accent line was the reason that branch dropped the accent). Applies to
+   every `.ui-input`, so Select's trigger (which composes this same class) gets it for free. */
+:global(.ui-input):focus, :global(.ui-input):focus-within { border-bottom: var(--rule); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-input):disabled { color: var(--faint); border-bottom: var(--rule-soft-dashed); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* Select's trigger has no caret/box change on focus, so the rule-firming alone is near-invisible
+   for keyboard focus (ink theme: #282B34 -> #3A3E4A, 1px). A second, NON-accent cue mirrors the
+   search field's glyph-bolding: the value text and caret go bold + full --fg on :focus-visible
+   only (keyboard focus, never a mouse-opened modal). No accent line, no outline box. */
+:global(.ui-select-trigger):focus-visible { color: var(--fg); font-weight: var(--fw-bold); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-select-trigger):focus-visible :global(.ui-select-caret) { color: var(--fg); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+/* Multiline: the SAME underline sits under the last line, not a box around the whole field —
+   `border` stays `none`/`border-bottom` only, exactly as the single-line branch above. */
+textarea:global(.ui-input) { resize: none; min-height: 62px; height: auto; padding: var(--sp-2) 0; line-height: var(--lh-ui); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
 
-/* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
-   list is a portaled <PopoverList> above the modal overlay; a transparent backdrop
-   between the overlay and the list catches outside clicks. */
+/* Select: a .ui-input styled as a clickable trigger with a trailing `▾` caret, on the SAME
+   underline as every other field — it inherits `.ui-input`'s rest/focus/disabled rules above
+   rather than owning a separate box or focus ring. The open list is a portaled <PopoverList>
+   above the modal overlay; a transparent backdrop between the overlay and the list catches
+   outside clicks. */
 :global(.ui-select-trigger) { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-:global(.ui-select-trigger):focus { border-color: var(--accent); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-/* border-color alone is not a focus indicator on a trigger whose resting border is already a
-   hairline — and it is entirely invisible once the control is in an accent-bordered state. */
-:global(.ui-select-trigger):focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-:global(.ui-select-caret) { flex: none; color: var(--faint); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-select-caret) { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */

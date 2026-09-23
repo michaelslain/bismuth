@@ -3,51 +3,31 @@
    file uses in place of the old `.evm-modal` (the class EventModal now passes to <FormModal>),
    which preserves the original (0,2,0) specificity of every `.evm-modal .x` descendant rule.
 
-   `.panel` itself carries only `min-width`/`gap` — the two `.event-modal` declarations that
-   survive the old two-class cascade (`.event-modal` + `.evm-modal` on the same root). Every other
-   `.event-modal` property (max-width, width, max-height, overflow-y, display, flex-direction) was
-   already overridden by the later, equal-specificity `.evm-modal` rule (now FormModal.module.css's
-   `.panel`) and is correctly NOT reproduced here — checked property-by-property against the
-   original two-class cascade before this file was written.
-
-   The old `.evm-toggle` family is gone: EventModal now renders <BracketToggle>, which owns that
-   styling in ui/BracketToggle.module.css. The old `.evm-in`/`.tall`/`.serif`/`.lead` family was
-   dead (every field already goes through TextInput/MarkdownField) and is not copied either. */
+   Redrawn for the modal-redesign (2026-09-23 plan): the form is now one SettingsGrid of
+   SettingsField label-column rows (ui/SettingsField.tsx/SettingsGrid.tsx own that layout + the
+   req/opt badge + the hint placement) instead of the old hand-rolled `.evm-titlefield`/
+   `.evm-lab`/`.evm-field`/`.evm-grid`/`.evm-daterow` family. What remains here is only the
+   layout this component still owns: the inline date+all-day / time rows, the markdown
+   description box, and the wrapping category/weekday chip rows. */
 .panel { min-width: 340px; gap: var(--sp-5); }
 
-/* title field */
-.panel .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
-.panel .evm-titlein { font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
-.panel .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--ui-font-stack); }
-.panel .evm-titlein:focus { border-bottom-color: var(--accent); }
+/* a control-column row holding more than one element side by side (date + all-day toggle,
+   start → end time). */
+.row { display: flex; align-items: center; gap: var(--sp-5); }
 
-/* labels + field shells */
-.panel .evm-lab { font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-3); }
-/* invisible spacer label: occupies a label's height to align the all-day toggle
-   with the dated field beside it, without showing any text. */
-.panel .evm-lab-spacer { visibility: hidden; }
-.panel .evm-field { display: flex; flex-direction: column; }
-.panel .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); }
+.allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-ui); color: var(--fg); cursor: pointer; white-space: nowrap; }
 
-/* description — live-preview markdown editor (MarkdownField); the box matches the old preview,
-   but padding + min-height sit on .cm-content so the whole box is click-to-cursor. */
-.panel .evm-mdedit { cursor: text; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); transition: border-color var(--dur) var(--ease); }
-.panel .evm-mdedit:hover { border-color: var(--border); }
-.panel .evm-mdedit:focus-within { border-color: var(--accent); }
-.panel .evm-mdedit :global(.cm-content) { padding: var(--sp-4) var(--sp-5); min-height: 76px; box-sizing: border-box; }
+.dash { color: var(--faint); font-size: var(--fs-body); }
 
-/* date row: date + all-day toggle inline */
-.panel .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-5); align-items: end; }
-.panel .evm-allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-body); color: var(--fg); cursor: pointer; white-space: nowrap; }
-
-/* time sub-row */
-.panel .evm-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--sp-5); align-items: center; margin-top: var(--sp-5); }
-.panel .evm-times .dash { color: var(--faint); font-size: var(--fs-body); }
+/* description — live-preview markdown editor (MarkdownField); neutral underline field, no fill,
+   no accent ring (modal redesign: Acceptance 5, neutral focus). */
+.mdedit { cursor: text; background: transparent; border: none; border-bottom: var(--rule-soft); transition: border-color var(--dur) var(--ease); }
+.mdedit:hover { border-bottom: var(--rule); }
+.mdedit:focus-within { border-bottom: var(--rule); }
+.mdedit :global(.cm-content) { padding: var(--sp-2) 0; min-height: 76px; box-sizing: border-box; }
 
 /* category chips (selectable) */
-.panel .evm-cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 
 /* weekday picker */
-.panel .evm-dows { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-5); }
-.panel .evm-ends { margin-top: var(--sp-5); }
-.panel .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }
+.dows { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-4); }

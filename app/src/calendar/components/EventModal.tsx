@@ -8,7 +8,6 @@ import { resolveCategoryColor, eventCategoryNames } from '../categoryColor'
 import FormModal from '../../ui/FormModal'
 import ModalBody from '../../ui/ModalBody'
 import BracketToggle from '../../ui/BracketToggle'
-import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import PlainButton from '../../ui/PlainButton'
@@ -18,6 +17,8 @@ import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
+import SettingsGrid from '../../ui/SettingsGrid'
+import SettingsField from '../../ui/SettingsField'
 import styles from './EventModal.module.css'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
@@ -225,258 +226,203 @@ export function EventModal(props: { store: EventStore }) {
     return (
         <FormModal
             onClose={close}
-            label={editing ? 'Edit Event' : 'New Event'}
+            label={editing ? 'edit event' : 'new event'}
             class={styles.panel}
         >
             <ModalHeader
-                icon="Calendar"
-                title={editing ? 'Edit Event' : 'New Event'}
-                subtitle={prettyDate(date())}
+                title={editing ? 'edit event' : 'new event'}
+                subtitle={prettyDate(date()).toLowerCase()}
                 onClose={close}
             />
 
             <ModalBody>
-                {/* title */}
-                <div class={styles['evm-titlefield']}>
-                    <TextInput
-                        plain
-                        class={styles['evm-titlein']}
-                        data-testid="event-modal-title"
-                        type="text"
-                        placeholder="Untitled event"
-                        autofocus
-                        value={title()}
-                        onInput={setTitle}
-                    />
-                </div>
+                <SettingsGrid>
+                    {/* title */}
+                    <SettingsField label="title">
+                        <TextInput
+                            data-testid="event-modal-title"
+                            type="text"
+                            placeholder="untitled event"
+                            autofocus
+                            value={title()}
+                            onInput={setTitle}
+                        />
+                    </SettingsField>
 
-                {/* date + all-day */}
-                <div class={styles['evm-field']}>
-                    <div class={styles['evm-daterow']}>
-                        <div>
-                            <div class={styles['evm-lab']}>
-                                <Icon
-                                    value="calendar"
-                                    size={12}
-                                    strokeWidth={2}
-                                />
-                                Date
-                            </div>
+                    {/* date + all-day */}
+                    <SettingsField label="date">
+                        <div class={styles.row}>
                             <TextInput
                                 type="date"
                                 value={date()}
                                 onInput={setDate}
                             />
-                        </div>
-                        <div>
-                            <div class={`${styles['evm-lab']} ${styles['evm-lab-spacer']}`}>x</div>
                             <PlainButton
-                                class={styles['evm-allday']}
+                                class={styles.allday}
                                 aria-pressed={allDay()}
                                 onClick={() => setAllDay(v => !v)}
                             >
                                 <BracketToggle checked={allDay()} />
-                                All day
+                                all day
                             </PlainButton>
                         </div>
-                    </div>
+                    </SettingsField>
+
+                    {/* time — start → end, only when not all-day */}
                     <Show when={!allDay()}>
-                        <div
-                            class={styles['evm-times']}
-                            data-testid="event-modal-times"
-                        >
-                            <TextInput
-                                type="time"
-                                value={startTime()}
-                                onInput={setStartTime}
-                            />
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles['dash']}
+                        <SettingsField label="time">
+                            <div
+                                class={styles.row}
+                                data-testid="event-modal-times"
                             >
-                                →
-                            </Text>
-                            <TextInput
-                                type="time"
-                                value={endTime()}
-                                onInput={setEndTime}
-                            />
-                        </div>
-                    </Show>
-                </div>
-
-                {/* location + link */}
-                <div class={styles['evm-grid']}>
-                    <div class={styles['evm-field']}>
-                        <div class={styles['evm-lab']}>
-                            <Icon value="Pin" size={12} strokeWidth={2} />
-                            Location
-                        </div>
-                        <TextInput
-                            placeholder="Add a place"
-                            value={location()}
-                            onInput={setLocation}
-                        />
-                    </div>
-                    <div class={styles['evm-field']}>
-                        <div class={styles['evm-lab']}>
-                            <Icon value="link" size={12} strokeWidth={2} />
-                            Link
-                        </div>
-                        <TextInput
-                            placeholder="meet.example.com/…"
-                            value={link()}
-                            onInput={setLink}
-                        />
-                    </div>
-                </div>
-
-                {/* description — live-preview markdown, editable exactly like the note editor */}
-                <div class={styles['evm-field']}>
-                    <div class={styles['evm-lab']}>
-                        <Icon
-                            value="TextQuote"
-                            size={12}
-                            strokeWidth={2}
-                        />
-                        Description{' '}
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['opt']}
-                        >
-                            // markdown
-                        </Text>
-                    </div>
-                    <MarkdownField
-                        class={styles['evm-mdedit']}
-                        value={description()}
-                        onInput={setDescription}
-                        placeholder="Notes, agenda, links to vault… (markdown)"
-                    />
-                </div>
-
-                {/* category */}
-                <div class={styles['evm-field']}>
-                    <div class={styles['evm-lab']}>
-                        <Icon value="tag" size={12} strokeWidth={2} />
-                        Category{' '}
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['opt']}
-                        >
-                            // pick one or more
-                        </Text>
-                    </div>
-                    <div class={styles['evm-cats']}>
-                        <TextButton
-                            variant={
-                                selCats().length === 0 ? 'selected' : 'unselected'
-                            }
-                            aria-pressed={selCats().length === 0}
-                            onClick={() => setSelCats([])}
-                        >
-                            <StatusDot color="var(--faint)" /> none
-                        </TextButton>
-                        <For each={categories.value}>
-                            {c => {
-                                const color = () => resolveCategoryColor(c.color)
-                                const picked = () => selCats().includes(c.name)
-                                return (
-                                    <TextButton
-                                        variant={
-                                            picked() ? 'selected' : 'unselected'
-                                        }
-                                        accent={color()}
-                                        aria-pressed={picked()}
-                                        onClick={() => toggleCat(c.name)}
-                                    >
-                                        <StatusDot color={color()} /> {c.name}
-                                    </TextButton>
-                                )
-                            }}
-                        </For>
-                    </div>
-                </div>
-
-                {/* recurrence */}
-                <div class={styles['evm-field']}>
-                    <div class={styles['evm-lab']}>
-                        <Icon value="repeat" size={12} strokeWidth={2} />
-                        Repeat
-                    </div>
-                    <SegmentedToggle
-                        value={recType()}
-                        onChange={v => setRecType(v)}
-                        options={RECUR.map(([label, val]) => ({
-                            id: val,
-                            label,
-                        }))}
-                    />
-                    <Show
-                        when={
-                            recType() === 'weekly' || recType() === 'biweekly'
-                        }
-                    >
-                        <div class={styles['evm-dows']}>
-                            <For each={DOW}>
-                                {([label, i]) => (
-                                    <TextButton
-                                        variant={
-                                            recDays().includes(i)
-                                                ? 'selected'
-                                                : 'unselected'
-                                        }
-                                        aria-pressed={recDays().includes(i)}
-                                        onClick={() =>
-                                            setRecDays(prev =>
-                                                prev.includes(i)
-                                                    ? prev.filter(x => x !== i)
-                                                    : [...prev, i],
-                                            )
-                                        }
-                                    >
-                                        {label}
-                                    </TextButton>
-                                )}
-                            </For>
-                        </div>
-                    </Show>
-                    <Show when={recType()}>
-                        <div class={styles['evm-ends']}>
-                            <div class={styles['evm-lab']}>
-                                <Icon
-                                    value="calendar-x"
-                                    size={12}
-                                    strokeWidth={2}
+                                <TextInput
+                                    type="time"
+                                    value={startTime()}
+                                    onInput={setStartTime}
                                 />
-                                Ends{' '}
                                 <Text
                                     as="span"
                                     size="inherit"
                                     tone="inherit"
                                     weight="inherit"
-                                    class={styles['opt']}
+                                    class={styles.dash}
                                 >
-                                    // optional
+                                    →
                                 </Text>
+                                <TextInput
+                                    type="time"
+                                    value={endTime()}
+                                    onInput={setEndTime}
+                                />
                             </div>
+                        </SettingsField>
+                    </Show>
+
+                    {/* location */}
+                    <SettingsField label="location">
+                        <TextInput
+                            placeholder="add a place"
+                            value={location()}
+                            onInput={setLocation}
+                        />
+                    </SettingsField>
+
+                    {/* link */}
+                    <SettingsField label="link">
+                        <TextInput
+                            placeholder="meet.example.com/…"
+                            value={link()}
+                            onInput={setLink}
+                        />
+                    </SettingsField>
+
+                    {/* description — live-preview markdown, editable exactly like the note editor */}
+                    <SettingsField label="description">
+                        <MarkdownField
+                            class={styles.mdedit}
+                            value={description()}
+                            onInput={setDescription}
+                            placeholder="markdown"
+                        />
+                    </SettingsField>
+
+                    {/* category */}
+                    <SettingsField label="category">
+                        <div class={styles.cats}>
+                            <TextButton
+                                variant={
+                                    selCats().length === 0
+                                        ? 'selected'
+                                        : 'unselected'
+                                }
+                                aria-pressed={selCats().length === 0}
+                                onClick={() => setSelCats([])}
+                            >
+                                <StatusDot color="var(--faint)" /> none
+                            </TextButton>
+                            <For each={categories.value}>
+                                {c => {
+                                    const color = () =>
+                                        resolveCategoryColor(c.color)
+                                    const picked = () =>
+                                        selCats().includes(c.name)
+                                    return (
+                                        <TextButton
+                                            variant={
+                                                picked()
+                                                    ? 'selected'
+                                                    : 'unselected'
+                                            }
+                                            accent={color()}
+                                            aria-pressed={picked()}
+                                            onClick={() => toggleCat(c.name)}
+                                        >
+                                            <StatusDot color={color()} />{' '}
+                                            {c.name}
+                                        </TextButton>
+                                    )
+                                }}
+                            </For>
+                        </div>
+                    </SettingsField>
+
+                    {/* repeat */}
+                    <SettingsField label="repeat">
+                        <SegmentedToggle
+                            value={recType()}
+                            onChange={v => setRecType(v)}
+                            options={RECUR.map(([label, val]) => ({
+                                id: val,
+                                label,
+                            }))}
+                        />
+                        <Show
+                            when={
+                                recType() === 'weekly' ||
+                                recType() === 'biweekly'
+                            }
+                        >
+                            <div class={styles.dows}>
+                                <For each={DOW}>
+                                    {([label, i]) => (
+                                        <TextButton
+                                            variant={
+                                                recDays().includes(i)
+                                                    ? 'selected'
+                                                    : 'unselected'
+                                            }
+                                            aria-pressed={recDays().includes(
+                                                i,
+                                            )}
+                                            onClick={() =>
+                                                setRecDays(prev =>
+                                                    prev.includes(i)
+                                                        ? prev.filter(
+                                                              x => x !== i,
+                                                          )
+                                                        : [...prev, i],
+                                                )
+                                            }
+                                        >
+                                            {label}
+                                        </TextButton>
+                                    )}
+                                </For>
+                            </div>
+                        </Show>
+                    </SettingsField>
+
+                    {/* ends — only while a repeat is chosen */}
+                    <Show when={recType()}>
+                        <SettingsField label="ends" badge="optional">
                             <TextInput
                                 type="date"
                                 value={recEnd()}
                                 onInput={setRecEnd}
                             />
-                        </div>
+                        </SettingsField>
                     </Show>
-                </div>
+                </SettingsGrid>
             </ModalBody>
 
             <ModalFooter
@@ -491,9 +437,7 @@ export function EventModal(props: { store: EventStore }) {
                     </Show>
                 }
             >
-                <TextButton onClick={close}>
-                    cancel
-                </TextButton>
+                <TextButton onClick={close}>cancel</TextButton>
                 <TextButton primary onClick={handleSave}>
                     {editing ? 'save' : 'create event'}
                 </TextButton>

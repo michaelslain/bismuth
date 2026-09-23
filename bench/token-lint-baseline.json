@@ -30,12 +30,6 @@
   "count": 1
  },
  {
-  "file": "bases/CardsModal.module.css",
-  "rule": "spacing-literal",
-  "detail": "20px var(--sp-7) var(--sp-6)",
-  "count": 1
- },
- {
   "file": "bases/CardsSkeleton.module.css",
   "rule": "spacing-literal",
   "detail": "18px",
@@ -591,12 +585,6 @@
   "file": "ui/ModalHeader.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-6) 20px var(--sp-5)",
-  "count": 1
- },
- {
-  "file": "ui/PromptModal.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
   "count": 1
  },
  {

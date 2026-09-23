@@ -1,16 +1,16 @@
 /* FlashcardsView.module.css — the flashcard review UI (bases/FlashcardsView.tsx), split out of
    bases/Flashcards.module.css (Task 4 of the design-system conformance pass) once that file had
-   two importers (this + EditCardsModal.tsx). The modal SHELL (panel sizing + title bar + close
-   button) both files drew moved to bases/CardsModal.tsx/.module.css, which this file's own
-   single-card edit modal now composes instead of duplicating.
+   two importers (this + EditCardsModal.tsx). The shared modal shell it once drew alongside
+   EditCardsModal.tsx (bases/CardsModal.tsx/.module.css) is deleted — modal-redesign Task 8
+   rebuilt the single-card edit modal as a plain FormModal/SettingsField composition instead.
 
    OWNS: .flashcards-host, .count/.card-dir/.tally (what the deck contributes to the HOST's view
    bar — see below), .fcmeter/.stage/.grade-row/.cardwrap/.card-actions/.flip-family/
    .card-appear (+its @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/
    .g-name/.done/.good-text/.inline-bolt (review stage — .fcmeter is the restored session-progress
-   AsciiMeter, on the deck's own surface, NOT inside the bar), and the single-card edit modal
-   (.card-edit-one/-body/-labeled/-field/-one-actions — the card's own ✎ action; its title-bar +
-   panel-sizing chrome now comes from <CardsModal>, not from classes owned here).
+   AsciiMeter, on the deck's own surface, NOT inside the bar). The single-card edit modal (the
+   card's own ✎ action) owns no classes here any more — modal-redesign Task 8 rebuilt it as a
+   plain FormModal/SettingsField composition, so it needs no CardsModal shell and no local chrome.
 
    DELETED, NOT MIGRATED (confirmed zero consumers before the original 2026-08 modularization
    commit; carried over from Flashcards.module.css's own header, unchanged by this split):
@@ -267,17 +267,6 @@
 .fc-empty-body.fc-empty-body .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
 .fc-empty-body.fc-empty-body code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
 
-/* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. Narrower than the
-   shared CardsModal default — `.card-edit-one` overrides `.panel`'s width/height; doubled
-   (.card-edit-one.card-edit-one) because that override lives in a DIFFERENT stylesheet from
-   `.panel` (bases/CardsModal.module.css) now, so cross-file cascade order can't be trusted to pick
-   it — only higher specificity can (same idiom as `.cards-draft.cards-draft` in
-   EditCardsModal.module.css). */
-.card-edit-one.card-edit-one { width: min(560px, 92vw); height: auto; }
-.card-edit-one-body { display: flex; flex-direction: column; gap: var(--sp-5); padding: 18px var(--sp-7) 20px; }
-.card-edit-labeled { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-ui); color: var(--text-muted); }
-/* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + min-height. */
-.card-edit-labeled textarea.card-edit-field {
-  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); line-height: 1.5; min-height: 64px; resize: vertical;
-}
-.card-edit-one-actions { display: flex; justify-content: flex-end; gap: var(--sp-5); margin-top: var(--sp-1); }
+/* The single-card edit modal (the card's own ✎ action) is now a plain FormModal + ModalHeader/
+   ModalBody/ModalFooter + SettingsGrid/SettingsField composition (modal-redesign Task 8) — no
+   classes of this file's own left to style it; the shared modal primitives own all its chrome. */

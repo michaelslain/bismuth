@@ -128,7 +128,7 @@ export const Interactive: Story = {
         await userEvent.type(titleInput, 'Plan the offsite')
 
         // All-day defaults on (no startTime seeded); flip it off to reveal the time row.
-        const allDayToggle = body.getByText('All day')
+        const allDayToggle = body.getByText('all day')
         await userEvent.click(allDayToggle)
         await waitFor(() =>
             expect(
@@ -205,7 +205,7 @@ export const KeyboardToggles: Story = {
         await userEvent.keyboard('{Backspace}')
         expect(document.querySelector('[role="dialog"]')).not.toBeNull()
 
-        const allDayBtn = body.getByText('All day').closest('button') as HTMLElement
+        const allDayBtn = body.getByText('all day').closest('button') as HTMLElement
         expect(allDayBtn).toHaveAttribute('aria-pressed', 'true')
         allDayBtn.focus()
         await userEvent.keyboard(' ')

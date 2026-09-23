@@ -1,7 +1,12 @@
-/* SettingsField.module.css — was `.evm-modal .set-field` / `.set-lab` / `.req` / `.opt` */
-.field { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
-.field.span { grid-column: 1 / -1; }
-.label { display: flex; align-items: center; gap: var(--sp-4); font-size: var(--fs-body); color: var(--fg); }
-.label svg { color: var(--accent); flex: 0 0 auto; }
-.label .req { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }
-.label .opt { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }
+/* SettingsField.module.css — was `.evm-modal .set-field` / `.set-lab` / `.req` / `.opt`. Label-
+   column layout (2026-09-23 modal redesign Task 4): the field is its OWN two-column grid keyed to
+   `--label-col`, so a bare SettingsField (no SettingsGrid ancestor) lines up identically to one
+   nested in a SettingsGrid — every row lines up because every field reads the same token, not
+   because of a shared grid ancestor. `span` drops the grid for a plain stacked column instead
+   (label above a full-width control), used for a control too wide to share the row. */
+.field { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--sp-6); row-gap: var(--sp-2); align-items: start; min-width: 0; }
+.field.span { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-4); }
+.label { grid-column: 1; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-3); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-muted); min-height: var(--h-control); }
+.control { grid-column: 2; display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.req { margin-left: 0; font-size: var(--fs-micro); color: var(--accent); }
+.opt { margin-left: 0; font-size: var(--fs-micro); color: var(--faint); }

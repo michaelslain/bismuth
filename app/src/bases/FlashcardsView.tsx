@@ -16,7 +16,12 @@ import { Icon } from '../icons/Icon'
 import EmptyState from '../ui/EmptyState'
 import { TextInput } from '../ui/TextInput'
 import Text from '../ui/Text'
-import Field from '../ui/Field'
+import FormModal from '../ui/FormModal'
+import ModalHeader from '../ui/ModalHeader'
+import ModalBody from '../ui/ModalBody'
+import ModalFooter from '../ui/ModalFooter'
+import SettingsGrid from '../ui/SettingsGrid'
+import SettingsField from '../ui/SettingsField'
 import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
@@ -24,7 +29,6 @@ import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
 import Kbd, { Key } from '../ui/ascii/Kbd'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
-import CardsModal from './CardsModal'
 import styles from './FlashcardsView.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
@@ -908,49 +912,44 @@ export function FlashcardsView(props: {
             </div>
 
             <Show when={editingCard() && props.basePath}>
-                <CardsModal
-                    title="Edit card"
+                <FormModal
                     onClose={() => setEditingCard(false)}
-                    class={styles['card-edit-one']}
+                    label="edit card"
+                    width={420}
                 >
-                    <div class={styles['card-edit-one-body']}>
-                        <Field
-                            label="Front"
-                            class={styles['card-edit-labeled']}
-                        >
-                            <TextInput
-                                multiline
-                                class={styles['card-edit-field']}
-                                value={cardFront()}
-                                placeholder="Front / prompt…"
-                                onInput={setCardFront}
-                            />
-                        </Field>
-                        <Field
-                            label="Back"
-                            class={styles['card-edit-labeled']}
-                        >
-                            <TextInput
-                                multiline
-                                class={styles['card-edit-field']}
-                                value={cardBack()}
-                                placeholder="Back / answer…"
-                                onInput={setCardBack}
-                            />
-                        </Field>
-                        <div class={styles['card-edit-one-actions']}>
-                            <TextButton onClick={() => setEditingCard(false)}>
-                                cancel
-                            </TextButton>
-                            <TextButton
-                                variant="selected"
-                                onClick={saveCardEdit}
-                            >
-                                save
-                            </TextButton>
-                        </div>
-                    </div>
-                </CardsModal>
+                    <ModalHeader
+                        title="edit card"
+                        onClose={() => setEditingCard(false)}
+                    />
+                    <ModalBody>
+                        <SettingsGrid>
+                            <SettingsField label="front">
+                                <TextInput
+                                    multiline
+                                    value={cardFront()}
+                                    placeholder="Front / prompt…"
+                                    onInput={setCardFront}
+                                />
+                            </SettingsField>
+                            <SettingsField label="back">
+                                <TextInput
+                                    multiline
+                                    value={cardBack()}
+                                    placeholder="Back / answer…"
+                                    onInput={setCardBack}
+                                />
+                            </SettingsField>
+                        </SettingsGrid>
+                    </ModalBody>
+                    <ModalFooter>
+                        <TextButton onClick={() => setEditingCard(false)}>
+                            cancel
+                        </TextButton>
+                        <TextButton variant="selected" onClick={saveCardEdit}>
+                            save
+                        </TextButton>
+                    </ModalFooter>
+                </FormModal>
             </Show>
         </div>
     )

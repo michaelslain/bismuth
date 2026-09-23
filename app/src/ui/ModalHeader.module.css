@@ -1,14 +1,84 @@
-/* Ported from calendar/Calendar.module.css's .evm-head family, which six components shared.
-   The close control's own chrome is NOT here — it is an IconButton and brings .btn--icon. */
-.modal-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
-.modal-head.compact { align-items: center; }
-.modal-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
-.modal-head.compact .modal-mark { height: var(--h-control); }
-.modal-htext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.modal-title { font-family: var(--ui-font-stack); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--fg); line-height: 1.1; }
-.modal-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: .02em; }
-.modal-x { margin-left: auto; flex: 0 0 auto; }
+/* app/src/ui/ModalHeader.module.css — see ModalHeader.tsx's header comment for the anatomy.
+   Exactly --row-h tall, edge to edge (no horizontal padding on the row itself): the leading/
+   trailing rule segments have to touch the panel's own left/right border for the header's rule to
+   read as ONE hairline with FormModal's frame (`.panel::before`), not two hairlines that merely
+   line up. `align-items: center` + each segment's own `height: 0` (a border-top draws the line,
+   the box itself has none) is what puts every segment at the row's vertical center for free,
+   without a manual half-row offset anywhere in this file. */
+.modal-head {
+    display: flex;
+    align-items: center;
+    height: var(--row-h);
+    gap: 0;
+}
 
-/* Destructive tone — see ModalHeader.tsx's `tone` prop. Only the mark changes hue: the title,
-   subtitle and close control stay neutral so the header does not turn into a warning banner. */
-.modal-head.danger .modal-mark { color: var(--danger); }
+/* Segments — a border-top standing in for a rule, each a zero-height flex item so it centers on
+   the row via .modal-head's align-items rather than needing its own vertical offset. */
+.rule-lead,
+.rule-fill,
+.rule-trail {
+    height: 0;
+    border-top: var(--rule);
+}
+.rule-lead {
+    flex: 0 0 calc(var(--sp-6) - var(--sp-2));
+    margin-right: var(--sp-2);
+}
+.rule-fill {
+    /* Basis at the same width as the lead/trail segments, then free to grow — the flexible
+       segment between the subtitle and the close control that absorbs whatever width the title
+       doesn't need. */
+    flex: 1 1 var(--sp-4);
+    min-width: var(--sp-4);
+    margin: 0 var(--sp-2);
+}
+.rule-trail {
+    flex: 0 0 calc(var(--sp-6) - var(--sp-2));
+    margin-left: var(--sp-2);
+}
+
+.title {
+    flex: 0 1 auto;
+    /* Percentage, not a literal length — leaves the close control + trailing rule guaranteed room
+       regardless of panel width, while still letting a short title take only what it needs. */
+    max-width: 60%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    color: var(--fg);
+}
+.modal-head.danger .title {
+    color: var(--danger);
+}
+
+.sep {
+    flex: 0 0 auto;
+    margin-left: var(--sp-2);
+    color: var(--faint);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+}
+.sub {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: var(--sp-2);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--faint);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+}
+
+.close {
+    flex: 0 0 auto;
+}
+/* The close is a TextButton (`[x]`, a letter, not an icon), whose own height is --h-control; the
+   header row is --row-h, so the close is sized to the row it sits in. Scoped through this
+   component's own `.close` class on the element it renders — no reach into Button's globals. */
+.modal-head .close {
+    height: var(--row-h);
+}

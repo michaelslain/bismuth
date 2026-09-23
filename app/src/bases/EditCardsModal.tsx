@@ -1,6 +1,5 @@
 import { createSignal, createMemo, For, Show } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
@@ -8,7 +7,10 @@ import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
 import Text from '../ui/Text'
-import CardsModal from './CardsModal'
+import FormModal from '../ui/FormModal'
+import ModalHeader from '../ui/ModalHeader'
+import ModalBody from '../ui/ModalBody'
+import ModalFooter from '../ui/ModalFooter'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
@@ -19,7 +21,7 @@ type Mode = 'list' | 'bulk'
 
 // Bulk-add separator presets. "auto" sniffs each line for the first that matches.
 const SEPARATORS: { id: string; label: string; sep: string }[] = [
-    { id: 'tab', label: 'Tab', sep: '\t' },
+    { id: 'tab', label: 'tab', sep: '\t' },
     { id: 'tripcolon', label: ':::', sep: ':::' },
     { id: 'dblcolon', label: '::', sep: '::' },
     { id: 'colon', label: ':', sep: ':' },
@@ -72,7 +74,7 @@ export function parseBulk(
  *  Commits on blur. */
 function CardCell(props: {
     value: string
-    field: 'Front' | 'Back'
+    field: 'front' | 'back'
     placeholder: string
     onCommit: (v: string) => void
 }) {
@@ -83,13 +85,15 @@ function CardCell(props: {
     // EditCardsModal.stories.tsx's play function also queries `.cell-front textarea` directly, so
     // it must stay a real, matchable literal in the DOM.
     const fieldClass =
-        props.field === 'Back' ? styles['cell-back'] : 'cell-front'
+        props.field === 'back' ? styles['cell-back'] : 'cell-front'
     return (
         <div class={`${styles.cell} ${fieldClass}`}>
             <div
                 class={styles['cell-md']}
                 innerHTML={
-                    renderMarkdown(val()) ||
+                    // trim: renderMarkdown ends every block with "\n", which `.cell-md`'s
+                    // pre-wrap would paint as an extra blank line under the card text.
+                    renderMarkdown(val()).trim() ||
                     cardCellPlaceholder(
                         styles['cell-ph'],
                         props.placeholder,
@@ -104,15 +108,6 @@ function CardCell(props: {
                 onInput={setVal}
                 onBlur={() => val() !== props.value && props.onCommit(val())}
             />
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['cell-tag']}
-            >
-                {props.field}
-            </Text>
         </div>
     )
 }
@@ -249,32 +244,14 @@ export function EditCardsModal(props: {
     }
 
     return (
-        <CardsModal
-            title="Edit cards"
-            onClose={close}
-            meta={
-                <Show when={props.deckName}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['cards-meta']}
-                    >
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['dot']}
-                        >
-                            //
-                        </Text>{' '}
-                        {props.deckName}
-                    </Text>
-                </Show>
-            }
-        >
+        <FormModal onClose={close} label="edit cards" width={940}>
+            <ModalHeader
+                title="edit cards"
+                subtitle={props.deckName}
+                onClose={close}
+            />
+
+            <ModalBody>
             <div class={styles['cards-modebar']}>
                 <SegmentedToggle
                     value={mode()}
@@ -309,16 +286,7 @@ export function EditCardsModal(props: {
                         weight="inherit"
                         class={styles['cards-hint']}
                     >
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['key']}
-                        >
-                            &crarr;
-                        </Text>{' '}
-                        adds a card // drag # to reorder
+                        drag # to reorder
                     </Text>
                 </Show>
             </div>
@@ -331,10 +299,10 @@ export function EditCardsModal(props: {
                             #
                         </Text>
                         <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                            Front
+                            front
                         </Text>
                         <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                            Back
+                            back
                         </Text>
                         <div />
                     </div>
@@ -365,26 +333,27 @@ export function EditCardsModal(props: {
                                 </div>
                                 <CardCell
                                     value={text(n, ff)}
-                                    field="Front"
-                                    placeholder="Front…"
+                                    field="front"
+                                    placeholder="front…"
                                     onCommit={v => commitCell(i(), ff, v)}
                                 />
                                 <CardCell
                                     value={text(n, bf)}
-                                    field="Back"
-                                    placeholder="Back…"
+                                    field="back"
+                                    placeholder="back…"
                                     onCommit={v => commitCell(i(), bf, v)}
                                 />
                                 <div class={styles['cards-del']}>
-                                    <IconButton
-                                        icon="Trash2"
-                                        label="Delete card"
-                                        iconSize={15}
+                                    <TextButton
+                                        aria-label="Delete card"
+                                        title="Delete card"
                                         danger
                                         disabled={busy()}
                                         onClick={() => removeCard(i())}
                                         class={styles['cards-del-btn']}
-                                    />
+                                    >
+                                        x
+                                    </TextButton>
                                 </div>
                             </div>
                         )}
@@ -408,7 +377,7 @@ export function EditCardsModal(props: {
                                 multiline
                                 plain
                                 value={draftFront()}
-                                placeholder="Front of new card…"
+                                placeholder="front of new card…"
                                 onInput={setDraftFront}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -426,7 +395,7 @@ export function EditCardsModal(props: {
                                     draftBackRef = el
                                 }}
                                 value={draftBack()}
-                                placeholder="Back…"
+                                placeholder="back…"
                                 onInput={setDraftBack}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -439,25 +408,6 @@ export function EditCardsModal(props: {
                         <div class={styles['cards-del']} />
                     </div>
                     <div class={styles['cards-addrow']}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['cards-lefthint']}
-                        >
-                            Type above, then{' '}
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles['key']}
-                            >
-                                &crarr;
-                            </Text>{' '}
-                            to add — keeps going for fast entry.
-                        </Text>
                         <IconTextButton
                             icon="Plus"
                             iconSize={14}
@@ -482,7 +432,7 @@ export function EditCardsModal(props: {
                             weight="inherit"
                             class={styles['cards-lab']}
                         >
-                            Separator
+                            separator
                         </Text>
                         <div class={styles['cards-chiprow']}>
                             <TextButton
@@ -529,7 +479,7 @@ export function EditCardsModal(props: {
                                 tone="faint"
                                 class={styles['cards-bulk-lab']}
                             >
-                                Paste your cards
+                                paste your cards
                             </Text>
                             <TextInput
                                 multiline
@@ -551,7 +501,7 @@ export function EditCardsModal(props: {
                                     weight="inherit"
                                     class={styles['cards-lab']}
                                 >
-                                    Preview
+                                    preview
                                 </Text>
                                 <Text
                                     as="span"
@@ -569,7 +519,7 @@ export function EditCardsModal(props: {
                                     when={parsed().length > 0}
                                     fallback={
                                         <div class={styles['cards-pvempty']}>
-                                            Parsed cards appear here as you
+                                            parsed cards appear here as you
                                             paste.
                                         </div>
                                     }
@@ -636,13 +586,16 @@ export function EditCardsModal(props: {
                     </div>
                 </div>
             </Show>
+            </ModalBody>
 
-            <div class={styles['cards-foot']}>
-                <Badge tone="muted" class={styles['cards-count']}>
-                    <b>{cards().length}</b>{' '}
-                    {cards().length === 1 ? 'card' : 'cards'} in deck
-                </Badge>
-                <div class={styles['sp']} />
+            <ModalFooter
+                leading={
+                    <Badge tone="muted" class={styles['cards-count']}>
+                        <b>{cards().length}</b>{' '}
+                        {cards().length === 1 ? 'card' : 'cards'} in deck
+                    </Badge>
+                }
+            >
                 <Show
                     when={mode() === 'bulk'}
                     fallback={
@@ -662,7 +615,7 @@ export function EditCardsModal(props: {
                         add {validCount()} cards
                     </TextButton>
                 </Show>
-            </div>
-        </CardsModal>
+            </ModalFooter>
+        </FormModal>
     )
 }
