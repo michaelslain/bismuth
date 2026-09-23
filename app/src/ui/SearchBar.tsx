@@ -5,10 +5,16 @@ import { warnBadIcon } from './devWarn'
 import { isConfirmKey } from './widgetKeys'
 import styles from './SearchBar.module.css'
 
+export type SearchBarSize = 'compact' | 'default' | 'large'
+
 export type SearchBarProps = {
     value: string
     onInput: (value: string) => void
     placeholder?: string
+    /** Density: `compact` (panels, popovers, find bars), `default`, `large` (palette + switcher). */
+    size?: SearchBarSize
+    /** The terminal prompt glyph leading the input — `/` by default, `>` for command entry. */
+    prompt?: string
     /** Convenience: called on the confirm key (Enter by default, settings.keybindings['ui-confirm']).
      *  Ignored if `onKeyDown` is provided (use that for full key handling). */
     onEnter?: () => void
