@@ -342,14 +342,19 @@ the accent. An outline appears only when it means something.
   edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
   goes inside the brackets: `[✓ label]`. One size only.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
-  that is off) `--faint`; `selected` `--accent`; `primary` `--accent` + bold, at most one per view;
-  `danger` `--danger`; disabled `--faint` with no hover.
+  that is off) `--faint`; `selected` `--accent` + bold (or `accent`, if set); `primary` `--accent`
+  + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
 - **Hover:** `unselected` lifts to `--text-muted`; states already at full ink underline the label
   (1px) instead of changing colour.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
   ring never touches the next `[`.
-- **Hierarchy:** the one confirming action in a footer or view is `primary`; `selected` is only for
-  a toggle member that is on. A `[cancel]` is `normal`.
+- **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
+  apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
+  groups (the drawing dock) keep the butted `segment` look.
+- **`accent` recolours a selected toggle** (a category's own colour).
+- **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
+  confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
+  is `normal`.
 - **Focus:** a 2px accent outline (`--focus-ring`) around the glyphs, on `:focus-visible` only.
 - **Icon button:** a separate register — a 24px square with no border; `normal` sits at full
   opacity. It keeps its own sizes.

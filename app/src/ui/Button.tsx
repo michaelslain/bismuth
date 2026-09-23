@@ -20,7 +20,8 @@ export type ButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
-    /** Colour for the selected state (a `var(--…)` token) — pre-registered for bracket-toggles Task 1. */
+    /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
+     *  `--btn-accent` on the root, read by `.btn--text.btn--selected` in place of `--accent`. */
     accent?: string
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
@@ -38,11 +39,20 @@ function Button(props: ButtonProps) {
         'size',
         'danger',
         'primary',
+        'accent',
         'class',
         'type',
+        'style',
         'children',
     ])
     const kind = () => local.kind ?? 'text'
+    const style = (): JSX.CSSProperties | string | undefined => {
+        if (!local.accent) return local.style
+        if (typeof local.style === 'string') {
+            return `${local.style};--btn-accent:${local.accent}`
+        }
+        return { ...local.style, '--btn-accent': local.accent }
+    }
     return (
         <button
             type={local.type ?? 'button'}
@@ -55,6 +65,7 @@ function Button(props: ButtonProps) {
                 primary: local.primary,
                 class: local.class,
             })}
+            style={style()}
             {...rest}
         >
             {kind() === 'text' ? (

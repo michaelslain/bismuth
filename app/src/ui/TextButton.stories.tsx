@@ -100,3 +100,22 @@ export const Primary: Story = {
         </Row>
     ),
 }
+
+/** `accent` recolours a selected toggle in its own colour (e.g. a calendar category) instead
+ *  of the view accent — `unselected` is untouched by `accent`, since only the selected state
+ *  reads `--btn-accent`. */
+export const Accent: Story = {
+    render: () => (
+        <Row>
+            <TextButton variant="unselected">work</TextButton>
+            <TextButton variant="selected" accent="var(--green)">
+                personal
+            </TextButton>
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const btn = canvas.getByRole('button', { name: 'personal' })
+        expect(getComputedStyle(btn).color).toBe('rgb(163, 190, 140)')
+    },
+}
