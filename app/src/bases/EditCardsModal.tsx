@@ -466,7 +466,7 @@ export function EditCardsModal(props: {
                             disabled={busy()}
                             onClick={addDraft}
                         >
-                            ADD CARD
+                            add card
                         </IconTextButton>
                     </div>
                 </div>
@@ -487,7 +487,6 @@ export function EditCardsModal(props: {
                         </Text>
                         <div class={styles['cards-chiprow']}>
                             <TextButton
-                                size="sm"
                                 variant={
                                     delim() === 'auto'
                                         ? 'selected'
@@ -495,12 +494,11 @@ export function EditCardsModal(props: {
                                 }
                                 onClick={() => setDelim('auto')}
                             >
-                                AUTO
+                                auto
                             </TextButton>
                             <For each={SEPARATORS}>
                                 {s => (
                                     <TextButton
-                                        size="sm"
                                         variant={
                                             delim() === s.id
                                                 ? 'selected'
@@ -508,7 +506,7 @@ export function EditCardsModal(props: {
                                         }
                                         onClick={() => setDelim(s.id)}
                                     >
-                                        {s.label.toUpperCase()}
+                                        {s.label}
                                     </TextButton>
                                 )}
                             </For>
@@ -650,19 +648,19 @@ export function EditCardsModal(props: {
                     when={mode() === 'bulk'}
                     fallback={
                         <TextButton variant="selected" onClick={close}>
-                            DONE
+                            done
                         </TextButton>
                     }
                 >
                     <TextButton onClick={() => setMode('list')}>
-                        CANCEL
+                        cancel
                     </TextButton>
                     <TextButton
                         variant="selected"
                         disabled={busy() || validCount() === 0}
                         onClick={addBulk}
                     >
-                        ADD {validCount()} CARDS
+                        add {validCount()} cards
                     </TextButton>
                 </Show>
             </div>

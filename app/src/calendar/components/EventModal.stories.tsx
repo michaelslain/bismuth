@@ -139,7 +139,7 @@ export const Interactive: Story = {
         const catChip = body.getByText('Work')
         await userEvent.click(catChip)
 
-        const createBtn = body.getByText('CREATE EVENT')
+        const createBtn = body.getByText('create event')
         await userEvent.click(createBtn)
 
         // The box flips back to null and the Host's <Show> unmounts the portal content.
