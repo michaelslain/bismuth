@@ -1,55 +1,18 @@
 /* app/src/EditDictionaryModal.module.css
-   The Edit-Dictionary modal. Mirrors the app's modal chrome (the calendar's
-   `.evm-modal` card: header mark + title + scrollable body + footer) using the
-   real theme vars directly, so it stays self-contained (no calendar coupling) and
-   re-themes automatically, incl. light mode. Controls are the shared ui/ primitives.
-   Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class
-   every <Modal> panel carries (ui/Modal.tsx) — this rule only supplies content
-   sizing/layout, so it doesn't fight `.asc-modal`'s `--pop-bg-strong` + blur chrome. */
-.dict-modal {
-  --dict-font: var(--ui-font-stack);
-  --mono: "Monaspace Xenon", ui-monospace, monospace;
+   The Edit-Dictionary modal's own content — the frame, header rule and footer rule now come from
+   FormModal + ModalHeader + ModalFooter (ui/), so this file only supplies the word-list rows and
+   the add-a-word row that are specific to this modal. */
 
-  position: relative;
-  width: 460px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 48px);
-  font-family: var(--mono);
-  font-size: var(--fs-body);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+/* word list — plain rows at --row-h, divided by a soft rule; no filled well (the old
+   background + outer border read as a heading-weight card, which the redesign drops). */
+.dict-list { display: flex; flex-direction: column; }
+.dict-row { display: flex; align-items: center; gap: var(--sp-5); height: var(--row-h); }
+.dict-row + .dict-row { border-top: var(--rule-soft); }
+.dict-word { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* header: accent icon mark + title + subtitle + close X */
-.dict-modal .dict-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
-.dict-modal .dict-mark { width: 24px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
-.dict-modal .dict-htext { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.dict-modal .dict-title { font-family: var(--dict-font); font-weight: 600; font-size: var(--fs-title); letter-spacing: -0.01em; color: var(--fg); line-height: 1.1; }
-.dict-modal .dict-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.02em; line-height: 1.45; }
-.dict-modal .dict-x { margin-left: auto; }
+/* empty state — a small, quiet hint, not a heading (size/tone come from the Text primitive) */
+.dict-empty { padding: var(--sp-6) var(--sp-3) var(--sp-3); text-align: center; font-style: italic; line-height: 1.5; }
 
-/* body scrolls when the word list is tall */
-.dict-modal .dict-body { padding: var(--sp-2) 20px var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); overflow-y: auto; min-height: 0; }
-
-/* word list — one grouped surface, a row per word */
-.dict-modal .dict-list { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
-.dict-modal .dict-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5); }
-.dict-modal .dict-row + .dict-row { border-top: 1px solid var(--border-soft); }
-.dict-modal .dict-word { flex: 1; min-width: 0; font-family: var(--dict-font); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* empty state — a small, quiet hint, not a heading */
-.dict-modal .dict-empty { padding: var(--sp-6) var(--sp-3) var(--sp-3); text-align: center; font-size: var(--fs-ui); font-style: italic; color: var(--faint); line-height: 1.5; }
-
-/* add-a-word — distinct dashed card (same affordance as the categories modal) */
-.dict-modal .dict-add { margin-top: var(--sp-2); border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: var(--sp-5); align-items: center; }
-/* Was a `:global(.ui-input)` reach into FormControl's shared chrome class; TextInput now takes a
-   local class directly (its own `class` prop, merged onto the same element), so this targets our
-   own hashed local instead of the foreign global one. */
-.dict-modal .dict-input { flex: 1; }
-
-/* footer: esc hint + DONE */
-.dict-modal .dict-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px 15px; border-top: 1px solid var(--border-soft); }
-.dict-modal .dict-hint { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.03em; color: var(--faint); }
-.dict-modal .dict-hint b { color: var(--faint); font-weight: 600; }
-.dict-modal .dict-sp { flex: 1; }
+/* add-a-word — one underline-input row, no card chrome */
+.dict-add { display: flex; gap: var(--sp-5); align-items: center; }
+.dict-input { flex: 1; }

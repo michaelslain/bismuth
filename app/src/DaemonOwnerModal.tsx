@@ -2,11 +2,15 @@
 // Pick which device owns the daemon. Lists every heartbeating device
 // (from GET /daemon/devices), marks the current owner and this machine, and on
 // confirm writes owner.json via POST /daemon/owner (the single source of truth —
-// Bismuth does NOT store the owner as a setting). Reuses the shared Modal +
+// Bismuth does NOT store the owner as a setting). Reuses the shared FormModal +
 // Select chrome (same as FolderPrompt / the calendar dialogs).
 import { createSignal, onMount, Show } from 'solid-js'
-import PromptModal from './ui/PromptModal'
-import PromptHint from './ui/PromptHint'
+import FormModal from './ui/FormModal'
+import ModalHeader from './ui/ModalHeader'
+import ModalBody from './ui/ModalBody'
+import ModalFooter from './ui/ModalFooter'
+import SettingsField from './ui/SettingsField'
+import Text from './ui/Text'
 import Select from './ui/Select'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
@@ -66,51 +70,63 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
     }
 
     return (
-        <PromptModal
+        <FormModal
             onClose={props.onClose}
-            title="Set daemon owner device"
-            actions={
-                <>
-                    <TextButton onClick={props.onClose}>cancel</TextButton>
-                    <TextButton
-                        primary
-                        onClick={submit}
-                        disabled={
-                            loading() ||
-                            saving() ||
-                            devices().length === 0 ||
-                            selected() === ''
-                        }
-                    >
-                        set owner
-                    </TextButton>
-                </>
-            }
+            width={460}
+            closeOnBackdrop={false}
+            label="set daemon owner device"
         >
-            <PromptHint>
-                The owner device runs the daemon (crons + the persistent bot
-                session). Other devices idle but stay selectable.
-            </PromptHint>
-            <Show
-                when={!loading()}
-                fallback={<PromptHint>Loading devices…</PromptHint>}
-            >
+            <ModalHeader
+                title="set daemon owner device"
+                onClose={props.onClose}
+            />
+            <ModalBody>
+                <Text size="ui" tone="faint">
+                    the owner device runs the daemon (crons + the persistent bot
+                    session) — other devices idle but stay selectable
+                </Text>
                 <Show
-                    when={devices().length > 0}
+                    when={!loading()}
                     fallback={
-                        <PromptHint>
-                            No devices have checked in yet. Start the daemon,
-                            then reopen this.
-                        </PromptHint>
+                        <Text size="ui" tone="faint">
+                            loading devices…
+                        </Text>
                     }
                 >
-                    <Select
-                        value={selected()}
-                        options={options()}
-                        onChange={setSelected}
-                    />
+                    <Show
+                        when={devices().length > 0}
+                        fallback={
+                            <Text size="ui" tone="faint">
+                                no devices have checked in yet — start the daemon,
+                                then reopen this
+                            </Text>
+                        }
+                    >
+                        <SettingsField label="owner">
+                            <Select
+                                value={selected()}
+                                options={options()}
+                                onChange={setSelected}
+                            />
+                        </SettingsField>
+                    </Show>
                 </Show>
-            </Show>
-        </PromptModal>
+            </ModalBody>
+            <ModalFooter hint="cancel">
+                <TextButton onClick={props.onClose}>cancel</TextButton>
+                <TextButton
+                    primary
+                    onClick={submit}
+                    disabled={
+                        loading() ||
+                        saving() ||
+                        devices().length === 0 ||
+                        selected() === ''
+                    }
+                >
+                    set owner
+                </TextButton>
+            </ModalFooter>
+        </FormModal>
     )
 }

@@ -1,9 +1,0 @@
-/* app/src/ui/PromptInput.module.css — PromptInput.tsx's own colocated stylesheet.
-
-   Used to carry its own chrome (extracted from FolderPrompt.css, CSS modules migration Task 8) —
-   a distinct font, padding scale, background and focus treatment from ui/TextInput's `.ui-input`.
-   The modal redesign (2026-09-23, Task 3) unified every field onto FormControl's shared chrome:
-   PromptInput.tsx now composes `<FormControl as="input">`, so this file keeps only a no-op local
-   marker — a `.module.css` with zero local classes reads as dead to `bench/moduleClassCheck.ts`,
-   which this isn't. */
-.prompt-input { --prompt-input: true; }

@@ -92,9 +92,22 @@
    now, applied to EVERY bar rather than only this one. */
 /* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
    shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
-   plain attribute selector, not a foreign class reach, so this carries no `:global()`. */
-.sidebar-icons [data-command-icon] { width: var(--bar-icon-size); height: var(--bar-icon-size); }
-.sidebar-icons { display: flex; align-items: center; gap: var(--bar-icon-gap); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+   plain attribute selector, not a foreign class reach, so this carries no `:global()`.
+
+   `min-width`, not `width` (Task 6b, the same fix ui.css's own `.btn--icon.btn--sm` rule already
+   made for the un-overridden default size — see that rule's comment in Button.module.css): Task 6
+   put `[`/`]` glyphs either side of the icon via `::before`/`::after`, and those glyphs are wider
+   than --bar-icon-size (18px) alone. A fixed `width` clipped/overlapped them — the `clip-x` story-
+   audit finding. `min-width` keeps the 18px floor for a bracket-less state while letting the box
+   grow to fit `[⌕]`; `height` stays fixed since the glyphs add no vertical extent. */
+.sidebar-icons [data-command-icon] { min-width: var(--bar-icon-size); height: var(--bar-icon-size); }
+/* `gap` here is intentionally its OWN value, not `var(--bar-icon-gap)` (which TabRail/TopStrip
+   still use at 0px). Those two rows wrap each icon onto its own line/column, so a zero gap between
+   them is invisible — there is only ever one button per row. This row never wraps: it is a single
+   flex line, so with the brackets now occupying real width, a zero gap collided adjacent buttons'
+   bracket glyphs into each other. `--sp-2` is the design system's own small-gap step (4px), enough
+   to read `[⌕] [I] [✉] [⚙]` as four distinct units without breaking the row's 46px-tall band. */
+.sidebar-icons { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
    (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
