@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { extractText, isUppercaseLabel, uppercaseWarning } from './uiLint'
+import { extractText, isLowercaseLabel, labelCaseWarning } from './uiLint'
 
 describe('extractText', () => {
     it('returns strings and numbers, joins arrays, drops non-text', () => {
@@ -13,26 +13,25 @@ describe('extractText', () => {
     })
 })
 
-describe('isUppercaseLabel', () => {
-    it('true when no lowercase letter present', () => {
-        expect(isUppercaseLabel('RESET VIEW')).toBe(true)
-        expect(isUppercaseLabel('REPLACE ALL')).toBe(true)
-        expect(isUppercaseLabel('+ ADD PAGE')).toBe(true)
-        expect(isUppercaseLabel('')).toBe(true)
+describe('isLowercaseLabel', () => {
+    it('true when no uppercase A-Z letter present', () => {
+        expect(isLowercaseLabel('save')).toBe(true)
+        expect(isLowercaseLabel('+ add page')).toBe(true)
+        expect(isLowercaseLabel('')).toBe(true)
     })
-    it('false when any lowercase letter present', () => {
-        expect(isUppercaseLabel('Reset view')).toBe(false)
-        expect(isUppercaseLabel('save')).toBe(false)
+    it('false when any uppercase A-Z letter present', () => {
+        expect(isLowercaseLabel('Save')).toBe(false)
+        expect(isLowercaseLabel('SAVE')).toBe(false)
     })
 })
 
-describe('uppercaseWarning', () => {
-    it('warns for lowercase labels with a corrected suggestion', () => {
-        expect(uppercaseWarning('Reset view')).toContain('RESET VIEW')
+describe('labelCaseWarning', () => {
+    it('warns for non-lowercase labels with a corrected suggestion', () => {
+        expect(labelCaseWarning('Reset view')).toContain('reset view')
     })
-    it('passes uppercase / empty / non-text children silently', () => {
-        expect(uppercaseWarning('RESET VIEW')).toBeNull()
-        expect(uppercaseWarning('')).toBeNull()
-        expect(uppercaseWarning(() => 'x')).toBeNull()
+    it('passes lowercase / empty / non-text children silently', () => {
+        expect(labelCaseWarning('reset view')).toBeNull()
+        expect(labelCaseWarning('')).toBeNull()
+        expect(labelCaseWarning(() => 'x')).toBeNull()
     })
 })

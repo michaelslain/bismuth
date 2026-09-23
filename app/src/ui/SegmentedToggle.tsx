@@ -29,6 +29,9 @@ export type SegmentedToggleProps<T> = {
  * A row of mutually-exclusive buttons: the active one is `selected`, the rest
  * `unselected`. This is THE canonical selected/unselected consumer — graph mode
  * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
+ *
+ * Renders `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, sized), kept
+ * verbatim so this component's pixels don't move when `kind="text"` becomes the bracket look.
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
     return (
@@ -39,7 +42,7 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
             <For each={props.options}>
                 {opt => (
                     <Button
-                        kind="text"
+                        kind="segment"
                         state={
                             opt.id === props.value ? 'selected' : 'unselected'
                         }

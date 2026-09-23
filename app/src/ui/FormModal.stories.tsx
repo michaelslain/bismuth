@@ -50,8 +50,8 @@ export const Default: Story = {
                 <Text>Third and last paragraph, closing things out.</Text>
             </ModalBody>
             <ModalFooter hint="to cancel">
-                <TextButton size="sm" onClick={noop}>
-                    CANCEL
+                <TextButton onClick={noop}>
+                    cancel
                 </TextButton>
             </ModalFooter>
         </FormModal>
@@ -76,8 +76,8 @@ export const NarrowWidth420: Story = {
                 </Text>
             </ModalBody>
             <ModalFooter hint="to cancel">
-                <TextButton size="sm" onClick={noop}>
-                    CANCEL
+                <TextButton onClick={noop}>
+                    cancel
                 </TextButton>
             </ModalFooter>
         </FormModal>

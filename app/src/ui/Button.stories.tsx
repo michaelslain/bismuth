@@ -1,9 +1,11 @@
 // Visual spec for the base <Button> + buttonClass() variant matrix.
 //
-// Two axes (see buttonClass.ts):
-//   • kind  — "text" (labelled, uppercased) | "icon" (borderless icon button)
+// Three kinds (see buttonClass.ts):
+//   • kind  — "text" (the bracket look — "[ label ]", lowercase, one size, the default) |
+//             "icon" (borderless icon button) | "segment" (the OLD "text" look — uppercase,
+//             bordered, sized — kept verbatim for SegmentedToggle only)
 //   • state — "normal" (standalone) | "unselected" (toggle member, off) | "selected" (toggle member, on)
-//   • size  — "sm" | "md" | "lg"  (text buttons; md is the default, adds no class)
+//   • size  — ignored for "text" (one size); "icon"/"segment" take "sm" | "md" | "lg" (md is the default)
 //   • danger — orthogonal destructive tone, layerable on any state
 //   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
 //
@@ -23,7 +25,7 @@ const meta = {
     component: Button,
     parameters: { layout: 'centered' },
     argTypes: {
-        kind: { control: 'inline-radio', options: ['text', 'icon'] },
+        kind: { control: 'inline-radio', options: ['text', 'icon', 'segment'] },
         state: {
             control: 'inline-radio',
             options: ['normal', 'selected', 'unselected'],
@@ -41,7 +43,7 @@ const meta = {
         danger: false,
         primary: false,
         disabled: false,
-        children: 'Button',
+        children: 'button',
     },
 } satisfies Meta<typeof Button>
 
@@ -62,41 +64,26 @@ function Stack(props: { children: JSX.Element }) {
 /** Fully controllable single button. */
 export const Playground: Story = {}
 
-/** Text button — the three selection states plus the danger tone. */
+/** Text button (the bracket register) — the three selection states plus the danger tone. Every
+ *  state renders `[ label ]` unconditionally now — there is no opt-in `bracket` prop and no
+ *  size variance (the old `Bracket`/`TextSizes` stories collapse into this one). */
 export const TextStates: Story = {
     render: () => (
         <Row label="text // states">
             <Button kind="text" state="normal">
-                Normal
+                normal
             </Button>
             <Button kind="text" state="unselected">
-                Unselected
+                unselected
             </Button>
             <Button kind="text" state="selected">
-                Selected
+                selected
             </Button>
             <Button kind="text" danger>
-                Danger
+                danger
             </Button>
             <Button kind="text" disabled>
-                Disabled
-            </Button>
-        </Row>
-    ),
-}
-
-/** Text button sizes. `md` is the default and emits no size class. */
-export const TextSizes: Story = {
-    render: () => (
-        <Row label="text // sizes">
-            <Button kind="text" size="sm">
-                Small
-            </Button>
-            <Button kind="text" size="md">
-                Medium
-            </Button>
-            <Button kind="text" size="lg">
-                Large
+                disabled
             </Button>
         </Row>
     ),
@@ -107,30 +94,30 @@ export const TextPrimary: Story = {
     render: () => (
         <Row label="text // primary">
             <Button kind="text" state="unselected">
-                Cancel
+                cancel
             </Button>
             <Button kind="text" primary>
-                Save
+                save
             </Button>
         </Row>
     ),
 }
 
-/** A text button with a leading icon (the shared 6px gap handles spacing). */
+/** A text button with a leading icon (Button's own `.label` gap handles spacing). */
 export const TextWithIcon: Story = {
     render: () => (
         <Row label="text // with icon">
             <Button kind="text" state="normal">
                 <Icon value="Plus" size={15} />
-                New
+                new
             </Button>
             <Button kind="text" state="selected">
                 <Icon value="Check" size={15} />
-                Saved
+                saved
             </Button>
             <Button kind="text" danger>
                 <Icon value="Trash2" size={15} />
-                Delete
+                delete
             </Button>
         </Row>
     ),
@@ -160,36 +147,22 @@ export const IconStates: Story = {
     ),
 }
 
-/** `bracket` renders the "[ label ]" CLI-confirm look, lowercase, on EVERY kind/register — not
- *  just `kind="text"`. Task 11 (daemon inbox bulk action) relies on this working for `kind="icon"`
- *  too. */
-export const Bracket: Story = {
+/** `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, sized), kept verbatim for
+ *  SegmentedToggle only. Not a general-purpose register — reach for `kind="text"` for anything
+ *  else. */
+export const Segment: Story = {
     render: () => (
-        <Stack>
-            <Row label="text // bracket, every state">
-                <Button kind="text" bracket>
-                    Approve
-                </Button>
-                <Button kind="text" state="selected" bracket>
-                    Approve
-                </Button>
-                <Button kind="text" state="unselected" bracket>
-                    Approve
-                </Button>
-                <Button kind="text" primary bracket>
-                    Approve All
-                </Button>
-                <Button kind="text" danger bracket>
-                    Delete
-                </Button>
-            </Row>
-            <Row label="icon // bracket">
-                <Button kind="icon" bracket title="approve">
-                    <Icon value="Check" size={15} />
-                    Approve
-                </Button>
-            </Row>
-        </Stack>
+        <Row label="segment // states">
+            <Button kind="segment" state="normal">
+                NORMAL
+            </Button>
+            <Button kind="segment" state="unselected">
+                UNSELECTED
+            </Button>
+            <Button kind="segment" state="selected">
+                SELECTED
+            </Button>
+        </Row>
     ),
 }
 
@@ -199,40 +172,40 @@ export const AllVariants: Story = {
         <Stack>
             <Row label="text // normal / unselected / selected">
                 <Button kind="text" state="normal">
-                    Normal
+                    normal
                 </Button>
                 <Button kind="text" state="unselected">
-                    Unselected
+                    unselected
                 </Button>
                 <Button kind="text" state="selected">
-                    Selected
-                </Button>
-            </Row>
-            <Row label="text // sizes sm / md / lg">
-                <Button kind="text" size="sm">
-                    Small
-                </Button>
-                <Button kind="text" size="md">
-                    Medium
-                </Button>
-                <Button kind="text" size="lg">
-                    Large
+                    selected
                 </Button>
             </Row>
             <Row label="text // danger / disabled">
                 <Button kind="text" danger>
-                    Danger
+                    danger
                 </Button>
                 <Button kind="text" danger disabled>
-                    Danger disabled
+                    danger disabled
                 </Button>
                 <Button kind="text" disabled>
-                    Disabled
+                    disabled
                 </Button>
             </Row>
             <Row label="text // primary">
                 <Button kind="text" primary>
-                    Primary
+                    primary
+                </Button>
+            </Row>
+            <Row label="segment // normal / unselected / selected">
+                <Button kind="segment" state="normal">
+                    NORMAL
+                </Button>
+                <Button kind="segment" state="unselected">
+                    UNSELECTED
+                </Button>
+                <Button kind="segment" state="selected">
+                    SELECTED
                 </Button>
             </Row>
             <Row label="icon // normal / unselected / selected / danger">

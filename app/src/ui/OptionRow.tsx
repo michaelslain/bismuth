@@ -2,7 +2,7 @@
 // A large single-choice row: an icon mark, a label, a sublabel, and a trailing chevron.
 // The "pick one of these scopes" control RecurrenceDialog hand-rolled as a bare <button>.
 //
-// Not TextButton (which enforces UPPERCASE labels) and not Button (documented internal-only) —
+// Not TextButton (which enforces lowercase bracket labels) and not Button (documented internal-only) —
 // a sentence-case, two-line, full-width choice row is a different control, so it is its own
 // primitive rather than a special case of the label button.
 import { Show, type Component } from 'solid-js'
