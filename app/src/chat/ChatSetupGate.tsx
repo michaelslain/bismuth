@@ -54,7 +54,7 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
                                     </>
                                 }
                                 body={<Text>{refusal().message}</Text>}
-                                actionLabel="USE CLAUDE CODE INSTEAD"
+                                actionLabel="use claude code instead"
                                 onAction={() => switchProvider('claude')}
                             />
                         )}
@@ -77,7 +77,7 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
                                     ), then reopen this tab.
                                 </Text>
                             }
-                            actionLabel="USE CLAUDE CODE INSTEAD"
+                            actionLabel="use claude code instead"
                             onAction={() => switchProvider('claude')}
                         />
                     </Match>
@@ -94,7 +94,7 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
                                     in, then reopen this tab.
                                 </Text>
                             }
-                            actionLabel="USE OPENCODE INSTEAD"
+                            actionLabel="use opencode instead"
                             onAction={() => switchProvider('opencode')}
                         />
                     </Match>
