@@ -13,7 +13,7 @@ export type GalleryItem = { id: string; label: string; value: string }
  *  query (""=a sensible default set) plus the pre-cap `total` for the "showing X of Y"
  *  hint. Keeping ranking inside the source is what lets the modal stay generic. */
 export type GallerySource = {
-    /** Search-box placeholder, e.g. "Search icons…". */
+    /** Search-box placeholder, e.g. "icons". */
     placeholder: string
     /** `loading` = the source's data isn't there yet (the icon library's lazy chunk) — the modal
      *  shows nothing rather than "No matches" until it lands. */

@@ -2,7 +2,8 @@
 // standardization rules the components enforce:
 //   • TextButton labels must be lowercase — pass already-lowercase text; no
 //     hidden CSS transform, what you pass is what shows.
-//   • IconButton/SearchBar icons must be icon names, never literal glyphs.
+//   • IconButton icons must be icon names, never literal glyphs. (SearchBar carries no icon —
+//     it renders a typed prompt glyph via its `prompt` prop instead.)
 // The checks are pure so they can be unit-tested; the components call them
 // behind an `import.meta.env.DEV` guard and emit console warnings.
 

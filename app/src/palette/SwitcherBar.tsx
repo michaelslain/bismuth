@@ -360,11 +360,9 @@ export function SwitcherBar(props: Props) {
     return (
         <div class={switcherStyles['switcher-bar']} onPointerDown={e => e.stopPropagation()}>
             <SearchBar
-                class={switcherStyles['switcher-search']}
-                leadClass={switcherStyles['switcher-lead']}
-                inputClass={switcherStyles['switcher-input']}
+                size="large"
                 inputRef={el => (inputRef = el)}
-                placeholder="Search file names and note text…"
+                placeholder="files and notes"
                 value={query()}
                 onInput={onQueryInput}
                 onKeyDown={onKeyDown}
