@@ -38,6 +38,7 @@
   height: var(--h-control);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
   padding: 0;
   background: transparent;
   border: none;
@@ -63,4 +64,4 @@ textarea:global(.ui-input) { resize: none; min-height: 62px; height: auto; paddi
    above the modal overlay; a transparent backdrop between the overlay and the list catches
    outside clicks. */
 :global(.ui-select-trigger) { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
-:global(.ui-select-caret) { flex: none; color: var(--faint); line-height: 1; } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */
+:global(.ui-select-caret) { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); } /* design-system-ignore globalReach: bridge to legacy readers until a later wave migrates them onto FormControl, see file header */

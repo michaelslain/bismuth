@@ -273,6 +273,12 @@
   --sp-6: 16px;
   --sp-7: 24px;
 
+  /* Optical-alignment nudge — a 1px correction for a glyph whose own em-box sits proud of a
+     neighboring text baseline (line-height: 1 does not self-centre a symbol font). Same value
+     Button.module.css's `.btn-label` already uses as a bare literal; named here so a second
+     site (Select's caret, FormControl.module.css) doesn't repeat the magic number. */
+  --optical-nudge: 1px;
+
   /* ── Control-height rhythm — NEW (§2.2, amended §9.4). Three bands: a list row, a control
      (button/select/input/chip), and a band (toolbar/header). §9.4 answers the two open questions
      from §8.4: the control step is 24 (on the 2/4/6/8 spacing grid, NOT the 18-grid's ugly-to-
