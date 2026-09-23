@@ -71,7 +71,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
             title="Set daemon owner device"
             actions={
                 <>
-                    <TextButton onClick={props.onClose}>CANCEL</TextButton>
+                    <TextButton onClick={props.onClose}>cancel</TextButton>
                     <TextButton
                         variant="selected"
                         onClick={submit}
@@ -82,7 +82,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
                             selected() === ''
                         }
                     >
-                        SET OWNER
+                        set owner
                     </TextButton>
                 </>
             }

@@ -7,7 +7,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { GcalConnectModal } from './GcalConnectModal'
-import { Button } from './ui/Button'
+import { TextButton } from './ui/TextButton'
 
 const meta = {
     title: 'Modals/GcalConnectModal',
@@ -34,13 +34,12 @@ export const Interactive: Story = {
         const [open, setOpen] = createSignal(true)
         return (
             <div style={{ padding: '40px' }}>
-                <Button
-                    kind="text"
-                    state="selected"
+                <TextButton
+                    variant="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Open Google Calendar connect
-                </Button>
+                    open google calendar connect
+                </TextButton>
                 {open() && <GcalConnectModal onClose={() => setOpen(false)} />}
             </div>
         )

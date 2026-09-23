@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, within } from 'storybook/test'
 import { IconPicker } from './IconPicker'
-import { Button } from '../ui/Button'
+import { TextButton } from '../ui/TextButton'
 
 const meta = {
     title: 'App/IconPicker',
@@ -82,13 +82,12 @@ export const Interactive: Story = {
                     'align-items': 'flex-start',
                 }}
             >
-                <Button
-                    kind="text"
-                    state="selected"
+                <TextButton
+                    variant="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Set icon…
-                </Button>
+                    set icon…
+                </TextButton>
                 <span
                     style={{
                         'font-family': 'var(--ui-font-stack)',

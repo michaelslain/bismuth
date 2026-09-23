@@ -142,7 +142,7 @@ export function GcalConnectModal(props: {
             title="Connect Google Calendar"
             actions={
                 <>
-                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <TextButton onClick={props.onClose}>close</TextButton>
                     <Show
                         when={status()?.connected}
                         fallback={
@@ -151,19 +151,19 @@ export function GcalConnectModal(props: {
                                 onClick={connect}
                                 disabled={loading() || busy()}
                             >
-                                {busy() ? 'CONNECTING…' : 'CONNECT'}
+                                {busy() ? 'connecting…' : 'connect'}
                             </TextButton>
                         }
                     >
                         <TextButton onClick={disconnect} disabled={busy()}>
-                            DISCONNECT
+                            disconnect
                         </TextButton>
                         <TextButton
                             variant="selected"
                             onClick={syncNow}
                             disabled={busy()}
                         >
-                            {busy() ? 'SYNCING…' : 'SYNC NOW'}
+                            {busy() ? 'syncing…' : 'sync now'}
                         </TextButton>
                     </Show>
                 </>

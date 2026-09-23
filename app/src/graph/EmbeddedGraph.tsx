@@ -290,10 +290,9 @@ export function EmbeddedGraph(props: {
                     </Show>
                     <IconTextButton
                         icon="Plus"
-                        size="sm"
                         onClick={() => commit(addNode(spec).spec)}
                     >
-                        NODE
+                        node
                     </IconTextButton>
                 </Show>
                 <div class={styles['graph-block-spacer']} />
@@ -361,16 +360,15 @@ export function EmbeddedGraph(props: {
                             }}
                         />
                     </Field>
-                    <IconTextButton icon="Check" size="sm" onClick={applyEdit}>
-                        APPLY
+                    <IconTextButton icon="Check" onClick={applyEdit}>
+                        apply
                     </IconTextButton>
                     <IconTextButton
                         icon="Trash2"
-                        size="sm"
                         danger
                         onClick={() => commit(removeNode(spec, selected()!))}
                     >
-                        DELETE
+                        delete
                     </IconTextButton>
                 </div>
             </Show>
