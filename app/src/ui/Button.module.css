@@ -209,9 +209,15 @@
    reads it) sidesteps the collision without touching BarLabel, which is out of this task. */
 .textLabel { display: inline-flex; align-items: center; gap: var(--sp-2); }
 
-/* ── icon buttons: borderless; state changes opacity / fill ───────────────── */
+/* ── icon buttons: borderless; state changes opacity / fill ─────────────────
+   Bracketed the same way `.btn--text` is: the icon sits between `::before`/`::after` glyphs
+   (`content: '[' / ''` — the `/ ''` empty alt text keeps the glyph out of the accessible name,
+   same technique as the text register above). Brackets read `--faint` at rest, pick up `--accent`
+   on hover/focus-visible, and go accent (via `currentColor`, following the icon) when selected —
+   Acceptance 9. `gap: 0` keeps the glyphs snug against the icon (`[▣]`, not `[ ▣ ]`). */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon) {
+  gap: 0;
   border: none;
   background: transparent;
   color: var(--fg);
@@ -219,6 +225,35 @@
   border-radius: var(--r-0);
   font-size: var(--fs-body-lg);
 }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon)::before { content: '[' / ''; color: var(--faint); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon)::after { content: ']' / ''; color: var(--faint); }
+/* focus-visible + hover (normal/unselected) raise the brackets to --accent; selected/danger below
+   go `currentColor` instead, so the brackets track whatever tone the icon itself already carries.
+   Each selector gets its own ignore comment (rather than one comment over a comma-joined list) to
+   match the audit's per-line reach check — see every other rule in this file. */
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon:focus-visible)::before,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon:focus-visible)::after { color: var(--accent); }
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--normal:hover:not(:disabled))::before,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--normal:hover:not(:disabled))::after,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--unselected:hover:not(:disabled))::before,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--unselected:hover:not(:disabled))::after { color: var(--accent); }
+/* selected/danger — brackets follow the icon's own tone rather than staying pinned to --faint */
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--selected)::before,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--selected)::after,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--danger)::before,
+/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+:global(.btn--icon.btn--danger)::after { color: currentColor; }
 /* normal — standalone, full opacity */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--normal) { opacity: 1; }
@@ -263,10 +298,15 @@
      collar (20px) — under the floor, and the app ships on iPad where it is a thumb target, not a
      mouse one. The icon itself is unchanged, so nothing about the mark's optical size moves; only
      the hit area grows, and --h-control is already 24px so the button now matches the height every
-     other control in a toolbar row already has. */
-  width: calc(var(--icon) + 10px);
+     other control in a toolbar row already has.
+     `min-width`, not `width` (IconButton brackets task): the box used to be a fixed square, but the
+     bracket glyphs now sitting either side of the icon are wider than the icon alone, so a fixed
+     square clips them. min-width keeps the WCAG floor for a bracket-less state while letting the
+     box grow to fit `[▣]`; height stays fixed so the row rhythm with every other toolzone control
+     is unchanged. */
+  min-width: calc(var(--icon) + 10px);
   height: calc(var(--icon) + 10px);
-  padding: 0;
+  padding: 0 var(--sp-1);
   border-radius: var(--r-0);
   color: var(--text-muted);
 }
