@@ -21,7 +21,7 @@
     border-top: var(--rule);
 }
 .rule-lead {
-    flex: 0 0 var(--sp-4);
+    flex: 0 0 calc(var(--sp-6) - var(--sp-2));
     margin-right: var(--sp-2);
 }
 .rule-fill {
@@ -33,7 +33,7 @@
     margin: 0 var(--sp-2);
 }
 .rule-trail {
-    flex: 0 0 var(--sp-4);
+    flex: 0 0 calc(var(--sp-6) - var(--sp-2));
     margin-left: var(--sp-2);
 }
 
