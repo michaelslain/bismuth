@@ -121,15 +121,13 @@ export function GraphSearch(props: {
             data-embedded={props.embedded ? '' : undefined}
         >
             <SearchBar
-                leadingIcon="Search"
+                size="compact"
                 placeholder="Search graph..."
                 value={query()}
                 onInput={setQuery}
                 onKeyDown={onKeyDown}
                 inputRef={el => (inputRef = el)}
                 class={styles['graph-search-bar']}
-                leadClass={styles['graph-search-lead']}
-                inputClass={styles['graph-search-input']}
             >
                 <IconButton
                     icon="X"
