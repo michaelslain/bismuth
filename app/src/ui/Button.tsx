@@ -20,8 +20,6 @@ export type ButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
-    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
-    bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -38,7 +36,6 @@ function Button(props: ButtonProps) {
         'size',
         'danger',
         'primary',
-        'bracket',
         'class',
         'type',
         'children',

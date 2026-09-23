@@ -3,7 +3,7 @@ import { Button } from './Button'
 import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon, warnLabelCase } from './devWarn'
-import type { ButtonState, ButtonSize } from './buttonClass'
+import type { ButtonState } from './buttonClass'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type IconTextButtonVariant = ButtonState
@@ -19,10 +19,6 @@ export type IconTextButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
     primary?: boolean
-    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
-    size?: ButtonSize
-    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
-    bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -38,8 +34,6 @@ function IconTextButton(props: IconTextButtonProps) {
         'icon',
         'iconSize',
         'variant',
-        'size',
-        'bracket',
         'children',
     ])
     if (import.meta.env?.DEV && !isIconName(local.icon)) {

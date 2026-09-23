@@ -1,6 +1,6 @@
 import { splitProps, createEffect, type JSX } from 'solid-js'
 import { Button } from './Button'
-import type { ButtonState, ButtonSize } from './buttonClass'
+import type { ButtonState } from './buttonClass'
 import { warnLabelCase } from './devWarn'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
@@ -13,10 +13,6 @@ export type TextButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
     primary?: boolean
-    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
-    size?: ButtonSize
-    /** @deprecated ignored — every text button is bracketed; removed in Task 6 */
-    bracket?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -27,11 +23,9 @@ export type TextButtonProps = {
  *    transform; what you pass is what shows). Non-lowercase input warns in dev.
  *  • Appearance comes from `variant` (selection state) only — call sites pass
  *    layout (flex/margin/position) via `style`, never colors/borders/padding.
- *  • `size`/`bracket` are deprecated and ignored — every text button is one
- *    size and every text button is `[ label ]`.
  */
 function TextButton(props: TextButtonProps) {
-    const [local, rest] = splitProps(props, ['variant', 'size', 'bracket'])
+    const [local, rest] = splitProps(props, ['variant'])
     if (import.meta.env?.DEV) {
         createEffect(() => warnLabelCase('TextButton', rest.children))
     }
