@@ -8,8 +8,14 @@
    hashed locals: the outside callers match the global name literally and a hashed local would
    compile, render and match nothing, silently.
 
-   Default tone = accent; tone-<x> tints the SELECTED state's border + label to a category
-   color, fill stays transparent (moved verbatim from ui.css, no pixel change). */
+   Default tone = accent; tone-<x> tints the SELECTED state's brackets + label to a category
+   color, fill stays transparent.
+
+   Modal redesign Task 5: no box (no border, no fill) — `[label]` bracket text in the same
+   register as SegmentedToggle's bracket look and TextButton's `.btn--text` (Button.module.css),
+   which this copies rather than reaches (TextButton itself is off-limits this wave). The `[`/`]`
+   are generated content, so they inherit `color` from the button and need no rule of their own —
+   selected tints text + brackets together, unselected is `--faint`. */
 
 /* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
    this file exports a real hashed local its component actually reads — a `.module.css` with zero
@@ -19,40 +25,46 @@
 .chip-toggle-marker { --chip-toggle: true; }
 
 /* design-system-ignore globalReach: ChipToggle's own class, temporary :global() bridge to the two outside callers above, until a later wave */
-:global(.chip-toggle) { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-3); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--text-muted); background: transparent; border: var(--rule); cursor: pointer; white-space: nowrap; }
+:global(.chip-toggle) { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0; border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--faint); background: transparent; border: none; cursor: pointer; white-space: nowrap; }
+/* The bracket glyphs — generated content, not markup, so ChipToggle.tsx stays a plain labelled
+   button; ' / '' hides the literal '[' / ']' from the accessible name, same as .btn--text's. */
+/* design-system-ignore globalReach: same bridge as above, until a later wave */
+:global(.chip-toggle)::before { content: '[' / ''; }
+/* design-system-ignore globalReach: same bridge as above, until a later wave */
+:global(.chip-toggle)::after { content: ']' / ''; }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle) svg { color: var(--faint); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle):hover { color: var(--fg); }
+:global(.chip-toggle):hover { color: var(--text-muted); }
 /* Same reasoning as .btn:focus-visible in Button.module.css — chip-toggle is a button that
    opted out of .btn's box model, not out of being keyboard-reachable. */
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle):focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.selected) { color: var(--accent); background: transparent; border-color: var(--accent); }
+:global(.chip-toggle.selected) { color: var(--accent); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.selected) svg { color: var(--accent); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-teal.selected) { color: var(--teal); background: transparent; border-color: var(--teal); }
+:global(.chip-toggle.tone-teal.selected) { color: var(--teal); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-teal.selected) svg { color: var(--teal); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-blue.selected) { color: var(--blue); background: transparent; border-color: var(--blue); }
+:global(.chip-toggle.tone-blue.selected) { color: var(--blue); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-blue.selected) svg { color: var(--blue); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-violet.selected) { color: var(--violet); background: transparent; border-color: var(--violet); }
+:global(.chip-toggle.tone-violet.selected) { color: var(--violet); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-violet.selected) svg { color: var(--violet); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-green.selected) { color: var(--green); background: transparent; border-color: var(--green); }
+:global(.chip-toggle.tone-green.selected) { color: var(--green); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-green.selected) svg { color: var(--green); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-gold.selected) { color: var(--gold); background: transparent; border-color: var(--gold); }
+:global(.chip-toggle.tone-gold.selected) { color: var(--gold); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-gold.selected) svg { color: var(--gold); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.chip-toggle.tone-rose.selected) { color: var(--rose); background: transparent; border-color: var(--rose); }
+:global(.chip-toggle.tone-rose.selected) { color: var(--rose); }
 /* design-system-ignore globalReach: same bridge as above, until a later wave */
 :global(.chip-toggle.tone-rose.selected) svg { color: var(--rose); }

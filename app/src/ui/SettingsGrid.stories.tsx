@@ -1,7 +1,9 @@
-// Visual spec for <SettingsGrid> — two equal columns holding SettingsField
-// children (was `.evm-modal .set-grid`). SettingsGrid owns only the column
-// layout; it defers entirely to whatever fields are passed in.
+// Visual spec for <SettingsGrid> — a vertical stack of SettingsField rows, each its own
+// label-column grid keyed to `--label-col` (was `.evm-modal .set-grid`; modal redesign Task 4,
+// 2026-09-23 — no longer two fields side by side, one row per field). SettingsGrid owns no
+// column layout itself; it defers entirely to whatever fields are passed in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import SettingsGrid from './SettingsGrid'
 import SettingsField from './SettingsField'
@@ -16,46 +18,52 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Two fields side by side, the grid's ordinary shape. */
-export const TwoFields: Story = {
+/** Four fields: two ordinary rows, a hint under one of them, and a spanning field — the shapes
+ *  a settings form composes together. */
+export const FourFields: Story = {
     render: () => {
-        const [title, setTitle] = createSignal('Team sync')
-        const [category, setCategory] = createSignal('Work')
+        const [title, setTitle] = createSignal('team sync')
+        const [category, setCategory] = createSignal('work')
+        const [interval, setInterval_] = createSignal('60')
+        const [notes, setNotes] = createSignal('')
         return (
-            <div style={{ width: '548px' }}>
+            <div style={{ width: '460px' }}>
                 <SettingsGrid>
-                    <SettingsField label="Title" badge="required">
+                    <SettingsField label="title" badge="required">
                         <TextInput value={title()} onInput={setTitle} />
                     </SettingsField>
-                    <SettingsField label="Category" badge="optional">
+                    <SettingsField label="category" badge="optional">
                         <TextInput value={category()} onInput={setCategory} />
+                    </SettingsField>
+                    <SettingsField
+                        label="sync interval"
+                        hint="how often the daemon polls for external changes."
+                    >
+                        <TextInput value={interval()} onInput={setInterval_} />
+                    </SettingsField>
+                    <SettingsField
+                        label="notes"
+                        span
+                        hint="visible only to you, never synced."
+                    >
+                        <TextInput value={notes()} onInput={setNotes} multiline />
                     </SettingsField>
                 </SettingsGrid>
             </div>
         )
     },
-}
-
-/** A `span` field takes the full width of the grid, the remaining two split the row below it. */
-export const WithSpanningField: Story = {
-    render: () => {
-        const [title, setTitle] = createSignal('Team sync')
-        const [start, setStart] = createSignal('09:00')
-        const [end, setEnd] = createSignal('09:30')
-        return (
-            <div style={{ width: '548px' }}>
-                <SettingsGrid>
-                    <SettingsField label="Title" badge="required" span>
-                        <TextInput value={title()} onInput={setTitle} />
-                    </SettingsField>
-                    <SettingsField label="Start" badge="required">
-                        <TextInput value={start()} onInput={setStart} />
-                    </SettingsField>
-                    <SettingsField label="End" badge="required">
-                        <TextInput value={end()} onInput={setEnd} />
-                    </SettingsField>
-                </SettingsGrid>
-            </div>
-        )
+    play: async ({ canvasElement }) => {
+        const fields = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="settings-field"]',
+            ),
+        ]
+        expect(fields).toHaveLength(4)
+        // Catches: rows not stacking (e.g. a stray `flex-direction: row`) — each field's top
+        // should be below the previous one's top.
+        const tops = fields.map(f => f.getBoundingClientRect().top)
+        for (let i = 1; i < tops.length; i++) {
+            expect(tops[i]).toBeGreaterThan(tops[i - 1])
+        }
     },
 }

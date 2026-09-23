@@ -82,10 +82,10 @@ export const SourcedUnconfigured: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        expect(canvas.getAllByText('Not set').length).toBeGreaterThan(0)
+        expect(canvas.getAllByText('not set').length).toBeGreaterThan(0)
         expect(
             canvas.getByText(
-                'New tasks have nowhere to go until this is set.',
+                'new tasks have nowhere to go until this is set.',
             ),
         ).toBeInTheDocument()
     },
@@ -118,10 +118,10 @@ export const OwnRows: Story = {
     args: { onSetField: fn() },
     play: async ({ args }) => {
         const canvas = within(document.body)
-        expect(canvas.getByText('Default category')).toBeInTheDocument()
-        expect(canvas.getByText('Category column')).toBeInTheDocument()
+        expect(canvas.getByText('default category')).toBeInTheDocument()
+        expect(canvas.getByText('category column')).toBeInTheDocument()
         expect(
-            canvas.queryByText('Destination note'),
+            canvas.queryByText('destination note'),
         ).not.toBeInTheDocument()
 
         const input = canvas.getByDisplayValue('Work') as HTMLInputElement
@@ -154,10 +154,10 @@ export const CategoriesEmpty: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        expect(canvas.getByText('Categories')).toBeInTheDocument()
+        expect(canvas.getByText('categories')).toBeInTheDocument()
         expect(
             canvas.getByText(
-                'Categories appear here once tasks have a source note or a category value.',
+                'categories appear here once tasks have a source note or a category value.',
             ),
         ).toBeInTheDocument()
     },
@@ -211,7 +211,7 @@ export const Interactive: Story = {
         await waitFor(() =>
             expect(
                 document.querySelector(
-                    '[role="dialog"][aria-label="Task calendar settings"]',
+                    '[role="dialog"][aria-label="task calendar settings"]',
                 ),
             ).not.toBeNull(),
         )
@@ -240,7 +240,7 @@ export const Interactive: Story = {
         await waitFor(() =>
             expect(
                 document.querySelector(
-                    '[role="dialog"][aria-label="Task calendar settings"]',
+                    '[role="dialog"][aria-label="task calendar settings"]',
                 ),
             ).toBeNull(),
         )

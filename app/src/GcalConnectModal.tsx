@@ -6,7 +6,7 @@
 //     Connect button that stores them (POST /gcal/credentials), starts the PKCE flow
 //     (POST /gcal/auth/start), opens Google's consent page in the SYSTEM browser, and
 //     polls status until the loopback callback completes on the backend.
-// Mirrors BismuthInstallModal; reuses the shared PromptModal chrome. Only the
+// Mirrors BismuthInstallModal; reuses the shared FormModal chrome. Only the
 // non-secret Client ID/Secret are entered here — they're persisted outside the vault and
 // never touch settings.yaml/git. The single scope requested is calendar.events.
 //
@@ -14,9 +14,14 @@
 // PER-CALENDAR: when opened from a calendar's settings, `basePath` is the currently-open
 // calendar — on a successful connect we turn ON sync for THAT base, and "Sync now" targets it.
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
-import PromptModal from './ui/PromptModal'
-import PromptHint from './ui/PromptHint'
-import PromptInput from './ui/PromptInput'
+import FormModal from './ui/FormModal'
+import ModalHeader from './ui/ModalHeader'
+import ModalBody from './ui/ModalBody'
+import ModalFooter from './ui/ModalFooter'
+import SettingsGrid from './ui/SettingsGrid'
+import SettingsField from './ui/SettingsField'
+import Text from './ui/Text'
+import TextInput from './ui/TextInput'
 import { TextButton } from './ui/TextButton'
 import { api, summarizeSync } from './api'
 import { pushToast } from './Toast'
@@ -137,98 +142,99 @@ export function GcalConnectModal(props: {
     }
 
     return (
-        <PromptModal
+        <FormModal
             onClose={props.onClose}
-            title="Connect Google Calendar"
-            actions={
-                <>
-                    <TextButton onClick={props.onClose}>close</TextButton>
+            width={460}
+            closeOnBackdrop={false}
+            label="connect google calendar"
+        >
+            <ModalHeader
+                title="connect google calendar"
+                onClose={props.onClose}
+            />
+            <ModalBody>
+                <Show
+                    when={!loading()}
+                    fallback={
+                        <Text size="ui" tone="faint">
+                            loading…
+                        </Text>
+                    }
+                >
                     <Show
                         when={status()?.connected}
                         fallback={
-                            <TextButton
-                                primary
-                                onClick={connect}
-                                disabled={loading() || busy()}
-                            >
-                                {busy() ? 'connecting…' : 'connect'}
-                            </TextButton>
+                            <>
+                                <Show when={status()?.needsCredentials ?? true}>
+                                    <SettingsGrid>
+                                        <SettingsField
+                                            label="client id"
+                                            hint="a google cloud desktop-app client"
+                                        >
+                                            <TextInput
+                                                placeholder="…apps.googleusercontent.com"
+                                                value={clientId()}
+                                                onInput={setClientId}
+                                                spellcheck={false}
+                                                autocapitalize="off"
+                                                autocorrect="off"
+                                            />
+                                        </SettingsField>
+                                        <SettingsField label="client secret">
+                                            <TextInput
+                                                type="password"
+                                                placeholder="client secret"
+                                                value={clientSecret()}
+                                                onInput={setClientSecret}
+                                                spellcheck={false}
+                                                autocapitalize="off"
+                                                autocorrect="off"
+                                            />
+                                        </SettingsField>
+                                    </SettingsGrid>
+                                </Show>
+                            </>
                         }
                     >
-                        <TextButton onClick={disconnect} disabled={busy()}>
-                            disconnect
-                        </TextButton>
-                        <TextButton
-                            primary
-                            onClick={syncNow}
-                            disabled={busy()}
-                        >
-                            {busy() ? 'syncing…' : 'sync now'}
-                        </TextButton>
+                        <SettingsGrid>
+                            <SettingsField label="account">
+                                <Text as="span" size="ui">
+                                    {status()?.account ?? 'connected'}
+                                </Text>
+                            </SettingsField>
+                            <Show when={status()?.timeZone}>
+                                <SettingsField label="timezone">
+                                    <Text as="span" size="ui">
+                                        {status()!.timeZone}
+                                    </Text>
+                                </SettingsField>
+                            </Show>
+                        </SettingsGrid>
                     </Show>
-                </>
-            }
-        >
-            <Show
-                when={!loading()}
-                fallback={<PromptHint>Loading…</PromptHint>}
-            >
+                </Show>
+            </ModalBody>
+            <ModalFooter>
+                <TextButton onClick={props.onClose}>close</TextButton>
                 <Show
                     when={status()?.connected}
                     fallback={
-                        <>
-                            <PromptHint>
-                                Two-way sync requests a single scope —{' '}
-                                <code>calendar.events</code> (view &amp; edit
-                                events only). It can't read your Gmail, Drive,
-                                or contacts. Create an OAuth
-                                <b> Desktop app</b> client in Google Cloud
-                                Console and paste its credentials below; they're
-                                stored outside your vault, never in git.
-                            </PromptHint>
-                            <PromptInput
-                                placeholder="Client ID (…apps.googleusercontent.com)"
-                                value={clientId()}
-                                spellcheck={false}
-                                autocapitalize="off"
-                                autocorrect="off"
-                                onInput={e =>
-                                    setClientId(e.currentTarget.value)
-                                }
-                            />
-                            <PromptInput
-                                type="password"
-                                placeholder="Client Secret"
-                                value={clientSecret()}
-                                spellcheck={false}
-                                autocapitalize="off"
-                                autocorrect="off"
-                                onInput={e =>
-                                    setClientSecret(e.currentTarget.value)
-                                }
-                            />
-                        </>
+                        <TextButton
+                            primary
+                            onClick={connect}
+                            disabled={loading() || busy()}
+                        >
+                            {busy() ? 'waiting for google…' : 'sign in with google'}
+                        </TextButton>
                     }
                 >
-                    <PromptHint>
-                        Connected
-                        {status()?.account ? (
-                            <>
-                                {' '}
-                                as <b>{status()!.account}</b>
-                            </>
-                        ) : (
-                            ''
-                        )}
-                        .
-                        {status()?.timeZone ? (
-                            <> Calendar timezone: {status()!.timeZone}.</>
-                        ) : (
-                            ''
-                        )}
-                    </PromptHint>
+                    <TextButton onClick={disconnect} disabled={busy()}>
+                        disconnect
+                    </TextButton>
+                    <TextButton primary onClick={syncNow} disabled={busy()}>
+                        {busy() ? 'syncing…' : 'sync now'}
+                    </TextButton>
                 </Show>
-            </Show>
-        </PromptModal>
+            </ModalFooter>
+        </FormModal>
     )
 }

@@ -151,7 +151,7 @@ export const Interactive: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        const row = await canvas.findByText('Sync this calendar with Google')
+        const row = await canvas.findByText('sync this calendar with google')
         await userEvent.click(row)
         await waitFor(() =>
             expect(

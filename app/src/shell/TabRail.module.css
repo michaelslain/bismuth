@@ -124,7 +124,7 @@
 /* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
    shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
    plain attribute selector, not a foreign class reach, so this carries no `:global()`. */
-.tab-rail-actions [data-command-icon] { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+.tab-rail-actions [data-command-icon] { min-width: var(--bar-icon-size); height: var(--bar-icon-size); }
 /* CENTER, not flex-start. The rail is a narrow vertical strip, so `row wrap` puts each icon on its
    own line and `justify-content` is what positions it ACROSS the rail. The content box is 21px
    (45px strip minus 12px padding a side) against an 18px icon, so flex-start pinned every icon 1.5px

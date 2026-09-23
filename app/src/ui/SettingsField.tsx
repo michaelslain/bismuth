@@ -1,22 +1,21 @@
 import { Show, type Component, type JSX } from 'solid-js'
-import { Icon } from '../icons/Icon'
 import SettingsHint from './SettingsHint'
 import styles from './SettingsField.module.css'
 
 export type SettingsFieldProps = {
     label: JSX.Element
-    /** Icon name, drawn in the accent colour before the label. */
-    icon?: string
-    /** Right-aligned badge on the label line. */
+    /** Right-aligned badge on the label line, rendered as plain text (no box). */
     badge?: 'required' | 'optional'
     hint?: JSX.Element
-    /** Span both columns of a SettingsGrid. */
+    /** Stack the control full-width under the label instead of sharing the label-column row. */
     span?: boolean
     class?: string
     children?: JSX.Element
 }
 
-/** One labelled control in a settings form: label line, the control, then an optional hint. */
+/** One labelled control in a settings form: a label column + the control (and an optional hint
+ *  under it) in the same row, keyed to the shared `--label-col` token so it lines up whether it
+ *  sits inside a SettingsGrid or stands alone. */
 const SettingsField: Component<SettingsFieldProps> = props => (
     <div
         data-testid="settings-field"
@@ -25,22 +24,21 @@ const SettingsField: Component<SettingsFieldProps> = props => (
             .join(' ')}
     >
         <div class={styles.label}>
-            <Show when={props.icon}>
-                {i => <Icon value={i()} size={14} strokeWidth={2} />}
-            </Show>
             {props.label}
             <Show when={props.badge}>
                 {b => (
                     <span class={b() === 'required' ? styles.req : styles.opt}>
-                        {b()}
+                        {b() === 'required' ? 'req' : 'opt'}
                     </span>
                 )}
             </Show>
         </div>
-        {props.children}
-        <Show when={props.hint}>
-            <SettingsHint>{props.hint}</SettingsHint>
-        </Show>
+        <div class={styles.control}>
+            {props.children}
+            <Show when={props.hint}>
+                <SettingsHint>{props.hint}</SettingsHint>
+            </Show>
+        </div>
     </div>
 )
 

@@ -32,7 +32,7 @@ const LINES = Array.from({ length: 40 }, (_, i) => i + 1)
 export const ScrollsWhenTall: Story = {
     render: () => (
         <FormModal onClose={noop} label="Long form">
-            <ModalHeader icon="list" title="Long form" compact onClose={noop} />
+            <ModalHeader title="Long form" onClose={noop} />
             <ModalBody>
                 <For each={LINES}>
                     {n => (
@@ -42,7 +42,7 @@ export const ScrollsWhenTall: Story = {
                     )}
                 </For>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter>
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>

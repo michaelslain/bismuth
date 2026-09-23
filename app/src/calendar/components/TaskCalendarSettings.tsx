@@ -51,13 +51,13 @@ export type TaskCalendarSettingsProps = {
     onClose: () => void
 }
 
-/** `props.columns` as Select options, with a leading "Not set" entry whose `detail` explains
+/** `props.columns` as Select options, with a leading "not set" entry whose `detail` explains
  *  where a task lands when no column is bound. */
 function dateOptions(columns: string[]): SelectOption[] {
     return [
         {
             value: '',
-            label: 'Not set',
+            label: 'not set',
             detail: 'falls back to scheduled, then due',
         },
         ...columns.map(c => ({ value: c, label: c })),
@@ -65,7 +65,7 @@ function dateOptions(columns: string[]): SelectOption[] {
 }
 
 function columnOptions(columns: string[]): SelectOption[] {
-    return [{ value: '', label: 'Not set' }, ...columns.map(c => ({ value: c, label: c }))]
+    return [{ value: '', label: 'not set' }, ...columns.map(c => ({ value: c, label: c }))]
 }
 
 /** `props.notes` (vault-relative paths) as Select options: the basename as the label, the full
@@ -74,7 +74,7 @@ function columnOptions(columns: string[]): SelectOption[] {
 function noteOptions(notes: string[]): SelectOption[] {
     const ids = notes.map(n => n.replace(/\.md$/, ''))
     return [
-        { value: '', label: 'Not set' },
+        { value: '', label: 'not set' },
         ...ids.map((id, i) => ({
             value: `[[${linkTargetFor(id, ids)}]]`,
             label: baseOf(id),
@@ -87,49 +87,45 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
     const [openPicker, setOpenPicker] = createSignal<string | null>(null)
 
     return (
-        <FormModal onClose={props.onClose} label="Task calendar settings">
+        <FormModal onClose={props.onClose} label="task calendar settings">
             <ModalHeader
-                icon="settings-2"
-                title="Task calendar settings"
-                compact
+                title="task calendar settings"
                 onClose={props.onClose}
             />
 
             <ModalBody>
-                <SettingsSection>Placement</SettingsSection>
+                <SettingsSection>placement</SettingsSection>
                 <SettingsGrid>
                     <SettingsField
-                        icon="calendar"
-                        label="Date column"
+                        label="date column"
                         span
                         hint={
                             props.dateField
                                 ? undefined
-                                : 'Tasks fall back to scheduled, then due, until this is set.'
+                                : 'tasks fall back to scheduled, then due, until this is set.'
                         }
                     >
                         <Select
                             value={props.dateField ?? ''}
                             options={dateOptions(props.columns)}
-                            placeholder="Not set"
+                            placeholder="not set"
                             onChange={v => props.onSetField('dateField', v)}
                         />
                     </SettingsField>
                 </SettingsGrid>
 
-                <SettingsSection>New tasks</SettingsSection>
+                <SettingsSection>new tasks</SettingsSection>
                 <SettingsGrid>
                     <Show
                         when={!props.ownsRows}
                         fallback={
                             <SettingsField
-                                icon="Tag"
-                                label="Default category"
+                                label="default category"
                                 span
                             >
                                 <TextInput
                                     value={props.defaultCategory ?? ''}
-                                    placeholder="Not set"
+                                    placeholder="not set"
                                     list="task-calendar-settings-category-names"
                                     class={styles['category-input']}
                                     onInput={v =>
@@ -145,19 +141,18 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                         }
                     >
                         <SettingsField
-                            icon="FileText"
-                            label="Destination note"
+                            label="destination note"
                             span
                             hint={
                                 props.taskFile
                                     ? undefined
-                                    : 'New tasks have nowhere to go until this is set.'
+                                    : 'new tasks have nowhere to go until this is set.'
                             }
                         >
                             <Select
                                 value={props.taskFile ?? ''}
                                 options={noteOptions(props.notes)}
-                                placeholder="Not set"
+                                placeholder="not set"
                                 onChange={v =>
                                     props.onSetField('taskFile', v)
                                 }
@@ -166,23 +161,22 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                     </Show>
                 </SettingsGrid>
 
-                <SettingsSection>Categories</SettingsSection>
+                <SettingsSection>categories</SettingsSection>
                 <Show when={!props.names.length}>
                     <SettingsHint>
-                        Categories appear here once tasks have a source note
+                        categories appear here once tasks have a source note
                         or a category value.
                     </SettingsHint>
                 </Show>
                 <Show when={props.ownsRows}>
                     <SettingsGrid>
                         <SettingsField
-                            icon="Tag"
-                            label="Category column"
+                            label="category column"
                             span
                             hint={
                                 props.categoryField
                                     ? undefined
-                                    : "Without this, a task's category comes from a `category` column, if it has one."
+                                    : "without this, a task's category comes from a `category` column, if it has one."
                             }
                         >
                             <Select
@@ -222,7 +216,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                 </Show>
             </ModalBody>
 
-            <ModalFooter hint="to close">
+            <ModalFooter>
                 <TextButton
                     primary
                     onClick={props.onClose}

@@ -1,32 +1,17 @@
-/* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome mirrors the
-   app's other modals (Portal-mounted panel over the shared .ui-overlay backdrop). */
+/* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome (frame, header
+   rule, footer rule) now comes from FormModal/ModalHeader/ModalFooter (modal-redesign Task 8);
+   this file only holds what those shared components don't: the --kb-meta-* var bridge to
+   PropertyValueEditor, the DUE trigger's sizing, the Milkdown description surface, the empty
+   state and the boolean toggle. */
 
-/* Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class every
-   <Modal> panel carries (ui/Modal.tsx) — this rule only supplies sizing/layout, so it doesn't
-   fight `.asc-modal`'s `--pop-bg-strong` + blur chrome for the win. */
-.panel {
-  width: 460px;
-  max-width: 92vw;
-  max-height: 86vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
-  padding: var(--sp-6) 20px;
-  overflow-y: auto;
-}
-
-.titleField,
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  min-width: 0;
+/* Carries the --kb-meta-* custom properties PropertyValueEditor.module.css reads for its shared
+   .kbMetaInput/.kbMetaSelectTrigger/.kbMetaMultiselectAdd controls (STATUS/PRIORITY/TAGS) — set
+   on SettingsGrid so every row in this modal measures the same as TITLE/DUE, not on a `.field`
+   wrapper of this file's own (SettingsField/SettingsGrid now own that layout). The filled/bordered
+   look those controls used to carry is gone (modal-redesign Task 8b) — PropertyValueEditor.tsx
+   dropped `plain` on its TextInput calls, so PRIORITY/STATUS/TAGS now compose the same
+   `.ui-input` underline chrome as TITLE/DUE; these vars still only govern sizing. */
+.metaVars {
   /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
      and any plain text/number property) caps at 200px by default for its OTHER host,
      KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
@@ -44,43 +29,15 @@
      `--kb-meta-height` override (same mechanism as the two vars above — a CSS custom property,
      not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/`.kbMetaSelectTrigger`) and the
      TAGS "+ add" trigger (`.kbMetaMultiselectAdd`); the card-face inline chip editor (KanbanCard)
-     sets nothing and keeps its own compact defaults. TITLE (.titleInput) and DUE (.dueTrigger)
-     below are this file's own classes and set the same value directly. */
+     sets nothing and keeps its own compact defaults. TITLE is now a plain SettingsField row (no
+     local override needed — TextInput/FormControl already sets --h-control) and DUE
+     (`.dueTrigger` below) is this file's own class and sets the same value directly. */
   --kb-meta-height: var(--h-control);
 }
 
 /* DUE's trigger (DateFieldEditor), pinned to the same --h-control every sibling control in this
-   modal now shares (see --kb-meta-height above and .titleInput's own height) rather than
-   FormControl's full 32px input height. */
+   modal shares (see --kb-meta-height above) rather than FormControl's full 32px input height. */
 .dueTrigger { height: var(--h-control); box-sizing: border-box; min-height: 0; padding: var(--sp-1) var(--sp-3); }
-
-/* `.titleField > .label` (not `> span`) out-specifies Field's own default
-   `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
-   through to that span) so the Title caption keeps the same micro-caps register as every
-   other property's `.label`, via the public labelClass prop rather than Field's DOM shape. */
-.label,
-.titleField > .label {
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--faint);
-  font-family: var(--ui-font-stack);
-}
-
-/* Layered on top of the shared `ui-input` class (surface/border/focus-ring, same as
-   every other control here) — only the size/weight that sets the title apart from an
-   ordinary field lives locally. */
-.titleInput {
-  font-size: var(--fs-lead);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  /* Same --h-control every other field control in this modal is pinned to (see --kb-meta-height
-     above) — FormControl's own default is the full 32px input height, which stood taller than
-     every sibling here. */
-  height: var(--h-control);
-  box-sizing: border-box;
-}
 
 .readonly {
   font-family: var(--ui-font-stack);
@@ -89,18 +46,20 @@
   padding: var(--sp-3) 0;
 }
 
-/* The rich Milkdown description surface — a bordered box that reads like the note editor's body. */
+/* The rich Milkdown description surface — a neutral underline field, matching every other value
+   control in the modal (modal-redesign: Acceptance 5, neutral focus — no fill, no accent ring). */
 .mdField {
   box-sizing: border-box;
   min-height: 96px;
-  padding: var(--sp-4) var(--sp-5);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-0);
-  background: var(--surface-2);
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  padding: var(--sp-2) 0;
+  border: none;
+  border-bottom: var(--rule-soft);
+  background: transparent;
+  transition: border-color 0.14s ease;
   cursor: text;
 }
-.mdField:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mdField:hover { border-bottom: var(--rule); }
+.mdField:focus-within { border-bottom: var(--rule); }
 
 /* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
    field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
@@ -182,10 +141,11 @@
 }
 
 
-/* Boolean toggle. Shrink-to-fit (see CardEditModal.tsx) and sized to the COMPACT card-face scale
-   its siblings use — PropertyValueEditor renders .kbMetaInput/.kbMetaSelect at 12px and
-   .kbMetaMultiselect chips at 20px (BaseView.module.css). At the global .chip-toggle size (30px)
-   this one control towered over the multiselect chips directly beneath it, which is the exact
-   intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
-.boolChip { align-self: flex-start; }
-.boolChipToggle { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }
+/* Boolean toggle: the product's `[x]`/`[ ]` register (ui/BracketToggle), the SAME one every
+   other on/off control uses (ui/ToggleRow, calendar's all-day switch) — not a filled Chip.
+   Shrink-to-fit (see CardEditModal.tsx): `.field` is a column flex container with no
+   align-items, so a bare inline-flex button would otherwise blockify and stretch across the
+   row's ~420px width. */
+.boolToggle { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); color: var(--faint); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.boolToggle:hover { color: var(--text-muted); }
+.boolToggle[aria-pressed="true"] { color: var(--fg); }

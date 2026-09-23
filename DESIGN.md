@@ -98,7 +98,7 @@ components:
     textColor: "{colors.ink-muted}"
     typography: "{typography.label}"
     rounded: "{rounded.none}"
-    padding: "0 6px"
+    padding: "0"
     height: "24px"
   card:
     backgroundColor: "{colors.surface-1}"
@@ -106,11 +106,24 @@ components:
     padding: "12px 16px"
   modal:
     backgroundColor: "{colors.editor-ground}"
+    borderColor: "{colors.border}"
     rounded: "{rounded.none}"
   popover:
     backgroundColor: "{colors.editor-ground}"
     rounded: "{rounded.none}"
     padding: "4px"
+  input:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-paper}"
+    typography: "{typography.ui}"
+    rounded: "{rounded.none}"
+    height: "{spacing.control}"
+    borderColor: "{colors.border-soft}"
+  icon-button:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-faint}"
+    rounded: "{rounded.none}"
+    height: "{spacing.control}"
   status-dot:
     rounded: "{rounded.dot}"
 governance:
@@ -356,12 +369,21 @@ the accent. An outline appears only when it means something.
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
   is `normal`.
 - **Focus:** a 2px accent outline (`--focus-ring`) around the glyphs, on `:focus-visible` only.
-- **Icon button:** a separate register — a 24px square with no border; `normal` sits at full
-  opacity. It keeps its own sizes.
+- **Icon button:** a separate register, no box — `[▣]`, the pixel icon set between generated
+  `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
+  accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
+  `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. A
+  24px square hit area, its own sizes.
 
 ### Chips
-- **Chip toggle:** square, 24px, `--rule` hairline, muted ink lifting to `--fg` on hover; its glyph
-  rests at `--faint`. Used for Bases property toggles and card-editor filters.
+- **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as
+  the text button and `SegmentedToggle`'s bracket look. Unselected `--faint`, selected tints
+  brackets + label to `--accent` or, with a `tone`, to that category's own hue.
+- **Segmented toggle:** a row of `[option]` buttons `--sp-4` apart, same bracket idiom; the on
+  option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) opt into the
+  older butted `segment` look instead.
+- **On/off toggle row** (`ToggleRow`, settings-form checkboxes): a full `--row-h` row rendering
+  `[x]` checked / `[ ]` unchecked (`BracketToggle`) — no box fill, just the bracket glyph flipping.
 
 ### Cards / Containers
 - **Card:** `--surface-1` fill, `--rule` hairline, square, `12px 16px` padding, no shadow.
@@ -369,19 +391,50 @@ the accent. An outline appears only when it means something.
 - **Callout:** the same accent left edge on a surface fill.
 
 ### Inputs / Fields
-- **Field:** a label in `--text-muted` stacked 4px above its control at `--fs-ui`.
-- **Inputs, selects, text inputs:** square, hairline, 24px control height; focus is the shared accent outline.
-- **Search field (`SearchBar`):** a typed terminal prompt line, not a boxed input — transparent,
-  no magnifier, no fill. A `/` glyph (`>` for the command palette) in `--accent` leads the input
-  by one monospace cell; at rest the field is underlined `--rule-soft` full-width, and on focus
-  the underline firms from `--rule-soft` to `--rule` (never accent) and the prompt glyph turns bold, with no full box outline. Placeholder
-  is always `--faint`. The field is set in the same type size as the results under it; its three
-  densities (`compact`/`default`/`large`) change padding, never text size, and in the palette and
-  switcher the prompt glyph sits on the rows' icon column.
+- **Underline fields, shared with the search field:** every text input, select trigger and prompt
+  input in the app is the same idiom — transparent, no fill, no box outline. At rest the field is
+  underlined `--rule-soft` full-width; on focus the underline firms from `--rule-soft` to the
+  neutral `--rule` (never an accent line — an autofocused field, which a modal's first control
+  always is, would otherwise read as a permanent coloured divider). Placeholder is always
+  `--faint`, height `--h-control`. `Select` composes the identical trigger and reads `value ▾` on
+  the same underline.
+- **Search field (`SearchBar`):** the one variant that also carries a leading prompt glyph — a
+  typed terminal prompt line, not a boxed input. A `/` glyph (`>` for the command palette) in
+  `--accent` leads the input by one monospace cell and turns bold on focus (the glyph is the only
+  thing that still moves on focus; the underline itself follows the shared neutral rule above).
+  The field is set in the same type size as the results under it; its three densities
+  (`compact`/`default`/`large`) change padding, never text size, and in the palette and switcher
+  the prompt glyph sits on the rows' icon column.
+- **Settings-form field (`SettingsField`):** a row pairing a label column (`--text-muted`,
+  `--fs-ui`, text only — no icon) with the control on the same row, keyed to one shared
+  `--label-col` token so every field in a form starts its control at the same x, whether or not it
+  sits inside a `SettingsGrid`. `span` drops the row for a stacked label-above-control column when
+  a control is too wide to share it.
+- **Section rule (`SettingsSection`):** reads `── name ─────────` — a two-cell leading rule, the
+  lowercase name in `--faint`, then a `--rule-soft` hairline trailing to the edge.
+- **Hint (`SettingsHint`):** sits under its control, in the same column as the control it
+  describes, `--faint`, `--fs-micro`.
+- **Required / optional badge:** plain text on the label line, inline after the label (wraps with
+  it rather than pinning to the row's right edge), no box — `req` in `--accent`, `opt` in
+  `--faint`.
 
 ### Overlays
-- **Modal:** `--pop-bg-strong` (translucent editor ground) with a `--rule` hairline over the
-  `--overlay-bg` scrim, square, no shadow. Composed from `ModalHeader` / `ModalBody` / `ModalFooter`.
+- **Modal (`FormModal`):** the one dialog shell in the app — the old `PromptModal`/`CardsModal`
+  variants are gone. A single `--rule` hairline frame on `--pop-bg-strong` (translucent editor
+  ground), square, no shadow, over the `--overlay-bg` scrim. Composed from `ModalHeader` /
+  `ModalBody` / `ModalFooter`, which between them draw one continuous frame rather than three
+  stacked boxes.
+- **`ModalHeader`** IS the frame's top edge: `┌─ title // subtitle ─────────[x]┐`, one hairline
+  broken only by the title/subtitle text and the close control, joining the panel's side borders
+  at the corners — no stub rule above it, no second line below it. Title `--fg`, `// subtitle`
+  `--faint`, both lowercase `--ui-font-stack` at `--fs-ui`; `tone="danger"` paints the title
+  `--danger`. Close is `[x]`, a `TextButton` holding the letter x — never an icon, never a boxed ✕. On open, focus lands on
+  the modal's first body control, never on the close button, so mount never draws an accent box
+  on `[x]`.
+- **`ModalFooter`:** a full-width `--rule` divider meeting the panel's side borders (never a
+  `--rail` fill band). Actions only — no keybind hints (`esc`, `↵`) anywhere in a modal; every
+  modal ends in a real dismiss button (`[cancel]` / `[close]` / `[done]`). Leading edge: leading
+  actions (delete, reset); trailing edge: the primary/secondary actions.
 - **Popover / menu:** `--pop-bg` with a hairline and `--lift`; 4px inner padding, rows at `--row-h`
   with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
 

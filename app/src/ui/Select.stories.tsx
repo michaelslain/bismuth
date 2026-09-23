@@ -140,6 +140,18 @@ export const OpenNearTopEdge: Story = {
     },
 }
 
+/** Keyboard focus on the trigger — proves the non-accent focus cue (bold value text + bold
+ *  caret, both in --fg) fires on :focus-visible, since the rule-firming alone is near-invisible. */
+export const Focused: Story = {
+    render: () => <Controlled options={THEME_OPTIONS} initial="ink" />,
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        await expect(trigger).not.toBeNull()
+        trigger.focus()
+        await expect(trigger).toHaveFocus()
+    },
+}
+
 /** Both states side by side. Click a trigger to open the portaled list. */
 export const Gallery: Story = {
     render: () => (

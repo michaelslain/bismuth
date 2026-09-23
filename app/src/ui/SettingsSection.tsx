@@ -6,7 +6,7 @@ export type SettingsSectionProps = {
     children: JSX.Element
 }
 
-/** The uppercase section eyebrow with a trailing hairline (was `.set-sect`). */
+/** The `── name ─────` section rule separating groups of fields (was `.set-sect`). */
 const SettingsSection: Component<SettingsSectionProps> = props => (
     <div class={`${styles.sect} ${props.class ?? ''}`}>{props.children}</div>
 )

@@ -4,24 +4,29 @@
      Parameterized (not a bare 200px) so a full-width host — CardEditModal's one-field-per-row
      layout — can widen it via `--kb-meta-max-width` without reaching this hashed class; the
      card-face inline chip editor (KanbanCard) sets nothing and keeps this 200px default. */
-  width: 100%; max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
-  font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); outline: none; line-height: normal;
-  /* Card-face default (auto, from padding + line-height) unless a host — CardEditModal's
+  max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box;
+  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
+  /* Chrome (transparent, `--rule-soft` underline, accent underline + inset shadow on focus) now
+     comes from the shared `.ui-input` FormControl composes — this component no longer passes
+     `plain` (PropertyValueEditor.tsx), so it stopped hand-rolling a filled well here. Only sizing
+     stays local: card-face default is the shared `--h-control` unless a host — CardEditModal's
      one-field-per-row layout — sets `--kb-meta-height` on an ancestor, the same CSS-custom-
      property override `--kb-meta-max-width`/`--kb-meta-margin` above already use rather than a
      `:global()` reach into this hashed class. */
-  height: var(--kb-meta-height, auto);
+  height: var(--kb-meta-height, var(--h-control));
 }
 .kbMetaSelect { display: inline-flex; margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1))); }
 .kbMetaSelectTrigger {
   height: var(--kb-meta-height, auto); min-height: 0; box-sizing: border-box; padding: var(--sp-1) 22px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0);
 }
+/* Chrome (transparent, `--rule-soft` underline, accent underline + inset shadow on focus) comes
+   from the shared `.ui-input` textarea rule FormControl composes — PropertyValueEditor.tsx no
+   longer passes `plain`. `overflow: hidden` stays local: it's what keeps this field scrollbar-
+   free while autoGrow() (PropertyValueEditor.tsx) resizes it inline to fit its content. */
 .kbMetaMarkdownArea {
-  width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-3);
-  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1.4; color: var(--fg);
-  resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
+  box-sizing: border-box;
+  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
+  overflow: hidden;
 }
 /* A declared `multiselect` property (#101), the EDITABLE version: same chip row as
    KanbanCard's read-only `.kbMetaMultiselectDisplay`, each chip clickable to remove, plus a

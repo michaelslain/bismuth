@@ -24,4 +24,4 @@
 /* Appearance (font-size/weight/line-height/color/background/border-radius/padding) moved to
    ui/Badge.tsx (`<Badge variant="solid">`) — this class stays only to anchor the badge against
    its button, which is this component's layout, not the primitive's. */
-.toolbar-badge { position: absolute; top: -1px; right: -3px; }
+.toolbar-badge { position: absolute; top: calc(-1 * var(--sp-2)); left: calc(100% - var(--sp-2)); right: auto; }

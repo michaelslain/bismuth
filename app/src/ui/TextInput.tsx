@@ -34,8 +34,9 @@ export type TextInputProps = {
 
 /**
  * The standard single- or multi-line text field. Composes FormControl's shared chrome
- * (surface fill, soft border, accent focus ring) — the same chrome Select's trigger composes —
- * so inputs/selects look identical. Pass `type="date"`/`"time"` etc. through `rest`.
+ * (transparent, an underline rule, accent underline + inset shadow on focus, no fill and no
+ * box) — the same chrome Select's trigger composes — so inputs/selects look identical. Pass
+ * `type="date"`/`"time"` etc. through `rest`.
  */
 function TextInput(props: TextInputProps) {
     const [local, rest] = splitProps(props, [

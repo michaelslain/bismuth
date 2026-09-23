@@ -92,7 +92,7 @@ export const PopoverIgnoresInsideClicks: Story = {
         // Sanity check: a press that IS genuinely outside the chip/popover still closes
         // it — proves the assertion above is testing something real, not a guard that
         // never closes at all.
-        const title = canvas.getByText('Categories')
+        const title = canvas.getByText('categories')
         fireEvent.mouseDown(title)
         await waitFor(() =>
             expect(

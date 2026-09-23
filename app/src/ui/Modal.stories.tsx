@@ -46,7 +46,7 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
                     color: 'var(--fg)',
                 }}
             >
-                Delete note?
+                delete note?
             </div>
             <div
                 style={{
@@ -56,7 +56,7 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
                 }}
             >
                 {props.children ??
-                    'This moves “Meeting notes 2026-07-07” to the trash. You can undo this from the file tree with Cmd+Z.'}
+                    'this moves “meeting notes 2026-07-07” to the trash. you can undo this from the file tree with cmd+z.'}
             </div>
             <div
                 style={{
@@ -81,13 +81,26 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
     )
 }
 
-/** The modal shown open (onClose is a no-op so it stays visible for the spec). */
+/** The modal shown open (onClose is a no-op so it stays visible for the spec). Bare <Modal> (the
+ *  palette's shape) keeps `.asc-modal`'s plain, full border on every side — only FormModal
+ *  neutralises it in favour of its own top-rule-aware frame. */
 export const Default: Story = {
     render: () => (
         <Modal onClose={noop}>
             <DialogPanel />
         </Modal>
     ),
+    play: async () => {
+        const panel = document.querySelector('[role="dialog"]') as HTMLElement
+        expect(panel).not.toBeNull()
+        const border = getComputedStyle(panel)
+        expect(border.borderTopStyle).toBe('solid')
+        expect(border.borderTopWidth).not.toBe('0px')
+        // Same width on every side — a plain full border, not a frame with a gap for a header.
+        expect(border.borderBottomWidth).toBe(border.borderTopWidth)
+        expect(border.borderLeftWidth).toBe(border.borderTopWidth)
+        expect(border.borderRightWidth).toBe(border.borderTopWidth)
+    },
 }
 
 /** Backdrop click does NOT dismiss (closeOnBackdrop={false}); only Escape / an explicit

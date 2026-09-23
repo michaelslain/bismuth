@@ -2,7 +2,6 @@ import { createSignal } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
-import { Icon } from '../icons/Icon'
 import FormControl from './FormControl'
 import styles from './Select.module.css'
 
@@ -26,7 +25,7 @@ function Select(props: {
     /** Appended to the trigger button's own class, alongside `class` (the root). Lets a caller
      *  style the trigger specifically without a `:global()` reach into `.ui-select-trigger`. */
     triggerClass?: string
-    /** Appended to the caret icon's class — e.g. a caller that wants to hide it entirely
+    /** Appended to the caret glyph's class — e.g. a caller that wants to hide it entirely
      *  (ChatControls' quiet row) without reaching `:global(.ui-select-caret)`. */
     caretClass?: string
     /** Fired when the popover closes WITHOUT a choice — Escape or a backdrop click — as
@@ -106,11 +105,12 @@ function Select(props: {
                 >
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
-                <Icon
-                    value="ChevronDown"
-                    size={14}
+                <span
                     class={`ui-select-caret ${props.caretClass ?? ''}`}
-                />
+                    aria-hidden="true"
+                >
+                    ▾
+                </span>
             </FormControl>
             <AnchoredPopover
                 anchor={() => triggerRef}

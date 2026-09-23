@@ -964,10 +964,7 @@ Skeleton loading placeholder shown only on cold (never-cached) base loads.
 A single placeholder bar — the shared unit `BaseSkeleton`'s table/card skeleton silhouettes are composed from. `class` layers on the caller's own sizing (height/width/flex/margin).
 
 #### `bases/EditCardsModal.tsx`
-Deck editor: list existing cards, add cards in bulk, drag-reorder, delete. Uses `POST /row/{update,delete,reorder}`.
-
-#### `bases/CardsModal.tsx`
-Shared modal shell (panel sizing + title bar + close button) composed by both `EditCardsModal.tsx` (the deck-wide card manager) and `FlashcardsView.tsx`'s single-card edit modal — extracted once both drew this identically from what used to be one shared stylesheet.
+Deck editor: list existing cards, add cards in bulk, drag-reorder, delete. Uses `POST /row/{update,delete,reorder}`. Composes the shared modal shell — `ui/FormModal` + `ModalHeader`/`ModalBody`/`ModalFooter` — the same primitives `FlashcardsView.tsx`'s single-card edit modal uses; the old bases-local `CardsModal.tsx` shell was retired in the modal redesign.
 
 #### `bases/calendarBase.ts` + `bases/calendarSerialize.ts`
 Calendar event serialization helpers (convert calendar events to/from base row format). Tested.

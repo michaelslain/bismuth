@@ -9,7 +9,7 @@
 // below. Every other story layers a transport seeded with SAMPLE_ROWS so the property/folder/tag
 // pickers have real vocabulary to offer, exactly like a populated vault.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { QueryBuilder } from './QueryBuilder'
 import type { BuilderState } from './queryGen'
 import { defaultBuilderState } from './queryGen'
@@ -48,6 +48,23 @@ export const NotesFresh: Story = {
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
     play: async () => {
+        // Initial focus lands on the FIRST BODY control in DOM order — never the header's `[x]`,
+        // and never a later form control the dialog would have to scroll down for (QueryBuilder's
+        // `limit` input sits near the bottom). Both checks go in one `waitFor`: the dialog-contains
+        // check on its own could pass transiently mid-pick, before the close-button check has a
+        // chance to run against the settled result.
+        await waitFor(() => {
+            const dialog = document.querySelector('[role="dialog"]')
+            expect(dialog?.contains(document.activeElement)).toBe(true)
+            expect(
+                document.activeElement?.matches('[data-modal-close]'),
+            ).toBe(false)
+            const body = document.querySelector('[data-modal-body]')
+            expect(body?.contains(document.activeElement)).toBe(true)
+            // The source toggle's first button ("notes") — the first focusable the body renders.
+            expect(document.activeElement?.textContent).toBe('notes')
+        })
+        const initial = document.activeElement as HTMLElement
         // Was a <div role="button"> with no tabindex — present to a screen reader, unreachable by
         // keyboard (same defect BaseSettings had). ModalHeader makes it a real IconButton. ui/Modal
         // portals to document.body, so query there rather than canvasElement.
@@ -61,6 +78,10 @@ export const NotesFresh: Story = {
         // A real <button> can. This is what makes the control keyboard-reachable at all.
         close!.focus()
         await expect(document.activeElement).toBe(close)
+        // Hand focus back: left on `[x]`, anything reading activeElement after this play (a
+        // focus probe, a screenshot of the focus ring) sees the play's own move, not the modal's
+        // initial focus — which is exactly how this story once read as "[x] steals focus".
+        initial.focus()
     },
 }
 

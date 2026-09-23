@@ -98,7 +98,7 @@ export const Interactive: Story = {
     },
     play: async () => {
         const body = within(document.body)
-        const thisEvent = body.getByText('This event')
+        const thisEvent = body.getByText('this event')
         await userEvent.click(thisEvent)
         await waitFor(() =>
             expect(document.querySelector('.recurrence-dialog')).toBeNull(),

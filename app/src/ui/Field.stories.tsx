@@ -23,18 +23,18 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const CATEGORY_OPTIONS: SelectOption[] = [
-    { value: 'work', label: 'Work' },
-    { value: 'personal', label: 'Personal' },
-    { value: 'health', label: 'Health' },
+    { value: 'work', label: 'work' },
+    { value: 'personal', label: 'personal' },
+    { value: 'health', label: 'health' },
 ]
 
 /** A single field wrapping a TextInput (the most common shape). */
 export const WithTextInput: Story = {
     render: () => {
-        const [v, setV] = createSignal('Team sync')
+        const [v, setV] = createSignal('team sync')
         return (
             <div style={{ width: '280px' }}>
-                <Field label="Title">
+                <Field label="title">
                     <TextInput value={v()} onInput={setV} />
                 </Field>
             </div>
@@ -47,7 +47,7 @@ export const WithTextInput: Story = {
  *  other property label uses there). */
 export const WithLabelClass: Story = {
     render: () => {
-        const [v, setV] = createSignal('Untitled')
+        const [v, setV] = createSignal('untitled')
         return (
             <div style={{ width: '280px' }}>
                 <style>
@@ -55,7 +55,7 @@ export const WithLabelClass: Story = {
                         '.storyMicroLabel { font-size: var(--fs-micro); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }'
                     }
                 </style>
-                <Field label="Title" labelClass="storyMicroLabel">
+                <Field label="title" labelClass="storyMicroLabel">
                     <TextInput value={v()} onInput={setV} />
                 </Field>
             </div>
@@ -69,7 +69,7 @@ export const WithSelect: Story = {
         const [v, setV] = createSignal('work')
         return (
             <div style={{ width: '280px' }}>
-                <Field label="Category">
+                <Field label="category">
                     <Select
                         value={v()}
                         options={CATEGORY_OPTIONS}
@@ -87,14 +87,14 @@ export const WithSegmentedToggle: Story = {
         const [v, setV] = createSignal('week')
         return (
             <div style={{ width: '280px' }}>
-                <Field label="Repeats">
+                <Field label="repeats">
                     <SegmentedToggle
                         value={v()}
                         onChange={setV}
                         options={[
-                            { id: 'day', label: 'Day' },
-                            { id: 'week', label: 'Week' },
-                            { id: 'month', label: 'Month' },
+                            { id: 'day', label: 'day' },
+                            { id: 'week', label: 'week' },
+                            { id: 'month', label: 'month' },
                         ]}
                     />
                 </Field>
@@ -106,7 +106,7 @@ export const WithSegmentedToggle: Story = {
 /** Several fields stacked, the way a modal form composes them. */
 export const StackedForm: Story = {
     render: () => {
-        const [title, setTitle] = createSignal('Team sync')
+        const [title, setTitle] = createSignal('team sync')
         const [category, setCategory] = createSignal('work')
         return (
             <div
@@ -117,22 +117,22 @@ export const StackedForm: Story = {
                     gap: '14px',
                 }}
             >
-                <Field label="Title">
+                <Field label="title">
                     <TextInput value={title()} onInput={setTitle} />
                 </Field>
-                <Field label="Category">
+                <Field label="category">
                     <Select
                         value={category()}
                         options={CATEGORY_OPTIONS}
                         onChange={setCategory}
                     />
                 </Field>
-                <Field label="Notes">
+                <Field label="notes">
                     <TextInput
                         value=""
                         onInput={() => {}}
                         multiline
-                        placeholder="Optional details…"
+                        placeholder="optional details…"
                     />
                 </Field>
             </div>

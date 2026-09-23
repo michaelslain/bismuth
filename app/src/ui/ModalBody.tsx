@@ -13,6 +13,7 @@ const ModalBody: Component<ModalBodyProps> = props => (
     <div
         class={[styles.body, props.class ?? ''].filter(Boolean).join(' ')}
         style={props.maxHeight ? { 'max-height': props.maxHeight } : undefined}
+        data-modal-body
         data-testid="modal-body"
     >
         {props.children}

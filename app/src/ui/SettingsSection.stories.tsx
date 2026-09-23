@@ -1,6 +1,6 @@
-// Visual spec for <SettingsSection> — the uppercase section eyebrow with a
-// trailing hairline that separates groups of fields in a settings form (was
-// `.evm-modal .set-sect`).
+// Visual spec for <SettingsSection> — `── name ─────` separating groups of fields in a settings
+// form (was `.evm-modal .set-sect`; modal redesign Task 4, 2026-09-23 — Acceptance 6: a two-cell
+// leading rule, lowercase faint name, trailing --rule-soft hairline to the edge).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import SettingsSection from './SettingsSection'
 import SettingsGrid from './SettingsGrid'
@@ -17,11 +17,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A single eyebrow, the hairline filling the remaining width. */
+/** A single rule, the hairline filling the remaining width. */
 export const Standalone: Story = {
     render: () => (
         <div style={{ width: '400px' }}>
-            <SettingsSection>General</SettingsSection>
+            <SettingsSection>general</SettingsSection>
         </div>
     ),
 }
@@ -29,27 +29,33 @@ export const Standalone: Story = {
 /** Two sections separating two grids of fields, the way a settings form composes them. */
 export const SeparatingGrids: Story = {
     render: () => {
-        const [title, setTitle] = createSignal('Team sync')
+        const [title, setTitle] = createSignal('team sync')
         const [notes, setNotes] = createSignal('')
+        const [interval, setInterval_] = createSignal('60')
         return (
             <div
                 style={{
-                    width: '548px',
+                    width: '460px',
                     display: 'flex',
                     'flex-direction': 'column',
                     gap: '14px',
                 }}
             >
-                <SettingsSection>Event details</SettingsSection>
+                <SettingsSection>event details</SettingsSection>
                 <SettingsGrid>
-                    <SettingsField label="Title" badge="required">
+                    <SettingsField label="title" badge="required">
                         <TextInput value={title()} onInput={setTitle} />
                     </SettingsField>
-                    <SettingsField label="Notes" badge="optional">
+                    <SettingsField label="notes" badge="optional">
                         <TextInput value={notes()} onInput={setNotes} />
                     </SettingsField>
                 </SettingsGrid>
-                <SettingsSection>Sync</SettingsSection>
+                <SettingsSection>sync</SettingsSection>
+                <SettingsGrid>
+                    <SettingsField label="sync interval">
+                        <TextInput value={interval()} onInput={setInterval_} />
+                    </SettingsField>
+                </SettingsGrid>
             </div>
         )
     },

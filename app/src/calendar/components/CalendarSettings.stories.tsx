@@ -145,7 +145,7 @@ export const Interactive: Story = {
         await waitFor(() =>
             expect(
                 document.querySelector(
-                    '[role="dialog"][aria-label="Calendar settings"]',
+                    '[role="dialog"][aria-label="calendar settings"]',
                 ),
             ).not.toBeNull(),
         )
@@ -154,7 +154,7 @@ export const Interactive: Story = {
         await waitFor(() =>
             expect(
                 document.querySelector(
-                    '[role="dialog"][aria-label="Calendar settings"]',
+                    '[role="dialog"][aria-label="calendar settings"]',
                 ),
             ).toBeNull(),
         )

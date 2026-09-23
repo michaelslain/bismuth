@@ -1,3 +1,6 @@
-/* SettingsSection.module.css — was `.evm-modal .set-sect` */
-.sect { font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); margin: var(--sp-1) 0; }
-.sect::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+/* SettingsSection.module.css — was `.evm-modal .set-sect`. Modal redesign Task 4 (2026-09-23):
+   reads `── name ─────` — a two-cell leading rule, the lowercase name (already lowercase text, no
+   CSS transform), then a trailing `--rule-soft` hairline out to the edge (Acceptance 6). */
+.sect { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-1) 0; }
+.sect::before { content: '──'; }
+.sect::after { content: ''; flex: 1; align-self: center; border-top: var(--rule-soft); }

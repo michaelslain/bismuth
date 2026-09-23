@@ -56,11 +56,11 @@
 }
 /* A boolean meta property is always a ChipToggle (display AND editor in one) — shrink the
    generic .chip-toggle chrome to fit the card's compact meta rows. */
-.kbMetaBoolChipToggle { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
+.kbMetaBoolChipToggle { height: var(--h-control); padding: 0; gap: 0; font-size: var(--fs-ui); border-radius: var(--r-0); }
 
 /* A declared `multiselect` property (#101), READ-ONLY display: a chip per selected value.
    The editable version (add/remove + "+ Add") is PropertyValueEditor's own `.kbMetaMultiselect`
    — identical chip sizing, kept as two owned rules rather than one shared selector so each
    file owns only the class it renders. */
 .kbMetaMultiselectDisplay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.kbMetaMultiselectDisplayToggle { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
+.kbMetaMultiselectDisplayToggle { height: var(--h-control); padding: 0; gap: 0; font-size: var(--fs-ui); border-radius: var(--r-0); }

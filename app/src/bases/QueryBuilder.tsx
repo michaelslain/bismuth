@@ -209,22 +209,6 @@ const SOURCE_OPTS = [
     { id: 'base' as BuilderSource, label: 'base' },
 ]
 
-// Icon per view kind, for the view picker.
-const VIEW_ICON: Record<ViewType, string> = {
-    table: 'table',
-    cards: 'layout-grid',
-    list: 'list',
-    bullets: 'list-tree',
-    kanban: 'columns-3',
-    map: 'map',
-    calendar: 'calendar',
-    flashcards: 'layers',
-    bar: 'bar-chart-3',
-    line: 'line-chart',
-    stat: 'sigma',
-    heatmap: 'grid-3x3',
-}
-
 // --------------------------------------------------------------------------------------
 // Component
 // --------------------------------------------------------------------------------------
@@ -445,20 +429,19 @@ export function QueryBuilder(props: {
     return (
         <FormModal
             onClose={props.onClose}
-            label={props.initial ? 'Edit query' : 'New query'}
+            label={props.initial ? 'edit query' : 'new query'}
             width={600}
             class={qbStyles.panel}
         >
             <ModalHeader
-                icon="search"
-                title={props.initial ? 'Edit query' : 'New query'}
-                subtitle="Build a query without writing any code"
+                title={props.initial ? 'edit query' : 'new query'}
+                subtitle="build a query without writing any code"
                 onClose={props.onClose}
             />
 
             <ModalBody maxHeight="min(72vh, 720px)">
                 {/* 1 — SOURCE */}
-                <SettingsSection>Source</SettingsSection>
+                <SettingsSection>source</SettingsSection>
                 <SegmentedToggle
                     options={SOURCE_OPTS}
                     value={state.source}
@@ -468,7 +451,7 @@ export function QueryBuilder(props: {
 
                 {/* 2 — FILTERS, gated on source */}
                 <Show when={state.source === 'notes'}>
-                    <SettingsSection>Filters</SettingsSection>
+                    <SettingsSection>filters</SettingsSection>
                     <Show
                         when={state.notes.rawWhere}
                         fallback={
@@ -482,7 +465,7 @@ export function QueryBuilder(props: {
                                             weight="inherit"
                                             class={qbStyles['qb-conn-lab']}
                                         >
-                                            Match
+                                            match
                                         </Text>
                                         <SegmentedToggle
                                             options={[
@@ -563,9 +546,8 @@ export function QueryBuilder(props: {
                         }
                     >
                         <SettingsField
-                            icon="Code"
-                            label="Advanced expression"
-                            hint="This query uses an expression the visual editor can't reverse. Editing it here keeps it verbatim; clear it to build filters visually."
+                            label="advanced expression"
+                            hint="this query uses an expression the visual editor can't reverse. editing it here keeps it verbatim; clear it to build filters visually."
                         >
                             <TextInput
                                 value={state.notes.rawWhere ?? ''}
@@ -577,9 +559,9 @@ export function QueryBuilder(props: {
                 </Show>
 
                 <Show when={state.source === 'tasks'}>
-                    <SettingsSection>Task filters</SettingsSection>
+                    <SettingsSection>task filters</SettingsSection>
                     <SettingsGrid>
-                        <SettingsField icon="circle-check" label="Status">
+                        <SettingsField label="status">
                             <SegmentedToggle
                                 options={[
                                     { id: 'open', label: 'open' },
@@ -597,14 +579,14 @@ export function QueryBuilder(props: {
                                 size="sm"
                             />
                         </SettingsField>
-                        <SettingsField icon="Star" label="Priority">
+                        <SettingsField label="priority">
                             <Select
                                 value={state.tasks.priority}
                                 options={TASK_PRIORITY_OPTS}
                                 onChange={v => setState('tasks', 'priority', v)}
                             />
                         </SettingsField>
-                        <SettingsField icon="Calendar" label="Due">
+                        <SettingsField label="due">
                             <Select
                                 value={state.tasks.due}
                                 options={TASK_DUE_OPTS}
@@ -617,7 +599,7 @@ export function QueryBuilder(props: {
                                 }
                             />
                         </SettingsField>
-                        <SettingsField icon="repeat" label="Recurring">
+                        <SettingsField label="recurring">
                             <SegmentedToggle
                                 options={[
                                     { id: 'any', label: 'any' },
@@ -635,7 +617,7 @@ export function QueryBuilder(props: {
                                 size="sm"
                             />
                         </SettingsField>
-                        <SettingsField icon="ListOrdered" label="Sort by">
+                        <SettingsField label="sort by">
                             <Select
                                 value={state.tasks.sortKey}
                                 options={TASK_SORT_OPTS}
@@ -644,7 +626,7 @@ export function QueryBuilder(props: {
                             />
                         </SettingsField>
                         <Show when={state.tasks.sortKey}>
-                            <SettingsField icon="arrow-down" label="Direction">
+                            <SettingsField label="direction">
                                 <Select
                                     value={
                                         state.tasks.sortReverse ? 'DESC' : 'ASC'
@@ -661,11 +643,10 @@ export function QueryBuilder(props: {
                             </SettingsField>
                         </Show>
                         <SettingsField
-                            icon="folder"
-                            label="Scope to a base"
+                            label="scope to a base"
                             badge="optional"
                             span
-                            hint="Limit tasks to the notes inside another base."
+                            hint="limit tasks to the notes inside another base."
                         >
                             <Select
                                 value={state.tasks.from ?? ''}
@@ -682,9 +663,8 @@ export function QueryBuilder(props: {
                     </SettingsGrid>
                     <Show when={state.tasks.rawWhere}>
                         <SettingsField
-                            icon="Code"
-                            label="Advanced filter"
-                            hint="Extra Tasks-DSL filters that don't map to a preset, kept verbatim."
+                            label="advanced filter"
+                            hint="extra Tasks-DSL filters that don't map to a preset, kept verbatim."
                         >
                             <TextInput
                                 value={state.tasks.rawWhere ?? ''}
@@ -695,13 +675,12 @@ export function QueryBuilder(props: {
                 </Show>
 
                 <Show when={state.source === 'base'}>
-                    <SettingsSection>Base</SettingsSection>
+                    <SettingsSection>base</SettingsSection>
                     <SettingsGrid>
                         <SettingsField
-                            icon="database"
-                            label="Base to query"
+                            label="base to query"
                             span
-                            hint="Renders another base's rows; the view/sort/group below override its own."
+                            hint="renders another base's rows; the view/sort/group below override its own."
                         >
                             <Select
                                 value={state.baseRef ?? ''}
@@ -711,11 +690,10 @@ export function QueryBuilder(props: {
                             />
                         </SettingsField>
                         <SettingsField
-                            icon="Code"
-                            label="Filter"
+                            label="filter"
                             badge="optional"
                             span
-                            hint="An optional Bases expression to further filter the base's rows."
+                            hint="an optional Bases expression to further filter the base's rows."
                         >
                             <TextInput
                                 value={state.baseWhere ?? ''}
@@ -729,9 +707,9 @@ export function QueryBuilder(props: {
                 </Show>
 
                 {/* 3 — VIEW & SORT (shared) */}
-                <SettingsSection>View</SettingsSection>
+                <SettingsSection>view</SettingsSection>
                 <SettingsGrid>
-                    <SettingsField icon={VIEW_ICON[state.view]} label="Show as">
+                    <SettingsField label="show as">
                         <Select
                             value={state.view}
                             options={viewOptions}
@@ -739,7 +717,7 @@ export function QueryBuilder(props: {
                         />
                     </SettingsField>
                     <Show when={state.source !== 'tasks'}>
-                        <SettingsField icon="ListOrdered" label="Sort by">
+                        <SettingsField label="sort by">
                             <Select
                                 value={state.sort?.[0]?.property ?? ''}
                                 options={propOptionsOptional()}
@@ -748,7 +726,7 @@ export function QueryBuilder(props: {
                             />
                         </SettingsField>
                         <Show when={state.sort?.[0]?.property}>
-                            <SettingsField icon="arrow-down" label="Direction">
+                            <SettingsField label="direction">
                                 <Select
                                     value={state.sort?.[0]?.direction ?? 'ASC'}
                                     options={DIR_OPTS}
@@ -759,7 +737,7 @@ export function QueryBuilder(props: {
                             </SettingsField>
                         </Show>
                     </Show>
-                    <SettingsField icon="Layers" label="Group by">
+                    <SettingsField label="group by">
                         <Select
                             value={state.group ?? ''}
                             options={propOptionsOptional()}
@@ -767,7 +745,7 @@ export function QueryBuilder(props: {
                             onChange={v => setState('group', v || undefined)}
                         />
                     </SettingsField>
-                    <SettingsField icon="hash" label="Limit" badge="optional">
+                    <SettingsField label="limit" badge="optional">
                         <TextInput
                             type="number"
                             value={
@@ -788,14 +766,13 @@ export function QueryBuilder(props: {
                 </SettingsGrid>
 
                 {/* 4 — PREVIEW */}
-                <SettingsSection>Generated query</SettingsSection>
+                <SettingsSection>generated query</SettingsSection>
                 <pre class={qbStyles['qb-preview']} data-testid="qb-preview">
                     <code>{previewBody()}</code>
                 </pre>
             </ModalBody>
 
             <ModalFooter
-                hint="to close"
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
