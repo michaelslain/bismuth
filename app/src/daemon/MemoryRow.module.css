@@ -1,0 +1,69 @@
+/* app/src/daemon/MemoryRow.module.css — MemoryRow.tsx is the ONLY importer.
+   Two lines, same idiom as InboxRow/DaemonServices' rows: a real <button> (PlainButton) wraps the
+   open target (name/type/age + excerpt), and the trailing forget/confirm actions sit outside it
+   as a sibling — a button can never contain another button. */
+.memory-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: var(--rule);
+    transition: background var(--dur-fast) var(--ease);
+}
+.memory-row:hover {
+    background: var(--hover-bg);
+}
+.memory-row-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    text-align: start;
+    font-size: var(--fs-ui);
+    line-height: var(--row-h, 18px);
+}
+.memory-row-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    min-width: 0;
+}
+.memory-row-name {
+    color: var(--fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.memory-row-type {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.memory-row-age {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: var(--fs-micro);
+    white-space: nowrap;
+}
+.memory-row-excerpt {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.memory-row-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+}
+/* Faint until the ROW (not just the button) is hovered or focused — a row-level reveal, same
+   intent as the file tree's hover-brightened icon (FileTree.module.css's .ft-row:hover .ft-icon),
+   restated on this row's own local class rather than reached from outside. Specificity
+   (.memory-row:hover .memory-row-forget = 3 classes) beats Button.module.css's own
+   `.btn--text.btn--unselected` (2 classes) without `:global()` or `!important`. */
+.memory-row:hover .memory-row-forget,
+.memory-row:focus-within .memory-row-forget {
+    color: var(--fg);
+}

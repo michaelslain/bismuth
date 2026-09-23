@@ -1,0 +1,9 @@
+/* app/src/daemon/DaemonMemory.module.css — DaemonMemory.tsx is the ONLY importer.
+   The panel's own chrome (border, scroll, fade) lives in DaemonPanel.module.css — this only
+   positions the search field above the row list inside DaemonPanel's scrolling body. */
+.memory-search {
+    margin: var(--sp-3) var(--sp-4);
+    /* The search bar scrolls away with the rows below --row-h height by default (SearchBar owns
+       its own box); this just keeps it flush with the row list's own left/right inset and gives
+       it the same top/bottom breathing room DaemonPanel's head row would have had. */
+}
