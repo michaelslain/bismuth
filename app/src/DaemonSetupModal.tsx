@@ -92,19 +92,19 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
             title="Set up daemon"
             actions={
                 <>
-                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <TextButton onClick={props.onClose}>close</TextButton>
                     <TextButton
                         onClick={update}
                         disabled={loading() || running()}
                     >
-                        {running() ? 'WORKING…' : 'UPDATE'}
+                        {running() ? 'working…' : 'update'}
                     </TextButton>
                     <TextButton
                         variant="selected"
                         onClick={setup}
                         disabled={loading() || running()}
                     >
-                        {running() ? 'WORKING…' : 'SET UP / REPAIR'}
+                        {running() ? 'working…' : 'set up / repair'}
                     </TextButton>
                 </>
             }

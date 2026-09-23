@@ -499,7 +499,7 @@ export function GraphView(props: {
                     <>
                         {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
             (.sidebar-icons) — same 28x28 box, same radius, same hover, no border. It is deliberately
-            NOT a <SegmentedToggle> here: that renders .btn--text segments, which keep their outline and
+            NOT a <SegmentedToggle> here: that renders .btn--segment segments, which keep their outline and
             turn an icon into a chunky bordered tile — the one control in the sidebar that didn't look
             like the sidebar. The full-pane graph keeps the real segmented control, where the labels are
             words and a joined outline is right. */}
@@ -575,13 +575,12 @@ export function GraphView(props: {
                         <Show when={props.fill}>
                             <IconTextButton
                                 icon="Search"
-                                size="sm"
                                 variant={menuOpen() ? 'selected' : 'unselected'}
                                 onClick={() =>
                                     menuOpen() ? closeMenu() : setMenuOpen(true)
                                 }
                             >
-                                FIND
+                                find
                             </IconTextButton>
                         </Show>
                     </Text>
@@ -635,7 +634,6 @@ export function GraphView(props: {
                     below, unchanged. */}
                         <Show when={props.mini}>
                             <TextButton
-                                size="sm"
                                 variant="unselected"
                                 title={
                                     graphViewMode() === '2d'
@@ -648,7 +646,7 @@ export function GraphView(props: {
                                     )
                                 }
                             >
-                                {graphViewMode() === '2d' ? '3D' : '2D'}
+                                {graphViewMode() === '2d' ? '3d' : '2d'}
                             </TextButton>
                         </Show>
                         <Show when={!props.mini}>
@@ -686,7 +684,6 @@ export function GraphView(props: {
                     <Show when={props.mini}>
                         <div class={styles['graph-bottom-local']}>
                             <TextButton
-                                size="sm"
                                 variant={localOn() ? 'selected' : 'unselected'}
                                 title={
                                     localOn()
@@ -695,7 +692,7 @@ export function GraphView(props: {
                                 }
                                 onClick={toggleLocal}
                             >
-                                LOCAL
+                                local
                             </TextButton>
                         </div>
                     </Show>

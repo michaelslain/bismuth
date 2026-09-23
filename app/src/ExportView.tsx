@@ -549,7 +549,7 @@ export function ExportView(props: {
                             iconSize={13}
                             onClick={browseSource}
                         >
-                            BROWSE
+                            browse
                         </IconTextButton>
                     </div>
                 </div>
@@ -572,7 +572,7 @@ export function ExportView(props: {
                             iconSize={13}
                             onClick={browseDest}
                         >
-                            BROWSE
+                            browse
                         </IconTextButton>
                     </div>
                 </div>
@@ -649,7 +649,7 @@ export function ExportView(props: {
                                     iconSize={13}
                                     onClick={() => setCalStart('')}
                                 >
-                                    TODAY
+                                    today
                                 </IconTextButton>
                             </Show>
                         </div>
@@ -775,7 +775,7 @@ export function ExportView(props: {
                         disabled={busy()}
                         onClick={doExport}
                     >
-                        EXPORT
+                        export
                     </IconTextButton>
                 </div>
             </div>

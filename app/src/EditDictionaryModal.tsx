@@ -114,12 +114,11 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                     />
                     <IconTextButton
                         icon="Plus"
-                        size="sm"
                         variant="selected"
                         onClick={add}
                         disabled={!draft().trim()}
                     >
-                        ADD
+                        add
                     </IconTextButton>
                 </div>
             </div>
@@ -136,11 +135,10 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                 </Text>
                 <div class={styles['dict-sp']} />
                 <TextButton
-                    size="sm"
                     variant="selected"
                     onClick={props.onClose}
                 >
-                    DONE
+                    done
                 </TextButton>
             </div>
         </Modal>

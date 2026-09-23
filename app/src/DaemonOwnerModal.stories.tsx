@@ -7,7 +7,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { DaemonOwnerModal } from './DaemonOwnerModal'
-import { Button } from './ui/Button'
+import { TextButton } from './ui/TextButton'
 
 const meta = {
     title: 'Modals/DaemonOwnerModal',
@@ -33,13 +33,12 @@ export const Interactive: Story = {
         const [open, setOpen] = createSignal(true)
         return (
             <div style={{ padding: '40px' }}>
-                <Button
-                    kind="text"
-                    state="selected"
+                <TextButton
+                    variant="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Open owner picker
-                </Button>
+                    open owner picker
+                </TextButton>
                 {open() && <DaemonOwnerModal onClose={() => setOpen(false)} />}
             </div>
         )

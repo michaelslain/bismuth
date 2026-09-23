@@ -64,7 +64,7 @@ export function UpdateBanner() {
                         </Text>
                     </Show>
                     <TextButton onClick={update} disabled={working()} variant="selected">
-                        {working() ? 'UPDATING…' : 'UPDATE'}
+                        {working() ? 'updating…' : 'update'}
                     </TextButton>
                     <IconButton
                         icon="X"

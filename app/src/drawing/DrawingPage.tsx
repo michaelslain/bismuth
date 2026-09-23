@@ -245,7 +245,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
                     iconSize={14}
                     onClick={() => store.addPage()}
                 >
-                    ADD PAGE
+                    add page
                 </IconTextButton>
             </div>
             {/* Hidden picker backing the toolbar's Import-image button. */}
