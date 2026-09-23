@@ -114,7 +114,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                     />
                     <IconTextButton
                         icon="Plus"
-                        variant="selected"
+                        primary
                         onClick={add}
                         disabled={!draft().trim()}
                     >
@@ -134,12 +134,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                     <b>esc</b> to close
                 </Text>
                 <div class={styles['dict-sp']} />
-                <TextButton
-                    variant="selected"
-                    onClick={props.onClose}
-                >
-                    done
-                </TextButton>
+                <TextButton onClick={props.onClose}>done</TextButton>
             </div>
         </Modal>
     )

@@ -772,6 +772,7 @@ export function ExportView(props: {
                     <IconTextButton
                         icon="Download"
                         iconSize={14}
+                        primary
                         disabled={busy()}
                         onClick={doExport}
                     >

@@ -255,7 +255,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
             >
                 <div class={styles['chat-question-actions']}>
                     <TextButton
-                        variant="selected"
+                        primary
                         disabled={!allAnswered()}
                         onClick={submit}
                     >

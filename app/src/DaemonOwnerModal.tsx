@@ -73,7 +73,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
                 <>
                     <TextButton onClick={props.onClose}>cancel</TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={submit}
                         disabled={
                             loading() ||

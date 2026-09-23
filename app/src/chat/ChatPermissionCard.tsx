@@ -82,7 +82,7 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
             >
                 <div class={styles['chat-permission-actions']}>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={() => props.onAnswer('allow', false)}
                     >
                         allow

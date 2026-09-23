@@ -100,7 +100,7 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
                         {running() ? 'working…' : 'update'}
                     </TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={setup}
                         disabled={loading() || running()}
                     >
