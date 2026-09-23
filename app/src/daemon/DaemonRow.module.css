@@ -1,0 +1,87 @@
+/* app/src/daemon/DaemonRow.module.css — DaemonRow.tsx is the ONLY importer.
+   The row itself carries no grid-template-columns of its own: `subgrid` inherits whatever the
+   parent list (DaemonCrons.module.css / DaemonProcesses.module.css) defined, which is what keeps
+   every row's dot/name/meta/status/actions aligned to the same x-position down the whole list. */
+.row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: var(--sp-3);
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    border-radius: var(--r-0);
+    cursor: pointer;
+    transition:
+        background var(--dur-fast) var(--ease),
+        color var(--dur-fast) var(--ease);
+}
+.row:hover,
+.row:focus-visible {
+    background: var(--hover-bg);
+}
+.row:focus-visible {
+    outline: none;
+}
+/* A disabled definition — the whole row steps back, same opacity idiom the old combined
+   DaemonServices rows used for a disabled cron/process. */
+.row.dim {
+    opacity: 0.45;
+}
+
+/* A 6px currentColor dot — the shared .status-dot idiom, but the colour is a tone class here
+   (not an inline style) so DaemonRow never receives a raw colour string, only the 5-value enum. */
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.dot.glow {
+    box-shadow: var(--glow-accent);
+}
+
+.name {
+    min-width: 0;
+}
+
+/* Schedule / trigger. Truncates FIRST — its column is capped at a fixed character width
+   (see the parent list's grid-template-columns), so the grid gives this track's room to the
+   name column before the name itself has to shrink. */
+.meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Status: a word plus age, never colour alone. Faint (ok/off/idle) by default; accent when
+   live, danger when failed — the same two reusable tone modifiers the old cronStatus/DaemonLog
+   rows already use. */
+.status {
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: var(--faint);
+}
+.tone-ok {
+    color: var(--text-muted);
+}
+.tone-running {
+    color: var(--accent);
+}
+.tone-failed {
+    color: var(--danger);
+}
+.tone-off,
+.tone-idle {
+    color: var(--faint);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+}

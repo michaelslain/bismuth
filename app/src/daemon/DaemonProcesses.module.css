@@ -1,0 +1,23 @@
+/* app/src/daemon/DaemonProcesses.module.css — DaemonProcesses.tsx is the ONLY importer.
+   Same grid as DaemonCrons.module.css's `.list` minus the schedule column: dot // name //
+   status // actions. No row ever passes DaemonRow a `meta`, so this list genuinely never has a
+   schedule track to size — the "same grid minus schedule" the spec asks for, not merely an
+   empty column. */
+.daemon-processes {
+    height: 100%;
+    min-height: 0;
+}
+.list {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    row-gap: 0;
+}
+.create-field {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.create-error {
+    color: var(--danger);
+    white-space: nowrap;
+}
