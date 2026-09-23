@@ -116,7 +116,7 @@ export const CodeFind: Story = {
         await canvas.findByText(/export function greet/)
         fireEvent.keyDown(root, { key: 'f', ctrlKey: true })
 
-        const input = await canvas.findByPlaceholderText('Find')
+        const input = await canvas.findByPlaceholderText('find')
         await fireEvent.input(input, { target: { value: 'return' } })
 
         await waitFor(() => expect(canvas.getByText('1/3')).toBeInTheDocument())
@@ -150,7 +150,7 @@ export const CodeFindNoResults: Story = {
         ) as HTMLElement
         await canvas.findByText(/export function greet/)
         fireEvent.keyDown(root, { key: 'f', ctrlKey: true })
-        const input = await canvas.findByPlaceholderText('Find')
+        const input = await canvas.findByPlaceholderText('find')
         await fireEvent.input(input, { target: { value: 'zzz-nomatch' } })
         await waitFor(() =>
             expect(canvas.getByText('No results')).toBeInTheDocument(),

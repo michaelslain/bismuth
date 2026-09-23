@@ -75,7 +75,7 @@ function withSearch(opts: {
 function typeQuery(canvasElement: HTMLElement, text: string) {
     const canvas = within(canvasElement)
     const input = canvas.getByPlaceholderText(
-        'Search file names and note text…',
+        'files and notes',
     )
     return userEvent.type(input, text)
 }

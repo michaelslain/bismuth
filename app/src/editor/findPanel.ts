@@ -111,7 +111,7 @@ export function createFindPanel(view: EditorView): Panel {
 
     const input = document.createElement('input')
     input.className = 'bismuth-find-input'
-    input.placeholder = 'Find'
+    input.placeholder = 'find'
     input.setAttribute('aria-label', 'Find in note')
     // NOTE: intentionally NOT tagged `main-field`. CM's findNext/findPrevious end by
     // calling selectSearchInput(), which select-all's the `main-field` element. Since we

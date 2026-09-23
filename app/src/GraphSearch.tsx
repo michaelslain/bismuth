@@ -122,7 +122,7 @@ export function GraphSearch(props: {
         >
             <SearchBar
                 size="compact"
-                placeholder="Search graph..."
+                placeholder="nodes"
                 value={query()}
                 onInput={setQuery}
                 onKeyDown={onKeyDown}

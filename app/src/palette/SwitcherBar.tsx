@@ -362,7 +362,7 @@ export function SwitcherBar(props: Props) {
             <SearchBar
                 size="large"
                 inputRef={el => (inputRef = el)}
-                placeholder="Search file names and note text…"
+                placeholder="files and notes"
                 value={query()}
                 onInput={onQueryInput}
                 onKeyDown={onKeyDown}

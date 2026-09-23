@@ -73,7 +73,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                 size="default"
                 value={props.history.query()}
                 onInput={props.history.setQuery}
-                placeholder="Search conversations…"
+                placeholder="conversations"
                 autofocus
             >
                 <IconButton

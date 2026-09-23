@@ -21,7 +21,7 @@ export type SearchBarProps = {
     autofocus?: boolean
     inputRef?: (el: HTMLInputElement) => void
     /** Accessible name for the input, when the placeholder alone isn't enough (e.g. a find-in-file
-     *  bar whose placeholder is the terse "Find"). Passed straight through to the `<input>`. */
+     *  bar whose placeholder is the terse "find"). Passed straight through to the `<input>`. */
     'aria-label'?: string
     /** Trailing adornments (toggles, buttons) rendered after the input. */
     children?: JSX.Element

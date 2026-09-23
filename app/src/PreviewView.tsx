@@ -701,7 +701,7 @@ export function PreviewView(props: {
                             >
                                 <SearchBar
                                     size="compact"
-                                    placeholder="Find"
+                                    placeholder="find"
                                     aria-label="Find in file"
                                     value={query()}
                                     onInput={value => {

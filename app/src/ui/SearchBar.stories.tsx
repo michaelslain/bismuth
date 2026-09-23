@@ -50,34 +50,34 @@ function Controlled(props: {
 
 /** Empty, showing the default `/` prompt + placeholder. */
 export const Placeholder: Story = {
-    render: () => <Controlled placeholder="Search notes…" />,
+    render: () => <Controlled placeholder="notes" />,
 }
 
 /** With a typed value. */
 export const Filled: Story = {
     render: () => (
-        <Controlled initial="meeting notes" placeholder="Search notes…" />
+        <Controlled initial="meeting notes" placeholder="notes" />
     ),
 }
 
 /** The command palette's own prompt glyph — `>` instead of `/`. */
 export const CommandPrompt: Story = {
     render: () => (
-        <Controlled prompt=">" placeholder="Type a command…" />
+        <Controlled prompt=">" placeholder="commands" />
     ),
 }
 
 /** `compact` density — panels, popovers, find bars. */
 export const Compact: Story = {
     render: () => (
-        <Controlled size="compact" placeholder="Find…" initial="todo" />
+        <Controlled size="compact" placeholder="find" initial="todo" />
     ),
 }
 
 /** `large` density — the command palette and quick switcher. */
 export const Large: Story = {
     render: () => (
-        <Controlled size="large" placeholder="Search everything…" />
+        <Controlled size="large" placeholder="everything" />
     ),
 }
 
@@ -85,7 +85,7 @@ export const Large: Story = {
  *  change on focus but never turn accent — an accent line read as a coloured divider between the
  *  query and its results in every autofocusing surface. */
 export const Focused: Story = {
-    render: () => <Controlled placeholder="Search notes…" />,
+    render: () => <Controlled placeholder="notes" />,
     play: async ({ canvasElement }) => {
         const input = canvasElement.querySelector('input') as HTMLInputElement
         const root = input.parentElement as HTMLElement
@@ -119,7 +119,7 @@ export const RebindableConfirmKey: Story = {
                 <SearchBar
                     value={v()}
                     onInput={setV}
-                    placeholder="Search notes…"
+                    placeholder="notes"
                     onEnter={() => confirmFires++}
                 />
             </div>
@@ -160,7 +160,7 @@ export const WithTrailingChips: Story = {
         const [matchCase, setMatchCase] = createSignal(false)
         const [wholeWord, setWholeWord] = createSignal(true)
         return (
-            <Controlled initial="TODO" placeholder="Find…">
+            <Controlled initial="TODO" placeholder="find">
                 <Chip
                     icon="CaseSensitive"
                     selected={matchCase()}
@@ -196,7 +196,7 @@ function TrailingControlsDemo() {
                 <SearchBar
                     value={query()}
                     onInput={setQuery}
-                    placeholder="Find"
+                    placeholder="find"
                     aria-label="Find in file"
                     inputRef={el => (inputEl = el)}
                     onKeyDown={e => {
