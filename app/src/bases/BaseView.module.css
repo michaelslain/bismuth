@@ -69,7 +69,7 @@
 
 /* Layout only — the bracket look (ui/SegmentedToggle's default `look="bracket"`) supplies its own
    spacing (`--sp-4` between options, no box, no butted border). */
-.tabs { display: flex; }
+.tabs { display: flex; margin-left: var(--sp-5); }
 
 /* Embedded query header: flush to the block edges (query hard-left, source icon hard-right).
    Doubled (`.embeddedBar.embeddedBar`) for the same reason as `.cards-draft.cards-draft` in
