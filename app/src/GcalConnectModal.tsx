@@ -147,7 +147,7 @@ export function GcalConnectModal(props: {
                         when={status()?.connected}
                         fallback={
                             <TextButton
-                                variant="selected"
+                                primary
                                 onClick={connect}
                                 disabled={loading() || busy()}
                             >
@@ -159,7 +159,7 @@ export function GcalConnectModal(props: {
                             disconnect
                         </TextButton>
                         <TextButton
-                            variant="selected"
+                            primary
                             onClick={syncNow}
                             disabled={busy()}
                         >

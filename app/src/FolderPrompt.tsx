@@ -31,7 +31,7 @@ export function FolderPrompt(props: {
                 <>
                     <TextButton onClick={props.onClose}>cancel</TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={submit}
                         disabled={value().trim() === ''}
                     >

@@ -72,7 +72,7 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
                 <>
                     <TextButton onClick={props.onClose}>close</TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         onClick={install}
                         disabled={loading() || running()}
                     >
