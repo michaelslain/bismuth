@@ -1156,13 +1156,14 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    `bismuth-popover-row`/`bismuth-popover-*` (a different, runtime-emitted family). Dead since
    before this file's own prior audits caught the .vseg/.chip case above. */
 
-/* Card / callout / frontmatter — MOVED OUT 2026-08-27 (visual-unification audit §7 wave 1,
+/* Card / callout — MOVED OUT 2026-08-27 (visual-unification audit §7 wave 1,
    §9.8's "a shared stylesheet is evidence of a missing component"): `.asc-card`/`.asc-card--
    proposal`/`.asc-frontmatter`/`.asc-callout` used to be bare classes here, exactly the pattern
    Text/Label/Badge were built to eliminate. Now real components with colocated modules:
-   ui/Card.tsx (Card.module.css), ui/Callout.tsx (Callout.module.css), ui/Frontmatter.tsx
-   (Frontmatter.module.css) — each still shares the one 2px accent left border, --accent-edge,
-   defined in styles/tokens.css. */
+   ui/Card.tsx (Card.module.css), ui/Callout.tsx (Callout.module.css) — each still shares the one
+   2px accent left border, --accent-edge, defined in styles/tokens.css. (`ui/Frontmatter.tsx` was
+   the third of these; dropped in the preview redesign — Task 1 — once note frontmatter was ruled
+   flat, no accent edge, so the companion strip could match the note editor directly instead.) */
 
 /* .asc-prose / .asc-wikilink (+ :hover) / .asc-tag DELETED 2026-09-12 (CSS modules migration
    Task 7, ownership map): zero consumers anywhere in .tsx/.ts, not even in a comment. The real

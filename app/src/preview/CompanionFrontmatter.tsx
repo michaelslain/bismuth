@@ -3,8 +3,14 @@
 // image + pdf kinds (plan "Design": tags for a binary live in its companion note `<file>.md`
 // — core/src/fileKinds.ts's companionPathFor — created lazily, only once the user actually
 // writes something). Reads/writes the RAW frontmatter block via ui/MarkdownField — whose
-// livePreview extension already renders `---` fences like a note's own frontmatter — inside the
-// compact ui/Frontmatter accent-edge panel.
+// livePreview extension already renders `---` fences like a note's own frontmatter.
+//
+// NOTE-IDENTICAL BY RULING (Task 1): note frontmatter is FLAT — no left accent bar, no radius
+// (livePreview.ts's own `.cm-block-top`/`.cm-block-mid`/`.cm-block-bottom` chrome, ~1780-1850, is
+// the source of truth). `ui/Frontmatter` (the accent-edge panel primitive used by Card/Callout)
+// was the wrong shape for this and has been dropped — this component now renders its own flat
+// root and matches the note editor directly via CompanionFrontmatter.module.css, never restyling
+// livePreview's own rules.
 //
 // PERSISTENCE lives in createCompanionStore.ts (annotationTypes.ts's CompanionStore) — the ONE
 // owner of the companion's read/debounced-write/conflict-reload for both this strip and the
@@ -21,10 +27,18 @@
 // (property keys, enum values, the `tags:` list) never fire here — only the BODY `#tag` source
 // would, popping a tag menu on YAML's comment character. Forwarding it needs an `inFrontmatter`
 // seam on MarkdownField first.
-import { Show } from 'solid-js'
+//
+// FOLD: unremembered/local unless `props.foldKey` is passed, in which case fold state is kept in
+// frontmatterFold.ts's module-level Map for the session (a tab switch keeps it, a full reload
+// does not — same ruling pdfViewMemory.ts documents). The Map holds no signal of its own, so
+// `foldVersion` is bumped on every toggle to force `folded()` to re-read it; `folded()` also
+// re-reads automatically when `props.foldKey` itself changes, since it is read inside the memo.
+import { createSignal, Show } from 'solid-js'
 import createCompanionStore from './createCompanionStore'
 import type { CompanionStore } from './annotationTypes'
-import Frontmatter from '../ui/Frontmatter'
+import { isFrontmatterFolded, setFrontmatterFolded } from './frontmatterFold'
+import FoldedFence from './FoldedFence'
+import IconButton from '../ui/IconButton'
 import MarkdownField from '../ui/MarkdownField'
 import styles from './CompanionFrontmatter.module.css'
 
@@ -46,6 +60,22 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
     const store: CompanionStore =
         props.store ?? createCompanionStore(() => props.binaryPath ?? '')
 
+    const [localFolded, setLocalFolded] = createSignal(false)
+    const [foldVersion, bump] = createSignal(0)
+    const folded = () =>
+        props.foldKey
+            ? foldVersion() >= 0 && isFrontmatterFolded(props.foldKey)
+            : localFolded()
+    const toggle = () => {
+        const next = !folded()
+        if (props.foldKey) {
+            setFrontmatterFolded(props.foldKey, next)
+            bump(v => v + 1)
+        } else {
+            setLocalFolded(next)
+        }
+    }
+
     const onInput = (value: string) => {
         store.setFrontmatter(value)
     }
@@ -56,17 +86,26 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
         // .ts's flushSave refuses those writes outright; hiding the field keeps the UI from lying
         // about being able to persist an edit).
         <Show when={store.loadState() === 'ready'}>
-            <Frontmatter
+            <div
                 class={[styles['companion-frontmatter'], props.class]
                     .filter(Boolean)
                     .join(' ')}
+                data-folded={folded() ? '' : undefined}
             >
-                <MarkdownField
-                    value={store.frontmatter()}
-                    onInput={onInput}
-                    class={styles['companion-frontmatter-field']}
+                <IconButton
+                    class={styles.chevron}
+                    icon={folded() ? 'ChevronRight' : 'ChevronDown'}
+                    label={folded() ? 'unfold frontmatter' : 'fold frontmatter'}
+                    aria-expanded={!folded()}
+                    onClick={toggle}
                 />
-            </Frontmatter>
+                <Show when={folded()}>
+                    <FoldedFence />
+                </Show>
+                <div class={styles.field}>
+                    <MarkdownField value={store.frontmatter()} onInput={onInput} />
+                </div>
+            </div>
         </Show>
     )
 }

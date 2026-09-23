@@ -312,12 +312,6 @@
   "count": 1
  },
  {
-  "file": "daemon/InboxRow.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px",
-  "count": 1
- },
- {
   "file": "drawing/DrawingPage.module.css",
   "rule": "spacing-literal",
   "detail": "20px",
@@ -489,6 +483,12 @@
   "file": "palette/SwitcherBar.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-5) 18px",
+  "count": 1
+ },
+ {
+  "file": "preview/CompanionFrontmatter.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 40px",
   "count": 1
  },
  {
