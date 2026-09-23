@@ -8,8 +8,8 @@
    root, but never the lead or the input — those are fixed here.
 
    `.search-bar-lead`/`.search-bar-input`/`.search-bar-trailing` are read ONLY by this file; no
-   other stylesheet imports this module (one-module-one-importer) and no caller may pass
-   leadClass/inputClass/inputStyle any more (deprecated + ignored on SearchBar.tsx). */
+   other stylesheet imports this module (one-module-one-importer) and SearchBar exposes no
+   lead/input class or style props. */
 
 .search-bar {
     display: flex;
@@ -49,6 +49,7 @@
     border: none;
     outline: none;
     color: var(--fg);
+    padding: 0;
 }
 .search-bar-input::placeholder {
     color: var(--faint);
@@ -91,9 +92,9 @@
 
 .search-bar[data-size='large'] {
     padding: var(--sp-5) var(--sp-6);
-    font-size: var(--palette-input-font-size, 15px);
+    font-size: var(--palette-input-font-size);
 }
 .search-bar[data-size='large'] .search-bar-lead,
 .search-bar[data-size='large'] .search-bar-input {
-    font-size: var(--palette-input-font-size, 15px);
+    font-size: var(--palette-input-font-size);
 }
