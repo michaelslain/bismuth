@@ -23,8 +23,8 @@ import {
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
-import ChipToggle from '../ui/ChipToggle'
-import { Icon } from '../icons/Icon'
+import BracketToggle from '../ui/BracketToggle'
+import PlainButton from '../ui/PlainButton'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
@@ -327,31 +327,21 @@ export function CardEditModal(props: {
             )
         }
         if (k.kind === 'boolean') {
-            // Wrapped, not bare: `.field` is a column flex container with no align-items, so a bare Chip
-            // (an inline-flex <button>) gets blockified and cross-stretched to the full ~420px body width
-            // — a wide bar instead of a pill. The wrapper absorbs the stretch and keeps it shrink-to-fit.
+            // The product's boolean register: `[x]`/`[ ]` (ui/BracketToggle), same as every
+            // other on/off control in the app — not a filled Chip. Shrink-to-fit (see
+            // .boolToggle below): `.field` is a column flex container with no align-items, so a
+            // bare inline-flex button would otherwise blockify and stretch across the row.
             return (
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles.boolChip}
+                <PlainButton
+                    class={styles.boolToggle}
+                    aria-pressed={value(id) === true}
+                    onClick={() =>
+                        props.onSetMeta(id, !(value(id) === true))
+                    }
                 >
-                    <ChipToggle
-                        selected={value(id) === true}
-                        class={styles.boolChipToggle}
-                        onToggle={() =>
-                            props.onSetMeta(id, !(value(id) === true))
-                        }
-                    >
-                        <Icon
-                            value={value(id) === true ? 'Check' : 'Square'}
-                            size={13}
-                        />
-                        {value(id) === true ? 'Yes' : 'No'}
-                    </ChipToggle>
-                </Text>
+                    <BracketToggle checked={value(id) === true} />
+                    {value(id) === true ? 'yes' : 'no'}
+                </PlainButton>
             )
         }
         if (k.kind === 'date') {

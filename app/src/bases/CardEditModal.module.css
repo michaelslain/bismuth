@@ -7,10 +7,10 @@
 /* Carries the --kb-meta-* custom properties PropertyValueEditor.module.css reads for its shared
    .kbMetaInput/.kbMetaSelectTrigger/.kbMetaMultiselectAdd controls (STATUS/PRIORITY/TAGS) — set
    on SettingsGrid so every row in this modal measures the same as TITLE/DUE, not on a `.field`
-   wrapper of this file's own (SettingsField/SettingsGrid now own that layout). NOT a fix for the
-   filled/bordered look those controls still carry — that background+border lives directly in
-   PropertyValueEditor.module.css's `.kbMetaInput`/`.kbMetaSelectTrigger` rules (not gated by any
-   var here), which is outside this task's files; see the hand-back's "Found, not acted on". */
+   wrapper of this file's own (SettingsField/SettingsGrid now own that layout). The filled/bordered
+   look those controls used to carry is gone (modal-redesign Task 8b) — PropertyValueEditor.tsx
+   dropped `plain` on its TextInput calls, so PRIORITY/STATUS/TAGS now compose the same
+   `.ui-input` underline chrome as TITLE/DUE; these vars still only govern sizing. */
 .metaVars {
   /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
      and any plain text/number property) caps at 200px by default for its OTHER host,
@@ -139,10 +139,11 @@
 }
 
 
-/* Boolean toggle. Shrink-to-fit (see CardEditModal.tsx) and sized to the COMPACT card-face scale
-   its siblings use — PropertyValueEditor renders .kbMetaInput/.kbMetaSelect at 12px and
-   .kbMetaMultiselect chips at 20px (BaseView.module.css). At the global .chip-toggle size (30px)
-   this one control towered over the multiselect chips directly beneath it, which is the exact
-   intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
-.boolChip { align-self: flex-start; }
-.boolChipToggle { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }
+/* Boolean toggle: the product's `[x]`/`[ ]` register (ui/BracketToggle), the SAME one every
+   other on/off control uses (ui/ToggleRow, calendar's all-day switch) — not a filled Chip.
+   Shrink-to-fit (see CardEditModal.tsx): `.field` is a column flex container with no
+   align-items, so a bare inline-flex button would otherwise blockify and stretch across the
+   row's ~420px width. */
+.boolToggle { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); color: var(--faint); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.boolToggle:hover { color: var(--text-muted); }
+.boolToggle[aria-pressed="true"] { color: var(--fg); }
