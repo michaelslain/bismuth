@@ -23,6 +23,10 @@ import {
     setCronEnabled,
     setProcessEnabled,
     runCron,
+    createCron,
+    createProcess,
+    deleteCron,
+    deleteProcess,
     daemonMachineDir,
     migrateDaemonState,
     registerVaultRoot,
@@ -510,6 +514,138 @@ test('unknown cron/process name throws (404 AppError)', () => {
     expect(() => setCronEnabled('nope', false, home)).toThrow()
     expect(() => runCron('nope', home)).toThrow()
     expect(() => setProcessEnabled('nope', false, home)).toThrow()
+})
+
+// ── create / delete (writes a brand-new cron/process definition) ──────────────
+
+test('createCron slugifies the name, writes a template, and returns the slug as `file`', () => {
+    const home = makeHome({})
+    const result = createCron('Answer Emails!', home)
+    expect(result).toEqual({ file: 'answer-emails' })
+    const md = readFileSync(
+        join(home, 'crons', 'answer-emails.md'),
+        'utf8',
+    )
+    expect(md).toContain('name: "Answer Emails!"')
+    expect(md).toContain('schedule: "0 9 * * *"')
+    expect(md).toContain('enabled: false')
+    // Bismuth's own reader can see the new cron immediately.
+    const snap = daemonSnapshot(home)
+    const cron = snap.crons.find(c => c.file === 'answer-emails')
+    expect(cron).toMatchObject({
+        name: 'Answer Emails!',
+        schedule: '0 9 * * *',
+        enabled: false,
+    })
+})
+
+test('createCron slug: lowercases, collapses runs of invalid chars into one dash, trims edges', () => {
+    const home = makeHome({})
+    expect(createCron('  Weekly   Vault Review!!  ', home)).toEqual({
+        file: 'weekly-vault-review',
+    })
+})
+
+test('createCron rejects a name that slugifies to empty with a 400 EINVAL', () => {
+    const home = makeHome({})
+    expect(() => createCron('!!!', home)).toThrowError(
+        expect.objectContaining({ code: 'EINVAL', statusCode: 400 }),
+    )
+    expect(() => createCron('', home)).toThrowError(
+        expect.objectContaining({ code: 'EINVAL', statusCode: 400 }),
+    )
+})
+
+test('createCron rejects a clashing slug with a 409 EEXIST, leaving the existing file untouched', () => {
+    const home = makeHome({})
+    writeDef(home, 'crons', 'dream', { schedule: '"0 * * * *"' })
+    const before = readFileSync(join(home, 'crons', 'dream.md'), 'utf8')
+    expect(() => createCron('dream', home)).toThrowError(
+        expect.objectContaining({ code: 'EEXIST', statusCode: 409 }),
+    )
+    expect(readFileSync(join(home, 'crons', 'dream.md'), 'utf8')).toBe(before)
+})
+
+test('createProcess slugifies the name, writes a template with a command placeholder', () => {
+    const home = makeHome({})
+    const result = createProcess('Web Search', home)
+    expect(result).toEqual({ file: 'web-search' })
+    const md = readFileSync(join(home, 'processes', 'web-search.md'), 'utf8')
+    expect(md).toContain('name: "Web Search"')
+    expect(md).toContain('command: echo "replace me"')
+    expect(md).toContain('enabled: false')
+    const snap = daemonSnapshot(home)
+    expect(
+        snap.processes.find(p => p.file === 'web-search'),
+    ).toMatchObject({ name: 'Web Search', enabled: false })
+})
+
+test('createProcess rejects empty/invalid slug (400) and a clashing slug (409)', () => {
+    const home = makeHome({})
+    expect(() => createProcess('***', home)).toThrowError(
+        expect.objectContaining({ code: 'EINVAL', statusCode: 400 }),
+    )
+    createProcess('backup-watcher', home)
+    expect(() => createProcess('backup-watcher', home)).toThrowError(
+        expect.objectContaining({ code: 'EEXIST', statusCode: 409 }),
+    )
+})
+
+test('deleteCron unlinks the definition file', () => {
+    const home = makeHome({})
+    writeDef(home, 'crons', 'dream', { schedule: '"0 * * * *"' })
+    deleteCron('dream', home)
+    expect(existsSync(join(home, 'crons', 'dream.md'))).toBe(false)
+})
+
+test('deleteCron resolves by frontmatter `name`, unlinking the FILE it backs', () => {
+    const home = makeHome({})
+    writeDef(home, 'crons', 'weird', {
+        name: '"Pretty Name"',
+        schedule: '"0 0 * * *"',
+    })
+    deleteCron('Pretty Name', home)
+    expect(existsSync(join(home, 'crons', 'weird.md'))).toBe(false)
+})
+
+test('deleteCron on an unknown name throws a 404 ENOENT', () => {
+    const home = makeHome({})
+    expect(() => deleteCron('nope', home)).toThrowError(
+        expect.objectContaining({ code: 'ENOENT', statusCode: 404 }),
+    )
+})
+
+test('deleteCron refuses a cron listed as running with a 409 EBUSY, leaving it in place', () => {
+    const home = makeHome({})
+    writeDef(home, 'crons', 'dream', { schedule: '"0 * * * *"' })
+    mkdirSync(join(home, 'crons'), { recursive: true })
+    writeFileSync(
+        join(home, 'crons', '.running.json'),
+        JSON.stringify({ dream: { startedAt: new Date().toISOString() } }),
+    )
+    expect(() => deleteCron('dream', home)).toThrowError(
+        expect.objectContaining({ code: 'EBUSY', statusCode: 409 }),
+    )
+    expect(existsSync(join(home, 'crons', 'dream.md'))).toBe(true)
+})
+
+test('deleteProcess unlinks the definition AND drops a reconcile trigger named by basename', () => {
+    const home = makeHome({})
+    writeDef(home, 'processes', 'engage-loop', {
+        command: '"bun run loop.ts"',
+    })
+    deleteProcess('engage-loop', home)
+    expect(existsSync(join(home, 'processes', 'engage-loop.md'))).toBe(false)
+    expect(
+        existsSync(join(home, 'processes', '.triggers', 'engage-loop')),
+    ).toBe(true)
+})
+
+test('deleteProcess on an unknown name throws a 404 ENOENT', () => {
+    const home = makeHome({})
+    expect(() => deleteProcess('nope', home)).toThrowError(
+        expect.objectContaining({ code: 'ENOENT', statusCode: 404 }),
+    )
 })
 
 test('registerVaultRoot keeps throwaway (temp) vaults out of a persistent registry', () => {

@@ -52,6 +52,7 @@ const NO_SNAPSHOT: DaemonSnapshot = {
     daemon: { label: 'daemon', running: false, home: '' },
     crons: [],
     processes: [],
+    identity: { name: 'daemon', blurb: '' },
 }
 
 const isHidden = () => document.visibilityState === 'hidden'
