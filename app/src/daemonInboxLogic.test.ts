@@ -4,6 +4,8 @@ import {
     dueSorted,
     scheduledSorted,
     resolvedSorted,
+    failedSorted,
+    actionLabel,
     sharedPrimaryAction,
 } from './daemonInboxLogic'
 import type { DaemonPage } from '../../core/src/daemonPages'
@@ -74,30 +76,59 @@ test('scheduledSorted: pending + future deliverAt only, soonest first', () => {
     ])
 })
 
-test('resolvedSorted: terminal pages only, most-recently-settled first', () => {
-    const pages = [
-        page({
-            slug: 'old-done',
-            status: 'done',
-            completedAt: '2026-07-05T00:00:00.000Z',
-        }),
-        page({
-            slug: 'new-failed',
-            status: 'failed',
-            completedAt: '2026-07-06T11:00:00.000Z',
-        }),
-        page({
-            slug: 'dismissed-no-completedAt',
-            status: 'dismissed',
-            pressedAt: '2026-07-06T09:00:00.000Z',
-        }),
-        page({ slug: 'still-pending' }),
-    ]
-    expect(resolvedSorted(pages).map(p => p.slug)).toEqual([
-        'new-failed',
+const settledMix = () => [
+    page({
+        slug: 'old-done',
+        status: 'done',
+        completedAt: '2026-07-05T00:00:00.000Z',
+    }),
+    page({
+        slug: 'new-failed',
+        status: 'failed',
+        completedAt: '2026-07-06T11:00:00.000Z',
+    }),
+    page({
+        slug: 'old-failed',
+        status: 'failed',
+        completedAt: '2026-07-04T11:00:00.000Z',
+    }),
+    page({
+        slug: 'dismissed-no-completedAt',
+        status: 'dismissed',
+        pressedAt: '2026-07-06T09:00:00.000Z',
+    }),
+    page({ slug: 'still-pending' }),
+]
+
+test('resolvedSorted: done/dismissed only, most-recently-settled first — never failed', () => {
+    expect(resolvedSorted(settledMix()).map(p => p.slug)).toEqual([
         'dismissed-no-completedAt',
         'old-done',
     ])
+})
+
+test('failedSorted: failed pages only, newest first', () => {
+    expect(failedSorted(settledMix()).map(p => p.slug)).toEqual([
+        'new-failed',
+        'old-failed',
+    ])
+})
+
+test('actionLabel: the pressed action on a failed page reads RETRY, the rest keep their label', () => {
+    const actions = [
+        { id: 'send', label: 'Send', kind: 'primary' as const, prompt: 'go' },
+        { id: 'dismiss', label: 'Dismiss', kind: 'default' as const },
+    ]
+    const failed = page({
+        slug: 'f',
+        status: 'failed',
+        pressedAction: 'send',
+        actions,
+    })
+    expect(actionLabel(failed, 'send')).toBe('RETRY')
+    expect(actionLabel(failed, 'dismiss')).toBe('DISMISS')
+    const pending = page({ slug: 'p', actions })
+    expect(actionLabel(pending, 'send')).toBe('SEND')
 })
 
 test('sharedPrimaryAction: 2+ pages with the identical single primary action id', () => {

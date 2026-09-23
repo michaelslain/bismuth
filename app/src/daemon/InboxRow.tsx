@@ -1,15 +1,17 @@
 // app/src/daemon/InboxRow.tsx
-// One inbox row: status dot, title/source/time, a one-line snippet, and (when due) inline
-// actions. Extracted from the deleted app/src/InboxView.tsx's PageRow — DaemonInbox.tsx is the
-// ONLY importer.
+// One inbox row, two lines: status dot + title + time, then source // snippet (or the failure
+// note). Due and failed rows add their actions on a third line, aligned to the text column.
+// Extracted from the deleted app/src/InboxView.tsx's PageRow — DaemonInbox.tsx is the ONLY
+// importer.
 import { createSignal, For, Show } from 'solid-js'
 import type { DaemonPage } from '../../../core/src/daemonPages'
-import { STATUS_COLOR } from '../daemonInboxLogic'
+import { STATUS_COLOR, STATUS_WORD, actionLabel } from '../daemonInboxLogic'
 import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
 import PlainButton from '../ui/PlainButton'
+import StatusDot from '../ui/StatusDot'
 import Text from '../ui/Text'
 import styles from './InboxRow.module.css'
 
@@ -33,6 +35,24 @@ function snippet(body: string): string {
 
 function InboxRow(props: InboxRowProps) {
     const [pressingId, setPressingId] = createSignal<string | null>(null)
+    const failed = () => props.page.status === 'failed'
+    // The section head, the dot and the danger tone already say "failed" — the line carries why.
+    const failure = () =>
+        props.page.daemonNote || 'The daemon could not finish.'
+    const time = () => relTimeISO(props.page.createdAt)
+
+    // The dot is colour only, so the button carries the words a screen reader needs, in the
+    // order a sighted reader scans them — instead of one run-on string of every span inside.
+    const label = () =>
+        [
+            props.page.title,
+            STATUS_WORD[props.page.status],
+            props.page.source && `from ${props.page.source}`,
+            time(),
+            failed() && failure(),
+        ]
+            .filter(Boolean)
+            .join(', ')
 
     async function press(actionId: string): Promise<void> {
         setPressingId(actionId)
@@ -49,57 +69,59 @@ function InboxRow(props: InboxRowProps) {
 
     return (
         <div class={`${styles['inbox-row']} ${props.class ?? ''}`}>
-            {/* A real button element around only the non-interactive part (dot + main text).
-                ARIA's button role is Children Presentational — wrapping the actions below too
-                would hide approve/dismiss from assistive tech, so those stay a sibling instead. */}
+            {/* A real button element around only the non-interactive part. ARIA's button role is
+                Children Presentational — wrapping the actions too would hide approve/dismiss
+                from assistive tech, so those stay a sibling instead. */}
             <PlainButton
                 class={styles['inbox-row-open']}
+                aria-label={label()}
                 onClick={() => props.onOpen(props.page.path)}
             >
+                <StatusDot color={STATUS_COLOR[props.page.status]} />
                 <Text
                     as="span"
                     size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['inbox-row-dot']}
-                    style={{ color: STATUS_COLOR[props.page.status] }}
-                />
-                <div class={styles['inbox-row-main']}>
-                    <div class={styles['inbox-row-head']}>
+                    weight="bold"
+                    class={styles['inbox-row-title']}
+                >
+                    {props.page.title}
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="faint"
+                    class={styles['inbox-row-time']}
+                >
+                    {time()}
+                </Text>
+                <Text
+                    as="span"
+                    size="inherit"
+                    tone="muted"
+                    class={styles['inbox-row-meta']}
+                >
+                    <Show when={props.page.source}>
+                        <Text
+                            as="span"
+                            size="inherit"
+                            tone="faint"
+                            weight="inherit"
+                        >
+                            {props.page.source} //{' '}
+                        </Text>
+                    </Show>
+                    <Show when={failed()} fallback={snippet(props.page.body)}>
                         <Text
                             as="span"
                             size="inherit"
                             tone="inherit"
                             weight="inherit"
-                            class={styles['inbox-row-title']}
+                            class={styles['inbox-row-failure']}
                         >
-                            {props.page.title}
+                            {failure()}
                         </Text>
-                        <Show when={props.page.source}>
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles['inbox-row-source']}
-                            >
-                                {props.page.source}
-                            </Text>
-                        </Show>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['inbox-row-time']}
-                        >
-                            {relTimeISO(props.page.createdAt)}
-                        </Text>
-                    </div>
-                    <div class={styles['inbox-row-snippet']}>
-                        {snippet(props.page.body)}
-                    </div>
-                </div>
+                    </Show>
+                </Text>
             </PlainButton>
             <Show when={props.showActions}>
                 <div class={styles['inbox-row-actions']}>
@@ -113,12 +135,13 @@ function InboxRow(props: InboxRowProps) {
                                 }
                                 danger={a.kind === 'danger'}
                                 disabled={props.page.status === 'working'}
+                                aria-busy={pressingId() === a.id}
                                 onClick={() => press(a.id)}
                             >
                                 {props.page.status === 'working' &&
                                 pressingId() === a.id
                                     ? '…'
-                                    : a.label.toUpperCase()}
+                                    : actionLabel(props.page, a.id)}
                             </TextButton>
                         )}
                     </For>

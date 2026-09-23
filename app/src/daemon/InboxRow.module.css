@@ -1,106 +1,59 @@
 /* app/src/daemon/InboxRow.module.css — InboxRow.tsx is the ONLY importer.
-   Moved from the deleted app/src/InboxView.module.css's row rules, unchanged in shape: a status
-   dot, title, source tag, relative time, a one-line snippet, inline actions — a list, not
-   cards. Section-head rules stayed with DaemonInbox.module.css (this file's sibling), which owns
-   the "Needs review / Scheduled / Recently resolved" grouping this row is inside. */
+   Two lines, scanned like the crons/services/log rows beside it: dot + title + time, then
+   source // snippet. The row is a three-column grid (dot, text, time) and the open-button and the
+   actions both sit on it through subgrid, so the actions start exactly under the title with no
+   magic indent. */
 .inbox-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--sp-2) var(--sp-5);
-    padding: var(--sp-5) var(--sp-4);
-    font-size: var(--fs-ui);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: var(--sp-3);
+    row-gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
     border-bottom: var(--rule);
-    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease);
 }
 .inbox-row:hover {
     background: var(--hover-bg);
 }
-/* Wraps only the dot + main text — the real <button> that opens the page (the actions column
-   stays a sibling, see InboxRow.tsx). Mirrors .inbox-row's own flex settings so grouping the two
-   under a button changes nothing visually; PlainButton already supplies the pointer cursor and
-   the focus ring at the same --focus-ring-offset this row used to hand-roll, so this rule adds
-   neither. */
+/* The real <button> that opens the page. PlainButton supplies the pointer cursor and the focus
+   ring; this only puts its four children on the row's grid. */
 .inbox-row-open {
-    display: flex;
-    flex: 1 1 160px;
-    min-width: 0;
-    align-items: flex-start;
-    gap: var(--sp-2) var(--sp-5);
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
     text-align: start;
+    /* Each text line is one row unit tall, the same fixed 18px the cron/service rows use,
+       instead of the ui type's airy 1.7 line-height. The Texts inside pass size="inherit" so
+       this is what they read. */
+    font-size: var(--fs-ui);
+    line-height: var(--row-h, 18px);
 }
-/* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
-   style (STATUS_COLOR, daemonInboxLogic.ts), not a hardcoded fill. */
-.inbox-row-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    margin-top: var(--sp-3);
-    flex-shrink: 0;
-    background: currentColor;
-}
-.inbox-row-main {
-    flex: 1;
-    min-width: 0;
-}
-/* WRAPS, deliberately — DaemonInbox.tsx composes this row inside a DaemonPanel column (a few
-   hundred px, not InboxView's old 760px-wide host). `.inbox-row-title`'s `flex: 1 1 100%` claims
-   the whole first line on its own (ellipsizing if even that's too narrow) and pushes the source
-   tag + time onto a second line together, rather than the three fighting for one line and
-   overflowing each other — the metadata is real content, not something a narrow column can drop. */
-.inbox-row-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--sp-2) var(--sp-4);
-    min-width: 0;
-}
+/* Same size as a cron or service name: the panel heading leads, the rows follow. */
 .inbox-row-title {
-    flex: 1 1 100%;
+    color: var(--fg);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 600;
-    font-size: var(--fs-body-lg);
-    color: var(--fg);
-}
-/* Source tag: a faint mono chip, radius 0 — "cron:answer-emails" reads as an identifier, not
-   prose. --border-soft, NOT --rule: this is inert METADATA, and the button family's own rule is
-   that an outline now MEANS something — a control. */
-.inbox-row-source {
-    flex-shrink: 0;
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-micro);
-    color: var(--faint);
-    white-space: nowrap;
-    padding: 0 var(--sp-2);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--r-0);
 }
 .inbox-row-time {
-    flex-shrink: 0;
-    margin-left: auto;
     font-size: var(--fs-micro);
-    color: var(--faint);
     white-space: nowrap;
 }
-.inbox-row-snippet {
-    font-size: var(--fs-ui);
-    color: var(--text-muted);
+.inbox-row-meta {
+    grid-column: 2 / -1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    min-width: 0;
     white-space: nowrap;
-    margin-top: var(--sp-1);
+}
+.inbox-row-failure {
+    color: var(--danger);
 }
 .inbox-row-actions {
+    grid-column: 2 / -1;
     display: flex;
+    flex-wrap: wrap;
     gap: var(--sp-3);
-    flex-shrink: 0;
-    padding-top: 1px;
 }
-/* Bracket action buttons — "[ approve ] [ dismiss ]" (the CLI-confirm register), scoped to a
-   row's OWN actions. Was a `:global(.btn--text)` reach-in; InboxRow.tsx now passes Button's own
-   `bracket` prop, which owns this look locally (ui/Button.module.css's `.bracket`) — nothing to
-   style here any more. */
