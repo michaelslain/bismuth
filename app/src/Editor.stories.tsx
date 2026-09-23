@@ -15,6 +15,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
+import { openSearchPanel } from '@codemirror/search'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import {
@@ -1805,6 +1806,58 @@ export const FrontmatterLinkCoverage: Story = {
         for (const el of hidden) {
             await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
         }
+    },
+}
+
+/** The in-editor Cmd+F find bar (editor/findPanel.ts), open with a query typed — the
+ *  terminal-prompt look: `/` glyph + input sharing one underline, no boxed field. Opened via
+ *  CodeMirror's own `openSearchPanel` (the same entry point Editor.tsx's keybinding calls),
+ *  not a DOM event simulation. */
+export const FindPanelOpen: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Find Demo.md': DEFAULT_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Find Demo.md"
+                    initialText={DEFAULT_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+
+        openSearchPanel(view)
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.bismuth-find')) {
+                throw new Error('find bar not mounted yet')
+            }
+            return true
+        })
+
+        const input = canvasElement.querySelector<HTMLInputElement>(
+            '.bismuth-find-input',
+        )
+        if (!input) throw new Error('find input not found')
+        input.value = 'Editor'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+
+        await expect(canvasElement.querySelector('.bismuth-find-prompt')).not.toBeNull()
+        await expect(canvasElement.querySelector('.bismuth-find-field')).not.toBeNull()
+        await waitFor(() => {
+            const count = canvasElement.querySelector('.bismuth-find-count')
+            if (!count || !/\d+\/\d+/.test(count.textContent ?? '')) {
+                throw new Error('match count not populated yet')
+            }
+            return true
+        })
     },
 }
 

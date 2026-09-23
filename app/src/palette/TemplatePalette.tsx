@@ -31,7 +31,7 @@ export function TemplatePalette(props: Props) {
     return (
         <Show when={templates()}>
             <PaletteModal
-                placeholder="Insert a template..."
+                placeholder="templates"
                 items={(templates() ?? []).map(t => ({
                     id: t.path,
                     label: t.name,

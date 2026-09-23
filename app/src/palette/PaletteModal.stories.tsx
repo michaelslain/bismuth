@@ -77,7 +77,7 @@ export const Default: Story = {
 export const RichRows: Story = {
     render: () => (
         <PaletteModal
-            placeholder="Select a command..."
+            placeholder="commands"
             items={RICH_ITEMS}
             onSelect={noop}
             onClose={noop}

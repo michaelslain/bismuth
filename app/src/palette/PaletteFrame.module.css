@@ -20,10 +20,4 @@
   overflow: hidden;
   font-family: var(--popover-font);
 }
-.palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: var(--sp-5); }
-/* Was `.palette-search :global(.search-bar-lead)` — retargeted onto SearchBar's own `leadClass`
-   prop (one-global-followups Task 2); see PaletteFrame.tsx. */
-.palette-lead.palette-lead { color: var(--faint); opacity: 1; }
-.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
-.palette-input::placeholder { color: var(--fg); opacity: 0.4; }
 .palette-empty { padding: var(--sp-5) var(--sp-6); opacity: 0.5; font-size: var(--fs-ui); }

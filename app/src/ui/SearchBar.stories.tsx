@@ -1,10 +1,10 @@
-// Visual spec for <SearchBar> — the leading-icon input used by the command palette,
-// quick switcher, and Find panels.
+// Visual spec for <SearchBar> — the terminal prompt-line field used by the command palette,
+// quick switcher, graph Find, code find bar, and chat history search.
 //
-// Props: value + onInput (controlled), placeholder?, onEnter? / onKeyDown? (the
-// latter wins — for list-navigating search boxes), leadingIcon? (default "Search"),
-// autofocus?, children (trailing adornments — toggles/buttons rendered after the
-// input), class? / inputClass? / inputStyle?.
+// Props: value + onInput (controlled), placeholder?, size? ('compact' | 'default' | 'large',
+// default 'default'), prompt? (the leading glyph, default '/'), onEnter? / onKeyDown? (the
+// latter wins — for list-navigating search boxes), autofocus?, children (trailing adornments —
+// toggles/buttons rendered after the input), class? (layout only, on the root).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show, type JSX } from 'solid-js'
 import { expect, fireEvent, waitFor } from 'storybook/test'
@@ -28,7 +28,8 @@ let confirmFires = 0
 function Controlled(props: {
     initial?: string
     placeholder?: string
-    leadingIcon?: string
+    size?: 'compact' | 'default' | 'large'
+    prompt?: string
     children?: JSX.Element
 }) {
     const [v, setV] = createSignal(props.initial ?? '')
@@ -38,7 +39,8 @@ function Controlled(props: {
                 value={v()}
                 onInput={setV}
                 placeholder={props.placeholder}
-                leadingIcon={props.leadingIcon}
+                size={props.size}
+                prompt={props.prompt}
             >
                 {props.children}
             </SearchBar>
@@ -46,23 +48,63 @@ function Controlled(props: {
     )
 }
 
-/** Empty, showing the default "Search" icon + placeholder. */
+/** Empty, showing the default `/` prompt + placeholder. */
 export const Placeholder: Story = {
-    render: () => <Controlled placeholder="Search notes…" />,
+    render: () => <Controlled placeholder="notes" />,
 }
 
 /** With a typed value. */
 export const Filled: Story = {
     render: () => (
-        <Controlled initial="meeting notes" placeholder="Search notes…" />
+        <Controlled initial="meeting notes" placeholder="notes" />
     ),
 }
 
-/** A custom leading icon (e.g. the quick switcher uses a different glyph per mode). */
-export const CustomLeadingIcon: Story = {
+/** The command palette's own prompt glyph — `>` instead of `/`. */
+export const CommandPrompt: Story = {
     render: () => (
-        <Controlled leadingIcon="Command" placeholder="Type a command…" />
+        <Controlled prompt=">" placeholder="commands" />
     ),
+}
+
+/** `compact` density — panels, popovers, find bars. */
+export const Compact: Story = {
+    render: () => (
+        <Controlled size="compact" placeholder="find" initial="todo" />
+    ),
+}
+
+/** `large` density — the command palette and quick switcher. */
+export const Large: Story = {
+    render: () => (
+        <Controlled size="large" placeholder="everything" />
+    ),
+}
+
+/** Focused, so the frame captures the firmed neutral underline + bold prompt glyph. The rule must
+ *  change on focus but never turn accent — an accent line read as a coloured divider between the
+ *  query and its results in every autofocusing surface. */
+export const Focused: Story = {
+    render: () => <Controlled placeholder="notes" />,
+    play: async ({ canvasElement }) => {
+        const input = canvasElement.querySelector('input') as HTMLInputElement
+        const root = input.parentElement as HTMLElement
+        const lead = root.firstElementChild as HTMLElement
+        const restRule = getComputedStyle(root).borderBottomColor
+        input.focus()
+        await waitFor(() => expect(document.activeElement).toBe(input))
+        await waitFor(() =>
+            expect(getComputedStyle(root).borderBottomColor).not.toBe(
+                restRule,
+            ),
+        )
+        await expect(getComputedStyle(root).borderBottomColor).not.toBe(
+            getComputedStyle(lead).color,
+        )
+        await expect(
+            parseInt(getComputedStyle(lead).fontWeight, 10),
+        ).toBeGreaterThanOrEqual(600)
+    },
 }
 
 /** `ui-confirm` (settings.keybindings) is rebindable — proves `onEnter` fires through
@@ -77,7 +119,7 @@ export const RebindableConfirmKey: Story = {
                 <SearchBar
                     value={v()}
                     onInput={setV}
-                    placeholder="Search notes…"
+                    placeholder="notes"
                     onEnter={() => confirmFires++}
                 />
             </div>
@@ -118,7 +160,7 @@ export const WithTrailingChips: Story = {
         const [matchCase, setMatchCase] = createSignal(false)
         const [wholeWord, setWholeWord] = createSignal(true)
         return (
-            <Controlled initial="TODO" placeholder="Find…">
+            <Controlled initial="TODO" placeholder="find">
                 <Chip
                     icon="CaseSensitive"
                     selected={matchCase()}
@@ -154,7 +196,7 @@ function TrailingControlsDemo() {
                 <SearchBar
                     value={query()}
                     onInput={setQuery}
-                    placeholder="Find"
+                    placeholder="find"
                     aria-label="Find in file"
                     inputRef={el => (inputEl = el)}
                     onKeyDown={e => {

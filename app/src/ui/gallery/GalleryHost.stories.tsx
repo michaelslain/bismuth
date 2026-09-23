@@ -40,7 +40,7 @@ export const NothingPending: Story = {
 export const GalleryOpen: Story = {
     render: () => {
         // No `title` override: SymbolGallery's search placeholder falls back to the source's own
-        // (`iconSource.placeholder`, "Search icons…") whenever `title` is unset — passing one here
+        // (`iconSource.placeholder`, "icons") whenever `title` is unset — passing one here
         // would replace that placeholder text with the title instead, which is what a first draft
         // of this story got wrong.
         void openGallery({ source: iconSource })
@@ -49,7 +49,7 @@ export const GalleryOpen: Story = {
     play: async () => {
         const body = within(document.body)
         expect(
-            await body.findByPlaceholderText('Search icons…'),
+            await body.findByPlaceholderText('icons'),
         ).toBeInTheDocument()
     },
 }

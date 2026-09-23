@@ -1,6 +1,6 @@
 // app/src/palette/PaletteFrame.tsx
 // The shared overlay shell every palette-family surface renders: a `<Modal>` panel sized/fonted
-// by `.palette-panel`, with a `.palette-search`/`.palette-input`-styled search box on top.
+// by `.palette-panel`, with a `size="large" prompt=">"` SearchBar on top.
 // Extracted so PaletteModal.tsx and ui/gallery/SymbolGallery.tsx compose ONE component instead
 // of both importing the former Palette.module.css directly.
 import type { JSX } from 'solid-js'
@@ -23,6 +23,8 @@ export type PaletteFrameProps = {
     onKeyDown?: (e: KeyboardEvent) => void
     inputRef?: (el: HTMLInputElement) => void
     children: JSX.Element
+    /** Prompt glyph; defaults to SearchBar's `/`. The command palette passes `>`. */
+    prompt?: string
 }
 
 function PaletteFrame(props: PaletteFrameProps) {
@@ -34,9 +36,8 @@ function PaletteFrame(props: PaletteFrameProps) {
             class={`${styles['palette-panel']} ${props.class ?? ''}`}
         >
             <SearchBar
-                class={styles['palette-search']}
-                leadClass={styles['palette-lead']}
-                inputClass={styles['palette-input']}
+                size="large"
+                prompt={props.prompt}
                 inputRef={props.inputRef}
                 placeholder={props.placeholder}
                 value={props.value}

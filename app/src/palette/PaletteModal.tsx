@@ -34,6 +34,8 @@ type Props = {
     // a non-empty query blends frecency into the fuzzy ranking as a gentle tiebreaker/booster
     // (a strong text match still wins — see FRECENCY_WEIGHT). Omit it for a plain fuzzy list.
     frecency?: (id: string) => number
+    /** Prompt glyph; defaults to SearchBar's `/`. The command palette passes `>`. */
+    prompt?: string
 }
 
 export function PaletteModal(props: Props) {
@@ -95,6 +97,7 @@ export function PaletteModal(props: Props) {
             onInput={setQuery}
             onKeyDown={nav.onKeyDown}
             inputRef={el => (inputRef = el)}
+            prompt={props.prompt}
         >
             <div class={styles['palette-list']} ref={listRef}>
                 <For each={results()}>

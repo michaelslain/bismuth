@@ -3,12 +3,14 @@
    ChatHeader.module.css now that ChatHistoryPanel.tsx (not ChatHeader.tsx) renders this markup —
    the anchor + toggle button stay in ChatControls.module.css, which owns "where does this attach".
 
-   `.list`/`.search-input` are now plain local classes: PopoverList and TextInput already accept a
-   `class` prop and carry it on the exact element these rules target, so no `:global()` bridge is
-   needed there any more. `.scope-toggle` is handed to SegmentedToggle via its own `class` prop for
-   the same reason — bracket-toggles Task 3 dropped `.scope-segment` (the full-width `flex: 1 1 0`
-   stretch on each option) along with `.scope-toggle`'s own `width: 100%`, so the scope row now
-   sits at natural width, left-aligned, `--sp-4` between options instead of stretched edge to edge.
+   `.list` is a plain local class: PopoverList already accepts a `class` prop and carries it on the
+   exact element this rule targets, so no `:global()` bridge is needed there. `.search` is
+   layout-only now (search-prompt Task 6) — the search row is `<SearchBar>` itself, which owns its
+   own fill/underline/lead-icon styling; this file only sets the row's horizontal inset. `.scope-toggle`
+   is handed to SegmentedToggle via its own `class` prop for the same reason — bracket-toggles Task 3
+   dropped `.scope-segment` (the full-width `flex: 1 1 0` stretch on each option) along with
+   `.scope-toggle`'s own `width: 100%`, so the scope row now sits at natural width, left-aligned,
+   `--sp-4` between options instead of stretched edge to edge.
 
    STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow now
    accepts `class`/`detailClass` for exactly this (one-global-followups Task 3), but PopoverList
@@ -80,28 +82,7 @@
 }
 
 .search {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-    padding: var(--sp-4) var(--sp-5);
-    border-bottom: 1px solid var(--border-soft);
-}
-.search-icon {
-    color: var(--faint);
-    flex: 0 0 auto;
-}
-.search-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    border: none;
-    background: transparent;
-    padding: var(--sp-1) 0;
-    font-size: var(--fs-body);
-    box-shadow: none;
-}
-.search-input:focus {
-    outline: none;
-    box-shadow: none;
+    margin: 0 var(--sp-5);
 }
 .close {
     flex: 0 0 auto;

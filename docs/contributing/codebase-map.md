@@ -1336,7 +1336,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `Stars.tsx` | Star rating widget |
 | `StatusDot.tsx` | Colored status indicator dot |
 | `ViewBar.tsx` | The view header. Takes six named region slots — `identity` `locus` `facet` `readouts` `config` `actions` — laid out as a leading and a trailing group. Also exports `Crumb` and `VBtn`. |
-| `SearchBar.tsx` | Search input with clear button |
+| `SearchBar.tsx` | Terminal-prompt search field (`size` compact/default/large, `prompt` glyph) |
 | `BarLabel.tsx` | A `ViewBar` label that knows how to get smaller: both a full `long` string and an optional `short` abbreviation sit in the DOM, and CSS picks one via `data-bar-label`/`data-bar-abbr` attributes driven by the shared collapse ladder in `ui/ui.css`; an optional `drop: 'early' \| 'late'` sheds the word entirely at a given tier |
 | `SegmentedToggle.tsx` | Multi-option toggle |
 | `TextInput.tsx` | Styled text input |

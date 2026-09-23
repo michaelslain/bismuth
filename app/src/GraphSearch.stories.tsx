@@ -44,7 +44,7 @@ export const Default: Story = {
     ),
     play: async ({ canvasElement }) => {
         const input =
-            within(canvasElement).getByPlaceholderText('Search graph...')
+            within(canvasElement).getByPlaceholderText('nodes')
         await userEvent.type(input, 'e')
     },
 }
@@ -61,7 +61,7 @@ export const NoMatches: Story = {
     ),
     play: async ({ canvasElement }) => {
         const input =
-            within(canvasElement).getByPlaceholderText('Search graph...')
+            within(canvasElement).getByPlaceholderText('nodes')
         await userEvent.type(input, 'zzz-no-match')
     },
 }

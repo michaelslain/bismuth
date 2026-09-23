@@ -392,7 +392,7 @@ export const HistoryOpenThenClose: Story = {
         await waitFor(() => expect(composer()).toBeNull())
         await expect(
             canvasElement.querySelector(
-                'input[placeholder="Search conversations…"]',
+                'input[placeholder="conversations"]',
             ),
         ).not.toBeNull()
 

@@ -74,7 +74,7 @@ export const FocusGuardIgnoresInModalFocus: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(document.body)
-        const searchInput = await body.findByPlaceholderText('Search icons…')
+        const searchInput = await body.findByPlaceholderText('icons')
         const decoy = await canvas.findByTestId('decoy')
         // Any OTHER button in the document is a grid cell — Modal portals the panel to
         // document.body, outside canvasElement, so it can't collide with the decoy above.

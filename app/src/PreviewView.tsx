@@ -695,11 +695,13 @@ export function PreviewView(props: {
                                 capture-phase global keydown handler from seeing ANY key pressed
                                 anywhere in the find bar, including the trailing buttons — restated
                                 here rather than dropped in the SearchBar swap. */}
-                            <div onKeyDown={e => e.stopPropagation()}>
+                            <div
+                                class={styles['preview-find']}
+                                onKeyDown={e => e.stopPropagation()}
+                            >
                                 <SearchBar
-                                    class={styles['preview-find']}
-                                    inputClass={styles['preview-find-input']}
-                                    placeholder="Find"
+                                    size="compact"
+                                    placeholder="find"
                                     aria-label="Find in file"
                                     value={query()}
                                     onInput={value => {

@@ -17,7 +17,7 @@ const MAX_CELLS = 300
  *  value = the library name, which is what gets written to `icon:`. Reads the library's load
  *  signal, so the gallery's memo re-runs when the lazily-loaded chunk lands. */
 export const iconSource: GallerySource = {
-    placeholder: 'Search icons…',
+    placeholder: 'icons',
     search(query: string) {
         const state = iconLibraryState()
         if (state !== 'loaded') {
@@ -61,7 +61,7 @@ const iconItem = (e: { name: string }): GalleryItem => ({
  *  searchEmoji already ranks (popularity + fuzzy) and dedupes by glyph, so total is
  *  just the returned count (no "showing X of Y" hint needed — it's all there is). */
 export const emojiSource: GallerySource = {
-    placeholder: 'Search emoji…',
+    placeholder: 'emoji',
     search(query: string) {
         const list = searchEmoji(query, MAX_CELLS)
         const items: GalleryItem[] = list.map(e => ({
