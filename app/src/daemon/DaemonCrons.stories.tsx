@@ -2,7 +2,7 @@
 // call instead of fetching (`fn()` from storybook/test), per the presentational-panel rule: this
 // component never imports `api`/stores itself, so nothing here needs a fake backend.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import DaemonCrons from './DaemonCrons'
 import { sampleDaemonSnapshot } from '../ui/_daemonFixtures'
 
@@ -224,11 +224,14 @@ export const ConfirmDelete: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        // The menu portals to document.body (Portal + Solid, same as ContextMenu.stories.tsx /
+        // TaskChip.stories.tsx), so it must be queried there, not inside canvasElement.
+        const body = within(document.body)
         await userEvent.pointer({
             keys: '[MouseRight]',
             target: canvas.getByText('morning-brief'),
         })
-        const menuDelete = await canvas.findByText('Delete')
+        const menuDelete = await waitFor(() => body.getByText('Delete'))
         await userEvent.click(menuDelete)
         await expect(
             canvas.getByRole('button', { name: 'delete' }),

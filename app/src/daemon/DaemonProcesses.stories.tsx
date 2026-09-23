@@ -2,7 +2,7 @@
 // DaemonCrons.stories.tsx minus running/failed (a service has no discrete run state) plus the
 // same create/delete/empty/offline matrix.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import DaemonProcesses from './DaemonProcesses'
 import { sampleDaemonSnapshot } from '../ui/_daemonFixtures'
 
@@ -139,11 +139,13 @@ export const ConfirmDelete: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        // The menu portals to document.body — query it there, not inside canvasElement.
+        const body = within(document.body)
         await userEvent.pointer({
             keys: '[MouseRight]',
             target: canvas.getByText('sync-worker'),
         })
-        const menuDelete = await canvas.findByText('Delete')
+        const menuDelete = await waitFor(() => body.getByText('Delete'))
         await userEvent.click(menuDelete)
         await expect(
             canvas.getByRole('button', { name: 'delete' }),

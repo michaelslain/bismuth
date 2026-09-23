@@ -174,6 +174,10 @@ const ALLOWED_FILES: AllowEntry[] = [
         file: 'ui/ToggleRow.tsx',
         reason: 'Enter now reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — it is this control\'s own activation gesture under the WAI-ARIA switch pattern (role="switch"), not an independently rebindable command',
     },
+    {
+        file: 'daemon/DaemonRow.tsx',
+        reason: 'Enter reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — it is this row\'s own activation gesture under the WAI-ARIA button pattern (role="button"), same treatment as ui/ToggleRow.tsx',
+    },
 ]
 
 const ALLOWED_SET = new Set(ALLOWED_FILES.map(e => e.file))

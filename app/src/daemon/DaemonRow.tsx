@@ -19,6 +19,7 @@
 import { type JSX, Show } from 'solid-js'
 import Text from '../ui/Text'
 import Label from '../ui/Label'
+import { isConfirmKey } from '../ui/widgetKeys'
 import styles from './DaemonRow.module.css'
 
 export type DaemonRowTone = 'ok' | 'running' | 'failed' | 'off' | 'idle'
@@ -54,10 +55,12 @@ function DaemonRow(props: DaemonRowProps) {
             role={props.onOpen ? 'button' : undefined}
             onClick={open}
             onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    open()
-                }
+                // ui-confirm (rebindable, default Enter) plus a hardcoded Space — Space is this
+                // row's own activation gesture under the WAI-ARIA button pattern (role="button"),
+                // not a named command, same treatment as ui/ToggleRow.tsx's switch.
+                if (!isConfirmKey(e) && e.key !== ' ') return
+                e.preventDefault()
+                open()
             }}
             onContextMenu={props.onContextMenu}
         >
