@@ -1,32 +1,17 @@
-/* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome mirrors the
-   app's other modals (Portal-mounted panel over the shared .ui-overlay backdrop). */
+/* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome (frame, header
+   rule, footer rule) now comes from FormModal/ModalHeader/ModalFooter (modal-redesign Task 8);
+   this file only holds what those shared components don't: the --kb-meta-* var bridge to
+   PropertyValueEditor, the DUE trigger's sizing, the Milkdown description surface, the empty
+   state and the boolean toggle. */
 
-/* Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class every
-   <Modal> panel carries (ui/Modal.tsx) — this rule only supplies sizing/layout, so it doesn't
-   fight `.asc-modal`'s `--pop-bg-strong` + blur chrome for the win. */
-.panel {
-  width: 460px;
-  max-width: 92vw;
-  max-height: 86vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
-  padding: var(--sp-6) 20px;
-  overflow-y: auto;
-}
-
-.titleField,
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  min-width: 0;
+/* Carries the --kb-meta-* custom properties PropertyValueEditor.module.css reads for its shared
+   .kbMetaInput/.kbMetaSelectTrigger/.kbMetaMultiselectAdd controls (STATUS/PRIORITY/TAGS) — set
+   on SettingsGrid so every row in this modal measures the same as TITLE/DUE, not on a `.field`
+   wrapper of this file's own (SettingsField/SettingsGrid now own that layout). NOT a fix for the
+   filled/bordered look those controls still carry — that background+border lives directly in
+   PropertyValueEditor.module.css's `.kbMetaInput`/`.kbMetaSelectTrigger` rules (not gated by any
+   var here), which is outside this task's files; see the hand-back's "Found, not acted on". */
+.metaVars {
   /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
      and any plain text/number property) caps at 200px by default for its OTHER host,
      KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
@@ -44,43 +29,15 @@
      `--kb-meta-height` override (same mechanism as the two vars above — a CSS custom property,
      not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/`.kbMetaSelectTrigger`) and the
      TAGS "+ add" trigger (`.kbMetaMultiselectAdd`); the card-face inline chip editor (KanbanCard)
-     sets nothing and keeps its own compact defaults. TITLE (.titleInput) and DUE (.dueTrigger)
-     below are this file's own classes and set the same value directly. */
+     sets nothing and keeps its own compact defaults. TITLE is now a plain SettingsField row (no
+     local override needed — TextInput/FormControl already sets --h-control) and DUE
+     (`.dueTrigger` below) is this file's own class and sets the same value directly. */
   --kb-meta-height: var(--h-control);
 }
 
 /* DUE's trigger (DateFieldEditor), pinned to the same --h-control every sibling control in this
-   modal now shares (see --kb-meta-height above and .titleInput's own height) rather than
-   FormControl's full 32px input height. */
+   modal shares (see --kb-meta-height above) rather than FormControl's full 32px input height. */
 .dueTrigger { height: var(--h-control); box-sizing: border-box; min-height: 0; padding: var(--sp-1) var(--sp-3); }
-
-/* `.titleField > .label` (not `> span`) out-specifies Field's own default
-   `.ui-field > span { color: var(--text-muted) }` (app/src/ui/Field.tsx passes `labelClass`
-   through to that span) so the Title caption keeps the same micro-caps register as every
-   other property's `.label`, via the public labelClass prop rather than Field's DOM shape. */
-.label,
-.titleField > .label {
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--faint);
-  font-family: var(--ui-font-stack);
-}
-
-/* Layered on top of the shared `ui-input` class (surface/border/focus-ring, same as
-   every other control here) — only the size/weight that sets the title apart from an
-   ordinary field lives locally. */
-.titleInput {
-  font-size: var(--fs-lead);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  /* Same --h-control every other field control in this modal is pinned to (see --kb-meta-height
-     above) — FormControl's own default is the full 32px input height, which stood taller than
-     every sibling here. */
-  height: var(--h-control);
-  box-sizing: border-box;
-}
 
 .readonly {
   font-family: var(--ui-font-stack);
