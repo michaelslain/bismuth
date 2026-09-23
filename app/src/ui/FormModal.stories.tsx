@@ -50,7 +50,7 @@ export const Default: Story = {
                 </Text>
                 <Text>Third and last paragraph, closing things out.</Text>
             </ModalBody>
-            <ModalFooter hint="to cancel">
+            <ModalFooter hint="cancel">
                 <TextButton onClick={noop}>
                     cancel
                 </TextButton>
