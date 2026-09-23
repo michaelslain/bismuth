@@ -21,26 +21,25 @@
    `.graph-search-row .graph-search-sub`'s font-size is now `var(--fs-micro)` (was a literal
    `10.5px`) — the token the value always equalled; nothing renders differently.
 
-   `.graph-search-bar :global(.search-bar-lead)`/`:global(.search-bar-input)` are gone
-   (one-global-followups Task 2) — GraphSearch.tsx now hands SearchBar its own `leadClass`/
-   `inputClass` props (`.graph-search-lead`/`.graph-search-input` below) instead of reaching into
-   SearchBar's internals via a global bridge class. `:global(.selected)` on `.graph-search-row`
-   is also gone: GraphSearch owns its own row (unlike PaletteRow/SearchResultRows, whose owning
-   `.tsx` sit outside this task), so its `selected` state is now a plain local class read via
+   `.graph-search-bar` no longer carries any lead/input overrides (search-prompt Task 2) —
+   GraphSearch.tsx now passes SearchBar `size="compact"` for both registers and takes whatever
+   density/prompt-glyph/underline SearchBar itself draws; a caller styles SearchBar's own wrapper
+   for layout only, never its lead or input (one-module-one-importer: those are SearchBar's, not
+   this module's, to draw). `.graph-search-bar` below is layout-only. The list's own `border-top`
+   divider is also gone — the field's underline (SearchBar's own bottom rule) is the one divider
+   now, so the panel never stacked two lines. `:global(.selected)` on `.graph-search-row` is also
+   gone: GraphSearch owns its own row (unlike PaletteRow/SearchResultRows, whose owning `.tsx` sit
+   outside this task), so its `selected` state is now a plain local class read via
    `styles['selected']` in GraphSearch.tsx, not the app-wide bare-literal convention. */
 
 .graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
 
-/* Graph Find search bar — a compact sibling of palette/Palette.module.css's `.palette-search`
-   (same anatomy: leading icon + transparent input + border-bottom divider above the result list). */
-.graph-search-bar { padding: var(--sp-5) var(--sp-5); gap: var(--sp-4); }
-.graph-search-lead.graph-search-lead { color: var(--faint); opacity: 1; }
-.graph-search-input { font-size: var(--fs-body); }
-.graph-search[data-embedded] .graph-search-bar { padding: var(--sp-3) var(--sp-4); gap: var(--sp-4); }
-.graph-search[data-embedded] .graph-search-input { font-size: var(--fs-ui); }
+/* Graph Find search bar — layout only (SearchBar itself owns padding/gap/font/colour for both
+   registers via its `size` prop). */
+.graph-search-bar { width: 100%; }
 
-/* Divider rides the list's top so it only shows alongside results (no empty sliver). */
-.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: var(--sp-2); }
+/* No divider here — SearchBar's own underline is the one line between the field and the list. */
+.graph-search-list { font-size: var(--fs-ui); overflow-y: auto; padding: var(--sp-2); }
 .graph-search[data-embedded] .graph-search-list { font-size: var(--fs-ui); padding: var(--sp-2); }
 
 .graph-search-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-0); cursor: pointer; white-space: nowrap; background: transparent; }
