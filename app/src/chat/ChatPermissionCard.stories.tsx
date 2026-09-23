@@ -33,7 +33,7 @@ export const Pending: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(
-            canvas.getByRole('button', { name: 'ALLOW' }),
+            canvas.getByRole('button', { name: 'allow' }),
         ).toBeInTheDocument()
     },
 }
@@ -102,7 +102,7 @@ export const AnswerAllow: Story = {
     args: { onAnswer: fn() },
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByRole('button', { name: 'ALLOW' }))
+        await userEvent.click(canvas.getByRole('button', { name: 'allow' }))
         await expect(args.onAnswer).toHaveBeenCalledWith('allow', false)
     },
 }

@@ -146,8 +146,8 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
                 wizard, so it runs in a terminal.
             </div>
             <div class={styles.actions}>
-                <TextButton onClick={openTerminal}>OPEN TERMINAL</TextButton>
-                <TextButton onClick={copyCommand}>COPY COMMAND</TextButton>
+                <TextButton onClick={openTerminal}>open terminal</TextButton>
+                <TextButton onClick={copyCommand}>copy command</TextButton>
             </div>
         </div>
     )

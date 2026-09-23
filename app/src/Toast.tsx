@@ -3,7 +3,7 @@
 // dismissToast/toasts) live in ./toastStore, re-exported here so every existing `from "./Toast"`
 // import keeps working unchanged — see toastStore.ts's header comment for why the split exists.
 import { For } from 'solid-js'
-import { Button } from './ui/Button'
+import { TextButton } from './ui/TextButton'
 import Text from './ui/Text'
 import styles from './Toast.module.css'
 import {
@@ -43,17 +43,14 @@ export function ToastHost() {
                             {t.message}
                         </Text>
                         {t.action && (
-                            <Button
-                                kind="text"
-                                size="sm"
-                                bracket
+                            <TextButton
                                 onClick={() => {
                                     t.action!.onClick()
                                     dismissToast(t.id)
                                 }}
                             >
-                                {t.action.label.toUpperCase()}
-                            </Button>
+                                {t.action.label.toLowerCase()}
+                            </TextButton>
                         )}
                     </div>
                 )}
