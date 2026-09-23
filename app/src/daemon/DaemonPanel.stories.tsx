@@ -1,5 +1,7 @@
-// Visual spec for <DaemonPanel> — the shared frame every daemon-page panel (crons, services,
-// inbox, log) composes: eyebrow title + count + optional actions over a scrolling body.
+// Visual spec for <DaemonPanel> — the shared frame a daemon-page panel (crons, services, inbox,
+// log) can compose: an optional plain title + count over a scrolling body, with a head row that
+// appears only when it has a title or actions. No border box, no eyebrow — the ViewBar facet is
+// the panel's heading now.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import DaemonPanel from './DaemonPanel'
@@ -22,7 +24,8 @@ type Story = StoryObj<typeof meta>
 const byModuleClass = (root: HTMLElement, name: string) =>
     root.querySelector<HTMLElement>(`[class*="${name}"]`)
 
-/** A populated panel: title + count, a handful of plain rows filling the scrolling body. */
+/** A populated panel with a plain title + count (DaemonServices' shape until task 6), a handful
+ *  of rows filling the scrolling body. */
 export const Default: Story = {
     render: () => (
         <div style={{ width: '280px', height: '220px' }}>
@@ -47,16 +50,29 @@ export const Default: Story = {
     },
 }
 
-/** A trailing actions slot beside the title (a bulk action, mirroring the inbox's "APPROVE
- *  ALL"). */
+/** No title, no actions, no count — the shape DaemonInbox/DaemonLog use now that the ViewBar
+ *  facet is their heading. No head row renders at all; the body sits flush at the top. */
+export const WithoutTitle: Story = {
+    render: () => (
+        <div style={{ width: '280px', height: '160px' }}>
+            <DaemonPanel>
+                <div style={{ padding: '4px 12px' }}>plain row</div>
+            </DaemonPanel>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(byModuleClass(canvasElement, 'daemon-panel-head')).toBeNull()
+        await expect(canvas.getByText('plain row')).toBeInTheDocument()
+    },
+}
+
+/** No title — actions alone are enough to earn a head row, right-aligned (mirrors the inbox's
+ *  "approve all" and the crons/services panels' "new cron"/"new service"). */
 export const WithActions: Story = {
     render: () => (
         <div style={{ width: '280px', height: '160px' }}>
-            <DaemonPanel
-                title="needs review"
-                count={2}
-                actions={<TextButton>approve all</TextButton>}
-            >
+            <DaemonPanel actions={<TextButton>approve all</TextButton>}>
                 <div style={{ padding: '4px 12px' }}>two pages waiting</div>
             </DaemonPanel>
         </div>
@@ -65,13 +81,14 @@ export const WithActions: Story = {
         const canvas = within(canvasElement)
         const button = canvas.getByRole('button', { name: 'approve all' })
         await expect(button).toBeInTheDocument()
-        // Beside the title: rendered inside the panel's head, not its scrolling body.
+        // The head row exists because of `actions` alone — there is no title here.
         const head = byModuleClass(canvasElement, 'daemon-panel-head')
         await expect(head?.contains(button)).toBe(true)
+        await expect(byModuleClass(canvasElement, 'daemon-panel-title')).toBeNull()
     },
 }
 
-/** No count passed — the badge is omitted entirely, and the body holds an EmptyState. */
+/** A title with no count — the badge is omitted entirely, and the body holds an EmptyState. */
 export const Empty: Story = {
     render: () => (
         <div style={{ width: '280px', height: '160px' }}>
@@ -87,8 +104,8 @@ export const Empty: Story = {
     },
 }
 
-/** The body overflows its fixed height — proves the panel itself stays put (border/height
- *  unchanged) while only the body scrolls. */
+/** The body overflows its fixed height — proves the panel itself stays put (height unchanged,
+ *  no border to speak of) while only the body scrolls. */
 export const OverflowingBody: Story = {
     render: () => (
         <div style={{ width: '280px', height: '160px' }}>

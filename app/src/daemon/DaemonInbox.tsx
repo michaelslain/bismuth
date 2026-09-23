@@ -106,10 +106,7 @@ function DaemonInbox(props: DaemonInboxProps) {
 
     return (
         <DaemonPanel
-            title="inbox"
-            // DUE pages only — the same count as the ViewBar's `N in inbox` readout and the
-            // toolbar badge (daemonInbox.ts dueCount), never scheduled or resolved ones.
-            count={due().length}
+            // No title/count — the ViewBar facet (`inbox N`) is this panel's heading now.
             // Acceptance: "no dead space under the last item — the panel packs to content like
             // the crons/services panels." DaemonPanel's own `packToContent` (DaemonPanel.tsx) —
             // sizes to its rows instead of stretching to fill the grid cell.
