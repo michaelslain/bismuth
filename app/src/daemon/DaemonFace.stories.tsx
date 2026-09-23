@@ -152,11 +152,12 @@ export const Narrow: Story = {
     play: assertFace(20),
 }
 
-/** A mood change settles: a burst of alternating raw moods never reaches the face, and a HELD
- *  change only paints after MOOD_SETTLE_MS — through one blink frame, then the new mood's eyes.
- *  Deterministic seam: real timers via `waitFor` (no fixed sleep) plus a MutationObserver that
- *  records every frame the component actually painted, so the blink-then-eyes order is asserted
- *  from what was rendered, not from a lucky poll. */
+/** A mood change settles: a HELD change only paints after MOOD_SETTLE_MS — through one blink
+ *  frame immediately preceding the new mood's eyes — and a burst of go-busy then three rapid
+ *  go-idle clicks (all within one tick) settles on `idle`, the value that actually held, never
+ *  `busy`. Deterministic seam: real timers via `waitFor` (no fixed sleep) plus a MutationObserver
+ *  that records every frame the component actually painted, so the blink-then-eyes order is
+ *  asserted from what was rendered, not from a lucky poll. */
 function MoodChangeHarness() {
     const [mood, setMood] = createSignal<DaemonMood>('idle')
     return (
@@ -168,6 +169,14 @@ function MoodChangeHarness() {
                 style={{ position: 'absolute', opacity: 0, 'pointer-events': 'none' }}
             >
                 go busy
+            </button>
+            <button
+                type="button"
+                data-testid="go-idle"
+                onClick={() => setMood('idle')}
+                style={{ position: 'absolute', opacity: 0, 'pointer-events': 'none' }}
+            >
+                go idle
             </button>
             <Column width="720px">
                 <DaemonFace mood={mood()} />
@@ -211,12 +220,35 @@ export const MoodChange: Story = {
 
         observer.disconnect()
 
-        const blinkIndex = frames.findIndex(f => f === '.:[--]:.')
         const settledIndex = frames.findIndex(
             f => f.startsWith('.:[') && f.endsWith(']:.') && f !== '.:[--]:.' &&
                 f !== '.:[00]:.',
         )
-        await expect(blinkIndex).toBeGreaterThanOrEqual(0)
-        await expect(settledIndex).toBeGreaterThan(blinkIndex)
+        await expect(settledIndex).toBeGreaterThan(0)
+        // The frame painted immediately before the settled busy frame must BE the blink — an
+        // ordinary idle blink earlier in the 1.5s wait would satisfy a looser "blink exists
+        // somewhere before settle" check without proving the transition itself blinked.
+        await expect(frames[settledIndex - 1]).toBe('.:[--]:.')
+
+        // Burst: go-busy (already settled busy, a no-op) then go-idle three times within one
+        // synchronous tick — only the mood that actually HOLDS may settle. If the burst reached
+        // the face directly, `busy` would still be showing after MOOD_SETTLE_MS; instead the last
+        // raw value (`idle`) is the only one that holds long enough.
+        const goIdle = canvasElement.querySelector<HTMLButtonElement>(
+            '[data-testid="go-idle"]',
+        )
+        await expect(goIdle).not.toBeNull()
+        goBusy!.click()
+        goIdle!.click()
+        goIdle!.click()
+        goIdle!.click()
+
+        await waitFor(
+            () => {
+                if (face!.getAttribute('data-mood') !== 'idle')
+                    throw new Error('not settled yet')
+            },
+            { timeout: MOOD_SETTLE_MS + 2000, interval: 20 },
+        )
     },
 }
