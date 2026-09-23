@@ -15,10 +15,4 @@
 :where(.plain-button:disabled) {
     cursor: default;
 }
-/* Outside :where() so it wins over caller styles on stylesheet order like every other real ring
-   (the reset above stays specificity-0 so a caller's class always wins; this one rule must not).
-   Inset offset keeps a full-bleed row's ring from painting under its neighbouring row. */
-.plain-button:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: calc(-1 * var(--focus-ring-offset) - 1px);
-}
+/* No focus ring — removed with the Button one at the user's request (2026-09-23). */

@@ -77,23 +77,9 @@
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn:disabled) { opacity: 0.4; cursor: default; }
 /* ── Keyboard focus ────────────────────────────────────────────────────────────
-   THE rule that makes this app usable without a mouse. `styles/reset.css` used to kill the native
-   ring on every `button` globally while nothing here restored it, so a keyboard user leaving a text
-   field lost all trace of where they were — across every toolbar, tab strip, palette row and modal
-   footer in the product.
-   `:focus-visible`, NOT `:focus`: the UA only matches it for keyboard/programmatic focus, so a
-   mouse click does not leave a ring stuck on the button it just pressed. That distinction is the
-   whole reason the ring can be this loud without being noise.
-   This lives on `.btn` (both kinds, every state) rather than on each variant, because a ring that
-   is present on text buttons and absent on icon buttons is worse than none — it teaches a user to
-   trust an indicator that then lies. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-/* Segmented members overlap their borders by -1px (see .segmented below), so an unraised focused
-   segment has its ring painted over by the NEXT segment's border. Raise it for the same reason
-   :hover and .btn--selected are raised. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.segmented .btn--segment:focus-visible) { z-index: 2; }
+   No focus ring on buttons: removed at the user's request (2026-09-23) — the ring read as a stray
+   "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
+   has no visible indicator beyond its own hover/selected tones. */
 /* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
    an all-caps label next to an icon reads as floating above the icon's center.
    Nudge label text down 1px so the caps center on the icon. (Label is wrapped in
