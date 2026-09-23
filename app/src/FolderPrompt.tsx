@@ -55,7 +55,7 @@ export function FolderPrompt(props: {
                     />
                 </SettingsField>
             </ModalBody>
-            <ModalFooter hint="cancel">
+            <ModalFooter>
                 <TextButton onClick={props.onClose}>cancel</TextButton>
                 <TextButton
                     primary

@@ -5,9 +5,9 @@
    ModalFooter (modal-redesign Task 8) — CardsModal.tsx/.module.css, the shared shell those two
    composed before, is deleted; this file owns only what those primitives don't.
 
-   OWNS: .cards-modebar/.cards-hint/.key, the Cards-list family
+   OWNS: .cards-modebar/.cards-hint, the Cards-list family
    (.cards-listwrap/.cards-collbl/.cards-row(+.dragging+.dropbefore)/.cards-num(+-add)/.cards-del/
-   .cards-addrow/.cards-lefthint), the Front/Back cell + draft row
+   .cards-addrow), the Front/Back cell + draft row
    (.cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft — folded in by Task 11 of the
    original 2026-08 CSS modularization; see the "innerHTML/closest/querySelector trap" paragraph
    below, carried over verbatim from Flashcards.module.css's own header), the Bulk-add family
@@ -60,9 +60,6 @@
 
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 0; }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
-/* Plain `↵` text, no keycap box — the modal redesign drops every bracket-less "key" chip in
-   favor of the footer's own `esc cancel` register (ModalFooter). */
-.cards-hint .key, .cards-lefthint .key { color: var(--faint); }
 .sp { flex: 1; }
 
 /* ── Cards list ── */
@@ -137,8 +134,7 @@
 .cards-del { display: flex; align-items: flex-start; padding-top: var(--sp-4); }
 .cards-del-btn { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
 .cards-row:hover .cards-del-btn { opacity: 1; }
-.cards-addrow { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-4) var(--sp-2) var(--sp-3); }
-.cards-lefthint { color: var(--faint); font-size: var(--fs-ui); }
+.cards-addrow { display: flex; justify-content: flex-end; align-items: center; padding: var(--sp-4) var(--sp-2) var(--sp-3); }
 
 /* ── Bulk add ── */
 .cards-bulkwrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: var(--sp-2) 0 0; }

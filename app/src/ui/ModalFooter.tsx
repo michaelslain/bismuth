@@ -1,6 +1,5 @@
 // app/src/ui/ModalFooter.tsx
-// The action strip every modal repeats: an optional `esc` hint, optional leading (left-aligned)
-// actions, a spacer, and the trailing (right-aligned) actions. Extracted alongside ModalHeader —
+// The action strip every modal repeats: optional leading (left-aligned) actions, a spacer, and the trailing (right-aligned) actions. Extracted alongside ModalHeader —
 // see its header comment for why.
 //
 // The slot split matters: EventModal's DELETE/DUPLICATE and the settings modals' RESET are
@@ -8,13 +7,14 @@
 // `<div class="sp">` spacer element hand-placed between them, plus a one-off `margin-left: 14px`
 // inline style in QueryBuilder and a `.set-reset-btn` class in CalendarSettings doing the same
 // thing two different ways. Both are now the leading slot's own gap.
+//
+// No `esc` keybind hint: every modal ends in a real dismiss button ([cancel] / [close] / [done]),
+// which is what a person reads; the keybind stays rebindable in .settings without the footer
+// having to know its label.
 import { Show, type Component, type JSX } from 'solid-js'
 import styles from './ModalFooter.module.css'
-import Text from './Text'
 
 export type ModalFooterProps = {
-    /** Words after the plain `esc` text, e.g. "close" / "cancel". Omit for no hint. */
-    hint?: string
     /** Left-aligned actions, before the spacer (DELETE, RESET). */
     leading?: JSX.Element
     /** Right-aligned actions, after the spacer (CANCEL, SAVE). */
@@ -27,13 +27,6 @@ const ModalFooter: Component<ModalFooterProps> = props => (
         class={styles['modal-foot']}
         classList={{ [props.class ?? '']: !!props.class }}
     >
-        <Show when={props.hint}>
-            {h => (
-                <Text as="span" size="micro" tone="faint" class={styles['modal-hint']}>
-                    esc {h()}
-                </Text>
-            )}
-        </Show>
         <Show when={props.leading}>
             <span class={styles['modal-foot-leading']}>{props.leading}</span>
         </Show>

@@ -285,16 +285,7 @@ export function EditCardsModal(props: {
                         weight="inherit"
                         class={styles['cards-hint']}
                     >
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['key']}
-                        >
-                            &crarr;
-                        </Text>{' '}
-                        adds a card // drag # to reorder
+                        drag # to reorder
                     </Text>
                 </Show>
             </div>
@@ -415,25 +406,6 @@ export function EditCardsModal(props: {
                         <div class={styles['cards-del']} />
                     </div>
                     <div class={styles['cards-addrow']}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['cards-lefthint']}
-                        >
-                            type above, then{' '}
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles['key']}
-                            >
-                                &crarr;
-                            </Text>{' '}
-                            to add — keeps going for fast entry.
-                        </Text>
                         <IconTextButton
                             icon="Plus"
                             iconSize={14}
@@ -615,7 +587,6 @@ export function EditCardsModal(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="close"
                 leading={
                     <Badge tone="muted" class={styles['cards-count']}>
                         <b>{cards().length}</b>{' '}

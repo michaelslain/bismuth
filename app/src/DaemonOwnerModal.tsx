@@ -112,7 +112,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
                     </Show>
                 </Show>
             </ModalBody>
-            <ModalFooter hint="cancel">
+            <ModalFooter>
                 <TextButton onClick={props.onClose}>cancel</TextButton>
                 <TextButton
                     primary

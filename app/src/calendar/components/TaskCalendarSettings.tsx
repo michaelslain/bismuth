@@ -216,7 +216,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                 </Show>
             </ModalBody>
 
-            <ModalFooter hint="close">
+            <ModalFooter>
                 <TextButton
                     primary
                     onClick={props.onClose}

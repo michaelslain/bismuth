@@ -111,7 +111,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                 </div>
             </ModalBody>
 
-            <ModalFooter hint="close">
+            <ModalFooter>
                 <TextButton onClick={props.onClose}>done</TextButton>
             </ModalFooter>
         </FormModal>

@@ -327,7 +327,7 @@ export function EventModal(props: { store: EventStore }) {
                     </SettingsField>
 
                     {/* category */}
-                    <SettingsField label="category" hint="pick one or more">
+                    <SettingsField label="category">
                         <div class={styles.cats}>
                             <TextButton
                                 variant={
@@ -426,7 +426,6 @@ export function EventModal(props: { store: EventStore }) {
             </ModalBody>
 
             <ModalFooter
-                hint="cancel"
                 leading={
                     <Show when={editing}>
                         <TextButton danger onClick={handleDelete}>

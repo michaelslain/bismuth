@@ -941,7 +941,7 @@ export function FlashcardsView(props: {
                             </SettingsField>
                         </SettingsGrid>
                     </ModalBody>
-                    <ModalFooter hint="close">
+                    <ModalFooter>
                         <TextButton onClick={() => setEditingCard(false)}>
                             cancel
                         </TextButton>

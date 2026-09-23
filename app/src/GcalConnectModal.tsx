@@ -165,10 +165,6 @@ export function GcalConnectModal(props: {
                         when={status()?.connected}
                         fallback={
                             <>
-                                <Text size="ui" tone="faint">
-                                    events only — never gmail, drive or
-                                    contacts
-                                </Text>
                                 <Show when={status()?.needsCredentials ?? true}>
                                     <SettingsGrid>
                                         <SettingsField
@@ -217,7 +213,7 @@ export function GcalConnectModal(props: {
                     </Show>
                 </Show>
             </ModalBody>
-            <ModalFooter hint="close">
+            <ModalFooter>
                 <TextButton onClick={props.onClose}>close</TextButton>
                 <Show
                     when={status()?.connected}

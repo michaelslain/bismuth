@@ -125,7 +125,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                     </OptionList>
                 </ModalBody>
 
-                <ModalFooter hint="cancel">
+                <ModalFooter>
                     <TextButton onClick={close}>
                         cancel
                     </TextButton>

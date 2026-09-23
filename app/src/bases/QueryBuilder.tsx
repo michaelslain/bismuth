@@ -773,7 +773,6 @@ export function QueryBuilder(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="close"
                 leading={
                     <IconTextButton
                         icon="RotateCcw"

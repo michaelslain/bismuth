@@ -428,12 +428,13 @@ the accent. An outline appears only when it means something.
   broken only by the title/subtitle text and the close control, joining the panel's side borders
   at the corners — no stub rule above it, no second line below it. Title `--fg`, `// subtitle`
   `--faint`, both lowercase `--ui-font-stack` at `--fs-ui`; `tone="danger"` paints the title
-  `--danger`. Close is `[x]`, a bracketed `IconButton` — never a boxed ✕. On open, focus lands on
+  `--danger`. Close is `[x]`, a `TextButton` holding the letter x — never an icon, never a boxed ✕. On open, focus lands on
   the modal's first body control, never on the close button, so mount never draws an accent box
   on `[x]`.
 - **`ModalFooter`:** a full-width `--rule` divider meeting the panel's side borders (never a
-  `--rail` fill band). Leading edge: `esc cancel` as plain `--faint` text, no keycap box, then any
-  leading actions; trailing edge: the primary/secondary actions.
+  `--rail` fill band). Actions only — no keybind hints (`esc`, `↵`) anywhere in a modal; every
+  modal ends in a real dismiss button (`[cancel]` / `[close]` / `[done]`). Leading edge: leading
+  actions (delete, reset); trailing edge: the primary/secondary actions.
 - **Popover / menu:** `--pop-bg` with a hairline and `--lift`; 4px inner padding, rows at `--row-h`
   with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
 

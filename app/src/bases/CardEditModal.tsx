@@ -418,7 +418,6 @@ export function CardEditModal(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="close"
                 leading={
                     <Show when={props.hasFileIdentity ?? true}>
                         <TextButton danger onClick={props.onDelete}>

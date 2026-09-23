@@ -161,7 +161,6 @@ export function CalendarSettings(props: {
             </ModalBody>
 
             <ModalFooter
-                hint="close"
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
