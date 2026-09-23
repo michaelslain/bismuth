@@ -16,12 +16,13 @@ export type FormControlProps =
       >)
 
 /**
- * The shared form-control chrome — surface fill, soft border, accent focus ring — behind both
- * TextInput and Select's trigger. Polymorphic: `as="input"`/`"textarea"` is what TextInput
- * composes, `as="button"` is what Select's trigger composes. The chrome itself stays the plain
- * global `.ui-input`/`.ui-select-trigger` class (see FormControl.module.css), not a hashed
- * module local — seven stylesheets outside ui/ and three literal writers still reach those class
- * names directly, and wave 3 of this plan is what migrates them onto the real components.
+ * The shared form-control chrome — transparent, an underline rule, accent underline + inset
+ * shadow on focus, no fill and no box — behind both TextInput and Select's trigger. Polymorphic:
+ * `as="input"`/`"textarea"` is what TextInput composes, `as="button"` is what Select's trigger
+ * composes. The chrome itself stays the plain global `.ui-input`/`.ui-select-trigger` class (see
+ * FormControl.module.css), not a hashed module local — seven stylesheets outside ui/ and three
+ * literal writers still reach those class names directly, and wave 3 of this plan is what
+ * migrates them onto the real components.
  */
 function FormControl(props: FormControlProps) {
     const [local, rest] = splitProps(props, ['as', 'class', 'children'])

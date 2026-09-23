@@ -237,6 +237,9 @@
   --rule-soft: 1px solid var(--border-soft);
   --rule-accent: 1px solid var(--accent);
   --rule-dashed: 1px dashed var(--border);
+  /* --rule-soft-dashed: NEW (modal redesign Task 3) — a disabled field's underline: the
+     --rule-soft border color, but dashed, so "disabled" reads distinctly from "resting". */
+  --rule-soft-dashed: 1px dashed var(--border-soft);
 
   /* ── Motion — RECONCILED 2026-08-27 (visual-unification audit §7 wave 2, "shared chrome" —
      the wave that owns nav-chrome motion, per wave 0's own deferral note below). Wave 0 moved

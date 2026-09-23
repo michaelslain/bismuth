@@ -17,5 +17,5 @@
    `data-select-backdrop` runtime hook's class marker, still needed by
    bases/PropertyValueEditor.tsx's outside-click guard (Select.test.ts pins this). */
 .ui-select-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
-.ui-select-placeholder { color: var(--text-muted); }
+.ui-select-placeholder { color: var(--faint); }
 .ui-select-backdrop { /* data-select-backdrop lives on this element; see comment above */ }
