@@ -53,8 +53,9 @@ export const Rest: Story = {
         await expect(btn.textContent).toBe('p. 3 / 12')
         const cs = getComputedStyle(btn)
         await expect(cs.textTransform).toBe('none')
-        // No rest frame: the border stays transparent (the mode toggles are the framed controls).
-        await expect(cs.borderTopColor).toBe('rgba(0, 0, 0, 0)')
+        // No rest frame: the readout is a ui/PlainButton, which resets `border: 0` outright — no
+        // border to draw at all (the mode toggles are the framed controls).
+        await expect(cs.borderTopWidth).toBe('0px')
         // Sits inside the 36px bar, vertically centred to within a pixel.
         const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
         const b = bar.getBoundingClientRect()
