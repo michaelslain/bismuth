@@ -647,7 +647,7 @@ export function EditCardsModal(props: {
                 <Show
                     when={mode() === 'bulk'}
                     fallback={
-                        <TextButton variant="selected" onClick={close}>
+                        <TextButton primary onClick={close}>
                             done
                         </TextButton>
                     }
@@ -656,7 +656,7 @@ export function EditCardsModal(props: {
                         cancel
                     </TextButton>
                     <TextButton
-                        variant="selected"
+                        primary
                         disabled={busy() || validCount() === 0}
                         onClick={addBulk}
                     >

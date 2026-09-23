@@ -239,7 +239,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                 </ModalBody>
 
                 <ModalFooter hint="to close">
-                    <TextButton variant="selected" onClick={close}>
+                    <TextButton primary onClick={close}>
                         done
                     </TextButton>
                 </ModalFooter>

@@ -950,7 +950,7 @@ export function BaseSettings(props: {
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    variant="selected"
+                    primary
                     disabled={duplicateNames().size > 0}
                     onClick={save}
                 >

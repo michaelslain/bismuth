@@ -187,7 +187,7 @@ export function CalendarSettings(props: {
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    variant="selected"
+                    primary
                     onClick={save}
                 >
                     save

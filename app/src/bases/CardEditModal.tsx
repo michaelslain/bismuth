@@ -443,7 +443,7 @@ export function CardEditModal(props: {
                     </Show>
                 }
             >
-                <TextButton variant="selected" onClick={close}>
+                <TextButton primary onClick={close}>
                     done
                 </TextButton>
             </ModalFooter>
