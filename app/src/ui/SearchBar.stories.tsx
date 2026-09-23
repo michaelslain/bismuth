@@ -88,6 +88,14 @@ export const Focused: Story = {
         const input = canvasElement.querySelector('input') as HTMLInputElement
         input.focus()
         await waitFor(() => expect(document.activeElement).toBe(input))
+        const root = input.parentElement as HTMLElement
+        const lead = root.firstElementChild as HTMLElement
+        await waitFor(() =>
+            expect(getComputedStyle(root).boxShadow).not.toBe('none'),
+        )
+        await expect(
+            parseInt(getComputedStyle(lead).fontWeight, 10),
+        ).toBeGreaterThanOrEqual(600)
     },
 }
 

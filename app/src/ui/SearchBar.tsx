@@ -1,4 +1,4 @@
-import { splitProps, type JSX } from 'solid-js'
+import { children as resolveChildren, Show, splitProps, type JSX } from 'solid-js'
 import Text from './Text'
 import { isConfirmKey } from './widgetKeys'
 import styles from './SearchBar.module.css'
@@ -46,6 +46,7 @@ function SearchBar(props: SearchBarProps) {
         'children',
         'class',
     ])
+    const trailing = resolveChildren(() => local.children)
     return (
         <div
             class={`${styles['search-bar']} ${local.class ?? ''}`.trim()}
@@ -74,11 +75,11 @@ function SearchBar(props: SearchBarProps) {
                     else if (isConfirmKey(e)) local.onEnter?.()
                 }}
             />
-            {local.children && (
+            <Show when={trailing()}>
                 <div class={styles['search-bar-trailing']}>
-                    {local.children}
+                    {trailing()}
                 </div>
-            )}
+            </Show>
         </div>
     )
 }
