@@ -101,11 +101,11 @@ function MemoryRow(props: MemoryRowProps) {
                         </TextButton>
                     }
                 >
-                    <TextButton ref={cancelRef} onClick={props.onCancel}>
-                        cancel
-                    </TextButton>
                     <TextButton danger onClick={props.onConfirm}>
                         forget
+                    </TextButton>
+                    <TextButton ref={cancelRef} onClick={props.onCancel}>
+                        cancel
                     </TextButton>
                 </Show>
             </div>
