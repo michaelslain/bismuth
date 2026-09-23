@@ -439,18 +439,21 @@ export const External: Story = {
 // No other story exercises it: Preview/PageInk's own image stories hand-place a KNOWN rect and
 // pass it straight to PageInk's `pages` prop, bypassing measureImage entirely. This story uses
 // the `imageSrc` data seam (above `PreviewView`'s props) to load a REAL image inside a real
-// `.preview-image` (real `padding: var(--sp-6)`, real `max-width/max-height:100%` auto-sizing),
-// then re-derives the SAME geometry from the SAME live DOM (not a hand-placed rect) and checks a
-// seeded stroke paints within 2px of that.
+// `.preview-image` (real `padding: 0` + `max-width/max-height: calc(100% - 2 * var(--sp-6))` +
+// `margin: auto` — the inset moved off padding so the checkerboard no longer rings an opaque
+// picture, see `.preview-image`'s comment in PreviewView.module.css), then re-derives the SAME
+// geometry from the SAME live DOM (not a hand-placed rect) and checks a seeded stroke paints
+// within 2px of that.
 //
 // MEASURED, NOT ASSUMED: Chrome auto-sizes an unconstrained `<img>` with `object-fit: contain`
 // so its CONTENT box (inside the padding) already matches the natural aspect ratio — so
 // `containRect` rarely needs to shrink further here, and this story does NOT assert that it
-// does. What it DOES prove is the PADDING OFFSET: `.preview-image`'s real padding measured
-// ~16px a side (well over the 2px tolerance below), so a `measureImage` that forgot to add
-// `padL`/`padT` into `content.left`/`.top` — or read the wrong element, or a stale/pre-load
-// rect — would place the stroke ~16px off and fail this story, which is exactly the "off-by-
-// padding" risk the review named.
+// does. What it DOES prove is the IMG-RECT OFFSET: `.preview-image` now carries no padding of
+// its own (`padL`/`padT` are asserted to be exactly 0 below), but `margin: auto` inside the
+// `max-width/max-height` inset still centres the img's rendered rect at least `--sp-6` in from
+// `.preview-body`'s edge — far more than the 2px ink tolerance — so a `measureImage` that read
+// the body's own origin instead of the img's rect would miss by well over that tolerance and
+// fail this story, which is exactly the "off-by-padding" risk the review named.
 const MEASURED_IMG_W = 200
 const MEASURED_IMG_H = 150
 let measuredPngUrl: string | undefined
@@ -614,12 +617,28 @@ export const ImageInkLandsAtRealMeasuredRect: Story = {
             h: ir.height - padT - padB,
         }
         const rendered = containRect(content, MEASURED_IMG_W, MEASURED_IMG_H)
-        // Padding is genuinely being measured, not a no-op — `.preview-image`'s real
-        // `padding: var(--sp-6)` came back well over the 2px tolerance the ink check uses below,
-        // so a `measureImage` that forgot to fold padL/padT into `content.left`/`.top` would miss
-        // by more than that tolerance, not by a rounding error.
-        await expect(padL).toBeGreaterThan(4)
-        await expect(padT).toBeGreaterThan(4)
+        // `.preview-image` carries no padding of its own any more — the inset moved to
+        // `max-width/max-height: calc(100% - 2 * var(--sp-6))` + `margin: auto` (so the
+        // checkerboard no longer rings an opaque picture and the outline hairline lands on the
+        // painted edge). `measureImage` still subtracts whatever padding it reads off the img,
+        // and 0 is the correct value here — a real offset still exists, it just moved off this
+        // element's own box, so the offset proof below asserts it a different way.
+        await expect(padL).toBe(0)
+        await expect(padT).toBe(0)
+
+        // IMG-RECT OFFSET PROOF (replaces the old padding-offset proof): the img's own rendered
+        // rect is still at least one `--sp-6` in from `.preview-body`'s content-box edge, because
+        // `margin: auto` centres the (now smaller-by-2*sp-6) box inside it. That is well over the
+        // 2px tolerance the ink check uses below, so a `measureImage` that read the body's own
+        // origin instead of the img's own rect would miss by more than 2px, not by a rounding
+        // error.
+        const inset = parseFloat(
+            getComputedStyle(body).getPropertyValue('--sp-6'),
+        )
+        await expect(Number.isFinite(inset)).toBe(true)
+        await expect(
+            ir.left - br.left - body.clientLeft + body.scrollLeft,
+        ).toBeGreaterThanOrEqual(inset - 0.5)
 
         const box = fitImage(MEASURED_IMG_W, MEASURED_IMG_H)
         const want = logicalToScreen(
