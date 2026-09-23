@@ -81,7 +81,7 @@ const setViewModePersisted = (m: '2d' | '3d') => {
 }
 
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
-// full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
+// full-pane graph): text-only, lowercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
 // if all five segments don't fit one line; see the @container rule in GraphView.module.css).
 /** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
@@ -90,10 +90,10 @@ const setViewModePersisted = (m: '2d' | '3d') => {
 const LOCAL_REFINE_TICKS = 120
 
 const MODE_SHORT: Record<GraphMode, string> = {
-    '2nd': '2ND',
-    '3rd': '3RD',
-    both: 'BOTH',
-    local: 'LOCAL',
+    '2nd': '2nd',
+    '3rd': '3rd',
+    both: 'both',
+    local: 'local',
 }
 /**
  * The same switcher as ICONS, for the sidebar mini-graph only.
@@ -456,7 +456,7 @@ export function GraphView(props: {
     /**
      * Plain-language expansion for the switcher's tooltip.
      *
-     * The segment labels (2ND / 3RD / BOTH / LOCAL) and the stats footer keep the product's own
+     * The segment labels (2nd / 3rd / both / local) and the stats footer keep the product's own
      * three-brain vocabulary — it is the documented model, it is what `.settings` and the docs call
      * these, and the text-only switcher was an explicit design decision (see MODE_SHORT's note).
      * But the tooltip used to repeat the same words back ("2nd brain"), so a user who did not
@@ -499,10 +499,10 @@ export function GraphView(props: {
                     <>
                         {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
             (.sidebar-icons) — same 28x28 box, same radius, same hover, no border. It is deliberately
-            NOT a <SegmentedToggle> here: that renders .btn--segment segments, which keep their outline and
-            turn an icon into a chunky bordered tile — the one control in the sidebar that didn't look
-            like the sidebar. The full-pane graph keeps the real segmented control, where the labels are
-            words and a joined outline is right. */}
+            NOT a <SegmentedToggle> here: an icon rendered as a bracket toggle would read as a
+            mystery `[icon]` chip rather than a plain icon button — the one control in the sidebar
+            that didn't look like the sidebar. The full-pane graph keeps the real segmented control,
+            where the labels are words and the bracket read is right. */}
                         {/* Hidden outright (not just disabled) when there's only one brain-mode option to pick
             from — the daemon-off default — since a permanently-selected single-option control
             does nothing. See modeOptions() above. */}
@@ -568,8 +568,8 @@ export function GraphView(props: {
                             onChange={setViewMode}
                             size="sm"
                             options={[
-                                { id: '2d', title: '2D', label: '2D' },
-                                { id: '3d', title: '3D', label: '3D' },
+                                { id: '2d', title: '2d', label: '2d' },
+                                { id: '3d', title: '3d', label: '3d' },
                             ]}
                         />
                         <Show when={props.fill}>
@@ -656,8 +656,8 @@ export function GraphView(props: {
                                 onChange={setViewMode}
                                 size="sm"
                                 options={[
-                                    { id: '2d', label: '2D' },
-                                    { id: '3d', label: '3D' },
+                                    { id: '2d', label: '2d' },
+                                    { id: '3d', label: '3d' },
                                 ]}
                             />
                             <Show when={props.fill}>

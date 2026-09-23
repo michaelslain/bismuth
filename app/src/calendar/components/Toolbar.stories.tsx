@@ -65,7 +65,7 @@ const shown = (el: Element | null) =>
     !!el && !!(el as HTMLElement).getClientRects().length
 
 /** What a label is SHOWING. Both lengths sit in the DOM at every width, so textContent reads
- *  "MonthM" forever and would grade a ladder that hides nothing as green. */
+ *  "monthm" forever and would grade a ladder that hides nothing as green. */
 const visible = (root: Element, sel: string) =>
     [...root.querySelectorAll(`${sel} [data-bar-abbr]`)]
         .filter(shown)
@@ -92,7 +92,7 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
-            viewName: 'Month',
+            viewName: 'month',
             todayWord: 'TODAY',
             categoriesShown: true,
         })
@@ -118,7 +118,7 @@ export const RangeCrossesYear: Story = {
     },
 }
 
-/** 3-day view — the label that used to read "2026-01-12 — 2026-01-18", and the view name ("3 Day")
+/** 3-day view — the label that used to read "2026-01-12 — 2026-01-18", and the view name ("3 day")
  *  that used to wrap onto a second line and push itself out of the 36px band. */
 export const ThreeDayView: Story = {
     render: () => {
@@ -136,7 +136,7 @@ export const Narrow900: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
-            viewName: 'Month',
+            viewName: 'month',
             todayWord: 'TODAY',
             categoriesShown: true,
         })
@@ -153,14 +153,14 @@ export const Narrow780: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
-            viewName: 'Month',
+            viewName: 'month',
             todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
-/** TIER 2 — 620px (a 584px container). View names abbreviate to M/W/3D/D and the date drops its
+/** TIER 2 — 620px (a 584px container). View names abbreviate to m/w/3d/d and the date drops its
  *  year. TODAY is still a word — 584 sits above the 480 late-word tier. */
 export const Narrow620: Story = {
     render: () => {
@@ -170,7 +170,7 @@ export const Narrow620: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
-            viewName: 'M',
+            viewName: 'm',
             todayWord: 'TODAY',
             categoriesShown: true,
         })
@@ -189,7 +189,7 @@ export const Narrow510: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
-            viewName: 'M',
+            viewName: 'm',
             todayWord: '',
             categoriesShown: true,
         })
@@ -212,7 +212,7 @@ export const Narrow480LateWords: Story = {
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
-            viewName: 'M',
+            viewName: 'm',
             todayWord: '',
             categoriesShown: false,
         })
