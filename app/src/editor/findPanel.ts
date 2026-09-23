@@ -101,6 +101,14 @@ export function createFindPanel(view: EditorView): Panel {
     dom.addEventListener('keydown', e => e.stopPropagation())
     dom.addEventListener('mousedown', e => e.stopPropagation())
 
+    const field = document.createElement('div')
+    field.className = 'bismuth-find-field'
+
+    const prompt = document.createElement('span')
+    prompt.className = 'bismuth-find-prompt'
+    prompt.setAttribute('aria-hidden', 'true')
+    prompt.textContent = '/'
+
     const input = document.createElement('input')
     input.className = 'bismuth-find-input'
     input.placeholder = 'Find'
@@ -110,6 +118,8 @@ export function createFindPanel(view: EditorView): Panel {
     // run a search on every keystroke, that would make each new character replace the whole
     // query (the "one character at a time" bug). We manage focus ourselves (mount() +
     // Editor.tsx's onFindKey), so opting out of CM's field auto-management is what we want.
+
+    field.append(prompt, input)
 
     const count = document.createElement('span')
     count.className = 'bismuth-find-count'
@@ -126,7 +136,7 @@ export function createFindPanel(view: EditorView): Panel {
 
     const closeBtn = iconButton(ICONS.close, 'Close (Esc)')
 
-    dom.append(input, count, prevBtn, nextBtn, caseBtn, closeBtn)
+    dom.append(field, count, prevBtn, nextBtn, caseBtn, closeBtn)
 
     let caseSensitive = getSearchQuery(view.state).caseSensitive
 
