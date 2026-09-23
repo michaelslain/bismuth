@@ -1,7 +1,9 @@
 // pure class-string composition for the ui/ button family.
 //
 // Buttons have two axes:
-//   • kind  — "text" (a labelled button) or "icon" (a borderless icon button)
+//   • kind  — "text" (the "[ label ]" bracket look, lowercase, one size) |
+//             "icon" (a borderless icon button) | "segment" (the OLD "text" look —
+//             uppercase, bordered, sized — kept verbatim for SegmentedToggle only)
 //   • state — the selection role of the button:
 //       "normal"     standalone button, not part of any group (default)
 //       "unselected" a member of a toggle/series that is currently OFF (de-emphasized)
@@ -10,7 +12,9 @@
 // `danger` is an orthogonal tone (destructive actions) layered on any state.
 // `primary` is a second orthogonal tone: selected + a glow rim — the view's one
 // emphasized action (max one per view; text buttons only).
-export type ButtonKind = 'text' | 'icon'
+// `size` is ignored for `kind: 'text'` — every text button renders at one size
+// (--fs-ui). `icon` and `segment` still take sm/md/lg.
+export type ButtonKind = 'text' | 'icon' | 'segment'
 export type ButtonState = 'normal' | 'selected' | 'unselected'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
@@ -29,11 +33,14 @@ export function buttonClass(opts: {
     primary?: boolean
     class?: string
 }): string {
+    const kind = opts.kind ?? 'text'
     return joinClasses(
         'btn',
-        `btn--${opts.kind ?? 'text'}`,
+        `btn--${kind}`,
         `btn--${opts.state ?? 'normal'}`,
-        opts.size && opts.size !== 'md' ? `btn--${opts.size}` : '',
+        opts.size && opts.size !== 'md' && kind !== 'text'
+            ? `btn--${opts.size}`
+            : '',
         opts.danger ? 'btn--danger' : '',
         opts.primary ? 'btn--primary' : '',
         opts.class,

@@ -29,7 +29,7 @@ export function IconPicker(props: Props) {
             current={props.current}
             onPick={props.onPick}
             onClear={props.onClear}
-            clearLabel="RESET TO DEFAULT ICON"
+            clearLabel="reset to default icon"
             onClose={props.onClose}
         />
     )

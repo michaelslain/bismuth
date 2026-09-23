@@ -5,8 +5,10 @@
 
    `.list`/`.search-input` are now plain local classes: PopoverList and TextInput already accept a
    `class` prop and carry it on the exact element these rules target, so no `:global()` bridge is
-   needed there any more. `.scope-toggle`/`.scope-segment` are handed to SegmentedToggle via its
-   own `class`/`segmentClass` props for the same reason.
+   needed there any more. `.scope-toggle` is handed to SegmentedToggle via its own `class` prop for
+   the same reason — bracket-toggles Task 3 dropped `.scope-segment` (the full-width `flex: 1 1 0`
+   stretch on each option) along with `.scope-toggle`'s own `width: 100%`, so the scope row now
+   sits at natural width, left-aligned, `--sp-4` between options instead of stretched edge to edge.
 
    STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow now
    accepts `class`/`detailClass` for exactly this (one-global-followups Task 3), but PopoverList
@@ -111,10 +113,7 @@
     border-bottom: 1px solid var(--border-soft);
 }
 .scope-toggle {
-    width: 100%;
-}
-.scope-segment {
-    flex: 1 1 0;
+    gap: var(--sp-4);
 }
 
 .hits {

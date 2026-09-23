@@ -71,10 +71,10 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
                     state="unselected"
                     onClick={() => props.onClose?.()}
                 >
-                    Cancel
+                    cancel
                 </Button>
                 <Button kind="text" danger onClick={() => props.onClose?.()}>
-                    Delete
+                    delete
                 </Button>
             </div>
         </div>
@@ -163,7 +163,7 @@ export const Interactive: Story = {
                     state="selected"
                     onClick={() => setOpen(true)}
                 >
-                    Open modal
+                    open modal
                 </Button>
                 {open() && (
                     <Modal onClose={() => setOpen(false)}>

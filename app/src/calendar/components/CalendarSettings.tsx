@@ -175,24 +175,22 @@ export function CalendarSettings(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        size="sm"
                         iconSize={13}
                         onClick={reset}
                     >
-                        RESET
+                        reset
                     </IconTextButton>
                 }
             >
-                <TextButton size="sm" onClick={close}>
-                    CANCEL
+                <TextButton onClick={close}>
+                    cancel
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    size="sm"
-                    variant="selected"
+                    primary
                     onClick={save}
                 >
-                    SAVE
+                    save
                 </IconTextButton>
             </ModalFooter>
         </FormModal>

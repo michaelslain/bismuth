@@ -3,9 +3,9 @@
 // selected/unselected consumer (graph mode, calendar view switcher, Bases view tabs).
 //
 // Props: options (id + label + optional title), value, onChange, size?, class?,
-// segmentClass?.
+// segmentClass?, look? ('bracket' default | 'segment').
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { SegmentedToggle } from './SegmentedToggle'
 import { Icon } from '../icons/Icon'
@@ -18,7 +18,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A simple two-way switch (2D/3D), the graph view-mode shape. */
+/** A simple two-way switch (2D/3D), the graph view-mode shape. Default `look="bracket"`. */
 export const TwoWay: Story = {
     render: () => {
         const [v, setV] = createSignal<'2d' | '3d'>('2d')
@@ -28,15 +28,17 @@ export const TwoWay: Story = {
                 onChange={setV}
                 size="sm"
                 options={[
-                    { id: '2d', label: '2D' },
-                    { id: '3d', label: '3D' },
+                    { id: '2d', label: '2d' },
+                    { id: '3d', label: '3d' },
                 ]}
             />
         )
     },
 }
 
-/** Several labelled segments (a Bases view-tab row). */
+/** Several labelled segments (a Bases view-tab row). `play` proves the keyboard path on the
+ *  default bracket look: Tab reaches the second option, Space toggles it, the newly-selected
+ *  option picks up `aria-pressed` + bold weight, and the wrapper's sibling gap is real. */
 export const MultiWay: Story = {
     render: () => {
         const [v, setV] = createSignal('table')
@@ -45,13 +47,26 @@ export const MultiWay: Story = {
                 value={v()}
                 onChange={setV}
                 options={[
-                    { id: 'table', label: 'Table' },
-                    { id: 'cards', label: 'Cards' },
-                    { id: 'kanban', label: 'Kanban' },
-                    { id: 'list', label: 'List' },
+                    { id: 'table', label: 'table' },
+                    { id: 'cards', label: 'cards' },
+                    { id: 'kanban', label: 'kanban' },
+                    { id: 'list', label: 'list' },
                 ]}
             />
         )
+    },
+    play: async ({ canvasElement }) => {
+        await userEvent.tab()
+        await userEvent.tab()
+        const second = document.activeElement as HTMLElement
+        expect(second.textContent).toContain('cards')
+        await userEvent.keyboard('[Space]')
+        expect(second.getAttribute('aria-pressed')).toBe('true')
+        expect(getComputedStyle(second).fontWeight).toBe('600')
+        const wrap = canvasElement.querySelector(
+            '[data-look="bracket"]',
+        ) as HTMLElement
+        expect(getComputedStyle(wrap).columnGap).not.toBe('0px')
     },
 }
 
@@ -71,7 +86,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="BookOpen" size={14} />
-                                <span class="btn-label">2ND</span>
+                                <span class="btn-label">2nd</span>
                             </>
                         ),
                     },
@@ -81,7 +96,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Brain" size={14} />
-                                <span class="btn-label">3RD</span>
+                                <span class="btn-label">3rd</span>
                             </>
                         ),
                     },
@@ -91,13 +106,60 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Blend" size={14} />
-                                <span class="btn-label">BOTH</span>
+                                <span class="btn-label">both</span>
                             </>
                         ),
                     },
                 ]}
             />
         )
+    },
+}
+
+/** `look="segment"` — today's butted boxes, uppercase, sized. The drawing toolbar's icon-only
+ *  tool groups are the one remaining caller of this look. */
+export const SegmentLook: Story = {
+    render: () => {
+        const [v, setV] = createSignal('pen')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="segment"
+                size="sm"
+                options={[
+                    {
+                        id: 'pen',
+                        title: 'Pen',
+                        ariaLabel: 'Pen',
+                        label: <Icon value="Pen" size={14} />,
+                    },
+                    {
+                        id: 'eraser',
+                        title: 'Eraser',
+                        ariaLabel: 'Eraser',
+                        label: <Icon value="Eraser" size={14} />,
+                    },
+                    {
+                        id: 'highlighter',
+                        title: 'Highlighter',
+                        ariaLabel: 'Highlighter',
+                        label: <Icon value="Highlighter" size={14} />,
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="segment"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        const pen = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Pen"]',
+        )!
+        expect(pen.classList.contains('btn--segment')).toBe(true)
+        expect(pen.hasAttribute('aria-pressed')).toBe(false)
     },
 }
 

@@ -109,7 +109,7 @@
 /* The graph toolbar is a PLAIN ViewBar — same height, gap, padding and hairline as every other
    view's (notes, bases, calendar, chat). `.graph-viewbar` (below, passed as ViewBar's own `class`)
    exists only as the hook for the narrow-container rules below. */
-.graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-4); }
+.graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-6); }
 .graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }

@@ -14,13 +14,13 @@ import { toDateStr } from '../dates'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
- *  one. "3 Day" is why this exists: the only two-word label here, and it used to wrap onto a second
+ *  one. "3 day" is why this exists: the only two-word label here, and it used to wrap onto a second
  *  line and push itself out of the 36px band the moment the pane got tight. */
 const VIEWS: { id: ViewType; label: string; short: string }[] = [
-    { id: 'month', label: 'Month', short: 'M' },
-    { id: 'week', label: 'Week', short: 'W' },
-    { id: '3day', label: '3 Day', short: '3D' },
-    { id: 'day', label: 'Day', short: 'D' },
+    { id: 'month', label: 'month', short: 'm' },
+    { id: 'week', label: 'week', short: 'w' },
+    { id: '3day', label: '3 day', short: '3d' },
+    { id: 'day', label: 'day', short: 'd' },
 ]
 
 /** What `calendarSlots()` needs to know to pick the `actions` control for the ACTIVE register —

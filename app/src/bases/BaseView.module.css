@@ -67,10 +67,9 @@
    vertical scroll is disabled here to avoid a double scroll. */
 .baseKanban { overflow: hidden; }
 
-/* NO GAP. `.segmented` butt-joins its segments with a -1px margin (ui/ui.css) so a switcher reads as
-   one control; a gap here defeated that and left the base's view tabs as loose buttons beside the
-   calendar's switcher in the same bar, which was butted. */
-.tabs { display: flex; }
+/* Layout only — the bracket look (ui/SegmentedToggle's default `look="bracket"`) supplies its own
+   spacing (`--sp-4` between options, no box, no butted border). */
+.tabs { display: flex; margin-left: var(--sp-5); }
 
 /* Embedded query header: flush to the block edges (query hard-left, source icon hard-right).
    Doubled (`.embeddedBar.embeddedBar`) for the same reason as `.cards-draft.cards-draft` in

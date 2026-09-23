@@ -39,7 +39,7 @@ export const IconSourceWithCurrentAndClear: Story = {
             source={iconSource}
             current="BookOpen"
             onClear={() => {}}
-            clearLabel="RESET TO DEFAULT"
+            clearLabel="reset to default"
             onPick={noop}
             onClose={noop}
         />

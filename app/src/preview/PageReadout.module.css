@@ -1,8 +1,10 @@
 /* app/src/preview/PageReadout.module.css — the PDF page readout (preview/PageReadout.tsx ONLY).
-   The rest state is a real Button for focus + click, but it must read as a READOUT — lowercase
-   "p.", muted ink, no rest frame — not as one more uppercase toggle beside the mode buttons. The
-   local class is doubled (`.readout.readout`) to keep 2 selector parts, outranking ui.css's
-   `.btn--text.btn--normal` (also 2) by specificity, not load order. */
+   The rest state is a ui/PlainButton (an unstyled real `<button>`) for focus + click, so `.readout`
+   is its ENTIRE look — lowercase "p.", muted ink, no rest frame, reading as a READOUT rather than
+   one more uppercase toggle beside the mode buttons. No doubled selector is needed any more: there
+   is no `.btn--text.btn--normal` to outrank, since PlainButton carries no ui/Button KIND class at
+   all. `height`/`display`/`cursor` below are written directly, in place of the `.btn` base rule a
+   real Button used to give this control for free. */
 
 .page-readout {
   display: inline-flex;
@@ -13,7 +15,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.readout.readout {
+.readout {
+  height: var(--h-control);
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
   text-transform: none;
   letter-spacing: 0;
   font-size: var(--fs-ui);
@@ -21,7 +27,7 @@
   color: var(--text-muted);
   padding: var(--sp-1) var(--sp-3);
 }
-.readout.readout:hover:not(:disabled) {
+.readout:hover:not(:disabled) {
   color: var(--fg);
   background: var(--hover-bg);
 }

@@ -31,7 +31,7 @@ export const Interactive: Story = {
         return (
             <div style={{ padding: '40px' }}>
                 <TextButton onClick={() => setOpen(true)}>
-                    OPEN FOLDER…
+                    open folder…
                 </TextButton>
                 {open() && (
                     <FolderPrompt

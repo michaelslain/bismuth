@@ -25,8 +25,8 @@ export const HintAndActions: Story = {
     render: () => (
         <div style={shell}>
             <ModalFooter hint="to close">
-                <TextButton size="sm" variant="selected" data-testid="mf-done">
-                    DONE
+                <TextButton variant="selected" data-testid="mf-done">
+                    done
                 </TextButton>
             </ModalFooter>
         </div>
@@ -37,11 +37,11 @@ export const HintAndActions: Story = {
         expect(hint!.textContent).toBe('esc to close')
         const done = canvasElement.querySelector('[data-testid="mf-done"]')
         expect(done).not.toBeNull()
-        expect(done!.textContent).toBe('DONE')
+        expect(done!.textContent).toBe('done')
     },
 }
 
-/** CalendarSettings' shape: hint, a leading RESET, and trailing CANCEL/SAVE. `play` asserts the
+/** CalendarSettings' shape: hint, a leading reset, and trailing cancel/save. `play` asserts the
  *  DOM order the primitive promises — hint, then leading, then the spacer, then trailing —
  *  since that order is what makes `leading` land at the LEFT and `children` at the RIGHT of the
  *  spacer's `flex: 1`. */
@@ -51,16 +51,16 @@ export const LeadingAndTrailing: Story = {
             <ModalFooter
                 hint="to close"
                 leading={
-                    <TextButton size="sm" data-testid="mf-reset">
-                        RESET
+                    <TextButton data-testid="mf-reset">
+                        reset
                     </TextButton>
                 }
             >
-                <TextButton size="sm" data-testid="mf-cancel">
-                    CANCEL
+                <TextButton data-testid="mf-cancel">
+                    cancel
                 </TextButton>
-                <TextButton size="sm" variant="selected" data-testid="mf-save">
-                    SAVE
+                <TextButton variant="selected" data-testid="mf-save">
+                    save
                 </TextButton>
             </ModalFooter>
         </div>
@@ -83,7 +83,7 @@ export const LeadingAndTrailing: Story = {
     },
 }
 
-/** EventModal's shape: NO hint, and DELETE/DUPLICATE lead. This is the case ModalFooter.tsx's
+/** EventModal's shape: NO hint, and delete/duplicate lead. This is the case ModalFooter.tsx's
  *  comment warns about: the leading slot must sit FLUSH against the footer's own left padding
  *  when nothing precedes it, not carry the extra margin it gets when a hint sits before it (see
  *  ModalFooter.module.css's `:not(:first-child)` rule). `play` asserts the leading action's left
@@ -94,13 +94,13 @@ export const NoHint: Story = {
         <div style={shell}>
             <ModalFooter
                 leading={
-                    <TextButton size="sm" danger data-testid="mf-delete">
-                        DELETE
+                    <TextButton danger data-testid="mf-delete">
+                        delete
                     </TextButton>
                 }
             >
-                <TextButton size="sm" variant="selected" data-testid="mf-save">
-                    CREATE EVENT
+                <TextButton variant="selected" data-testid="mf-save">
+                    create event
                 </TextButton>
             </ModalFooter>
         </div>

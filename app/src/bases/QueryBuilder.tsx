@@ -204,9 +204,9 @@ const DIR_OPTS: SelectOption[] = [
 ]
 
 const SOURCE_OPTS = [
-    { id: 'notes' as BuilderSource, label: 'Notes' },
-    { id: 'tasks' as BuilderSource, label: 'Tasks' },
-    { id: 'base' as BuilderSource, label: 'Base' },
+    { id: 'notes' as BuilderSource, label: 'notes' },
+    { id: 'tasks' as BuilderSource, label: 'tasks' },
+    { id: 'base' as BuilderSource, label: 'base' },
 ]
 
 // Icon per view kind, for the view picker.
@@ -486,8 +486,8 @@ export function QueryBuilder(props: {
                                         </Text>
                                         <SegmentedToggle
                                             options={[
-                                                { id: 'and', label: 'All' },
-                                                { id: 'or', label: 'Any' },
+                                                { id: 'and', label: 'all' },
+                                                { id: 'or', label: 'any' },
                                             ]}
                                             value={state.notes.connective}
                                             onChange={c =>
@@ -554,11 +554,10 @@ export function QueryBuilder(props: {
                                 </div>
                                 <IconTextButton
                                     icon="Plus"
-                                    size="sm"
                                     iconSize={13}
                                     onClick={addRow}
                                 >
-                                    ADD FILTER
+                                    add filter
                                 </IconTextButton>
                             </>
                         }
@@ -583,9 +582,9 @@ export function QueryBuilder(props: {
                         <SettingsField icon="circle-check" label="Status">
                             <SegmentedToggle
                                 options={[
-                                    { id: 'open', label: 'Open' },
-                                    { id: 'done', label: 'Done' },
-                                    { id: 'all', label: 'All' },
+                                    { id: 'open', label: 'open' },
+                                    { id: 'done', label: 'done' },
+                                    { id: 'all', label: 'all' },
                                 ]}
                                 value={state.tasks.status}
                                 onChange={s =>
@@ -621,9 +620,9 @@ export function QueryBuilder(props: {
                         <SettingsField icon="repeat" label="Recurring">
                             <SegmentedToggle
                                 options={[
-                                    { id: 'any', label: 'Any' },
-                                    { id: 'yes', label: 'Yes' },
-                                    { id: 'no', label: 'No' },
+                                    { id: 'any', label: 'any' },
+                                    { id: 'yes', label: 'yes' },
+                                    { id: 'no', label: 'no' },
                                 ]}
                                 value={state.tasks.recurring}
                                 onChange={r =>
@@ -800,24 +799,22 @@ export function QueryBuilder(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        size="sm"
                         iconSize={13}
                         onClick={reset}
                     >
-                        RESET
+                        reset
                     </IconTextButton>
                 }
             >
-                <TextButton size="sm" onClick={props.onClose}>
-                    CANCEL
+                <TextButton onClick={props.onClose}>
+                    cancel
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    size="sm"
-                    variant="selected"
+                    primary
                     onClick={confirm}
                 >
-                    {props.initial ? 'SAVE' : 'INSERT'}
+                    {props.initial ? 'save' : 'insert'}
                 </IconTextButton>
             </ModalFooter>
         </FormModal>

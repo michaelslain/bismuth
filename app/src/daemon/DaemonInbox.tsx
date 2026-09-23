@@ -144,35 +144,29 @@ function DaemonInbox(props: DaemonInboxProps) {
                                 when={confirming()}
                                 fallback={
                                     <TextButton
-                                        size="sm"
                                         primary
-                                        bracket
                                         onClick={askConfirm}
                                     >
-                                        {`APPROVE ALL ${due().length}`}
+                                        {`approve all ${due().length}`}
                                     </TextButton>
                                 }
                             >
                                 <TextButton
                                     ref={cancelRef}
-                                    size="sm"
-                                    bracket
                                     disabled={approving()}
                                     onClick={() => setConfirming(false)}
                                 >
-                                    CANCEL
+                                    cancel
                                 </TextButton>
                                 <TextButton
-                                    size="sm"
                                     primary
-                                    bracket
                                     disabled={approving()}
                                     aria-busy={approving()}
                                     onClick={approveAll}
                                 >
                                     {approving()
                                         ? '…'
-                                        : `CONFIRM ${due().length}`}
+                                        : `confirm ${due().length}`}
                                 </TextButton>
                             </Show>
                         </div>

@@ -105,15 +105,15 @@ export const ConfirmApproveAll: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByRole('button', { name: /APPROVE ALL 3/ }))
-        await expect(canvas.getByRole('button', { name: /CONFIRM 3/ })).toBeInTheDocument()
+        await userEvent.click(canvas.getByRole('button', { name: /approve all 3/ }))
+        await expect(canvas.getByRole('button', { name: /confirm 3/ })).toBeInTheDocument()
         await expect(canvas.getByText(/act on all 3/)).toBeInTheDocument()
         await waitFor(() =>
-            expect(canvas.getByRole('button', { name: /CANCEL/ })).toHaveFocus(),
+            expect(canvas.getByRole('button', { name: /cancel/ })).toHaveFocus(),
         )
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByRole('button', { name: /APPROVE ALL 3/ })).toBeInTheDocument()
-        await userEvent.click(canvas.getByRole('button', { name: /APPROVE ALL 3/ }))
+        await expect(canvas.getByRole('button', { name: /approve all 3/ })).toBeInTheDocument()
+        await userEvent.click(canvas.getByRole('button', { name: /approve all 3/ }))
     },
 }
 
@@ -133,7 +133,7 @@ export const FailedAndResolved: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(/^Failed/)).toBeInTheDocument()
-        await expect(canvas.getByRole('button', { name: /RETRY/ })).toBeInTheDocument()
+        await expect(canvas.getByRole('button', { name: /retry/ })).toBeInTheDocument()
         const toggle = canvas.getByRole('button', { name: /Recently resolved/ })
         await expect(toggle).toHaveAttribute('aria-expanded', 'false')
         toggle.focus()

@@ -22,7 +22,7 @@ import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
-import { Button } from '../ui/Button'
+import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
@@ -40,11 +40,13 @@ import ChatAuthPanel from './ChatAuthPanel'
 
 export type ChatControlSlots = ViewBarSlots
 
-/** A plain lowercase text control for the quiet row's actions (history/new chat) — `Button`
- *  itself, not `TextButton` (which enforces UPPERCASE labels and warns in dev otherwise: this row's
- *  whole point is a quiet lowercase line, not a toolbar of shouting buttons). All of `.btn--text`'s
- *  usual chrome (uppercase, padding, border, hover fill) is stripped back down to plain text by the
- *  row's own register in ChatControls.module.css — this component only supplies the state. */
+/** A plain lowercase text control for the quiet row's actions (history/new chat) — `PlainButton`
+ *  (an unstyled real `<button>`), not `TextButton`/`Button` (whose KIND classes carry the
+ *  bracket/uppercase text-button chrome this row deliberately never wants: this row's whole point
+ *  is a quiet lowercase line, not a toolbar of shouting buttons). `.action` in
+ *  ChatControls.module.css supplies the whole look — this component only supplies the state, via
+ *  a `data-state` attribute (the same runtime hook ui/Button's own `state` prop renders, so the
+ *  row's `[data-state="selected"]` rules read this control identically to a real Button's). */
 function RowAction(props: {
     label: string
     active?: boolean
@@ -53,15 +55,15 @@ function RowAction(props: {
     title?: string
 }) {
     return (
-        <Button
-            kind="text"
-            state={props.active ? 'selected' : 'normal'}
+        <PlainButton
+            class={styles.action}
+            data-state={props.active ? 'selected' : 'normal'}
             data-testid={props.testId}
             title={props.title}
             onClick={props.onClick}
         >
             {props.label}
-        </Button>
+        </PlainButton>
     )
 }
 
@@ -184,21 +186,21 @@ function Actions(props: { session: ChatSession }) {
                 as returned rather than force-lowercased. */}
             <Show when={props.session.provider() === 'opencode'}>
                 <div class={styles['auth-anchor']} data-chat-auth-anchor>
-                    <Button
-                        kind="text"
-                        state={authOpen() ? 'selected' : 'normal'}
+                    <PlainButton
                         class={
-                            opencodeAuthSummary(props.session.authProviders())
+                            styles.action +
+                            (opencodeAuthSummary(props.session.authProviders())
                                 .signedIn === false
-                                ? styles['auth-out']
-                                : undefined
+                                ? ' ' + styles['auth-out']
+                                : '')
                         }
+                        data-state={authOpen() ? 'selected' : 'normal'}
                         data-testid="chat-auth"
                         title="opencode credentials"
                         onClick={() => setAuthOpen(v => !v)}
                     >
                         {opencodeAuthSummary(props.session.authProviders()).label}
-                    </Button>
+                    </PlainButton>
                     <Show when={authOpen()}>
                         <ChatAuthPanel
                             providers={props.session.authProviders()}

@@ -160,9 +160,9 @@ export const SwitchSource: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        await expect(canvas.getByText('ADD FILTER')).toBeInTheDocument()
-        await userEvent.click(canvas.getByText('Tasks'))
-        await expect(canvas.queryByText('ADD FILTER')).not.toBeInTheDocument()
+        await expect(canvas.getByText('add filter')).toBeInTheDocument()
+        await userEvent.click(canvas.getByText('tasks'))
+        await expect(canvas.queryByText('add filter')).not.toBeInTheDocument()
     },
 }
 
@@ -177,7 +177,7 @@ export const AddFilterRow: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        await userEvent.click(canvas.getByText('ADD FILTER'))
+        await userEvent.click(canvas.getByText('add filter'))
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
         const pre = document.querySelector('[data-testid="qb-preview"] code')
         await expect(pre?.textContent ?? '').not.toBe('')

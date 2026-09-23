@@ -55,7 +55,7 @@ export const WithActions: Story = {
             <DaemonPanel
                 title="needs review"
                 count={2}
-                actions={<TextButton size="sm">APPROVE ALL</TextButton>}
+                actions={<TextButton>approve all</TextButton>}
             >
                 <div style={{ padding: '4px 12px' }}>two pages waiting</div>
             </DaemonPanel>
@@ -63,7 +63,7 @@ export const WithActions: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const button = canvas.getByRole('button', { name: 'APPROVE ALL' })
+        const button = canvas.getByRole('button', { name: 'approve all' })
         await expect(button).toBeInTheDocument()
         // Beside the title: rendered inside the panel's head, not its scrolling body.
         const head = byModuleClass(canvasElement, 'daemon-panel-head')

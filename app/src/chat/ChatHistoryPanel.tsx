@@ -27,13 +27,13 @@ export type ChatHistoryPanelProps = {
 }
 
 const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
-    { id: 'user', label: 'You', title: 'Chats you started' },
+    { id: 'user', label: 'you', title: 'Chats you started' },
     {
         id: 'daemon',
-        label: 'Daemon',
+        label: 'daemon',
         title: "Chats the daemon's crons started (dream, vault-review)",
     },
-    { id: 'all', label: 'All', title: "Both, with the daemon's marked" },
+    { id: 'all', label: 'all', title: "Both, with the daemon's marked" },
 ]
 
 export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
@@ -87,7 +87,6 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
             <div class={styles.scope}>
                 <SegmentedToggle
                     class={styles['scope-toggle']}
-                    segmentClass={styles['scope-segment']}
                     options={SCOPE_OPTIONS}
                     value={props.history.scope()}
                     onChange={props.history.setScope}

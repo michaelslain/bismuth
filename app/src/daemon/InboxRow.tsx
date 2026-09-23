@@ -128,8 +128,6 @@ function InboxRow(props: InboxRowProps) {
                     <For each={props.page.actions}>
                         {a => (
                             <TextButton
-                                size="sm"
-                                bracket
                                 variant={
                                     a.kind === 'primary' ? 'selected' : 'normal'
                                 }

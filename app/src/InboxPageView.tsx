@@ -133,7 +133,7 @@ export function InboxPageView(props: {
                                                 : 'No response — daemon may be offline.'}
                                         </Text>
                                         <TextButton onClick={markFailed}>
-                                            MARK FAILED
+                                            mark failed
                                         </TextButton>
                                     </Match>
                                     <Match
@@ -160,8 +160,8 @@ export function InboxPageView(props: {
                                                 >
                                                     {p.status === 'working' &&
                                                     pressingId() === a.id
-                                                        ? 'WORKING…'
-                                                        : a.label.toUpperCase()}
+                                                        ? 'working…'
+                                                        : a.label.toLowerCase()}
                                                 </TextButton>
                                             )}
                                         </For>
@@ -205,7 +205,7 @@ export function InboxPageView(props: {
                                                     danger={a.kind === 'danger'}
                                                     onClick={() => press(a.id)}
                                                 >
-                                                    {a.label.toUpperCase()}
+                                                    {a.label.toLowerCase()}
                                                 </TextButton>
                                             )}
                                         </For>

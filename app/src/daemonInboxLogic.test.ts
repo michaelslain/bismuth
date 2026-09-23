@@ -125,10 +125,10 @@ test('actionLabel: the pressed action on a failed page reads RETRY, the rest kee
         pressedAction: 'send',
         actions,
     })
-    expect(actionLabel(failed, 'send')).toBe('RETRY')
-    expect(actionLabel(failed, 'dismiss')).toBe('DISMISS')
+    expect(actionLabel(failed, 'send')).toBe('retry')
+    expect(actionLabel(failed, 'dismiss')).toBe('dismiss')
     const pending = page({ slug: 'p', actions })
-    expect(actionLabel(pending, 'send')).toBe('SEND')
+    expect(actionLabel(pending, 'send')).toBe('send')
 })
 
 test('sharedPrimaryAction: 2+ pages with the identical single primary action id', () => {

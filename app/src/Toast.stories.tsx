@@ -33,14 +33,14 @@ export const Default: Story = {
 }
 
 /** A stack of two, the top one carrying an action button (the daemon inbox's
- *  "N pages ready for review" → "REVIEW" shape). */
+ *  "N pages ready for review" → "review" shape). */
 export const StackWithAction: Story = {
     render: () => {
         reset()
         pushToast("Couldn't run vault-review", undefined, 0)
         pushToast(
             '3 reply drafts ready for review',
-            { label: 'Review', onClick: () => {} },
+            { label: 'review', onClick: () => {} },
             0,
         )
         return <ToastHost />

@@ -169,7 +169,7 @@ function ErrorActionMarker() {
     errorActionMounts++
     return (
         <button type="button" data-testid="pdfpages-error-action">
-            OPEN IN DEFAULT APP
+            open in default app
         </button>
     )
 }

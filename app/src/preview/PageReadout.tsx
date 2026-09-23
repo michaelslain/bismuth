@@ -3,13 +3,14 @@
 // page number in place — Enter (or blur) goes there, Escape leaves the position alone — so the
 // readout doubles as go-to-page without a separate control taking bar width.
 //
-// The rest state is a ui/Button (kind="text") rather than a Label, because it IS a control: it has
-// to be focusable, announce itself, and take a click. `.readout` restores the readout look over the
-// Button's own chrome (lowercase "p.", muted ink, tabular digits) — see PageReadout.module.css.
+// The rest state is a ui/PlainButton rather than a Label, because it IS a control: it has to be
+// focusable, announce itself, and take a click. PlainButton is an unstyled real `<button>` — its
+// look (lowercase "p.", muted ink, tabular digits) comes entirely from `.readout`, not from
+// overriding a ui/Button KIND class — see PageReadout.module.css.
 // The edit state composes ui/InlineTextInput, the app's one inline-edit input (Enter/blur commits
 // exactly once, Escape cancels).
 import { createSignal, Show } from 'solid-js'
-import Button from '../ui/Button'
+import PlainButton from '../ui/PlainButton'
 import InlineTextInput from '../ui/InlineTextInput'
 import Label from '../ui/Label'
 import styles from './PageReadout.module.css'
@@ -58,16 +59,15 @@ function PageReadout(props: PageReadoutProps) {
             <Show
                 when={editing()}
                 fallback={
-                    <Button
+                    <PlainButton
                         ref={el => (buttonRef = el)}
-                        kind="text"
                         class={styles.readout}
                         title="Go to page"
                         aria-label={`Page ${props.current() + 1} of ${props.count()}, go to page`}
                         onClick={() => setEditing(true)}
                     >
                         {`p. ${props.current() + 1} / ${props.count()}`}
-                    </Button>
+                    </PlainButton>
                 }
             >
                 <Label tone="muted" class={styles.prefix}>

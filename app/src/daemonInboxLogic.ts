@@ -81,13 +81,13 @@ export function resolvedSorted(pages: DaemonPage[]): DaemonPage[] {
     return pages.filter(p => SETTLED.has(p.status)).sort(newestSettledFirst)
 }
 
-/** A row button's label: the action that failed reads RETRY, since pressing it re-runs it;
- *  every other label is the page's own, uppercased for TextButton. */
+/** A row button's label: the action that failed reads retry, since pressing it re-runs it;
+ *  every other label is the page's own, lowercased for TextButton. */
 export function actionLabel(page: DaemonPage, actionId: string): string {
     if (page.status === 'failed' && page.pressedAction === actionId)
-        return 'RETRY'
+        return 'retry'
     const action = page.actions.find(a => a.id === actionId)
-    return (action?.label ?? actionId).toUpperCase()
+    return (action?.label ?? actionId).toLowerCase()
 }
 
 /**

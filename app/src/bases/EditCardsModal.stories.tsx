@@ -134,9 +134,9 @@ export const BulkAddPreview: Story = {
     },
     play: async () => {
         const bulkToggle = Array.from(document.querySelectorAll('button')).find(
-            b => b.textContent?.includes('BULK ADD'),
+            b => b.textContent?.includes('bulk add'),
         )
-        if (!bulkToggle) throw new Error('BULK ADD toggle not found')
+        if (!bulkToggle) throw new Error('bulk add toggle not found')
         await userEvent.click(bulkToggle)
 
         const textarea = document.querySelector(

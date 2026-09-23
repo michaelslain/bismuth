@@ -3,7 +3,7 @@
 // every component emits the same wording. Call sites guard these with
 // `import.meta.env?.DEV` — they have zero effect in production.
 
-import { uppercaseWarning } from './uiLint'
+import { labelCaseWarning } from './uiLint'
 
 /**
  * Warn that `icon` is not a icon name. Single canonical message shared by
@@ -16,11 +16,11 @@ export function warnBadIcon(component: string, icon: string): void {
 }
 
 /**
- * Warn that a button's children text is not all-caps (no-op if it is / non-textual).
+ * Warn that a button's children text is not all-lowercase (no-op if it is / non-textual).
  * `_component` is accepted for call-site symmetry with `warnBadIcon`; the message
- * text itself comes from `uppercaseWarning`.
+ * text itself comes from `labelCaseWarning`.
  */
-export function warnNonUppercase(_component: string, children: unknown): void {
-    const w = uppercaseWarning(children)
+export function warnLabelCase(_component: string, children: unknown): void {
+    const w = labelCaseWarning(children)
     if (w) console.warn(w)
 }

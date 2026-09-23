@@ -909,14 +909,13 @@ export function BaseSettings(props: {
                                                     <div class={styles['sp']} />
                                                     <IconTextButton
                                                         icon="Trash2"
-                                                        size="sm"
                                                         iconSize={13}
                                                         danger
                                                         onClick={() =>
                                                             removePropRow(i)
                                                         }
                                                     >
-                                                        DELETE
+                                                        delete
                                                     </IconTextButton>
                                                 </div>
                                             </div>
@@ -928,8 +927,8 @@ export function BaseSettings(props: {
                     </div>
                 </Show>
                 <div class={styles['propset-add']}>
-                    <IconTextButton icon="Plus" size="sm" onClick={addPropRow}>
-                        ADD PROPERTY
+                    <IconTextButton icon="Plus" onClick={addPropRow}>
+                        add property
                     </IconTextButton>
                 </div>
             </ModalBody>
@@ -939,25 +938,23 @@ export function BaseSettings(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        size="sm"
                         iconSize={13}
                         onClick={reset}
                     >
-                        RESET
+                        reset
                     </IconTextButton>
                 }
             >
-                <TextButton size="sm" onClick={props.onClose}>
-                    CANCEL
+                <TextButton onClick={props.onClose}>
+                    cancel
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    size="sm"
-                    variant="selected"
+                    primary
                     disabled={duplicateNames().size > 0}
                     onClick={save}
                 >
-                    SAVE
+                    save
                 </IconTextButton>
             </ModalFooter>
         </FormModal>

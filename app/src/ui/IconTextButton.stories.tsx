@@ -1,8 +1,10 @@
-// Visual spec for <IconTextButton> — a text <Button> with a leading icon (icon-named).
+// Visual spec for <IconTextButton> — a text <Button> with a leading icon, rendered as the
+// bracket register: `[ icon label ]`.
 //
-// Props: icon (required), iconSize (default 14), variant ("normal" default | "selected"
-// | "unselected"), danger, primary, size, plus native <button> attributes. Labels must be
-// UPPERCASE (dev warns otherwise — same rule as TextButton).
+// Props: icon (required), iconSize (default 12), variant ("normal" default | "selected"
+// | "unselected"), danger, primary, plus native <button> attributes. Labels must be
+// lowercase (dev warns otherwise — same rule as TextButton). `size`/`bracket` are deprecated
+// and ignored.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { IconTextButton } from './IconTextButton'
 import { Row } from './_storyKit'
@@ -17,19 +19,18 @@ const meta = {
             control: 'inline-radio',
             options: ['normal', 'selected', 'unselected'],
         },
-        size: { control: 'inline-radio', options: ['sm', 'md', 'lg'] },
         danger: { control: 'boolean' },
         primary: { control: 'boolean' },
         disabled: { control: 'boolean' },
         children: { control: 'text' },
     },
     args: {
-        icon: 'Plus',
+        icon: 'Check',
         variant: 'normal',
         danger: false,
         primary: false,
         disabled: false,
-        children: 'NEW',
+        children: 'approve',
     },
 } satisfies Meta<typeof IconTextButton>
 
@@ -39,58 +40,41 @@ type Story = StoryObj<typeof meta>
 /** Fully controllable single button. */
 export const Playground: Story = {}
 
-/** The three selection states, plus danger + disabled (the graph "FIND" toggle shape). */
+/** `[✓ approve]` in every state — the three selection states, plus danger + disabled. */
 export const States: Story = {
     render: () => (
         <Row>
-            <IconTextButton icon="Search" variant="normal">
-                FIND
+            <IconTextButton icon="Check" variant="normal">
+                approve
             </IconTextButton>
-            <IconTextButton icon="Search" variant="unselected">
-                FIND
+            <IconTextButton icon="Check" variant="unselected">
+                approve
             </IconTextButton>
-            <IconTextButton icon="Search" variant="selected">
-                FIND
+            <IconTextButton icon="Check" variant="selected">
+                approve
             </IconTextButton>
-            <IconTextButton icon="Trash2" danger>
-                DELETE
+            <IconTextButton icon="Check" danger>
+                approve
             </IconTextButton>
-            <IconTextButton icon="Search" disabled>
-                FIND
-            </IconTextButton>
-        </Row>
-    ),
-}
-
-/** Sizes (shares Button's sm/md/lg scale). */
-export const Sizes: Story = {
-    render: () => (
-        <Row>
-            <IconTextButton icon="Plus" size="sm">
-                NEW
-            </IconTextButton>
-            <IconTextButton icon="Plus" size="md">
-                NEW
-            </IconTextButton>
-            <IconTextButton icon="Plus" size="lg">
-                NEW
+            <IconTextButton icon="Check" disabled>
+                approve
             </IconTextButton>
         </Row>
     ),
 }
 
-/** A few representative real labels from call sites (FIND, NEW, SAVED). */
+/** A few representative real labels from call sites (new note, saved, sync). */
 export const Examples: Story = {
     render: () => (
         <Row>
             <IconTextButton icon="Plus" variant="normal">
-                NEW NOTE
+                new note
             </IconTextButton>
             <IconTextButton icon="Check" variant="selected">
-                SAVED
+                saved
             </IconTextButton>
             <IconTextButton icon="RefreshCw" variant="unselected">
-                SYNC
+                sync
             </IconTextButton>
         </Row>
     ),

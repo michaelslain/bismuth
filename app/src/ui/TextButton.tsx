@@ -1,7 +1,7 @@
 import { splitProps, createEffect, type JSX } from 'solid-js'
 import { Button } from './Button'
-import type { ButtonState, ButtonSize } from './buttonClass'
-import { warnNonUppercase } from './devWarn'
+import type { ButtonState } from './buttonClass'
+import { warnLabelCase } from './devWarn'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type TextButtonVariant = ButtonState
@@ -13,24 +13,23 @@ export type TextButtonProps = {
     danger?: boolean
     /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
     primary?: boolean
-    /** Renders the "[ label ]" CLI-confirm look — see Button.tsx. */
-    bracket?: boolean
-    size?: ButtonSize
+    /** Colour for the selected state (a `var(--…)` token) — pre-registered for bracket-toggles Task 1. */
+    accent?: string
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
- * Text-label button. The default app button.
+ * Text-label button. The default app button — always renders `[ label ]`.
  *
  * Standardization rules this component enforces:
- *  • Labels are UPPERCASE — pass already-uppercase text (no hidden CSS
- *    transform; what you pass is what shows). Lowercase input warns in dev.
+ *  • Labels are lowercase — pass already-lowercase text (no hidden CSS
+ *    transform; what you pass is what shows). Non-lowercase input warns in dev.
  *  • Appearance comes from `variant` (selection state) only — call sites pass
  *    layout (flex/margin/position) via `style`, never colors/borders/padding.
  */
 function TextButton(props: TextButtonProps) {
     const [local, rest] = splitProps(props, ['variant'])
     if (import.meta.env?.DEV) {
-        createEffect(() => warnNonUppercase('TextButton', rest.children))
+        createEffect(() => warnLabelCase('TextButton', rest.children))
     }
     return <Button kind="text" state={local.variant ?? 'normal'} {...rest} />
 }

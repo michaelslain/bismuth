@@ -800,8 +800,8 @@ export function FlashcardsView(props: {
                                         {graded() === 1 ? 'review' : 'reviews'}.
                                     </Show>
                                 </EmptyState>
-                                <TextButton size="lg" onClick={restart}>
-                                    REVIEW AGAIN
+                                <TextButton onClick={restart}>
+                                    review again
                                 </TextButton>
                             </div>
                         }
@@ -940,13 +940,13 @@ export function FlashcardsView(props: {
                         </Field>
                         <div class={styles['card-edit-one-actions']}>
                             <TextButton onClick={() => setEditingCard(false)}>
-                                CANCEL
+                                cancel
                             </TextButton>
                             <TextButton
                                 variant="selected"
                                 onClick={saveCardEdit}
                             >
-                                SAVE
+                                save
                             </TextButton>
                         </div>
                     </div>

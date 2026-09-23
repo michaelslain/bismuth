@@ -113,7 +113,7 @@ export const InlinePrompts: Story = {
     args: { onAnswerPermission: fn() },
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getAllByRole('button', { name: 'ALLOW' })[0])
+        await userEvent.click(canvas.getAllByRole('button', { name: 'allow' })[0])
         await expect(args.onAnswerPermission).toHaveBeenCalledWith(
             'perm-1',
             'allow',

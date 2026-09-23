@@ -1627,7 +1627,7 @@ export const PdfViewBarNarrow: Story = {
             const frame = frames[w]!
             const actions = Array.from(
                 frame.querySelectorAll<HTMLElement>(`.${styles['preview-body']} button`),
-            ).filter(x => x.textContent?.includes('OPEN IN DEFAULT APP'))
+            ).filter(x => x.textContent?.includes('open in default app'))
             expect(actions.length, `${w}px: error actions`).toBe(1)
             const msg = frame.querySelector(
                 '[data-testid="ui-empty"]',

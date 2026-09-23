@@ -178,8 +178,8 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                 </div>
             </Show>
             <div class={styles.sourceBar}>
-                <TextButton onClick={save}>SAVE</TextButton>
-                <TextButton onClick={props.onClose}>CANCEL</TextButton>
+                <TextButton onClick={save}>save</TextButton>
+                <TextButton onClick={props.onClose}>cancel</TextButton>
             </div>
         </div>
     )
