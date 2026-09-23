@@ -6,6 +6,9 @@
 // `bun run` itself), core just needs to run, so a compiled binary is the simplest
 // shippable form — a Tauri "sidecar".
 //
+// Signed builds run it under the hardened runtime: ../src-tauri/Entitlements.plist is what lets it
+// JIT and dlopen the bun-pty library it extracts at runtime. Without it the terminal is dead.
+//
 // Tauri resolves sidecars by a target-triple suffix, so we name the output
 // `bismuth-core-<triple>` and reference `binaries/bismuth-core` in tauri.conf.json
 // (externalBin). The binary is heavy (~58MB) and platform-specific → gitignored.

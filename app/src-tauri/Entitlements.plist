@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Applied by `tauri build` to every executable it signs: Bismuth itself AND the bismuth-core
+    sidecar. Signing with an identity (app/scripts/signingIdentity.ts) turns on the hardened
+    runtime, and the sidecar is a compiled Bun binary, which needs both keys under it.
+    Measured on a signed probe binary, 2026-09-23:
+
+    - allow-jit: without it JavaScriptCore cannot map JIT memory and silently falls back to the
+      interpreter. The whole backend ran ~6.5x slower (a tight loop took 6.5s, not 1.0s).
+    - disable-library-validation: bun-pty's native librust_pty is embedded in the binary and
+      extracted to $TMPDIR at runtime, ad-hoc signed. Library validation refuses to dlopen it
+      ("different Team IDs"), so every terminal tab failed with `lib.symbols` undefined.
+
+    Guarded by app/scripts/entitlements.test.ts.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
