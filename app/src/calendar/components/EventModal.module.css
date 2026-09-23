@@ -46,15 +46,8 @@
 
 /* category chips (selectable) */
 .panel .evm-cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
-.panel .evm-cat { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); cursor: pointer; user-select: none; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-muted); transition: background .14s, border-color .14s, color .14s; }
-.panel .evm-cat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc, var(--faint)); }
-.panel .evm-cat:hover { color: var(--fg); border-color: var(--border); }
-.panel .evm-cat.on { color: var(--fg); background: color-mix(in srgb, var(--cc, var(--accent)) 15%, transparent); border-color: color-mix(in srgb, var(--cc, var(--accent)) 45%, transparent); }
 
 /* weekday picker */
-.panel .evm-dows { display: flex; gap: var(--sp-2); margin-top: var(--sp-5); }
-.panel .evm-dow { flex: 1; height: var(--h-control); border-radius: var(--r-0); display: grid; place-items: center; font-size: var(--fs-micro); letter-spacing: .05em; text-transform: uppercase; color: var(--faint); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; transition: background .14s, color .14s, border-color .14s; }
-.panel .evm-dow:hover { color: var(--text-muted); background: var(--surface-2); }
-.panel .evm-dow.on { color: var(--fg); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.panel .evm-dows { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-5); }
 .panel .evm-ends { margin-top: var(--sp-5); }
 .panel .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }

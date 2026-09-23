@@ -154,3 +154,53 @@ export const Interactive: Story = {
         expect(currentDate.value.getMonth()).toBe(ANCHOR.getMonth())
     },
 }
+
+/** Keyboard-only proof for the three rows that became real bracket toggles: category,
+ *  weekday and all-day. Each control is a real `<button>` — focusable, Space flips it, and
+ *  `aria-pressed` tracks the flip. Seeded with a weekly recurrence whose days (Mon/Wed/Fri)
+ *  exclude Thursday, and no category, so "work"/"thu" both start unpicked and all-day starts
+ *  on (no `startTime`). */
+export const KeyboardToggles: Story = {
+    render: () => {
+        const editing = {
+            id: 'evt-kb',
+            title: 'Keyboard demo',
+            date: '2026-08-20',
+            recurrence: {
+                type: 'weekly' as const,
+                daysOfWeek: [1, 3, 5],
+                startDate: '2026-08-20',
+                seriesId: 'series-kb',
+            },
+        }
+        seedCalendarState({ date: ANCHOR, events: [editing] })
+        showEventModal.value = { event: editing }
+        return <Host store={new EventStore(new MemoryBackend())} />
+    },
+    play: async () => {
+        const body = within(document.body)
+
+        const workBtn = body.getByRole('button', { name: /work/i })
+        expect(workBtn).toHaveAttribute('aria-pressed', 'false')
+        workBtn.focus()
+        await userEvent.keyboard(' ')
+        expect(workBtn).toHaveAttribute('aria-pressed', 'true')
+
+        const thuBtn = body.getByRole('button', { name: 'thu' })
+        expect(thuBtn).toHaveAttribute('aria-pressed', 'false')
+        thuBtn.focus()
+        await userEvent.keyboard(' ')
+        expect(thuBtn).toHaveAttribute('aria-pressed', 'true')
+
+        const allDayBtn = body.getByText('All day').closest('button') as HTMLElement
+        expect(allDayBtn).toHaveAttribute('aria-pressed', 'true')
+        allDayBtn.focus()
+        await userEvent.keyboard(' ')
+        expect(allDayBtn).toHaveAttribute('aria-pressed', 'false')
+        await waitFor(() =>
+            expect(
+                document.querySelector('[data-testid="event-modal-times"]'),
+            ).not.toBeNull(),
+        )
+    },
+}
