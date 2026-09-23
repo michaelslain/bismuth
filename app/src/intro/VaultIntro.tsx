@@ -443,7 +443,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                             onClick={next}
                             disabled={busy()}
                         >
-                            [ {busy() ? 'opening…' : 'enter your vault'} ]
+                            {busy() ? 'opening…' : 'enter your vault'}
                         </TextButton>
                     </div>
                 </Show>
