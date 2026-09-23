@@ -18,13 +18,13 @@ export const Standalone: Story = {
     render: () => (
         <div style={{ width: '260px' }}>
             <SettingsHint>
-                Changes take effect the next time the vault is opened.
+                changes take effect the next time the vault is opened.
             </SettingsHint>
         </div>
     ),
 }
 
-/** Trailing a label + control, the usual placement inside SettingsField. */
+/** Trailing a label + control, the usual placement inside SettingsField's control column. */
 export const AfterAControl: Story = {
     render: () => (
         <div
@@ -35,10 +35,10 @@ export const AfterAControl: Story = {
                 gap: '4px',
             }}
         >
-            <div>Sync interval</div>
+            <div>sync interval</div>
             <div>60 seconds</div>
             <SettingsHint>
-                How often the daemon polls for external changes.
+                how often the daemon polls for external changes.
             </SettingsHint>
         </div>
     ),

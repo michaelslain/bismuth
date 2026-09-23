@@ -1,4 +1,7 @@
 /* app/src/ui/Field.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
-   Task 7). ui/Field.tsx was the sole reader anywhere in the app. */
-.ui-field { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-ui); }
+   Task 7). ui/Field.tsx was the sole reader anywhere in the app. Modal redesign Task 4
+   (2026-09-23): Field is SettingsField's older sibling, so it gets the same label-column layout,
+   keyed to the same `--label-col` token — a Field lines up with any neighboring SettingsField
+   rows even though the two components are unrelated in code. */
+.ui-field { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--sp-6); align-items: start; font-size: var(--fs-ui); }
 .ui-field > span { color: var(--text-muted); }
