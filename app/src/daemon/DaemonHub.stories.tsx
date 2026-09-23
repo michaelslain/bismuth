@@ -72,7 +72,9 @@ export const Resting: Story = {
         await expect(
             canvas.getByText(/keeps a living model/),
         ).toBeInTheDocument()
-        await expect(canvas.getByText('[ edit ]')).toBeInTheDocument()
+        await expect(
+            canvas.getByRole('button', { name: 'edit' }),
+        ).toBeInTheDocument()
         const face = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-face"]',
         )!
@@ -143,7 +145,9 @@ export const NoBlurb: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('daemon')).toBeInTheDocument()
-        await expect(canvas.getByText('[ edit ]')).toBeInTheDocument()
+        await expect(
+            canvas.getByRole('button', { name: 'edit' }),
+        ).toBeInTheDocument()
     },
 }
 
@@ -165,7 +169,7 @@ export const LongBlurb: Story = {
     ),
     play: async ({ canvasElement }) => {
         const blurb = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-face-caption"] span',
+            '[data-testid="daemon-hub-blurb"]',
         )
         await expect(blurb).not.toBeNull()
         const overflowing =

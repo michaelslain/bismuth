@@ -54,7 +54,13 @@ function DaemonHub(props: DaemonHubProps) {
                 {props.name}
             </Text>
             <Show when={!compact() && props.blurb}>
-                <Text as="span" size="ui" tone="muted" class={styles.blurb}>
+                <Text
+                    as="span"
+                    size="ui"
+                    tone="muted"
+                    class={styles.blurb}
+                    data-testid="daemon-hub-blurb"
+                >
                     {props.blurb}
                 </Text>
             </Show>
