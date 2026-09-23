@@ -30,6 +30,7 @@ import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import styles from './CompanionFrontmatter.module.css'
+import foldedFenceStyles from './FoldedFence.module.css'
 
 /** Builds a real CompanionStore under this story's own Solid owner (createCompanionStore.ts) and
  *  hands it to CompanionFrontmatter as `store` — same "an already-owned store" path PreviewView
@@ -334,12 +335,106 @@ export const MatchesNoteFrontmatter: Story = {
             expect(s).toBe(e)
         })
 
-        // No rounding anywhere in the block (ruling: note frontmatter is flat).
+        // No rounding anywhere in the block (ruling: note frontmatter is flat) — checked on the
+        // `::after` fill itself (nothing ever rounds `.cm-block-mid` directly; the flat fill lives
+        // entirely in the pseudo, so a check against the LINE's own `borderRadius` could never
+        // fail regardless of what the fill does).
         await waitFor(() => {
+            for (const sel of [
+                '.cm-block-top',
+                '.cm-block-mid',
+                '.cm-block-bottom',
+            ]) {
+                const stripLine = strip.querySelector(sel) as HTMLElement
+                const editorLine = editor.querySelector(sel) as HTMLElement
+                expect(
+                    getComputedStyle(stripLine, '::after').borderRadius,
+                ).toBe('0px')
+                expect(
+                    getComputedStyle(editorLine, '::after').borderRadius,
+                ).toBe('0px')
+            }
+        })
+
+        // Fence-glyph colour, property-key colour and block left padding — strip vs editor.
+        await waitFor(() => {
+            const stripFenceSyntax = strip.querySelector(
+                '.cm-fence-syntax',
+            ) as HTMLElement
+            const editorFenceSyntax = editor.querySelector(
+                '.cm-fence-syntax',
+            ) as HTMLElement
+            expect(getComputedStyle(stripFenceSyntax).color).toBe(
+                getComputedStyle(editorFenceSyntax).color,
+            )
+
+            // `.cm-fm-key`, not `.cm-fm-key > span` — CodeMirror only nests an inner highlight
+            // span when a syntax token wins inside the mark (see livePreview.ts ~1919-1924); a
+            // plain key like `tags` has no such child, and `.cm-fm-key` itself already carries
+            // the colour rule either way.
+            const stripKey = strip.querySelector('.cm-fm-key') as HTMLElement
+            const editorKey = editor.querySelector('.cm-fm-key') as HTMLElement
+            expect(getComputedStyle(stripKey).color).toBe(
+                getComputedStyle(editorKey).color,
+            )
+
             const stripMid = strip.querySelector(
                 '.cm-block-mid',
             ) as HTMLElement
-            expect(getComputedStyle(stripMid).borderRadius).toBe('0px')
+            const editorMid = editor.querySelector(
+                '.cm-block-mid',
+            ) as HTMLElement
+            expect(getComputedStyle(stripMid).paddingLeft).toBe(
+                getComputedStyle(editorMid).paddingLeft,
+            )
+        })
+
+        // The `---` text's own left edge sits 40px (this panel's own left padding) + 0.5em (the
+        // fence row's own left padding, `.cm-block-top`'s `0.15em 0.5em`) from the strip's left
+        // edge — the same offset a note's frontmatter fence sits at (measured today 46.75px).
+        await waitFor(() => {
+            const panel = strip.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const fenceTop = strip.querySelector(
+                '.cm-block-top',
+            ) as HTMLElement
+            const walker = document.createTreeWalker(
+                fenceTop,
+                NodeFilter.SHOW_TEXT,
+            )
+            let dashNode: Text | null = null
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                if (n.textContent?.includes('---')) {
+                    dashNode = n as Text
+                    break
+                }
+            }
+            expect(dashNode).toBeTruthy()
+            const range = document.createRange()
+            range.selectNodeContents(dashNode!)
+            const textLeft = range.getBoundingClientRect().left
+            const panelLeft = panel.getBoundingClientRect().left
+            const expected =
+                40 + 0.5 * parseFloat(getComputedStyle(fenceTop).fontSize)
+            expect(
+                Math.abs(textLeft - panelLeft - expected),
+            ).toBeLessThanOrEqual(0.5)
+        })
+
+        // Finding 1: the chevron sits vertically centred on the opening `---` row.
+        await waitFor(() => {
+            const chev = within(strip)
+                .getByLabelText('fold frontmatter')
+                .getBoundingClientRect()
+            const fenceTop = strip
+                .querySelector('.cm-block-top')!
+                .getBoundingClientRect()
+            expect(
+                Math.abs(
+                    chev.top + chev.height / 2 - (fenceTop.top + fenceTop.height / 2),
+                ),
+            ).toBeLessThanOrEqual(1)
         })
 
         // The in-block gutter number is BACK (the old fork suppressed it) and non-empty on both
@@ -376,7 +471,8 @@ export const MatchesNoteFrontmatter: Story = {
     },
 }
 
-/** Folded: the chevron collapses the strip to FoldedFence's single `--- … ---` row. */
+/** Folded: the chevron collapses the strip to FoldedFence's single `--- … ---` row, landing
+ *  exactly where the opening fence row sat before the fold (Review Focus: findings 2 + 3). */
 export const Folded: Story = {
     render: () => {
         setTransport(
@@ -389,6 +485,20 @@ export const Folded: Story = {
         await waitFor(() =>
             expect(canvas.getByLabelText('fold frontmatter')).toBeInTheDocument(),
         )
+
+        // Record the UNFOLDED opening fence row's own rect + height, and the panel's own padding,
+        // before folding — these are what the folded row must land back on.
+        const panel = canvasElement.querySelector(
+            `.${styles['companion-frontmatter']}`,
+        ) as HTMLElement
+        const fenceTopBeforeFold = panel
+            .querySelector('.cm-block-top')!
+            .getBoundingClientRect()
+        const fenceH = fenceTopBeforeFold.height
+        const panelPaddingTop = parseFloat(
+            getComputedStyle(panel).paddingTop,
+        )
+
         await fireEvent.click(canvas.getByLabelText('fold frontmatter'))
 
         await waitFor(() => {
@@ -399,23 +509,47 @@ export const Folded: Story = {
             expect(canvas.getByText('--- … ---')).toBeInTheDocument(),
         )
 
-        // The field is hidden and the strip collapses to one editor row.
+        // The field is hidden and the folded fence lands where the opening fence row was, at its
+        // own unfolded height, and the panel itself shrinks to match (findings 2 + 3).
         await waitFor(() => {
-            const panel = canvasElement.querySelector(
-                `.${styles['companion-frontmatter']}`,
-            ) as HTMLElement
             const field = panel.querySelector(`.${styles.field}`) as HTMLElement
             expect(getComputedStyle(field).display).toBe('none')
-            const rowH =
-                parseFloat(
-                    getComputedStyle(document.documentElement).getPropertyValue(
-                        '--row-h',
-                    ),
-                ) || 18
-            const spacing = 2 * 8 // var(--sp-4) top + bottom
-            expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(
-                rowH * 2 + spacing + 1,
-            )
+
+            const foldedFenceEl = panel.querySelector(
+                `.${foldedFenceStyles['folded-fence']}`,
+            ) as HTMLElement
+            const foldedRect = foldedFenceEl.getBoundingClientRect()
+            const chevRect = canvas
+                .getByLabelText('unfold frontmatter')
+                .getBoundingClientRect()
+
+            // Chevron centre == FoldedFence root's own centre, ±1px.
+            expect(
+                Math.abs(
+                    chevRect.top +
+                        chevRect.height / 2 -
+                        (foldedRect.top + foldedRect.height / 2),
+                ),
+            ).toBeLessThanOrEqual(1)
+
+            // FoldedFence root's top == the unfolded `.cm-block-top`'s own top, ±1px.
+            expect(
+                Math.abs(foldedRect.top - fenceTopBeforeFold.top),
+            ).toBeLessThanOrEqual(1)
+
+            // FoldedFence itself keeps the fence row's own height.
+            expect(
+                Math.abs(foldedRect.height - fenceH),
+            ).toBeLessThanOrEqual(1)
+
+            // The panel shrinks to exactly: fence height + FoldedFence's 6px margin-top + its own
+            // top/bottom padding (read off the live element, no literal).
+            expect(
+                Math.abs(
+                    panel.getBoundingClientRect().height -
+                        (fenceH + 6 + 2 * panelPaddingTop),
+                ),
+            ).toBeLessThanOrEqual(1)
         })
     },
 }

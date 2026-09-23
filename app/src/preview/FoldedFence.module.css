@@ -18,6 +18,10 @@
     font-size: var(--editor-font-size);
     line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
     padding: 0.15em 0.5em;
+    /* mirrors `.cm-content` padding-top 4px + `.cm-block-top` margin-top 2px (livePreview.ts
+       ~1784): folding removes those two offsets from above the row (the field that carried them
+       is hidden), so this margin puts the folded row back exactly where the opening fence sat. */
+    margin-top: 6px;
     background: var(--surface-1);
     color: color-mix(in srgb, var(--fg) 30%, transparent);
     white-space: nowrap;

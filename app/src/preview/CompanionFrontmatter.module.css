@@ -27,14 +27,20 @@
 }
 
 /* The chevron sits in the 40px left gutter: centred 20px from the strip's own left edge
-   (translateX(-50%) around `left: 20px`), and vertically centred on the opening `---` row —
-   derived from the same padding-top + half-row-height the fence row itself sits at, not a
-   measured pixel guess, so it stays correct if the row unit or line-height setting ever changes. */
+   (translateX(-50%) around `left: 20px`), and vertically centred on the opening `---` row.
+   `top` walks down to that row's own centre from the strip's padding-top:
+   `var(--sp-4)` (this panel's own top padding) + 6px (the offset between the panel's padding
+   edge and the fence row's own top: `.cm-content`'s 4px padding-top, a CodeMirror baseTheme
+   rule, plus `.cm-block-top`'s 2px margin-top, livePreview.ts ~1784) + half the fence row's own
+   height (`--row-h` * `--prose-line-height` + 0.3em, the fence row's 0.15em top + bottom padding,
+   livePreview.ts ~1780..1783) — not a measured pixel guess, so it stays correct if the row unit,
+   line-height or font-size setting ever changes. */
 .chevron {
     position: absolute;
     left: 20px;
     top: calc(
-        var(--sp-4) + (var(--row-h, 18px) * var(--prose-line-height, 1) / 2)
+        var(--sp-4) + 6px +
+            (var(--row-h, 18px) * var(--prose-line-height, 1) + 0.3 * var(--editor-font-size)) / 2
     );
     transform: translate(-50%, -50%);
 }
