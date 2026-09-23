@@ -87,19 +87,23 @@
   clip-path: inset(0 -8px -8px 0);
 }
 
-/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. NO page
-   edge here (Task 4) — this element's own box carries `padding: var(--sp-6)` and the picture is
-   `object-fit: contain`, so unless the image's natural aspect ratio happens to fill that padded
-   box exactly, an outline on THIS box would frame the padding rect, not the picture's own painted
-   edge. The letterboxed case is the common one, so the hairline lives on `.preview-image--scratch`
-   below instead, whose box (JS-positioned from `imagePages()[0].rendered`) IS the picture's exact
-   rendered rect. Non-scratch images are reported as not edged. */
+/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. The inset
+   from the pane edge is done with `max-width`/`max-height` (not `padding`) so the element's own
+   box equals the picture's rendered rect exactly: with `padding: var(--sp-6)` the box was bigger
+   than the picture whenever the aspect ratio didn't fill it exactly (the common, letterboxed
+   case), so the checkerboard painted a 16px ring pressed against the pane edges on every opaque
+   photo — a busy frame, and a third background colour in the reading area — and the picture had
+   no edge of its own (only `.preview-image--scratch` below had one). With padding 0 and the inset
+   folded into max-width/max-height instead, the box IS the picture's rect (same as the scratch
+   variant), so the checker shows only through transparent pixels and a hairline `outline` lands
+   on the painted edge. */
 .preview-image {
   margin: auto;
-  max-width: 100%;
-  max-height: 100%;
+  max-width: calc(100% - 2 * var(--sp-6));
+  max-height: calc(100% - 2 * var(--sp-6));
   object-fit: contain;
-  padding: var(--sp-6);
+  padding: 0;
+  outline: var(--rule-soft);
   box-sizing: border-box;
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
