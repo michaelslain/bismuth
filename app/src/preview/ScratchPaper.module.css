@@ -1,6 +1,8 @@
-/* app/src/preview/ScratchPaper.module.css — ScratchPaper.tsx ONLY (one-module-one-importer). */
+/* app/src/preview/ScratchPaper.module.css — ScratchPaper.tsx ONLY (one-module-one-importer).
+   Raised note surface: --surface-1 against the --editor desk it sits on, with the same rule-soft
+   hairline as a note's own dividers. */
 
 .scratch-paper {
-    background: var(--editor);
+    background: var(--surface-1);
     border-left: var(--rule-soft);
 }

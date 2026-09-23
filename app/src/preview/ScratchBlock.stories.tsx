@@ -35,7 +35,7 @@ function Patch(props: { autofocus: boolean }) {
                 position: 'relative',
                 width: '260px',
                 height: '220px',
-                background: 'var(--editor)',
+                background: 'var(--surface-1)',
                 'border-left': 'var(--rule-soft)',
             }}
         >

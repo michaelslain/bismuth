@@ -27,6 +27,7 @@ type HarnessProps = {
     draw?: boolean
     scratch?: boolean
     panel?: boolean
+    imageSize?: { w: number; h: number }
 }
 
 /** A live bar: every toggle flips its own signal, so a play() can press it and read the result. */
@@ -61,6 +62,7 @@ function Harness(props: HarnessProps): JSX.Element {
                 onTogglePanel={() => setPanel(v => !v)}
                 nativeActions={() => props.native ?? false}
                 onOpenExternal={() => {}}
+                imageSize={() => props.imageSize}
             />
         </div>
     )
@@ -156,6 +158,9 @@ export const Image: Story = {
             await expect(canvas.queryByLabelText(label)).toBeNull()
         }
         await expect(bar.querySelector('[data-testid="page-readout"]')).toBeNull()
+        // No natural size known → no readouts region at all (image-size readout is the only
+        // thing that region ever holds for an image).
+        await expect(bar.querySelector('[data-testid="vb-readouts"]')).toBeNull()
 
         // The image bar's Draw button actually works — no test previously pressed it.
         const draw = canvas.getByLabelText('Draw')
@@ -166,6 +171,35 @@ export const Image: Story = {
         await fireEvent.click(draw)
         await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('false'))
         await expect(probeBar(bar).frames, 'draw off').toBe(0)
+    },
+}
+
+/** An image whose natural pixel size is known: `W × H` in the readouts region (the same slot the
+ *  PDF page readout occupies), muted like every other readout, dropping at bar-drop level 2. */
+export const ImageWithSize: Story = {
+    render: () => (
+        <Harness
+            width={1000}
+            kind="image"
+            name="whiteboard-2026-09-15.png"
+            imageSize={{ w: 1600, h: 900 }}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        expectCalm(bar, 0, 0)
+        const readouts = bar.querySelector('[data-testid="vb-readouts"]') as HTMLElement
+        await expect(readouts).toBeInTheDocument()
+        const label = within(readouts).getByText('1600 × 900')
+        await expect(label.closest('[data-bar-drop]')?.getAttribute('data-bar-drop')).toBe('2')
+
+        // Muted like every other readout: the same colour a probe resolves --text-muted to.
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--text-muted)'
+        readouts.appendChild(probe)
+        const expectedColor = getComputedStyle(probe).color
+        probe.remove()
+        await expect(getComputedStyle(label).color).toBe(expectedColor)
     },
 }
 

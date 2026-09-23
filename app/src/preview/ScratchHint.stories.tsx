@@ -15,7 +15,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The strip: --editor ground against a --surface-2 desk, matching PageInk/ScratchTextLayer. */
+/** The strip: --surface-1 ground against a --editor desk, matching PageInk/ScratchTextLayer. */
 function Strip() {
     return (
         <div
@@ -23,7 +23,7 @@ function Strip() {
                 position: 'relative',
                 width: '280px',
                 height: '160px',
-                background: 'var(--surface-2)',
+                background: 'var(--editor)',
                 padding: '20px',
             }}
         >
@@ -32,7 +32,7 @@ function Strip() {
                     position: 'relative',
                     width: '240px',
                     height: '120px',
-                    background: 'var(--editor)',
+                    background: 'var(--surface-1)',
                     'border-left': 'var(--rule-soft)',
                 }}
             >
