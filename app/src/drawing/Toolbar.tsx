@@ -245,7 +245,7 @@ export function Toolbar(props: {
                     {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
                     <Show when={props.onImportImage}>
                         <Button
-                            kind="text"
+                            kind="segment"
                             state="unselected"
                             class={styles['draw-iconseg']}
                             title="Import image"
