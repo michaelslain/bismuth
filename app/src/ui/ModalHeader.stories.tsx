@@ -1,10 +1,7 @@
-// Visual spec for <ModalHeader> — the header strip six modals used to hand-roll (icon mark +
-// title + optional subtitle + a close control), extracted onto calendar/Calendar.module.css's
-// `.evm-head` family. See ModalHeader.tsx's header comment for the full story.
-//
-// Props: icon (registry name, required), title (required), subtitle (optional), onClose
-// (required), compact (centres the mark against a single-line title), tone ('danger' paints the
-// mark --danger), class.
+// Visual spec for <ModalHeader> — the top-rule row every modal draws: a title, an optional
+// `// subtitle`, and a close control, with the rule itself drawn as line segments either side of
+// that text (see ModalHeader.tsx's header comment for the anatomy). `icon`/`compact` are
+// deprecated no-ops (Task 12 deletes both).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { ModalHeader } from './ModalHeader'
@@ -14,8 +11,7 @@ const meta = {
     component: ModalHeader,
     parameters: { layout: 'padded' },
     args: {
-        icon: 'Calendar',
-        title: 'New Event',
+        title: 'new event',
         onClose: () => {},
     },
 } satisfies Meta<typeof ModalHeader>
@@ -23,84 +19,48 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Icon + title + subtitle — EventModal's shape, two-line, `align-items: flex-start`. */
+/** Title only — the acceptance shape: one hairline broken only by the title text and `[x]`,
+ *  meeting the panel's own left/right border with no stub above and no second line below. */
 export const Default: Story = {
     render: () => (
         <div style={{ width: '440px', border: '1px solid var(--border-soft)' }}>
-            <ModalHeader
-                icon="Calendar"
-                title="New Event"
-                subtitle="Tuesday, August 12"
-                onClose={() => {}}
-            />
+            <ModalHeader title="new event" onClose={() => {}} />
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const title = canvasElement.querySelector('[class*="modal-title"]')
-        const sub = canvasElement.querySelector('[class*="modal-sub"]')
+        const title = canvasElement.querySelector('[class*="title"]')
         expect(title).not.toBeNull()
-        expect(title!.textContent).toBe('New Event')
-        expect(sub).not.toBeNull()
-        expect(sub!.textContent).toBe('Tuesday, August 12')
-        expect(canvasElement.querySelector('svg')).not.toBeNull()
-    },
-}
-
-/** No subtitle — CategoryPanel / CalendarSettings' shape: the mark centres against a
- *  single-line title instead of sitting at the top of a two-line block. */
-export const Compact: Story = {
-    render: () => (
-        <div style={{ width: '440px', border: '1px solid var(--border-soft)' }}>
-            <ModalHeader icon="Tag" title="Categories" compact onClose={() => {}} />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const title = canvasElement.querySelector('[class*="modal-title"]')
-        expect(title).not.toBeNull()
-        expect(title!.textContent).toBe('Categories')
-        // No subtitle passed -> the <Show> renders nothing, not an empty node.
-        expect(canvasElement.querySelector('[class*="modal-sub"]')).toBeNull()
-        const head = canvasElement.querySelector(
-            '[class*="modal-head"]',
-        ) as HTMLElement
-        expect(head.className).toMatch(/compact/)
-    },
-}
-
-/** The defect this component exists to prevent recurring: `bases/BaseSettings.tsx` used a
- *  `<div role="button">` with no `tabindex` for its close control, which is NOT reachable by
- *  keyboard at all. Here the close control is a real IconButton — a `<button>` element, present
- *  in the standard focusable-element query the same way `ui/Modal.tsx`'s own focus trap builds
- *  its list (tag selectors only, never a class name — see CLAUDE.md's DOM-interrogation rule). */
-const FOCUSABLE =
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-export const CloseIsFocusable: Story = {
-    render: () => (
-        <div style={{ width: '440px', border: '1px solid var(--border-soft)' }}>
-            <ModalHeader
-                icon="Settings2"
-                title="Calendar settings"
-                compact
-                onClose={() => {}}
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
+        expect(title!.textContent).toBe('new event')
+        expect(canvasElement.querySelector('[class*="sep"]')).toBeNull()
         const close = canvasElement.querySelector('button[aria-label="Close"]')
         expect(close).not.toBeNull()
-        expect(close!.tagName).toBe('BUTTON')
-        const focusable = [
-            ...canvasElement.querySelectorAll(FOCUSABLE),
-        ]
-        expect(focusable).toContain(close)
+        expect(close).toHaveAttribute('data-modal-close')
     },
 }
 
-/** Destructive tone — RecurrenceDialog's delete shape. The mark alone changes hue; the title,
- *  subtitle and close control stay neutral. `play` asserts the two marks actually compute to
- *  different colours rather than merely carrying different class names, since a `tone` prop that
- *  silently failed to reach the CSS would still render a perfectly plausible header. */
+/** `// subtitle` — the separator is the app-wide `//` glyph, never a middot. */
+export const WithSubtitle: Story = {
+    render: () => (
+        <div style={{ width: '440px', border: '1px solid var(--border-soft)' }}>
+            <ModalHeader
+                title="new event"
+                subtitle="tuesday, august 12"
+                onClose={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const sep = canvasElement.querySelector('[class*="sep"]')
+        expect(sep).not.toBeNull()
+        expect(sep!.textContent).toBe('//')
+        const sub = canvasElement.querySelector('[class*="sub"]')
+        expect(sub).not.toBeNull()
+        expect(sub!.textContent).toBe('tuesday, august 12')
+    },
+}
+
+/** Destructive tone — RecurrenceDialog's delete shape. `tone="danger"` paints the title
+ *  --danger; the subtitle and close control stay neutral, same as before. */
 export const DangerTone: Story = {
     render: () => (
         <div
@@ -112,36 +72,61 @@ export const DangerTone: Story = {
             }}
         >
             <ModalHeader
-                icon="trash-2"
-                title="Delete recurring event"
-                subtitle="MATH 128A Lecture"
-                compact
+                title="delete recurring event"
+                subtitle="math 128a lecture"
                 onClose={() => {}}
             />
             <ModalHeader
-                icon="trash-2"
-                title="Delete recurring event"
-                subtitle="MATH 128A Lecture"
-                compact
+                title="delete recurring event"
+                subtitle="math 128a lecture"
                 tone="danger"
                 onClose={() => {}}
             />
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const marks = [
-            ...canvasElement.querySelectorAll('[class*="modal-mark"]'),
-        ] as HTMLElement[]
-        expect(marks.length).toBe(2)
-        const plain = getComputedStyle(marks[0]!).color
-        const danger = getComputedStyle(marks[1]!).color
-        expect(danger).not.toBe(plain)
-        // The title beside a danger mark must NOT also turn red — the tone is on the mark only.
         const titles = [
-            ...canvasElement.querySelectorAll('[class*="modal-title"]'),
+            ...canvasElement.querySelectorAll('[class*="title"]'),
         ] as HTMLElement[]
-        expect(getComputedStyle(titles[1]!).color).toBe(
-            getComputedStyle(titles[0]!).color,
+        expect(titles.length).toBe(2)
+        const plain = getComputedStyle(titles[0]!).color
+        const danger = getComputedStyle(titles[1]!).color
+        expect(danger).not.toBe(plain)
+        // The subtitle beside a danger title must NOT also turn red — the tone is on the title only.
+        const subs = [
+            ...canvasElement.querySelectorAll('[class*="sub"]'),
+        ] as HTMLElement[]
+        expect(getComputedStyle(subs[1]!).color).toBe(
+            getComputedStyle(subs[0]!).color,
+        )
+    },
+}
+
+/** A title far too long for the row ellipsizes before reaching the close control — it never
+ *  pushes `[x]` outside the panel or wraps onto a second line. */
+export const LongTitleEllipsis: Story = {
+    render: () => (
+        <div style={{ width: '320px', border: '1px solid var(--border-soft)' }}>
+            <ModalHeader
+                title="a considerably longer modal title than this narrow panel can ever hope to show in full"
+                onClose={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector(
+            '[class*="title"]',
+        ) as HTMLElement
+        expect(title).not.toBeNull()
+        expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
+        const close = canvasElement.querySelector(
+            'button[aria-label="Close"]',
+        ) as HTMLElement
+        const panel = canvasElement.firstElementChild as HTMLElement
+        // The close control stays fully inside the panel — the title ellipsized instead of
+        // pushing it out or wrapping the row onto a second line.
+        expect(close.getBoundingClientRect().right).toBeLessThanOrEqual(
+            panel.getBoundingClientRect().right + 1,
         )
     },
 }

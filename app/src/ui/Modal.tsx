@@ -116,10 +116,16 @@ function Modal(props: ModalProps) {
         opener = document.activeElement as HTMLElement | null
         window.addEventListener('keydown', handleKey)
         // Focus the first real control if there is one, else the panel. Deferred a frame because a
-        // caller's children may still be mounting on the same tick.
+        // caller's children may still be mounting on the same tick. Skips the header's close
+        // control (`[data-modal-close]`) so a modal with no body control focuses the panel rather
+        // than landing an accent focus ring on the close button at open — a body control (or the
+        // close, as the last resort) is what the eye expects to light up on mount.
         queueMicrotask(() => {
             const items = focusables()
-            ;(items[0] ?? panelEl)?.focus()
+            const firstNonClose = items.find(
+                el => !el.matches('[data-modal-close]'),
+            )
+            ;(firstNonClose ?? items[0] ?? panelEl)?.focus()
         })
         if (import.meta.env?.DEV && !props.label)
             console.warn(
