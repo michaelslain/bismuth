@@ -485,20 +485,20 @@ export function EventModal(props: { store: EventStore }) {
             <ModalFooter
                 leading={
                     <Show when={editing}>
-                        <TextButton size="sm" danger onClick={handleDelete}>
-                            DELETE
+                        <TextButton danger onClick={handleDelete}>
+                            delete
                         </TextButton>
-                        <TextButton size="sm" onClick={handleDuplicate}>
-                            DUPLICATE
+                        <TextButton onClick={handleDuplicate}>
+                            duplicate
                         </TextButton>
                     </Show>
                 }
             >
-                <TextButton size="sm" onClick={close}>
-                    CANCEL
+                <TextButton onClick={close}>
+                    cancel
                 </TextButton>
-                <TextButton size="sm" variant="selected" onClick={handleSave}>
-                    {editing ? 'SAVE' : 'CREATE EVENT'}
+                <TextButton variant="selected" onClick={handleSave}>
+                    {editing ? 'save' : 'create event'}
                 </TextButton>
             </ModalFooter>
         </FormModal>

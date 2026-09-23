@@ -554,11 +554,10 @@ export function QueryBuilder(props: {
                                 </div>
                                 <IconTextButton
                                     icon="Plus"
-                                    size="sm"
                                     iconSize={13}
                                     onClick={addRow}
                                 >
-                                    ADD FILTER
+                                    add filter
                                 </IconTextButton>
                             </>
                         }
@@ -800,24 +799,22 @@ export function QueryBuilder(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        size="sm"
                         iconSize={13}
                         onClick={reset}
                     >
-                        RESET
+                        reset
                     </IconTextButton>
                 }
             >
-                <TextButton size="sm" onClick={props.onClose}>
-                    CANCEL
+                <TextButton onClick={props.onClose}>
+                    cancel
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    size="sm"
                     variant="selected"
                     onClick={confirm}
                 >
-                    {props.initial ? 'SAVE' : 'INSERT'}
+                    {props.initial ? 'save' : 'insert'}
                 </IconTextButton>
             </ModalFooter>
         </FormModal>
