@@ -112,7 +112,14 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         if (s.pending === null) return
         const remaining = s.since + MOOD_SETTLE_MS - Date.now()
         const id = setTimeout(
-            () => setSettle(cur => settleMood(cur, props.mood, Date.now())),
+            () =>
+                setSettle(cur =>
+                    settleMood(
+                        cur,
+                        props.mood,
+                        Math.max(Date.now(), cur.since + MOOD_SETTLE_MS),
+                    ),
+                ),
             Math.max(0, remaining),
         )
         onCleanup(() => clearTimeout(id))
