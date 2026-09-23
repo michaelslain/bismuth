@@ -1,10 +1,11 @@
 /* app/src/PreviewView.module.css — read-only file preview tab (images / PDFs / code / binary).
    Moved out of the global PreviewView.css verbatim (2026-08 CSS modularization). Consumed by
-   PreviewView.tsx only. `:global()` appears once, on `.preview-find-case`, to reach the shared
-   ui/Button's own KIND class (`.btn--text`) — see that rule's own comment for why. The
-   selected/unselected STATE no longer needs `:global()` at all: it is read off Button's own
-   `data-state` attribute (one-global-followups Task 1) instead of reaching `.btn--selected`/
-   `.btn--unselected` as foreign classes.
+   PreviewView.tsx only. No `:global()` reach anywhere in this file — the match-case toggle
+   (`.preview-find-case`) is a ui/PlainButton (an unstyled real `<button>`, all visuals from its
+   own `class`) carrying a LOCAL class for its whole look, instead of the shared ui/Button plus a
+   `:global(.btn)`/`:global(.btn--text)` override reaching Button's own KIND classes. Its
+   selected/unselected STATE is a `data-state` attribute PreviewView.tsx sets on it directly, not
+   a foreign `:global(.btn--selected)`/`.btn--unselected)` reach.
 
    CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
    `is-empty` on `.preview-find-count`, `is-active` on `.preview-find-match` (the match-case
@@ -207,20 +208,16 @@
 }
 .preview-find-count.is-empty { color: var(--danger); }
 
-/* Match-case toggle ("Aa") — the shared ui/Button (kind="text", state=selected/unselected),
-   with this control's original bespoke chrome restored via a `:global(.btn)`/`:global(.btn--text)`
-   override reaching Button's own KIND classes — the same idiom as drawing/Toolbar.module.css's
-   `.draw-colorseg:global(.btn)`. The two STATE rules below key on Button's own `data-state`
-   attribute instead (one-global-followups Task 1), not a foreign `:global(.btn--selected)`/
-   `.btn--unselected)` reach. Two things a plain .btn--text would get wrong here: `text-transform:
-   uppercase` would turn the "Aa" label into "AA", and `.btn--text[data-state="selected"]`'s
-   bordered-not-filled look doesn't match this control's filled active state (background
-   var(--accent-soft), no border) — so both are overridden below rather than left to the shared
-   default. The base `.preview-find-case:global(.btn)` rule combines an extra `:global()` class
-   beyond what ui.css's own rule uses (two classes against ui.css's one) purely so specificity —
-   not import order — decides the tie; the attribute selectors below carry the same specificity a
-   class would (0,1,0 each), so the tie-break is unaffected by the swap. */
-.preview-find-case:global(.btn) {
+/* Match-case toggle ("Aa") — a ui/PlainButton (unstyled real `<button>`) carrying this LOCAL
+   class for its entire look, rather than the shared ui/Button plus a bespoke-chrome override
+   reaching Button's own KIND classes (the `:global(.btn)`/`:global(.btn--text)` idiom
+   drawing/Toolbar.module.css's `.draw-colorseg:global(.btn)` still uses). The two STATE rules
+   below key on a `data-state` attribute PreviewView.tsx sets directly, not a foreign
+   `:global(.btn--selected)`/`.btn--unselected)` reach. Two things a plain text button would get
+   wrong here anyway: `text-transform: uppercase` would turn the "Aa" label into "AA", and a
+   bordered-not-filled selected look doesn't match this control's filled active state (background
+   var(--accent-soft), no border) — both are just written directly below instead. */
+.preview-find-case {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -238,8 +235,8 @@
   font-family: var(--ui-font, system-ui, sans-serif);
   transition: background 0.1s ease, color 0.1s ease;
 }
-.preview-find-case:global(.btn--text)[data-state="unselected"] { color: var(--text-muted); }
-.preview-find-case:global(.btn--text)[data-state="selected"] {
+.preview-find-case[data-state="unselected"] { color: var(--text-muted); }
+.preview-find-case[data-state="selected"] {
   background: var(--accent-soft);
   color: var(--accent);
 }

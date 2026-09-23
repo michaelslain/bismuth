@@ -4,6 +4,7 @@ import type { PaperBg } from '../../../core/src/drawing/model'
 import type { ToolState } from './DrawingCanvas'
 import { ZOOM_MIN, ZOOM_MAX } from './DrawingPage'
 import { Button } from '../ui/Button'
+import PlainButton from '../ui/PlainButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { CATEGORY_SWATCHES, resolveAppearance } from '../themes'
@@ -329,43 +330,60 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
-                            <SegmentedToggle
-                                value={undefined}
-                                onChange={id => {
-                                    if (id === 'out') props.onZoomOut!()
-                                    else if (id === 'reset')
-                                        props.onResetZoom!()
-                                    else props.onZoomIn!()
-                                }}
-                                segmentClass={styles['draw-iconseg']}
-                                options={[
-                                    {
-                                        id: 'out' as const,
-                                        label: (
-                                            <Icon value="ZoomOut" size={17} />
-                                        ),
-                                        title: 'Zoom out',
-                                        ariaLabel: 'Zoom out',
-                                        disabled: props.zoom!() <= ZOOM_MIN,
-                                    },
-                                    {
-                                        id: 'reset' as const,
-                                        label: `${zoomPct()}%`,
-                                        title: 'Reset zoom',
-                                        ariaLabel: 'Reset zoom',
-                                        class: styles['draw-zoompct'],
-                                    },
-                                    {
-                                        id: 'in' as const,
-                                        label: (
-                                            <Icon value="ZoomIn" size={17} />
-                                        ),
-                                        title: 'Zoom in',
-                                        ariaLabel: 'Zoom in',
-                                        disabled: props.zoom!() >= ZOOM_MAX,
-                                    },
-                                ]}
-                            />
+                            <div class={styles['draw-zoomrow']}>
+                                <SegmentedToggle
+                                    value={undefined}
+                                    onChange={() => props.onZoomOut!()}
+                                    segmentClass={styles['draw-iconseg']}
+                                    options={[
+                                        {
+                                            id: 'out' as const,
+                                            label: (
+                                                <Icon
+                                                    value="ZoomOut"
+                                                    size={17}
+                                                />
+                                            ),
+                                            title: 'Zoom out',
+                                            ariaLabel: 'Zoom out',
+                                            disabled:
+                                                props.zoom!() <= ZOOM_MIN,
+                                        },
+                                    ]}
+                                />
+                                {/* A ui/PlainButton (unstyled real <button>), not a SegmentedToggle
+                                    option — this is a readout, not a toggle member, so it must
+                                    never pick up a Button KIND class (bracket-buttons Task 2). Its
+                                    look is `.draw-zoompct` alone, colocated below. */}
+                                <PlainButton
+                                    class={styles['draw-zoompct']}
+                                    title="Reset zoom"
+                                    aria-label="Reset zoom"
+                                    onClick={() => props.onResetZoom!()}
+                                >
+                                    {`${zoomPct()}%`}
+                                </PlainButton>
+                                <SegmentedToggle
+                                    value={undefined}
+                                    onChange={() => props.onZoomIn!()}
+                                    segmentClass={styles['draw-iconseg']}
+                                    options={[
+                                        {
+                                            id: 'in' as const,
+                                            label: (
+                                                <Icon
+                                                    value="ZoomIn"
+                                                    size={17}
+                                                />
+                                            ),
+                                            title: 'Zoom in',
+                                            ariaLabel: 'Zoom in',
+                                            disabled:
+                                                props.zoom!() >= ZOOM_MAX,
+                                        },
+                                    ]}
+                                />
+                            </div>
                         </Show>
                     </div>
                 </div>
