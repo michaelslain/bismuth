@@ -7,7 +7,7 @@
 // canvasElement/#storybook-root entirely (see Modal.tsx). So the width play below queries
 // `document`, not `canvasElement`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { createSignal } from 'solid-js'
+import { Show, createSignal } from 'solid-js'
 import { expect, waitFor } from 'storybook/test'
 import FormModal from './FormModal'
 import ModalHeader from './ModalHeader'
@@ -136,5 +136,90 @@ export const FocusLandsInBody: Story = {
         expect(
             document.activeElement?.matches('[data-modal-close]'),
         ).toBe(false)
+    },
+}
+
+/** The seam the two late-mount stories below flip from play(): their body control is gated on it,
+ *  the way QueryBuilder's sections are gated on a `createResource`. Module-scoped so play() can
+ *  reach it; each render resets it, so a re-render starts from the not-yet-loaded state. */
+const [lateBodyReady, setLateBodyReady] = createSignal(false)
+
+/** Resolve after `n` animation frames — long enough that any fixed "re-check after a frame or
+ *  two" in Modal's initial focus has already run and given up before the body mounts. */
+const frames = (n: number) =>
+    new Promise<void>(resolve => {
+        const step = (left: number) =>
+            left ? requestAnimationFrame(() => step(left - 1)) : resolve()
+        step(n)
+    })
+
+const LateBodyModal = (props: { withFooter?: boolean }) => {
+    const [value, setValue] = createSignal('')
+    setLateBodyReady(false)
+    return (
+        <FormModal onClose={noop} label="rename note">
+            <ModalHeader title="rename note" onClose={noop} />
+            <ModalBody>
+                <Show when={lateBodyReady()}>
+                    <SettingsField label="name">
+                        <TextInput value={value()} onInput={setValue} />
+                    </SettingsField>
+                </Show>
+            </ModalBody>
+            <Show when={props.withFooter}>
+                <ModalFooter hint="to cancel">
+                    <TextButton onClick={noop}>cancel</TextButton>
+                </ModalFooter>
+            </Show>
+        </FormModal>
+    )
+}
+
+/** A body control that mounts well AFTER the dialog (a fetch-gated body, like QueryBuilder's):
+ *  until it exists the only control is the header's `[x]`, so initial focus parks there — and
+ *  must move to the body control the moment it appears, not stay on close. */
+export const FocusFollowsLateBodyControl: Story = {
+    render: () => <LateBodyModal />,
+    play: async () => {
+        await waitFor(() =>
+            expect(
+                document.activeElement?.matches('[data-modal-close]'),
+            ).toBe(true),
+        )
+        await frames(3)
+        setLateBodyReady(true)
+        await waitFor(() =>
+            expect(document.activeElement).toBe(
+                document.querySelector('[role="dialog"] input'),
+            ),
+        )
+        expect(
+            document.activeElement?.matches('[data-modal-close]'),
+        ).toBe(false)
+    },
+}
+
+/** The other half of the late-mount contract: once focus has moved somewhere Modal did not put
+ *  it, a body control mounting afterwards must NOT pull focus back into the body. */
+export const LateBodyControlNeverStealsMovedFocus: Story = {
+    render: () => <LateBodyModal withFooter />,
+    play: async () => {
+        const cancel = () =>
+            document.querySelector(
+                '[role="dialog"] button:not([data-modal-close])',
+            )
+        await waitFor(() => expect(document.activeElement).toBe(cancel()))
+        const close = document.querySelector(
+            '[data-modal-close]',
+        ) as HTMLElement
+        close.focus()
+        setLateBodyReady(true)
+        await waitFor(() =>
+            expect(document.querySelector('[role="dialog"] input')).not.toBe(
+                null,
+            ),
+        )
+        await frames(3)
+        expect(document.activeElement).toBe(close)
     },
 }
