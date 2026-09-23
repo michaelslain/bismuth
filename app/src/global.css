@@ -414,6 +414,11 @@
      onto --h-row. */
   --row-h: 18px;
 
+  /* Cap for a scrolling stack of --row-h rows inside a dialog (ToggleList's column-visibility
+     list, and anything shaped like it) — enough rows to browse without the list, and the dialog
+     around it, growing unbounded. */
+  --list-max-h: 320px;
+
   --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
 
   --blink: 1.1s;        /* caret step-end blink */

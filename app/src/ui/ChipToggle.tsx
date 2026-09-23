@@ -15,8 +15,11 @@ export type ChipToggleProps = {
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
- * A selectable pill toggle — export options, search toggles. `.chip-toggle` (+ `.selected`,
- * `.tone-<x>`) is currently a `:global()` bridge in ChipToggle.module.css, still reached
+ * A selectable `[label]` bracket toggle — export options, search toggles. No box: the brackets
+ * are generated content in ChipToggle.module.css, tinted with the label (selected = accent or
+ * `tone`, unselected = `--faint`), the same register as SegmentedToggle's bracket look.
+ * `.chip-toggle` (+ `.selected`, `.tone-<x>`) is currently a `:global()` bridge in
+ * ChipToggle.module.css, still reached
  * directly by bases/CardEditModal.module.css and bases/BaseView.module.css; see that file's
  * header. Remaining native button attributes (`title`, `aria-*`, …) pass through via
  * `splitProps` onto the underlying `<button>` — but `onClick` is NOT forwarded: click is owned
