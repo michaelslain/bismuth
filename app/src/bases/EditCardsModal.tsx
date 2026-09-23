@@ -280,7 +280,6 @@ export function EditCardsModal(props: {
                     value={mode()}
                     onChange={setMode}
                     size="sm"
-                    segmentClass={styles['cards-modebtn']}
                     options={[
                         {
                             id: 'list',
