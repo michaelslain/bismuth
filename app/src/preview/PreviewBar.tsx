@@ -3,7 +3,7 @@
 // control a `VBtn`, the same two spacings every other bar in the app uses. Left to right:
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
-//   readouts  `p. N / M`                                   pdf only
+//   readouts  p. N / M (pdf) // W × H (image)
 //   config    [− 100% + FIT]   [highlight draw scratch]    pdf  ·  [draw] on an image
 //   actions   [bookmarks]      [open-externally reveal]    bookmarks pdf only · file actions Tauri
 //
@@ -104,18 +104,27 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                 </Crumb>
             }
             readouts={
-                <Show when={pdf() && (props.pageCount?.() ?? 0) > 0}>
-                    {/* The least essential thing in the trail: a reading position is worth less
-                        than the controls that edit the page. The wrapper carries the tag because
-                        PageReadout's props are its interface, not a pass-through. */}
-                    <div class={styles.group} data-bar-drop="2">
-                        <PageReadout
-                            current={() => props.currentPage?.() ?? 0}
-                            count={() => props.pageCount?.() ?? 0}
-                            onGo={i => props.onGoToPage?.(i)}
-                        />
-                    </div>
-                </Show>
+                <>
+                    <Show when={pdf() && (props.pageCount?.() ?? 0) > 0}>
+                        {/* The least essential thing in the trail: a reading position is worth
+                            less than the controls that edit the page. The wrapper carries the tag
+                            because PageReadout's props are its interface, not a pass-through. */}
+                        <div class={styles.group} data-bar-drop="2">
+                            <PageReadout
+                                current={() => props.currentPage?.() ?? 0}
+                                count={() => props.pageCount?.() ?? 0}
+                                onGo={i => props.onGoToPage?.(i)}
+                            />
+                        </div>
+                    </Show>
+                    <Show when={props.kind() === 'image' && props.imageSize?.()}>
+                        {size => (
+                            <div class={styles.group} data-bar-drop="2">
+                                <Label tone="muted">{`${size().w} × ${size().h}`}</Label>
+                            </div>
+                        )}
+                    </Show>
+                </>
             }
             config={
                 <Show when={inkable()}>
