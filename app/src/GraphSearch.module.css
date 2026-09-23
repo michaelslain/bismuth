@@ -36,7 +36,8 @@
 
 /* Graph Find search bar — layout only (SearchBar itself owns padding/gap/font/colour for both
    registers via its `size` prop). */
-.graph-search-bar { width: 100%; }
+.graph-search-bar { width: auto; margin: 0 calc(var(--sp-2) + var(--sp-3)); }
+.graph-search[data-embedded] .graph-search-bar { margin: 0 calc(var(--sp-2) * 2); }
 
 /* No divider here — SearchBar's own underline is the one line between the field and the list. */
 .graph-search-list { font-size: var(--fs-ui); overflow-y: auto; padding: var(--sp-2); }
