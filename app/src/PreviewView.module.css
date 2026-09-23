@@ -157,45 +157,31 @@
 /* ── Find bar (Cmd/Ctrl+F over a code/text or PDF preview) ─────────────────────────────
    Overlaid top-right of the scrolling body; visual twin of the editor's `.bismuth-find`
    (Editor.css) but self-contained so PreviewView never depends on the editor being loaded. */
-/* `.preview-find` is now this component's own `class` on `ui/SearchBar`, so it composes with
-   (and, at equal single-class specificity, loads after — see GraphSearch.module.css's
-   `.graph-search-bar` for the same idiom) ui.css's global `.search-bar`. `height: auto` undoes
-   that base rule's fixed `--h-control` row height — this bar's own content (icon buttons, the
-   "Aa" toggle) drove its height before the swap and still should. */
+/* `.preview-find` is this component's own `onKeyDown={e => e.stopPropagation()}` wrapper
+   `<div>` (that stopPropagation is load-bearing — see the comment at its call site) around
+   `ui/SearchBar`, not SearchBar's own `class` — SearchBar owns every visual of the field itself
+   now (see ui/SearchBar.module.css), so this rule supplies only the floating popover CHROME
+   around it: position, background, border, lift. `min-width` is a cell-count, not a literal —
+   `--cell-w` is the ASCII-grid character advance width defined in global.css — and stays a floor
+   rather than a fixed `width` so the bar's own content (icon, input, trailing buttons) is never
+   squeezed narrower than it needs and forced to overflow the popover's right edge. No `display:
+   flex` here: the code-find case has exactly one child (`ui/SearchBar`, itself a flex row) that
+   fills this box in normal block flow; the PDF note case (multiple direct children) supplies its
+   own flex layout on `.preview-find-note` below. */
 .preview-find {
   position: absolute;
-  top: 8px;
-  right: 14px;
+  top: var(--sp-3);
+  right: var(--sp-5);
   z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: auto;
-  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
+  min-width: calc(var(--cell-w) * 40);
+  padding: var(--sp-2) var(--sp-4);
   background: var(--pop-bg-strong, var(--bg));
-
-
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--r-0);
   box-shadow: var(--lift);
   font-family: var(--ui-font-stack);
   color: var(--fg);
 }
-
-/* Composes with ui.css's global `.search-bar-input`, whose `flex: 1` (flex-basis 0%) would
-   otherwise ignore this rule's `width` entirely and stretch the field to fill the bar — `flex:
-   none` restores the fixed 168px this field always had. */
-.preview-find-input {
-  width: 168px;
-  flex: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--fg);
-  font-size: var(--fs-body);
-  padding: var(--sp-1);
-}
-.preview-find-input::placeholder { color: var(--text-muted); }
 
 .preview-find-count {
   min-width: 30px;
@@ -241,9 +227,15 @@
   color: var(--accent);
 }
 
-/* PDF variant: an informational note (no input) — the embedded viewer owns text search. */
+/* PDF variant: an informational note (no input) — the embedded viewer owns text search. This is
+   the one `.preview-find` user with several direct children (icon, text, close button), so it
+   supplies its own row layout rather than relying on the code-find bar's single-child block flow. */
 .preview-find-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
+  border: var(--rule);
   color: var(--text-muted);
   max-width: min(340px, 70vw);
 }

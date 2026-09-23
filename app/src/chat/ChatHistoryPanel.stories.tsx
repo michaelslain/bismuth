@@ -101,7 +101,7 @@ export const Search: Story = {
     ),
     play: async ({ canvasElement }) => {
         const input = canvasElement.querySelector<HTMLInputElement>(
-            'input[placeholder="Search conversations…"]',
+            'input[placeholder="conversations"]',
         )!
         await expect(input.value).toBe('quiet row')
         const canvas = within(canvasElement)
