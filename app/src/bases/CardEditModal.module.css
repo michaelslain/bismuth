@@ -46,18 +46,20 @@
   padding: var(--sp-3) 0;
 }
 
-/* The rich Milkdown description surface — a bordered box that reads like the note editor's body. */
+/* The rich Milkdown description surface — a neutral underline field, matching every other value
+   control in the modal (modal-redesign: Acceptance 5, neutral focus — no fill, no accent ring). */
 .mdField {
   box-sizing: border-box;
   min-height: 96px;
-  padding: var(--sp-4) var(--sp-5);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-0);
-  background: var(--surface-2);
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  padding: var(--sp-2) 0;
+  border: none;
+  border-bottom: var(--rule-soft);
+  background: transparent;
+  transition: border-color 0.14s ease;
   cursor: text;
 }
-.mdField:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mdField:hover { border-bottom: var(--rule); }
+.mdField:focus-within { border-bottom: var(--rule); }
 
 /* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
    field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
