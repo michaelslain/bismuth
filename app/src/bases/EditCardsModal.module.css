@@ -1,11 +1,11 @@
 /* EditCardsModal.module.css — the deck-wide card manager (bases/EditCardsModal.tsx), split out
    of bases/Flashcards.module.css (Task 4 of the design-system conformance pass) once that file
-   had two importers (EditCardsModal.tsx + FlashcardsView.tsx). The modal SHELL (panel sizing +
-   title bar + close button) moved to bases/CardsModal.tsx/.module.css, which both files now
-   compose instead of each drawing its own — that shell was the actual class both used.
+   had two importers (EditCardsModal.tsx + FlashcardsView.tsx). The modal SHELL (frame, top-rule
+   header with title/subtitle/close, footer rule) is now FormModal + ModalHeader + ModalBody +
+   ModalFooter (modal-redesign Task 8) — CardsModal.tsx/.module.css, the shared shell those two
+   composed before, is deleted; this file owns only what those primitives don't.
 
-   OWNS: .cards-meta/.dot (this modal's own header addendum — the deck-name meta CardsModal
-   renders via its `meta` slot), .cards-modebar/.cards-hint/.key, the Cards-list family
+   OWNS: .cards-modebar/.cards-hint/.key, the Cards-list family
    (.cards-listwrap/.cards-collbl/.cards-row(+.dragging+.dropbefore)/.cards-num(+-add)/.cards-del/
    .cards-addrow/.cards-lefthint), the Front/Back cell + draft row
    (.cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft — folded in by Task 11 of the
@@ -14,9 +14,9 @@
    (.cards-bulkwrap/.cards-bulk-toolbar/.cards-lab/.cards-chiprow/.cards-bulk-grid/
    .cards-bulk-input(+textarea)/.cards-bulk-preview/.cards-pvhead/.cards-cnt/.cards-pvlist/
    .cards-pvcard(+.bad)/.cards-pi/.cards-pf/.cards-pb(+::before)/.cards-warn-em/.cards-warn/
-   .cards-pvempty), the Footer (.cards-foot/.cards-count), and a local `.sp` spacer (flex: 1) for
-   the two flex-spacer usages that are NOT the header's — the modebar hint gap and the bulk
-   toolbar's trailing gap. (CardsModal.module.css owns its OWN, separate `.sp` for the header.)
+   .cards-pvempty), .cards-count (the footer's card-count Badge, now ModalFooter's `leading`
+   slot), and a local `.sp` spacer (flex: 1) for the two flex-spacer usages that aren't the
+   header's/footer's own — the modebar hint gap and the bulk toolbar's trailing gap.
 
    THE INNERHTML/CLOSEST/QUERYSELECTOR TRAP (Task 11, unchanged by this split). `.cell-*`/
    `.cards-draft` were held back from Task 8's original App.css move because
@@ -57,9 +57,6 @@
 
    :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest): .cards-num,
    .cards-row:hover .cards-del .btn--icon. */
-
-.cards-meta { color: var(--text-muted); font-size: var(--fs-body); display: flex; align-items: center; gap: var(--sp-4); }
-.cards-meta .dot { color: var(--faint); }
 
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-7); }
 .cards-hint { color: var(--faint); font-size: var(--fs-ui); white-space: nowrap; }
@@ -169,7 +166,8 @@
 .cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: var(--fs-ui); text-align: center; padding: 30px; }
 
 /* ── Footer ── */
-.cards-foot { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-6) var(--sp-7); border-top: 1px solid var(--border-soft); }
+/* .cards-foot deleted (modal-redesign Task 8) — the footer strip is now ModalFooter's own
+   `.modal-foot`, with this Badge as its `leading` slot. */
 /* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); font-size (12px, not on
    the fixed --fs-* scale) stays here, and the class stays for the nested `b` override below. */
 .cards-count { font-size: var(--fs-ui); }

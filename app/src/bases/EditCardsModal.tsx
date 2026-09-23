@@ -8,7 +8,10 @@ import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
 import Text from '../ui/Text'
-import CardsModal from './CardsModal'
+import FormModal from '../ui/FormModal'
+import ModalHeader from '../ui/ModalHeader'
+import ModalBody from '../ui/ModalBody'
+import ModalFooter from '../ui/ModalFooter'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
@@ -249,32 +252,14 @@ export function EditCardsModal(props: {
     }
 
     return (
-        <CardsModal
-            title="Edit cards"
-            onClose={close}
-            meta={
-                <Show when={props.deckName}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['cards-meta']}
-                    >
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['dot']}
-                        >
-                            //
-                        </Text>{' '}
-                        {props.deckName}
-                    </Text>
-                </Show>
-            }
-        >
+        <FormModal onClose={close} label="edit cards" width={940}>
+            <ModalHeader
+                title="edit cards"
+                subtitle={props.deckName}
+                onClose={close}
+            />
+
+            <ModalBody>
             <div class={styles['cards-modebar']}>
                 <SegmentedToggle
                     value={mode()}
@@ -636,13 +621,17 @@ export function EditCardsModal(props: {
                     </div>
                 </div>
             </Show>
+            </ModalBody>
 
-            <div class={styles['cards-foot']}>
-                <Badge tone="muted" class={styles['cards-count']}>
-                    <b>{cards().length}</b>{' '}
-                    {cards().length === 1 ? 'card' : 'cards'} in deck
-                </Badge>
-                <div class={styles['sp']} />
+            <ModalFooter
+                hint="to close"
+                leading={
+                    <Badge tone="muted" class={styles['cards-count']}>
+                        <b>{cards().length}</b>{' '}
+                        {cards().length === 1 ? 'card' : 'cards'} in deck
+                    </Badge>
+                }
+            >
                 <Show
                     when={mode() === 'bulk'}
                     fallback={
@@ -662,7 +651,7 @@ export function EditCardsModal(props: {
                         add {validCount()} cards
                     </TextButton>
                 </Show>
-            </div>
-        </CardsModal>
+            </ModalFooter>
+        </FormModal>
     )
 }

@@ -23,15 +23,17 @@ import {
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
-import { Modal } from '../ui/Modal'
 import ChipToggle from '../ui/ChipToggle'
 import { Icon } from '../icons/Icon'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
-import Field from '../ui/Field'
 import { TextInput } from '../ui/TextInput'
+import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
+import ModalBody from '../ui/ModalBody'
 import ModalFooter from '../ui/ModalFooter'
+import SettingsGrid from '../ui/SettingsGrid'
+import SettingsField from '../ui/SettingsField'
 import MilkdownField from '../ui/MilkdownField'
 import DateFieldEditor from './DateFieldEditor'
 import { PropertyValueEditor } from './PropertyValueEditor'
@@ -379,62 +381,54 @@ export function CardEditModal(props: {
     }
 
     return (
-        <Modal onClose={close} class={styles.panel}>
-            <ModalHeader icon="Pencil" title="Edit card" compact onClose={close} />
+        <FormModal onClose={close} label="edit card" width={460}>
+            <ModalHeader title="edit card" onClose={close} />
 
-            <div class={styles.body}>
-                <Show when={props.hasFileIdentity ?? true}>
-                    <Field label="Title" class={styles.titleField} labelClass={styles.label}>
-                        <TextInput
-                            ref={titleRef}
-                            class={styles.titleInput}
-                            value={titleDraft()}
-                            placeholder="Untitled"
-                            onInput={setTitleDraft}
-                            onBlur={commitTitle}
-                            onKeyDown={e => {
-                                if (isConfirmKey(e)) {
-                                    e.preventDefault()
-                                    e.currentTarget.blur()
-                                } else if (isDismissKey(e)) {
-                                    setTitleDraft(
-                                        titleOf(props.row, props.titleCol),
-                                    )
-                                    e.currentTarget.blur()
-                                }
-                            }}
-                        />
-                    </Field>
-                </Show>
+            <ModalBody>
+                <SettingsGrid class={styles.metaVars}>
+                    <Show when={props.hasFileIdentity ?? true}>
+                        <SettingsField label="title">
+                            <TextInput
+                                ref={titleRef}
+                                value={titleDraft()}
+                                placeholder="Untitled"
+                                onInput={setTitleDraft}
+                                onBlur={commitTitle}
+                                onKeyDown={e => {
+                                    if (isConfirmKey(e)) {
+                                        e.preventDefault()
+                                        e.currentTarget.blur()
+                                    } else if (isDismissKey(e)) {
+                                        setTitleDraft(
+                                            titleOf(props.row, props.titleCol),
+                                        )
+                                        e.currentTarget.blur()
+                                    }
+                                }}
+                            />
+                        </SettingsField>
+                    </Show>
 
-                <For each={cols()}>
-                    {id => (
-                        <div
-                            class={styles.field}
-                            ref={el => fieldRefs.set(id, el)}
-                        >
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={styles.label}
-                            >
-                                {columnLabel(id, props.config)}
-                            </Text>
-                            {renderControl(id)}
+                    <For each={cols()}>
+                        {id => (
+                            <div ref={el => fieldRefs.set(id, el)}>
+                                <SettingsField label={columnLabel(id, props.config)}>
+                                    {renderControl(id)}
+                                </SettingsField>
+                            </div>
+                        )}
+                    </For>
+
+                    <Show when={cols().length === 0}>
+                        <div class={styles.empty}>
+                            This board declares no editable properties.
                         </div>
-                    )}
-                </For>
-
-                <Show when={cols().length === 0}>
-                    <div class={styles.empty}>
-                        This board declares no editable properties.
-                    </div>
-                </Show>
-            </div>
+                    </Show>
+                </SettingsGrid>
+            </ModalBody>
 
             <ModalFooter
+                hint="to close"
                 leading={
                     <Show when={props.hasFileIdentity ?? true}>
                         <TextButton danger onClick={props.onDelete}>
@@ -447,6 +441,6 @@ export function CardEditModal(props: {
                     done
                 </TextButton>
             </ModalFooter>
-        </Modal>
+        </FormModal>
     )
 }
