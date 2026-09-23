@@ -68,4 +68,6 @@
   min-width: 38px;
   font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
+.draw-zoompct:hover:not(:disabled) { color: var(--fg); }
