@@ -825,7 +825,7 @@ export function PreviewView(props: {
                                                 void openExternal(false)
                                             }
                                         >
-                                            OPEN IN DEFAULT APP
+                                            open in default app
                                         </IconTextButton>
                                     </Show>
                                 </div>
@@ -980,7 +980,7 @@ export function PreviewView(props: {
                                         icon="ExternalLink"
                                         onClick={() => void openExternal(false)}
                                     >
-                                        OPEN IN DEFAULT APP
+                                        open in default app
                                     </IconTextButton>
                                 ) : undefined
                             }
@@ -1077,7 +1077,7 @@ export function PreviewView(props: {
                                     icon="ExternalLink"
                                     onClick={() => void openExternal(false)}
                                 >
-                                    OPEN IN DEFAULT APP
+                                    open in default app
                                 </IconTextButton>
                             </Show>
                         </div>
