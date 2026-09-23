@@ -65,6 +65,11 @@ if (!firstRun) {
         })
 }
 
+import { installExternalLinkGuard } from './externalLinks'
+import { openExternalUrl } from './appWindow'
+
+installExternalLinkGuard(url => void openExternalUrl(url))
+
 render(() => <Root />, document.getElementById('root') as HTMLElement)
 
 // First run renders the intro takeover instead of App, so App's boot-ready signal (which dismisses
