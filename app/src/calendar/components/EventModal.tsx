@@ -497,7 +497,7 @@ export function EventModal(props: { store: EventStore }) {
                 <TextButton onClick={close}>
                     cancel
                 </TextButton>
-                <TextButton variant="selected" onClick={handleSave}>
+                <TextButton primary onClick={handleSave}>
                     {editing ? 'save' : 'create event'}
                 </TextButton>
             </ModalFooter>

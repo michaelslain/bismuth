@@ -224,7 +224,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
 
             <ModalFooter hint="to close">
                 <TextButton
-                    variant="selected"
+                    primary
                     onClick={props.onClose}
                 >
                     done

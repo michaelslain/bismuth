@@ -811,7 +811,7 @@ export function QueryBuilder(props: {
                 </TextButton>
                 <IconTextButton
                     icon="Check"
-                    variant="selected"
+                    primary
                     onClick={confirm}
                 >
                     {props.initial ? 'save' : 'insert'}
