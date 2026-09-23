@@ -431,9 +431,10 @@ export const WithMargin: Story = {
             { timeout: 5000 },
         )
 
-        // Acceptance 1 (scratch-notes decision 3): the strip is the note editor's own ground +
-        // hairline (ScratchPaper.tsx), NOT a continuation of the PDF page's white — so it reads
-        // as a different, note-styled surface at a glance rather than an extra-wide page.
+        // Acceptance 1 (scratch-notes decision 3): the strip is the raised `--surface-1` note
+        // surface, one step above the `--editor` desk, + hairline (ScratchPaper.tsx), NOT a
+        // continuation of the PDF page's white — so it reads as a different, note-styled surface
+        // at a glance rather than an extra-wide page.
         const marginRgb = parseRgb(getComputedStyle(marginEl).backgroundColor)
         const surface1Rgb = hexToRgb(
             getComputedStyle(document.documentElement)
