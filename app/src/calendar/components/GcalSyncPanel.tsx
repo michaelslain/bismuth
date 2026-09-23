@@ -24,9 +24,9 @@ import { GcalConnectModal } from '../../GcalConnectModal'
 import styles from './GcalSyncPanel.module.css'
 
 const POLICIES = [
-    { value: 'bismuthWins', label: 'This calendar wins' },
-    { value: 'lastWriteWins', label: 'Most recent edit wins' },
-    { value: 'googleWins', label: 'Google wins' },
+    { value: 'bismuthWins', label: 'this calendar wins' },
+    { value: 'lastWriteWins', label: 'most recent edit wins' },
+    { value: 'googleWins', label: 'google wins' },
 ]
 
 type GcalView = { googleCalendarSync?: boolean; googleCalendarId?: string }
@@ -112,15 +112,15 @@ export function GcalSyncPanel(props: { basePath: string }) {
 
     return (
         <>
-            <SettingsSection>Google Calendar sync</SettingsSection>
+            <SettingsSection>google calendar sync</SettingsSection>
 
             <Show
                 when={status()?.connected}
                 fallback={
                     <div class={styles['gcal-connect']}>
                         <SettingsHint>
-                            Two-way sync between this calendar and Google —
-                            events only (no Gmail, Drive, or contacts).
+                            two-way sync between this calendar and google —
+                            events only (no gmail, drive, or contacts).
                         </SettingsHint>
                         <IconTextButton
                             icon="Calendar"
@@ -155,28 +155,27 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 <div class={styles['gcal-toggle-group']}>
                     <ToggleList>
                         <ToggleRow
-                            label="Sync this calendar with Google"
+                            label="sync this calendar with google"
                             checked={syncedHere()}
                             muted={!syncedHere()}
                             onToggle={toggle}
                         />
                     </ToggleList>
                     <SettingsHint>
-                        Two-way every {gc().syncIntervalMinutes} min, and
-                        whenever you hit Sync now.
+                        two-way every {gc().syncIntervalMinutes} min, and
+                        whenever you hit sync now.
                     </SettingsHint>
                 </div>
 
                 <SettingsField
-                    icon="calendar"
-                    label="Google calendar"
+                    label="google calendar"
                     span
                     hint={
                         <>
-                            Which Google calendar this base syncs with.{' '}
+                            which google calendar this base syncs with.{' '}
                             <code>primary</code> is your main calendar; paste
-                            another calendar's ID (Google Calendar → Settings →
-                            Integrate calendar → Calendar ID) to sync a
+                            another calendar's id (google calendar → settings →
+                            integrate calendar → calendar id) to sync a
                             different one.
                         </>
                     }
@@ -199,10 +198,9 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 </SettingsField>
 
                 <SettingsField
-                    icon="Combine"
-                    label="On a conflict"
+                    label="on a conflict"
                     span
-                    hint="Which side wins if an event changed in both places since the last sync."
+                    hint="which side wins if an event changed in both places since the last sync."
                 >
                     <Select
                         value={gc().conflictPolicy}
