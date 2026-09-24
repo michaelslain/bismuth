@@ -26,26 +26,9 @@
    alongside its own hashed `.segmented` class) — no more descendant reach into another
    primitive's internals. */
 .draw-vstack-seg { gap: var(--sp-1); justify-content: flex-start; }
-/* The zoom group's own row — zoom-out / the % readout / zoom-in, now three sibling elements
-   (bracket-buttons Task 2 pulled the readout out of the SegmentedToggle it used to share with
-   zoom-out/in, since it is a caption/readout, not a toggle member) instead of one shared segmented
-   control. */
+/* The zoom group's own row — zoom-out / the % readout / zoom-in: two plain IconButtons and a
+   TextButton (one-button Task 6). The readout is a real bracket command now (resetting to 100%
+   is a click, not a caption), so TextButton supplies its whole look — no `.draw-zoompct` class
+   needed any more (a fixed width for jitter-free digits would be a width rule on a Button-family
+   control, which the button rule bans). */
 .draw-zoomrow { display: flex; align-items: center; }
-/* Zoom % readout sits in the zoom row; a ui/PlainButton (unstyled real <button>) now, not a
-   SegmentedToggle option, so this class carries the `.btn` base declarations it relied on
-   (inline-flex, centred, control height, inherited font) plus its own fixed width so it doesn't
-   jitter as the percentage changes. */
-.draw-zoompct {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--h-control);
-  font: inherit;
-  font-family: var(--ui-font-stack);
-  cursor: pointer;
-  min-width: 38px;
-  font-size: var(--fs-ui);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-.draw-zoompct:hover:not(:disabled) { color: var(--fg); }

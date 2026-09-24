@@ -1,80 +1,21 @@
-/* app/src/ui/SegmentedToggle.module.css — SegmentedToggle.tsx's own local stylesheet.
+/* app/src/ui/SegmentedToggle.tsx's own local stylesheet.
 
-   `.segmented` is SegmentedToggle's own hashed local now (ds-bridges Task 2) — every outside
-   reach that used to need `:global(.segmented …)` reads the `data-segmented`/`data-look` hooks
-   SegmentedToggle.tsx's root stamps instead (the shared-context hook table), so nothing here
-   needs to stay a `:global()` bridge for `.segmented` itself.
+   `.segmented` is SegmentedToggle's own hashed local (ds-bridges Task 2) — every outside reach
+   that used to need `:global(.segmented …)` reads the `data-segmented`/`data-look` hooks
+   SegmentedToggle.tsx's root stamps instead.
 
-   The `[data-kind="segment"]` compounds below still style Button's own segment register — this
-   is SegmentedToggle's layout rule (the butted-border overlap / look-specific fills), not
-   Button's, so it stays here rather than in Button.module.css. Button's `.btn--segment` class is
-   itself still a literal global string (buttonClass.ts, until it emits hashed locals), so these
-   compounds target it through the `data-kind`/`data-state`/`data-primary` hooks the seam commit
-   stamped on Button's root — one hook token for one class token, per the translation rule — which
-   is why none of these rules need `:global()` either: an attribute selector was never a class.
+   BRACKET TOGGLES (one-button Task 6): the OLD `segment`/`icon`/`swatch` `look`s and their
+   butted-box `[data-kind="segment"]` compounds (overlapping -1px borders, the icon look's
+   accent-soft fill, the swatch frame) are GONE. Every option is a bracket `Button` now —
+   `kind="text"` (the default, "bracket" `look`) or `kind="icon"` (`look="icon"`) — and
+   selected-state colour, the brackets themselves, and the no-box treatment all come from
+   Button's own CSS (`.btn--text.btn--selected` / `.btn--icon.btn--selected`, Button.module.css).
+   This file owns only the row's own gap: `--sp-4` (the standard bracket-sibling gap every other
+   bar uses) for the default look, `--sp-1` for `look="icon"` — the tighter pitch the drawing
+   dock's icon-only tool/colour/size/smoothing/paper/undo-redo groups have always shipped at
+   (previously an accident of the old boxed register's -1px border overlap, now a real gap
+   value). `kind="segment"` is retired from every caller outside `ui/Button*`/`ui/buttonClass*`
+   now (Task 10 deletes the kind itself). */
 
-   BRACKET TOGGLES (bracket-toggles Task 1): `look` picks between four renders. The default,
-   `look="bracket"`, is plain `kind="text"` buttons — no box, no butted border — spaced by the
-   `[data-look="bracket"]` gap rule below. `look="segment"`/`"icon"`/`"swatch"` all keep
-   `kind="segment"` (today's boxed look) — `segment` is the plain butted-box register (the
-   drawing dock's text/undo-redo/zoom groups), `icon` adds the accent-soft selected fill for the
-   dock's icon-only tool/size/smoothing/paper groups, and `swatch` is the butted-colour-chip
-   register for the dock's colour row (one frame, zero gap, ring-only selected). */
-
-.segmented { display: inline-flex; align-items: center; }
-/* Bracket look (the default): plain [label] buttons, no box, no butted border — just spaced
-   apart. `--sp-4` is the same sibling gap every other bracket button family uses. */
-.segmented[data-look="bracket"] { gap: var(--sp-4); }
-
-/* Segment + icon + swatch looks all share the same butted-box structure: today's boxed look,
-   unchanged. Swatch's own border-radius/padding/background reset below still applies on top —
-   this shared group is only the butted-border overlap (position + the -1px collapse + stacking),
-   which swatch needs exactly like segment/icon do, so the colour chips overlap borders the same
-   way instead of sitting a full border apart. */
-.segmented[data-look="segment"] [data-kind="segment"],
-.segmented[data-look="icon"] [data-kind="segment"],
-.segmented[data-look="swatch"] [data-kind="segment"] { border-radius: 0; position: relative; }
-/* Segments share ONE rule between them by overlapping borders, not by dropping the
-   left one — a dropped border leaves the selected segment's accent outline open on
-   its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
-   so its own border draws the full box. */
-.segmented[data-look="segment"] [data-kind="segment"] + [data-kind="segment"],
-.segmented[data-look="icon"] [data-kind="segment"] + [data-kind="segment"],
-.segmented[data-look="swatch"] [data-kind="segment"] + [data-kind="segment"] { margin-left: -1px; }
-.segmented[data-look="segment"] [data-kind="segment"][data-state="selected"],
-.segmented[data-look="segment"] [data-kind="segment"][data-primary],
-.segmented[data-look="segment"] [data-kind="segment"]:hover:not(:disabled),
-.segmented[data-look="icon"] [data-kind="segment"][data-state="selected"],
-.segmented[data-look="icon"] [data-kind="segment"][data-primary],
-.segmented[data-look="icon"] [data-kind="segment"]:hover:not(:disabled),
-.segmented[data-look="swatch"] [data-kind="segment"][data-state="selected"],
-.segmented[data-look="swatch"] [data-kind="segment"][data-primary],
-.segmented[data-look="swatch"] [data-kind="segment"]:hover:not(:disabled) { z-index: 1; }
-.segmented[data-look="segment"] [data-kind="segment"]:first-child,
-.segmented[data-look="icon"] [data-kind="segment"]:first-child { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
-.segmented[data-look="segment"] [data-kind="segment"]:last-child,
-.segmented[data-look="icon"] [data-kind="segment"]:last-child { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
-
-/* Icon look: the active tool/size/smoothing/paper segment — accent glyph on an accent-soft fill
-   with a 1px inset accent ring, instead of the plain segment register's border-only "selected". */
-.segmented[data-look="icon"] [data-kind="segment"][data-state="selected"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-/* Swatch look: the colour row — butted chips (no per-chip border) inside one shared --border
-   frame, a different shape from the individually-boxed segment/icon registers above. The row's
-   own flex `gap` stays `--sp-1` (not 0) to match the pitch the OLD `look="segment"` render
-   actually shipped at: it sat inside `drawing/Toolbar.tsx`'s `.draw-vstack`, whose descendant
-   `.draw-vstack :global(.segmented) { gap: var(--sp-1) }` rule outranked (by source order, equal
-   specificity) the color row's own `gap: 0` override — so the pixels everyone is used to have
-   always been `--sp-1` apart, the "0" was never actually reached. */
-.segmented[data-look="swatch"] { gap: var(--sp-1); border: 1px solid var(--border); }
-.segmented[data-look="swatch"] [data-kind="segment"] { padding: 0; border-radius: 0; background: none; }
-/* The active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
-   swatch already IS a color; ringing it in --accent would fight the ink color itself). */
-.segmented[data-look="swatch"] [data-kind="segment"][data-state="selected"] {
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--bg), inset 0 0 0 2px var(--fg);
-}
+.segmented { display: inline-flex; align-items: center; gap: var(--sp-4); }
+.segmented[data-look="icon"] { gap: var(--sp-1); }
