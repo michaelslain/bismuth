@@ -39,7 +39,6 @@ export default function ChatUserTurn(props: ChatUserTurnProps) {
                         <IconButton
                             icon="X"
                             label="Cancel queued message"
-                            iconSize={11}
                             class={styles['chat-queued-cancel']}
                             onClick={() =>
                                 props.onCancelQueued(props.item.queueId!)

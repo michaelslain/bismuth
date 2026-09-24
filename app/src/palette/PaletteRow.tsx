@@ -44,7 +44,7 @@ function PaletteRow(props: PaletteRowProps) {
                     weight="inherit"
                     class={styles['palette-icon']}
                 >
-                    <Icon value={props.icon!} size={14} />
+                    <Icon value={props.icon!} />
                 </Text>
             </Show>
             <Text

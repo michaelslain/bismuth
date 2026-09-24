@@ -177,7 +177,7 @@ export function Toolbar(props: {
     const toolOpts = () => [
         ...TOOLS.map(x => ({
             id: x.id,
-            label: (<Icon value={x.icon} size={17} />) as JSX.Element,
+            label: (<Icon value={x.icon} />) as JSX.Element,
             title: x.title,
         })),
         ...(props.lasso
@@ -253,7 +253,7 @@ export function Toolbar(props: {
                             aria-label="Import image"
                             onClick={() => props.onImportImage!()}
                         >
-                            <Icon value="ImagePlus" size={17} />
+                            <Icon value="ImagePlus" />
                         </Button>
                     </Show>
                 </div>
@@ -316,13 +316,13 @@ export function Toolbar(props: {
                             options={[
                                 {
                                     id: 'undo' as const,
-                                    label: <Icon value="Undo2" size={17} />,
+                                    label: <Icon value="Undo2" />,
                                     title: 'Undo',
                                     ariaLabel: 'Undo',
                                 },
                                 {
                                     id: 'redo' as const,
-                                    label: <Icon value="Redo2" size={17} />,
+                                    label: <Icon value="Redo2" />,
                                     title: 'Redo',
                                     ariaLabel: 'Redo',
                                 },
@@ -348,7 +348,6 @@ export function Toolbar(props: {
                                             label: (
                                                 <Icon
                                                     value="ZoomOut"
-                                                    size={17}
                                                 />
                                             ),
                                             title: 'Zoom out',
@@ -381,7 +380,6 @@ export function Toolbar(props: {
                                             label: (
                                                 <Icon
                                                     value="ZoomIn"
-                                                    size={17}
                                                 />
                                             ),
                                             title: 'Zoom in',

@@ -30,7 +30,7 @@ function Chip(props: {
             onClick={e => props.onClick?.(e)}
         >
             <Show when={props.icon}>
-                {i => <Icon value={i()} size={props.iconSize ?? 14} />}
+                {i => <Icon value={i()} size={props.iconSize} />}
             </Show>
             {props.children}
         </button>

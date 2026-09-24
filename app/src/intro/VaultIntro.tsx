@@ -527,7 +527,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         class={`${styles['vi-powerup']} ${!selectable ? styles['locked'] : ''}`}
                                     >
                                         <div class={styles['vi-powerup-top']}>
-                                            <Icon value={p.icon} size={16} />
+                                            <Icon value={p.icon} />
                                             <Text
                                                 as="span"
                                                 size="inherit"

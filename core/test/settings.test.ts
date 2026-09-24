@@ -359,7 +359,7 @@ test('reconcile migrates a legacy-theme .settings file exactly once, resetting t
             '  editorFontSize: 16',
             '  uiFontSize: 14',
             '  tabFontSize: 12',
-            '  sidebarIconFontSize: 18',
+            '  iconSize: 18',
             '  paletteInputFontSize: 17',
             '  monoScale: 0.85',
             '  sidebarWidth: 280',
@@ -382,8 +382,8 @@ test('reconcile migrates a legacy-theme .settings file exactly once, resetting t
     expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize)
     expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize)
     expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize)
-    expect(appearance.sidebarIconFontSize).toBe(
-        DEFAULT_APPEARANCE.sidebarIconFontSize,
+    expect(appearance.iconSize).toBe(
+        DEFAULT_APPEARANCE.iconSize,
     )
     expect(appearance.paletteInputFontSize).toBe(
         DEFAULT_APPEARANCE.paletteInputFontSize,

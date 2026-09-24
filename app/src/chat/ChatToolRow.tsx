@@ -40,7 +40,6 @@ export default function ChatToolRow(props: ChatToolRowProps) {
             >
                 <Icon
                     value={pickToolIcon(props.part.toolKind, props.part.name)}
-                    size={14}
                     class={styles['chat-tool-icon']}
                 />
                 <Text as="span" weight="medium" class={styles['chat-tool-name']}>
@@ -68,7 +67,6 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                         fallback={
                             <Icon
                                 value={props.part.isError ? 'X' : 'Check'}
-                                size={13}
                                 class={
                                     props.part.isError
                                         ? styles['chat-tool-x']
@@ -84,7 +82,6 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                 </Text>
                 <Icon
                     value={open() ? 'ChevronDown' : 'ChevronRight'}
-                    size={13}
                     class={styles['chat-tool-caret']}
                 />
             </PlainButton>

@@ -284,7 +284,6 @@ export function KanbanCard(props: {
                                             >
                                                 <Icon
                                                     value={on ? 'Check' : 'Square'}
-                                                    size={12}
                                                 />
                                                 {on ? 'Yes' : 'No'}
                                             </ChipToggle>

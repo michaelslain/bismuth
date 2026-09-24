@@ -33,6 +33,7 @@ import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import { plural } from './plural'
 import { IconButton } from './ui/IconButton'
+import IconBar from './ui/IconBar'
 import { TextButton } from './ui/TextButton'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
@@ -511,12 +512,14 @@ export function GraphView(props: {
                 }
                 facet={
                     <>
-                        {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
-            (.sidebar-icons) — same 28x28 box, same radius, same hover, no border. It is deliberately
-            NOT a <SegmentedToggle> here: an icon rendered as a bracket toggle would read as a
-            mystery `[icon]` chip rather than a plain icon button — the one control in the sidebar
-            that didn't look like the sidebar. The full-pane graph keeps the real segmented control,
-            where the labels are words and the bracket read is right. */}
+                        {/* The mini-graph switcher renders through the same <IconBar> primitive as every
+            other icon toolbar in the app (sidebar row, tab-rail actions) — same box, glyph size and
+            gap, sized by one setting. No `band` here: this bar sits inside the ViewBar's `facet`
+            slot, which already supplies the band. It is deliberately NOT a <SegmentedToggle> here:
+            an icon rendered as a bracket toggle would read as a mystery `[icon]` chip rather than a
+            plain icon button — the one control in the sidebar that didn't look like the sidebar. The
+            full-pane graph keeps the real segmented control, where the labels are words and the
+            bracket read is right. */}
                         {/* Hidden outright (not just disabled) when there's only one brain-mode option to pick
             from — the daemon-off default — since a permanently-selected single-option control
             does nothing. See modeOptions() above. */}
@@ -539,11 +542,10 @@ export function GraphView(props: {
                                     />
                                 }
                             >
-                                <div class={styles['graph-mode-icons']}>
+                                <IconBar label="Graph mode">
                                     <For each={modeOptions()}>
                                         {id => (
                                             <IconButton
-                                                class={styles['graph-mode-icon-btn']}
                                                 icon={MODE_ICON[id]}
                                                 // The mini-graph switcher is ICON-ONLY, so this label IS
                                                 // the entire accessible name and the entire tooltip — the
@@ -561,7 +563,7 @@ export function GraphView(props: {
                                             />
                                         )}
                                     </For>
-                                </div>
+                                </IconBar>
                             </Show>
                         </Show>
                     </>

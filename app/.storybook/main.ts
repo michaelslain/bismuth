@@ -60,6 +60,14 @@ const config: StorybookConfig = {
             ...(viteConfig.server.fs.allow ?? []),
             realRoot,
         ]
+        // PER-CHECKOUT DEP CACHE. Storybook's default Vite cacheDir lives under
+        // `node_modules/.cache/storybook/…/sb-vite`, and a worktree's `node_modules` is a symlink to the
+        // main checkout's — so every Storybook on the machine re-optimized deps into ONE directory.
+        // When either re-optimized, the other's open tab kept requesting the old `?v=<hash>` files and
+        // went white, with no server error and a 200 from index.json/iframe.html. `__dirname` is this
+        // checkout's own `.storybook/`, never resolved through the symlink, so each checkout gets its
+        // own cache. Gitignored as `.storybook-cache/`.
+        viteConfig.cacheDir = join(__dirname, '..', '.storybook-cache', 'sb-vite')
         return viteConfig
     },
 }

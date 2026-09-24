@@ -47,10 +47,7 @@
    TabRail, TopStrip, ChatTranscript, Graph, Flashcards, SymbolGallery) — see ui.css's own header
    for the full inventory. This is a temporary re-export bridge, not a foreign reach: Button owns
    these classes, `buttonClass.ts` is their one literal writer, and it stays a pure module with no
-   stylesheet import so it can keep exactly one importer (Button.tsx). bridge kept: Sidebar/
-   TabRail/TopStrip still reach `.btn--icon.btn--sm` from their own modules as a container-scoped
-   size override on buttons rendered by `shell/CommandButton.tsx`, which has no `class` prop to
-   retarget to and is out of this task's (one-global-followups Task 4) file scope; ChatComposer/
+   stylesheet import so it can keep exactly one importer (Button.tsx). ChatComposer/
    ChatSetup/ChatTurnParts/Toast/InboxView/PaneTree/ChatTranscript/Graph/Flashcards/SymbolGallery
    are likewise outside this task. The `:global()` wrapper and each ignore comment below come off
    once every remaining caller composes `<Button class={…}>` instead of reaching the class. */
@@ -257,9 +254,12 @@
 :global(.btn--icon:disabled)::before,
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon:disabled)::after { color: var(--faint); }
-/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
+/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) outside any bar.
+   Inside an IconBar there is no half-opacity dim state (Acceptance 5) — `--iconbar-unselected-
+   opacity` is set to 1 by IconBar.module.css's `.bar`, read here with a fallback equal to today's
+   0.5 so every IconButton NOT under a bar is byte-identical to before (Review Focus 3). */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
-:global(.btn--icon.btn--unselected) { opacity: 0.5; }
+:global(.btn--icon.btn--unselected) { opacity: var(--iconbar-unselected-opacity, 0.5); }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--unselected:hover:not(:disabled)) { opacity: 1; }
 /* selected — toggle member, on: accent icon on an accent-soft fill */
@@ -297,16 +297,41 @@
      mouse one. The icon itself is unchanged, so nothing about the mark's optical size moves; only
      the hit area grows, and --h-control is already 24px so the button now matches the height every
      other control in a toolbar row already has.
+     `max(var(--h-control), …)` (one-icon-size, 2026-09-24): --icon dropped to 12px, and 12 + 10 is
+     22px — under that same floor — so the box never shrinks below --h-control whatever the setting.
      `min-width`, not `width` (IconButton brackets task): the box used to be a fixed square, but the
      bracket glyphs now sitting either side of the icon are wider than the icon alone, so a fixed
      square clips them. min-width keeps the WCAG floor for a bracket-less state while letting the
      box grow to fit `[▣]`; height stays fixed so the row rhythm with every other toolzone control
-     is unchanged. */
-  min-width: calc(var(--icon) + 10px);
-  height: calc(var(--icon) + 10px);
+     is unchanged.
+
+     `--iconbar-box`/`--iconbar-glyph` (toolbar-iconbar Task 1): read from an enclosing IconBar via
+     inherited custom properties, never a class selector — IconBar.module.css's `.bar` sets
+     `--iconbar-box: var(--bar-icon-size)` (18px) and IconBar.tsx sets `--iconbar-glyph` inline from
+     the bar's iconSize number. Fallbacks equal today's values exactly, so a button NOT under any
+     bar (Review Focus 3) is byte-identical to before this task. */
+  min-width: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
+  height: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
   padding: 0 var(--sp-1);
   border-radius: var(--r-0);
-  color: var(--text-muted);
+  font-size: var(--iconbar-glyph, var(--fs-body-lg));
 }
+/* Muted tone for the toolzone — scoped to normal/unselected ONLY (toolbar-iconbar Task 1), not a
+   blanket `.btn--icon.btn--sm { color }`. Before this the blanket rule sat textually AFTER
+   `.btn--icon.btn--selected`/`.btn--icon.btn--danger` at equal specificity (two classes each), so
+   it silently won the cascade and any sm icon button in a selected/danger state rendered muted
+   instead of accent/danger — invisible until IconBar started defaulting IconButton to size="sm"
+   inside a bar (Acceptance 5: the selected mini-graph mode must be `--accent`). Three classes here
+   outrank the two-class `.btn--selected`/`.btn--danger` selectors regardless of source order, so
+   normal/unselected stay muted and selected keeps its accent — a normal+danger sm icon button
+   still renders muted, as it did before this rule (EditDictionaryModal's delete icon).
+   `:not(:disabled)` matters for the SAME reason in the other direction: without it this selector's
+   three classes would outrank `.btn--icon:disabled`'s two, and a disabled sm icon button (state
+   defaults to "normal") would render muted instead of `--faint`. Excluding `:disabled` here lets
+   the disabled rule govern by simply not competing, rather than by winning a specificity race. */
+/* design-system-ignore globalReach: Button's own .btn--icon family, emitted as literal global strings by buttonClass.ts — stays a :global() bridge until the family is componentized (see file header) */
+:global(.btn--icon.btn--sm.btn--normal:not(:disabled)),
+/* design-system-ignore globalReach: Button's own .btn--icon family, emitted as literal global strings by buttonClass.ts — stays a :global() bridge until the family is componentized (see file header) */
+:global(.btn--icon.btn--sm.btn--unselected:not(:disabled)) { color: var(--text-muted); }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--sm:hover:not(:disabled)) { color: var(--fg); }

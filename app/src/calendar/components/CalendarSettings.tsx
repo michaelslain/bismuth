@@ -164,7 +164,6 @@ export function CalendarSettings(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        iconSize={13}
                         onClick={reset}
                     >
                         reset

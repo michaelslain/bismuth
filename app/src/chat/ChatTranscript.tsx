@@ -220,7 +220,6 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                         <ChatTurnColumn class={styles['chat-turn-error']}>
                             <Icon
                                 value="TriangleAlert"
-                                size={13}
                                 class={styles['chat-turn-error-icon']}
                             />
                             <Text as="span" size="inherit" tone="inherit" weight="inherit">
@@ -236,7 +235,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                     class={styles['chat-jump-bottom']}
                     onClick={() => scrollToBottom(true)}
                 >
-                    <Icon value="ArrowDown" size={13} /> Latest
+                    <Icon value="ArrowDown" /> Latest
                 </PlainButton>
             </Show>
             {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
@@ -253,7 +252,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                             setSelReply(null)
                         }}
                     >
-                        <Icon value="Reply" size={13} /> Reply
+                        <Icon value="Reply" /> Reply
                     </PlainButton>
                 )}
             </Show>

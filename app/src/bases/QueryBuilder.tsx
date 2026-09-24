@@ -525,7 +525,6 @@ export function QueryBuilder(props: {
                                                 <IconButton
                                                     icon="x"
                                                     label="Remove filter"
-                                                    iconSize={14}
                                                     class={qbStyles['qb-rm']}
                                                     onClick={() =>
                                                         removeRow(i())
@@ -537,7 +536,6 @@ export function QueryBuilder(props: {
                                 </div>
                                 <IconTextButton
                                     icon="Plus"
-                                    iconSize={13}
                                     onClick={addRow}
                                 >
                                     add filter
@@ -776,7 +774,6 @@ export function QueryBuilder(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        iconSize={13}
                         onClick={reset}
                     >
                         reset

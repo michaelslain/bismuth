@@ -48,7 +48,7 @@ export function PaneDropZone(props: PaneDropZoneProps) {
                     weight="inherit"
                     class={styles['pane-drop-reference-cue']}
                 >
-                    <Icon value="AtSign" size={14} /> Drop to reference
+                    <Icon value="AtSign" /> Drop to reference
                 </Text>
             </div>
         </Show>

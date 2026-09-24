@@ -175,7 +175,7 @@ export function Crumb(props: {
     return (
         <span class={cx(styles.crumb, props.class)}>
             <Show when={props.icon}>
-                {i => <Icon value={i()} size={props.iconSize ?? 15} />}
+                {i => <Icon value={i()} size={props.iconSize} />}
             </Show>
             <b
                 classList={{ [styles['crumb-serif']]: !!props.serif }}
@@ -244,7 +244,7 @@ export function VBtn(props: VBtnProps) {
             {...rest}
         >
             <Show when={own.icon}>
-                {i => <Icon value={i()} size={own.iconSize ?? 14} />}
+                {i => <Icon value={i()} size={own.iconSize} />}
             </Show>
             {own.children}
         </button>

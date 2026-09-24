@@ -251,6 +251,128 @@ describe('editorFont deletion round-trips cleanly: key gone, its comment and an 
     })
 })
 
+describe('sidebarIconFontSize renamed to iconSize', () => {
+    test('the interim toolbarIconSize key is renamed to iconSize in place, keeping its value', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            ['appearance:', '  # toolbar glyphs', '  toolbarIconSize: 15', ''].join(
+                '\n',
+            ),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const lines = text.split('\n')
+        const idx = lines.findIndex(l => /^\s*iconSize:/.test(l))
+
+        expect(text).not.toContain('toolbarIconSize')
+        expect(lines.filter(l => /^\s*iconSize:/.test(l)).length).toBe(1)
+        expect(lines[idx]).toContain('15')
+        expect(lines[idx - 1]).toContain('# toolbar glyphs')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a file with only the old key renames it in place, keeping the comment and value', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            ['appearance:', '  # my icons', '  sidebarIconFontSize: 18', ''].join(
+                '\n',
+            ),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const lines = text.split('\n')
+        const idx = lines.findIndex(l => l.includes('iconSize'))
+
+        expect(text).not.toContain('sidebarIconFontSize')
+        expect(lines.filter(l => l.includes('iconSize')).length).toBe(1)
+        expect(lines[idx]).toContain('18')
+        expect(lines[idx - 1]).toContain('# my icons')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a file with both keys keeps the new value and drops the old key', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  sidebarIconFontSize: 18',
+                '  iconSize: 15',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        expect(text).not.toContain('sidebarIconFontSize')
+        expect(
+            text.split('\n').filter(l => l.includes('iconSize')).length,
+        ).toBe(1)
+        expect(text).toContain('iconSize: 15')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a second reconcile is a no-op', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            ['appearance:', '  sidebarIconFontSize: 18', ''].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const second = await reconcileSettings(vault)
+
+        expect(second).toBe(false)
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a comment above the old key survives when the old key is the section\'s last item', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  iconSize: 15',
+                '  # my icon comment',
+                '  sidebarIconFontSize: 18',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        expect(text).toContain('# my icon comment')
+        expect(text).not.toContain('sidebarIconFontSize')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a same-line comment on the old key survives when both keys are present', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  iconSize: 15',
+                '  sidebarIconFontSize: 18 # note',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        expect(text).toContain('# note')
+        expect(text).not.toContain('sidebarIconFontSize')
+        rmSync(vault, { recursive: true, force: true })
+    })
+})
+
 describe('upgrade resilience — a damaged or hostile old file must not make things worse', () => {
     test('a corrupt settings file is left untouched for the user to fix, not overwritten', async () => {
         const vault = emptyVault()

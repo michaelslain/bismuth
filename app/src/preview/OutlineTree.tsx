@@ -242,7 +242,6 @@ function OutlineTree(props: OutlineTreeProps) {
                                                     ? `Collapse ${node.title}`
                                                     : `Expand ${node.title}`
                                             }
-                                            iconSize={10}
                                             aria-expanded={open()}
                                             class={
                                                 styles['outline-disclosure-btn']
