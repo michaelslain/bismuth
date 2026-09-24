@@ -60,7 +60,7 @@ const Wrap = (props: { children: unknown }) => (
     </div>
 )
 
-const toolbar = (
+const toolbar = () => (
     <>
         <CommandButton icon="Search" label="Search" onClick={noop} />
         <CommandButton icon="Inbox" label="Inbox" badge={2} onClick={noop} />
@@ -82,7 +82,7 @@ export const Default: Story = {
                 visible={true}
                 graphCollapsed={false}
                 graphSlotRef={noop}
-                toolbar={toolbar}
+                toolbar={toolbar()}
                 tree={treeStub}
             />
         </Wrap>
@@ -99,7 +99,7 @@ export const GraphCollapsed: Story = {
                 visible={true}
                 graphCollapsed={true}
                 graphSlotRef={noop}
-                toolbar={toolbar}
+                toolbar={toolbar()}
                 tree={treeStub}
             />
         </Wrap>
@@ -117,7 +117,7 @@ export const Hidden: Story = {
                 visible={false}
                 graphCollapsed={false}
                 graphSlotRef={noop}
-                toolbar={toolbar}
+                toolbar={toolbar()}
                 tree={treeStub}
             />
         </Wrap>
@@ -143,7 +143,7 @@ export const Overflowing: Story = {
                     visible={true}
                     graphCollapsed={true}
                     graphSlotRef={noop}
-                    toolbar={toolbar}
+                    toolbar={toolbar()}
                     tree={tallTree()}
                 />
             </Wrap>
