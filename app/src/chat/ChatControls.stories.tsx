@@ -161,12 +161,15 @@ export const NoSession: Story = {
 }
 
 /** Width samples proving the row can never overflow its own box — there is no longer a
- *  narrow-width ladder that drops controls at measured breakpoints (Task 2: "no pixel ladder").
- *  Instead the model control is the ONE thing that shrinks (flex-shrink + ellipsis in
- *  ChatControls.module.css); permission mode, history and new chat always keep their full width.
- *  `scrollWidth <= clientWidth` is what actually proves "nothing spills past the container" — a
- *  row wider than its own box grows `scrollWidth` past `clientWidth` while `clientWidth` (and any
- *  height-based assertion) stays exactly the same. */
+ *  narrow-width ladder that DROPS controls at measured breakpoints (Task 2: "no pixel ladder").
+ *  The model control is the main thing that shrinks (flex-shrink + a 3ch floor + ellipsis in
+ *  ChatModelMenu.module.css/ChatControls.module.css); permission mode, history and new chat always
+ *  keep their full CONTROL — but below the row's own `@container chatrow` tier (280px,
+ *  ChatControls.module.css), history/new-chat give up their WORD (`data-row-label`) and render
+ *  icon-only, which is what frees the room the floored model word needs rather than the model word
+ *  giving up its own floor. `scrollWidth <= clientWidth` is what actually proves "nothing spills
+ *  past the container" — a row wider than its own box grows `scrollWidth` past `clientWidth` while
+ *  `clientWidth` (and any height-based assertion) stays exactly the same. */
 const overflowProof = (widthPx: number) => ({
     render: () => (
         <div style={{ width: `${widthPx}px` }}>
@@ -198,6 +201,15 @@ const overflowProof = (widthPx: number) => ({
             canvasElement.querySelector('[data-testid="chat-perm-mode"]')!.getClientRects()
                 .length,
         ).toBeGreaterThan(0)
+        // The row's one collapse tier: below 280px `data-row-label` (the word inside
+        // `[history]`/`[new chat]`) hides so the icon-only bracket frees room for the floored
+        // model word; at and above 280px the label stays. Read from the LIVE trigger's computed
+        // style, not a hand-picked class, so this fails if the container-query threshold drifts.
+        const newChatLabel = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-new"] [data-row-label]',
+        )!
+        const collapsed = getComputedStyle(newChatLabel).display === 'none'
+        expect(collapsed).toBe(widthPx <= 280)
     },
 })
 
