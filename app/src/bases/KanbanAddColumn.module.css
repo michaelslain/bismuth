@@ -1,18 +1,36 @@
 /* ---- KanbanAddColumn ---- */
 /* The trailing ghost column: a bare `+` (Acceptance 11), the far-right sibling of the board's
    real columns. `.trigger` is a 24px (--h-control) square hit area, same tones as the add-card
-   `+` (KanbanView.module.css) — no box, no label. The ghost's own height is pinned to
-   `.kanbanColHeader`'s (KanbanView.module.css: calc(22px + 2 * var(--sp-5)) — still keyed to
-   KanbanColumnMenu's unchanged 22px trigger, not this file's own --h-control) so `align-self:
-   flex-start` on the board's flex row (align-items: flex-start there) lines the two up at the
-   same top edge, and centring the 24px square inside that band sits the `+` glyph level with a
-   column title's own vertical centre. */
+   `+` (KanbanView.module.css) — no box, no label. `margin-left: auto` pushes the ghost into the
+   board's far-right slot regardless of how many real columns precede it, instead of sitting one
+   gap after the last one. On a full board (the common case in a split pane) the columns' own
+   flex-grow takes all the free space first and that auto margin collapses to 0, so
+   `padding-left: var(--sp-7)` is the gutter that remains — wider than the ~25px count-to-dot
+   rhythm between two real columns, so the `+` never reads as the last column's `02 +`.
+   The ghost RESERVES the name field's width at rest (`min-width` below, --kb-add-field-w): the
+   field opens at the `+`'s own x and runs --kb-add-field-w to its right, so without the
+   reservation a far-right ghost's field overflows `.kanban`'s `overflow-x: auto` and focusing it
+   scrolls the whole board sideways (measured: scrollLeft 111px). The `+` therefore sits at the
+   LEFT edge of that far-right slot, not flush with the board's right edge — the two cannot
+   coexist with the no-move swap below.
+   The ghost's own height is pinned to `.kanbanColHeader`'s (KanbanView.module.css:
+   --h-control) so `align-self: flex-start` on the board's flex row (`.kanban` is now
+   `align-items: stretch`, so every OTHER child fills the row's height — the ghost opts back out
+   with its own `flex-start` since it's a fixed-height control, not a lane) lines the two up at
+   the same top edge, and centring the 24px square inside that band sits the `+` glyph level
+   with a column title's own vertical centre. */
 .ghost {
+  /* The name field's width — one value for both the reservation here and .addField's own. */
+  --kb-add-field-w: 160px;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   align-self: flex-start;
-  height: calc(22px + (2 * var(--sp-5)));
+  height: var(--h-control);
+  margin-left: auto;
+  padding-left: var(--sp-7);
+  box-sizing: border-box;
+  min-width: calc(var(--sp-7) + var(--kb-add-field-w));
   /* Containing block for .addField's out-of-flow overlay below. */
   position: relative;
 }
@@ -31,11 +49,13 @@
      the padding). The input's own text sits var(--sp-2) + 1px inside ITS OWN left edge
      (KanbanColumnNameInput's padding, plus the 1px hairline border its square chrome now
      carries). Both paddings are the same var(--sp-2), so they cancel and only that 1px border
-     is left over between the two glyphs' x — this backs it out. */
-  left: -1px;
+     is left over between the two glyphs' x — this backs it out. `left` is measured from the
+     ghost's PADDING edge (the abspos containing block), so the ghost's own padding-left is added
+     back in to land on the trigger's left edge. */
+  left: calc(var(--sp-7) - 1px);
   top: 50%;
   transform: translateY(-50%);
-  min-width: 160px;
+  min-width: var(--kb-add-field-w);
 }
 /* Left-aligned, not centred: the glyph's own left edge sits at the same var(--sp-2) inset as
    KanbanColumnNameInput's input text (its own padding, KanbanColumnNameInput.module.css), so
