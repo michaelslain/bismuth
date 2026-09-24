@@ -57,6 +57,14 @@ function Button(props: ButtonProps) {
         <button
             type={local.type ?? 'button'}
             data-state={local.state ?? 'normal'}
+            data-kind={kind()}
+            data-size={
+                local.size && local.size !== 'md' && kind() !== 'text'
+                    ? local.size
+                    : undefined
+            }
+            data-danger={local.danger ? '' : undefined}
+            data-primary={local.primary ? '' : undefined}
             class={buttonClass({
                 kind: local.kind,
                 state: local.state,

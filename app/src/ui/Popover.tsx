@@ -17,7 +17,10 @@ export type PopoverProps = {
  */
 const Popover: Component<PopoverProps> = props => {
     return (
-        <div class={`${styles['popover-marker']} asc-popover${props.class ? ` ${props.class}` : ''}`}>
+        <div
+            class={`${styles['popover-marker']} asc-popover${props.class ? ` ${props.class}` : ''}`}
+            data-popover=""
+        >
             {props.children}
         </div>
     )

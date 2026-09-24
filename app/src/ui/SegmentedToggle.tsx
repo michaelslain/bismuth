@@ -48,6 +48,7 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
         <div
             class={`segmented ${styles.wrap} ${props.class ?? ''}`}
             data-look={look()}
+            data-segmented=""
         >
             <For each={props.options}>
                 {opt => (

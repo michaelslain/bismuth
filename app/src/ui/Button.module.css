@@ -88,6 +88,10 @@
    a <span class="btn-label">.) */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn .btn-label) { position: relative; top: 1px; }
+/* design-system-ignore globalReach: seam for ds-bridges, converted by Task 1 */
+:global(.btn) [data-btn-label] { position: relative; top: 1px; }
+/* design-system-ignore globalReach: seam for ds-bridges, converted by Task 1 */
+:global(.btn--segment) svg { display: block; }
 /* The ASCII glyph slot inside a button (in place of an SVG icon) — recedes to
    --faint at rest, picks up the button's own ink when selected/primary. */
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */

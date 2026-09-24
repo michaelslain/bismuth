@@ -48,6 +48,7 @@ const ChipToggle: Component<ChipToggleProps> = props => {
                 .filter(Boolean)
                 .join(' ')}
             aria-pressed={!!local.selected}
+            data-tone={local.tone}
             onClick={() => local.onToggle?.()}
         >
             {local.children}

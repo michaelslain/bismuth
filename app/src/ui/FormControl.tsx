@@ -31,6 +31,7 @@ function FormControl(props: FormControlProps) {
         return (
             <textarea
                 class={cls()}
+                data-control={local.as}
                 {...(rest as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
             />
         )
@@ -39,6 +40,7 @@ function FormControl(props: FormControlProps) {
         return (
             <button
                 class={cls()}
+                data-control={local.as}
                 {...(rest as JSX.ButtonHTMLAttributes<HTMLButtonElement>)}
             >
                 {local.children}
@@ -46,7 +48,11 @@ function FormControl(props: FormControlProps) {
         )
     }
     return (
-        <input class={cls()} {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)} />
+        <input
+            class={cls()}
+            data-control={local.as}
+            {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)}
+        />
     )
 }
 

@@ -245,6 +245,7 @@ function Modal(props: ModalProps) {
                     ]
                         .filter(Boolean)
                         .join(' ')}
+                    data-modal-panel=""
                     role="dialog"
                     aria-modal="true"
                     aria-label={props.label}

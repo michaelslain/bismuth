@@ -81,6 +81,7 @@ function Select(props: {
                 as="button"
                 ref={triggerRef}
                 type="button"
+                data-select-trigger=""
                 class={`ui-select-trigger ${props.class ?? ''} ${props.triggerClass ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
@@ -107,6 +108,7 @@ function Select(props: {
                 </span>
                 <span
                     class={`ui-select-caret ${props.caretClass ?? ''}`}
+                    data-select-caret=""
                     aria-hidden="true"
                 >
                     ▾
