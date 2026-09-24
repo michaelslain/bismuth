@@ -62,6 +62,11 @@ typography:
     fontSize: "calc(var(--editor-font-size) * 1.04)"
     fontWeight: 400
     lineHeight: 1.6
+  code:
+    fontFamily: "Monaspace Xenon, ui-monospace, monospace"
+    fontSize: "calc(var(--prose-font-size) * 0.89)"
+    fontWeight: 400
+    lineHeight: 1.6
 rounded:
   none: "0"
   dot: "50%"
@@ -270,6 +275,11 @@ person actually wrote. The two never mix within one register.
   status bar, legends. Nothing in the app is set smaller.
 - **Prose** (`--prose-font-size` = the user's editor size × 1.04): note body, note headings,
   note tables, chat messages and the chat composer.
+- **Code** (`--code-font-size` = prose × `--code-scale` 0.89, × the user's `monoScale`): every mono
+  run inside a note or a chat message — code blocks and both fence rows, frontmatter, inline code
+  (`--fs-rel-code`, the same ratio off `1em`), `#tags`, task checkboxes and fields, list and syntax
+  marks. One step below prose because Monaspace at prose x-height is 24% wider and carries 16% more
+  ink than Lora; 0.89 is ink parity. KaTeX output is not code and keeps its own size.
 
 ### The content heading ramp
 Markdown headings in every surface read `--fs-h1` … `--fs-h6`. h1/h2 are never smaller than prose,
@@ -281,7 +291,12 @@ muted). The ramp is relative to the user's editor size, so it holds at every set
 `--fs-h*`; never copy the numbers into a consumer.
 
 **The Register Rule.** Prose is serif; anything pulled back out of prose (code, frontmatter,
-`#tags`, math) returns to `--ui-font-stack` at `--editor-font-size`, not a scaled multiple.
+`#tags`, math source) returns to `--ui-font-stack` at ONE size, `--code-font-size` — never the
+prose size, never a per-construct size.
+
+**The One Fence Rule.** A frontmatter `---` and a code block's ```` ``` ```` keep their own
+characters but are one row style: same size, padding, height and dim fence tone; the code fence's
+language label is fence text in that tone. YAML keys read muted in both blocks.
 
 **The Untracked Body Rule.** Uppercase labels are widely tracked; body text is never tracked.
 

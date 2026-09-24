@@ -147,6 +147,9 @@ const blockBottomRule = Decoration.line({ class: 'cm-block-bottom' })
 // fence row's rounded corners + grey band (the container looked open-ended). On the caret line the
 // fence brightens to the standard `cm-syntax-mark` for editing.
 const fenceMark = Decoration.mark({ class: 'cm-fence-syntax' })
+// The one tone for fence text — a frontmatter `---`, a code block's ``` and its ```lang label —
+// so the two kinds of block open and close with identical rows.
+const FENCE_TONE = 'color-mix(in srgb, var(--fg) 30%, transparent)'
 const fmKeyMark = Decoration.mark({ class: 'cm-fm-key' })
 const tableLine = Decoration.line({ class: 'cm-table' })
 // A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
@@ -167,7 +170,9 @@ const ORDERED_LINE_RE = /^(\s*)(\d+)([.)])(\s+)/
 const BLOCK_MATH_RE = /\$\$([^$]+)\$\$/g
 const INLINE_MATH_RE = /(?<!\$)\$([^$\n]+)\$(?!\$)/g
 const INLINE_CODE_RE = /(`+)((?:(?!\1)[^\n])*?)\1/g
-const FM_KEY_RE = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/
+// The leading group swallows a sequence dash too, so `  - type: table` marks `type`.
+const FM_KEY_RE = /^(\s*(?:-\s+)?)([A-Za-z0-9_$.-]+)\s*:/
+const YAML_LANGS = new Set(['yaml', 'yml'])
 // STRONG_STAR_RE / STRONG_UNDERSCORE_RE / EM_RE / STRIKE_RE live in ./inlineEmphasis.
 const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g
@@ -702,6 +707,16 @@ function buildDecorations(
                             line.number - codeBlock.open,
                         ).range(line.from),
                     )
+                    // A yaml block's keys take the frontmatter key mark, so the two read alike.
+                    if (YAML_LANGS.has(codeBlock.lang.toLowerCase())) {
+                        const km = FM_KEY_RE.exec(text)
+                        if (km) {
+                            const start = line.from + km[1].length
+                            deco.push(
+                                fmKeyMark.range(start, start + km[2].length),
+                            )
+                        }
+                    }
                 }
                 pos = line.to + 1
                 continue
@@ -1594,9 +1609,9 @@ export const livePreview = [
         // emits a native <code>): byte-identical styling, so they share one rule.
         // Inline code + code blocks read the user's chosen UI font (var(--ui-font-stack), not the
         // fixed Xenon-only MONO_FONT) on --surface-2, per the ASCII redesign's flat register.
+        // SIZE lives in global.css (--fs-rel-code), with every other mono-in-prose size.
         '.cm-inline-code, .cm-table-rendered code': {
             'font-family': 'var(--ui-font-stack)',
-            'font-size': 'calc(1em * var(--mono-scale, 0.85))',
             background: 'var(--surface-2)',
             padding: '0 3px',
             'border-radius': '3px',
@@ -1756,9 +1771,9 @@ export const livePreview = [
         // patch pasted into the note rather than as part of it. Denser leading for code is a
         // reasonable idea in the abstract; it is the wrong one HERE, because these rows sit
         // directly between prose rows and the mismatch is what you see, not the density.
+        // SIZE lives in global.css's size-reset list (--code-font-size), shared with frontmatter.
         '.cm-codeblock': {
             'font-family': 'var(--ui-font-stack)',
-            'font-size': 'calc(1em * var(--mono-scale, 0.85))',
         },
         // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
         // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
@@ -1777,9 +1792,10 @@ export const livePreview = [
         // flat card (killing the old rounded-corner "darker band" treatment). The tiny top margin
         // separates this block from ANY content above it (e.g. an adjacent block's closing fence);
         // inside the block there are no margins, so the container stays one continuous piece.
+        // Size: global.css's size-reset list (--code-font-size), so a `---` and a ``` fence row
+        // are the same size by construction.
         '.cm-block-top': {
             'font-family': MONO_FONT,
-            'font-size': 'var(--editor-font-size)',
             padding: '0.15em 0.5em',
             margin: '2px 0 0',
         },
@@ -1788,7 +1804,6 @@ export const livePreview = [
         // adjacent-block separation.
         '.cm-block-bottom': {
             'font-family': MONO_FONT,
-            'font-size': 'var(--editor-font-size)',
             padding: '0.15em 0.5em',
             margin: '0 0 2px',
         },
@@ -1842,7 +1857,7 @@ export const livePreview = [
         // the row). The `> span` override is load-bearing (mirrors `.cm-fm-key`): CodeMirror nests
         // syntax-highlighter token spans inside the mark, and their own token color would win without it.
         '.cm-fence-syntax, .cm-fence-syntax > span': {
-            color: 'color-mix(in srgb, var(--fg) 30%, transparent)',
+            color: FENCE_TONE,
         },
         // The header widget rides the opening fence's row — it inherits that row's
         // `.cm-block-top` padding, so the lang label/copy button sit inset from the left edge like the
@@ -1863,7 +1878,6 @@ export const livePreview = [
             'vertical-align': 'middle',
             width: '100%',
             'line-height': '1',
-            'font-size': 'var(--fs-micro)',
         },
         '.cm-code-header': {
             display: 'flex',
@@ -1871,15 +1885,15 @@ export const livePreview = [
             'justify-content': 'space-between',
             'align-items': 'center',
             'line-height': '1',
-            // --fs-micro, not 0.78em. An em multiplier here compounded against the code block's
-            // own reduced size and bottomed out at 8.97px — flagged by bench/invariants.ts as
-            // text-too-small, and genuinely unreadable. The type scale's smallest step is 10.5px
-            // and that is the floor on purpose.
-            'font-size': 'var(--fs-micro)',
+            // No font-size here: the ```lang label is FENCE TEXT, so it takes the fence rows' size
+            // (--code-font-size, global.css's size-reset list) — the same as a frontmatter `---`.
+            // It used to be --fs-micro, which made a code fence and a frontmatter fence two
+            // different-looking rows.
         },
+        // The same tone as a frontmatter `---` (FENCE_TONE): the label IS the fence.
         '.cm-code-lang': {
             'font-family': 'var(--ui-font-stack)',
-            color: 'color-mix(in srgb, var(--fg) 42%, transparent)',
+            color: FENCE_TONE,
             'letter-spacing': '0.04em',
         },
         // The copy button is an <IconButton> (.btn.btn--icon), which already supplies the
@@ -1902,19 +1916,18 @@ export const livePreview = [
             transition: 'color 120ms, opacity 120ms',
         },
         '.cm-code-copy:hover': { color: 'var(--accent)', opacity: '1' },
-        // Frontmatter: monospace property rows at the NOTE PROSE size (--editor-font-size), not the
-        // --fs-ui chrome size it used to sit at. The type scale's argument for the chrome size was that
-        // frontmatter is metadata rather than prose — true in the abstract, and wrong in practice: plenty of
-        // notes are mostly frontmatter (a book note is a dozen property rows and one query), so "metadata"
-        // was in fact most of the document, and it read a size smaller than the query results under it. One
-        // note, one text size. The container chrome (flat surface) still comes from
-        // `.cm-block-mid` (always co-applied).
+        // Frontmatter: monospace property rows at --code-font-size — the SAME size as a fenced code
+        // block (global.css's size-reset list), not the --fs-ui chrome size it once sat at. Plenty of
+        // notes are mostly frontmatter (a book note is a dozen property rows and one query), so it is
+        // sized as note content, one step below prose like every other mono run in a note. The
+        // container chrome (flat surface) still comes from `.cm-block-mid` (always co-applied).
         '.cm-frontmatter': {
             'font-family': MONO_FONT,
-            'font-size': 'var(--editor-font-size)',
         },
         // Property KEYS (date / tags / icon …): --text-muted, NOT a theme-accent color, so the
-        // frontmatter panel stays theme-agnostic. The `> span` is load-bearing (mirrors
+        // frontmatter panel stays theme-agnostic. A ```yaml / ```yml fenced block's keys carry the
+        // SAME mark (buildDecorations), so a key reads identically in frontmatter and in a yaml
+        // block; other languages keep their syntax colour. The `> span` is load-bearing (mirrors
         // `.cm-syntax-mark`/`.cm-heading-mark` above): CodeMirror nests the YAML syntax-highlighter
         // token INSIDE this mark — `<span class="cm-fm-key"><span class="ͼ…">key</span></span>` —
         // and that inner token is `t.propertyName → var(--accent)` (codeHighlight.ts). Coloring only
@@ -1931,7 +1944,6 @@ export const livePreview = [
         // clipping. A table that fits the pane is unaffected (no wrap needed either way).
         '.cm-table': {
             'font-family': MONO_FONT,
-            'font-size': 'calc(1em * var(--mono-scale, 0.85))',
             'white-space': 'pre',
             'overflow-x': 'auto',
         },

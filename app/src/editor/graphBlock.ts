@@ -228,7 +228,7 @@ function buildDecorations(state: EditorState): DecorationSet {
 const graphTheme = EditorView.theme({
     '.cm-graphblock-body': {
         fontFamily: 'var(--ui-font-stack)',
-        fontSize: 'calc(1em * var(--mono-scale, 0.85))',
+        fontSize: 'var(--code-font-size)',
     },
 })
 
