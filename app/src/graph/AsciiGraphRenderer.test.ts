@@ -6779,6 +6779,72 @@ describe("GraphConfig.labelEveryNode — the graph block's all-labels mode", () 
     })
 })
 
+describe('showLodMasses: false — the [clusters]-off field is labelled like a flat graph', () => {
+    /** Same 2-level ring the "N-level semantic labels" suite uses (communityPath/communityPathLabels,
+     *  coarsest-first per graph.ts), so there are real cluster names on this fixture to suppress —
+     *  a fixture with none would pass trivially. */
+    function twoLevelGraph() {
+        const nodes = []
+        const edges = []
+        for (let i = 0; i < 24; i++) {
+            const a = (i / 24) * Math.PI * 2
+            const top = i < 12 ? 0 : 1
+            const sub = top * 2 + (i % 2)
+            nodes.push({
+                id: `n${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [
+                    Math.cos(a) * 80 * RING_SCALE,
+                    Math.sin(a) * 30 * RING_SCALE,
+                    ((i % 5) - 2) * 30 * RING_SCALE,
+                ] as [number, number, number],
+                position2d: [
+                    Math.cos(a) * 80 * RING_SCALE,
+                    Math.sin(a) * 30 * RING_SCALE,
+                ] as [number, number],
+                community: sub,
+                communityLabel: `Sub ${sub}`,
+                communityPath: [top, sub],
+                communityPathLabels: [`Top ${top}`, `Sub ${sub}`],
+            })
+        }
+        for (let i = 1; i < 24; i++)
+            edges.push({ from: 'n0', to: `n${i}`, kind: 'link' as const })
+        return { nodes, edges }
+    }
+
+    const eyebrowLabels = (r: AsciiGraphRenderer) =>
+        (
+            r as unknown as { labels: { text: string; eyebrow?: boolean }[] }
+        ).labels.filter(l => l.eyebrow)
+    const fileLabels = (r: AsciiGraphRenderer) =>
+        (
+            r as unknown as { labels: { text: string; eyebrow?: boolean }[] }
+        ).labels.filter(l => !l.eyebrow)
+
+    // Both dimensions: 3D has no masses, so its clusters-on look IS the cluster-name ladder, and
+    // [clusters] off must swap that for note names exactly as 2D does.
+    for (const dim of ['2d', '3d'] as const) {
+        it(`${dim}: drops cluster names and names more notes than with clusters on, at fit`, () => {
+            const g = twoLevelGraph()
+            const clustered = mountRenderer(dim, g, { showLodMasses: true })
+            // Guard: this fixture DOES carry cluster names at fit — otherwise the flat side's "zero
+            // eyebrows" would pass for having nothing to lose in the first place.
+            expect(eyebrowLabels(clustered.r).length).toBeGreaterThan(0)
+            const clusteredFileCount = fileLabels(clustered.r).length
+            clustered.r.destroy()
+
+            const flat = mountRenderer(dim, g, { showLodMasses: false })
+            expect(eyebrowLabels(flat.r).length).toBe(0)
+            expect(fileLabels(flat.r).length).toBeGreaterThan(
+                clusteredFileCount,
+            )
+            flat.r.destroy()
+        })
+    }
+})
+
 /**
  * THE ATMOSPHERE'S TERRITORY COLOUR.
  *

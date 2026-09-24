@@ -68,6 +68,9 @@ import styles from './GraphAtmosphere.module.css'
  *  file-level comment for why this exists instead of a `renderer` prop. */
 export interface BloomSink {
     current?: (field: DensityField) => void
+    /** The last field any renderer pushed — replayed on mount so a remount at
+     *  rest paints at once. */
+    last?: DensityField
 }
 
 /** CRT-phosphor teal — used only if neither an explicit --bloom-rgb nor a themed --accent
@@ -161,6 +164,7 @@ export function GraphAtmosphere(props: {
         const sink = props.sink
         if (sink) {
             sink.current = push
+            if (sink.last) push(sink.last)
             onCleanup(() => {
                 if (sink.current === push) sink.current = undefined
             })
