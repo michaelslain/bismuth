@@ -27,7 +27,7 @@ export type SegmentedToggleProps<T> = {
      *  apart, `size` ignored. 'segment' (butted boxes, text): today's boxed look, `size`
      *  honoured. 'icon' (butted boxes, icon glyphs): selected is an accent glyph on
      *  `--accent-soft` with a 1px inset accent ring. 'swatch' (butted colour chips inside one
-     *  1px `var(--border)` frame, zero gap): selected is a ring only, no fill. */
+     *  1px `var(--border)` frame, `--sp-1` gap): selected is a ring only, no fill. */
     look?: 'bracket' | 'segment' | 'icon' | 'swatch'
 }
 

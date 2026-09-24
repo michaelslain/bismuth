@@ -158,7 +158,7 @@ export const SegmentLook: Story = {
         const pen = canvasElement.querySelector<HTMLElement>(
             '[aria-label="Pen"]',
         )!
-        expect(pen.classList.contains('btn--segment')).toBe(true)
+        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
         expect(pen.hasAttribute('aria-pressed')).toBe(false)
     },
 }
@@ -210,7 +210,7 @@ export const NoSelectionWithOptionExtras: Story = {
         expect(out).not.toBeNull()
         expect(reset.classList.contains('fixed-width-demo')).toBe(true)
         // No segment is ever "selected" — this group has no active member.
-        expect(out.classList.contains('btn--selected')).toBe(false)
+        expect(out.getAttribute('data-state') === 'selected').toBe(false)
     },
 }
 
@@ -330,8 +330,8 @@ export const IconLook: Story = {
         const pen = canvasElement.querySelector<HTMLElement>(
             '[aria-label="Pen"]',
         )!
-        expect(pen.classList.contains('btn--segment')).toBe(true)
-        expect(pen.classList.contains('btn--selected')).toBe(true)
+        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
+        expect(pen.getAttribute('data-state') === 'selected').toBe(true)
     },
 }
 
@@ -394,6 +394,6 @@ export const SwatchLook: Story = {
         const accent = canvasElement.querySelector<HTMLElement>(
             '[aria-label="accent"]',
         )!
-        expect(accent.classList.contains('btn--selected')).toBe(true)
+        expect(accent.getAttribute('data-state') === 'selected').toBe(true)
     },
 }
