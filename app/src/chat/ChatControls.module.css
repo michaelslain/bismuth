@@ -15,15 +15,11 @@
    `<Select caretClass={styles['mode-caret']}>`) rather than a `:global(.ui-select-caret)` reach —
    `.mode-caret` below is a plain local class.
 
-   NO `:global()` REACH IN THIS FILE (bracket-buttons Task 2). The row's action controls
-   (RowAction, the auth pill — ChatControls.tsx) used to be ui/Button (`kind="text"`) with a
-   `.row :global(.btn--text)` override stripping the shared text button's uppercase-label chrome
-   down to plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text
-   label"); Button exposed no prop for "quiet, chromeless text control", so this row was the one
-   place that convention was overridden by reaching into Button's own KIND class. They are now
-   `PlainButton` (an unstyled real `<button>`, ui/PlainButton.tsx) carrying `.action` below as
-   their whole look — a LOCAL class, not a foreign reach — with `data-state` set directly by
-   ChatControls.tsx rather than read off a Button prop. */
+   NO `:global()` REACH IN THIS FILE. The row's action controls (RowAction, the auth pill —
+   ChatControls.tsx) are `TextButton` (one-button migration) — every clickable command in this row
+   is a real button-family control (`variant`/`danger` props), never a hand-styled `PlainButton`.
+   `.actions` below is a plain LOCAL layout class (gap only, no look) wrapping the auth pill +
+   history + new-chat into one cluster — see `.actions`' own comment for why. */
 
 .stat {
     display: inline-flex;
@@ -52,22 +48,24 @@
     max-width: 130px;
 }
 
+/* One cluster — a SINGLE child of `.row` — holding the auth pill (opencode only) + history +
+   new-chat. `.row > * + *::before` (below) puts exactly one `//` before this whole cluster,
+   separating it from the readout groups (model word, permission mode) that precede it; INSIDE the
+   cluster, `--sp-4` alone carries the spacing between the bracket buttons themselves — no `//`
+   between two adjacent commands (Acceptance 7 / the ruling table: "brackets already separate
+   them"). */
+.actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
 .auth-anchor {
     position: relative;
     display: inline-flex;
-    /* `align-items: center`, not the flex default `stretch` — the anchor is itself a `.row` flex
-       ITEM, and its own `::before` separator `//` (the general `.row > * + *::before` rule) is one of
-       ITS flex children too. Without this the separator stretched to the anchor's full cross-axis height
-       and sat pinned near the top instead of centred on the text baseline like every other
-       separator in the row — confirmed live as a visibly HIGH, off-baseline separator (then a `·`) between "Bypass"
-       and "history" before this rule existed. */
+    /* `align-items: center`, not the flex default `stretch` — the anchor is itself an `.actions`
+       flex ITEM. Without this it stretched to the cluster's full cross-axis height instead of
+       centring on the text baseline like its siblings. */
     align-items: center;
-}
-/* Signed-out warning tone for the auth pill's text (Button's own `state="selected"` handles the
-   open/closed look; this is the orthogonal "needs attention" tone, same idea as the permission
-   mode's armed tint). */
-.auth-out {
-    color: var(--danger);
 }
 
 /* ── The quiet row: faint ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
@@ -157,40 +155,6 @@
    was `!important`. Reached via Select's own `caretClass` prop now, not `:global()`. */
 .mode-caret {
     display: none !important;
-}
-
-/* The RowAction / auth-pill controls (ChatControls.tsx's `<PlainButton class={styles.action}>`)
-   — a caption-register control, not a toolbar button, so it carries none of `.btn--text`'s usual
-   chrome (UPPERCASE, padding, reserved border, hover fill) in the first place; this class is its
-   entire look, matching the Selects above (plain lowercase text).
-   `color: var(--fg)`, NOT `inherit`: the old `.row :global(.btn--text) { color: inherit }` rule
-   tied in specificity with Button's own `.btn--text.btn--normal { color: var(--fg) }`
-   (both 0,2,0), and that tie was actually won by Button's rule on CSS-module import order —
-   confirmed against the baseline screenshot, where "history"/"new chat" render at full `--fg`
-   strength, not `.row`'s own dimmer `--faint`. PlainButton carries no competing Button class to
-   tie against, so the value has to be written explicitly here to reproduce that same look.
-   `border: 1px solid transparent` (reserved, not drawn — same idiom as ui/Button.module.css's own
-   `.btn--text`) is written explicitly too: PlainButton's reset sets `border: 0`, and without this
-   the control loses the 1px-per-side layout space Button used to reserve, shifting every sibling
-   after it in the row leftward by 2px — confirmed against the baseline screenshot. */
-.action {
-    padding: 0;
-    border: 1px solid transparent;
-    background: transparent;
-    text-transform: none;
-    letter-spacing: normal;
-    font-family: inherit;
-    font-size: inherit;
-    color: var(--fg);
-}
-.action[data-state="normal"]:hover:not(:disabled) {
-    color: var(--fg);
-    background: transparent;
-}
-.action[data-state="selected"] {
-    color: var(--fg);
-    background: transparent;
-    border-color: transparent;
 }
 
 /* The no-session row: Config/Actions render for real (buildDisabledSession() in ChatControls.tsx)

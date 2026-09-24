@@ -91,9 +91,9 @@ export const Default: Story = {
     },
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
-            actionWords: 'CATEGORIES',
+            actionWords: 'categories',
             viewName: 'month',
-            todayWord: 'TODAY',
+            todayWord: 'today',
             categoriesShown: true,
         })
     },
@@ -135,9 +135,9 @@ export const Narrow900: Story = {
     },
     play: async ({ canvasElement }) => {
         expect(state(canvasElement)).toEqual({
-            actionWords: 'CATEGORIES',
+            actionWords: 'categories',
             viewName: 'month',
-            todayWord: 'TODAY',
+            todayWord: 'today',
             categoriesShown: true,
         })
     },
@@ -154,7 +154,7 @@ export const Narrow780: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'month',
-            todayWord: 'TODAY',
+            todayWord: 'today',
             categoriesShown: true,
         })
     },
@@ -171,7 +171,7 @@ export const Narrow620: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'm',
-            todayWord: 'TODAY',
+            todayWord: 'today',
             categoriesShown: true,
         })
     },

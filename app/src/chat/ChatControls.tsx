@@ -22,7 +22,7 @@ import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
-import PlainButton from '../ui/PlainButton'
+import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
@@ -40,13 +40,12 @@ import ChatAuthPanel from './ChatAuthPanel'
 
 export type ChatControlSlots = ViewBarSlots
 
-/** A plain lowercase text control for the quiet row's actions (history/new chat) — `PlainButton`
- *  (an unstyled real `<button>`), not `TextButton`/`Button` (whose KIND classes carry the
- *  bracket/uppercase text-button chrome this row deliberately never wants: this row's whole point
- *  is a quiet lowercase line, not a toolbar of shouting buttons). `.action` in
- *  ChatControls.module.css supplies the whole look — this component only supplies the state, via
- *  a `data-state` attribute (the same runtime hook ui/Button's own `state` prop renders, so the
- *  row's `[data-state="selected"]` rules read this control identically to a real Button's). */
+/** A bracket text control for the row's actions (history/new chat) — `TextButton`, the app's
+ *  standard command control (button-family migration: every clickable command renders as
+ *  TextButton/IconButton/IconTextButton, never a hand-styled PlainButton — PlainButton is reserved
+ *  for readouts/rows, not commands). `history` is a TOGGLE (the history panel is open or not), so
+ *  it gets `variant="selected"|"unselected"` from `active`; `new chat` passes no `active` at all,
+ *  so it falls through to plain `variant="normal"` — a one-shot action, not a toggle member. */
 function RowAction(props: {
     label: string
     active?: boolean
@@ -54,16 +53,21 @@ function RowAction(props: {
     onClick: () => void
     title?: string
 }) {
+    const variant = () =>
+        props.active === undefined
+            ? 'normal'
+            : props.active
+              ? 'selected'
+              : 'unselected'
     return (
-        <PlainButton
-            class={styles.action}
-            data-state={props.active ? 'selected' : 'normal'}
+        <TextButton
+            variant={variant()}
             data-testid={props.testId}
             title={props.title}
             onClick={props.onClick}
         >
             {props.label}
-        </PlainButton>
+        </TextButton>
     )
 }
 
@@ -175,32 +179,35 @@ function Config(props: { session: ChatSession }) {
     )
 }
 
-/** The auth pill + history + new-chat actions, with their two popovers anchored here. */
+/** The auth pill + history + new-chat actions, with their two popovers anchored here. Wrapped in
+ *  ONE `.actions` cluster — a single child of `.row` — so the three sit `--sp-4` apart with NO `//`
+ *  between them: brackets already separate adjacent commands, and `//` is reserved for separating
+ *  readout GROUPS (Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — exactly two `//`,
+ *  none inside the actions cluster itself). */
 function Actions(props: { session: ChatSession }) {
     const [authOpen, setAuthOpen] = createSignal(false)
     return (
-        <>
+        <div class={styles.actions}>
             {/* Text-only, like every other control in the row (Acceptance: "every control a
                 lowercase text label") — the KeyRound glyph that used to sit in front of the summary
                 is dropped; the summary text itself is the app's own copy (e.g. "signed out"), left
-                as returned rather than force-lowercased. */}
+                as returned rather than force-lowercased. `danger` (not a hand-rolled `.auth-out`
+                class) carries the signed-out tone — the same orthogonal prop every other danger
+                control in the app uses. */}
             <Show when={props.session.provider() === 'opencode'}>
                 <div class={styles['auth-anchor']} data-chat-auth-anchor>
-                    <PlainButton
-                        class={
-                            styles.action +
-                            (opencodeAuthSummary(props.session.authProviders())
+                    <TextButton
+                        variant={authOpen() ? 'selected' : 'unselected'}
+                        danger={
+                            opencodeAuthSummary(props.session.authProviders())
                                 .signedIn === false
-                                ? ' ' + styles['auth-out']
-                                : '')
                         }
-                        data-state={authOpen() ? 'selected' : 'normal'}
                         data-testid="chat-auth"
                         title="opencode credentials"
                         onClick={() => setAuthOpen(v => !v)}
                     >
                         {opencodeAuthSummary(props.session.authProviders()).label}
-                    </PlainButton>
+                    </TextButton>
                     <Show when={authOpen()}>
                         <ChatAuthPanel
                             providers={props.session.authProviders()}
@@ -229,7 +236,7 @@ function Actions(props: { session: ChatSession }) {
                 title="New chat"
                 onClick={props.session.startNewChat}
             />
-        </>
+        </div>
     )
 }
 
