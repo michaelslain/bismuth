@@ -15,17 +15,31 @@
 }
 /* The bottom action bar — a hairline on its TOP edge (the mirror of ViewBar's own border-bottom
    above the body), same row height as ViewBar so the pane reads as one consistent band top and
-   bottom. Left-aligned in document order (status note, then buttons) — there is only ever one
-   flowing group here, so there is no second group to push to the trailing edge the way
-   ModalFooter's `.modal-foot-sp` spacer does. */
+   bottom. The hairline + vertical padding stay on this OUTER element, full pane width, so the
+   rule still spans edge to edge; the CONTENT is centred inside `.inbox-page-actions-row` so the
+   buttons land under the note text instead of the pane's left edge. */
 .inbox-page-actions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
   min-height: var(--h-band);
   padding: var(--sp-5) var(--sp-6);
   border-top: var(--rule-soft);
+}
+/* Shares the editor's centred reading column: `Editor.tsx`'s `.cm-content` is `width: 100%;
+   max-width: var(--note-column)` inside a `justify-content: center` scroller, which centres it
+   within the FULL pane width regardless of the scroller's own symmetric padding — margin auto on
+   a fixed-width box does the same, independent of this element's own (symmetric) padding above.
+   Left-aligned in document order (status note, then buttons) — there is only ever one flowing
+   group here, so there is no second group to push to the trailing edge the way ModalFooter's
+   `.modal-foot-sp` spacer does. */
+.inbox-page-actions-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  max-width: var(--note-column);
+  margin: 0 auto;
 }
 .inbox-page-note {
   font-size: var(--fs-ui);

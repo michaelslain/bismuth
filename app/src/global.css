@@ -287,6 +287,10 @@
      rhythm change nobody asked for. Change the bar's `gap` instead. */
   --h-band: 36px;
 
+  /* The centred reading column of a note — .cm-content's max-width, the title and the inbox
+     action bar all share this one number. */
+  --note-column: 620px;
+
   /* ── Icon size — NEW (§9.5). ONE size, stricter than §2.2's original 3-step sm/md/lg proposal
      ("we should just have one size i feel no?"). --icon-sm and --icon-lg are deliberately NOT
      created — a genuinely oversized empty-state mark sets its own literal at the call site with
@@ -897,8 +901,9 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
 /* Daemon services list: nothing here. Its rules left this file for DaemonList.module.css (Task 11),
    and DaemonList itself is now DELETED — the graph's "daemon" mode is gone (docs/graph/overview.md)
-   and the crons + services list lives on the daemon's own page (app/src/daemon/DaemonServices.tsx,
-   with its own DaemonServices.module.css). History only; no `.daemon-*` rule remains global. */
+   and the crons + services list lives on the daemon's own page (app/src/daemon/DaemonProcesses.tsx
+   and app/src/daemon/DaemonCrons.tsx, each with its own colocated module.css). History only; no
+   `.daemon-*` rule remains global. */
 
 /* Empty pane: a centered "new terminal" icon (styled to match the sidebar toolbar icons,
    `[data-sidebar-toolbar] :global(.btn--icon)`, shell/Sidebar.module.css) above a faint italic hint
