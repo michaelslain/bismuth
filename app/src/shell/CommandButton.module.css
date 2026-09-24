@@ -2,30 +2,42 @@
    HASHED at build time: they are reachable only through the imported `styles` object, never as a
    string literal. Nothing outside CommandButton.tsx may target them.
 
-   TWO RULES, NEITHER OWNING THE ICON BOX. `.toolbar-btn-wrap` is a non-visual `position: relative`
-   sizing box so `.toolbar-badge` can anchor against it; `.toolbar-badge` positions the badge
-   against its own button's corner (see that rule's comment). Every button's actual toolzone box —
-   size, glyph, brackets, hover/selected/disabled colour — comes from `ui/IconBar` (context) down
-   through `IconButton`, not from anything in this file: this component never renders `.btn--icon`
-   itself, that class lands on the `<IconButton>` it wraps.
+   TWO RULES, NEITHER OWNING THE ICON BOX. `.toolbar-btn-wrap` lays the badge out AFTER its button,
+   inline (see that rule's comment for why this is no longer an absolute overlay). Every button's
+   actual toolzone box — size, glyph, brackets, hover/selected/disabled colour — comes from
+   `ui/IconBar` (context) down through `IconButton`, not from anything in this file: this component
+   never renders `.btn--icon` itself, that class lands on the `<IconButton>` it wraps.
 
    NEITHER RULE HAS A `:hover` STATE OF ITS OWN, so both are fully reachable by the computed-style
    baseline: `Default`/`Disabled` exercise `.toolbar-btn-wrap`, and `WithBadge`/`WithBadgeLarge` are
    the only stories that render `.toolbar-badge` at all. */
 
-/* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
-   to the button's top-right corner without disturbing the icon row's layout. */
-.toolbar-btn-wrap { position: relative; display: inline-flex; }
+/* A toolbar button that carries a live count (the daemon inbox). INLINE ROW, NOT AN ABSOLUTE
+   ANCHOR (toolbar-iconbar plan, Task 3 fix round 2 — a decision, see `.toolbar-badge` below for
+   why two absolute-overlay attempts were abandoned). The badge is a flex sibling after the
+   button, never stacked on top of it, so it can never cover a bracket glyph — its own or a
+   neighbour's — regardless of `toolbarIconSize` (11–20) or digit count. */
+.toolbar-btn-wrap { display: inline-flex; align-items: center; gap: var(--sp-1); }
 /* Appearance (font-size/weight/line-height/color/background/border-radius/padding) moved to
-   ui/Badge.tsx (`<Badge variant="solid">`) — this class stays only to anchor the badge against
-   its button, which is this component's layout, not the primitive's.
+   ui/Badge.tsx (`<Badge variant="solid">`) — this class stays empty on purpose (kept as a
+   reachable hook per the header comment) rather than positioning the badge, which is this
+   component's layout, not the primitive's.
 
-   ANCHORED BY `right`, NOT `left: calc(100% - …)` (toolbar-iconbar plan, Task 3 fix). The old rule
-   positioned the badge's LEFT edge just inside the wrap's right edge, so the badge's own width (its
-   digit plus Badge's padding) extended further RIGHT from there — past the wrap, across the
-   `var(--sp-2)` (4px) inter-button gap, and onto the NEXT button's `[`. `right`/`top` anchor the
-   badge to ITS OWN corner instead, and the `--sp-1` (2px) negative inset lets it peek over that
-   corner without leaving more than 2px of the 4px gap, at every `toolbarIconSize` from 11 to 20 —
-   the inset is a fixed offset, not a percentage of the badge's own size, so it never grows with a
-   bigger glyph or a wider (two-digit) badge the way the old `left: calc(100%...)` did. */
-.toolbar-badge { position: absolute; top: calc(-1 * var(--sp-1)); right: calc(-1 * var(--sp-1)); left: auto; }
+   WHY NOT AN ABSOLUTE OVERLAY (Acceptance 6, two failed rounds). Round 1 anchored the badge's
+   LEFT edge just inside the wrap's right edge (`left: calc(100% - …)`); the badge's own width
+   bled past the wrap, across the `--sp-2` (4px) inter-button gap, onto the NEXT button's `[`.
+   Round 2 anchored by `right`/`top` with a negative `--sp-1` inset instead, which stayed on the
+   right button but sank the badge's box DOWN into the 18px toolzone row, covering its OWN `]`.
+   A third attempt — anchoring `bottom: 100%` to float the badge entirely above the row, so it
+   could never reach a bracket at any icon size — passed in isolation but clips in the real
+   sidebar: the toolbar row is the FIRST child of `.sidebar`, which is `overflow: hidden` with no
+   padding-top, and `ui/IconBar`'s `.band` only centers ~9px of headroom above an 18px box —
+   less than a solid Badge's own painted height (~14.5px: `--fs-micro` line-height-1 plus two
+   `--sp-1` padding edges). Anything anchored to hang above the box gets silently trimmed by the
+   sidebar's own edge before it ever reaches a bracket.
+
+   So the badge is laid out IN FLOW instead (`.toolbar-btn-wrap`'s `gap: var(--sp-1)`), reading as
+   "[icon] 3" rather than a corner pill. It costs row width when a badge is showing — the button
+   after it shifts right by the badge's width plus the gap — which is the tradeoff for a
+   positioning rule that holds at every icon size and inside the real, clipping sidebar band. */
+.toolbar-badge {}

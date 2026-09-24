@@ -74,14 +74,27 @@ export const Disabled: Story = {
     ),
 }
 
-/** The badge at the schema's largest `toolbarIconSize` (20px), with a neighbour button on each
- *  side — proves the badge's own-corner anchor (Task 3's fix to `.toolbar-badge`) still clears the
- *  `--sp-2` gap and never covers either neighbour's `[`/`]` at the biggest glyph size the setting
- *  allows. */
+/** The badge at the schema's largest `toolbarIconSize` (20px) and smallest (11px), each with a
+ *  neighbour button on either side — proves the badge (now laid out in-flow after its button,
+ *  Task 3 fix round 2) never covers either neighbour's `[`/`]` at the size extremes the setting
+ *  allows. BOTH bars are built INLINE, directly as children of their own `<IconBar>`, inside this
+ *  `render()` — never hoisted to a module-level constant and reused as `{row}` — because
+ *  `useIconBar()` is a Solid context read, and context is only visible to JSX created while the
+ *  provider is actually rendering it. A `const row = <>…</>` built once at module scope, then
+ *  interpolated into a story's JSX, would run outside any `<IconBar>` at creation time and every
+ *  `CommandButton` in it would silently fall back to `IconButton`'s standalone default (14px icon,
+ *  24px box) instead of the bar's `iconSize` — never exercising the sizes this story exists to
+ *  prove. */
 export const WithBadgeLarge: Story = {
     render: () => (
         <div style={{ padding: '12px', background: 'var(--bg)' }}>
             <IconBar label="Toolbar" iconSize={20}>
+                <CommandButton icon="Search" label="Search" onClick={noop} />
+                <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
+                <CommandButton icon="Settings" label="Settings" onClick={noop} />
+            </IconBar>
+            <div style={{ height: '12px' }} />
+            <IconBar label="Toolbar" iconSize={11}>
                 <CommandButton icon="Search" label="Search" onClick={noop} />
                 <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
                 <CommandButton icon="Settings" label="Settings" onClick={noop} />

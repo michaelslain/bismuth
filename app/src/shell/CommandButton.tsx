@@ -5,7 +5,9 @@ import styles from './CommandButton.module.css'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
 // the sidebar header bar, the horizontal tab strip, and the vertical tab rail): an icon button
-// plus an optional numeric badge, wrapped so the badge can position itself absolutely against it.
+// plus an optional numeric badge, wrapped so the two lay out as one inline row (Task 3 fix round
+// 2 — see CommandButton.module.css's `.toolbar-badge` comment for why this is in-flow rather than
+// an absolute corner overlay).
 //
 // WHAT DELIBERATELY STAYED IN App.tsx (as the local `ToolbarButton` wrapper): resolving a
 // `{command}` / `{commands: [...]}` config to a live Command via `resolveButtonCommands`, hiding
@@ -16,9 +18,10 @@ import styles from './CommandButton.module.css'
 // ONE BEHAVIOURAL NOTE: the pre-extraction "unknown command" fallback rendered a bare
 // `<IconButton disabled>` with no `.toolbar-btn-wrap` around it. This component always wraps,
 // including when `disabled` is true, so both branches now share one shape. `.toolbar-btn-wrap` is
-// `position: relative; display: inline-flex` — a non-visual sizing box — so this does not change
-// the disabled button's own appearance; it only means a disabled button could in principle host a
-// badge too, which no caller currently passes.
+// `display: inline-flex; align-items: center; gap: var(--sp-1)` — it costs nothing extra when
+// there is no badge (the `<Show>` below renders nothing, so the gap has no second child to apply
+// to) — so this does not change the disabled button's own appearance; it only means a disabled
+// button could in principle host a badge too, which no caller currently passes.
 //
 // `.toolbar-btn-wrap` / `.toolbar-badge` are reached through the imported `styles` object —
 // bracket access, not `styles.toolbarBtnWrap`: Vite only exposes camelCase aliases under
