@@ -35,10 +35,10 @@ function Frame(props: { children: JSX.Element; tall?: boolean }) {
     )
 }
 
-/** Resting cluster (Acceptance 12): the composer is well above the frame floor and the gap from
- *  the face region to the chat region is the one `--sp-6` margin, not the old flex bias baked
- *  into `.faceRegion`. Shared by every story that rests (Resting, LongBlurb, NoBlurb,
- *  IdentityFocused). */
+/** Resting cluster (Acceptance 12): the composer is well above the frame floor, and the gap from
+ *  the identity name's own bottom to the chat region's top is `.faceRegion`'s `padding-block`
+ *  bottom alone (`--sp-6`, ~16px) — `.chatRegion` carries no margin-top any more. Shared by every
+ *  story that rests (Resting, LongBlurb, NoBlurb, IdentityFocused). */
 async function expectRestingCluster(canvasElement: HTMLElement) {
     const frame = canvasElement.querySelector<HTMLElement>(
         '[data-testid="story-frame"]',
@@ -51,12 +51,13 @@ async function expectRestingCluster(canvasElement: HTMLElement) {
     await expect(frameRect.bottom - chatRect.bottom).toBeGreaterThanOrEqual(
         frameRect.height * 0.25,
     )
+    const name = within(canvasElement).getByRole('button', { name: 'daemon' })
+    const nameRect = name.getBoundingClientRect()
     const faceRegion = canvasElement.querySelector<HTMLElement>(
         '[data-testid="daemon-face-region"]',
     )!
-    const faceRect = faceRegion.getBoundingClientRect()
-    const spSix = parseFloat(getComputedStyle(chat).marginTop)
-    await expect(chatRect.top - faceRect.bottom).toBeLessThanOrEqual(spSix * 2)
+    const spSix = parseFloat(getComputedStyle(faceRegion).paddingBottom)
+    await expect(chatRect.top - nameRect.bottom).toBeLessThanOrEqual(spSix + 4)
 }
 
 /** Stands in for the real composer (proven elsewhere, see the header note above) — just enough

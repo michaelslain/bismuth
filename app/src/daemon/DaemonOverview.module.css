@@ -18,7 +18,11 @@
 }
 .logSlot {
     flex: 1 1 0;
-    min-height: calc(var(--row-h) * 8);
+    /* 8 rows of real row height (`--row-h` + its own vertical padding, `--sp-1` top and bottom)
+       plus the section heading's own row + its gap to the first row. */
+    min-height: calc(
+        (var(--row-h) + 2 * var(--sp-1)) * 8 + var(--row-h) + var(--sp-2)
+    );
 }
 @container (max-width: 759.98px) {
     .overview {
@@ -27,6 +31,9 @@
     }
     .logSlot {
         flex: none;
-        height: calc(var(--row-h) * 10);
+        /* Same accounting as above, 10 rows narrow. */
+        height: calc(
+            (var(--row-h) + 2 * var(--sp-1)) * 10 + var(--row-h) + var(--sp-2)
+        );
     }
 }

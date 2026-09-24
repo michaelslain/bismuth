@@ -95,6 +95,10 @@
     }
     .panel {
         order: 1;
+        /* Section headings/dots carry their own inset past the stage's own padding — pull the
+           whole column back by it so section text lines up with the hub's composer border at the
+           same 16px edge instead of jagging in further. */
+        margin-inline: calc(-1 * var(--sp-4));
     }
 }
 
