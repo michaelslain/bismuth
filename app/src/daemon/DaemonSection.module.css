@@ -1,0 +1,29 @@
+/* app/src/daemon/DaemonSection.module.css — DaemonSection.tsx is the ONLY importer.
+   The shared frame for each of the daemon page's right-column sections (inbox / crons / services
+   / log): a heading row, an optional empty line, then the section's own rows. Every section sizes
+   to its content — DaemonOverview owns the column's one scroll. */
+.section {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+}
+.heading {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+    margin-bottom: var(--sp-2);
+}
+.count {
+    opacity: 0.65;
+    font-weight: 400;
+}
+.empty {
+    height: var(--row-h);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-4);
+}
+.body {
+    flex: none;
+}

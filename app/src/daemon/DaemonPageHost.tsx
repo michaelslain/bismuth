@@ -1,10 +1,9 @@
 // app/src/daemon/DaemonPageHost.tsx
 // The daemon page's container (routed by PaneContent for DAEMON_TAB). It owns everything
 // DaemonPage/DaemonHub deliberately do not: polling the snapshot + activity log, reading the
-// shared inbox store App already polls, deriving the face's mood/caption/facet-counts, which
-// facet is showing (remembered per window in localStorage), wiring every panel's callbacks to
-// `api` with a toast on failure, and looking up the daemon's chat session (if any) to hand
-// DaemonHub as its `chat` slot.
+// shared inbox store App already polls, deriving the face's mood/caption, wiring every section's
+// callbacks to `api` with a toast on failure, and looking up the daemon's chat session (if any)
+// to hand DaemonHub as its `chat` slot.
 //
 // The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin
 // lands on the composer, `chatSession(DAEMON_CHAT_ID)` is undefined and DaemonChat renders its
@@ -13,7 +12,7 @@
 //
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
-import { createEffect, createMemo, createSignal, Match, onCleanup, Switch } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
@@ -29,22 +28,22 @@ import { chatBusy, chatComposing, chatSpeaking } from '../chatActivity'
 import { DAEMON_CHAT_ID } from '../tabIds'
 import { chatSession } from '../chat/chatSessions'
 import { armDaemonChat } from './daemonChatArm'
-import { resolveWindowId } from '../windowId'
 import { pushToast } from '../toastStore'
 import DaemonChat from './DaemonChat'
+import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
 import DaemonInbox from './DaemonInbox'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
 import DaemonLog from './DaemonLog'
-import { deriveMood } from './daemonFaceModel'
 import {
-    barReadouts,
-    faceCaption,
-    hasRecentFailure,
-    initialFacet,
-    shouldSteerToInbox,
-    type DaemonFacet,
-} from './daemonPageModel'
+    dueSorted,
+    failedSorted,
+    scheduledSorted,
+    resolvedSorted,
+} from '../daemonInboxLogic'
+import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
+import { deriveMood } from './daemonFaceModel'
+import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
 import DaemonPage from './DaemonPage'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -69,24 +68,6 @@ const NO_SNAPSHOT: DaemonSnapshot = {
 }
 
 const isHidden = () => document.visibilityState === 'hidden'
-
-const facetKey = () => `bismuth.daemonFacet.${resolveWindowId()}`
-
-function readRememberedFacet(): string | null {
-    try {
-        return localStorage.getItem(facetKey())
-    } catch {
-        return null
-    }
-}
-
-function writeRememberedFacet(f: DaemonFacet): void {
-    try {
-        localStorage.setItem(facetKey(), f)
-    } catch {
-        /* best effort — a window that can't persist just re-derives next open */
-    }
-}
 
 function DaemonPageHost(props: DaemonPageHostProps) {
     const [snapshot, setSnapshot] = createSignal<DaemonSnapshot>(NO_SNAPSHOT)
@@ -143,36 +124,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         void refreshDaemonPages()
     }
 
-    // ── Facet: which ONE panel is showing ──────────────────────────────────────────────────
-    // `initialFacet` picks it once at mount from whatever due-count is already known; a late-
-    // arriving due count (the inbox poll landing after this component mounts) can still steer it
-    // to `inbox` — but only ONCE per mount (`shouldSteerToInbox`, daemonPageModel.ts), and never
-    // once the user has picked a facet of their own. A mount that already opened on `inbox`
-    // (something was due at initial-facet time) starts pre-steered, so a later due→0→due bounce
-    // doesn't steer it a second time.
-    const [facet, setFacetSignal] = createSignal<DaemonFacet>(
-        initialFacet(dueCount(), readRememberedFacet()),
-    )
-    let userPickedFacet = false
-    let steered = facet() === 'inbox'
-    createEffect(() => {
-        if (
-            shouldSteerToInbox({
-                due: dueCount(),
-                steered,
-                userPicked: userPickedFacet,
-            })
-        ) {
-            steered = true
-            setFacetSignal('inbox')
-        }
-    })
-    const onFacet = (f: DaemonFacet) => {
-        userPickedFacet = true
-        setFacetSignal(f)
-        writeRememberedFacet(f)
-    }
-
     const mood = createMemo(() => {
         const snap = snapshot()
         return deriveMood({
@@ -202,8 +153,8 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
 
-    // ── Panel callbacks: every one wired to `api`, each swallowing after its toast — matching the
-    // rows' own commit helpers, which have no catch of their own to feed. There is no create:
+    // ── Section callbacks: every one wired to `api`, each swallowing after its toast — matching
+    // the rows' own commit helpers, which have no catch of their own to feed. There is no create:
     // crons and services are created by asking the daemon in chat (it writes the definition via
     // `bismuth daemon cron|process create`, the user approving the call), never from the page. ──
     const onRunCron = async (name: string) => {
@@ -248,6 +199,36 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     }
     const onEditIdentity = () => props.onOpen('.daemon/identity.md')
 
+    // What DaemonOverview needs to size each section's dynamic row limit — attention floors it
+    // never cuts into, plus the inbox's own trailing "N resolved // show" line, which costs a row
+    // of height too when it's rendered.
+    const rows = (): DaemonOverviewProps['rows'] => {
+        const pages = inboxPages()
+        const now = Date.now()
+        const due = dueSorted(pages, now).length
+        const failed = failedSorted(pages).length
+        const scheduled = scheduledSorted(pages, now).length
+        const resolved = resolvedSorted(pages).length
+        const snap = snapshot()
+        return {
+            inbox: {
+                total: due + failed + scheduled,
+                attention: due + failed,
+                extraLines: resolved > 0 ? 1 : 0,
+            },
+            crons: {
+                total: snap.crons.length,
+                attention: snap.crons.filter(c => cronNeedsAttention(c, snap.daemon.running)).length,
+            },
+            services: {
+                total: snap.processes.length,
+                attention: snap.processes.filter(p => processNeedsAttention(p, snap.daemon.running))
+                    .length,
+            },
+            log: { total: events().length, attention: 0 },
+        }
+    }
+
     return (
         <div class="full">
             <DaemonPage
@@ -257,26 +238,22 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 mood={mood()}
                 loading={enabled() && !loaded()}
                 readouts={barReadouts(status())}
-                facet={facet()}
-                onFacet={onFacet}
-                counts={{
-                    due: dueCount(),
-                    crons: snapshot().crons.length,
-                    services: snapshot().processes.length,
-                }}
-                panel={
-                    <Switch>
-                        <Match when={facet() === 'inbox'}>
+                overview={
+                    <DaemonOverview
+                        rows={rows()}
+                        inbox={limit => (
                             <DaemonInbox
                                 pages={inboxPages()}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onChanged={onChanged}
                             />
-                        </Match>
-                        <Match when={facet() === 'crons'}>
+                        )}
+                        crons={limit => (
                             <DaemonCrons
                                 crons={snapshot().crons}
                                 daemonRunning={snapshot().daemon.running}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onRun={name => void onRunCron(name)}
                                 onToggle={(name, on) =>
@@ -284,22 +261,21 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 }
                                 onDelete={onDeleteCron}
                             />
-                        </Match>
-                        <Match when={facet() === 'services'}>
+                        )}
+                        services={limit => (
                             <DaemonProcesses
                                 processes={snapshot().processes}
                                 daemonRunning={snapshot().daemon.running}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onToggle={(name, on) =>
                                     void onToggleProcess(name, on)
                                 }
                                 onDelete={onDeleteProcess}
                             />
-                        </Match>
-                        <Match when={facet() === 'log'}>
-                            <DaemonLog events={events()} />
-                        </Match>
-                    </Switch>
+                        )}
+                        log={limit => <DaemonLog events={events()} limit={limit()} />}
+                    />
                 }
                 conversing={conversing()}
                 chatFills={conversing() || !!session()?.history.open()}

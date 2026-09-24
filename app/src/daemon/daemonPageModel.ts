@@ -1,9 +1,8 @@
 // app/src/daemon/daemonPageModel.ts
 // Pure derivations behind the daemon page (DaemonPage.tsx / DaemonPageHost.tsx / DaemonHub.tsx):
-// the face's status (the view bar's only trailing readout now — the old cron/service COUNT
-// readouts moved onto the facet segments themselves, see facetCount), whether a cron failed
-// recently enough to hurt, and which facet the page opens on. No Solid imports — the host owns
-// the polling and localStorage, and feeds these whatever it last fetched.
+// the face's status (the view bar's only trailing readout), and whether a cron failed recently
+// enough to hurt. No Solid imports — the host owns the polling and feeds these whatever it last
+// fetched.
 import type { DaemonCron, DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { DaemonMood } from './daemonFaceModel'
 import { relTimeMs } from '../relTime'
@@ -58,66 +57,8 @@ export function faceCaption(
     return `watching // last: ${last.name} ${age}`
 }
 
-/** Whether the host should auto-steer the facet to `inbox` on this reactive tick: something is
- *  due, the host hasn't already steered once this mount, and the user hasn't picked a facet of
- *  their own. The host is expected to keep its own `steered` flag and flip it true the one time
- *  this returns true, so a due count that goes 0→1→0→2 steers only on the FIRST rise, never the
- *  second — and never again once the user has interacted with the facet toggle at all. */
-export function shouldSteerToInbox(s: {
-    due: number
-    steered: boolean
-    userPicked: boolean
-}): boolean {
-    return s.due > 0 && !s.steered && !s.userPicked
-}
-
-/** The one panel the page shows at a time. */
-export type DaemonFacet = 'inbox' | 'crons' | 'services' | 'log'
-
-/** In the order the ViewBar's SegmentedToggle renders them. */
-export const DAEMON_FACETS: DaemonFacet[] = [
-    'inbox',
-    'crons',
-    'services',
-    'log',
-]
-
-function isDaemonFacet(v: string | null): v is DaemonFacet {
-    return v !== null && (DAEMON_FACETS as string[]).includes(v)
-}
-
-/** Which facet the page opens on: anything due in the inbox wins outright — that's why the user
- *  is here — otherwise the last facet this window had open, otherwise `crons` (what's
- *  configured, the most stable "home" facet). An unrecognised remembered value (a stale
- *  localStorage entry from a build that had different facets) falls back to `crons` too. */
-export function initialFacet(due: number, remembered: string | null): DaemonFacet {
-    if (due > 0) return 'inbox'
-    if (isDaemonFacet(remembered)) return remembered
-    return 'crons'
-}
-
-/** The segment count for one facet's label — `undefined` when the facet has no natural count
- *  (`log`), which the label renders by omitting the count entirely rather than showing a false
- *  zero. */
-export function facetCount(
-    f: DaemonFacet,
-    c: { due: number; crons: number; services: number },
-): number | undefined {
-    switch (f) {
-        case 'inbox':
-            return c.due
-        case 'crons':
-            return c.crons
-        case 'services':
-            return c.services
-        case 'log':
-            return undefined
-    }
-}
-
-/** The view bar's ONE trailing readout: the face's status alone. The cron/service/inbox COUNTS
- *  that used to ride alongside it now live on the facet segments (see `facetCount`) — an empty
- *  status yields no readout at all rather than an empty label. */
+/** The view bar's ONE trailing readout: the face's status alone. An empty status yields no
+ *  readout at all rather than an empty label. */
 export function barReadouts(status: string): string[] {
     return status ? [status] : []
 }

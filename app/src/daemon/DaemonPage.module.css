@@ -1,15 +1,17 @@
 /* app/src/daemon/DaemonPage.module.css — DaemonPage.tsx is the ONLY importer.
-   Layout only. Panel chrome (no border box any more, a head row only when it has actions) belongs
-   to DaemonPanel; the hub's own layout (face, identity, its chat) belongs to DaemonHub.module.css.
-   This file decides WHERE the hub and the one active panel sit and nothing about how either looks.
+   Layout only. The overview column's own chrome (inbox/crons/services/log stacked, the log
+   filling the rest) belongs to DaemonOverview.module.css + DaemonSection.module.css; the hub's
+   own layout (face, identity, its chat) belongs to DaemonHub.module.css. This file decides WHERE
+   the hub and the overview column sit and nothing about how either looks.
 
-   Wide (>= 760px of the page's own width): [ viewbar (identity // facet toggle // status) ]
-                                             [ hub  |  panel ]
-   Two columns, both the stage's own full height with the same inset top and bottom. The panel
+   Wide (>= 760px of the page's own width): [ viewbar (identity // status) ]
+                                             [ hub  |  overview ]
+   Two columns, both the stage's own full height with the same inset top and bottom. The overview
    column is never narrower than the hub column — `minmax(320px, 1fr) minmax(360px, 1.2fr)`, so a
-   long cron name in the panel has at least as much room as the identity block in the hub.
-   Narrow (< 760px): hub then panel, stacked in a scrolling column.
-   Off: one column, just the hub (sleeping face + how to wake it) — no facet toggle, no panel. */
+   long cron name has at least as much room as the identity block in the hub.
+   Narrow (< 760px): hub then overview, stacked in a scrolling column — DaemonOverview owns its
+   own narrow sizing from here down.
+   Off: one column, just the hub (sleeping face + how to wake it) — no overview column. */
 
 .page {
     /* A SIZE container: the narrow rule below queries the page's own width. Safe because the page
@@ -71,14 +73,7 @@
     margin-inline: var(--sp-3);
 }
 
-/* The facet count, riding inside a SegmentedToggle option's own .textLabel (a flex row with its
-   own gap). A direct flex child so dropping it at 480px (BarLabel's drop="late") takes its gap
-   with it, instead of leaving a dead space where a wrapping element used to sit. */
-.facetCount {
-    color: var(--faint);
-}
-
-/* Off: no facet toggle, no panel — the stage is just the sleeping hub. */
+/* Off: no overview column — the stage is just the sleeping hub. */
 .page[data-enabled='false'] .stage {
     grid-template-columns: minmax(0, 1fr);
 }
@@ -100,7 +95,10 @@
     }
     .panel {
         order: 1;
-        height: 420px;
+        /* Section headings/dots carry their own inset past the stage's own padding — pull the
+           whole column back by it so section text lines up with the hub's composer border at the
+           same 16px edge instead of jagging in further. */
+        margin-inline: calc(-1 * var(--sp-4));
     }
 }
 
