@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
     appendColumnKey,
     columnDropIndex,
+    isColumnNameTaken,
     removeColumnKey,
     renameColumnKey,
     renamePropertyOption,
@@ -201,6 +202,13 @@ describe('removeColumnKey', () => {
         const keys = [...KEYS]
         removeColumnKey(keys, 'todo')
         expect(keys).toEqual(KEYS)
+    })
+})
+
+describe('isColumnNameTaken', () => {
+    test('matches trimmed names', () => {
+        expect(isColumnNameTaken(['Todo', 'Done'], '  Todo ')).toBe(true)
+        expect(isColumnNameTaken(['Todo', 'Done'], 'Doing')).toBe(false)
     })
 })
 
