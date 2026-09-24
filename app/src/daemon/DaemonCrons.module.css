@@ -1,18 +1,46 @@
 /* app/src/daemon/DaemonCrons.module.css — DaemonCrons.tsx is the ONLY importer.
    The list is the grid DaemonRow's rows subgrid into: dot // name // schedule // status //
    actions. Name floors at 12ch and sizes to its own content (`minmax(12ch, max-content)`);
-   schedule floors at 0 and sizes to its own content (`minmax(0, max-content)`), so schedule gives
-   up its room FIRST under pressure and name only starts to shrink once schedule is already at
-   zero. Status floors at its own content and takes the leftover free space
-   (`minmax(max-content, 1fr)`), so any slack in a wide panel lands between status and the
-   trailing `[ run ]` instead of opening a gap between name and schedule — see
-   DaemonRow.module.css's `.meta` for the truncation half of this. */
-.daemon-crons {
-    height: 100%;
-    min-height: 0;
-}
-.list {
+   schedule is the ONE flexible track (`minmax(0, 1fr)`) and absorbs all the row's free space, so
+   it ellipsizes under pressure while name and status stay at their own content width — see
+   DaemonRow.module.css's `.meta` for the truncation half of this. `column-gap` is uniform
+   `--sp-3`, which is also the schedule→status minimum Acceptance 9 asks for.
+
+   DaemonCrons is the one list whose DaemonRow ALWAYS carries an `actions` cell (`[ run ]`,
+   never omitted the way DaemonProcesses omits it at rest) — so `.status` is never DaemonRow's own
+   `:last-child` and the `.row > :last-child { padding-right: … }` rule it relies on for its own
+   right inset (DaemonRow.module.css, unedited) never reaches it. Rather than reach into that
+   file, the actions cell is pulled OUT of grid flow here and pinned to the row's own right edge —
+   the same "trailing action overlays the trailing text, hidden text on hover" idiom
+   InboxRow.module.css already uses for its age/archive pair — so the status word itself becomes
+   the row's true rightmost content, inset by `--sp-4` same as everywhere else (Acceptance 5).
+   Every selector below is structural (child combinator + `:nth-child` + the `data-confirming`
+   runtime attribute DaemonRow.tsx already sets) — never a class reached from outside its module. */
+.cronsList {
     display: grid;
-    grid-template-columns: auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto;
+    grid-template-columns: auto minmax(12ch, max-content) minmax(0, 1fr) max-content;
+    column-gap: var(--sp-3);
     row-gap: 0;
+}
+.cronsList > div {
+    position: relative;
+}
+.cronsList > div > :nth-child(4) {
+    /* `margin`, not `padding`: `justify-self: end` aligns the item's MARGIN box to the track's
+       end, so a trailing margin (unlike padding, which is inside the border box a bounding-rect
+       read reports) is what actually pulls the visible text `--sp-4` off the track's true right
+       edge. */
+    margin-right: var(--sp-4);
+    justify-self: end;
+}
+.cronsList > div > :nth-child(5) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+}
+.cronsList > div:hover > :nth-child(4),
+.cronsList > div:focus-within > :nth-child(4),
+.cronsList > div[data-confirming] > :nth-child(4) {
+    visibility: hidden;
 }

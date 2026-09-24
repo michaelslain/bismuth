@@ -14,19 +14,34 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /** 12 events spanning every kind (cron/process/daemon/session) and outcome, so every tone
- *  (fail/live/quiet/ok) and duration bucket (<1s/Ns/Nm) appears at once. */
+ *  (fail/live/quiet/ok) and duration bucket (<1s/Ns/Nm) appears at once. `fill` needs a flex
+ *  column frame to take its height from — see DaemonSection.stories.tsx's `Frame`. */
 export const Default: Story = {
     render: () => (
-        <div style={{ width: '420px', height: '360px' }}>
+        <div
+            style={{
+                width: '420px',
+                height: '360px',
+                display: 'flex',
+                'flex-direction': 'column',
+            }}
+        >
             <DaemonLog events={sampleActivity()} />
         </div>
     ),
 }
 
-/** No activity yet — the panel's shared EmptyState. */
+/** No activity yet — the section's own empty line. */
 export const Empty: Story = {
     render: () => (
-        <div style={{ width: '420px', height: '160px' }}>
+        <div
+            style={{
+                width: '420px',
+                height: '160px',
+                display: 'flex',
+                'flex-direction': 'column',
+            }}
+        >
             <DaemonLog events={[]} />
         </div>
     ),

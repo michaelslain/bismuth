@@ -160,6 +160,59 @@ export const LongName: Story = {
     ),
 }
 
+/** A 40-char file-change trigger next to `failed 10m ago` — the schedule cell ellipsizes and
+ *  never crowds the status, which stays flush against the list's right edge (Acceptance 5, 9). */
+export const LongSchedule: Story = {
+    render: () => (
+        <div style={{ width: '340px', height: '120px' }}>
+            <DaemonCrons
+                {...baseProps}
+                crons={[
+                    {
+                        name: 'reindex',
+                        file: 'reindex',
+                        schedule: '',
+                        on: 'file-change',
+                        watch: 'notes/**/inbox/**/*.md and attachments/**/*',
+                        enabled: true,
+                        lastFired: {
+                            timestamp: new Date(
+                                Date.now() - 10 * 60 * 1000,
+                            ).toISOString(),
+                            result: 'failed',
+                        },
+                        running: false,
+                        startedAt: null,
+                    },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const schedule = canvas.getByText(/^on change:/)
+        await expect(schedule.scrollWidth).toBeGreaterThan(
+            schedule.clientWidth,
+        )
+        const status = canvas.getByText('failed 10m ago')
+        const list = canvasElement.querySelector<HTMLElement>(
+            '[class*="cronsList"]',
+        )!
+        const sp4 = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+                '--sp-4',
+            ),
+        )
+        const statusRect = status.getBoundingClientRect()
+        const listRect = list.getBoundingClientRect()
+        await expect(
+            Math.abs(
+                statusRect.right - (listRect.right - sp4),
+            ),
+        ).toBeLessThanOrEqual(1)
+    },
+}
+
 /** The row's context menu → Delete swaps the trailing action for an inline `[ delete ] [
  *  cancel ]` confirm — no modal. */
 export const ConfirmDelete: Story = {

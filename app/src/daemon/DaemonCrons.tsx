@@ -17,8 +17,7 @@ import { openContextMenu } from '../nativeMenu'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
-import EmptyState from '../ui/EmptyState'
-import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
+import DaemonSection from './DaemonSection'
 import DaemonRow from './DaemonRow'
 import { cronTone } from './cronStatus'
 import cronFrequency from './cronFrequency'
@@ -149,39 +148,36 @@ function DaemonCrons(props: DaemonCronsProps) {
     }
 
     return (
-        <div class={`${styles['daemon-crons']} ${props.class ?? ''}`}>
-            <DaemonPanel>
-                <Show
-                    when={props.crons.length > 0}
-                    fallback={
-                        <EmptyState blockClass={daemonPanelEmptyClass}>
-                            no crons yet // ask the daemon
-                        </EmptyState>
-                    }
-                >
-                    <div class={styles.list}>
-                        <For each={props.crons}>
-                            {cron => (
-                                <DaemonRow
-                                    name={cron.name}
-                                    tone={cronTone(cron, props.daemonRunning)}
-                                    status={statusFor(cron, props.daemonRunning)}
-                                    meta={metaFor(cron)}
-                                    dim={!cron.enabled}
-                                    onOpen={() =>
-                                        props.onOpen(
-                                            `.daemon/crons/${cron.file}.md`,
-                                        )
-                                    }
-                                    onContextMenu={e => openMenu(cron, e)}
-                                    actions={rowActions(cron)}
-                                    confirming={deletingName() === cron.name}
-                                />
-                            )}
-                        </For>
-                    </div>
-                </Show>
-            </DaemonPanel>
+        <DaemonSection
+            title="crons"
+            count={props.crons.length}
+            empty="no crons yet // ask the daemon"
+            isEmpty={props.crons.length === 0}
+            class={props.class}
+        >
+            <Show when={props.crons.length > 0}>
+                <div class={styles.cronsList}>
+                    <For each={props.crons}>
+                        {cron => (
+                            <DaemonRow
+                                name={cron.name}
+                                tone={cronTone(cron, props.daemonRunning)}
+                                status={statusFor(cron, props.daemonRunning)}
+                                meta={metaFor(cron)}
+                                dim={!cron.enabled}
+                                onOpen={() =>
+                                    props.onOpen(
+                                        `.daemon/crons/${cron.file}.md`,
+                                    )
+                                }
+                                onContextMenu={e => openMenu(cron, e)}
+                                actions={rowActions(cron)}
+                                confirming={deletingName() === cron.name}
+                            />
+                        )}
+                    </For>
+                </div>
+            </Show>
             <Show when={menu()}>
                 {m => (
                     <Portal>
@@ -194,7 +190,7 @@ function DaemonCrons(props: DaemonCronsProps) {
                     </Portal>
                 )}
             </Show>
-        </div>
+        </DaemonSection>
     )
 }
 
