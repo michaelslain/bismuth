@@ -56,8 +56,8 @@ export const WithCount: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('crons')).toBeInTheDocument()
         await expect(canvas.getByText('3')).toBeInTheDocument()
-        const section = canvasElement.querySelector('[data-testid="daemon-section"]')!
-        await expect(section.getAttribute('data-section')).toBe('crons')
+        const section = canvasElement.querySelector('[data-testid="daemon-section-crons"]')!
+        await expect(section).toBeInTheDocument()
     },
 }
 
@@ -117,7 +117,7 @@ export const FillOverflowing: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('log')).toBeInTheDocument()
-        const body = canvasElement.querySelector('[data-testid="daemon-section"] > div:last-child')!
+        const body = canvasElement.querySelector('[data-testid="daemon-section-log"] > div:last-child')!
         await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
     },
 }

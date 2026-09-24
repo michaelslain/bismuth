@@ -28,8 +28,7 @@ function DaemonSection(props: DaemonSectionProps) {
     return (
         <div
             class={`${styles.section} ${props.fill ? styles.fill : ''} ${props.class ?? ''}`}
-            data-testid="daemon-section"
-            data-section={props.title}
+            data-testid={`daemon-section-${props.title}`}
         >
             <div class={styles.heading}>
                 <Text as="div" size="micro" tone="faint" eyebrow>
