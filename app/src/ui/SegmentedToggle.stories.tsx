@@ -3,7 +3,7 @@
 // selected/unselected consumer (graph mode, calendar view switcher, Bases view tabs).
 //
 // Props: options (id + label + optional title), value, onChange, size?, class?,
-// segmentClass?, look? ('bracket' default | 'segment' | 'icon' | 'swatch').
+// segmentClass?, look? ('icon', default omitted renders the plain [label] bracket).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -113,53 +113,6 @@ export const WithIcons: Story = {
                 ]}
             />
         )
-    },
-}
-
-/** `look="segment"` — today's butted boxes, uppercase, sized. The drawing toolbar's icon-only
- *  tool groups are the one remaining caller of this look. */
-export const SegmentLook: Story = {
-    render: () => {
-        const [v, setV] = createSignal('pen')
-        return (
-            <SegmentedToggle
-                value={v()}
-                onChange={setV}
-                look="segment"
-                size="sm"
-                options={[
-                    {
-                        id: 'pen',
-                        title: 'Pen',
-                        ariaLabel: 'Pen',
-                        label: <Icon value="Pen" size={14} />,
-                    },
-                    {
-                        id: 'eraser',
-                        title: 'Eraser',
-                        ariaLabel: 'Eraser',
-                        label: <Icon value="Eraser" size={14} />,
-                    },
-                    {
-                        id: 'highlighter',
-                        title: 'Highlighter',
-                        ariaLabel: 'Highlighter',
-                        label: <Icon value="Highlighter" size={14} />,
-                    },
-                ]}
-            />
-        )
-    },
-    play: async ({ canvasElement }) => {
-        const wrap = canvasElement.querySelector(
-            '[data-look="segment"]',
-        ) as HTMLElement
-        expect(wrap).not.toBeNull()
-        const pen = canvasElement.querySelector<HTMLElement>(
-            '[aria-label="Pen"]',
-        )!
-        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
-        expect(pen.hasAttribute('aria-pressed')).toBe(false)
     },
 }
 
@@ -293,9 +246,10 @@ export const DisabledOption: Story = {
     },
 }
 
-/** `look="icon"` — the drawing dock's tool/size/smoothing/paper groups: butted icon-only boxes,
- *  the selected one an accent glyph on an `--accent-soft` fill with a 1px inset accent ring. */
-export const IconLook: Story = {
+/** `look="icon"` — the drawing dock's tool/size/smoothing/paper groups: square, borderless
+ *  icon-only brackets (the same `kind="icon"` IconButton uses), the selected one an accent
+ *  bracket + glyph, no fill, no box. */
+export const IconOption: Story = {
     render: () => {
         const [v, setV] = createSignal('pen')
         return (
@@ -335,14 +289,16 @@ export const IconLook: Story = {
         const pen = canvasElement.querySelector<HTMLElement>(
             '[aria-label="Pen"]',
         )!
-        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
+        expect(pen.getAttribute('data-kind') === 'icon').toBe(true)
         expect(pen.getAttribute('data-state') === 'selected').toBe(true)
     },
 }
 
-/** `look="swatch"` — the drawing dock's colour row: butted colour chips inside one shared
- *  `1px var(--border)` frame, spaced by `--sp-1`, the selected chip a ring only (no fill). */
-export const SwatchLook: Story = {
+/** `look="icon"` colour swatches — the drawing dock's colour row: each swatch is a filled
+ *  square glyph inside a plain icon bracket, `--sp-1` apart. The active swatch's BRACKETS turn
+ *  accent (Button's `kind="icon"` selected treatment); the glyph itself keeps its own stored
+ *  colour, since it paints with an explicit `background`/`fill`, never `currentColor`. */
+export const SwatchOption: Story = {
     render: () => {
         const [v, setV] = createSignal('accent')
         const swatch = (fill: string) => (
@@ -359,7 +315,7 @@ export const SwatchLook: Story = {
             <SegmentedToggle
                 value={v()}
                 onChange={setV}
-                look="swatch"
+                look="icon"
                 options={[
                     {
                         id: 'fg',
@@ -391,7 +347,7 @@ export const SwatchLook: Story = {
     },
     play: async ({ canvasElement }) => {
         const wrap = canvasElement.querySelector(
-            '[data-look="swatch"]',
+            '[data-look="icon"]',
         ) as HTMLElement
         expect(wrap).not.toBeNull()
         const sp1 = getComputedStyle(document.documentElement).getPropertyValue('--sp-1').trim()
