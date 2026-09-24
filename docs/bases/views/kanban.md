@@ -8,7 +8,7 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
 - **Edit a card** — tapping anywhere on a card opens a focused **edit modal** (`CardEditModal`): its title field renames the note, and every meta property gets a control matched to its type (text/number/date/select/multiselect/tags, a `markdown` property in a rich Milkdown surface, a boolean as an instant Yes/No toggle). Delete lives inside that modal. See [Editable Cards](#editable-cards), and [properties](../properties.md) for how a property's type is determined. **This is `mode: normal` behavior only** — a board with [`mode: tasks`](#tasks-mode-mode-tasks) has no edit modal at all; see that section.
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
-- **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
+- **Add a card** — a bare `+` directly under each column's last card opens a composer that creates a note in the board's folder with that column's value set.
 
 The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **read-only meta chips** — tapping the card opens the [edit modal](#editable-cards). `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it. All of this describes the default `mode: normal` card; a [`mode: tasks`](#tasks-mode-mode-tasks) board's card face is a checkbox line instead — see [Tasks Mode](#tasks-mode-mode-tasks).
 
@@ -163,7 +163,7 @@ views:
     hideLabels: true
 ```
 
-Normally (the default) each meta item stacks its label **above** its value — see [Card Face](#card-face).
+Normally (the default) each property is one line — its key, then its value, with every value on a card starting at the same x — see [Card Face](#card-face).
 
 ### `mode` (task board variant)
 
