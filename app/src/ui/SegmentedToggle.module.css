@@ -11,11 +11,8 @@
    selected-state colour, the brackets themselves, and the no-box treatment all come from
    Button's own CSS (`.btn--text.btn--selected` / `.btn--icon.btn--selected`, Button.module.css).
    This file owns only the row's own gap: `--sp-4` (the standard bracket-sibling gap every other
-   bar uses) for the default look, `--sp-1` for `look="icon"` — the tighter pitch the drawing
-   dock's icon-only tool/colour/size/smoothing/paper/undo-redo groups have always shipped at
-   (previously an accident of the old boxed register's -1px border overlap, now a real gap
-   value). `kind="segment"` is retired from every caller outside `ui/Button*`/`ui/buttonClass*`
-   now (Task 10 deletes the kind itself). */
+   bar uses, per DESIGN.md — sibling bracket buttons sit `--sp-4` apart, no exception for icon
+   runs) for every look, including `look="icon"`. `kind="segment"` is retired from every caller
+   outside `ui/Button*`/`ui/buttonClass*` now (Task 10 deletes the kind itself). */
 
 .segmented { display: inline-flex; align-items: center; gap: var(--sp-4); }
-.segmented[data-look="icon"] { gap: var(--sp-1); }

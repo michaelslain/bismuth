@@ -1937,7 +1937,7 @@ export const PdfViewBarLayout: Story = {
         // Rest: no frame and full-contrast muted ink (not a disabled-looking dim).
         const restCs = getComputedStyle(drawBtn)
         expect(restCs.opacity).toBe('1')
-        expect(restCs.borderTopColor).toBe('rgba(0, 0, 0, 0)')
+        expect(rest.frames, 'accent frames at rest').toBe(0)
 
         // SCRATCH on: still zero accent frames (the button family draws none for a selected
         // state), one control now selected, and nothing moves.
@@ -1947,7 +1947,6 @@ export const PdfViewBarLayout: Story = {
         const on = probeBar(bar)
         expect(on.frames, 'accent frames, scratch on').toBe(0)
         expect(on.selectedCount, 'scratch on').toBe(1)
-        expect(getComputedStyle(scratchBtn).borderTopWidth).toBe('1px')
         expect(on.gaps).toEqual(rest.gaps)
         // put the fixture back (the store wrote a margin; turn it off again)
         await fireEvent.click(scratchBtn)

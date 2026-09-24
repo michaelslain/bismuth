@@ -295,7 +295,8 @@ export const IconOption: Story = {
 }
 
 /** `look="icon"` colour swatches — the drawing dock's colour row: each swatch is a filled
- *  square glyph inside a plain icon bracket, `--sp-1` apart. The active swatch's BRACKETS turn
+ *  square glyph inside a plain icon bracket, `--sp-4` apart (DESIGN.md: sibling bracket buttons
+ *  never sit closer, no exception for icon runs). The active swatch's BRACKETS turn
  *  accent (Button's `kind="icon"` selected treatment); the glyph itself keeps its own stored
  *  colour, since it paints with an explicit `background`/`fill`, never `currentColor`. */
 export const SwatchOption: Story = {
@@ -350,8 +351,8 @@ export const SwatchOption: Story = {
             '[data-look="icon"]',
         ) as HTMLElement
         expect(wrap).not.toBeNull()
-        const sp1 = getComputedStyle(document.documentElement).getPropertyValue('--sp-1').trim()
-        expect(getComputedStyle(wrap).gap).toBe(sp1)
+        const sp4 = getComputedStyle(document.documentElement).getPropertyValue('--sp-4').trim()
+        expect(getComputedStyle(wrap).gap).toBe(sp4)
         const accent = canvasElement.querySelector<HTMLElement>(
             '[aria-label="accent"]',
         )!
