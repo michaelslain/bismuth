@@ -1,7 +1,7 @@
 /* Trigger button — visibility is driven from OUTSIDE this file: KanbanView.module.css's
    `.kanbanColHeader:hover [data-kbcolmenu-trigger]` / `:focus-within` rule shows it (the
    `data-kbcolmenu-trigger` attribute is the cross-component hook; this file only owns the
-   at-rest/hover/focus-visible states of the reveal itself). The button's own box (size,
+   at-rest / focus-visible / expanded reveal states of the reveal itself). The button's own box (size,
    brackets, hover/focus tone) is IconButton's `size="sm"` (KanbanColumnMenu.tsx) — this file
    only PLACES it.
 
@@ -17,12 +17,17 @@
     right: var(--sp-5);
     top: 50%;
     transform: translateY(-50%);
-    opacity: 0;
-    pointer-events: none;
     transition: opacity 120ms ease;
 }
-.trigger:focus-visible,
-.trigger[aria-expanded='true'] {
+/* Doubled selector: IconButton's own `.btn--icon.btn--normal { opacity: 1 }` (two classes) beats
+   a single `.trigger` on specificity regardless of source order, so the rest state must match
+   its specificity to win. */
+.trigger.trigger.trigger {
+    opacity: 0;
+    pointer-events: none;
+}
+.trigger.trigger.trigger:focus-visible,
+.trigger.trigger.trigger[aria-expanded='true'] {
     opacity: 1;
     pointer-events: auto;
 }
