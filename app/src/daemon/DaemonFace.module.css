@@ -1,7 +1,8 @@
 /* app/src/daemon/DaemonFace.module.css — the living .:[00]:. (DaemonFace.tsx is the only importer).
    The root is the size container, so the face scales with the column it sits in, not the window:
-   9.5cqi of the root's inline size, clamped to 28px..74px — roughly half of the glyph's earlier
-   56px..148px range, so the face reads as part of the hub rather than a centrepiece. A
+   7cqi of the root's inline size, clamped to 28px..74px — lower than the glyph's earlier 9.5cqi
+   share so the widest hub columns (e.g. the daemon page's inbox layout) still stay at or under
+   the resting ceiling, so the face reads as part of the hub rather than a centrepiece. A
    container cannot size its OWN font from cqi (the unit resolves against an ancestor), which is why
    the glyph row is a child — and why --glyph is only declared here and resolved in the children. */
 
@@ -9,7 +10,7 @@
     container-type: inline-size;
     /* An unregistered custom property is substituted where it is USED, so each child resolves this
        cqi against .root — the face's font and the caption's gap stay one number. */
-    --glyph: clamp(28px, 9.5cqi, 74px);
+    --glyph: clamp(28px, 7cqi, 74px);
     display: flex;
     flex-direction: column;
     align-items: center;
