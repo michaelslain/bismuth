@@ -3,10 +3,11 @@ import { createSignal, createResource, createEffect, For, Show } from 'solid-js'
 import { api } from './api'
 import { settings } from './settings'
 import { Icon } from './icons/Icon'
-import Chip from './ui/Chip'
+import ChipToggle from './ui/ChipToggle'
 import Label from './ui/Label'
 import Swatch from './ui/Swatch'
 import Text from './ui/Text'
+import { Loading } from './ui/EmptyState'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
 import { pushToast } from './Toast'
@@ -460,17 +461,23 @@ export function ExportView(props: {
                     <Show
                         when={!result.error}
                         fallback={
-                            <div class={styles['export-empty']}>
+                            <Text
+                                as="div"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                                class={styles['export-empty']}
+                            >
                                 Preview failed:{' '}
                                 {(result.error as Error)?.message}
-                            </div>
+                            </Text>
                         }
                     >
                         <Show
                             when={result()}
                             fallback={
                                 <div class={styles['export-empty']}>
-                                    Rendering preview…
+                                    <Loading>Rendering preview…</Loading>
                                 </div>
                             }
                         >
@@ -582,12 +589,12 @@ export function ExportView(props: {
                         <div class={styles.fopts}>
                             <For each={views()}>
                                 {(v, i) => (
-                                    <Chip
+                                    <ChipToggle
                                         selected={viewIndex() === i()}
-                                        onClick={() => setViewIndex(i())}
+                                        onToggle={() => setViewIndex(i())}
                                     >
                                         {viewLabel(v, i())}
-                                    </Chip>
+                                    </ChipToggle>
                                 )}
                             </For>
                         </div>
@@ -601,13 +608,13 @@ export function ExportView(props: {
                         <div class={styles.fopts}>
                             <For each={MODES}>
                                 {m => (
-                                    <Chip
+                                    <ChipToggle
                                         selected={mode() === m}
                                         icon={MODE_ICON[m]}
-                                        onClick={() => pickMode(m)}
+                                        onToggle={() => pickMode(m)}
                                     >
                                         {MODE_LABEL[m]}
-                                    </Chip>
+                                    </ChipToggle>
                                 )}
                             </For>
                         </div>
@@ -621,12 +628,12 @@ export function ExportView(props: {
                         <div class={styles.fopts}>
                             <For each={SPANS}>
                                 {s => (
-                                    <Chip
+                                    <ChipToggle
                                         selected={calSpan() === s}
-                                        onClick={() => pickSpan(s)}
+                                        onToggle={() => pickSpan(s)}
                                     >
                                         {SPAN_LABEL[s]}
-                                    </Chip>
+                                    </ChipToggle>
                                 )}
                             </For>
                         </div>
@@ -658,22 +665,22 @@ export function ExportView(props: {
                     <div class={styles.field}>
                         <Label class={styles.flab}>Frontmatter</Label>
                         <div class={styles.fopts}>
-                            <Chip
+                            <ChipToggle
                                 selected={includeFrontmatter()}
-                                onClick={() =>
+                                onToggle={() =>
                                     setIncludeFrontmatter(!includeFrontmatter())
                                 }
                             >
                                 Include frontmatter
-                            </Chip>
-                            <Chip
+                            </ChipToggle>
+                            <ChipToggle
                                 selected={showMarkdownSyntax()}
-                                onClick={() =>
+                                onToggle={() =>
                                     setShowMarkdownSyntax(!showMarkdownSyntax())
                                 }
                             >
                                 Show markdown syntax
-                            </Chip>
+                            </ChipToggle>
                         </div>
                     </div>
                 </Show>
@@ -683,13 +690,13 @@ export function ExportView(props: {
                     <div class={styles.fopts}>
                         <For each={formats()}>
                             {f => (
-                                <Chip
+                                <ChipToggle
                                     selected={format() === f}
                                     icon={FORMAT_ICON[f]}
-                                    onClick={() => setFormat(f)}
+                                    onToggle={() => setFormat(f)}
                                 >
                                     {LABEL[f]}
-                                </Chip>
+                                </ChipToggle>
                             )}
                         </For>
                     </div>
@@ -728,12 +735,12 @@ export function ExportView(props: {
                         <div class={styles.fopts}>
                             <For each={PDF_FONT_SIZES}>
                                 {sz => (
-                                    <Chip
+                                    <ChipToggle
                                         selected={pdfFontSize() === sz}
-                                        onClick={() => setPdfFontSize(sz)}
+                                        onToggle={() => setPdfFontSize(sz)}
                                     >
                                         {sz}pt
-                                    </Chip>
+                                    </ChipToggle>
                                 )}
                             </For>
                         </div>
@@ -745,9 +752,9 @@ export function ExportView(props: {
                     <div class={styles.fopts}>
                         <For each={THEMES}>
                             {t => (
-                                <Chip
+                                <ChipToggle
                                     selected={theme() === t}
-                                    onClick={() => setTheme(t)}
+                                    onToggle={() => setTheme(t)}
                                 >
                                     <Swatch
                                         static
@@ -755,7 +762,7 @@ export function ExportView(props: {
                                         class={styles['theme-swatch']}
                                     />
                                     {THEME_LABEL[t]}
-                                </Chip>
+                                </ChipToggle>
                             )}
                         </For>
                     </div>

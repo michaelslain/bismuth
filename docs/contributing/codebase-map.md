@@ -1338,7 +1338,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `IconButton.tsx` | Icon-only button |
 | `IconTextButton.tsx` | Icon + text button |
 | `buttonClass.ts` | `buttonClass(kind, state, size, danger)` — pure class-name builder. Tested. |
-| `Chip.tsx` | Pill/tag chip |
+| `ChipToggle.tsx` | Selectable `[label]` pill toggle (merged `Chip.tsx`, ds-bridges Task 3) |
 | `Stars.tsx` | Star rating widget |
 | `StatusDot.tsx` | Colored status indicator dot |
 | `ViewBar.tsx` | The view header. Takes six named region slots — `identity` `locus` `facet` `readouts` `config` `actions` — laid out as a leading and a trailing group. Also exports `Crumb` and `VBtn`. |
