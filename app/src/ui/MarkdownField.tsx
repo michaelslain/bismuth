@@ -49,12 +49,12 @@ const fieldTheme = EditorView.theme({
         fontSize: 'var(--fs-body)',
     },
     '.cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
         {
             backgroundColor:
-                'color-mix(in srgb, var(--accent) 38%, transparent)',
+                'var(--selection)',
         },
 })
 

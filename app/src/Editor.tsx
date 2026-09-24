@@ -214,7 +214,7 @@ const editorTheme = EditorView.theme({
         transition: 'left 70ms ease-out, top 70ms ease-out', // smooth glide
     },
     '.cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
     // CodeMirror's baseTheme paints the drawSelection layer (`.cm-selectionBackground`) with
     // high-specificity selectors: the UNFOCUSED range via `&light .cm-selectionBackground`
@@ -226,12 +226,12 @@ const editorTheme = EditorView.theme({
     // input has focus the editor is UNFOCUSED, so the match's "selection" must not fall back to the
     // invisible gray. (Match the exact focused selector too so the accent tint wins while focused.)
     '.cm-selectionLayer .cm-selectionBackground': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
         {
             backgroundColor:
-                'color-mix(in srgb, var(--accent) 38%, transparent)',
+                'var(--selection)',
         },
     '.cm-gutters': {
         backgroundColor: 'transparent',

@@ -81,12 +81,12 @@ const cardTheme = EditorView.theme({
         transition: 'left 70ms ease-out, top 70ms ease-out',
     },
     '.cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
         {
             backgroundColor:
-                'color-mix(in srgb, var(--accent) 38%, transparent)',
+                'var(--selection)',
         },
 })
 

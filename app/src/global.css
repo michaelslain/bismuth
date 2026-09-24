@@ -44,6 +44,9 @@
   --term-fg: #C9C4B6;
   --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
   --accent-soft: rgba(147,189,176,0.12);
+  /* Text-selection tint — THE one highlight colour: the note editor's focused selection, reused by
+     every ::selection, every CodeMirror surface, the PDF text layer and the terminal. */
+  --selection: color-mix(in srgb, var(--accent) 38%, transparent);
   --on-accent: #15161A;
   /* Foreground over an arbitrary-photo scrim (--scrim-bg) — always white, every theme. See
      settingsCssVars.ts's --on-scrim projection for why this isn't a light/dark derivation. */
@@ -564,8 +567,8 @@ body { background: var(--bg); color: var(--fg); }
    everywhere. Without this the whole app — and rendered/live-preview "formatter"
    content — falls back to the browser's harsh bright-blue default. The CodeMirror
    editor sets its own matching tint in Editor.tsx (.cm-selectionBackground). */
-::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+::selection { background: var(--selection); }
+::-moz-selection { background: var(--selection); }
 
 /* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
    invisible; the thumb is a faint inset pill that only firms up on hover. */
@@ -1476,7 +1479,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   border-radius: var(--r-0);
 }
 
-/* ── Table-cell text selection color (#23) ─────────────────────────────────────
+/* ── Focused-field text selection inside the editor (#23: table cells, the note title textarea, any widget input) ──────────────────────────────────────
    A table cell (editor/tableWidget.ts `.cm-td`) is a contenteditable inside a block
    widget, so selecting text in it uses the browser's NATIVE ::selection. CodeMirror's
    drawSelection injects, at Prec.highest, `.cm-content :focus ::selection { background:
@@ -1484,19 +1487,18 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    element inside the content — which overrides the editor's own accent tint, so a cell's
    selection rendered as OS blue instead of the app selection color everywhere else.
    Re-assert the editor selection color: the SAME accent tint CodeMirror draws for a
-   FOCUSED editor's `.cm-selectionBackground` (Editor.tsx line 99:
-   `color-mix(in srgb, var(--accent) 38%, transparent)`), so a cell's selection matches
-   the rest of the editor. The four class-level selectors (`.cm-editor .cm-content
-   .cm-table-rendered .cm-td`) give specificity (0,4,1) — strictly higher than CM's
+   FOCUSED editor's `.cm-selectionBackground` (the `--selection`
+   token), so a cell's selection matches
+   the rest of the editor. The doubled `.cm-editor.cm-editor .cm-content :focus` gives specificity (0,4,1) — strictly higher than CM's
    `.cm-content :focus ::selection` (0,3,1) — so this wins deterministically alongside
    `!important` (source order irrelevant). Both `::selection` and `::-moz-selection`. */
-.cm-editor .cm-content .cm-table-rendered .cm-td::selection,
-.cm-editor .cm-content .cm-table-rendered .cm-td ::selection {
-  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+.cm-editor.cm-editor .cm-content :focus::selection,
+.cm-editor.cm-editor .cm-content :focus ::selection {
+  background-color: var(--selection) !important;
 }
-.cm-editor .cm-content .cm-table-rendered .cm-td::-moz-selection,
-.cm-editor .cm-content .cm-table-rendered .cm-td ::-moz-selection {
-  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+.cm-editor.cm-editor .cm-content :focus::-moz-selection,
+.cm-editor.cm-editor .cm-content :focus ::-moz-selection {
+  background-color: var(--selection) !important;
 }
 
 /* ── Lists inside a table cell (#15) ───────────────────────────────────────────

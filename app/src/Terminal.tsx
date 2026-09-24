@@ -151,7 +151,8 @@ function buildTerminalTheme(): ITheme {
         // cursorAccent = fg keeps the underlying character rendering in its normal color.
         cursor: 'rgba(0,0,0,0)',
         cursorAccent: fg,
-        selectionBackground: cssVar('--accent-soft'),
+        // The app-wide --selection tint (accent 38%), resolved to a concrete colour for xterm.
+        selectionBackground: mixToward(cssVar('--accent'), 'transparent', 38),
         ...base,
         brightBlack: cssVar('--faint'),
         brightRed: mixToward(base.red, fg),
