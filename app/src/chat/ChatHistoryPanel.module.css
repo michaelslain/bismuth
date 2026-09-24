@@ -40,11 +40,6 @@
     color: var(--faint);
     border-bottom: 1px solid var(--border-soft);
 }
-.new-chat {
-    text-transform: none;
-    letter-spacing: normal;
-    color: var(--faint);
-}
 .state {
     flex: 1 1 auto;
     min-height: 0;

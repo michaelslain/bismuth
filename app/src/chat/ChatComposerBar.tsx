@@ -289,6 +289,7 @@ export default function ChatComposerBar(
                                         <IconButton
                                             icon="X"
                                             label="Remove attachment"
+                                            size="sm"
                                             class={styles['attachment-remove']}
                                             onClick={() =>
                                                 props.session?.removeAttachment(
