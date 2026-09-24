@@ -1,7 +1,10 @@
 /* app/src/daemon/DaemonLog.module.css — DaemonLog.tsx is the ONLY importer.
    One mono row per event: `time  who  what  duration`, tone colours per activityLine.ts's
    ActivityTone (fail→--danger, live→--accent, quiet→--faint, ok→--text-muted). Deliberately
-   plain rows, not chips — a scrolling console read, not a table. */
+   plain rows, not chips — a scrolling console read, not a table. The scroll + 16px bottom fade
+   that used to live on the deleted DaemonPanel is now DaemonSection's own `fill` variant
+   (DaemonSection.module.css) — this file owns only the row's own look, and `.log-duration`'s
+   existing right inset already lands on the section's shared `--sp-4` right edge. */
 /* 2px of block padding on the 18px line: a console read, one step looser than the 18px cron rows
    (the time/who/what columns need a little air to scan) but not the 26px it was. */
 .log-row {

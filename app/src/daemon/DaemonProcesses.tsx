@@ -12,8 +12,7 @@ import type { DaemonProcess } from '../../../core/src/daemonGraph'
 import { openContextMenu } from '../nativeMenu'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { TextButton } from '../ui/TextButton'
-import EmptyState from '../ui/EmptyState'
-import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
+import DaemonSection from './DaemonSection'
 import DaemonRow, { type DaemonRowTone } from './DaemonRow'
 import styles from './DaemonProcesses.module.css'
 
@@ -114,41 +113,38 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     }
 
     return (
-        <div class={`${styles['daemon-processes']} ${props.class ?? ''}`}>
-            <DaemonPanel>
-                <Show
-                    when={props.processes.length > 0}
-                    fallback={
-                        <EmptyState blockClass={daemonPanelEmptyClass}>
-                            no services yet // ask the daemon
-                        </EmptyState>
-                    }
+        <DaemonSection
+            title="services"
+            count={props.processes.length}
+            empty="no services yet // ask the daemon"
+            isEmpty={props.processes.length === 0}
+            class={props.class}
+        >
+            <Show when={props.processes.length > 0}>
+                <div
+                    class={styles.list}
+                    classList={{ [styles['with-actions']]: deletingName() !== null }}
                 >
-                    <div
-                        class={styles.list}
-                        classList={{ [styles['with-actions']]: deletingName() !== null }}
-                    >
-                        <For each={props.processes}>
-                            {process => (
-                                <DaemonRow
-                                    name={process.name}
-                                    tone={toneFor(process, props.daemonRunning)}
-                                    status={statusFor(process)}
-                                    dim={!process.enabled}
-                                    onOpen={() =>
-                                        props.onOpen(
-                                            `.daemon/processes/${process.file}.md`,
-                                        )
-                                    }
-                                    onContextMenu={e => openMenu(process, e)}
-                                    actions={rowActions(process)}
-                                    confirming={deletingName() === process.name}
-                                />
-                            )}
-                        </For>
-                    </div>
-                </Show>
-            </DaemonPanel>
+                    <For each={props.processes}>
+                        {process => (
+                            <DaemonRow
+                                name={process.name}
+                                tone={toneFor(process, props.daemonRunning)}
+                                status={statusFor(process)}
+                                dim={!process.enabled}
+                                onOpen={() =>
+                                    props.onOpen(
+                                        `.daemon/processes/${process.file}.md`,
+                                    )
+                                }
+                                onContextMenu={e => openMenu(process, e)}
+                                actions={rowActions(process)}
+                                confirming={deletingName() === process.name}
+                            />
+                        )}
+                    </For>
+                </div>
+            </Show>
             <Show when={menu()}>
                 {m => (
                     <Portal>
@@ -161,7 +157,7 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                     </Portal>
                 )}
             </Show>
-        </div>
+        </DaemonSection>
     )
 }
 
