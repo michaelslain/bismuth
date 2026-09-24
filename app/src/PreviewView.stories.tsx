@@ -333,7 +333,7 @@ export const PdfLoadFails: Story = {
         await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom in')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom out')).toBeInTheDocument()
-        await expect(canvas.getByText('FIT')).toBeInTheDocument()
+        await expect(canvas.getByText('fit')).toBeInTheDocument()
         // PdfPages' own load() seam (fetch(assetUrl())) genuinely fails against the fake
         // transport's unfetchable base — see the file header — so its "Couldn't load PDF"
         // EmptyState is what should render here, not a blank pane.
