@@ -15,8 +15,8 @@
 //
 // GraphAtmosphere (the phosphor-bloom layer) is NOT storied standalone — it paints from a live
 // per-frame BloomSink the renderer feeds it, so alone it would show only a static vignette. It
-// mounts unconditionally inside GraphView itself, so every story below exercises it as a real
-// layer for free.
+// mounts inside GraphView while the [gradient] toggle (graph/graphLayers.ts) is on — the default —
+// so every story below exercises it as a real layer for free unless the story turns it off.
 //
 // `visible` pauses the renderer's rAF loop (in the app it stops a hidden sidebar slot from
 // burning frames while the main pane shows the graph). Storybook only ever mounts one story's
@@ -24,11 +24,12 @@
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
-import { sampleGraphData } from './ui/_graphFixtures'
+import { sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
+import { setGraphClusters, setGraphGradient } from './graph/graphLayers'
 
 const meta = {
     title: 'Graph/GraphView',
@@ -41,6 +42,15 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+// Both layer signals are MODULE-LEVEL (graph/graphLayers.ts) and shared by every GraphView instance
+// in this iframe — Storybook navigates between stories without reloading, so a story that leaves
+// them flipped leaks into whichever story renders next. Every story below calls this at the top of
+// its `render`, before mounting anything, so each one is deterministic regardless of click order.
+const resetLayers = () => {
+    setGraphClusters(true)
+    setGraphGradient(true)
+}
+
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // Calendar/MonthView.stories.tsx's own note on this), and `.graph-root` fills its parent's
 // height (App.css `.graph-root { height: 100% }`).
@@ -51,18 +61,21 @@ const STORY_H = '640px'
  *  renders GraphView (App.tsx's one call site never omits it); the 1:1-square fallback only
  *  the `mini` story below exists for cases that don't pass it. */
 export const Default: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <GraphView
-                graph={sampleGraphData(8)}
-                onOpen={noop}
-                mode="2nd"
-                setMode={noop}
-                active={null}
-                fill
-            />
-        </div>
-    ),
+    render: () => {
+        resetLayers()
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={sampleGraphData(8)}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={null}
+                    fill
+                />
+            </div>
+        )
+    },
 }
 
 /** A 60-note graph — same fixture, much larger — to see the field's respacing, hub labelling,
@@ -70,6 +83,7 @@ export const Default: Story = {
  *  generated note ids so the active-file highlight has something real to draw. */
 export const LargerGraph: Story = {
     render: () => {
+        resetLayers()
         const graph = sampleGraphData(60)
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -95,18 +109,21 @@ export const LargerGraph: Story = {
  *  and the stray `.graph-find-panel { border-radius: 11px; backdrop-filter: blur(10px) }` bug
  *  the material-unification pass fixed was reachable only in the live app. */
 export const FindPanelOpen: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <GraphView
-                graph={sampleGraphData(8)}
-                onOpen={noop}
-                mode="2nd"
-                setMode={noop}
-                active={null}
-                fill
-            />
-        </div>
-    ),
+    render: () => {
+        resetLayers()
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={sampleGraphData(8)}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={null}
+                    fill
+                />
+            </div>
+        )
+    },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const findButton = await canvas.findByText('find')
@@ -132,6 +149,7 @@ export const FindPanelOpen: Story = {
  */
 export const MiniLocal: Story = {
     render: () => {
+        resetLayers()
         const graph = sampleGraphData(8)
         return (
             <div style={{ height: '305px', width: '266px' }}>
@@ -249,6 +267,7 @@ let miniSwitcherOwned = false
 
 export const MiniModeSwitcher: Story = {
     render: () => {
+        resetLayers()
         // OWNER CHECK, ASSERTED IN play() BELOW — this is the whole safety of the restore.
         // `onCleanup` only ever runs if it was registered under a reactive owner; called without
         // one it is a NO-OP that Solid does not throw on, so the restore would silently never
@@ -356,6 +375,7 @@ const LONG_HOVER_LABEL =
 
 export const HudBadges: Story = {
     render: () => {
+        resetLayers()
         const previousShowFps = settings.graph.showFps
         setSettings('graph', 'showFps', true)
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
@@ -452,5 +472,45 @@ export const HudBadges: Story = {
         expect(hoverPill.getBoundingClientRect().right).toBeLessThanOrEqual(
             stats.getBoundingClientRect().left,
         )
+    },
+}
+
+/**
+ * THE [clusters]/[gradient] TOGGLES — three stories over a real community hierarchy
+ * (`sampleClusteredGraphData`, six rings of twelve notes each), which `sampleGraphData` never has.
+ * Each sets BOTH layer signals in `render`, before returning JSX — module state leaks across
+ * stories in one Storybook iframe (see `resetLayers` above), so a story cannot rely on whichever
+ * state a previous one left the signals in.
+ */
+const clustered = (clusters: boolean, gradient: boolean) => () => {
+    setGraphClusters(clusters)
+    setGraphGradient(gradient)
+    const graph = sampleClusteredGraphData()
+    return (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <GraphView graph={graph} onOpen={noop} mode="2nd" setMode={noop} active={null} fill />
+        </div>
+    )
+}
+
+/** A real community hierarchy with [clusters] on (the default): zoomed out, each community is one mass. */
+export const Clustered: Story = { render: clustered(true, true) }
+
+/** Same graph, [clusters] off: every note glyph + name at 100% zoom, no masses. */
+export const ClustersOff: Story = { render: clustered(false, true) }
+
+/** [gradient] off: no bloom canvas, no vignette, flat ground. play() turns it back on and the
+ *  atmosphere remounts (Review Focus 1). */
+export const GradientOff: Story = {
+    render: clustered(true, false),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const btn = await c.findByRole('button', { name: /gradient/ })
+        await expect(btn.getAttribute('aria-pressed')).toBe('false')
+        const before = canvasElement.querySelectorAll('canvas').length
+        await userEvent.click(btn)
+        await waitFor(() => expect(canvasElement.querySelectorAll('canvas').length).toBe(before + 1))
+        await userEvent.click(btn)
+        await waitFor(() => expect(canvasElement.querySelectorAll('canvas').length).toBe(before))
     },
 }
