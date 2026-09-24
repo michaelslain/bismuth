@@ -1,5 +1,5 @@
 /* The card face wrapper — a tap anywhere opens the focused edit modal (KanbanCard.tsx). Stacks
-   the title + meta with the same gap the cardBodyInner used, so display spacing is unchanged. */
+   the title + meta with the card's own title-to-meta gap, so display spacing is unchanged. */
 .kbCardFace { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .kbFaceEditable { cursor: pointer; }
 
@@ -23,7 +23,10 @@
    column-gap standing in for the "+2ch" pad. `.kbMetaItem` sets `display: contents` so its
    label + value spans become direct grid children of `.kbMeta` — two cells in the SAME row —
    rather than a nested box the grid can't see into. */
-.kbMeta { display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px; }
+.kbMeta {
+  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px;
+  font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
+}
 /* `hideLabels` (#105): no key column at all — every value starts flush left in one column. */
 .kbMetaHideLabels { grid-template-columns: 1fr; }
 .kbMetaItem { display: contents; }
@@ -37,7 +40,7 @@
    pointer-based card drag mid-gesture). */
 .kbMeta a { -webkit-user-drag: none; }
 
-.kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; }
+.kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; align-self: baseline; }
 .kbMetaClickable {
   cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px;
   transition: background 120ms ease, color 120ms ease;
