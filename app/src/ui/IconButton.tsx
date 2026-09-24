@@ -3,6 +3,7 @@ import { Button } from './Button'
 import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
+import { useIconBar } from './iconBarContext'
 import type { ButtonState, ButtonSize } from './buttonClass'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone, full opacity. */
@@ -44,21 +45,30 @@ function IconButton(props: IconButtonProps) {
         'icon',
         'label',
         'variant',
+        'size',
         'iconSize',
         'title',
     ])
     if (import.meta.env?.DEV && !isIconName(local.icon)) {
         warnBadIcon('IconButton', local.icon)
     }
+    // Read an enclosing IconBar (toolbar-iconbar plan) for the toolbar box + glyph size — a plain
+    // Solid context read, never a class selector. `bar` is undefined outside any bar, so every
+    // default below falls through to today's behaviour unchanged (Review Focus 3). An explicit
+    // `size`/`iconSize` prop on THIS button still wins over the bar.
+    const bar = useIconBar()
+    const size = () => local.size ?? (bar ? 'sm' : undefined)
+    const iconSize = () => local.iconSize ?? (bar ? bar.iconSize() : ICON_PX)
     return (
         <Button
             kind="icon"
             state={local.variant ?? 'normal'}
+            size={size()}
             aria-label={local.label}
             title={local.title ?? local.label}
             {...rest}
         >
-            <Icon value={local.icon} size={local.iconSize ?? ICON_PX} />
+            <Icon value={local.icon} size={iconSize()} />
         </Button>
     )
 }

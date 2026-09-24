@@ -19,3 +19,74 @@ export const Default: Story = {
         </IconBar>
     ),
 }
+
+/** A chrome band — the sidebar row / tab-rail action row shape: min-height var(--h-band), side
+ *  padding var(--sp-5), a bottom hairline. */
+export const Band: Story = {
+    render: () => (
+        <IconBar label="Band toolbar" band>
+            <IconButton icon="Search" label="Search" />
+            <IconButton icon="Inbox" label="Inbox" />
+            <IconButton icon="Settings" label="Settings" />
+        </IconBar>
+    ),
+}
+
+/** The collapsed tab rail's shape: icons stack one per line, centred, in a narrow container. */
+export const Wrapped: Story = {
+    render: () => (
+        <div style={{ width: '36px' }}>
+            <IconBar label="Wrapped toolbar" layout="wrap">
+                <IconButton icon="Search" label="Search" />
+                <IconButton icon="Inbox" label="Inbox" />
+                <IconButton icon="Settings" label="Settings" />
+                <IconButton icon="Star" label="Star" />
+            </IconBar>
+        </div>
+    ),
+}
+
+/** A toggle/series member (selected) beside two unselected members — no half-opacity dim inside a
+ *  bar (Acceptance 5). */
+export const WithSelected: Story = {
+    render: () => (
+        <IconBar label="Toolbar with a selected member">
+            <IconButton icon="Search" label="Search" variant="unselected" />
+            <IconButton icon="Inbox" label="Inbox" variant="selected" />
+            <IconButton icon="Settings" label="Settings" variant="unselected" />
+        </IconBar>
+    ),
+}
+
+/** A disabled member alongside two enabled ones. */
+export const Disabled: Story = {
+    render: () => (
+        <IconBar label="Toolbar with a disabled member">
+            <IconButton icon="Search" label="Search" />
+            <IconButton icon="Inbox" label="Inbox" disabled />
+            <IconButton icon="Settings" label="Settings" />
+        </IconBar>
+    ),
+}
+
+/** The same three buttons at every iconSize the setting allows the low/default/high end of
+ *  (Acceptance 8) — glyph and bracket size move together. */
+export const Sizes: Story = {
+    render: () => (
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: 'var(--sp-4)',
+            }}
+        >
+            {[11, 12, 16, 20].map(n => (
+                <IconBar label={`Toolbar at ${n}px`} iconSize={n}>
+                    <IconButton icon="Search" label="Search" />
+                    <IconButton icon="Inbox" label="Inbox" />
+                    <IconButton icon="Settings" label="Settings" />
+                </IconBar>
+            ))}
+        </div>
+    ),
+}

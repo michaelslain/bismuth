@@ -1,7 +1,13 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
+import { IconBarContext } from './iconBarContext'
+import toolbarIconSize from './toolbarIconSize'
+import styles from './IconBar.module.css'
 
-// SEAM STUB (toolbar-iconbar plan, pre-wave). The props type below is final; the body is a
-// pass-through that plan Task 1 replaces with the real bar (context, layout, band chrome).
+// The unified icon-toolbar primitive (toolbar-iconbar plan). Every icon toolbar in the app — the
+// sidebar row, the tab-rail action row, the mini-graph mode switcher — composes this instead of
+// bespoke layout CSS, so bracket spacing, button box, glyph size and band height are identical
+// everywhere. It reaches its `IconButton` children through Solid context only (never a class
+// selector or `:global()`) — see iconBarContext.ts and Button.module.css's `--iconbar-*` reads.
 export type IconBarProps = {
     children: JSX.Element
     /** Accessible name; the root is role="toolbar". */
@@ -21,6 +27,10 @@ export type IconBarProps = {
 >
 
 const IconBar: Component<IconBarProps> = props => {
+    // `style` is destructured out (not left in `rest`) so a caller-supplied style object merges
+    // with `--iconbar-glyph` instead of a later `{...rest}` spread silently replacing the whole
+    // style attribute and losing it — Solid's JSX applies attributes in the order written, and a
+    // plain object spread would win over the explicit `style` above it.
     const [local, rest] = splitProps(props, [
         'children',
         'label',
@@ -28,11 +38,29 @@ const IconBar: Component<IconBarProps> = props => {
         'band',
         'iconSize',
         'class',
+        'style',
     ])
+    const iconSize = () => local.iconSize ?? toolbarIconSize()
+    const style = (): JSX.CSSProperties | string => {
+        const glyph = { '--iconbar-glyph': `${iconSize()}px` }
+        if (!local.style) return glyph
+        if (typeof local.style === 'string') {
+            return `${local.style};--iconbar-glyph:${iconSize()}px`
+        }
+        return { ...local.style, ...glyph }
+    }
     return (
-        <div role="toolbar" aria-label={local.label} class={local.class} {...rest}>
-            {local.children}
-        </div>
+        <IconBarContext.Provider value={{ iconSize }}>
+            <div
+                role="toolbar"
+                aria-label={local.label}
+                class={`${styles.bar} ${local.band ? styles.band : ''} ${local.layout === 'wrap' ? styles.wrap : ''} ${local.class ?? ''}`}
+                style={style()}
+                {...rest}
+            >
+                {local.children}
+            </div>
+        </IconBarContext.Provider>
     )
 }
 
