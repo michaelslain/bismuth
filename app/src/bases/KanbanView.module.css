@@ -157,17 +157,9 @@
   pointer-events: none;
 }
 
-/* Add-card composer — a compact "+" icon button */
-.kbAddBtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; margin-top: var(--sp-1); padding: 0;
-  border: none; background: none; border-radius: var(--r-0); color: var(--text-muted);
-  cursor: pointer; transition: background 120ms ease, color 120ms ease;
-  /* The bare <button> centred by default (UA text-align: center); PlainButton's reset sets
-     text-align: inherit, so pin it back explicitly. */
-  text-align: center;
-}
-.kbAddBtn:hover { background: var(--surface-2); color: var(--fg); }
+/* Add-card composer trigger — an IconButton now (one-button); this file only places it, the
+   look (border/background/colour/hover) is Button's own. */
+.kbAddBtn { margin-top: var(--sp-1); align-self: flex-start; }
 /* The composer gets a text caret + real text selection back (a dragged card sets
    user-select:none via CardFrame's `draggable` variant). Both declaration blocks target the
    same `.kbComposer` element — kept as one merged rule (the source file had them as two

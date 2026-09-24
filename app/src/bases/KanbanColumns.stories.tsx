@@ -516,7 +516,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
             ).toBeNull(),
         )
 
-        await userEvent.click(canvas.getByText('+ column'))
+        await userEvent.click(canvas.getByRole('button', { name: 'column' }))
         const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')
