@@ -67,9 +67,14 @@ function DaemonHub(props: DaemonHubProps) {
     )
 
     return (
-        <div class={`${styles.hub} ${props.class ?? ''}`} data-testid="daemon-page-hub">
+        <div
+            class={`${styles.hub} ${!compact() ? styles.resting : ''} ${props.class ?? ''}`}
+            data-testid="daemon-page-hub"
+            data-resting={compact() ? 'false' : 'true'}
+        >
             <div
                 class={`${styles.faceRegion} ${compact() ? styles.faceCompact : ''}`}
+                data-testid="daemon-face-region"
             >
                 <DaemonFace
                     mood={props.mood}

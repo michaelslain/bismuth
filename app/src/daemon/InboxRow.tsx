@@ -56,7 +56,7 @@ function InboxRow(props: InboxRowProps) {
     }
 
     return (
-        <div class={`${styles['inbox-row']} ${props.class ?? ''}`}>
+        <div class={`${styles['inbox-row']} ${props.class ?? ''}`} data-testid="inbox-row">
             {/* A real button element around only the non-interactive part. ARIA's button role is
                 Children Presentational — wrapping archive too would hide it from assistive tech,
                 so it stays a sibling instead. */}

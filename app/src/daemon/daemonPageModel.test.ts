@@ -3,10 +3,6 @@ import {
     hasRecentFailure,
     faceCaption,
     barReadouts,
-    initialFacet,
-    facetCount,
-    shouldSteerToInbox,
-    DAEMON_FACETS,
     RECENT_FAILURE_MS,
 } from './daemonPageModel'
 import type { DaemonSnapshot, DaemonCron } from '../../../core/src/daemonGraph'
@@ -143,73 +139,9 @@ test('the watching caption names the MOST RECENT run, with its age', () => {
     ).toBe('watching // last: fresh 2h ago')
 })
 
-test('facet order', () => {
-    expect(DAEMON_FACETS).toEqual([
-        'inbox',
-        'crons',
-        'services',
-        'log',
-    ])
-})
-
-test('initial facet: anything due wins outright, else the remembered facet, else crons', () => {
-    expect(initialFacet(3, 'log')).toBe('inbox')
-    expect(initialFacet(0, null)).toBe('crons')
-    expect(initialFacet(0, 'log')).toBe('log')
-    expect(initialFacet(0, 'services')).toBe('services')
-})
-
-test('initial facet: an unrecognised remembered value falls back to crons, not the value itself', () => {
-    expect(initialFacet(0, 'bogus')).toBe('crons')
-    // `memory` was a facet until the memory list was dropped — a window that remembered it opens on crons.
-    expect(initialFacet(0, 'memory')).toBe('crons')
-    expect(initialFacet(0, '')).toBe('crons')
-})
-
-test('facet counts read the matching field, log has none', () => {
-    const c = { due: 3, crons: 4, services: 2 }
-    expect(facetCount('inbox', c)).toBe(3)
-    expect(facetCount('crons', c)).toBe(4)
-    expect(facetCount('services', c)).toBe(2)
-    expect(facetCount('log', c)).toBeUndefined()
-})
-
-test('bar readouts are the status alone now — counts moved onto the facet labels', () => {
+test('bar readouts are the status alone', () => {
     expect(barReadouts('watching // last: dream 4m ago')).toEqual([
         'watching // last: dream 4m ago',
     ])
     expect(barReadouts('')).toEqual([])
-})
-
-test('shouldSteerToInbox: fires only while something is due, not yet steered, not user-picked', () => {
-    expect(
-        shouldSteerToInbox({ due: 1, steered: false, userPicked: false }),
-    ).toBe(true)
-    expect(shouldSteerToInbox({ due: 0, steered: false, userPicked: false })).toBe(
-        false,
-    )
-    expect(shouldSteerToInbox({ due: 1, steered: true, userPicked: false })).toBe(
-        false,
-    )
-    expect(shouldSteerToInbox({ due: 1, steered: false, userPicked: true })).toBe(
-        false,
-    )
-})
-
-test('shouldSteerToInbox: a due 0→1→0→2 sequence steers on the first rise only, never again', () => {
-    let steered = false
-    const tick = (due: number) => {
-        if (shouldSteerToInbox({ due, steered, userPicked: false })) steered = true
-    }
-    tick(0)
-    expect(steered).toBe(false)
-    tick(1) // first rise — steers
-    expect(steered).toBe(true)
-    tick(0)
-    expect(steered).toBe(true) // stays steered, no un-steering
-    tick(2) // due again — must NOT steer a second time
-    expect(steered).toBe(true)
-    // the flag having gone true once is the whole point: shouldSteerToInbox now always answers
-    // false for this mount, however due bounces around.
-    expect(shouldSteerToInbox({ due: 2, steered, userPicked: false })).toBe(false)
 })

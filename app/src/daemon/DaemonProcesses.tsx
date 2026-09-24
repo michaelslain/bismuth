@@ -6,15 +6,17 @@
 // 4-column grid. `running` on DaemonProcess is always false (core exposes no per-process
 // liveness file it can trust), so "live" here means enabled AND the daemon process itself is up
 // (`daemonRunning`) — the same rule this file's own `toneFor` has always applied.
-import { createSignal, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonProcess } from '../../../core/src/daemonGraph'
 import { openContextMenu } from '../nativeMenu'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { TextButton } from '../ui/TextButton'
-import EmptyState from '../ui/EmptyState'
-import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
+import DaemonSection from './DaemonSection'
 import DaemonRow, { type DaemonRowTone } from './DaemonRow'
+import DaemonMoreLine from './DaemonMoreLine'
+import { processNeedsAttention, attentionFirst } from './daemonAttention'
+import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonProcesses.module.css'
 
 export type DaemonProcessesProps = {
@@ -23,6 +25,7 @@ export type DaemonProcessesProps = {
     onOpen: (file: string) => void
     onToggle: (name: string, enabled: boolean) => void
     onDelete: (name: string) => Promise<void>
+    limit?: RowLimit
     class?: string
 }
 
@@ -43,6 +46,18 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     } | null>(null)
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
+    const [expanded, setExpanded] = createSignal(false)
+    const sorted = createMemo(() =>
+        attentionFirst(props.processes, p => processNeedsAttention(p, props.daemonRunning)),
+    )
+    const limited = createMemo(
+        () => props.limit !== undefined && sorted().length > props.limit,
+    )
+    const shown = createMemo(() =>
+        props.limit === undefined || expanded()
+            ? sorted()
+            : sorted().slice(0, props.limit),
+    )
 
     async function commitDelete(name: string): Promise<void> {
         setBusyName(name)
@@ -114,41 +129,49 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     }
 
     return (
-        <div class={`${styles['daemon-processes']} ${props.class ?? ''}`}>
-            <DaemonPanel>
-                <Show
-                    when={props.processes.length > 0}
-                    fallback={
-                        <EmptyState blockClass={daemonPanelEmptyClass}>
-                            no services yet // ask the daemon
-                        </EmptyState>
-                    }
+        <DaemonSection
+            title="services"
+            count={props.processes.length}
+            empty="no services yet // ask the daemon"
+            isEmpty={props.processes.length === 0}
+            class={props.class}
+        >
+            <Show when={props.processes.length > 0}>
+                <div
+                    class={styles.list}
+                    classList={{ [styles['with-actions']]: deletingName() !== null }}
                 >
-                    <div
-                        class={styles.list}
-                        classList={{ [styles['with-actions']]: deletingName() !== null }}
-                    >
-                        <For each={props.processes}>
-                            {process => (
-                                <DaemonRow
-                                    name={process.name}
-                                    tone={toneFor(process, props.daemonRunning)}
-                                    status={statusFor(process)}
-                                    dim={!process.enabled}
-                                    onOpen={() =>
-                                        props.onOpen(
-                                            `.daemon/processes/${process.file}.md`,
-                                        )
-                                    }
-                                    onContextMenu={e => openMenu(process, e)}
-                                    actions={rowActions(process)}
-                                    confirming={deletingName() === process.name}
-                                />
-                            )}
-                        </For>
-                    </div>
+                    <For each={shown()}>
+                        {process => (
+                            <DaemonRow
+                                name={process.name}
+                                tone={toneFor(process, props.daemonRunning)}
+                                status={statusFor(process)}
+                                dim={!process.enabled}
+                                onOpen={() =>
+                                    props.onOpen(
+                                        `.daemon/processes/${process.file}.md`,
+                                    )
+                                }
+                                onContextMenu={e => openMenu(process, e)}
+                                actions={rowActions(process)}
+                                confirming={deletingName() === process.name}
+                            />
+                        )}
+                    </For>
+                </div>
+                <Show when={limited()}>
+                    <DaemonMoreLine
+                        label={
+                            expanded()
+                                ? `all ${sorted().length}`
+                                : `+${sorted().length - (props.limit as number)} more`
+                        }
+                        open={expanded()}
+                        onToggle={() => setExpanded(v => !v)}
+                    />
                 </Show>
-            </DaemonPanel>
+            </Show>
             <Show when={menu()}>
                 {m => (
                     <Portal>
@@ -161,7 +184,7 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                     </Portal>
                 )}
             </Show>
-        </div>
+        </DaemonSection>
     )
 }
 

@@ -1,35 +1,21 @@
 // app/src/daemon/DaemonPage.tsx
-// The daemon page — "hub + one panel". Presentational only: DaemonPageHost fetches and derives,
-// this lays it out. A ViewBar on top — identity, a SegmentedToggle across the four facets
-// (inbox/crons/services/log, each labelled with its own count), and the status readout
-// alone (the old cron/service COUNTS moved onto the facet labels, see daemonPageModel.ts's
-// facetCount). Below it, a two-column stage: DaemonHub (the face, its identity, its own chat) on
-// the left, whichever ONE panel the current facet names on the right — handed in as a slot
-// (`props.panel`) so this file never imports DaemonCrons/DaemonProcesses/DaemonInbox/
-// DaemonLog directly; the host picks the panel for the facet and wires its callbacks.
+// The daemon page — the FULL overview, always. Presentational only: DaemonPageHost fetches and
+// derives, this lays it out. A ViewBar on top carries only identity and the status readout — no
+// facet toggle any more, every section shows at once. Below it, a two-column stage: DaemonHub
+// (the face, its identity, its own chat) on the left, the right column (`props.overview` — the
+// host's <DaemonOverview/>: inbox, crons, services, log stacked top to bottom, the log filling
+// the rest) on the right — handed in as a slot so this file never imports DaemonInbox/
+// DaemonCrons/DaemonProcesses/DaemonLog/DaemonOverview directly.
 //
 // Off (`enabled === false`): DaemonHub itself sleeps (no identity, no chat) and this file drops
-// the facet toggle and the panel entirely — there's nothing to facet over while the daemon is
-// off — leaving one EmptyState under the face saying how to wake it.
+// the overview column entirely — leaving one EmptyState under the face saying how to wake it.
 import { Index, Show, type JSX } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Text from '../ui/Text'
-import SegmentedToggle, { type SegmentedOption } from '../ui/SegmentedToggle'
 import DaemonHub from './DaemonHub'
 import type { DaemonMood } from './daemonFaceModel'
-import {
-    DAEMON_FACETS,
-    facetCount,
-    type DaemonFacet,
-} from './daemonPageModel'
 import styles from './DaemonPage.module.css'
-
-export type DaemonFacetCounts = {
-    due: number
-    crons: number
-    services: number
-}
 
 export type DaemonPageProps = {
     name: string
@@ -42,12 +28,8 @@ export type DaemonPageProps = {
     loading?: boolean
     /** The ONE trailing readout — the status string, or empty (see daemonPageModel.barReadouts). */
     readouts: string[]
-    facet: DaemonFacet
-    onFacet: (f: DaemonFacet) => void
-    counts: DaemonFacetCounts
-    /** The current facet's panel — the host picks + wires it (DaemonCrons/DaemonProcesses/
-     *  DaemonInbox/DaemonLog). */
-    panel: JSX.Element
+    /** The right column — the host passes <DaemonOverview/>. */
+    overview: JSX.Element
     /** The hub's own chat, rendered under the face/identity. Host passes <DaemonChat/>; stories
      *  a stub. Expected to fill the height it's given. */
     chat: JSX.Element
@@ -60,42 +42,7 @@ export type DaemonPageProps = {
     class?: string
 }
 
-const FACET_WORD: Record<DaemonFacet, string> = {
-    inbox: 'inbox',
-    crons: 'crons',
-    services: 'services',
-    log: 'log',
-}
-
 function DaemonPage(props: DaemonPageProps) {
-    const options = (): SegmentedOption<DaemonFacet>[] =>
-        DAEMON_FACETS.map(f => {
-            const count = facetCount(f, props.counts)
-            return {
-                id: f,
-                ariaLabel:
-                    count === undefined
-                        ? FACET_WORD[f]
-                        : `${FACET_WORD[f]} ${count}`,
-                label: (
-                    <>
-                        {FACET_WORD[f]}
-                        <Show when={count !== undefined}>
-                            {/* 'late' — the count is a convenience once the word itself is
-                                already visible; it drops at 480px so all four facet words
-                                stay put and only the digits give way. A direct flex child of
-                                .textLabel (not wrapped in Text) so its gap drops WITH it. */}
-                            <BarLabel
-                                long={String(count)}
-                                drop="late"
-                                class={styles.facetCount}
-                            />
-                        </Show>
-                    </>
-                ),
-            }
-        })
-
     return (
         <div
             class={`${styles.page} ${props.class ?? ''}`}
@@ -105,16 +52,6 @@ function DaemonPage(props: DaemonPageProps) {
             <ViewBar
                 parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}
                 identity={<Crumb icon="Bot">{props.name}</Crumb>}
-                facet={
-                    <Show when={props.enabled}>
-                        <SegmentedToggle
-                            options={options()}
-                            value={props.facet}
-                            onChange={props.onFacet}
-                            size="sm"
-                        />
-                    </Show>
-                }
                 readouts={
                     <Show when={props.readouts.length > 0}>
                         <Index each={props.readouts}>
@@ -151,8 +88,8 @@ function DaemonPage(props: DaemonPageProps) {
                     onEditIdentity={props.onEditIdentity}
                 />
                 <Show when={props.enabled}>
-                    <div class={styles.panel} data-testid="daemon-page-panel">
-                        {props.panel}
+                    <div class={styles.panel} data-testid="daemon-page-overview">
+                        {props.overview}
                     </div>
                 </Show>
             </div>

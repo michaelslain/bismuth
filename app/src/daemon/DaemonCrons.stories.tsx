@@ -160,6 +160,59 @@ export const LongName: Story = {
     ),
 }
 
+/** A 40-char file-change trigger next to `failed 10m ago` — the schedule cell ellipsizes and
+ *  never crowds the status, which stays flush against the list's right edge (Acceptance 5, 9). */
+export const LongSchedule: Story = {
+    render: () => (
+        <div style={{ width: '340px', height: '120px' }}>
+            <DaemonCrons
+                {...baseProps}
+                crons={[
+                    {
+                        name: 'reindex',
+                        file: 'reindex',
+                        schedule: '',
+                        on: 'file-change',
+                        watch: 'notes/**/inbox/**/*.md and attachments/**/*',
+                        enabled: true,
+                        lastFired: {
+                            timestamp: new Date(
+                                Date.now() - 10 * 60 * 1000,
+                            ).toISOString(),
+                            result: 'failed',
+                        },
+                        running: false,
+                        startedAt: null,
+                    },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const schedule = canvas.getByText(/^on change:/)
+        await expect(schedule.scrollWidth).toBeGreaterThan(
+            schedule.clientWidth,
+        )
+        const status = canvas.getByText('failed 10m ago')
+        const list = canvasElement.querySelector<HTMLElement>(
+            '[class*="cronsList"]',
+        )!
+        const sp4 = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+                '--sp-4',
+            ),
+        )
+        const statusRect = status.getBoundingClientRect()
+        const listRect = list.getBoundingClientRect()
+        await expect(
+            Math.abs(
+                statusRect.right - (listRect.right - sp4),
+            ),
+        ).toBeLessThanOrEqual(1)
+    },
+}
+
 /** The row's context menu → Delete swaps the trailing action for an inline `[ delete ] [
  *  cancel ]` confirm — no modal. */
 export const ConfirmDelete: Story = {
@@ -171,9 +224,9 @@ export const ConfirmDelete: Story = {
                     {
                         name: 'morning-brief',
                         file: 'morning-brief',
-                        schedule: '0 7 * * *',
-                        on: 'schedule',
-                        watch: null,
+                        schedule: '',
+                        on: 'file-change',
+                        watch: 'notes/journal/**/daily/*.md',
                         enabled: true,
                         lastFired: null,
                         running: false,
@@ -202,6 +255,68 @@ export const ConfirmDelete: Story = {
         // or focus needed — DaemonRow's `data-confirming`.
         const actionsBox = deleteBtn.closest<HTMLElement>('[class*="actions"]')!
         await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+        // The confirm overlay is ~17ch wide, wider than the status cell alone — a long
+        // schedule/trigger must be hidden too, not just the status word.
+        await expect(
+            getComputedStyle(canvas.getByText(/^on change:/)).visibility,
+        ).toBe('hidden')
+    },
+}
+
+/** A row-limited list — 8 crons with the 6th failed. `limit={3}` shows the failed one first
+ *  (attentionFirst) plus 2 more, then `+5 more // show`; clicking it reveals all 8 with
+ *  `all 8 // hide`. The count badge always reads the full total, never the limited count. */
+export const Limited: Story = {
+    render: () => {
+        const crons = Array.from({ length: 8 }, (_, i) => ({
+            name: `cron-${i}`,
+            file: `cron-${i}`,
+            schedule: '0 7 * * *',
+            on: 'schedule' as const,
+            watch: null,
+            enabled: true,
+            lastFired:
+                i === 5
+                    ? {
+                          timestamp: new Date(
+                              Date.now() - 2 * 60 * 60 * 1000,
+                          ).toISOString(),
+                          result: 'failed' as const,
+                      }
+                    : {
+                          timestamp: new Date(
+                              Date.now() - 10 * 60 * 1000,
+                          ).toISOString(),
+                          result: 'success' as const,
+                      },
+            running: false,
+            startedAt: null,
+        }))
+        return (
+            <div style={{ width: '360px', height: '260px' }}>
+                <DaemonCrons {...baseProps} crons={crons} limit={3} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const rowNames = () =>
+            [
+                ...canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="daemon-row"]',
+                ),
+            ].map(r => r.textContent ?? '')
+        await expect(rowNames().length).toBe(3)
+        await expect(rowNames()[0]).toContain('cron-5')
+        const badge = within(
+            canvasElement.querySelector('[data-testid="daemon-section-crons"]') as HTMLElement,
+        ).getByText('8')
+        await expect(badge).toBeInTheDocument()
+        const more = canvas.getByRole('button', { name: /\+5 more/ })
+        await expect(more).toBeInTheDocument()
+        await userEvent.click(more)
+        await expect(rowNames().length).toBe(8)
+        await expect(canvas.getByRole('button', { name: /all 8/ })).toBeInTheDocument()
     },
 }
 

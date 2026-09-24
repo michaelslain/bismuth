@@ -54,9 +54,9 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// The resting floor is now ~half of the old glyph size (28px, was 56px) — the face is part of the
-// hub, not a centrepiece.
-const REST_FLOOR_PX = 28
+// The resting face never drops below 32px (its clamp floor); the compact header form must stay
+// under it.
+const REST_FLOOR_PX = 32
 
 function assertFace(minFontPx: number) {
     return async ({ canvasElement }: { canvasElement: HTMLElement }) => {

@@ -149,6 +149,41 @@ export const ConfirmDelete: Story = {
     },
 }
 
+/** A row-limited list — 6 services, `limit={2}` shows 2 rows plus `+4 more // show`. The count
+ *  badge always reads the full total, never the limited count. */
+export const Limited: Story = {
+    render: () => {
+        const processes = Array.from({ length: 6 }, (_, i) => ({
+            name: `service-${i}`,
+            file: `service-${i}`,
+            enabled: true,
+            running: false,
+        }))
+        return (
+            <div style={{ width: '360px', height: '160px' }}>
+                <DaemonProcesses {...baseProps} processes={processes} limit={2} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const rows = () =>
+            canvasElement.querySelectorAll('[data-testid="daemon-row"]')
+        await expect(rows().length).toBe(2)
+        const badge = within(
+            canvasElement.querySelector(
+                '[data-testid="daemon-section-services"]',
+            ) as HTMLElement,
+        ).getByText('6')
+        await expect(badge).toBeInTheDocument()
+        const more = canvas.getByRole('button', { name: /\+4 more/ })
+        await expect(more).toBeInTheDocument()
+        await userEvent.click(more)
+        await expect(rows().length).toBe(6)
+        await expect(canvas.getByRole('button', { name: /all 6/ })).toBeInTheDocument()
+    },
+}
+
 /** No background services configured. */
 export const Empty: Story = {
     render: () => (

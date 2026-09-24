@@ -20,12 +20,44 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-function Frame(props: { children: JSX.Element }) {
+function Frame(props: { children: JSX.Element; tall?: boolean }) {
     return (
-        <div style={{ width: '420px', height: '640px', 'max-width': '100%' }}>
+        <div
+            data-testid="story-frame"
+            style={{
+                width: '420px',
+                height: props.tall ? '900px' : '640px',
+                'max-width': '100%',
+            }}
+        >
             {props.children}
         </div>
     )
+}
+
+/** Resting cluster (Acceptance 12): the composer is well above the frame floor, and the gap from
+ *  the identity name's own bottom to the chat region's top is `.faceRegion`'s `padding-block`
+ *  bottom alone (`--sp-6`, ~16px) — `.chatRegion` carries no margin-top any more. Shared by every
+ *  story that rests (Resting, LongBlurb, NoBlurb, IdentityFocused). */
+async function expectRestingCluster(canvasElement: HTMLElement) {
+    const frame = canvasElement.querySelector<HTMLElement>(
+        '[data-testid="story-frame"]',
+    )!
+    const frameRect = frame.getBoundingClientRect()
+    const chat = canvasElement.querySelector<HTMLElement>(
+        '[data-testid="daemon-page-chat"]',
+    )!
+    const chatRect = chat.getBoundingClientRect()
+    await expect(frameRect.bottom - chatRect.bottom).toBeGreaterThanOrEqual(
+        frameRect.height * 0.25,
+    )
+    const name = within(canvasElement).getByRole('button', { name: 'daemon' })
+    const nameRect = name.getBoundingClientRect()
+    const faceRegion = canvasElement.querySelector<HTMLElement>(
+        '[data-testid="daemon-face-region"]',
+    )!
+    const spSix = parseFloat(getComputedStyle(faceRegion).paddingBottom)
+    await expect(chatRect.top - nameRect.bottom).toBeLessThanOrEqual(spSix + 4)
 }
 
 /** Stands in for the real composer (proven elsewhere, see the header note above) — just enough
@@ -53,7 +85,7 @@ function ChatStub(props: { tall?: boolean }) {
 
 export const Resting: Story = {
     render: () => (
-        <Frame>
+        <Frame tall>
             <DaemonHub
                 name="daemon"
                 blurb="keeps a living model of the vault + reviews it every few hours"
@@ -84,6 +116,7 @@ export const Resting: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeGreaterThan(26)
+        await expectRestingCluster(canvasElement)
     },
 }
 
@@ -91,7 +124,7 @@ export const Resting: Story = {
  *  moves, since the card is absolutely positioned over whatever sits below it. */
 export const IdentityFocused: Story = {
     render: () => (
-        <Frame>
+        <Frame tall>
             <DaemonHub
                 name="daemon"
                 blurb="keeps a living model of the vault + reviews it every few hours"
@@ -119,6 +152,7 @@ export const IdentityFocused: Story = {
         await expect(
             canvas.getByRole('button', { name: 'edit' }),
         ).toBeInTheDocument()
+        await expectRestingCluster(canvasElement)
     },
 }
 
@@ -162,12 +196,23 @@ export const Conversing: Story = {
             chat.getBoundingClientRect().height /
                 hub.getBoundingClientRect().height,
         ).toBeGreaterThan(0.5)
+        // Conversing keeps the composer on the floor — unlike the resting cluster, its bottom
+        // stays flush with the frame bottom.
+        const frame = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="story-frame"]',
+        )!
+        await expect(
+            Math.abs(
+                frame.getBoundingClientRect().bottom -
+                    chat.getBoundingClientRect().bottom,
+            ),
+        ).toBeLessThanOrEqual(2)
     },
 }
 
 export const NoBlurb: Story = {
     render: () => (
-        <Frame>
+        <Frame tall>
             <DaemonHub
                 name="daemon"
                 blurb=""
@@ -193,13 +238,14 @@ export const NoBlurb: Story = {
         await expect(
             canvasElement.querySelector('[data-testid="daemon-identity-blurb"]'),
         ).toBeNull()
+        await expectRestingCluster(canvasElement)
     },
 }
 
 /** A blurb longer than the card's 40ch cap wraps across lines instead of overflowing. */
 export const LongBlurb: Story = {
     render: () => (
-        <Frame>
+        <Frame tall>
             <DaemonHub
                 name="daemon"
                 blurb="a persistent personal-assistant daemon for this vault, consolidating memory hourly and reviewing the whole tree every four hours to keep a living model of the person who owns it"
@@ -221,6 +267,7 @@ export const LongBlurb: Story = {
         await expect(blurb).not.toBeNull()
         const lineHeight = parseFloat(getComputedStyle(blurb!).lineHeight)
         await expect(blurb!.scrollHeight).toBeGreaterThan(lineHeight * 1.5)
+        await expectRestingCluster(canvasElement)
     },
 }
 
