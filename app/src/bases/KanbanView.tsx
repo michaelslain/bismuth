@@ -1812,7 +1812,7 @@ export function KanbanView(props: {
                         // Exactly one control is ever marked: a swatch when an override is set
                         // (and it matches the current color), else Auto — never both at once.
                         const hasOverride = () => !!groupColors()[key]
-                        let colorTriggerRef: HTMLButtonElement | undefined
+                        let colorAnchorRef: HTMLDivElement | undefined
                         return (
                             <>
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
@@ -1837,7 +1837,10 @@ export function KanbanView(props: {
                                     }}
                                     style={{ '--kb-col-color': color() }}
                                 >
-                                    <div class={styles.kbColorAnchor}>
+                                    <div
+                                        class={styles.kbColorAnchor}
+                                        ref={el => (colorAnchorRef = el)}
+                                    >
                                         <div
                                             class={styles.kanbanColHeader}
                                             onPointerDown={e =>
@@ -1845,9 +1848,6 @@ export function KanbanView(props: {
                                             }
                                         >
                                             <PlainButton
-                                                ref={el =>
-                                                    (colorTriggerRef = el)
-                                                }
                                                 class={styles.kbDotBtn}
                                                 title={
                                                     editable()
@@ -1919,7 +1919,7 @@ export function KanbanView(props: {
 
                                         {/* Color picker popover */}
                                         <AnchoredPopover
-                                            anchor={() => colorTriggerRef}
+                                            anchor={() => colorAnchorRef}
                                             open={
                                                 pickerCol() === group().key
                                             }
