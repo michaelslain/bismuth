@@ -19,14 +19,14 @@ import IconBar from '../ui/IconBar'
 // literal `class="undefined"` on the element.
 //
 // `data-sidebar-toolbar="true"` on the toolbar row is passed through `IconBar`'s rest-attribute
-// spread onto its root div. It exists because `palette/switcher.css`'s
+// spread onto its root div. It exists because `app/src/global.css`'s
 // `.layout.switcher-active [data-sidebar-toolbar] { opacity: .35; pointer-events: none; … }`
 // reaches this element from a wholly unrelated component (the Cmd+O switcher dims the sidebar
 // toolbar while active) — a cross-file dependency this migration must not break silently, since
 // no Storybook story ever sets `.switcher-active` and the computed-style baseline never renders
 // it. Attribute selectors are the repo's existing pattern for reaching an element from outside its
 // own file without sharing a module (see `data-tabstrip`/`data-tab-chip` in App.tsx,
-// `data-pane-leaf` in PaneTree.tsx); switcher.css selects `[data-sidebar-toolbar]`, not a class.
+// `data-pane-leaf` in PaneTree.tsx); app/src/global.css selects `[data-sidebar-toolbar]`, not a class.
 export function Sidebar(props: {
     visible: boolean
     graphCollapsed: boolean
