@@ -1902,12 +1902,12 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Three spacings, four group boundaries, two annotate hairlines (highlight/draw/scratch),
-        // one glyph size, one icon box, zero frames at rest.
+        // Two spacings, four group boundaries, two annotate within-group gaps (highlight/draw/
+        // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
         expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(4)
-        expect(rest.annotateGaps, `annotate hairlines in ${JSON.stringify(rest.gaps)}`).toBe(2)
+        expect(rest.annotateGaps, `annotate within-group gaps in ${JSON.stringify(rest.gaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconBoxes).toHaveLength(1)
         expect(rest.outside).toEqual([])
