@@ -65,17 +65,18 @@
 /* --bar-icon-gap / --bar-icon-size / --bar-crumb-gap MOVED to styles/tokens.css 2026-09-12 (CSS
    modules migration Task 7) — a token, not chrome, regardless of currently having only this
    file's own viewbar section as a reader. Values unchanged. */
-/* `.btn--icon`/`.btn--sm` are Button.module.css's own bare global literals (Button family not yet
-   componentized — Task 4 of this plan owns that file), reached here so a bar's icon buttons
-   inherit the bar's own icon-rhythm box. `.viewbar` itself needs no `:global()` any more: it is a
-   real hashed local, matched here inside its own module.
+/* Button's `kind="icon"` + `size="sm"` combination is read via its `data-kind`/`data-size` hooks
+   (ds-bridges Task 1: Button.module.css's `.btn--icon`/`.btn--sm` are hashed locals now, not bare
+   global literals, so a bar reaching them by class name would match nothing), so a bar's icon
+   buttons inherit the bar's own icon-rhythm box. `.viewbar` itself needs no `:global()`: it is a
+   real hashed local, matched here inside its own module, and neither does the attribute selector —
+   CSS Modules only ever hashes class tokens.
    `--iconbar-width` (toolbar-iconbar): an enclosing ui/IconBar sets it to `auto`, so a bracketed
    IconBar button inside a bar (the mini-graph mode switcher, in the `facet` slot) grows to fit
    `[` + glyph + `]` instead of being pinned to this 18px square — pinned, the brackets overflowed
    the box both ways (it centres its content), overlapping each other and clipping the first `[`
    against `.vb-lead`'s overflow edge. Unset everywhere else, so every other bar is unchanged. */
-/* design-system-ignore globalReach: Button family (.btn--icon/.btn--sm) is out of this task's file scope — Task 4 owns componentizing it */
-.viewbar :global(.btn--icon.btn--sm) { width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
+.viewbar [data-kind="icon"][data-size="sm"] { width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why

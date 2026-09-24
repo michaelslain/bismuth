@@ -23,26 +23,37 @@ function joinClasses(...parts: (string | false | null | undefined)[]): string {
     return parts.filter(Boolean).join(' ')
 }
 
-export function buttonClass(opts: {
-    kind?: ButtonKind
-    state?: ButtonState
-    size?: ButtonSize
-    danger?: boolean
-    /** Selected + a glow rim (--glow-accent) — the view's one emphasized action.
-     *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
-    primary?: boolean
-    class?: string
-}): string {
+/** Maps each logical class key ('btn', 'btn--text', 'btn--selected', 'btn--sm', 'btn--danger',
+ *  'btn--primary', …) to the hashed local Button.module.css exports it under. */
+export type ButtonClassMap = Readonly<Record<string, string>>
+
+/** Maps each logical class key ('btn', 'btn--text', 'btn--selected', 'btn--sm', 'btn--danger',
+ *  'btn--primary', …) through `cls`, so Button.tsx passes its CSS-module `styles` and the output
+ *  is hashed. `cls` is REQUIRED: no literal class name ever reaches the DOM. A key missing from
+ *  `cls` is dropped rather than emitted as a literal. */
+export function buttonClass(
+    opts: {
+        kind?: ButtonKind
+        state?: ButtonState
+        size?: ButtonSize
+        danger?: boolean
+        /** Selected + a glow rim (--glow-accent) — the view's one emphasized action.
+         *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
+        primary?: boolean
+        class?: string
+    },
+    cls: ButtonClassMap,
+): string {
     const kind = opts.kind ?? 'text'
     return joinClasses(
-        'btn',
-        `btn--${kind}`,
-        `btn--${opts.state ?? 'normal'}`,
+        cls['btn'],
+        cls[`btn--${kind}`],
+        cls[`btn--${opts.state ?? 'normal'}`],
         opts.size && opts.size !== 'md' && kind !== 'text'
-            ? `btn--${opts.size}`
+            ? cls[`btn--${opts.size}`]
             : '',
-        opts.danger ? 'btn--danger' : '',
-        opts.primary ? 'btn--primary' : '',
+        opts.danger ? cls['btn--danger'] : '',
+        opts.primary ? cls['btn--primary'] : '',
         opts.class,
     )
 }

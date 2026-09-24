@@ -15,6 +15,13 @@
 // directly (`stopPropagation` on `onPointerDown`), so the header's own pointerdown handler never
 // sees it. Note `stopPropagation` on `onClick`/`onMouseDown` would NOT have covered this — pointerdown
 // is its own event and bubbles independently.
+//
+// The close button is `variant="unselected"` (ds-bridges Task 1) — a rest opacity of 0.5 that
+// goes to full opacity + accent brackets on hover, with NO background fill (IconButton's own
+// unselected/hover treatment). It used to carry a PaneHeader-local hover rule that painted
+// `--state-hover-bg` behind it; that fill is gone at the user's request (no background fills on
+// buttons) and the plain `variant="unselected"` state already gives the right rest/hover opacity,
+// so the local override and its `pane-header-x` class are gone too.
 import { Show } from 'solid-js'
 import styles from './PaneHeader.module.css'
 import { Icon } from './icons/Icon'
@@ -43,7 +50,7 @@ export function PaneHeader(props: {
             <IconButton
                 icon="X"
                 label="Close pane"
-                class={styles['pane-header-x']}
+                variant="unselected"
                 onPointerDown={e => e.stopPropagation()} // don't start a pane drag
                 onMouseDown={e => {
                     e.stopPropagation() // don't also trigger focus
