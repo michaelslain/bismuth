@@ -55,7 +55,7 @@ export const Editing: Story = {
         const canvas = within(canvasElement)
         await fontsSettled()
         const ghost = ghostOf(canvasElement)
-        const trigger = canvas.getByText('+ column')
+        const trigger = canvas.getByRole('button', { name: 'column' })
         const restOrigin = restTextOrigin(ghost)
         const restWidths = boardWidths(canvasElement)
         await userEvent.click(trigger)
@@ -73,7 +73,7 @@ export const Editing: Story = {
         await userEvent.keyboard('{Enter}')
         expect(addedNames).toEqual(['Blocked'])
         // back to the ghost trigger after a successful add
-        expect(canvas.getByText('+ column')).toBeVisible()
+        expect(canvas.getByRole('button', { name: 'column' })).toBeVisible()
     },
 }
 
@@ -91,7 +91,7 @@ export const DuplicateRefused: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByText('+ column'))
+        await userEvent.click(canvas.getByRole('button', { name: 'column' }))
         const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Doing')
         await userEvent.keyboard('{Enter}')

@@ -16,10 +16,17 @@ export type TextOrigin = { x: number; y: number }
 export const ghostOf = (root: Element) =>
     root.querySelector('[data-testid="kanban-add-column"]') as HTMLElement
 
-/** The resting "+ column" glyph box's top-left: a Range over the trigger's own text node, so
- *  line-box leading and button padding cannot hide a real shift. */
+/** The resting "column" glyph box's top-left: a Range over the trigger's own text node, so
+ *  line-box leading and button padding cannot hide a real shift. The trigger's label span now
+ *  also holds a leading icon span (IconTextButton) ahead of the text, so the text node is found
+ *  by node type rather than assumed to be the label's `firstChild` — that assumption silently
+ *  measured the icon's glyph box instead once the icon was added, with no typecheck or test
+ *  failure to catch it. */
 export function restTextOrigin(ghost: HTMLElement): TextOrigin {
-    const node = ghost.querySelector('button span')?.firstChild as Node
+    const label = ghost.querySelector('button span') as HTMLElement
+    const node = Array.from(label.childNodes).find(
+        n => n.nodeType === Node.TEXT_NODE,
+    ) as Node
     const range = document.createRange()
     range.selectNodeContents(node)
     const r = range.getBoundingClientRect()
