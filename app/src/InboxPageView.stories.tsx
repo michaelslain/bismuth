@@ -105,6 +105,49 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+/** A sized stand-in for a real editor pane, at a given width — InboxPageView is `height: 100%`,
+ *  so a narrower-pane story needs a bounded box or the width the assertion cares about never
+ *  takes effect (copy of the pattern in bases/FlashcardsView.stories.tsx). */
+function Pane(props: { w: string; children: any }) {
+    return (
+        <div
+            style={{
+                width: props.w,
+                height: '640px',
+                position: 'relative',
+                overflow: 'hidden',
+            }}
+        >
+            {props.children}
+        </div>
+    )
+}
+
+/** The action bar's [submit] left edge must equal the note text column's left edge
+ *  (`.cm-content`'s left, within 2px) — the bar's CONTENT shares the editor's centred reading
+ *  column (`--note-column`) instead of sitting at the pane's left edge. The bar's own top
+ *  hairline still spans the full pane width — asserted separately below. */
+async function assertActionsAlignToText(canvasElement: HTMLElement) {
+    const content = canvasElement.querySelector('.cm-content')
+    const bar = canvasElement.querySelector(
+        '[data-testid="inbox-page-actions"]',
+    )
+    const submit = bar?.querySelector('button') ?? null
+    await expect(content).not.toBeNull()
+    await expect(bar).not.toBeNull()
+    await expect(submit).not.toBeNull()
+    const contentLeft = (content as HTMLElement).getBoundingClientRect().left
+    const submitLeft = (submit as HTMLElement).getBoundingClientRect().left
+    await expect(Math.abs(submitLeft - contentLeft)).toBeLessThanOrEqual(2)
+    // The bar's own top hairline still spans the full pane — its rect, not its inner row, is as
+    // wide as the pane host that contains both it and the editor body.
+    const barRect = (bar as HTMLElement).getBoundingClientRect()
+    const host = (bar as HTMLElement).parentElement as HTMLElement
+    const hostRect = host.getBoundingClientRect()
+    await expect(barRect.left).toBeCloseTo(hostRect.left, 0)
+    await expect(barRect.width).toBeCloseTo(hostRect.width, 0)
+}
+
 /** A pending page: two live actions ("Submit" / "Dismiss") in the bar pinned to the bottom. */
 export const Pending: Story = {
     render: () => {
@@ -134,6 +177,31 @@ export const Pending: Story = {
         const bodyTop = (body as HTMLElement).getBoundingClientRect().top
         const barTop = (bar as HTMLElement).getBoundingClientRect().top
         await expect(barTop).toBeGreaterThan(bodyTop)
+        await assertActionsAlignToText(canvasElement)
+    },
+}
+
+/** Same as `Pending`, at a 900px pane width — the bar's content must still track the editor's
+ *  centred column once it narrows, not just at the default (1280px) viewport. */
+export const PendingNarrowPane: Story = {
+    render: () => {
+        setTransport(pagesTransport())
+        void refreshDaemonPages()
+        return (
+            <Pane w="900px">
+                <InboxPageView
+                    path={REPLY_DRAFTS_PATH}
+                    initialText={REPLY_DRAFTS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => []}
+                    memoryNames={() => []}
+                    tagNames={() => []}
+                />
+            </Pane>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await assertActionsAlignToText(canvasElement)
     },
 }
 
