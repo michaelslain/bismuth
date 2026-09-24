@@ -44,6 +44,7 @@ const KanbanColumnMenu: Component<KanbanColumnMenuProps> = props => {
                 ref={el => (triggerRef = el)}
                 icon="Menu"
                 label="Column menu"
+                size="sm"
                 class={`${styles.trigger}${props.className ? ` ${props.className}` : ''}`}
                 data-kbcolmenu-trigger
                 aria-haspopup="menu"
