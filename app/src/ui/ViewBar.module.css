@@ -80,11 +80,25 @@
    `.btn--icon.btn--sm` comment): the icon now sits between `[`/`]` bracket glyphs, which are wider
    than the bare 18px square this rule used to pin, so a fixed `width` clipped the brackets. */
 .viewbar [data-kind="icon"][data-size="sm"] { min-width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
+/* ONE BRACKET SIZE PER BAR (one-button fix). Outside a bar an IconButton draws its `[`/`]` at
+   --fs-body-lg with an --sp-2/--sp-1 collar, so `[<]` measured 37px and `[⚙]` 33px, while a text
+   button beside it draws its brackets at --fs-ui with no collar and an IconTextButton collapsed to
+   `[▣]` measured 25px. Three widths for one mark, in one row — and the 12px each icon button spent on
+   collar and oversized glyphs is what pushed the calendar bar's crumb and date into ellipsis at every
+   narrow tier. Inside a bar every bracketed icon now matches the text register: --fs-ui brackets,
+   no collar, so a collapsed `[▣ word]` and an `[▣]` IconButton are the same width. `button` in the
+   selector out-specifies Button.module.css's `.btn--icon.btn--sm` (two classes) whatever the load
+   order. The svg is sized by its own inline width, so only the brackets shrink. */
+.viewbar button[data-kind="icon"] { padding: 0; font-size: var(--fs-ui); }
+/* `column-gap` (one-button fix): space-between only separates the two groups while there is slack.
+   A bar filled to its width put the lead's last bracket flush against the trail's first — the
+   calendar's `[d][+]` — so the two groups keep the same --sp-4 every sibling pair of bracket
+   buttons keeps, even when nothing is left over. */
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why
    the name had to exist there first. */
-.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
+.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; column-gap: var(--bar-icon-gap); padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
 .vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
 .vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
@@ -175,6 +189,7 @@
        level   fires at   who declares it              what it is
          4        650      chat  · tools + MCP counts   two glyph+number readouts, 84px the pair
          3        570      chat  · effort Select        68px
+                           calendar · Today             `[▣ today]` + its gap, 74px — see below
          2        500      chat  · provider Select      119px
          1        465      calendar · Categories        a panel toggle, 36px with its region gap
 
@@ -225,6 +240,17 @@
    agent is writing to the vault unconfirmed and a control that disappears takes that signal with
    it. The context percentage, because it is the only warning before a turn starts failing. And New
    chat, because a bar with no way to start a chat is not a narrower bar, it is a broken one. */
+/* ── RE-MEASURED FOR BRACKETS, 2026-09-24 (one-button fix) — the calendar day bar, content box ──
+   Every control now carries `[`/`]` and every sibling pair sits --sp-4 apart, so the table above
+   (taken against bare glyphs at a 0px gap) under-states each state by 60-100px. The tiers were NOT
+   moved — the chat bar shares them and the calendar's Narrow* stories pin which state each width is
+   in. Instead the calendar sheds more per tier: TODAY leaves whole at DROP 3 (570) rather than
+   collapsing to `[▣]` at the late tier — the date beside it is itself a jump to today (DateNav.tsx),
+   so the bar loses a shortcut, not a function — and the late tier also drops the crumb's icon and
+   tightens the region seams. Measured, container widths:
+       584 (Narrow620)   today word + categories + short date/views     575 needed
+       474 (Narrow510)   today gone, crumb icon gone, seams --sp-4      471 needed
+       444 (Narrow480)   + categories gone                               433 needed */
 @container viewbar (max-width: 800px) {
   /* WORDS, EARLY — the early words go. Every button that loses one keeps an icon that already names it and a
         `title`, so the label was a convenience rather than the only signal — and it squares up
@@ -237,8 +263,12 @@
      deletes the VBtn family once every call site has migrated. No extra rule is needed to close
      the gap `.textLabel`'s own `gap` would otherwise leave: `gap` only spaces RENDERED flex
      children, and hiding the label leaves the icon as the sole visible child. */
+  /* NO fixed `width` on the Button-family half (one-button fix): a collapsed IconTextButton is
+     `[` + glyph + `]`, 25px at --fs-ui, and the old `width: var(--h-control)` (24px, sized for VBtn's
+     bare glyph) clipped the brackets by a pixel and made the collapsed control a different width from
+     the `[▣]` IconButton beside it. With no text padding left to remove, shrink-to-fit IS square. */
   .viewbar .vbtn:has(> [data-bar-label='early']),
-  .viewbar [data-kind="text"]:has([data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
+  .viewbar [data-kind="text"]:has([data-bar-label='early']) { padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 650px) {
   /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
@@ -298,7 +328,17 @@
   .viewbar [data-bar-label='late'] { display: none; }
   /* Same widening as the 'early' tier above — see its comment. */
   .viewbar .vbtn:has(> [data-bar-label='late']),
-  .viewbar [data-kind="text"]:has([data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
+  .viewbar [data-kind="text"]:has([data-bar-label='late']) { padding: 0; justify-content: center; }
+  /* The crumb's leading icon goes with the late words (one-button fix). It is decoration — the
+     title beside it names the view — and its 20px (glyph + gap) is what the calendar's crumb and date
+     need to stay whole at the 510px story once every control carries brackets. Matched by
+     structure inside this module's own `.crumb`, never by the Icon's class. `!important` because
+     icons/Icon.tsx writes `display: inline-flex` as an INLINE style on that wrapper, which no
+     selector can out-specify. */
+  .viewbar .crumb > :has(> svg) { display: none !important; }
+  /* …and the seams between regions tighten from --sp-5 to the --sp-4 every sibling pair of bracket
+     buttons already keeps. 4px a seam, but the calendar's 510px story needs every one of them. */
+  .viewbar .vb-lead, .viewbar .vb-trail { gap: var(--bar-icon-gap); }
 }
 @container viewbar (max-width: 465px) {
   /* DROP 1 — the LAST whole control goes, because there are no words left to shed. The region wrapper

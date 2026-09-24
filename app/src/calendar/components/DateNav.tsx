@@ -36,16 +36,20 @@ export function DateNav(props: DateNavProps) {
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
-            {/* NOT selected. Today is a one-shot jump, not a toggle. `drop="late"` because a
-                calendar glyph inside a calendar is the least self-descriptive mark in the app — a
-                calendar next to a date says nothing the date does not already say — so the word is
-                the last thing this bar gives up. */}
+            {/* NOT selected. Today is a one-shot jump, not a toggle. It never collapses to a bare
+                `[▣]`: a calendar glyph inside a calendar is the least self-descriptive mark in the
+                app, so the word stays until the whole control goes. It goes WHOLE at the bar's
+                DROP 3 tier (`data-bar-drop="3"`, 570px — ui/ViewBar.module.css), because once every
+                control is bracketed the bar cannot hold it, Categories, the crumb and the date at
+                the narrow tiers — and the date below is itself a jump to today, so the bar loses a
+                shortcut rather than a function. */}
             <IconTextButton
+                data-bar-drop="3"
                 icon="Calendar"
                 title="Today"
                 onClick={jumpToToday}
             >
-                <BarLabel long="today" drop="late" />
+                <BarLabel long="today" />
             </IconTextButton>
             <IconButton
                 icon="ChevronLeft"
