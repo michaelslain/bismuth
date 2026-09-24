@@ -15,10 +15,9 @@
 
 /* The name reads as plain text, not a bracket button — this is the one TextButton in the app
    whose brackets are switched off, so it can sit directly under the face looking like a label
-   while staying a real, keyboard-focusable control. */
-.nameTrigger {
-    color: var(--fg);
-}
+   while staying a real, keyboard-focusable control. No color override here: a standalone
+   TextButton is already `--fg` (Button.module.css's `.btn--text.btn--normal`) — this only
+   removes the bracket glyphs, it does not restyle the control. */
 .nameTrigger::before,
 .nameTrigger::after {
     content: none;

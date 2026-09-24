@@ -32,6 +32,7 @@ import { Icon } from '../icons/Icon'
 import SearchBar from '../ui/SearchBar'
 import Kbd from '../ui/ascii/Kbd'
 import PlainButton from '../ui/PlainButton'
+import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import EmptyState, { Loading } from '../ui/EmptyState'
 import { createMenuNav } from '../ui/popover/createMenuNav'
@@ -438,34 +439,14 @@ export function SwitcherBar(props: Props) {
                     {/* Persistent AI affordance for question-shaped queries that DO have rows — plain
               Enter commits the highlighted row, so the AI needs its own visible path. */}
                     <Show when={navCount() > 0 && shaped()}>
-                        <PlainButton
-                            class={`${switcherStyles['search-ask-ai']} ${switcherStyles['switcher-ask-ai']}`}
+                        <IconTextButton
+                            icon="Sparkles"
+                            class={switcherStyles['switcher-ask-ai']}
                             onClick={askAi}
-                            title="Search your vault with Bismuth AI (natural-language)"
+                            title="Search your vault with Bismuth AI (natural-language, ⌘↵)"
                         >
-                            <Icon
-                                value="Sparkles"
-                                class={switcherStyles['search-ask-ai-icon']}
-                            />
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={switcherStyles['search-ask-ai-label']}
-                            >
-                                Ask Bismuth AI about your vault
-                            </Text>
-                            <Text
-                                as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                                class={switcherStyles['search-ask-ai-kbd']}
-                            >
-                                <kbd class={switcherStyles['search-kbd']}>⌘↵</kbd>
-                            </Text>
-                        </PlainButton>
+                            ask bismuth ai about your vault
+                        </IconTextButton>
                     </Show>
                     <Show when={navCount() === 0}>
                         <Show when={!query().trim()}>

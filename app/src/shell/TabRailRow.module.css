@@ -128,10 +128,14 @@
    collapsed, so the approximation is never seen. */
 .tab-rail-row .tab-x, .tab-rail-row .tab-pin {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-  padding: var(--sp-1); opacity: 0; color: var(--text-muted);
+  opacity: 0;
   transition: opacity 0.12s ease;
 }
-.tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
+/* No color override here any more (one-button task 9): `.tab-x` is a `size="sm"` IconButton in
+   its default "normal" state, which `Button.module.css`'s `.btn--icon.btn--sm.btn--normal` already
+   renders `--text-muted` — the exact tone this rule used to hardcode. `.tab-pin` carries
+   `variant="selected"` instead of a hardcoded `--accent` here, so its accent tone comes from the
+   button's own state prop rather than a class fighting it. */
 /* ANCESTOR REACHED VIA `[data-tab-rail]`/`[data-rail-pinned]` — see this file's header. */
 [data-tab-rail]:hover .tab-rail-row.pinned .tab-pin,
 [data-tab-rail][data-rail-pinned] .tab-rail-row.pinned .tab-pin { opacity: 0.85; }

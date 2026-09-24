@@ -45,7 +45,7 @@ const DaemonIdentity: Component<DaemonIdentityProps> = props => {
                         {props.blurb}
                     </Text>
                 </Show>
-                <TextButton onClick={props.onEdit} class={styles.edit}>
+                <TextButton onClick={props.onEdit}>
                     edit
                 </TextButton>
             </div>

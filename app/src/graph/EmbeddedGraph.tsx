@@ -274,7 +274,6 @@ export function EmbeddedGraph(props: {
                             value={directed() ? 'dir' : 'undir'}
                             onChange={v => setDirected(v === 'dir')}
                             size="sm"
-                            look="segment"
                             options={[
                                 {
                                     id: 'dir',
@@ -303,7 +302,6 @@ export function EmbeddedGraph(props: {
                     value={dim()}
                     onChange={setDim}
                     size="sm"
-                    look="segment"
                     options={[
                         {
                             id: '2d',

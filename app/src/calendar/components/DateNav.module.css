@@ -22,11 +22,15 @@
 
 /* The subject of the bar, and a secondary jump back to today. Sentence case, --fg, no tracking —
    every control around it is uppercase and muted. The ONLY elastic thing in the bar: flex 0 1 auto
-   + an ellipsizing inner span make a shortened date the failure mode, not controls pushed out. */
+   + an ellipsizing inner span make a shortened date the failure mode, not controls pushed out.
+   NO PADDING (one-button fix): the old `0 var(--sp-3)` kept the date off VBtn's bare chevron glyphs.
+   The chevrons are `[<]`/`[>]` now and `.nav`'s --sp-4 gap already sits between each bracket and
+   the date, so the padding was 12px of the bar's width spent twice — width the date itself needs
+   at the narrow tiers. */
 .nav .range {
     flex: 0 1 auto;
     min-width: 0;
-    padding: 0 var(--sp-3);
+    padding: 0;
     color: var(--fg);
     font-size: var(--fs-ui);
     font-weight: 600;
