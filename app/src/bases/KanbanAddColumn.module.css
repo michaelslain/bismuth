@@ -27,17 +27,23 @@
    stays mounted but invisible, so the ghost keeps its exact rest footprint — the swap cannot
    reflow the board by construction, whatever the input's own intrinsic width. */
 .ghost[data-editing] .trigger { visibility: hidden; }
-/* The input overlays the hidden trigger, out of flow, with its text origin on the "+ column"
-   glyph's. x: the trigger's text sits var(--sp-4) in (its padding), KanbanColumnNameInput's
-   input text var(--sp-2) in (its own padding), so the field starts at the difference. y: the same
-   difference below the trigger's own top (this ghost's rest padding-top) — both centre the same
-   11.5px glyph in an 18px line, so equal content-box tops mean equal glyph tops.
+/* The input overlays the hidden trigger, out of flow, with its text origin on the "column"
+   glyph's — not the leading icon's. x: measured headless (add-column story, this branch) with
+   the trigger now `<IconTextButton icon="Plus">column</IconTextButton>` (brackets + icon added
+   by IconTextButton/Button, not this file): the "column" text glyph starts 23.140625px right of
+   where the old plain-text trigger's label did (the icon box, its gap, and the bracket glyph's
+   own inset all sit ahead of the word now), so that's added to the original `sp-4 - sp-2`
+   difference between the trigger's own padding and KanbanColumnNameInput's input padding — not a
+   round token sum, so it's pinned as a measured value rather than forced into an inexact calc,
+   same reasoning as `.ghost`'s `padding-top` above. y is unaffected — the icon sits inline with
+   the same line box, so the same difference below the trigger's own top still centres the same
+   glyph in the same 18px line.
    `right: 0` pins the field to the ghost's width; the `.ghost` prefix outranks the shared
    `.field { min-width: 160px }` (equal specificity alone would leave it to bundle order). */
 .ghost .addField {
   position: absolute;
   top: calc(6.5px + var(--sp-4) - var(--sp-2));
-  left: calc(var(--sp-4) - var(--sp-2));
+  left: calc(var(--sp-4) - var(--sp-2) + 18.09375px);
   right: 0;
   min-width: 0;
 }
