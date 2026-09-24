@@ -90,6 +90,28 @@ export const Row: Story = {
         )!
         const plainColor = getComputedStyle(modelWord).color
         expect(armed.color).not.toBe(plainColor)
+        // Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — `history` (closed) and
+        // `new chat` are both real bracket TextButtons (button-family migration, no PlainButton),
+        // and CLOSED `history` must no longer paint the same colour as `new chat` — the defect
+        // Acceptance 7 calls out ("today selected and normal are the same colour — that defect
+        // goes"). `history` is unselected (--faint) while closed; `new chat` is a plain normal
+        // action (--fg).
+        const history = within(canvasElement).getByTestId('chat-history')
+        const newChat = within(canvasElement).getByTestId('chat-new')
+        expect(history.tagName).toBe('BUTTON')
+        expect(newChat.tagName).toBe('BUTTON')
+        expect(getComputedStyle(history).color).not.toBe(
+            getComputedStyle(newChat).color,
+        )
+        // The `//` separator lands on the ACTIONS CLUSTER as a whole (one `//` before it,
+        // separating it from the permission-mode readout), never between the two bracket buttons
+        // it contains — brackets already separate adjacent commands.
+        const actionsCluster = canvasElement.querySelector<HTMLElement>(
+            `.${styles.actions}`,
+        )!
+        expect(getComputedStyle(actionsCluster, '::before').content).toContain(
+            '//',
+        )
     },
 }
 
