@@ -1,13 +1,15 @@
 // app/src/daemon/DaemonCrons.tsx
 // Presentational crons panel — the "crons" facet's panel. Takes data + callbacks only (no
-// `api`/`pushToast`/store imports — the host wires those, same seam DaemonInbox/DaemonServices
-// already use). Status/tone derivation ports today's DaemonServices.tsx behaviour: cronStatus.ts
-// for the enabled/running/failed/idle base key, failedResult.ts (via cronStatus) for the
-// killed-counts-as-failed unification, cronFrequency.ts for the schedule string, relTimeISO for
-// ages — refined into the row-per-tone/labelled-status text the redesign asks for ('ok 4m ago',
-// 'failed 2h ago', not colour alone). The dot only glows 'running' while the daemon PROCESS
-// itself is up (`daemonRunning`) — a cron can't really be live if the machine daemon is down,
-// whatever its stale `running` flag says.
+// `api`/`pushToast`/store imports — the host wires those, same seam DaemonInbox/DaemonProcesses
+// already use). Status/tone derivation lives in cronStatus.ts now (`cronTone`, moved out of this
+// file so it's unit-testable without mounting Solid): the enabled/running/failed/idle base key,
+// failedResult.ts (via cronStatus) for the killed-counts-as-failed unification, cronFrequency.ts
+// for the schedule string, relTimeISO for ages — refined into the row-per-tone/labelled-status
+// text the redesign asks for ('ok 4m ago', 'failed 2h ago', not colour alone). `statusFor` stays
+// here — it's the human-readable text, not the tone. The dot only glows 'running' while the
+// daemon PROCESS itself is up (`daemonRunning`) — a cron can't really be live if the machine
+// daemon is down; if its stale `running` flag survived a daemon restart, `cronTone` falls back to
+// whatever it last actually did (failed/ok/idle) instead of a bare `idle`.
 import { createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonCron } from '../../../core/src/daemonGraph'
@@ -19,8 +21,8 @@ import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import InlineTextInput from '../ui/InlineTextInput'
 import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
-import DaemonRow, { type DaemonRowTone } from './DaemonRow'
-import { cronStatus } from './cronStatus'
+import DaemonRow from './DaemonRow'
+import { cronTone } from './cronStatus'
 import cronFrequency from './cronFrequency'
 import styles from './DaemonCrons.module.css'
 
@@ -35,16 +37,8 @@ export type DaemonCronsProps = {
     class?: string
 }
 
-function toneFor(cron: DaemonCron, daemonRunning: boolean): DaemonRowTone {
-    const key = cronStatus(cron)
-    if (key === 'disabled') return 'off'
-    if (key === 'failed') return 'failed'
-    if (key === 'running') return daemonRunning ? 'running' : 'idle'
-    return cron.lastFired ? 'ok' : 'idle'
-}
-
 function statusFor(cron: DaemonCron, daemonRunning: boolean): string {
-    const tone = toneFor(cron, daemonRunning)
+    const tone = cronTone(cron, daemonRunning)
     if (tone === 'off') return 'off'
     if (tone === 'running') return 'running'
     if (tone === 'failed')
@@ -234,7 +228,7 @@ function DaemonCrons(props: DaemonCronsProps) {
                             {cron => (
                                 <DaemonRow
                                     name={cron.name}
-                                    tone={toneFor(cron, props.daemonRunning)}
+                                    tone={cronTone(cron, props.daemonRunning)}
                                     status={statusFor(cron, props.daemonRunning)}
                                     meta={metaFor(cron)}
                                     dim={!cron.enabled}

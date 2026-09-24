@@ -42,6 +42,7 @@ import {
     faceCaption,
     hasRecentFailure,
     initialFacet,
+    shouldSteerToInbox,
     type DaemonFacet,
 } from './daemonPageModel'
 import DaemonPage from './DaemonPage'
@@ -145,14 +146,26 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     // ── Facet: which ONE panel is showing ──────────────────────────────────────────────────
     // `initialFacet` picks it once at mount from whatever due-count is already known; a late-
     // arriving due count (the inbox poll landing after this component mounts) can still steer it
-    // to `inbox`, but only until the user has picked a facet of their own.
+    // to `inbox` — but only ONCE per mount (`shouldSteerToInbox`, daemonPageModel.ts), and never
+    // once the user has picked a facet of their own. A mount that already opened on `inbox`
+    // (something was due at initial-facet time) starts pre-steered, so a later due→0→due bounce
+    // doesn't steer it a second time.
     const [facet, setFacetSignal] = createSignal<DaemonFacet>(
         initialFacet(dueCount(), readRememberedFacet()),
     )
     let userPickedFacet = false
+    let steered = facet() === 'inbox'
     createEffect(() => {
-        if (userPickedFacet) return
-        if (dueCount() > 0) setFacetSignal('inbox')
+        if (
+            shouldSteerToInbox({
+                due: dueCount(),
+                steered,
+                userPicked: userPickedFacet,
+            })
+        ) {
+            steered = true
+            setFacetSignal('inbox')
+        }
     })
     const onFacet = (f: DaemonFacet) => {
         userPickedFacet = true

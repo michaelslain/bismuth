@@ -303,3 +303,40 @@ export const DaemonOffline: Story = {
         await expect(canvas.queryByText('running')).toBeNull()
     },
 }
+
+/** The daemon process is offline AND the stale `running` flag's cron actually fired before it
+ *  went down — the status must fall back to that last result ('ok 3h ago') rather than 'never',
+ *  which would read as "this has never once run" and is simply false. */
+export const StaleRunningOffline: Story = {
+    render: () => (
+        <div style={{ width: '360px', height: '120px' }}>
+            <DaemonCrons
+                {...baseProps}
+                daemonRunning={false}
+                crons={[
+                    {
+                        name: 'morning-brief',
+                        file: 'morning-brief',
+                        schedule: '0 7 * * *',
+                        on: 'schedule',
+                        watch: null,
+                        enabled: true,
+                        lastFired: {
+                            timestamp: new Date(
+                                Date.now() - 3 * 60 * 60 * 1000,
+                            ).toISOString(),
+                            result: 'success',
+                        },
+                        running: true,
+                        startedAt: null,
+                    },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const status = canvas.getByText(/^ok /)
+        await expect(status.textContent).not.toBe('never')
+    },
+}
