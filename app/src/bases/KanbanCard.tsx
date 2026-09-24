@@ -210,7 +210,9 @@ export function KanbanCard(props: {
                 data-edit-target={props.titleCol}
                 title={props.editable ? 'Click to edit card' : undefined}
             >
-                {title()}
+                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    {title()}
+                </Text>
             </div>
 
             <Show when={visibleMeta().length > 0}>

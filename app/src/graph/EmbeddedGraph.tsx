@@ -224,7 +224,7 @@ export function EmbeddedGraph(props: {
                                             size="inherit"
                                             tone="inherit"
                                             weight="inherit"
-                                            class="btn-label"
+                                            data-btn-label
                                         >
                                             select
                                         </Text>
@@ -242,7 +242,7 @@ export function EmbeddedGraph(props: {
                                             size="inherit"
                                             tone="inherit"
                                             weight="inherit"
-                                            class="btn-label"
+                                            data-btn-label
                                         >
                                             connect
                                         </Text>
@@ -260,7 +260,7 @@ export function EmbeddedGraph(props: {
                                             size="inherit"
                                             tone="inherit"
                                             weight="inherit"
-                                            class="btn-label"
+                                            data-btn-label
                                         >
                                             erase
                                         </Text>
@@ -330,9 +330,14 @@ export function EmbeddedGraph(props: {
                 <div class={styles['graph-block-errors']}>
                     <For each={errors}>
                         {e => (
-                            <div>
+                            <Text
+                                as="div"
+                                size="inherit"
+                                tone="inherit"
+                                weight="inherit"
+                            >
                                 line {e.line}: {e.message}
-                            </div>
+                            </Text>
                         )}
                     </For>
                 </div>

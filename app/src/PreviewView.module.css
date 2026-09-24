@@ -223,8 +223,8 @@
 
 /* Match-case toggle ("Aa") — a ui/PlainButton (unstyled real `<button>`) carrying this LOCAL
    class for its entire look, rather than the shared ui/Button plus a bespoke-chrome override
-   reaching Button's own KIND classes (the `:global(.btn)`/`:global(.btn--text)` idiom
-   drawing/Toolbar.module.css's `.draw-colorseg:global(.btn)` still uses). The two STATE rules
+   reaching Button's own KIND classes (the `:global(.btn)`/`:global(.btn--text)` idiom several
+   other modules still use — see Button.module.css's own header for the list). The two STATE rules
    below key on a `data-state` attribute PreviewView.tsx sets directly, not a foreign
    `:global(.btn--selected)`/`.btn--unselected)` reach. Two things a plain text button would get
    wrong here anyway: `text-transform: uppercase` would turn the "Aa" label into "AA", and a

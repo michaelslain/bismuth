@@ -58,13 +58,15 @@
     outline: none;
 }
 
-/* Trailing adornments (count, chevrons, Aa, close, esc Kbd) — a separate flex group so their
-   --sp-2 rhythm never leaks into the --sp-4 lead-to-input gap above. */
+/* Trailing adornments (count, chevrons, Aa, close, esc Kbd) — a separate flex group. Chips in here
+   are ChipToggle's bracket look, so the between-chip gap uses --sp-4, the same sibling gap every
+   other bracket-button family (SegmentedToggle, ExportView's .fopts) uses — --sp-2 read as no wider
+   than the bracket's own internal padding and the chips ran together as one bracket run. */
 .search-bar-trailing {
     display: flex;
     align-items: center;
     flex: none;
-    gap: var(--sp-2);
+    gap: var(--sp-4);
     margin-left: var(--sp-2);
 }
 

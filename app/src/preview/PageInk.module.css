@@ -36,7 +36,7 @@
   touch-action: none; /* stylus/touch draws; the wheel still scrolls the preview */
 }
 
-/* The toolbar's anchor. In a PDF the host is as tall as the whole page stack, so the global
+/* The toolbar's anchor. In a PDF the host is as tall as the whole page stack, so
    `.draw-toolbar`'s `position: absolute; bottom: 20px` needs a positioned parent that stays at
    the bottom of the VISIBLE area: a zero-height sticky element does exactly that, and it is a
    no-op for an image, whose host is the visible area.
@@ -59,10 +59,9 @@
   height: 0;
 }
 
-/* The drawing dock is Toolbar.tsx's `.draw-toolbar` (still a bare, global, unhashed class in
-   drawing/Toolbar.module.css — external story probes need the literal string). This file reaches
-   it through the `data-draw-toolbar` attribute Toolbar.tsx also carries on the same node instead,
-   which needs no hashing to stay correct. */
+/* The drawing dock is Toolbar.tsx's `.draw-toolbar` — a plain hashed local in
+   drawing/Toolbar.module.css. This file reaches it through the `data-draw-toolbar` attribute
+   Toolbar.tsx also carries on the same node instead, which every external story probe uses too. */
 .page-ink.active [data-draw-toolbar] {
   pointer-events: auto;
 }

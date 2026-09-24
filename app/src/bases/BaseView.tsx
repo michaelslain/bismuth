@@ -72,6 +72,7 @@ import ViewBar, { Crumb, VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
+import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
 import styles from './BaseView.module.css'
 
@@ -161,7 +162,18 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                         ref={gutter}
                         aria-hidden="true"
                     >
-                        <Index each={lines()}>{n => <div>{n()}</div>}</Index>
+                        <Index each={lines()}>
+                            {n => (
+                                <Text
+                                    as="div"
+                                    size="inherit"
+                                    tone="inherit"
+                                    weight="inherit"
+                                >
+                                    {n()}
+                                </Text>
+                            )}
+                        </Index>
                     </div>
                     <TextInput
                         multiline
@@ -178,7 +190,7 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                 </div>
             </Show>
             <div class={styles.sourceBar}>
-                <TextButton onClick={save}>save</TextButton>
+                <TextButton primary onClick={save}>save</TextButton>
                 <TextButton onClick={props.onClose}>cancel</TextButton>
             </div>
         </div>

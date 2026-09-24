@@ -21,10 +21,11 @@
  *
  * CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles`.
  *
- * NOT REACHABLE BY THE COMPUTED-STYLE BASELINE: `.pane-header:active`, `.pane-header-x`'s hover rule.
- * CSS `:hover` follows the physical pointer and `:active` needs a real press, so no story can pose
- * them; the baseline records the resting state only. `moduleClassCheck.ts` proves those names still
- * reach the DOM — nothing proves their appearance.
+ * NOT REACHABLE BY THE COMPUTED-STYLE BASELINE: `.pane-header:active`, the close IconButton's own
+ * hover state (opacity 0.5 -> 1 + accent brackets, carried entirely by Button.module.css's
+ * `variant="unselected"` treatment now — see PaneHeader.tsx). CSS `:hover` follows the physical
+ * pointer and `:active` needs a real press, so no story can pose them; the baseline records the
+ * resting state only.
  */
 
 .pane-header {
@@ -45,32 +46,6 @@
    built for a different kind of text. */
 .pane-header:active { cursor: grabbing; }
 [data-pane-focused] .pane-header { color: var(--fg); }
-/* flex/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for the two
-   font-weight/color rules below. */
-.pane-header-x { padding: 0 var(--sp-2); border-radius: var(--r-0); opacity: 0.5; cursor: pointer; }
-/* --state-hover-bg, not a bespoke color-mix(fg 12%) — every other icon-button hover in the frame
-   (Sidebar/TabRail/EmptyPane's toolzone buttons, ui.css's own .btn--icon.btn--normal) swaps to
-   the same shared hover fill; this was the one place still inventing its own percentage on top of
-   an opacity change (visual-unification audit §4.8).
-   SELECTOR IS `.pane-header-x.btn--icon[data-state="normal"]:hover:not(:disabled)`, not the
-   plainer `.pane-header-x:hover` this rule shipped with first — this button is an IconButton with
-   no `variant`, so it always also carries `btn--icon` + `data-state="normal"` from Button.tsx, and
-   ui/ui.css's own `.btn--icon.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }`
-   has specificity (0,4,0) against the plain form's (0,2,0), so it silently won regardless of what
-   value this rule set — the color-mix->token swap had ZERO effect on rendered output (caught by
-   forcing :hover via CDP and reading the computed background, which a resting-state baseline
-   cannot do). Selectors here give (0,5,0), unambiguously ahead of ui.css's (0,4,0) — no reliance
-   on source order (one-global-followups Task 1: the STATE half of that count now comes from
-   `[data-state="normal"]`, an attribute selector, not `.btn--normal` — attribute selectors carry
-   the same (0,1,0) weight a class does, so the total is unchanged). `btn--icon` is wrapped in
-   `:global()` — it is ui.css's own global KIND class, not a local of this module; without
-   `:global()` postcss-modules hashes it too (`._btn--icon_xxxxx`), which matches nothing on the
-   real button and makes the whole rule silently inert — exactly the bug this rule exists to fix,
-   reintroduced by the fix itself on the first pass. `[data-state="normal"]` needs no `:global()`:
-   a data attribute is never hashed by CSS Modules, so it reaches the DOM directly. Caught only by
-   forcing :hover and reading getMatchedStylesForNode, which showed the rule not even present in
-   the cascade. */
-.pane-header-x:global(.btn--icon)[data-state="normal"]:hover:not(:disabled) { opacity: 1; background: var(--state-hover-bg); }
 
 /* Leading content icon: faint by design, sits before the title. */
 .pane-header .pane-header-icon {

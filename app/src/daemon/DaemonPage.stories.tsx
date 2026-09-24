@@ -464,7 +464,7 @@ export const AwakeFilled: Story = {
         await expect(
             canvasElement.querySelector('[role="radiogroup"]'),
         ).toBeNull()
-        await expect(canvasElement.querySelector('.segmented')).toBeNull()
+        await expect(canvasElement.querySelector('[data-segmented]')).toBeNull()
         const sections = [
             ...canvasElement.querySelectorAll<HTMLElement>(
                 '[data-testid^="daemon-section-"]',

@@ -521,6 +521,7 @@ export function FlashcardsView(props: {
             <IconButton
                 icon="Trash2"
                 label="Delete this card"
+                danger
                 onClick={deleteCurrent}
                 class={styles['card-action-btn']}
             />
@@ -941,7 +942,7 @@ export function FlashcardsView(props: {
                         <TextButton onClick={() => setEditingCard(false)}>
                             cancel
                         </TextButton>
-                        <TextButton variant="selected" onClick={saveCardEdit}>
+                        <TextButton primary onClick={saveCardEdit}>
                             save
                         </TextButton>
                     </ModalFooter>

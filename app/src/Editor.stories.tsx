@@ -1261,12 +1261,11 @@ const toggleDrawMode = (canvasElement: HTMLElement) => {
     )
 }
 
-/** The drawing dock renders only while draw mode is on, and `.draw-toolbar` is a GLOBAL class
- *  (drawing/Toolbar.module.css, kept unhashed there via :global()) rather than a hashed module
- *  local — so it is a safe probe for "the overlay is interactive", where the host's own
- *  `active` class is not. */
+/** The drawing dock renders only while draw mode is on. `data-draw-toolbar` is a runtime hook
+ *  Toolbar.tsx's root always carries — unlike its (now hashed) module class, it is a stable probe
+ *  for "the overlay is interactive", where the host's own `active` class is not. */
 const drawModeOn = (canvasElement: HTMLElement) =>
-    !!canvasElement.querySelector('.draw-toolbar')
+    !!canvasElement.querySelector('[data-draw-toolbar]')
 
 const scrollerOf = (canvasElement: HTMLElement) => {
     const el = canvasElement.querySelector('.cm-scroller') as HTMLElement | null

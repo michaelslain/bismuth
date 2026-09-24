@@ -77,7 +77,7 @@ const visible = (root: Element, sel: string) =>
  *  as one that never fires, and only the whole tuple can see that. */
 const state = (root: Element) => ({
     actionWords: visible(root, '[title="Categories"]'),
-    viewName: visible(root, '.segmented button:first-child'),
+    viewName: visible(root, '[data-segmented] button:first-child'),
     todayWord: visible(root, '[title="Today"]'),
     categoriesShown: shown(root.querySelector('[title="Categories"]')),
 })
@@ -310,12 +310,12 @@ export const CalendarBaseWithTwoViews: Story = {
         const bar = canvasElement.querySelector('[data-viewbar]')!
         // Two toggles, and they are in DIFFERENT regions — that separation IS the design. If both
         // ever land in one region this reads 2 and 0, with nothing on screen to tell them apart.
-        expect(bar.querySelectorAll('[data-testid="vb-locus"] .segmented').length).toBe(1)
-        expect(bar.querySelectorAll('[data-testid="vb-facet"] .segmented').length).toBe(1)
+        expect(bar.querySelectorAll('[data-testid="vb-locus"] [data-segmented]').length).toBe(1)
+        expect(bar.querySelectorAll('[data-testid="vb-facet"] [data-segmented]').length).toBe(1)
         // The period switcher follows DateNav inside `locus`, not the other way round.
         const locus = bar.querySelector('[data-testid="vb-locus"]')!
         const kids = [...locus.children]
-        expect(kids[kids.length - 1]!.className).toContain('segmented')
+        expect((kids[kids.length - 1] as HTMLElement).hasAttribute('data-segmented')).toBe(true)
     },
 }
 

@@ -78,8 +78,6 @@
    header) — it once rendered ONLY the daemon-mode list.
 
    `:global()` — classes this file's selectors reach that are owned elsewhere and must NOT hash:
-     `.asc-popover` (ui/Popover.tsx's own surface, stamped by GraphView.tsx alongside the local
-       `graph-find-panel`/`graph-stats` classes)
      `.search-bar-input` (ui/SearchBar.tsx) in the Find-panel search bar's type override
      `.selected` — the app-wide bare state-class convention (see palette/Palette.module.css's
        header for the fuller rationale); `.graph-search-row`'s selected state reaches it this way

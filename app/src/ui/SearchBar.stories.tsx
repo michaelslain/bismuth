@@ -9,7 +9,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show, type JSX } from 'solid-js'
 import { expect, fireEvent, waitFor } from 'storybook/test'
 import SearchBar from './SearchBar'
-import Chip from './Chip'
+import ChipToggle from './ChipToggle'
 import IconButton from './IconButton'
 import Text from './Text'
 import { settings, setSettings } from '../settings'
@@ -161,19 +161,19 @@ export const WithTrailingChips: Story = {
         const [wholeWord, setWholeWord] = createSignal(true)
         return (
             <Controlled initial="TODO" placeholder="find">
-                <Chip
+                <ChipToggle
                     icon="CaseSensitive"
                     selected={matchCase()}
-                    onClick={() => setMatchCase(v => !v)}
+                    onToggle={() => setMatchCase(v => !v)}
                     title="Match case"
                 />
-                <Chip
+                <ChipToggle
                     icon="Check"
                     selected={wholeWord()}
-                    onClick={() => setWholeWord(v => !v)}
+                    onToggle={() => setWholeWord(v => !v)}
                     title="Whole word"
                 />
-                <Chip icon="Regex" title="Regex" />
+                <ChipToggle icon="Regex" title="Regex" />
             </Controlled>
         )
     },

@@ -45,7 +45,7 @@
    module.css — this is only the popover's own surface + inset around that shared component.
    AnchoredPopover's panel is bare (menu mode gets its surface from PopoverList; rename mode has
    no such wrapper), so without this the input and the "already a column" error print straight
-   over the card beneath. Same surface values as .kbColorPop in KanbanView.module.css. */
+   over the card beneath. Same surface values as .kbColorPanel in KanbanView.module.css. */
 .renaming {
     padding: var(--sp-4);
     background: var(--panel);

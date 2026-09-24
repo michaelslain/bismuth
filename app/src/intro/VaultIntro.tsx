@@ -13,7 +13,7 @@
    self-designed, no specimen exists for this surface): --bg ground, the wordmark
    (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
    crystal, a four swatch-card theme picker (not a dropdown),
-   power-ups as <Card> rows (ui/Card.tsx) with a Chip toggle, and the CTA as the one bracket
+   power-ups as <Card> rows (ui/Card.tsx) with a ChipToggle, and the CTA as the one bracket
    btn--primary in the takeover. A face picker (5 Monaspace variants, plus Lora for the prose
    face) was considered but deliberately left out: PORTING's own "if trivially wired to
    appearance.uiFont/proseFont SEEDS" is conditional, and it isn't trivial here — persisting a
@@ -33,7 +33,7 @@ import {
 } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import Chip from '../ui/Chip'
+import ChipToggle from '../ui/ChipToggle'
 import Card from '../ui/Card'
 import Heading from '../ui/Heading'
 import Text from '../ui/Text'
@@ -512,8 +512,8 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     </div>
                 </Show>
 
-                {/* Power-ups: <Card> rows with a chip toggle (not a bespoke selectable-card grid) —
-            the system's own vocabulary for "a labeled option you can flip" (ui/Chip.tsx,
+                {/* Power-ups: <Card> rows with a ChipToggle (not a bespoke selectable-card grid) —
+            the system's own vocabulary for "a labeled option you can flip" (ui/ChipToggle.tsx,
             already the ExportView/search-toggle primitive). */}
                 <Show when={slide().key === 'powerups'}>
                     <div class={styles['vi-powerups']}>
@@ -537,20 +537,20 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                             >
                                                 {p.name}
                                             </Text>
-                                            <Chip
+                                            <ChipToggle
                                                 selected={on()}
                                                 title={
                                                     selectable
                                                         ? undefined
                                                         : 'Always on'
                                                 }
-                                                onClick={() =>
+                                                onToggle={() =>
                                                     selectable &&
                                                     togglePowerup(p.id)
                                                 }
                                             >
                                                 {on() ? 'ON' : 'OFF'}
-                                            </Chip>
+                                            </ChipToggle>
                                         </div>
                                         <Text
                                             as="span"

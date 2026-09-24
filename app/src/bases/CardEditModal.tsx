@@ -27,6 +27,7 @@ import BracketToggle from '../ui/BracketToggle'
 import PlainButton from '../ui/PlainButton'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
+import EmptyState from '../ui/EmptyState'
 import { TextInput } from '../ui/TextInput'
 import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
@@ -149,7 +150,7 @@ export function CardEditModal(props: {
         rowEl.scrollIntoView({ block: 'nearest' })
         rowEl
             .querySelector<HTMLElement>(
-                'input, textarea, .ui-select-trigger, button',
+                'input, textarea, [data-select-trigger], button',
             )
             ?.focus()
     })
@@ -410,9 +411,9 @@ export function CardEditModal(props: {
                     </For>
 
                     <Show when={cols().length === 0}>
-                        <div class={styles.empty}>
+                        <EmptyState>
                             this board declares no editable properties.
-                        </div>
+                        </EmptyState>
                     </Show>
                 </SettingsGrid>
             </ModalBody>

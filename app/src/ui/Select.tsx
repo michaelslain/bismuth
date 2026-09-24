@@ -81,7 +81,8 @@ function Select(props: {
                 as="button"
                 ref={triggerRef}
                 type="button"
-                class={`ui-select-trigger ${props.class ?? ''} ${props.triggerClass ?? ''}`}
+                data-select-trigger=""
+                class={`${styles['ui-select-trigger']} ${props.class ?? ''} ${props.triggerClass ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
                     if (open()) {
@@ -106,7 +107,8 @@ function Select(props: {
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
                 <span
-                    class={`ui-select-caret ${props.caretClass ?? ''}`}
+                    class={`${styles['ui-select-caret']} ${props.caretClass ?? ''}`}
+                    data-select-caret=""
                     aria-hidden="true"
                 >
                     ▾

@@ -1,14 +1,15 @@
 /* app/src/ui/Select.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
    Task 7). ui/Select.tsx was the sole reader of these classes anywhere in the app.
 
-   `.ui-input` and `.ui-select-trigger` (composed onto the trigger button, via `<FormControl
-   as="button">`) and `.ui-select-caret` now live in ui/FormControl.module.css, the shared chrome
-   primitive both TextInput and Select compose — a rule genuinely shared by two components, so it
-   got its own extracted component rather than a copy in each. They stay plain (non-module)
-   global classes there, not hashed here, because all three are reached via `:global()` from
-   other modules (ChatHeader.module.css, bases/BaseView.module.css) and `.ui-select-trigger` is
-   also depended on by a literal `querySelector` in bases/CardEditModal.tsx. See
-   .claude/plans/ui-css-ownership.md.
+   `.ui-select-trigger`/`.ui-select-caret` are Select's OWN hashed locals (ds-bridges Task 4,
+   moved in from ui/FormControl.module.css): the trigger/caret layout is genuinely only ever
+   rendered by Select, so it has no reason to live in the shared FormControl stylesheet, and
+   Select must not import that file directly (one component, one importer). The trigger still
+   composes FormControl's `.ui-input` local (via `<FormControl as="button">`) for the shared
+   underline/focus chrome every field gets; these two classes layer the trigger-specific flex
+   row + caret + focus-visible glyph-bolding on top of it. `[data-select-trigger]`/
+   `[data-select-caret]` (stamped by Select.tsx) are the hooks an OUTSIDE selector reaches
+   instead — see the ds-bridges plan's hook table.
 
    Positioning + stacking (the old `.ui-select-list`'s `position: fixed; z-index: 1100`) moved to
    `ui/AnchoredPopover.module.css` — Select composes `<AnchoredPopover>` now instead of hand
@@ -16,6 +17,21 @@
    backdrop's fixed/inset/z-index live in AnchoredPopover too); it survives here only as the
    `data-select-backdrop` runtime hook's class marker, still needed by
    bases/PropertyValueEditor.tsx's outside-click guard (Select.test.ts pins this). */
+
+/* Select: a .ui-input styled as a clickable trigger with a trailing `▾` caret, on the SAME
+   underline as every other field — it inherits `.ui-input`'s rest/focus/disabled rules above
+   rather than owning a separate box or focus ring. The open list is a portaled <PopoverList>
+   above the modal overlay; a transparent backdrop between the overlay and the list catches
+   outside clicks. */
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); }
+.ui-select-caret { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); }
+/* Select's trigger has no caret/box change on focus, so the rule-firming alone is near-invisible
+   for keyboard focus (ink theme: #282B34 -> #3A3E4A, 1px). A second, NON-accent cue mirrors the
+   search field's glyph-bolding: the value text and caret go bold + full --fg on :focus-visible
+   only (keyboard focus, never a mouse-opened modal). No accent line, no outline box. */
+.ui-select-trigger:focus-visible { color: var(--fg); font-weight: var(--fw-bold); }
+.ui-select-trigger:focus-visible .ui-select-caret { color: var(--fg); }
+
 .ui-select-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
 .ui-select-placeholder { color: var(--faint); }
 .ui-select-backdrop { /* data-select-backdrop lives on this element; see comment above */ }
