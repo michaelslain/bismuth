@@ -12,7 +12,12 @@
 // (throw NOT_SUPPORTED): structural fs ops (create/move/delete/restore),
 // folder-icon + set-setting (settings.yaml writer), asset upload, backup/git,
 // open-folder — these need FileAccess extended with create/move/delete + a
-// settings writer, tracked as the next increment.
+// settings writer, tracked as the next increment. Also NOT_SUPPORTED: every
+// /daemon/* write (cron/process toggle, cron run, cron/process create, cron/process
+// delete) — the HTTP server owner-gates these (they mutate the shared daemon
+// machine dir, not the vault, and CORS is `*`), and the in-process transport has no
+// notion of an owner channel at all, so it refuses them outright rather than
+// silently running unauthenticated.
 import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
@@ -401,6 +406,15 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'POST /daily-note':
             case 'POST /backup':
             case 'POST /open-folder':
+            // ---- daemon writes: owner-gated on the HTTP server; this transport has no
+            // owner-channel concept at all, so refuse rather than run unauthenticated ----
+            case 'POST /daemon/cron/toggle':
+            case 'POST /daemon/cron/run':
+            case 'POST /daemon/process/toggle':
+            case 'POST /daemon/cron/create':
+            case 'POST /daemon/process/create':
+            case 'POST /daemon/cron/delete':
+            case 'POST /daemon/process/delete':
                 return notSupported(route)
 
             default:

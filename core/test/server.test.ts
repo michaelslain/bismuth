@@ -2539,6 +2539,229 @@ test('daemon routes: status + devices read shared state, owner round-trips', asy
     }
 })
 
+// All seven /daemon/* cron/process writes are owner-gated (CORS is `*`, and the daemon itself
+// never calls these — it acts through the headless CLI). Per route: no token -> 403; token +
+// a missing required field -> 400 (proves the gate isn't standing in for validation); token +
+// a valid body -> 200 with the documented shape; an unknown name -> 404; creating the same
+// slug twice -> 409. The 403 assertions are the ones that would silently pass if the gate line
+// were ever deleted from one route but not another, since every OTHER assertion here exercises
+// validation/lookup code that has nothing to do with the owner channel.
+test('daemon cron/process writes: owner-gated, validate, round-trip, 404 unknown, 409 on re-create', async () => {
+    const { vault } = await makeSampleVault()
+    await writeNote(
+        vault,
+        '.daemon/crons/existing-cron.md',
+        '---\nname: existing-cron\nschedule: 0 9 * * *\nenabled: false\n---\n\nbody\n',
+    )
+    await writeNote(
+        vault,
+        '.daemon/processes/existing-process.md',
+        '---\nname: existing-process\ncommand: echo\nenabled: false\n---\n\nbody\n',
+    )
+    const server = createServer({ vault, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = readRunRecords().find(r => r.vault === vault)?.token
+        expect(token).toBeTruthy()
+        const post = (path: string, body: unknown, withToken = false) =>
+            fetch(`${base}${path}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(withToken ? { 'X-Bismuth-Token': token! } : {}),
+                },
+                body: JSON.stringify(body),
+            })
+
+        // ---- /daemon/cron/toggle ----
+        expect(
+            (
+                await post('/daemon/cron/toggle', {
+                    name: 'existing-cron',
+                    enabled: true,
+                })
+            ).status,
+        ).toBe(403)
+        expect(
+            (await post('/daemon/cron/toggle', { enabled: true }, true)).status,
+        ).toBe(400)
+        const cronToggleOk = await post(
+            '/daemon/cron/toggle',
+            { name: 'existing-cron', enabled: true },
+            true,
+        )
+        expect(cronToggleOk.status).toBe(200)
+        expect(await cronToggleOk.json()).toEqual({ ok: true })
+        expect(
+            (
+                await post(
+                    '/daemon/cron/toggle',
+                    { name: 'no-such-cron', enabled: true },
+                    true,
+                )
+            ).status,
+        ).toBe(404)
+
+        // ---- /daemon/cron/run ----
+        expect(
+            (await post('/daemon/cron/run', { name: 'existing-cron' })).status,
+        ).toBe(403)
+        expect((await post('/daemon/cron/run', {}, true)).status).toBe(400)
+        const cronRunOk = await post(
+            '/daemon/cron/run',
+            { name: 'existing-cron' },
+            true,
+        )
+        expect(cronRunOk.status).toBe(200)
+        expect(await cronRunOk.json()).toEqual({ ok: true })
+        expect(
+            (
+                await post(
+                    '/daemon/cron/run',
+                    { name: 'no-such-cron' },
+                    true,
+                )
+            ).status,
+        ).toBe(404)
+
+        // ---- /daemon/process/toggle ----
+        expect(
+            (
+                await post('/daemon/process/toggle', {
+                    name: 'existing-process',
+                    enabled: true,
+                })
+            ).status,
+        ).toBe(403)
+        expect(
+            (
+                await post(
+                    '/daemon/process/toggle',
+                    { name: 'existing-process' },
+                    true,
+                )
+            ).status,
+        ).toBe(400)
+        const processToggleOk = await post(
+            '/daemon/process/toggle',
+            { name: 'existing-process', enabled: true },
+            true,
+        )
+        expect(processToggleOk.status).toBe(200)
+        expect(await processToggleOk.json()).toEqual({ ok: true })
+        expect(
+            (
+                await post(
+                    '/daemon/process/toggle',
+                    { name: 'no-such-process', enabled: true },
+                    true,
+                )
+            ).status,
+        ).toBe(404)
+
+        // ---- /daemon/cron/create ----
+        expect(
+            (await post('/daemon/cron/create', { name: 'New Cron' })).status,
+        ).toBe(403)
+        expect((await post('/daemon/cron/create', {}, true)).status).toBe(400)
+        const cronCreateOk = await post(
+            '/daemon/cron/create',
+            { name: 'New Cron' },
+            true,
+        )
+        expect(cronCreateOk.status).toBe(200)
+        expect(await cronCreateOk.json()).toEqual({
+            ok: true,
+            file: 'new-cron',
+        })
+        expect(
+            (await post('/daemon/cron/create', { name: 'New Cron' }, true))
+                .status,
+        ).toBe(409)
+
+        // ---- /daemon/process/create ----
+        expect(
+            (await post('/daemon/process/create', { name: 'New Process' }))
+                .status,
+        ).toBe(403)
+        expect(
+            (await post('/daemon/process/create', {}, true)).status,
+        ).toBe(400)
+        const processCreateOk = await post(
+            '/daemon/process/create',
+            { name: 'New Process' },
+            true,
+        )
+        expect(processCreateOk.status).toBe(200)
+        expect(await processCreateOk.json()).toEqual({
+            ok: true,
+            file: 'new-process',
+        })
+        expect(
+            (
+                await post(
+                    '/daemon/process/create',
+                    { name: 'New Process' },
+                    true,
+                )
+            ).status,
+        ).toBe(409)
+
+        // ---- /daemon/cron/delete ---- (gate pre-existing; covered here for completeness)
+        expect(
+            (await post('/daemon/cron/delete', { name: 'existing-cron' }))
+                .status,
+        ).toBe(403)
+        expect((await post('/daemon/cron/delete', {}, true)).status).toBe(400)
+        expect(
+            (
+                await post(
+                    '/daemon/cron/delete',
+                    { name: 'no-such-cron' },
+                    true,
+                )
+            ).status,
+        ).toBe(404)
+        const cronDeleteOk = await post(
+            '/daemon/cron/delete',
+            { name: 'existing-cron' },
+            true,
+        )
+        expect(cronDeleteOk.status).toBe(200)
+        expect(await cronDeleteOk.json()).toEqual({ ok: true })
+
+        // ---- /daemon/process/delete ---- (gate pre-existing; covered here for completeness)
+        expect(
+            (
+                await post('/daemon/process/delete', {
+                    name: 'existing-process',
+                })
+            ).status,
+        ).toBe(403)
+        expect(
+            (await post('/daemon/process/delete', {}, true)).status,
+        ).toBe(400)
+        expect(
+            (
+                await post(
+                    '/daemon/process/delete',
+                    { name: 'no-such-process' },
+                    true,
+                )
+            ).status,
+        ).toBe(404)
+        const processDeleteOk = await post(
+            '/daemon/process/delete',
+            { name: 'existing-process' },
+            true,
+        )
+        expect(processDeleteOk.status).toBe(200)
+        expect(await processDeleteOk.json()).toEqual({ ok: true })
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('GET /daemon/install returns a never-throwing install status', async () => {
     // installStatus() degrades to a safe default whenever it can't talk to the
     // claude-bot installer entrypoint, so the route always answers with a valid
