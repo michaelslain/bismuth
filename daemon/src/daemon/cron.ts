@@ -41,7 +41,15 @@ export interface CronExpression {
 }
 
 interface CronJobBase {
+    /** The display name — frontmatter `name:`, falling back to `file` when absent. Never use
+     *  this for keying/paths; see `file`. */
     name: string
+    /** The `.md` basename this job was loaded from (no extension) — the stable identity used
+     *  for `jobKey`, `runningJobs`, the abort-controller map and the self-modification guard's
+     *  own-file path. Passed to `parseCronFrontmatter` by every caller as the file's own
+     *  basename; `.running.json`/`.last-fired.json` and the activity log intentionally stay
+     *  keyed by `name` (the display value) instead — core's snapshot reads those by name. */
+    file: string
     prompt: string
     enabled: boolean
     notify: boolean
@@ -95,10 +103,15 @@ export type CronJob = ScheduleCronJob | FileChangeCronJob
 // ── Per-vault state keys ──────────────────────────────────────────────────────
 //
 // ONE machine runtime multiplexes every enabled vault. In-memory runtime state
-// (running set, abort controllers) is keyed by `${ctx.root}::${jobName}` so two
-// vaults can each own a cron of the same name without colliding. On-disk write
-// queues stay keyed by absolute file path — each vault's last-fired/running file
-// lives under its own .daemon, so the path is already vault-unique.
+// (running set, abort controllers) is keyed by `${ctx.root}::${jobFile}`, where
+// `jobFile` MUST be the job's `file` (its `.md` basename) — never its `name` (the
+// free-text display name, which can differ from the file since a job can carry
+// `name: "Web Search"` in `web-search.md`). Every external caller (HTTP routes,
+// the CLI, MCP) already addresses a job by its file basename, so keying by
+// anything else makes lookups miss. On-disk write queues stay keyed by absolute
+// file path — each vault's last-fired/running file lives under its own .daemon,
+// so the path is already vault-unique; those two files (and the activity log's
+// display) intentionally stay keyed by `name` — core's snapshot reads them by name.
 const jobKey = (ctx: VaultContext, name: string): string =>
     `${ctx.root}::${name}`
 
@@ -116,6 +129,7 @@ function parseCronFrontmatter(
 ): CronJob | null {
     const base = {
         name: frontmatter.name ?? name,
+        file: name,
         prompt: body,
         enabled: frontmatter.enabled !== 'false',
         notify: frontmatter.notify === 'true',
@@ -1050,7 +1064,7 @@ async function fireJob(
         checkpoint = { dir: plan.dir, ref: plan.ref }
     }
 
-    const key = jobKey(ctx, job.name)
+    const key = jobKey(ctx, job.file)
     const ac = new AbortController()
     runningJobs.add(key)
     jobAbortControllers.set(key, ac)
@@ -1062,7 +1076,7 @@ async function fireJob(
     // crons directory. The old approach (snapshotDir of all .md) reverted
     // legitimate external edits to sibling crons that happened while this
     // job was running. Self-modification is the real threat.
-    const ownCronFile = join(ctx.cronsDir, `${job.name}.md`)
+    const ownCronFile = join(ctx.cronsDir, `${job.file}.md`)
     let ownCronContent: string | null = null
     try {
         ownCronContent = await readFile(ownCronFile, 'utf-8')
@@ -1246,7 +1260,7 @@ export async function fireFileChangeCron(
     changedPaths: string[],
 ): Promise<void> {
     if (!job.enabled) return
-    const key = jobKey(ctx, job.name)
+    const key = jobKey(ctx, job.file)
     if (runningJobs.has(key)) {
         console.log(
             `[cron] File-change trigger for "${job.name}" ignored — already running`,
@@ -1291,7 +1305,7 @@ export async function recoverInterruptedCrons(
 
     for (const name of names) {
         const job = jobMap.get(name)
-        if (job && job.enabled && !runningJobs.has(jobKey(ctx, name))) {
+        if (job && job.enabled && !runningJobs.has(jobKey(ctx, job.file))) {
             console.log(`[cron] Re-firing interrupted cron: ${name}`)
             // Await fireJob to ensure .running.json + in-memory state are set before continuing
             await fireJob(ctx, job, lastFired)
@@ -1319,7 +1333,7 @@ export function startCronScheduler(): void {
                 if (
                     job.enabled &&
                     shouldCatchUp(job, lastFired) &&
-                    !runningJobs.has(jobKey(ctx, job.name))
+                    !runningJobs.has(jobKey(ctx, job.file))
                 ) {
                     console.log(`[cron] Catch-up firing: ${job.name}`)
                     await fireJob(ctx, job, lastFired) // await ensures .running.json is written before next iteration
@@ -1348,7 +1362,7 @@ export function startCronScheduler(): void {
                 loadLastFired(ctx),
             ])
             for (const job of jobs) {
-                if (!job.enabled || runningJobs.has(jobKey(ctx, job.name)))
+                if (!job.enabled || runningJobs.has(jobKey(ctx, job.file)))
                     continue
                 // Fire on schedule OR when overdue (catchup). The whole decision — including where the
                 // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
@@ -1576,15 +1590,15 @@ function buildCronFile(opts: {
     lines.push(`name: ${frontmatterValue(opts.name)}`)
     if (opts.on === 'file-change') {
         lines.push(`on: file-change`)
-        if (opts.watch) lines.push(`watch: ${opts.watch}`)
+        if (opts.watch) lines.push(`watch: ${frontmatterValue(opts.watch)}`)
     } else if (opts.schedule) {
-        lines.push(`schedule: ${opts.schedule}`)
+        lines.push(`schedule: ${frontmatterValue(opts.schedule)}`)
     }
-    if (opts.model) lines.push(`model: ${opts.model}`)
-    if (opts.effort) lines.push(`effort: ${opts.effort}`)
+    if (opts.model) lines.push(`model: ${frontmatterValue(opts.model)}`)
+    if (opts.effort) lines.push(`effort: ${frontmatterValue(opts.effort)}`)
     if (opts.timeout !== undefined && opts.timeout !== DEFAULT_CRON_TIMEOUT)
         lines.push(`timeout: ${opts.timeout}`)
-    if (opts.waitFor) lines.push(`waitFor: ${opts.waitFor}`)
+    if (opts.waitFor) lines.push(`waitFor: ${frontmatterValue(opts.waitFor)}`)
     // Default is now true — only emit when explicitly disabled
     if (opts.catchup === false) lines.push(`catchup: false`)
     if (opts.notify) lines.push(`notify: true`)

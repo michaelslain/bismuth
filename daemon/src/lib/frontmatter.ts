@@ -53,8 +53,11 @@ const UNSAFE_LEADING = /^["'[{&*!|>%@`]/
  * `v` bare when it is safe as a plain YAML scalar AND survives `parseFrontmatter` unchanged:
  * no `:`/`#` anywhere (either would be ambiguous with this format's syntax), no unsafe leading
  * character, no leading/trailing whitespace (this parser's own `.trim()` would silently eat it
- * on the next read), and non-empty. Otherwise `JSON.stringify(v)`, which both quotes and
- * escapes it, and which `unquote` above reverses exactly via `JSON.parse`.
+ * on the next read), not a bare YAML indicator character (`- `/`? `/`: ` or a lone leading
+ * `,`/`]`/`}`, each of which makes a block a YAML alias/flow scalar to a real reader), not a
+ * bare YAML scalar that would decode as boolean/null/numeric (`true`/`false`/`null`/`~`, an
+ * int/float/hex/octal, `.inf`/`.nan`), and non-empty. Otherwise `JSON.stringify(v)`, which both
+ * quotes and escapes it, and which `unquote` above reverses exactly via `JSON.parse`.
  */
 export function frontmatterValue(v: string): string {
     if (
@@ -62,7 +65,9 @@ export function frontmatterValue(v: string): string {
         v !== v.trim() ||
         v.includes(':') ||
         v.includes('#') ||
-        UNSAFE_LEADING.test(v)
+        UNSAFE_LEADING.test(v) ||
+        /^[-?:,\]}](\s|$)|^[,\]}]/.test(v) ||
+        /^(true|false|null|~|[-+]?(\d[\d_]*)?\.?\d+([eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(inf|nan))$/i.test(v)
     ) {
         return JSON.stringify(v)
     }
