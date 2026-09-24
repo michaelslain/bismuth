@@ -1,0 +1,13 @@
+/* app/src/daemon/DaemonMoreLine.module.css — DaemonMoreLine.tsx is the ONLY importer.
+   One row of the section's own pitch (`--row-h` + `--sp-1` top and bottom, the same as DaemonRow
+   and InboxRow), inset to the rows' left edge.
+   Not `display: flex` — that would split the "label // " / "show"|"hide" runs into separate flex
+   items, and a flex item trims trailing whitespace at its own box edge, eating the space before
+   "show". A block keeps both spans in one inline formatting context. */
+.line {
+    display: block;
+    width: 100%;
+    padding: var(--sp-1) var(--sp-4);
+    line-height: var(--row-h);
+    text-align: start;
+}

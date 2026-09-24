@@ -1,30 +1,43 @@
 // app/src/daemon/DaemonLog.tsx
 // The daemon page's activity log panel: one mono row per event (`time  who  what  duration`),
 // newest first as `events` already arrives (api.daemonLogs()). Formatting is entirely
-// activityLine.ts's job — this component only renders what that returns.
-import { For } from 'solid-js'
+// activityLine.ts's job — this component only renders what that returns. `limit` row-caps the
+// list (newest-first order is unchanged) behind a `+N more // show` line; the log no longer
+// scrolls on its own — the whole right column has one scroll.
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import activityLine from './activityLine'
 import DaemonSection from './DaemonSection'
+import DaemonMoreLine from './DaemonMoreLine'
 import Text from '../ui/Text'
+import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonLog.module.css'
 
 export type DaemonLogProps = {
     events: ActivityEvent[]
+    limit?: RowLimit
     class?: string
 }
 
 function DaemonLog(props: DaemonLogProps) {
     const now = () => new Date()
+    const [expanded, setExpanded] = createSignal(false)
+    const limited = createMemo(
+        () => props.limit !== undefined && props.events.length > props.limit,
+    )
+    const shown = createMemo(() =>
+        props.limit === undefined || expanded()
+            ? props.events
+            : props.events.slice(0, props.limit),
+    )
     return (
         <DaemonSection
             title="log"
             empty="nothing logged yet"
             isEmpty={props.events.length === 0}
-            fill
             class={props.class}
         >
-            <For each={props.events}>
+            <For each={shown()}>
                 {e => {
                     const line = activityLine(e, now())
                     return (
@@ -79,6 +92,17 @@ function DaemonLog(props: DaemonLogProps) {
                     )
                 }}
             </For>
+            <Show when={limited()}>
+                <DaemonMoreLine
+                    label={
+                        expanded()
+                            ? `all ${props.events.length}`
+                            : `+${props.events.length - (props.limit as number)} more`
+                    }
+                    open={expanded()}
+                    onToggle={() => setExpanded(v => !v)}
+                />
+            </Show>
         </DaemonSection>
     )
 }

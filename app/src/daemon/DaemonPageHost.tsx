@@ -30,11 +30,18 @@ import { chatSession } from '../chat/chatSessions'
 import { armDaemonChat } from './daemonChatArm'
 import { pushToast } from '../toastStore'
 import DaemonChat from './DaemonChat'
-import DaemonOverview from './DaemonOverview'
+import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
 import DaemonInbox from './DaemonInbox'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
 import DaemonLog from './DaemonLog'
+import {
+    dueSorted,
+    failedSorted,
+    scheduledSorted,
+    resolvedSorted,
+} from '../daemonInboxLogic'
+import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
 import { deriveMood } from './daemonFaceModel'
 import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
 import DaemonPage from './DaemonPage'
@@ -192,6 +199,36 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     }
     const onEditIdentity = () => props.onOpen('.daemon/identity.md')
 
+    // What DaemonOverview needs to size each section's dynamic row limit — attention floors it
+    // never cuts into, plus the inbox's own trailing "N resolved // show" line, which costs a row
+    // of height too when it's rendered.
+    const rows = (): DaemonOverviewProps['rows'] => {
+        const pages = inboxPages()
+        const now = Date.now()
+        const due = dueSorted(pages, now).length
+        const failed = failedSorted(pages).length
+        const scheduled = scheduledSorted(pages, now).length
+        const resolved = resolvedSorted(pages).length
+        const snap = snapshot()
+        return {
+            inbox: {
+                total: due + failed + scheduled,
+                attention: due + failed,
+                extraLines: resolved > 0 ? 1 : 0,
+            },
+            crons: {
+                total: snap.crons.length,
+                attention: snap.crons.filter(c => cronNeedsAttention(c, snap.daemon.running)).length,
+            },
+            services: {
+                total: snap.processes.length,
+                attention: snap.processes.filter(p => processNeedsAttention(p, snap.daemon.running))
+                    .length,
+            },
+            log: { total: events().length, attention: 0 },
+        }
+    }
+
     return (
         <div class="full">
             <DaemonPage
@@ -203,17 +240,20 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 readouts={barReadouts(status())}
                 overview={
                     <DaemonOverview
-                        inbox={
+                        rows={rows()}
+                        inbox={limit => (
                             <DaemonInbox
                                 pages={inboxPages()}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onChanged={onChanged}
                             />
-                        }
-                        crons={
+                        )}
+                        crons={limit => (
                             <DaemonCrons
                                 crons={snapshot().crons}
                                 daemonRunning={snapshot().daemon.running}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onRun={name => void onRunCron(name)}
                                 onToggle={(name, on) =>
@@ -221,19 +261,20 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 }
                                 onDelete={onDeleteCron}
                             />
-                        }
-                        services={
+                        )}
+                        services={limit => (
                             <DaemonProcesses
                                 processes={snapshot().processes}
                                 daemonRunning={snapshot().daemon.running}
+                                limit={limit()}
                                 onOpen={props.onOpen}
                                 onToggle={(name, on) =>
                                     void onToggleProcess(name, on)
                                 }
                                 onDelete={onDeleteProcess}
                             />
-                        }
-                        log={<DaemonLog events={events()} />}
+                        )}
+                        log={limit => <DaemonLog events={events()} limit={limit()} />}
                     />
                 }
                 conversing={conversing()}

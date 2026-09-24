@@ -110,6 +110,48 @@ export const EmptyWithResolved: Story = {
     },
 }
 
+/** A row-limited list — 6 open pages + 2 resolved, `limit={3}` shows 3 open rows plus
+ *  `+3 more // show`, then the separate `2 resolved // show` toggle below it. */
+export const Limited: Story = {
+    render: () => {
+        const openPages: DaemonPage[] = Array.from({ length: 6 }, (_, i) => ({
+            path: `.daemon/pages/page-${i}.md`,
+            slug: `page-${i}`,
+            title: `Open page ${i}`,
+            createdAt: new Date(NOW - (i + 1) * HOUR).toISOString(),
+            source: 'cron:example',
+            actions: [],
+            body: 'placeholder',
+            status: 'pending' as const,
+        }))
+        const pages = [...openPages, ...RESOLVED_ONLY]
+        return (
+            <div style={{ width: '360px', height: '480px' }}>
+                <DaemonInbox
+                    pages={pages}
+                    onOpen={() => {}}
+                    onChanged={() => {}}
+                    limit={3}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
+        ).toBe(3)
+        const more = canvas.getByRole('button', { name: /\+3 more/ })
+        await expect(more).toBeInTheDocument()
+        const resolvedToggle = canvas.getByRole('button', { name: /2 resolved/ })
+        await expect(resolvedToggle).toBeInTheDocument()
+        await userEvent.click(more)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
+        ).toBe(6)
+    },
+}
+
 /** A failed page alongside open + resolved ones — the failed page reads as one plain row, no
  *  retry button, and "N resolved // show" is the only way to reveal the resolved rows. */
 export const FailedAndResolved: Story = {

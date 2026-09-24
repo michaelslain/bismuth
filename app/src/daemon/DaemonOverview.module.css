@@ -1,14 +1,16 @@
 /* app/src/daemon/DaemonOverview.module.css — DaemonOverview.tsx is the ONLY importer.
-   Stacks the four right-column sections (inbox, crons, services, log) with the log slot taking
-   whatever height is left under the other three. Narrow (DaemonPage's `.page` container) drops
-   the fixed height + internal scroll for a stage that scrolls as a whole, capping the log slot at
-   a fixed row count instead of letting it flex. */
+   Stacks the four right-column sections (inbox, crons, services, log) with ONE scroll for the
+   whole column — no section scrolls on its own. `--overview-fit` is a runtime read: 1 (the
+   default, wide) means DaemonOverview.tsx measures its own height and dynamically limits each
+   section's rows; 0 (narrow, set below) means the stage scrolls as a whole instead and the
+   component falls back to static per-section caps. */
 .overview {
     height: 100%;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
     gap: var(--sp-6);
+    --overview-fit: 1;
 }
 .slot {
     display: flex;
@@ -16,24 +18,10 @@
     min-height: 0;
     flex: none;
 }
-.logSlot {
-    flex: 1 1 0;
-    /* 8 rows of real row height (`--row-h` + its own vertical padding, `--sp-1` top and bottom)
-       plus the section heading's own row + its gap to the first row. */
-    min-height: calc(
-        (var(--row-h) + 2 * var(--sp-1)) * 8 + var(--row-h) + var(--sp-2)
-    );
-}
 @container (max-width: 759.98px) {
     .overview {
         height: auto;
         overflow: visible;
-    }
-    .logSlot {
-        flex: none;
-        /* Same accounting as above, 10 rows narrow. */
-        height: calc(
-            (var(--row-h) + 2 * var(--sp-1)) * 10 + var(--row-h) + var(--sp-2)
-        );
+        --overview-fit: 0;
     }
 }

@@ -1,11 +1,12 @@
 // app/src/daemon/DaemonSection.stories.tsx
 // Visual spec for <DaemonSection> — the shared frame every right-column section (inbox, crons,
-// services, log) composes: heading + count, the empty one-liner, and a scrolling `fill` body with
-// the panel's familiar bottom fade. Rows are plain `Text` stand-ins here — the real row
+// services, log) composes: heading + count, the empty one-liner, and the section's own rows.
+// Every section sizes to its content now — DaemonOverview owns the column's one scroll and row-
+// limits what each section renders. Rows are plain `Text` stand-ins here — the real row
 // components (InboxRow, DaemonRow, log rows) are proven in their own story files.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
-import { For, type JSX } from 'solid-js'
+import { type JSX } from 'solid-js'
 import DaemonSection from './DaemonSection'
 import Text from '../ui/Text'
 
@@ -101,23 +102,5 @@ export const EmptyWithTrailingChild: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('nothing needs you')).toBeInTheDocument()
         await expect(canvas.getByText('2 resolved // show')).toBeInTheDocument()
-    },
-}
-
-export const FillOverflowing: Story = {
-    render: () => (
-        <Frame height="300px">
-            <DaemonSection title="log" empty="nothing logged yet" isEmpty={false} fill>
-                <For each={Array.from({ length: 60 }, (_, i) => i)}>
-                    {i => <Row>10:{String(i).padStart(2, '0')} daemon did a thing 1s</Row>}
-                </For>
-            </DaemonSection>
-        </Frame>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await expect(canvas.getByText('log')).toBeInTheDocument()
-        const body = canvasElement.querySelector('[data-testid="daemon-section-log"] > div:last-child')!
-        await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
     },
 }

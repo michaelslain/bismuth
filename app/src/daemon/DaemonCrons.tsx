@@ -10,7 +10,7 @@
 // daemon PROCESS itself is up (`daemonRunning`) — a cron can't really be live if the machine
 // daemon is down; if its stale `running` flag survived a daemon restart, `cronTone` falls back to
 // whatever it last actually did (failed/ok/idle) instead of a bare `idle`.
-import { createSignal, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonCron } from '../../../core/src/daemonGraph'
 import { openContextMenu } from '../nativeMenu'
@@ -19,8 +19,11 @@ import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
 import DaemonSection from './DaemonSection'
 import DaemonRow from './DaemonRow'
+import DaemonMoreLine from './DaemonMoreLine'
 import { cronTone } from './cronStatus'
 import cronFrequency from './cronFrequency'
+import { cronNeedsAttention, attentionFirst } from './daemonAttention'
+import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonCrons.module.css'
 
 export type DaemonCronsProps = {
@@ -30,6 +33,7 @@ export type DaemonCronsProps = {
     onRun: (name: string) => void
     onToggle: (name: string, enabled: boolean) => void
     onDelete: (name: string) => Promise<void>
+    limit?: RowLimit
     class?: string
 }
 
@@ -58,6 +62,18 @@ function DaemonCrons(props: DaemonCronsProps) {
     } | null>(null)
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
+    const [expanded, setExpanded] = createSignal(false)
+    const sorted = createMemo(() =>
+        attentionFirst(props.crons, c => cronNeedsAttention(c, props.daemonRunning)),
+    )
+    const limited = createMemo(
+        () => props.limit !== undefined && sorted().length > props.limit,
+    )
+    const shown = createMemo(() =>
+        props.limit === undefined || expanded()
+            ? sorted()
+            : sorted().slice(0, props.limit),
+    )
 
     async function commitDelete(name: string): Promise<void> {
         setBusyName(name)
@@ -157,7 +173,7 @@ function DaemonCrons(props: DaemonCronsProps) {
         >
             <Show when={props.crons.length > 0}>
                 <div class={styles.cronsList}>
-                    <For each={props.crons}>
+                    <For each={shown()}>
                         {cron => (
                             <DaemonRow
                                 name={cron.name}
@@ -177,6 +193,17 @@ function DaemonCrons(props: DaemonCronsProps) {
                         )}
                     </For>
                 </div>
+                <Show when={limited()}>
+                    <DaemonMoreLine
+                        label={
+                            expanded()
+                                ? `all ${sorted().length}`
+                                : `+${sorted().length - (props.limit as number)} more`
+                        }
+                        open={expanded()}
+                        onToggle={() => setExpanded(v => !v)}
+                    />
+                </Show>
             </Show>
             <Show when={menu()}>
                 {m => (

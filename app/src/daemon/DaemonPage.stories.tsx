@@ -27,11 +27,21 @@ import Text from '../ui/Text'
 import ChatComposerBar from '../chat/ChatComposerBar'
 import ChatControls from '../chat/ChatControls'
 import { makeStubChatSession } from '../chat/_stubChatSession'
-import DaemonOverview from './DaemonOverview'
+import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
 import DaemonInbox from './DaemonInbox'
 import DaemonLog from './DaemonLog'
+import {
+    dueSorted,
+    failedSorted,
+    scheduledSorted,
+    resolvedSorted,
+} from '../daemonInboxLogic'
+import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
+import type { DaemonPage as DaemonPageFixture } from '../../../core/src/daemonPages'
+import type { DaemonCron, DaemonProcess } from '../../../core/src/daemonGraph'
+import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import {
     sampleDaemonSnapshot,
     sampleDaemonPages,
@@ -69,38 +79,67 @@ function Frame(props: {
 
 const SNAPSHOT = sampleDaemonSnapshot()
 
+/** The `rows` DaemonOverview needs to size its dynamic limits — mirrors exactly what
+ *  DaemonPageHost derives from a real snapshot (see its own header comment). */
+function overviewRows(
+    pages: DaemonPageFixture[],
+    crons: DaemonCron[],
+    processes: DaemonProcess[],
+    events: ActivityEvent[],
+    daemonRunning: boolean,
+): DaemonOverviewProps['rows'] {
+    const now = Date.now()
+    const due = dueSorted(pages, now).length
+    const failed = failedSorted(pages).length
+    const scheduled = scheduledSorted(pages, now).length
+    const resolved = resolvedSorted(pages).length
+    return {
+        inbox: { total: due + failed + scheduled, attention: due + failed, extraLines: resolved > 0 ? 1 : 0 },
+        crons: {
+            total: crons.length,
+            attention: crons.filter(c => cronNeedsAttention(c, daemonRunning)).length,
+        },
+        services: {
+            total: processes.length,
+            attention: processes.filter(p => processNeedsAttention(p, daemonRunning)).length,
+        },
+        log: { total: events.length, attention: 0 },
+    }
+}
+
 /** The right column, built from the REAL list components over the shared fixtures — a full
  *  inbox/crons/services/log, all four sections carrying rows. */
 function fullOverview(): JSX.Element {
+    const pages = sampleDaemonPages()
+    const events = sampleActivity()
     return (
         <DaemonOverview
-            inbox={
-                <DaemonInbox
-                    pages={sampleDaemonPages()}
-                    onOpen={noop}
-                    onChanged={noop}
-                />
-            }
-            crons={
+            rows={overviewRows(pages, SNAPSHOT.crons, SNAPSHOT.processes, events, true)}
+            inbox={limit => (
+                <DaemonInbox pages={pages} limit={limit()} onOpen={noop} onChanged={noop} />
+            )}
+            crons={limit => (
                 <DaemonCrons
                     crons={SNAPSHOT.crons}
                     daemonRunning
+                    limit={limit()}
                     onOpen={noop}
                     onRun={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
-            }
-            services={
+            )}
+            services={limit => (
                 <DaemonProcesses
                     processes={SNAPSHOT.processes}
                     daemonRunning
+                    limit={limit()}
                     onOpen={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
-            }
-            log={<DaemonLog events={sampleActivity()} />}
+            )}
+            log={limit => <DaemonLog events={events} limit={limit()} />}
         />
     )
 }
@@ -110,29 +149,110 @@ function fullOverview(): JSX.Element {
 function emptyOverview(): JSX.Element {
     return (
         <DaemonOverview
-            inbox={<DaemonInbox pages={[]} onOpen={noop} onChanged={noop} />}
-            crons={
+            rows={overviewRows([], [], [], [], true)}
+            inbox={limit => <DaemonInbox pages={[]} limit={limit()} onOpen={noop} onChanged={noop} />}
+            crons={limit => (
                 <DaemonCrons
                     crons={[]}
                     daemonRunning
+                    limit={limit()}
                     onOpen={noop}
                     onRun={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
-            }
-            services={
+            )}
+            services={limit => (
                 <DaemonProcesses
                     processes={[]}
                     daemonRunning
+                    limit={limit()}
                     onOpen={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
-            }
-            log={<DaemonLog events={[]} />}
+            )}
+            log={limit => <DaemonLog events={[]} limit={limit()} />}
         />
     )
+}
+
+/** A large fixture — 12 crons (one failed, placed late in the list), 10 services, 8 inbox pages,
+ *  60 log events — for `AwakeCrowded`: proves the dynamic row budget actually keeps every section
+ *  visible at rest in the standard wide frame, with the failed cron never hidden behind a limit
+ *  despite its position in the source list (attention-first sorting is DaemonCrons' own job; this
+ *  just proves a limit doesn't hide it). */
+function crowdedOverview(): {
+    overview: JSX.Element
+    crons: DaemonCron[]
+} {
+    const pages: DaemonPageFixture[] = Array.from({ length: 8 }, (_, i) => ({
+        path: `.daemon/pages/page-${i}.md`,
+        slug: `page-${i}`,
+        title: `page ${i}`,
+        createdAt: new Date(Date.now() - i * 60_000).toISOString(),
+        source: 'cron:crowded',
+        actions: [],
+        body: '',
+        status: 'pending',
+    }))
+    const crons: DaemonCron[] = Array.from({ length: 12 }, (_, i) => ({
+        name: `cron-${i}`,
+        file: `cron-${i}`,
+        schedule: '0 * * * *',
+        on: 'schedule',
+        watch: null,
+        enabled: true,
+        lastFired:
+            i === 10
+                ? { timestamp: new Date().toISOString(), result: 'failed', detail: 'boom' }
+                : { timestamp: new Date().toISOString(), result: 'success' },
+        running: false,
+        startedAt: null,
+    }))
+    const processes: DaemonProcess[] = Array.from({ length: 10 }, (_, i) => ({
+        name: `service-${i}`,
+        file: `service-${i}`,
+        enabled: true,
+        running: false,
+    }))
+    const events: ActivityEvent[] = Array.from({ length: 60 }, (_, i) => ({
+        ts: new Date(Date.now() - i * 60_000).toISOString(),
+        kind: 'cron',
+        name: `cron-${i % 12}`,
+        event: 'finished',
+        outcome: 'success',
+        durationMs: 1000,
+    }))
+    const overview = (
+        <DaemonOverview
+            rows={overviewRows(pages, crons, processes, events, true)}
+            inbox={limit => <DaemonInbox pages={pages} limit={limit()} onOpen={noop} onChanged={noop} />}
+            crons={limit => (
+                <DaemonCrons
+                    crons={crons}
+                    daemonRunning
+                    limit={limit()}
+                    onOpen={noop}
+                    onRun={noop}
+                    onToggle={noop}
+                    onDelete={async () => {}}
+                />
+            )}
+            services={limit => (
+                <DaemonProcesses
+                    processes={processes}
+                    daemonRunning
+                    limit={limit()}
+                    onOpen={noop}
+                    onToggle={noop}
+                    onDelete={async () => {}}
+                />
+            )}
+            log={limit => <DaemonLog events={events} limit={limit()} />}
+        />
+    )
+    return { overview, crons }
 }
 
 /** The hub's `chat` slot for every story: the REAL `ChatComposerBar` with the REAL `ChatControls`
@@ -389,6 +509,72 @@ export const AwakeEmpty: Story = {
             'services',
             'log',
         ])
+    },
+}
+
+/** A large fixture — 12 crons (one failed, late in the list), 10 services, 8 inbox pages, 60 log
+ *  events — in the standard wide frame: the dynamic row budget keeps every section's heading
+ *  visible with no scroll at rest, and the failed cron is never hidden behind a limit despite its
+ *  position in the source list. Expanding a more-line then makes the column scroll. */
+export const AwakeCrowded: Story = {
+    render: () => {
+        const { overview } = crowdedOverview()
+        return (
+            <Frame>
+                <DaemonPage {...pageProps('busy', 'needs you // 8 due', { overview })} />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { chat: true })
+        const overviewEl = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page-overview"] [data-testid="daemon-overview"]',
+        )!
+        await expect(overviewEl.scrollHeight).toBeLessThanOrEqual(overviewEl.clientHeight + 1)
+        const sections = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid^="daemon-section-"]'),
+        ]
+        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
+            'inbox',
+            'crons',
+            'services',
+            'log',
+        ])
+        for (const section of sections) {
+            await expect(section.offsetHeight).toBeGreaterThan(0)
+        }
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="daemon-more-line"]').length,
+        ).toBeGreaterThan(0)
+        const cronsSection = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-section-crons"]',
+        )!
+        const cronRows = [...cronsSection.querySelectorAll<HTMLElement>('[data-testid="daemon-row"]')]
+        await expect(cronRows.some(r => r.textContent?.includes('cron-10'))).toBe(true)
+    },
+}
+
+/** The crowded page after expanding crons in place: the section shows all 12 and the ONE column
+ *  scroll takes over — no section ever scrolls on its own. Kept separate from `AwakeCrowded` so
+ *  that story's screenshot is the resting state. */
+export const AwakeCrowdedExpanded: Story = {
+    render: AwakeCrowded.render,
+    play: async ({ canvasElement }) => {
+        const overviewEl = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page-overview"] [data-testid="daemon-overview"]',
+        )!
+        const cronsSection = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-section-crons"]',
+        )!
+        const cronsMoreLine = cronsSection.querySelector<HTMLElement>('[data-testid="daemon-more-line"]')
+        await expect(cronsMoreLine).not.toBeNull()
+        await fireEvent.click(cronsMoreLine!)
+        await waitFor(() =>
+            expect(cronsSection.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12),
+        )
+        await waitFor(() =>
+            expect(overviewEl.scrollHeight).toBeGreaterThan(overviewEl.clientHeight),
+        )
     },
 }
 

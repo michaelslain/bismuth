@@ -263,6 +263,63 @@ export const ConfirmDelete: Story = {
     },
 }
 
+/** A row-limited list — 8 crons with the 6th failed. `limit={3}` shows the failed one first
+ *  (attentionFirst) plus 2 more, then `+5 more // show`; clicking it reveals all 8 with
+ *  `all 8 // hide`. The count badge always reads the full total, never the limited count. */
+export const Limited: Story = {
+    render: () => {
+        const crons = Array.from({ length: 8 }, (_, i) => ({
+            name: `cron-${i}`,
+            file: `cron-${i}`,
+            schedule: '0 7 * * *',
+            on: 'schedule' as const,
+            watch: null,
+            enabled: true,
+            lastFired:
+                i === 5
+                    ? {
+                          timestamp: new Date(
+                              Date.now() - 2 * 60 * 60 * 1000,
+                          ).toISOString(),
+                          result: 'failed' as const,
+                      }
+                    : {
+                          timestamp: new Date(
+                              Date.now() - 10 * 60 * 1000,
+                          ).toISOString(),
+                          result: 'success' as const,
+                      },
+            running: false,
+            startedAt: null,
+        }))
+        return (
+            <div style={{ width: '360px', height: '260px' }}>
+                <DaemonCrons {...baseProps} crons={crons} limit={3} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const rowNames = () =>
+            [
+                ...canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="daemon-row"]',
+                ),
+            ].map(r => r.textContent ?? '')
+        await expect(rowNames().length).toBe(3)
+        await expect(rowNames()[0]).toContain('cron-5')
+        const badge = within(
+            canvasElement.querySelector('[data-testid="daemon-section-crons"]') as HTMLElement,
+        ).getByText('8')
+        await expect(badge).toBeInTheDocument()
+        const more = canvas.getByRole('button', { name: /\+5 more/ })
+        await expect(more).toBeInTheDocument()
+        await userEvent.click(more)
+        await expect(rowNames().length).toBe(8)
+        await expect(canvas.getByRole('button', { name: /all 8/ })).toBeInTheDocument()
+    },
+}
+
 /** No crons configured. */
 export const Empty: Story = {
     render: () => (
