@@ -230,7 +230,7 @@ export function createKanbanDrag(opts: KanbanDragOptions) {
     }
     function moveGhost(x: number, y: number): void {
         if (ghostEl)
-            ghostEl.style.transform = `translate(${x - armGrab.dx}px, ${y - armGrab.dy}px) rotate(2deg)`
+            ghostEl.style.transform = `translate(${x - armGrab.dx}px, ${y - armGrab.dy}px)`
     }
     function onPointerMove(e: PointerEvent): void {
         const committed = dragId() !== null || colDrag() !== null

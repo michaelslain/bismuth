@@ -30,3 +30,11 @@ export function appendOrder(sortKeys: number[]): number {
     }
     return Math.max(max, sortKeys.length) + 1
 }
+
+/** A column header's card count, zero-padded to two digits so single-digit counts (`2`) don't
+ *  read as a narrower column than double-digit ones (`14`) — the count sits flush right of the
+ *  column name and a width jump there reads as a layout shift on every add/remove. Three-plus
+ *  digit counts are left as-is (`128`), never truncated or further padded. */
+export function padCount(n: number): string {
+    return n < 10 ? `0${n}` : `${n}`
+}

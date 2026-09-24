@@ -227,3 +227,40 @@ export const ColorPickerOpenThirdColumn: Story = {
         expect(auto).toBeVisible()
     },
 }
+
+// 12 rows, all in "Todo" — the count crosses into two digits (Acceptance 3's `padCount`) and
+// the column itself grows taller than the board, so it scrolls its OWN `.kanbanCards` instead
+// of the header moving (see KanbanView.module.css's `.kanbanCards` comment).
+const MANY_CARDS_ROWS = Array.from({ length: 12 }, () => ({
+    note: { status: 'Todo', priority: 1, tags: [] as string[] },
+}))
+
+/** A column with 12+ cards: the header count reads `12`, not `2` or `012` — `padCount` pads a
+ *  single digit to two and leaves three-plus digits alone — and the column scrolls internally
+ *  rather than growing past the board's own height. */
+export const ManyCardsInOneColumn: Story = {
+    render: () => {
+        const views = kanbanViews()
+        return (
+            <KanbanView
+                result={sampleViewResult(MANY_CARDS_ROWS, { views })}
+                config={sampleBaseConfig({ views })}
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const col = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"]',
+        )!
+        expect(within(col).getByText('12')).toBeVisible()
+        const cardsEl = col.querySelector<HTMLElement>(
+            '[class*="kanbanCards"]',
+        )!
+        expect(cardsEl.scrollHeight).toBeGreaterThan(cardsEl.clientHeight)
+        expect(
+            canvas.getAllByTestId('kanban-card').length,
+        ).toBe(MANY_CARDS_ROWS.length)
+    },
+}
