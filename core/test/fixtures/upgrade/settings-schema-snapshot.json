@@ -78,13 +78,6 @@
     "max": 500,
     "required": false
   },
-  "appearance.sidebarIconFontSize": {
-    "type": "number",
-    "default": 12,
-    "min": 11,
-    "max": 20,
-    "required": false
-  },
   "appearance.sidebarWidth": {
     "type": "number",
     "default": 266,
@@ -112,6 +105,13 @@
     "default": "ink",
     "min": null,
     "max": null,
+    "required": false
+  },
+  "appearance.toolbarIconSize": {
+    "type": "number",
+    "default": 12,
+    "min": 11,
+    "max": 20,
     "required": false
   },
   "appearance.uiFont": {

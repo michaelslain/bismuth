@@ -205,7 +205,6 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--ui-font-size': s.appearance.uiFontSize + 'px',
         '--mono-scale': String(s.appearance.monoScale),
         '--tab-font-size': s.appearance.tabFontSize + 'px',
-        '--sidebar-icon-font-size': s.appearance.sidebarIconFontSize + 'px',
         '--palette-input-font-size': s.appearance.paletteInputFontSize + 'px',
         '--palette-top-offset': s.ui.paletteTopOffset,
         '--pane-divider-width': s.ui.paneDividerWidth + 'px',

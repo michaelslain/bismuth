@@ -151,12 +151,12 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 14,
             doc: 'Editor tab label font size (px).',
         },
-        sidebarIconFontSize: {
+        toolbarIconSize: {
             type: 'number',
             default: 12,
             min: 11,
             max: 20,
-            doc: 'Sidebar header icon button size (px). Default 12 — larger than the 11.5px --fs-ui chrome TEXT size (styles/tokens.css), because an icon needs more room than a label at the same optical weight. Only the sidebar toolbar reads this; the tab-rail toolbar sizes its icons from ICON_PX (the app-wide --icon token, 14px) and is unaffected by this key.',
+            doc: 'Toolbar icon size (px) for every icon toolbar — the sidebar row, the tab-rail actions and the mini-graph mode switcher. Default 12: an icon needs a little more room than the 11.5px --fs-ui label text beside it.',
         },
         paletteInputFontSize: {
             type: 'number',
