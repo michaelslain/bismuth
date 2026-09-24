@@ -9,7 +9,6 @@ import {
     onMount,
 } from 'solid-js'
 import { stringify as yamlStringify } from 'yaml'
-import { Icon } from '../icons/Icon'
 import type {
     ViewResult,
     BaseConfig,
@@ -85,6 +84,7 @@ import { suppressCardContextMenu } from './kanbanCardMenu'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
 import TextInput from '../ui/TextInput'
 import Swatch from '../ui/Swatch'
 import AnchoredPopover from '../ui/AnchoredPopover'
@@ -1873,19 +1873,17 @@ export function KanbanView(props: {
                                                     group().key
                                                 }
                                                 fallback={
-                                                    <PlainButton
+                                                    <IconButton
+                                                        icon="Plus"
+                                                        label="Add a card"
                                                         class={styles.kbAddBtn}
-                                                        title="Add a card"
-                                                        aria-label="Add a card"
                                                         onClick={() => {
                                                             setComposerCol(
                                                                 group().key,
                                                             )
                                                             setDraft('')
                                                         }}
-                                                    >
-                                                        <Icon value="Plus" />
-                                                    </PlainButton>
+                                                    />
                                                 }
                                             >
                                                 <TextInput

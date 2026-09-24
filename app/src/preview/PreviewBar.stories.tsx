@@ -1,9 +1,9 @@
 // app/src/preview/PreviewBar.stories.tsx
 // Visual + behavioural spec for <PreviewBar> — the preview tab's view bar for images and PDFs. Every
 // play() probes what a person sees (ui/_previewBarAssertions.ts): the gaps between adjacent
-// controls are only the bar's three spacing tokens (icon-gap inside a group, crumb-gap between
-// groups, the annotate group's own hairline), the number of accent frames, one glyph size and
-// one icon box, and nothing leaving the 36px band.
+// controls are only the bar's two spacing tokens (icon-gap inside a group, including the annotate
+// group; crumb-gap between groups), the number of accent frames, one glyph size and one icon box,
+// and nothing leaving the 36px band.
 import { createSignal, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
@@ -70,16 +70,16 @@ function Harness(props: HarnessProps): JSX.Element {
 
 const barOf = (root: HTMLElement) => root.querySelector('[data-viewbar]') as HTMLElement
 
-/** The checks every shape shares: three spacings and nothing else (`--bar-icon-gap` inside a
- *  group, `--bar-crumb-gap` between groups, `--sp-1` inside the annotate group), one glyph size,
- *  one icon box, all inside the band on one centre line, and a visible filename.
- *  `annotatePairs` is the number of adjacent-control pairs INSIDE the annotate group — 2 for
- *  highlight+draw+scratch (pdf), 0 for draw alone (image). */
+/** The checks every shape shares: two spacings and nothing else (`--bar-icon-gap` inside a group,
+ *  including the annotate group; `--bar-crumb-gap` between groups), one glyph size, one icon box,
+ *  all inside the band on one centre line, and a visible filename. `annotatePairs` is the number
+ *  of adjacent-control pairs INSIDE the annotate group — 2 for highlight+draw+scratch (pdf), 0 for
+ *  draw alone (image). */
 function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
     const p = probeBar(bar)
     expect(p.strayGaps, `gaps ${JSON.stringify(p.gaps)}`).toEqual([])
     expect(p.groupBoundaries, `group boundaries in ${JSON.stringify(p.gaps)}`).toBe(groups)
-    expect(p.annotateGaps, `annotate-group hairline gaps in ${JSON.stringify(p.gaps)}`).toBe(
+    expect(p.annotateGaps, `annotate within-group gaps in ${JSON.stringify(p.gaps)}`).toBe(
         annotatePairs,
     )
     expect(p.glyphSizes, 'glyph sizes').toEqual(['12x12'])
