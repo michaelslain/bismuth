@@ -12,8 +12,9 @@ export type { ButtonKind, ButtonState, ButtonSize }
 export type ButtonProps = {
     kind?: ButtonKind
     /** Also rendered as `data-state` on the root element (defaulting to `'normal'`) — the runtime
-     *  hook outside callers select on (`.x[data-state="selected"]`) instead of reaching
-     *  `:global(.btn--selected)` etc. See one-global-followups Task 1. */
+     *  hook outside callers select on (`.x[data-state="selected"]`) rather than reaching a class
+     *  of Button's own. `.btn--selected` etc below are Button.module.css's hashed locals now, not
+     *  global literals — an outside caller can no longer reach them by name at all. */
     state?: ButtonState
     /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`/`segment`. */
     size?: ButtonSize
@@ -65,14 +66,17 @@ function Button(props: ButtonProps) {
             }
             data-danger={local.danger ? '' : undefined}
             data-primary={local.primary ? '' : undefined}
-            class={buttonClass({
-                kind: local.kind,
-                state: local.state,
-                size: local.size,
-                danger: local.danger,
-                primary: local.primary,
-                class: local.class,
-            })}
+            class={buttonClass(
+                {
+                    kind: local.kind,
+                    state: local.state,
+                    size: local.size,
+                    danger: local.danger,
+                    primary: local.primary,
+                    class: local.class,
+                },
+                styles,
+            )}
             style={style()}
             {...rest}
         >
