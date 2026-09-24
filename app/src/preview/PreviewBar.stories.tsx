@@ -92,8 +92,10 @@ function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
 }
 
 /** A freshly opened PDF at 100%: `p. 1 / 12` · `− 100% + FIT` · highlight draw scratch · bookmarks.
- *  Zero accent frames at rest (FIT is a one-shot, never selected). Then SCRATCH on paints exactly
- *  one frame, BOOKMARKS open exactly one more. */
+ *  Zero accent frames at rest (FIT is a one-shot, never selected) AND with any toggle on — the
+ *  button family draws no border for a selected state (DESIGN.md: "states are colour and weight,
+ *  nothing drawn"). SCRATCH on raises `selectedCount` to one, BOOKMARKS open to two, with frames
+ *  staying at zero throughout. */
 export const Pdf: Story = {
     render: () => <Harness width={1000} kind="pdf" />,
     play: async ({ canvasElement }) => {
@@ -101,32 +103,38 @@ export const Pdf: Story = {
         const canvas = within(bar)
         const p = expectCalm(bar, 3, 2)
         await expect(p.frames, 'accent frames at rest').toBe(0)
+        await expect(p.selectedCount, 'selected controls at rest').toBe(0)
         const fit = canvas.getByLabelText('Fit width')
         await expect(fit.getAttribute('aria-pressed')).toBeNull()
 
         const scratch = canvas.getByLabelText('Scratch paper')
         await fireEvent.click(scratch)
         await waitFor(() => expect(scratch.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'scratch on').toBe(1)
+        await expect(probeBar(bar).frames, 'accent frames, scratch on').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'scratch on').toBe(1)
         const bookmarks = canvas.getByLabelText('Bookmarks')
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(bookmarks.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'scratch on + bookmarks open').toBe(2)
-        // Toggling on never moves anything: the frame is a border every state reserves.
+        await expect(probeBar(bar).frames, 'accent frames, scratch on + bookmarks open').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'scratch on + bookmarks open').toBe(2)
+        // Toggling on never moves anything: no frame is drawn, so nothing shifts.
         expectCalm(bar, 3, 2)
         await fireEvent.click(scratch)
         await fireEvent.click(bookmarks)
-        await waitFor(() => expect(probeBar(bar).frames).toBe(0))
+        await waitFor(() => expect(probeBar(bar).selectedCount).toBe(0))
+        await expect(probeBar(bar).frames).toBe(0)
     },
 }
 
-/** Draw, scratch and bookmarks all on: exactly three frames, same boxes, same gaps. */
+/** Draw, scratch and bookmarks all on: zero accent frames (the button family draws none for a
+ *  selected state), three selected controls, same boxes, same gaps. */
 export const PdfModesOn: Story = {
     render: () => <Harness width={1000} kind="pdf" draw scratch panel />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const p = expectCalm(bar, 3, 2)
-        await expect(p.frames).toBe(3)
+        await expect(p.frames, 'accent frames').toBe(0)
+        await expect(p.selectedCount).toBe(3)
         for (const label of ['Draw', 'Scratch paper', 'Bookmarks']) {
             await expect(within(bar).getByLabelText(label).getAttribute('aria-pressed')).toBe('true')
         }
@@ -167,10 +175,12 @@ export const Image: Story = {
         await expect(draw.getAttribute('aria-pressed')).toBe('false')
         await fireEvent.click(draw)
         await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'draw on').toBe(1)
+        await expect(probeBar(bar).frames, 'accent frames, draw on').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'draw on').toBe(1)
         await fireEvent.click(draw)
         await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('false'))
-        await expect(probeBar(bar).frames, 'draw off').toBe(0)
+        await expect(probeBar(bar).frames, 'accent frames, draw off').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'draw off').toBe(0)
     },
 }
 

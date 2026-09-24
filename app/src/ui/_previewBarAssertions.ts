@@ -28,6 +28,16 @@ export function barItems(bar: HTMLElement): HTMLElement[] {
 export const tokenPx = (el: HTMLElement, name: string) =>
     parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0
 
+/** `--accent` as the browser serialises a computed colour, so it compares against borderColor. */
+export function accentColor(el: HTMLElement): string {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    el.appendChild(probe)
+    const c = getComputedStyle(probe).color
+    probe.remove()
+    return c
+}
+
 export type BarProbe = {
     /** Horizontal distance between each pair of adjacent controls. */
     gaps: number[]
@@ -43,11 +53,16 @@ export type BarProbe = {
      *  can no longer tell it apart). 2 painted buttons -> 1 gap, 3 -> 2. Each one still has to land
      *  in `iconGap`, which `strayGaps` already enforces. */
     annotateGaps: number
-    /** Button-family controls in the bar currently `selected` (a toggle that is ON) — DESIGN.md:
-     *  "states are colour and weight, nothing drawn", so a selected control draws no border/frame
-     *  any more (the pre-button-family `VBtn.active` accent outline this once measured is gone);
-     *  `data-state="selected"` is the runtime hook Button.tsx stamps on the root instead. */
+    /** Elements in the bar painting an accent border. DESIGN.md: "states are colour and weight,
+     *  nothing drawn" — under the button family a selected control draws no border/frame, so this
+     *  is expected to be 0 everywhere, at rest and with any toggle on. A non-zero reading means a
+     *  border/box came back onto a selected control (e.g. `.btn--icon.btn--selected` in
+     *  Button.module.css), which is exactly the regression this probe exists to catch. */
     frames: number
+    /** Button-family controls in the bar currently `selected` (a toggle that is ON) —
+     *  `data-state="selected"` is the runtime hook Button.tsx stamps on the root. Use this where a
+     *  story wants to assert a mode is on; it says nothing about whether a border is drawn. */
+    selectedCount: number
     /** Distinct rendered sizes (`WxH`) of every trail glyph. Want exactly one. */
     glyphSizes: string[]
     /** Distinct box sizes of the icon-only controls. Want exactly one. */
@@ -71,7 +86,17 @@ export function probeBar(bar: HTMLElement): BarProbe {
     const crumbGap = tokenPx(bar, '--bar-crumb-gap')
     const gaps = rects.slice(1).map((r, i) => Math.round((r.left - rects[i]!.right) * 10) / 10)
     const near = (a: number, b: number) => Math.abs(a - b) <= 0.5
-    const frames = Array.from(
+    const accent = accentColor(bar)
+    const frames = Array.from(bar.querySelectorAll<HTMLElement>('*')).filter(el => {
+        if (!painted(el)) return false
+        const cs = getComputedStyle(el)
+        return (
+            parseFloat(cs.borderTopWidth) > 0 &&
+            cs.borderTopStyle !== 'none' &&
+            cs.borderTopColor === accent
+        )
+    }).length
+    const selectedCount = Array.from(
         bar.querySelectorAll<HTMLElement>('[data-state="selected"]'),
     ).filter(painted).length
     const trail = bar.querySelector('[data-testid="vb-trail"]') as HTMLElement
@@ -132,6 +157,7 @@ export function probeBar(bar: HTMLElement): BarProbe {
         groupBoundaries: gaps.filter(g => near(g, crumbGap)).length,
         annotateGaps: Math.max(0, annotateButtons.length - 1),
         frames,
+        selectedCount,
         glyphSizes,
         iconBoxes,
         outside,
