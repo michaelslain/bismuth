@@ -27,6 +27,8 @@ import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
+import { PALETTE_NAMES } from './kanbanPalette'
+import { parentOf } from '../fileTreeOps'
 import {
     groupUpdatesByPath,
     rollbackPending,
@@ -106,21 +108,13 @@ const PALETTE = [
 // Human names for the PALETTE swatches above, parallel by index — every theme's --graph-0..4
 // ramp is rose/violet/blue/teal/green in that order. Used as each Swatch's accessible name +
 // title (a color, not a token name, reads better to a keyboard/screen-reader user).
-const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
-
-// Module-level stash for the dragged row's identity (rowId — see rowIdentity.ts).
-let draggedId: string | null = null
+// (PALETTE_NAMES itself lives in ./kanbanPalette, shared with the stories.)
 
 // An optimistic move: the column key + order a just-dropped card should render at, before the
 // backend write + refetch land. Keyed by rowId (see rowIdentity.ts).
 /** `keyOnly`: clear once the card reaches `key`, whatever its stored order (a column rename
  *  moves cards without writing an order, so an order match would never come). */
 type PendingMove = { key: string; order: number; keyOnly?: boolean }
-
-function dirOf(path: string): string {
-    const i = path.lastIndexOf('/')
-    return i >= 0 ? path.slice(0, i) : ''
-}
 
 /** Make a title safe as a filename: strip path/YAML-hostile chars, collapse whitespace. */
 function safeFilename(title: string): string {
@@ -288,6 +282,14 @@ export function KanbanView(props: {
         new Set(),
     )
 
+    /** Roll `pendingColOrder` back to `prevOrder`, but only-if-still-mine: another column action
+     * (reorder/rename/delete) may have written a newer order during this call's await, and an
+     * unconditional restore would clobber that action's own in-flight state. Used by
+     * addColumn/renameColumn/deleteColumn's catch blocks. */
+    function rollbackColOrder(keys: string[], prevOrder: string[] | null): void {
+        setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+    }
+
     /** Effective within-column sort order: the pending (optimistic) order if this card has one for
      * this column, else its explicit `order`, else its stable engine position. */
     function effOrder(row: Row, group: ResultGroup): number {
@@ -305,7 +307,7 @@ export function KanbanView(props: {
     // The groups to render: the server groups with any pending optimistic moves applied (a moved
     // card is pulled from its server column and shown in its pending target column). Column set +
     // order are untouched, so the Index below stays stable.
-    const displayGroups = (): ResultGroup[] => {
+    const displayGroups = createMemo((): ResultGroup[] => {
         const pend = pending()
         const adds = pendingAdds()
         const groups = props.result.groups
@@ -349,7 +351,7 @@ export function KanbanView(props: {
         }
         for (const [key, rows] of extra) out.push({ key, rows })
         return out
-    }
+    })
 
     // Clear each optimistic move once the freshly-resolved server data matches it exactly (the card
     // is in the target column AND its `order` equals the pending order) — so the overlay hands off to
@@ -433,67 +435,92 @@ export function KanbanView(props: {
     // animate each card from its old position back to its new one. Without this the
     // placeholder pops open and the surrounding cards snap instantly — Trello slides.
     let rootEl: HTMLDivElement | undefined
-    const prevRects = new Map<string, DOMRect>()
-    function snapshotRects() {
+
+    /** Snapshot every element matching `selector`'s rect, keyed by `keyOf(el)` — the First half
+     * of FLIP. Shared by the card-level and column-level FLIPs below. */
+    function snapshotFlip(
+        map: Map<string, DOMRect>,
+        selector: string,
+        keyOf: (el: HTMLElement) => string | null | undefined,
+    ): void {
         if (!rootEl) return
-        prevRects.clear()
-        for (const el of rootEl.querySelectorAll<HTMLElement>(
-            '[data-kbcard][data-path]',
-        )) {
-            const p = el.dataset.path
-            if (p) prevRects.set(p, el.getBoundingClientRect())
+        map.clear()
+        for (const el of rootEl.querySelectorAll<HTMLElement>(selector)) {
+            const k = keyOf(el)
+            if (k != null) map.set(k, el.getBoundingClientRect())
         }
     }
-    function playFlip() {
-        if (!rootEl || prevRects.size === 0) return
-        for (const el of rootEl.querySelectorAll<HTMLElement>(
-            '[data-kbcard][data-path]',
-        )) {
-            const p = el.dataset.path
-            const prev = p ? prevRects.get(p) : undefined
+
+    /** Play the Invert+Play half of FLIP: for every element matching `selector` whose rect moved
+     * since the matching `snapshotFlip`, force it back to its old position with no transition,
+     * then release it into a `${ms}ms` transition back to rest. `transformFor(dx, dy)` returns the
+     * `{from, to}` transform pair, or a falsy value to skip an element that didn't move on the axis
+     * that matters (both axes for cards, x-only for columns). */
+    function playFlipFrom(
+        map: Map<string, DOMRect>,
+        selector: string,
+        keyOf: (el: HTMLElement) => string | null | undefined,
+        transformFor: (
+            dx: number,
+            dy: number,
+        ) => { from: string; to: string } | null,
+        ms: number,
+    ): void {
+        if (!rootEl || map.size === 0) return
+        for (const el of rootEl.querySelectorAll<HTMLElement>(selector)) {
+            const k = keyOf(el)
+            const prev = k != null ? map.get(k) : undefined
             if (!prev) continue
             const now = el.getBoundingClientRect()
             const dx = prev.left - now.left
             const dy = prev.top - now.top
-            if (dx === 0 && dy === 0) continue
+            const t = transformFor(dx, dy)
+            if (!t) continue
             el.style.transition = 'none'
-            el.style.transform = `translate(${dx}px, ${dy}px)`
+            el.style.transform = t.from
             // Force a reflow so the next style change actually transitions.
             el.getBoundingClientRect()
-            el.style.transition = 'transform 180ms cubic-bezier(.2,.7,.2,1)'
-            el.style.transform = 'translate(0, 0)'
+            el.style.transition = `transform ${ms}ms cubic-bezier(.2,.7,.2,1)`
+            el.style.transform = t.to
         }
-        prevRects.clear()
+        map.clear()
+    }
+
+    const prevRects = new Map<string, DOMRect>()
+    function snapshotRects(): void {
+        snapshotFlip(prevRects, '[data-kbcard][data-path]', el => el.dataset.path)
+    }
+    function playFlip(): void {
+        playFlipFrom(
+            prevRects,
+            '[data-kbcard][data-path]',
+            el => el.dataset.path,
+            (dx, dy) =>
+                dx === 0 && dy === 0
+                    ? null
+                    : { from: `translate(${dx}px, ${dy}px)`, to: 'translate(0, 0)' },
+            180,
+        )
     }
     // Same FLIP, for whole COLUMNS on a header reorder (they only move horizontally).
     const prevColRects = new Map<string, DOMRect>()
-    function snapshotColRects() {
-        if (!rootEl) return
-        prevColRects.clear()
-        for (const el of rootEl.querySelectorAll<HTMLElement>('[data-kbcol]')) {
-            const k = el.dataset.kbcol
-            if (k != null) prevColRects.set(k, el.getBoundingClientRect())
-        }
+    function snapshotColRects(): void {
+        snapshotFlip(prevColRects, '[data-kbcol]', el => el.dataset.kbcol)
     }
-    function playColFlip() {
-        if (!rootEl || prevColRects.size === 0) return
-        for (const el of rootEl.querySelectorAll<HTMLElement>('[data-kbcol]')) {
-            const k = el.dataset.kbcol
-            const prev = k != null ? prevColRects.get(k) : undefined
-            if (!prev) continue
-            const dx = prev.left - el.getBoundingClientRect().left
-            if (dx === 0) continue
-            el.style.transition = 'none'
-            el.style.transform = `translateX(${dx}px)`
-            el.getBoundingClientRect()
-            el.style.transition = 'transform 200ms cubic-bezier(.2,.7,.2,1)'
-            el.style.transform = 'translateX(0)'
-        }
-        prevColRects.clear()
+    function playColFlip(): void {
+        playFlipFrom(
+            prevColRects,
+            '[data-kbcol]',
+            el => el.dataset.kbcol,
+            dx =>
+                dx === 0
+                    ? null
+                    : { from: `translateX(${dx}px)`, to: 'translateX(0)' },
+            200,
+        )
     }
 
     function clearDrag(): void {
-        draggedId = null
         batch(() => {
             setOverCol(null)
             setDragId(null)
@@ -712,7 +739,6 @@ export function KanbanView(props: {
             document.documentElement.classList.add('kb-dragging')
             beginGhost()
             if (armMode === 'card') {
-                draggedId = armId
                 setDragH(armSourceEl ? armSourceEl.offsetHeight : 46)
                 setFromCol(armColKey)
                 setDragId(armId)
@@ -774,7 +800,7 @@ export function KanbanView(props: {
         endDrag()
     }
     async function dropCard(): Promise<void> {
-        const id = draggedId
+        const id = dragId()
         const insertAt = overIndex()
         const targetKey = overCol()
         const from = fromCol()
@@ -1000,7 +1026,7 @@ export function KanbanView(props: {
             // Only-if-still-mine: another column action (reorder/rename/delete) may have
             // written a newer `pendingColOrder` during this await — restoring `prevOrder`
             // unconditionally would clobber that action's own in-flight state.
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             // Mirrors renameColumn's catch: this call cleared `trimmedName` out of
             // pendingRemovedCols optimistically (to un-hide the re-added column). If the
             // `columns` write never landed, the add never happened server-side — the removal
@@ -1156,7 +1182,7 @@ export function KanbanView(props: {
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev => {
                 const s = rollbackRemoved(prev, alreadyRemoved ? null : from)
                 return targetWasRemoved && !columnsLanded
@@ -1205,7 +1231,7 @@ export function KanbanView(props: {
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev =>
                 rollbackRemoved(prev, alreadyRemoved ? null : key),
             )
@@ -1263,7 +1289,7 @@ export function KanbanView(props: {
         // description edit to lose in the normal flow; only a description typed into the SAME
         // card during the brief in-flight window of a just-committed rename would be dropped — a
         // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
-        const dir = dirOf(row.file.path)
+        const dir = parentOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
         if (desired === row.file.path) return
         const target = dedupe(desired, takenPaths())
@@ -1317,7 +1343,7 @@ export function KanbanView(props: {
     // ── Add card — create a note in the board's folder with the column's status set. ──
     function boardFolder(): string {
         const first = props.result.groups.flatMap(g => g.rows)[0]
-        if (first) return dirOf(first.file.path)
+        if (first) return parentOf(first.file.path)
         return props.basePath ? props.basePath.replace(/\.md$/, '') : ''
     }
     // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
