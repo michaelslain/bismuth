@@ -335,8 +335,8 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
  */
 export const BelowFloor: Story = {
     render: () => (
-        // 300px, not the old 400px: the one-button pass shrank TextButton/IconButton (the
-        // `segment` look and its bigger box are gone), so at 400px the lead group's minimum
+        // 300px, not the old 400px: the one-button pass shrank TextButton/IconButton (VBtn's
+        // padded box is gone), so at 400px the lead group's minimum
         // content now fits without scrolling and this story proved nothing. 300px keeps a real
         // ~40px shortfall (measured: 118px available vs 178px the icon buttons + crumb need),
         // still comfortably below the 430px floor tier.

@@ -9,7 +9,7 @@
 //       "selected"   a member that is currently ON (accent-highlighted)
 //     For icon buttons, "normal" looks like "unselected" but at full opacity.
 // `danger` is an orthogonal tone (destructive actions) layered on any state.
-// `primary` is a second orthogonal tone: selected + a glow rim — the view's one
+// `primary` is a second orthogonal tone: accent + bold, no box — the view's one
 // emphasized action (max one per view; text buttons only).
 // `size` is ignored for `kind: 'text'` — every text button renders at one size
 // (--fs-ui). `icon` still takes sm/md/lg.
@@ -36,7 +36,7 @@ export function buttonClass(
         state?: ButtonState
         size?: ButtonSize
         danger?: boolean
-        /** Selected + a glow rim (--glow-accent) — the view's one emphasized action.
+        /** Accent + bold, no box — the view's one emphasized action.
          *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
         primary?: boolean
         class?: string

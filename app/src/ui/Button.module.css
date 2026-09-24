@@ -25,8 +25,8 @@
 /* Every button is one of two KINDS (text | icon) in one of three STATES
    (normal | selected | unselected). normal = standalone; unselected/selected =
    a member of a toggle/series that is off/on. `danger` is an orthogonal tone;
-   `primary` is a second orthogonal tone — selected + a glow rim. At most ONE
-   .btn--primary per view (it is the view's one emphasized action). */
+   `primary` is a second orthogonal tone — accent + bold, no box: the view's
+   one emphasized action. At most ONE .btn--primary per view. */
 .btn {
   font: inherit;
   font-family: var(--ui-font-stack);

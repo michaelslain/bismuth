@@ -25,7 +25,7 @@
 /* Click-to-copy the location readout (issue #10, superseding issue #7's vault-name-only copy);
    title="" tooltip shows the full text on hover — load-bearing when the Label itself is
    ellipsized. Only a color shift on hover — the status bar has no vertical padding to spare for
-   a hover background (compare .tab:hover / .vbtn:hover, same treatment). Color/overflow/ellipsis
+   a hover background (compare .tab:hover, same treatment). Color/overflow/ellipsis
    themselves live on `ui/Label.tsx` (`<Label tone="muted">`); this rule only adds what a bare
    `Label` doesn't have — pointer affordance + the hover tint.
 

@@ -389,7 +389,8 @@ the accent. An outline appears only when it means something.
   `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
   accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
   `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. A
-  24px square hit area, its own sizes.
+  24px square hit area minimum outside a bar; inside a view bar the brackets draw at `--fs-ui`,
+  26px wide.
 
 ### Chips
 - **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as

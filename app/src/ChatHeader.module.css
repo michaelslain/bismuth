@@ -29,7 +29,7 @@
 .crumb { flex: 0 1 auto; min-width: 0; }
 .crumb b { min-width: 0; }
 
-/* The readout region buys its own gap: ViewBar's regions sit at `--bar-icon-gap: 0` because their
-   usual contents carry their own padding, and a readout stat is a bare span that would otherwise
-   run flush into its neighbour. */
+/* The readout region buys its own gap: ViewBar's regions sit at `--bar-icon-gap` (`--sp-4`) because
+   their usual contents carry their own padding, and a readout stat is a bare span that would
+   otherwise run flush into its neighbour — so readouts want `--sp-5` instead. */
 .readouts { gap: var(--sp-5); }
