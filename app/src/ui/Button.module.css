@@ -82,8 +82,8 @@
 .btn--text::before { content: '[' / ''; }
 .btn--text::after { content: ']' / ''; }
 .btn--text.btn--normal { color: var(--fg); }
-.btn--text.btn--unselected { color: var(--faint); }
-.btn--text.btn--unselected:hover:not(:disabled) { color: var(--text-muted); }
+.btn--text.btn--unselected { color: var(--text-muted); }
+.btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); }
 .btn--text.btn--selected { color: var(--btn-accent, var(--accent)); font-weight: var(--fw-bold); }
 .btn--text.btn--primary { color: var(--accent); font-weight: var(--fw-bold); }
 .btn--text.btn--danger { color: var(--danger); }
@@ -145,12 +145,12 @@
 .btn--icon:disabled { color: var(--faint); cursor: default; }
 .btn--icon:disabled::before,
 .btn--icon:disabled::after { color: var(--faint); }
-/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) outside any bar.
-   Inside an IconBar there is no half-opacity dim state (Acceptance 5) — `--iconbar-unselected-
-   opacity` is set to 1 by IconBar.module.css's `.bar`, read here with a fallback equal to today's
-   0.5 so every IconButton NOT under a bar is byte-identical to before (Review Focus 3). */
-.btn--icon.btn--unselected { opacity: var(--iconbar-unselected-opacity, 0.5); }
-.btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; }
+/* unselected — toggle member, off: full opacity, muted ink (design-pass finding: opacity is not a
+   state signal — it read as disabled, and dropped faint-bracketed icons below the 3:1 non-text
+   contrast floor). `--iconbar-unselected-opacity` is no longer read here; IconBar.module.css and
+   PreviewBar.module.css still set it, but that variable is now dead. */
+.btn--icon.btn--unselected { opacity: 1; color: var(--text-muted); }
+.btn--icon.btn--unselected:hover:not(:disabled) { color: var(--fg); }
 /* selected — toggle member, on: accent icon on an accent-soft fill */
 /* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
    lighter tile against its container. */
@@ -210,11 +210,21 @@
    inside a bar (Acceptance 5: the selected mini-graph mode must be `--accent`). Three classes here
    outrank the two-class `.btn--selected`/`.btn--danger` selectors regardless of source order, so
    normal/unselected stay muted and selected keeps its accent — a normal+danger sm icon button
-   still renders muted, as it did before this rule (EditDictionaryModal's delete icon).
+   (EditDictionaryModal's delete icon) used to render muted here too; the dedicated danger rule
+   below wins it back to `--danger`.
    `:not(:disabled)` matters for the SAME reason in the other direction: without it this selector's
    three classes would outrank `.btn--icon:disabled`'s two, and a disabled sm icon button (state
    defaults to "normal") would render muted instead of `--faint`. Excluding `:disabled` here lets
    the disabled rule govern by simply not competing, rather than by winning a specificity race. */
 .btn--icon.btn--sm.btn--normal:not(:disabled),
 .btn--icon.btn--sm.btn--unselected:not(:disabled) { color: var(--text-muted); }
+/* `danger` rides alongside `state="normal"` (buttonClass.ts joins them), so the muted rule above
+   also matches a danger sm icon button and, at equal three-class specificity, wins by source order
+   — a delete icon rendered muted instead of --danger. Same specificity, declared after: wins back.
+   Brackets stay --faint like every other sm icon button's at rest, not currentColor (which would
+   otherwise now resolve to --danger too) — a lone red glyph reads, red brackets around it read as
+   an error box. */
+.btn--icon.btn--sm.btn--danger:not(:disabled) { color: var(--danger); }
+.btn--icon.btn--sm.btn--danger:not(:disabled)::before,
+.btn--icon.btn--sm.btn--danger:not(:disabled)::after { color: var(--faint); }
 .btn--icon.btn--sm:hover:not(:disabled) { color: var(--fg); }
