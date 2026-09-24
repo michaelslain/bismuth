@@ -11,7 +11,6 @@ import {
 import { api } from '../api'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import PlainButton from '../ui/PlainButton'
 import { Icon } from '../icons/Icon'
 import EmptyState from '../ui/EmptyState'
 import { TextInput } from '../ui/TextInput'
@@ -22,7 +21,9 @@ import ModalBody from '../ui/ModalBody'
 import ModalFooter from '../ui/ModalFooter'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
-import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
+import { type ViewBarSlots } from '../ui/ViewBar'
+import { IconTextButton } from '../ui/IconTextButton'
+import InlineCode from '../ui/InlineCode'
 import BarLabel from '../ui/BarLabel'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
@@ -61,11 +62,10 @@ export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir }
 const GRADE_KEYS: {
     response: 'hard' | 'good' | 'easy'
     id: KeybindingId
-    cls: string
 }[] = [
-    { response: 'hard', id: 'flashcard-hard', cls: 'hard' },
-    { response: 'good', id: 'flashcard-good', cls: 'good' },
-    { response: 'easy', id: 'flashcard-easy', cls: 'easy' },
+    { response: 'hard', id: 'flashcard-hard' },
+    { response: 'good', id: 'flashcard-good' },
+    { response: 'easy', id: 'flashcard-easy' },
 ]
 
 /** Everything the deck's contribution to the view bar reads, as ACCESSORS. Plain values would be
@@ -186,26 +186,26 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             </div>
         ),
         config: (
-            <VBtn
+            <IconTextButton
                 icon="Zap"
                 title="Cram: review every card, no scheduling changes"
-                active={state.cram()}
+                variant={state.cram() ? 'selected' : 'unselected'}
                 onClick={() => state.onToggleCram()}
             >
                 {/* LATE, not early. A lightning bolt does not say "cram" — it is the same case as
                     the calendar's TODAY, whose calendar glyph does not say "today". */}
-                <BarLabel long="CRAM" drop="late" />
-            </VBtn>
+                <BarLabel long="cram" drop="late" />
+            </IconTextButton>
         ),
         actions: (
             <Show when={state.canEditCards()}>
-                <VBtn
+                <IconTextButton
                     icon="Layers"
                     title="Browse, add, edit, and delete every card in this deck"
                     onClick={() => state.onCards()}
                 >
-                    <BarLabel long="CARDS" drop="early" />
-                </VBtn>
+                    <BarLabel long="cards" drop="early" />
+                </IconTextButton>
             </Show>
         ),
     }
@@ -516,14 +516,14 @@ export function FlashcardsView(props: {
                 icon="Pencil"
                 label="Edit this card"
                 onClick={openCardEdit}
-                class={styles['card-action-btn']}
+                size="sm"
             />
             <IconButton
                 icon="Trash2"
                 label="Delete this card"
                 danger
                 onClick={deleteCurrent}
-                class={styles['card-action-btn']}
+                size="sm"
             />
         </div>
     )
@@ -723,8 +723,9 @@ export function FlashcardsView(props: {
                                 when={!cram()}
                                 fallback={
                                     <>
-                                        Add rows with <code>front</code> /{' '}
-                                        <code>back</code> columns.
+                                        Add rows with{' '}
+                                        <InlineCode>front</InlineCode> /{' '}
+                                        <InlineCode>back</InlineCode> columns.
                                     </>
                                 }
                             >
@@ -881,25 +882,17 @@ export function FlashcardsView(props: {
                             <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
-                                        <PlainButton
-                                            class={`${styles['grade']} ${styles[g.cls]}`}
+                                        <TextButton
+                                            danger={g.response === 'hard'}
                                             onClick={() => grade(g.response)}
                                         >
-                                            <Text
-                                                as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
-                                                class={styles['g-name']}
-                                            >
-                                                {g.response}
-                                            </Text>
+                                            {g.response}{' '}
                                             <Kbd
                                                 combo={
                                                     settings.keybindings[g.id]
                                                 }
                                             />
-                                        </PlainButton>
+                                        </TextButton>
                                     )}
                                 </For>
                             </div>
