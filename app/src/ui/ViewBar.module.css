@@ -252,7 +252,7 @@
      `gap` only spaces RENDERED flex children, and hiding the label leaves the icon as the sole
      visible child. */
   /* NO fixed `width` on the Button-family half (one-button fix): a collapsed IconTextButton is
-     `[` + glyph + `]`, 25px at --fs-ui, and a fixed `width: var(--h-control)` (24px, sized for a
+     `[` + glyph + `]`, 26px at --fs-ui (measured 26.28 in ui-barlabel--early-labels-dropped), and a fixed `width: var(--h-control)` (24px, sized for a
      bare glyph) clipped the brackets by a pixel and made the collapsed control a different width from
      the `[▣]` IconButton beside it. With no text padding left to remove, shrink-to-fit IS square. */
   .viewbar [data-kind="text"]:has([data-bar-label='early']) { padding: 0; justify-content: center; }
