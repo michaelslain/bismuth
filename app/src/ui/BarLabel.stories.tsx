@@ -109,7 +109,7 @@ export const EarlyLabelsDropped: Story = {
         expect(visibleText(r, 'late-btn')).toBe('today')
         // The button squares up rather than keeping text padding around nothing.
         const btn = r.querySelector<HTMLElement>('[data-testid="drop1-btn"]')!
-        expect(Math.round(btn.getBoundingClientRect().width)).toBeLessThanOrEqual(26)
+        expect(Math.round(btn.getBoundingClientRect().width)).toBe(26)
     },
 }
 

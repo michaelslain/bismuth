@@ -335,7 +335,12 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
  */
 export const BelowFloor: Story = {
     render: () => (
-        <Frame w="400px">
+        // 300px, not the old 400px: the one-button pass shrank TextButton/IconButton (the
+        // `segment` look and its bigger box are gone), so at 400px the lead group's minimum
+        // content now fits without scrolling and this story proved nothing. 300px keeps a real
+        // ~40px shortfall (measured: 118px available vs 178px the icon buttons + crumb need),
+        // still comfortably below the 430px floor tier.
+        <Frame w="300px">
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
                 locus={<IconButton icon="ChevronLeft" label="Previous" />}
@@ -350,7 +355,7 @@ export const BelowFloor: Story = {
         const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         // The container really is below the floor boundary — otherwise this story proves nothing.
         expect(bar.clientWidth).toBeGreaterThan(0)
-        expect(bar.clientWidth).toBeLessThanOrEqual(400)
+        expect(bar.clientWidth).toBeLessThanOrEqual(300)
 
         const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(lead).toBeTruthy()
