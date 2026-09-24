@@ -20,9 +20,12 @@
     min-width: 0;
 }
 
-/* The subject of the bar, and a secondary jump back to today. Sentence case, --fg, no tracking —
-   every control around it is uppercase and muted. The ONLY elastic thing in the bar: flex 0 1 auto
-   + an ellipsizing inner span make a shortened date the failure mode, not controls pushed out.
+/* The subject of the bar, and a secondary jump back to today. --fg, no tracking, and — like the
+   rest of the bar — lowercase: `rangeLabel()` hands back "January 2026" (Intl capitalizes month
+   names), and this is the one place in the bar that lowercases at render time rather than at the
+   source, since `monthName()`/`spanLabel()` in calendar/dates.ts are shared with non-UI callers.
+   The ONLY elastic thing in the bar: flex 0 1 auto + an ellipsizing inner span make a shortened
+   date the failure mode, not controls pushed out.
    NO PADDING (one-button fix): the old `0 var(--sp-3)` kept the date off VBtn's bare chevron glyphs.
    The chevrons are `[<]`/`[>]` now and `.nav`'s --sp-4 gap already sits between each bracket and
    the date, so the padding was 12px of the bar's width spent twice — width the date itself needs
@@ -35,7 +38,7 @@
     font-size: var(--fs-ui);
     font-weight: 600;
     letter-spacing: 0;
-    text-transform: none;
+    text-transform: lowercase;
 }
 .range-text {
     display: block;

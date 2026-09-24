@@ -81,16 +81,16 @@
 .mapZoomStack {
   display: flex;
   flex-direction: column;
-  border: var(--rule);
-  border-radius: var(--r-0);
-  overflow: hidden;
-  background: var(--pop-bg);
-
-  box-shadow: var(--lift);
+  gap: var(--sp-4);
 }
 /* Zoom in/out, reset and locate are now IconButtons (bracket [icon] look owned by Button) — no
-   per-button box/background/border of our own left to give them; .mapZoomStack/.mapControls
-   above are the only look left here, and it's on their container div, not on a button. */
+   per-button box/background/border of our own left to give them, and .mapZoomStack no longer
+   plates itself either: the basemap is our own themed vector surface (.mapSea/.mapLand tokens),
+   not photographic tiles, so a bare bracket reads fine on it — the same assumption the rest of
+   the app's floating bracket controls make (GraphFloater over the graph canvas). All four
+   controls (zoom in, zoom out, reset, locate) are now bare IconButtons spaced --sp-4 apart,
+   nested two levels deep in .mapControls/.mapZoomStack purely for the column/column-within-row
+   grouping — neither div carries a look of its own any more. */
 /* Scale bar, bottom-left above the badge. */
 .mapScale {
   position: absolute;

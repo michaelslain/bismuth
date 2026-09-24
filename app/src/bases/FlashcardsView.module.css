@@ -83,7 +83,11 @@
 .count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
 .count b { color: var(--fg); }
 .count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
-.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; }
+/* text-transform: lowercase, not lowercase literals — BaseView.stories.tsx's own play test
+   queries this row by the literal text "HARD"/"GOOD"/"EASY" (out of this task's edit list), so the
+   DOM keeps its existing case and only the rendering (which is what the bar's lowercase reading
+   convention actually governs) changes. */
+.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; text-transform: lowercase; }
 .tally b { font-weight: 600; }
 .tally .a b { color: var(--violet); }
 .tally .g b { color: var(--blue); }
@@ -93,7 +97,7 @@
    replaces — restored 2026-09-02 at the user's request: "i liked that flashcards ascii meter").
    NOT `max-width: <n>vw` — the rule this replaces used 42vw, and `vw` is the WINDOW while this
    view lives in a PANE, so in a split pane or beside the sidebar it sized against a viewport far
-   wider than its container. See .grade-row below, which carries the same correction for the same
+   wider than its container. See .cardwrap below, which carries the same correction for the same
    reason. The meter sizes itself in CELLS from the measured width of this box (fitMeterWidth in
    ui/ascii/asciiMeterMath.ts, driven from FlashcardsView.tsx), so this rule only has to define
    the box.
@@ -121,17 +125,23 @@
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center;
   gap: 26px; padding: 26px; overflow: hidden;
 }
-/* 100% of the STAGE, not 92vw. `vw` is the window, but this view lives in a pane — in a split
-   pane or beside the sidebar the card was sized against a viewport far wider than its own
-   container and overhung it. .stage's 26px padding is the breathing room `92vw` was standing in for. */
-.grade-row { flex: 0 0 auto; display: flex; gap: var(--sp-5); width: min(680px, 100%); }
+/* Centered under the (also centered) card now that the grade buttons are plain bracket
+   `TextButton`s rather than the old wide grade cards — the row no longer needs its own
+   pane-relative width, .cardwrap below still does. */
+.grade-row { flex: 0 0 auto; display: flex; justify-content: center; gap: var(--sp-4); }
+/* The key hint sits OUTSIDE the TextButton (a class passed to a button-family control may only
+   place it, never decorate its insides) — the grade label and its Kbd cap are siblings here. */
+.grade-item { display: flex; align-items: center; gap: var(--sp-2); }
 
 /* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
    Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
    hard 420px min-height floor — scrolls (safely centered, so the overflow stays reachable, same
    idiom as .flip-face's "safe center" below) once the pane is shorter than the card. */
 .cardwrap {
-  perspective: 1800px; width: min(680px, 100%);   /* pane-relative, not 92vw — see .grade-row */
+  /* 100% of the STAGE, not 92vw — pane-relative. `vw` is the window, but this view lives in a
+     pane, so in a split pane or beside the sidebar the card was sized against a viewport far
+     wider than its own container and overhung it. */
+  perspective: 1800px; width: min(680px, 100%);
   flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
   overflow-y: auto;
 }
