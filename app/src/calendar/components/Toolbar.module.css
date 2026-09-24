@@ -11,26 +11,13 @@
  * carried size containment and a zero flex-basis, so it could never claim width from a
  * shrink-to-fit region.
  *
- * `.vbtn` (VBtn's own base class) is a real hashed local now (ui/ViewBar.module.css), not
- * reachable from outside that module by name — `.cta` below needs no `:global(.vbtn)` compound any
- * more, since a bare local class here always outranks VBtn's single-class base by specificity
- * regardless of load order. */
+ * `.cta` IS GONE TOO (one-button Task 2). Categories and + Event are now `IconTextButton`s, and
+ * + Event's accent tint comes from Button's own `primary` prop — no rule here owns a look for a
+ * Button-family control any more; `.views` below is pure placement. */
 
 /* The period switcher's air. Region gaps are `--bar-icon-gap` (0px), which is right for the
    icon-button pairs the value was chosen for and wrong immediately after a text label — without
    this the range date sits flush against the first view segment. */
 .views {
     margin-left: var(--sp-5);
-}
-
-/* + Event is the bar's one primary action and keeps a tint the outline states never use, so
-   "create" never reads as "selected". */
-.cta {
-    color: var(--fg);
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-}
-.cta:hover {
-    background: color-mix(in srgb, var(--accent) 24%, transparent);
-    color: var(--fg);
 }
