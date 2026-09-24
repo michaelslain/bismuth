@@ -178,6 +178,7 @@ import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
 import { openContextMenu, isTauri } from './nativeMenu'
 import './global.css'
 import ChatColorDot from './ChatColorDot'
+import toolbarIconSize from './ui/toolbarIconSize'
 import { migrationPollDelays } from './migrationPoll'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
@@ -2955,9 +2956,7 @@ export default function App() {
                             {btn => (
                                 <ToolbarButton
                                     btn={btn}
-                                    iconSize={
-                                        settings.appearance.sidebarIconFontSize
-                                    }
+                                    iconSize={toolbarIconSize()}
                                 />
                             )}
                         </For>
