@@ -90,7 +90,7 @@ components:
     padding: "0"
     height: "24px"
   button-text-unselected:
-    textColor: "{colors.ink-faint}"
+    textColor: "{colors.ink-muted}"
   button-text-selected:
     textColor: "{colors.accent-sage}"
   button-text-primary:
@@ -370,9 +370,11 @@ the accent. An outline appears only when it means something.
   edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
   goes inside the brackets: `[✓ label]`. One size only.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
-  that is off) `--faint`; `selected` `--accent` + bold (or `accent`, if set); `primary` `--accent`
-  + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
-- **Hover:** `unselected` lifts to `--text-muted`; states already at full ink underline the label
+  that is off) `--text-muted`; `selected` `--accent` + bold (or `accent`, if set); `primary`
+  `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
+  No state is ever shown by opacity — `unselected` used to dim to 0.5, which read as disabled and
+  failed contrast; it is full-opacity, muted-ink now, same as every other state.
+- **Hover:** `unselected` lifts to `--fg`; states already at full ink underline the label
   (1px) instead of changing colour.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
   ring never touches the next `[`.
