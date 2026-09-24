@@ -102,7 +102,6 @@
 .tab-rail.rail-pinned .tab-rail-actions {
   justify-content: flex-start;
   flex-wrap: nowrap;
-  gap: var(--sp-3);
 }
 
 /* The scrollable row list fills the middle. */

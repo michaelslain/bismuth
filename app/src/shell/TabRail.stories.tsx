@@ -131,7 +131,7 @@ const rows = (
     </>
 )
 
-const actions = (
+const actions = () => (
     <>
         <CommandButton icon="Plus" label="New tab" onClick={noop} />
         <CommandButton
@@ -145,7 +145,7 @@ const actions = (
 // A badge-free THIRD action, for `PinnedThreeActions` below — none of `Collapsed`/`Expanded`/
 // `Pinned` render three buttons in a row, so there is no coverage of a three-wide action bar at
 // all (toolbar-iconbar plan, Task 3).
-const threeActions = (
+const threeActions = () => (
     <>
         <CommandButton icon="Plus" label="New tab" onClick={noop} />
         <CommandButton
@@ -165,7 +165,7 @@ const threeActions = (
 export const Collapsed: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions}>{rows}</TabRail>
+            <TabRail actions={actions()}>{rows}</TabRail>
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
@@ -197,7 +197,7 @@ export const Collapsed: Story = {
 export const Expanded: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions}>{rows}</TabRail>
+            <TabRail actions={actions()}>{rows}</TabRail>
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
@@ -235,7 +235,7 @@ export const Expanded: Story = {
 export const Pinned: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions} pinned>
+            <TabRail actions={actions()} pinned>
                 {rows}
             </TabRail>
         </Wrap>
@@ -273,7 +273,7 @@ export const Pinned: Story = {
 export const PinnedThreeActions: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={threeActions} pinned>
+            <TabRail actions={threeActions()} pinned>
                 {rows}
             </TabRail>
         </Wrap>
