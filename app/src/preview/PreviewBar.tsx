@@ -8,11 +8,11 @@
 //   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [draw] on an image
 //   actions   [bookmarks]      [open-externally reveal]    bookmarks pdf only · file actions Tauri
 //
-// GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap`; between groups
-// — whether that boundary is ViewBar's own region gap or two groups sharing a region — it is
-// `--bar-crumb-gap`. Nothing else: no hand-rolled margins (see PreviewBar.module.css). The one
-// exception is the annotate group's own hairline `--sp-1` gap (`.annotate`), which keeps two
-// adjacent ON toggles (e.g. DRAW + SCRATCH) from reading as one fused frame.
+// GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap` — the annotate
+// group (highlight/draw/scratch) included, so two adjacent ON toggles (e.g. DRAW + SCRATCH) read as
+// separate bracket buttons, never a fused frame; between groups — whether that boundary is ViewBar's
+// own region gap or two groups sharing a region — it is `--bar-crumb-gap`. Nothing else: no
+// hand-rolled margins (see PreviewBar.module.css).
 //
 // ONE THING MEANS ONE THING. Only a toggle that is ON renders `variant="selected"` (HIGHLIGHT while
 // armed, DRAW, SCRATCH, BOOKMARKS) — accent brackets + accent glyph, no box (Button.module.css draws
@@ -145,10 +145,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             </TextButton>
                         </div>
                     </Show>
-                    <div
-                        class={`${styles.group} ${styles.annotate}`}
-                        data-testid="preview-annotate"
-                    >
+                    <div class={styles.group} data-testid="preview-annotate">
                         <Show when={pdf()}>
                             <IconButton
                                 icon="Highlighter"

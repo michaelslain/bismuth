@@ -31,16 +31,6 @@
   gap: var(--bar-crumb-gap);
 }
 
-/* The annotate group (highlight/draw/scratch) is the one group that can hold TWO toggles at
-   once — turn both on and their accent frames sit at `--bar-icon-gap` (0), which reads as one
-   fused two-cell box instead of two controls. A hairline gap keeps every frame visibly its own
-   without reading as a group boundary (`--bar-crumb-gap` would). Declared after `.group` so
-   source order breaks the tie at equal specificity. Bookmarks stays alone in its own group, so
-   it never needs this. */
-.annotate {
-  gap: var(--sp-1);
-}
-
 /* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the LEFT —
    mirror the glyph so it reads as a RIGHT-hand panel, the one this control actually opens. Only the
    svg flips; the button's own box (hit area, focus ring) stays unmirrored. */

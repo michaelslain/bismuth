@@ -33,16 +33,15 @@ export type BarProbe = {
     gaps: number[]
     iconGap: number
     crumbGap: number
-    /** `--sp-1`, the annotate group's own hairline gap (highlight/draw/scratch) — keeps two
-     *  adjacent ON toggles from reading as one fused accent frame. Every other group's internal
-     *  gap is `iconGap` (0). */
-    annotateGap: number
-    /** Gaps that are none of the three known tokens (±0.5px). Want 0. */
+    /** Gaps that are neither known token (±0.5px). Want 0. */
     strayGaps: number[]
     /** Gaps equal to --bar-crumb-gap: one per group boundary. */
     groupBoundaries: number
-    /** Gaps equal to the annotate group's own --sp-1 hairline: one per adjacent pair of controls
-     *  INSIDE that group (2 controls -> 1, 3 controls -> 2). */
+    /** Adjacent-control pairs INSIDE the annotate group (highlight/draw/scratch) — found
+     *  structurally (painted buttons under `[data-testid="preview-annotate"]`, not by gap value:
+     *  the annotate group's internal gap is `iconGap`, same as every other group, so a pixel probe
+     *  can no longer tell it apart). 2 painted buttons -> 1 gap, 3 -> 2. Each one still has to land
+     *  in `iconGap`, which `strayGaps` already enforces. */
     annotateGaps: number
     /** Button-family controls in the bar currently `selected` (a toggle that is ON) — DESIGN.md:
      *  "states are colour and weight, nothing drawn", so a selected control draws no border/frame
@@ -70,7 +69,6 @@ export function probeBar(bar: HTMLElement): BarProbe {
     const rects = items.map(el => el.getBoundingClientRect())
     const iconGap = tokenPx(bar, '--bar-icon-gap')
     const crumbGap = tokenPx(bar, '--bar-crumb-gap')
-    const annotateGap = tokenPx(bar, '--sp-1')
     const gaps = rects.slice(1).map((r, i) => Math.round((r.left - rects[i]!.right) * 10) / 10)
     const near = (a: number, b: number) => Math.abs(a - b) <= 0.5
     const frames = Array.from(
@@ -122,16 +120,17 @@ export function probeBar(bar: HTMLElement): BarProbe {
     const centre = (b.top + b.bottom) / 2
     const maxCentreOffset = Math.max(0, ...rects.map(r => Math.abs((r.top + r.bottom) / 2 - centre)))
     const title = bar.querySelector('[data-testid="crumb-title"]') as HTMLElement | null
+    const annotate = bar.querySelector('[data-testid="preview-annotate"]') as HTMLElement | null
+    const annotateButtons = annotate
+        ? Array.from(annotate.querySelectorAll<HTMLElement>('button')).filter(painted)
+        : []
     return {
         gaps,
         iconGap,
         crumbGap,
-        annotateGap,
-        strayGaps: gaps.filter(
-            g => !near(g, iconGap) && !near(g, crumbGap) && !near(g, annotateGap),
-        ),
+        strayGaps: gaps.filter(g => !near(g, iconGap) && !near(g, crumbGap)),
         groupBoundaries: gaps.filter(g => near(g, crumbGap)).length,
-        annotateGaps: gaps.filter(g => near(g, annotateGap)).length,
+        annotateGaps: Math.max(0, annotateButtons.length - 1),
         frames,
         glyphSizes,
         iconBoxes,
