@@ -1,20 +1,3 @@
 {
-  "accepted": [
-    {
-      "check": "globalReach",
-      "path": "app/src/chat/ChatControls.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/drawing/Toolbar.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/PaneHeader.module.css"
-    },
-    {
-      "check": "globalReach",
-      "path": "app/src/PreviewView.module.css"
-    }
-  ]
+  "accepted": []
 }
