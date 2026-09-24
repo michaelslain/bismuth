@@ -83,6 +83,7 @@ function sortedChildren(node: TreeNode): TreeNode[] {
 // headlessly without importing this component tree (Solid client-only code, CodeMirror, …). Import
 // for local use, and re-export to preserve the existing `./FileTree` public surface.
 import { decideTreeRefresh } from './fileTreeRefresh'
+import holdScrollDuringDrag, { scrollParent } from './holdScrollDuringDrag'
 export { decideTreeRefresh }
 
 /** Resolve the OS-drag / native-drop target folder at a viewport point: the nearest ancestor
@@ -1097,7 +1098,20 @@ export function FileTree(props: {
                 [styles['drop-target']]: dropTargetFolder() === '',
             }}
             data-drop-root="true"
-            ref={el => (rootEl = el)}
+            ref={el => {
+                rootEl = el
+                // Capture phase: a row's own pointerdown stops propagation (nested rows), so this
+                // is the only place that sees every press before the drag controller takes over.
+                el.addEventListener(
+                    'pointerdown',
+                    e => {
+                        if (e.button !== 0) return
+                        const sc = scrollParent(el)
+                        if (sc) holdScrollDuringDrag(sc)
+                    },
+                    true,
+                )
+            }}
             role="tree"
             aria-label="Vault files"
             tabindex="0"
