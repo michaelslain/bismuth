@@ -13,7 +13,3 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {
     args: { children: <div>Title</div> },
 }
-
-export const LooseGap: Story = {
-    args: { looseGap: true, children: <div>Title</div> },
-}

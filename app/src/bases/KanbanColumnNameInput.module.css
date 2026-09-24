@@ -1,8 +1,9 @@
 /* ---- KanbanColumnNameInput ---- */
 /* Shared field chrome for both callers (KanbanAddColumn / KanbanColumnMenu): regular weight (not
-   the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting --border bottom
-   rule, and the error's left edge aligned to the input's own text x via the same horizontal
-   padding token on both (.input / .error). */
+   the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting hairline box (square,
+   Acceptance 11/14 — not just an underline), accent border on focus, and the error's left edge
+   aligned to the input's own text x via the same horizontal padding token on both
+   (.input / .error). */
 .field {
     display: flex;
     flex-direction: column;
@@ -16,9 +17,16 @@
     font-size: var(--fs-ui);
     font-weight: 400;
     color: var(--fg);
-    border-bottom: 1px solid var(--border);
+    border: var(--rule);
+    border-radius: var(--r-0);
+    transition: border-color 120ms ease;
 }
+.field .input:focus { border-color: var(--accent); }
+/* The full hairline box above adds a 1px left border .input didn't carry before (it was
+   border-bottom only) — its text now starts 1px further in than a bare padding-left match
+   would give, so this adds that same 1px to keep the error's left edge flush with the input's
+   own text x (KanbanColumnNameInput.stories.tsx's Duplicate play() asserts this). */
 .error {
-    padding-left: var(--sp-2);
+    padding-left: calc(var(--sp-2) + 1px);
     color: var(--danger);
 }

@@ -13,14 +13,28 @@ export function titleOf(row: Row, titleCol: string): string {
     return v == null || typeof v === 'object' ? row.file.name : String(v)
 }
 
+/** On a file-backed board (`titleCol === 'file.name'`) these ids all name the SAME title
+ * slot the dedicated title field already renders — `file.basename` (a stale spelling of
+ * `file.name`), and `title`/`note.title` (the frontmatter key a pre-migration or hand-
+ * written board still lists in `order:`, meaning "the card's title", not a second
+ * property). Listing one in `order:` must not open a second title row on the card face
+ * or in the edit modal. A stored-row board (any other `titleCol`) has no such aliasing —
+ * its title IS a normal frontmatter property, so only `titleCol` itself is dropped. */
+export const TITLE_ALIASES = new Set(['file.basename', 'title', 'note.title'])
+
 /** The view's `order:` ids to show as meta on each card: everything except the title
- * column. Description is NOT special-cased (#103) — a base that declares (or an `order:`
- * that lists) `description`/`note.description` flows through here like any other
- * property, rendered + edited via the same generic type-aware meta path. */
+ * column (and, on a file-backed board, its aliases — see `TITLE_ALIASES`). Description
+ * is NOT special-cased (#103) — a base that declares (or an `order:` that lists)
+ * `description`/`note.description` flows through here like any other property, rendered
+ * + edited via the same generic type-aware meta path. */
 export function metaColumns(
     order: string[] | undefined,
     titleCol: string,
 ): string[] {
+    if (titleCol === 'file.name')
+        return (order ?? []).filter(
+            id => id !== titleCol && !TITLE_ALIASES.has(id),
+        )
     return (order ?? []).filter(id => id !== titleCol)
 }
 

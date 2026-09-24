@@ -32,10 +32,12 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
                 it out of flow (KanbanAddColumn.module.css's `.addField`). */}
             <PlainButton
                 class={styles.trigger}
+                aria-label="Add a column"
+                title="Add a column"
                 onClick={() => setEditing(true)}
             >
-                <Text as="span" size="inherit" tone="muted" weight="inherit">
-                    + column
+                <Text as="span" inherit>
+                    +
                 </Text>
             </PlainButton>
             <Show when={editing()}>

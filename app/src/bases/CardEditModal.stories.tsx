@@ -13,6 +13,8 @@ import { createSignal } from 'solid-js'
 import { expect, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
+import { metaColumns } from './kanbanMeta'
+import type { Row } from '../../../core/src/bases/types'
 
 const meta = {
     title: 'Bases/CardEditModal',
@@ -66,6 +68,85 @@ export const Default: Story = {
         )
         expect(dueTrigger).not.toBeNull()
         expect(dueTrigger!.textContent).toBe('2026-08-05')
+    },
+}
+
+// Reproduces the reported bug (#106): a board whose `order:` lists `title` (a stale/hand-
+// written spelling of "the card's title", not a second property) alongside a declared
+// `multiselect` property. `metaCols` here is computed through the REAL `metaColumns()` —
+// the same call `KanbanView.metaCols()` makes — so this story exercises the actual fix
+// (in kanbanMeta.ts), not a hand-picked array that would mask it.
+const titleOrderConfig = sampleBaseConfig({
+    properties: {
+        tags: {
+            type: {
+                kind: 'multiselect',
+                options: ['feature', 'bug', 'change'],
+            },
+        },
+    },
+    declaredProperties: ['tags'],
+})
+const titleOrderMetaCols = metaColumns(
+    ['title', 'tags', 'description'],
+    'file.name',
+)
+// Two sibling rows: one with no `title:` frontmatter, one that has it set to a plain
+// string — the exact "some notes have it, some don't" shape the bug report's board had.
+const NO_TITLE_ROW: Row = {
+    file: { ...SAMPLE_ROWS[0].file, name: 'No Title Frontmatter' },
+    note: { ...SAMPLE_ROWS[0].note },
+    formula: {},
+}
+const HAS_TITLE_ROW: Row = {
+    file: { ...SAMPLE_ROWS[1].file, name: 'Has Title Frontmatter' },
+    note: { ...SAMPLE_ROWS[1].note, title: 'A stray title value' },
+    formula: {},
+}
+const TITLE_ORDER_ROWS = [NO_TITLE_ROW, HAS_TITLE_ROW]
+
+/** #106: `order: [title, tags, description]` on a file-backed board must render exactly ONE
+ *  title field — the dedicated rename input — never a second row for `title`/`note.title`/
+ *  `file.basename`. Rendered for the row that DOES carry a `title:` frontmatter value (the
+ *  half of the repro most likely to make a stray second field visible, since the FIRST row
+ *  had nothing to show there even pre-fix). */
+export const OrderListsTitle: Story = {
+    render: () => (
+        <CardEditModal
+            row={HAS_TITLE_ROW}
+            titleCol="file.name"
+            metaCols={titleOrderMetaCols}
+            config={titleOrderConfig}
+            siblingValues={id => TITLE_ORDER_ROWS.map(r => r.note[id])}
+            onRename={noop}
+            onSetMeta={noop}
+            onDelete={noop}
+            onClose={noop}
+        />
+    ),
+    play: async () => {
+        // Same Portal caveat as `Default` above: read document.body, not canvasElement.
+        // Every field in this modal is a <SettingsField label="…">; the dedicated title
+        // input's SettingsField AND (pre-fix) a stray `title` meta row both label
+        // themselves the literal string "title" (columnLabel passes a bare id through
+        // unchanged) — so counting labels named exactly "title" is the direct assertion
+        // for "exactly one title field", independent of what CONTROL the stray row used.
+        const titleLabels = [...document.querySelectorAll('label,span,div')].filter(
+            el =>
+                el.textContent?.trim().toLowerCase() === 'title' &&
+                el.children.length === 0,
+        )
+        expect(titleLabels.length).toBe(1)
+        const titleInput = document.querySelector<HTMLInputElement>(
+            'input[placeholder="Untitled"]',
+        )
+        expect(titleInput).not.toBeNull()
+        expect(titleInput!.value).toBe('Has Title Frontmatter')
+        // `tags` (a genuinely declared multiselect) legitimately keeps its own "+ Add"
+        // chip-picker row — that control is correct and must NOT be asserted away. The bug
+        // was a second row keyed `title`, never `tags`'s own control; `titleLabels.length`
+        // above is what proves the second row is gone.
+        expect(document.body.textContent).toMatch(/\+ Add/)
     },
 }
 

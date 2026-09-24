@@ -1,5 +1,5 @@
 // Visual spec for <KanbanView>'s column management: add/rename/delete a column, the column
-// `…` menu, and the trailing "+ column" composer (AddColumn). Split out of KanbanView.stories.tsx
+// `…` menu, and the trailing bare `+` composer (AddColumn). Split out of KanbanView.stories.tsx
 // — board rendering + colour lives there, own-rows/row-write behaviour in
 // KanbanStoredRows.stories.tsx. Exercises `sampleViewResult` end to end: real rows, run through
 // the real query engine (core/src/bases/query.ts `runView`) with a `groupBy`, rendered by the
@@ -38,7 +38,7 @@ const noop = () => {}
 // `addedNames` in KanbanAddColumn.stories.tsx.
 let kanbanCalls: { path: string; body: unknown }[] = []
 
-/** The trailing "+ column" ghost — clicking it, typing a name and hitting Enter adds a fourth,
+/** The trailing bare `+` ghost — clicking it, typing a name and hitting Enter adds a fourth,
  *  empty column ("Blocked") alongside the 3 status groups the sample rows already produce, and
  *  persists it via `api.setViewProperty(basePath, viewIndex, 'columns', [...])` (KanbanView's
  *  `addColumn`, optimistic like `reorderColumns`). `status` is a declared `select` property here
@@ -64,7 +64,7 @@ export const AddColumn: Story = {
         const columnsBefore =
             canvasElement.querySelectorAll('[data-kbcol]').length
 
-        // The `+ column` text-node top must land level with a real column title's, within 1px
+        // The bare `+` text-node top must land level with a real column title's, within 1px
         // (kanban-polish finding 2/1: the header's min-height pin + the ghost's derived
         // padding-top). Measured via a Range over each text node's own glyph box, not the
         // element's box, so ascender/descender padding can't hide a real mismatch.
@@ -516,7 +516,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
             ).toBeNull(),
         )
 
-        await userEvent.click(canvas.getByText('+ column'))
+        await userEvent.click(canvas.getByLabelText('Add a column'))
         const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Blocked')
         await userEvent.keyboard('{Enter}')

@@ -1,7 +1,7 @@
-// Visual spec for <KanbanAddColumn> — the trailing "+ column" ghost column KanbanView renders
-// after its real columns. Presentational: the component owns only its own open/editing state
-// and the inline duplicate-name refusal; persisting the new column is entirely the caller's
-// `onAdd`.
+// Visual spec for <KanbanAddColumn> — the trailing bare-`+` ghost column KanbanView renders
+// after its real columns (Acceptance 11). Presentational: the component owns only its own
+// open/editing state and the inline duplicate-name refusal; persisting the new column is
+// entirely the caller's `onAdd`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import KanbanAddColumn from './KanbanAddColumn'
@@ -22,7 +22,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Resting ghost column — "+ column" in muted text, no input shown. */
+/** Resting ghost column — a bare `+`, muted, no word or brackets, no input shown. */
 export const Default: Story = {
     args: {
         existing: ['Todo', 'Doing', 'Done'],
@@ -55,7 +55,7 @@ export const Editing: Story = {
         const canvas = within(canvasElement)
         await fontsSettled()
         const ghost = ghostOf(canvasElement)
-        const trigger = canvas.getByText('+ column')
+        const trigger = canvas.getByLabelText('Add a column')
         const restOrigin = restTextOrigin(ghost)
         const restWidths = boardWidths(canvasElement)
         await userEvent.click(trigger)
@@ -73,7 +73,7 @@ export const Editing: Story = {
         await userEvent.keyboard('{Enter}')
         expect(addedNames).toEqual(['Blocked'])
         // back to the ghost trigger after a successful add
-        expect(canvas.getByText('+ column')).toBeVisible()
+        expect(canvas.getByLabelText('Add a column')).toBeVisible()
     },
 }
 
@@ -91,7 +91,7 @@ export const DuplicateRefused: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByText('+ column'))
+        await userEvent.click(canvas.getByLabelText('Add a column'))
         const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Doing')
         await userEvent.keyboard('{Enter}')

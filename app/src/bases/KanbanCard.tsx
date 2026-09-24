@@ -204,7 +204,7 @@ export function KanbanCard(props: {
                 data-edit-target={props.titleCol}
                 title={props.editable ? 'Click to edit card' : undefined}
             >
-                <Text as="span" inherit>
+                <Text as="span" inherit register="prose">
                     {title()}
                 </Text>
             </div>
@@ -214,6 +214,7 @@ export function KanbanCard(props: {
             (a native link-drag fires pointercancel, tearing the card drag down mid-gesture). */}
                 <div
                     class={styles.kbMeta}
+                    classList={{ [styles.kbMetaHideLabels]: props.hideLabels }}
                     onDragStart={e => e.preventDefault()}
                 >
                     <For each={visibleMeta()}>
@@ -238,7 +239,11 @@ export function KanbanCard(props: {
                                 if (k.kind === 'markdown') {
                                     const v = value()
                                     return (
-                                        <div
+                                        <Text
+                                            as="div"
+                                            register="prose"
+                                            size="body"
+                                            tone="muted"
                                             class={styles.kbMetaMarkdown}
                                             innerHTML={renderMarkdown(
                                                 v == null ? '' : String(v),
@@ -304,18 +309,18 @@ export function KanbanCard(props: {
                                 }
                                 return renderCell(id, displayRow(), true)
                             }
+                            // A row with no key spans the full grid width (acceptance 7-9):
+                            // tags (self-describing) and a markdown body always; every OTHER
+                            // row once `hideLabels` (#105) drops the key column too.
+                            const noKey = () =>
+                                isTagColumn(id) || kind().kind === 'markdown'
                             return (
                                 <div
                                     class={styles.kbMetaItem}
                                     data-edit-target={id}
                                 >
-                                    {/* #tags are self-describing — skip the label for tag columns. The view's
-                      `hideLabels` toggle (#105) suppresses every OTHER label too. */}
                                     <Show
-                                        when={
-                                            !isTagColumn(id) &&
-                                            !props.hideLabels
-                                        }
+                                        when={!noKey() && !props.hideLabels}
                                     >
                                         <Text
                                             as="span"
@@ -332,6 +337,8 @@ export function KanbanCard(props: {
                                         classList={{
                                             [styles.kbMetaClickable]:
                                                 props.editable,
+                                            [styles.kbMetaSpan]:
+                                                noKey() || props.hideLabels,
                                         }}
                                         title={
                                             props.editable

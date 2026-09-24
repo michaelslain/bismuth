@@ -6,6 +6,9 @@ export type TextTag = 'p' | 'span' | 'div'
 export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'inherit'
 export type TextTone = 'default' | 'muted' | 'faint' | 'inherit'
 export type TextWeight = 'regular' | 'medium' | 'bold' | 'inherit'
+/** Which typeface family a Text renders in — see DESIGN.md's register rule: prose is what a
+ *  person WROTE (note bodies, a card title), mechanism/data stays mono (--ui-font-stack). */
+export type TextRegister = 'chrome' | 'prose'
 
 export type TextProps = {
     /** Tag to render. 'p' (default) for a paragraph, 'span' for an inline run, 'div' for a
@@ -31,6 +34,10 @@ export type TextProps = {
      *  `tone` alongside it; see Text.module.css for why eyebrow itself stays silent on
      *  tone/weight. */
     eyebrow?: boolean
+    /** 'chrome' (default) emits no class — the ambient --ui-font-stack applies as normal.
+     *  'prose' adds `text--prose` (font-family: var(--prose-font)) and nothing else — size,
+     *  tone and weight stay independent props. */
+    register?: TextRegister
     class?: string
     children?: JSX.Element
 } & Omit<JSX.HTMLAttributes<HTMLElement>, 'class' | 'children'>
@@ -45,6 +52,7 @@ function textClass(props: TextProps): string {
         tone !== 'inherit' ? styles[`text--${tone}`] : '',
         weight !== 'inherit' ? styles[`text--${weight}`] : '',
         props.eyebrow ? styles['text--eyebrow'] : '',
+        props.register === 'prose' ? styles['text--prose'] : '',
         props.class,
     ]
         .filter(Boolean)
@@ -66,6 +74,7 @@ const Text: Component<TextProps> = props => {
         'weight',
         'inherit',
         'eyebrow',
+        'register',
         'class',
         'children',
     ])

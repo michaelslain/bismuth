@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { appendOrder } from './kanbanOrder'
+import { appendOrder, padCount } from './kanbanOrder'
 
 describe('appendOrder', () => {
     // NOTE: appendOrder must be conservative — given only a flat number[], it cannot
@@ -129,5 +129,23 @@ describe('appendOrder', () => {
 
             expect(sorted.at(-1)!.name).toBe('Apple')
         })
+    })
+})
+
+describe('padCount', () => {
+    test('pads a single digit to two', () => {
+        expect(padCount(2)).toBe('02')
+    })
+
+    test('leaves two digits as-is', () => {
+        expect(padCount(14)).toBe('14')
+    })
+
+    test('leaves three-plus digits as-is', () => {
+        expect(padCount(128)).toBe('128')
+    })
+
+    test('pads zero', () => {
+        expect(padCount(0)).toBe('00')
     })
 })
