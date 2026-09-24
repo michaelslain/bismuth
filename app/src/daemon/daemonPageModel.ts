@@ -58,6 +58,19 @@ export function faceCaption(
     return `watching // last: ${last.name} ${age}`
 }
 
+/** Whether the host should auto-steer the facet to `inbox` on this reactive tick: something is
+ *  due, the host hasn't already steered once this mount, and the user hasn't picked a facet of
+ *  their own. The host is expected to keep its own `steered` flag and flip it true the one time
+ *  this returns true, so a due count that goes 0→1→0→2 steers only on the FIRST rise, never the
+ *  second — and never again once the user has interacted with the facet toggle at all. */
+export function shouldSteerToInbox(s: {
+    due: number
+    steered: boolean
+    userPicked: boolean
+}): boolean {
+    return s.due > 0 && !s.steered && !s.userPicked
+}
+
 /** The one panel the page shows at a time. */
 export type DaemonFacet = 'inbox' | 'crons' | 'services' | 'log'
 

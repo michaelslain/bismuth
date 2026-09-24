@@ -5,6 +5,7 @@ import {
     barReadouts,
     initialFacet,
     facetCount,
+    shouldSteerToInbox,
     DAEMON_FACETS,
     RECENT_FAILURE_MS,
 } from './daemonPageModel'
@@ -178,4 +179,37 @@ test('bar readouts are the status alone now — counts moved onto the facet labe
         'watching // last: dream 4m ago',
     ])
     expect(barReadouts('')).toEqual([])
+})
+
+test('shouldSteerToInbox: fires only while something is due, not yet steered, not user-picked', () => {
+    expect(
+        shouldSteerToInbox({ due: 1, steered: false, userPicked: false }),
+    ).toBe(true)
+    expect(shouldSteerToInbox({ due: 0, steered: false, userPicked: false })).toBe(
+        false,
+    )
+    expect(shouldSteerToInbox({ due: 1, steered: true, userPicked: false })).toBe(
+        false,
+    )
+    expect(shouldSteerToInbox({ due: 1, steered: false, userPicked: true })).toBe(
+        false,
+    )
+})
+
+test('shouldSteerToInbox: a due 0→1→0→2 sequence steers on the first rise only, never again', () => {
+    let steered = false
+    const tick = (due: number) => {
+        if (shouldSteerToInbox({ due, steered, userPicked: false })) steered = true
+    }
+    tick(0)
+    expect(steered).toBe(false)
+    tick(1) // first rise — steers
+    expect(steered).toBe(true)
+    tick(0)
+    expect(steered).toBe(true) // stays steered, no un-steering
+    tick(2) // due again — must NOT steer a second time
+    expect(steered).toBe(true)
+    // the flag having gone true once is the whole point: shouldSteerToInbox now always answers
+    // false for this mount, however due bounces around.
+    expect(shouldSteerToInbox({ due: 2, steered, userPicked: false })).toBe(false)
 })
