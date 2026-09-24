@@ -208,7 +208,7 @@
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are
    re-enabled because the bar itself is click-through. */
 
-.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
+.graph-bottom-local { display: flex; gap: var(--sp-4); margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
 /* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
    props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
    Five text segments wrapped onto two rows here and ate the little field's height, which is exactly

@@ -29,7 +29,7 @@ const GraphLayerToggles: Component<GraphLayerTogglesProps> = props => (
             title={
                 props.clusters
                     ? 'Clusters — notes read as named groups (zoomed-out masses in 2D). Click to show every note'
-                    : 'Every note — drawn and named at every zoom. Click to group into clusters'
+                    : 'Every note — the biggest hubs named, more names as you zoom in. Click to group into clusters'
             }
             onClick={() => props.onClusters(!props.clusters)}
         >

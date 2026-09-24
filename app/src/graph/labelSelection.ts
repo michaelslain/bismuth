@@ -153,6 +153,25 @@ export function clusterLabelBudget(
     return Math.max(floor, Math.min(byRows, totalCandidates))
 }
 
+/**
+ * Note-name budget for the FLAT field ([clusters] off). With no cluster names to fall back on, a
+ * zoom-only budget (`fileLabelBudget`, zero at fit) would leave the field unnamed — but opening it
+ * to every candidate crowds it with a name on every glyph. So it starts at the pane's ROW budget
+ * (`clusterLabelBudget` — roughly one name per few rows, biggest-degree first) and grows with zoom
+ * to every candidate, whichever is larger.
+ */
+export function flatLabelBudget(
+    t: number,
+    rows: number,
+    totalCandidates: number,
+): number {
+    if (totalCandidates <= 0) return 0
+    return Math.max(
+        clusterLabelBudget(rows, totalCandidates),
+        fileLabelBudget(t, totalCandidates),
+    )
+}
+
 /** Smoothstep crossfade: 0 at/below `revealT`, 1 at `revealT + fadeSpan` and beyond. Drives file
  *  labels' fade-IN alpha; `clusterLabelAlpha` is its complement. */
 export function fileLabelAlpha(
