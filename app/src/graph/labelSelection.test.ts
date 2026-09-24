@@ -5,6 +5,7 @@ import {
     fileLabelAlpha,
     clusterLabelAlpha,
     clusterLabelBudget,
+    flatLabelBudget,
     clusterLabelText,
     CLUSTER_LABEL_MAX_CHARS,
     CLUSTER_LABEL_MIN_BUDGET,
@@ -366,5 +367,19 @@ describe('clusterLabelBudget — how many cluster names a pane may draw at once,
         const budget = clusterLabelBudget(15, 18) // a compact-shrunk small panel's row count, ballpark
         expect(budget).toBeLessThan(18)
         expect(budget).toBeGreaterThanOrEqual(CLUSTER_LABEL_MIN_BUDGET)
+    })
+})
+
+describe('flatLabelBudget — clusters-off note names: row budget at fit, every name when zoomed in', () => {
+    it('names only the row budget at fit, not every candidate', () => {
+        expect(flatLabelBudget(0, 30, 1000)).toBe(clusterLabelBudget(30, 1000))
+        expect(flatLabelBudget(0, 30, 1000)).toBeLessThan(1000)
+    })
+    it('opens to every candidate once fully zoomed in', () => {
+        expect(flatLabelBudget(1, 30, 1000)).toBe(1000)
+    })
+    it('never exceeds the candidates, and is zero with none', () => {
+        expect(flatLabelBudget(0, 60, 4)).toBe(4)
+        expect(flatLabelBudget(0.5, 30, 0)).toBe(0)
     })
 })

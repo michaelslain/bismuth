@@ -55,6 +55,7 @@ import {
     FILE_LABEL_FADE_SPAN,
     fileLabelAlpha,
     fileLabelBudget,
+    flatLabelBudget,
     FILE_LABEL_REVEAL_T,
     levelBoundaries,
 } from './labelSelection'
@@ -3688,8 +3689,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // must still DROP colliding names rather than draw them over each other.
         const everyNode =
             this.cfg.labelEveryNode === true || this.levelCount === 0
-        const budget =
-            everyNode || flat ? ordered.length : fileLabelBudget(t, ordered.length)
+        // `flat` opens to every name only as the camera zooms in — at fit it names the pane's
+        // row budget of biggest hubs, so the field is labelled without a name on every glyph.
+        const budget = everyNode
+            ? ordered.length
+            : flat
+              ? flatLabelBudget(t, m.rows, ordered.length)
+              : fileLabelBudget(t, ordered.length)
 
         const forced = (nv: NodeView) => {
             const id = nv.node.id

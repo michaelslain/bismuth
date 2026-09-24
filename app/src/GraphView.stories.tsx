@@ -498,8 +498,33 @@ const clustered = (clusters: boolean, gradient: boolean) => () => {
 /** A real community hierarchy with [clusters] on (the default): zoomed out, each community is one mass. */
 export const Clustered: Story = { render: clustered(true, true) }
 
-/** Same graph, [clusters] off: every note glyph + name at 100% zoom, no masses. */
+/** Same graph, [clusters] off: every note glyph, no masses — names thinned to the biggest hubs at fit. */
 export const ClustersOff: Story = { render: clustered(false, true) }
+
+/** The sidebar mini graph over the same hierarchy — its [clusters] toggle sits bottom-right beside
+ *  [local], driving the same shared signal as the full pane's layer toggles. */
+const miniClustered = (clusters: boolean) => () => {
+    setGraphClusters(clusters)
+    setGraphGradient(true)
+    const graph = sampleClusteredGraphData()
+    return (
+        <div style={{ height: '305px', width: '266px' }}>
+            <GraphView graph={graph} communitySource={graph} onOpen={noop} mode="2nd" setMode={noop} active={null} fill mini />
+        </div>
+    )
+}
+
+export const MiniClustered: Story = { render: miniClustered(true) }
+
+/** [clusters] off in the mini graph: note names at fit are thinned to the pane's row budget
+ *  (biggest hubs first), not one on every glyph. */
+export const MiniClustersOff: Story = {
+    render: miniClustered(false),
+    play: async ({ canvasElement }) => {
+        const btn = await within(canvasElement).findByRole('button', { name: /clusters/ })
+        await expect(btn.getAttribute('aria-pressed')).toBe('false')
+    },
+}
 
 /** [gradient] off: no bloom canvas, no vignette, flat ground. play() turns it back on and the
  *  atmosphere remounts (Review Focus 1). */

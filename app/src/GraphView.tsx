@@ -713,6 +713,20 @@ export function GraphView(props: {
               open note. */}
                     <Show when={props.mini}>
                         <div class={styles['graph-bottom-local']}>
+                            {/* [clusters] — the same shared toggle as the full pane's layer toggles
+                            (graph/graphLayers.ts), so flipping it here flips it there too. */}
+                            <TextButton
+                                variant={graphClusters() ? 'selected' : 'unselected'}
+                                aria-pressed={graphClusters()}
+                                title={
+                                    graphClusters()
+                                        ? 'Clusters — notes read as named groups. Click to show every note'
+                                        : 'Every note — the biggest hubs named, more names as you zoom in. Click to group into clusters'
+                                }
+                                onClick={() => setGraphClusters(!graphClusters())}
+                            >
+                                clusters
+                            </TextButton>
                             <TextButton
                                 variant={localOn() ? 'selected' : 'unselected'}
                                 title={
