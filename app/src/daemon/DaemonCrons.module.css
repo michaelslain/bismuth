@@ -41,6 +41,25 @@
 }
 .cronsList > div:hover > :nth-child(4),
 .cronsList > div:focus-within > :nth-child(4),
+.cronsList > div[data-confirming] > :nth-child(3),
 .cronsList > div[data-confirming] > :nth-child(4) {
     visibility: hidden;
+}
+/* Touch: DaemonRow keeps .actions always visible, so the overlay would paint [ run ] over a
+   visible status — put the actions cell back into grid flow instead. */
+@media (hover: none) {
+    .cronsList {
+        grid-template-columns: auto minmax(12ch, max-content) minmax(0, 1fr) max-content auto;
+    }
+    .cronsList > div > :nth-child(4) {
+        margin-right: 0;
+    }
+    .cronsList > div > :nth-child(5) {
+        position: static;
+        height: auto;
+    }
+    .cronsList > div:focus-within > :nth-child(4),
+    .cronsList > div[data-confirming] > :nth-child(4) {
+        visibility: visible;
+    }
 }
