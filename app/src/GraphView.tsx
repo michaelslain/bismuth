@@ -16,6 +16,13 @@ import type {
 } from './graph/graphRenderer'
 import { AsciiGraphRenderer } from './graph/AsciiGraphRenderer'
 import { GraphAtmosphere, type BloomSink } from './graph/GraphAtmosphere'
+import GraphLayerToggles from './graph/GraphLayerToggles'
+import {
+    graphClusters,
+    graphGradient,
+    setGraphClusters,
+    setGraphGradient,
+} from './graph/graphLayers'
 import { computeLayout } from '../../core/src/layout'
 import { localLayoutInput } from './graph/localLayoutInput'
 import { settings, DEFAULT_ACCENT_PALETTE } from './settings'
@@ -334,7 +341,9 @@ export function GraphView(props: {
             // zoom on the assumption that aggregate MASSES are covering the field. With no communities there
             // are no masses, so both passes stay off and the field renders completely empty. Local mode wants
             // the real notes at every zoom, which is exactly the non-LOD path.
-            showLodMasses: props.mode !== 'local',
+            // The [clusters] toggle (graph/graphLayers.ts) turns the masses off for every-note-at-every-zoom,
+            // the same non-LOD path local mode takes.
+            showLodMasses: graphClusters() && props.mode !== 'local',
             // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
             // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
             edgeColor: ap.isLight
@@ -563,6 +572,13 @@ export function GraphView(props: {
                         weight="inherit"
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
+                        <GraphLayerToggles
+                            clusters={graphClusters()}
+                            gradient={graphGradient()}
+                            showClusters={graphViewMode() === '2d'}
+                            onClusters={setGraphClusters}
+                            onGradient={setGraphGradient}
+                        />
                         <SegmentedToggle
                             value={graphViewMode()}
                             onChange={setViewMode}
@@ -595,14 +611,18 @@ export function GraphView(props: {
                 }}
             >
                 <div class={styles['graph-canvas-host']} ref={host} />
-                {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette). Mounts
-            unconditionally, ONCE, for the component's whole lifetime. The old rule ("the ASCII
-            field's ground is deliberately flat, no glow or vignette") is deliberately reversed: the
+                {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette). Mounts while
+            the [gradient] toggle (graph/graphLayers.ts) is on. The old rule ("the ASCII field's
+            ground is deliberately flat, no glow or vignette") is deliberately reversed: the
             redesign's phosphor bloom IS the atmosphere.
             No `renderer` prop, on purpose — see GraphAtmosphere.tsx's file-level comment and
             bloomSink above. No DOM label overlay: the renderer draws its labels on its own
-            canvas. */}
-                <GraphAtmosphere sink={bloomSink} mode={props.mode} />
+            canvas. Unmounting clears `bloomSink.current` (GraphAtmosphere's own onCleanup) so the
+            renderer's bloom callback becomes a no-op, and remounting re-registers it — exactly
+            what the bloomSink indirection was built for. */}
+                <Show when={graphGradient()}>
+                    <GraphAtmosphere sink={bloomSink} mode={props.mode} />
+                </Show>
                 {/* No floating cluster-legend card — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. */}
