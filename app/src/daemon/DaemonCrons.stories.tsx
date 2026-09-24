@@ -161,7 +161,7 @@ export const LongName: Story = {
     ),
 }
 
-/** `[ new cron ]` swapped for the inline name field. */
+/** The list's last row, `+ new cron`, swapped in place for the inline name field. */
 export const Creating: Story = {
     render: () => (
         <div style={{ width: '360px', height: '160px' }}>
@@ -171,11 +171,9 @@ export const Creating: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const newCronBtn = canvas.getByRole('button', { name: 'new cron' })
-        // The panel head's own actions are hidden at rest too.
-        const actions = canvasElement.querySelector<HTMLElement>(
-            '[class*="daemon-panel-actions"]',
-        )!
-        await expect(getComputedStyle(actions).opacity).toBe('0')
+        // The create action is the list's own last row, visible at rest (not a hover-revealed
+        // panel-head button).
+        await expect(getComputedStyle(newCronBtn).opacity).toBe('1')
         await userEvent.click(newCronBtn)
         await expect(
             canvas.getByRole('textbox', { name: 'new cron name' }),

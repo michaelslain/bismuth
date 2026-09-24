@@ -27,12 +27,3 @@
 .list.with-actions {
     grid-template-columns: auto minmax(12ch, max-content) minmax(max-content, 1fr) auto;
 }
-.create-field {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-}
-.create-error {
-    color: var(--danger);
-    white-space: nowrap;
-}

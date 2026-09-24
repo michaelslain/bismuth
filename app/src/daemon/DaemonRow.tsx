@@ -66,6 +66,7 @@ function DaemonRow(props: DaemonRowProps) {
             class={`${styles.row} ${props.class ?? ''}`}
             classList={{ [styles.dim]: props.dim }}
             data-confirming={props.confirming ? '' : undefined}
+            data-testid="daemon-row"
             tabIndex={props.onOpen ? 0 : undefined}
             role={props.onOpen ? 'button' : undefined}
             onClick={open}

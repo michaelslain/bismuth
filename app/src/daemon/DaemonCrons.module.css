@@ -16,14 +16,3 @@
     grid-template-columns: auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto;
     row-gap: 0;
 }
-/* The head's create control — the field and its inline error sit on one row (no vertical
-   growth of the panel head), the error trailing the input in the danger token. */
-.create-field {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-}
-.create-error {
-    color: var(--danger);
-    white-space: nowrap;
-}

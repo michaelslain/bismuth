@@ -42,7 +42,7 @@ export const Default: Story = {
         // (`.list` vs `.list.with-actions` in DaemonProcesses.module.css), so every row's status
         // word is its last painted cell.
         const rows = [
-            ...canvasElement.querySelectorAll<HTMLElement>('[class*="row"]'),
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="daemon-row"]'),
         ]
         await expect(rows.length).toBeGreaterThan(0)
         for (const row of rows) {
@@ -107,7 +107,7 @@ export const LongName: Story = {
         // …with the status word still fully inside the row, not pushed off the edge by the
         // un-clipped name.
         await expect(canvas.getByText('on')).toBeInTheDocument()
-        const row = name.closest<HTMLElement>('[class*="row"]')!
+        const row = name.closest<HTMLElement>('[data-testid="daemon-row"]')!
         const status = row.lastElementChild as HTMLElement
         const rowRect = row.getBoundingClientRect()
         const statusRect = status.getBoundingClientRect()
@@ -116,7 +116,7 @@ export const LongName: Story = {
     },
 }
 
-/** `[ new service ]` swapped for the inline name field. */
+/** The list's last row, `+ new service`, swapped in place for the inline name field. */
 export const Creating: Story = {
     render: () => (
         <div style={{ width: '360px', height: '160px' }}>
@@ -126,11 +126,9 @@ export const Creating: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const newServiceBtn = canvas.getByRole('button', { name: 'new service' })
-        // The panel head's own actions are hidden at rest too.
-        const actions = canvasElement.querySelector<HTMLElement>(
-            '[class*="daemon-panel-actions"]',
-        )!
-        await expect(getComputedStyle(actions).opacity).toBe('0')
+        // The create action is the list's own last row, visible at rest (not a hover-revealed
+        // panel-head button).
+        await expect(getComputedStyle(newServiceBtn).opacity).toBe('1')
         await userEvent.click(newServiceBtn)
         await expect(
             canvas.getByRole('textbox', { name: 'new service name' }),
