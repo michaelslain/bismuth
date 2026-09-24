@@ -3,14 +3,15 @@
    Wave 2 Task 9). The three cross-boundary rules that reach OTHER components' DOM via
    `[data-*]` attributes stayed behind in switcher.css — see that file's header for why.
 
-   `.search-ask-ai*`/`.search-empty*`/`.search-kbd` (below, "moved from SearchResultRows.module.css")
-   MOVED IN from ../SearchResultRows.module.css (ds-conformance Task 8 follow-up): SwitcherBar.tsx
-   was the only reader of that markup anywhere in the app, so importing SearchResultRows.module.css
-   here just for these classes was a second importer of a stylesheet `SearchResultRows.tsx` alone
-   owns (its own classes are `.sresult` and descendants only). Moved byte-for-byte; nothing else
-   changed. `switcher-ask-ai` (this file's own pre-existing class) still composes alongside
-   `search-ask-ai` on the persistent AI affordance — same two classes on one element as before,
-   just both local to this module now.
+   `.search-empty*`/`.search-kbd` (below, "moved from SearchResultRows.module.css") MOVED IN from
+   ../SearchResultRows.module.css (ds-conformance Task 8 follow-up): SwitcherBar.tsx was the only
+   reader of that markup anywhere in the app, so importing SearchResultRows.module.css here just
+   for these classes was a second importer of a stylesheet `SearchResultRows.tsx` alone owns (its
+   own classes are `.sresult` and descendants only). Moved byte-for-byte; nothing else changed.
+   `.search-ask-ai*` (the persistent AI affordance's former bespoke CTA plate) moved in alongside
+   these the same way, then was deleted outright in one-button task 9 once the affordance became an
+   `IconTextButton` — its look now comes from the button family, and `.switcher-ask-ai` (this
+   file's own class, unaffected) carries only the placement `margin-top`.
 
    `.switcher-list` is now a real hashed local (one-global-followups Task 2): SwitcherBar.tsx sets
    both the local class AND a `data-switcher-list` attribute on the same element, and
@@ -92,36 +93,12 @@
 }
 
 /* The persistent "Ask Bismuth AI" footer affordance under the unified list (question-shaped
-   queries that DO have rows — Enter commits a row, so the AI keeps its own visible path). */
+   queries that DO have rows — Enter commits a row, so the AI keeps its own visible path). Now an
+   IconTextButton (one-button task 9); this is a PLACEMENT-only override (the button's own look
+   comes from the button family, not this class) — see SwitcherBar.tsx. The former bespoke
+   `.search-ask-ai*` rules (border/background/color/padding — the teal CTA plate) are gone with the
+   PlainButton they styled. */
 .switcher-ask-ai { margin-top: var(--sp-5); }
-
-/* .search-ask-ai — MOVED IN from ../SearchResultRows.module.css (see this file's header) — the
-   persistent AI affordance (BUG #8): shown under the result rows whenever the query is
-   question-shaped, so the AI search is reachable in one obvious click even when file/keyword
-   matches exist. Also invokable via Cmd+Enter. */
-.search-ask-ai {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  width: 100%;
-  padding: var(--sp-4) var(--sp-5);
-  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
-  border-radius: var(--r-0);
-  background: color-mix(in srgb, var(--teal) 7%, transparent);
-  color: var(--teal);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-body);
-  text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.search-ask-ai:hover {
-  background: color-mix(in srgb, var(--teal) 13%, transparent);
-  border-color: color-mix(in srgb, var(--teal) 70%, var(--border));
-}
-.search-ask-ai-icon { flex: none; color: var(--teal); }
-.search-ask-ai-label { font-weight: 500; }
-.search-ask-ai-kbd { margin-left: auto; }
 
 /* .search-empty — zero-results affordance: a centered column nudging the user toward the AI
    fallback (clickable CTA) or reporting the AI found nothing. */

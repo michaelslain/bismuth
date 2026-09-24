@@ -155,6 +155,7 @@ export function TabRailRow(props: {
                     fallback={
                         <IconButton
                             class={styles['tab-x']}
+                            size="sm"
                             icon="X"
                             label="Close tab"
                             onClick={props.onClose}
@@ -163,6 +164,8 @@ export function TabRailRow(props: {
                 >
                     <IconButton
                         class={styles['tab-pin']}
+                        size="sm"
+                        variant="selected"
                         icon="Pin"
                         label="Unpin tab"
                         onClick={() => props.onUnpin()}
