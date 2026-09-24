@@ -116,7 +116,9 @@ export const AllEmpty: Story = {
 
 export const LongLog: Story = {
     render: () => (
-        <Frame width="900px" height="1200px">
+        // Bounded, not 1200px: the log only has to scroll (Acceptance 11) when the frame can't
+        // just grow to fit all 60 rows.
+        <Frame width="900px" height="600px">
             <DaemonOverview
                 inbox={
                     <DaemonSection title="inbox" count={2} empty="nothing needs you" isEmpty={false}>
@@ -183,11 +185,15 @@ export const TallTopSections: Story = {
     ),
     play: async ({ canvasElement }) => {
         await expect(assertSectionOrder(canvasElement)).toEqual(['inbox', 'crons', 'services', 'log'])
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
-        )
+        const root = getComputedStyle(document.documentElement)
+        const rowH = parseFloat(root.getPropertyValue('--row-h'))
+        const sp1 = parseFloat(root.getPropertyValue('--sp-1'))
+        const sp2 = parseFloat(root.getPropertyValue('--sp-2'))
+        // 8 real (padded) rows plus the section heading's own row + its gap to the first row —
+        // matches `.logSlot`'s `min-height` in DaemonOverview.module.css.
+        const floor = (rowH + 2 * sp1) * 8 + rowH + sp2
         const logSection = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-section-log"]')!
-        await expect(logSection.offsetHeight).toBeGreaterThanOrEqual(8 * rowH)
+        await expect(logSection.offsetHeight).toBeGreaterThanOrEqual(floor)
     },
 }
 
