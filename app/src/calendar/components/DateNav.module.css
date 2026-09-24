@@ -1,9 +1,11 @@
 /* app/src/calendar/components/DateNav.module.css — the view bar's time cluster.
  *
- * `.vbtn` (VBtn's own base class, ui/ViewBar.module.css) is a real hashed local now — not reachable
- * from outside that module by name any more — so `.range` below no longer needs a `:global(.vbtn)`
- * compound to outrank it: a plain local class beats VBtn's single-class base on specificity alone
- * (two classes via the `.nav` ancestor vs one), no load-order dependency either way.
+ * TODAY and the chevrons are Button-family controls now (`IconTextButton`/`IconButton`, one-button
+ * Task 2) — they own their own box, padding and hover/selected look, so the `.step`/`.today`
+ * VBtn-compensating rules that used to live here (squaring the chevrons, tightening TODAY's
+ * padding against VBtn's shared `0 var(--sp-5)`) are gone: giving a Button-family control its own
+ * padding/width here would fight the look the `size`/`variant` props already produce. `.range`
+ * below is the one control that stays a plain readout (`PlainButton`), so it keeps its own class.
  *
  * THERE ARE NO COLLAPSE RULES HERE ANY MORE. This file used to carry two @container tiers against
  * `caltoolbar`, repeating Toolbar.module.css's 540 and 400 under a comment asking the two files to
@@ -16,25 +18,6 @@
     align-items: center;
     gap: var(--sp-4);
     min-width: 0;
-}
-
-/* Square, not a text button carrying an icon: the shared `.vbtn` padding is `0 var(--sp-5)`, which
-   on an icon-only button reads as ~40px of dead space per chevron and made prev/next look like a
-   gap between two unrelated controls. */
-.nav .step {
-    width: var(--h-control);
-    padding: 0;
-    justify-content: center;
-    flex: none;
-}
-
-/* TODAY keeps its own tighter padding while the word is showing. When the word drops (the late-word
-   tier), the ladder's `:has(> [data-bar-label='late'])` rule squares the button up — generic, so
-   no view has to write that geometry twice. */
-.nav .today {
-    flex: none;
-    gap: var(--sp-3);
-    padding: 0 var(--sp-4);
 }
 
 /* The subject of the bar, and a secondary jump back to today. Sentence case, --fg, no tracking —
