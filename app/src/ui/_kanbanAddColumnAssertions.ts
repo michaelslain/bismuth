@@ -1,6 +1,6 @@
 // app/src/ui/_kanbanAddColumnAssertions.ts
 // Story-only probes for bases/KanbanAddColumn, shared by Bases/KanbanAddColumn.stories.tsx (the
-// ghost alone) and Bases/KanbanView.stories.tsx's AddColumn (the ghost at the end of a real
+// ghost alone) and Bases/KanbanView/Columns.stories' AddColumn (the ghost at the end of a real
 // board). ONE definition of "where the text starts", so the two stories cannot drift apart on
 // what they measure. Keys only on `data-testid="kanban-add-column"`, `data-kbcol` and tag
 // selectors — never a CSS-module class name, which hashes.

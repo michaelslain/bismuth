@@ -51,7 +51,7 @@ const KanbanColumnMenu: Component<KanbanColumnMenuProps> = props => {
                 title="Column menu"
                 onClick={() => setMode(mode() === 'closed' ? 'menu' : 'closed')}
             >
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     …
                 </Text>
             </PlainButton>

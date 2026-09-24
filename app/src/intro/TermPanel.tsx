@@ -40,60 +40,30 @@ function Line(props: { ln: TermLine }): JSX.Element {
     const ln = props.ln
     if ('p' in ln)
         return (
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-pmt']}
-                >
+            <Text as="span" inherit>
+                <Text as="span" inherit class={styles['t-pmt']}>
                     {ln.p}{' '}
                 </Text>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-cmd']}
-                >
+                <Text as="span" inherit class={styles['t-cmd']}>
                     {ln.c}
                 </Text>
             </Text>
         )
     if ('user' in ln)
         return (
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-prompt']}
-                >
+            <Text as="span" inherit>
+                <Text as="span" inherit class={styles['t-prompt']}>
                     ›{' '}
                 </Text>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-cmd']}
-                >
+                <Text as="span" inherit class={styles['t-cmd']}>
                     {ln.user}
                 </Text>
             </Text>
         )
     if ('status' in ln)
         return (
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-on']}
-                >
+            <Text as="span" inherit>
+                <Text as="span" inherit class={styles['t-on']}>
                     ●
                 </Text>{' '}
                 <Text as="span" size="inherit" tone="muted" weight="inherit">
@@ -102,20 +72,14 @@ function Line(props: { ln: TermLine }): JSX.Element {
             </Text>
         )
     return (
-        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+        <Text as="span" inherit>
             <Text as="span" size="inherit" tone="faint" weight="inherit">
                 {ln.d}
             </Text>
             {ln.accent && (
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     {' '}
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['t-accent']}
-                    >
+                    <Text as="span" inherit class={styles['t-accent']}>
                         {ln.accent}
                     </Text>
                 </Text>
@@ -133,13 +97,7 @@ function Line(props: { ln: TermLine }): JSX.Element {
                 </Text>
             )}
             {ln.ok && (
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['t-ok']}
-                >
+                <Text as="span" inherit class={styles['t-ok']}>
                     {ln.ok}
                 </Text>
             )}
@@ -160,13 +118,7 @@ const TermPanel: Component<TermPanelProps> = props => {
           bismuth-design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
           or macOS traffic-light dots. */}
             <div class={styles['vi-term-bar']}>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['vi-term-tab']}
-                >
+                <Text as="span" inherit class={styles['vi-term-tab']}>
                     [ {props.name} ]
                 </Text>
             </div>
@@ -189,22 +141,10 @@ const TermPanel: Component<TermPanelProps> = props => {
                         'animation-delay': `${0.15 + props.lines.length * 0.28}s`,
                     }}
                 >
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['t-pmt']}
-                    >
+                    <Text as="span" inherit class={styles['t-pmt']}>
                         ~/vault ❯{' '}
                     </Text>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class="asc-caret"
-                    >
+                    <Text as="span" inherit class="asc-caret">
                         _
                     </Text>
                 </div>

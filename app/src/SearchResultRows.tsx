@@ -68,9 +68,7 @@ export function SearchResultRows(props: {
                     here would re-add a 700 class fighting that 500, not reproduce it. */}
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['sresult-title']}
                             >
                                 {parts.name}
@@ -78,9 +76,7 @@ export function SearchResultRows(props: {
                             <Show when={parts.folder}>
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['sresult-path']}
                                 >
                                     // {parts.folder}/
@@ -93,9 +89,7 @@ export function SearchResultRows(props: {
                         <Show when={r.reason}>
                             <Text
                                 as="div"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['sresult-reason']}
                             >
                                 {r.reason}
@@ -109,18 +103,14 @@ export function SearchResultRows(props: {
                                 >
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['sresult-line']}
                                     >
                                         {s.line}
                                     </Text>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['sresult-text']}
                                     >
                                         {s.before}

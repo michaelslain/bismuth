@@ -17,13 +17,7 @@ export type LockupProps = {
 const Lockup: Component<LockupProps> = props => {
     return (
         <div class={styles['vi-lockup']}>
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['vi-lockup-mark']}
-            >
+            <Text as="span" inherit class={styles['vi-lockup-mark']}>
                 <img
                     src={`/logos/${props.icon}.svg`}
                     width={30}

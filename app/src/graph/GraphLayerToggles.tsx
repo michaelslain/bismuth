@@ -18,9 +18,7 @@ export type GraphLayerTogglesProps = {
 const GraphLayerToggles: Component<GraphLayerTogglesProps> = props => (
     <Text
         as="span"
-        size="inherit"
-        tone="inherit"
-        weight="inherit"
+        inherit
         class={[styles.toggles, props.class ?? ''].filter(Boolean).join(' ')}
     >
         <TextButton

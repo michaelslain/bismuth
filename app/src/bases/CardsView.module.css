@@ -62,7 +62,7 @@
    (`<Label tone="default" lines={2}>`); font-family/size/weight/letter-spacing/line-height and
    the card-cover positioning stay here — not on the app's fixed type scale, so not something
    Label should own. */
-.coverTitle { position: relative; z-index: 1; font-family: var(--ui-font-stack); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+.coverTitle { position: relative; z-index: 1; font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
    positioning stay here. */

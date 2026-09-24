@@ -60,6 +60,9 @@ td.cellMuted { color: var(--text-muted); }
   display: flex;
   justify-content: center;
 }
+/* The last column's handle would hang 6px past the table's right edge — past the viewport when
+   the table fills it — so it tucks inside the cell instead. */
+.thResizable:last-child .thResize { right: 0; }
 .thResize::after {
   content: "";
   width: 2px;

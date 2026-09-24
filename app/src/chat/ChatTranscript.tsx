@@ -212,7 +212,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                     <ChatTurnColumn class={styles['chat-row']}>
                         <ChatTurnLabel label={props.persona} />
                         <div class={styles['chat-awaiting-dots']}>
-                            working<Text as="span" size="inherit" tone="inherit" weight="inherit" class="asc-caret">_</Text>
+                            working<Text as="span" inherit class="asc-caret">_</Text>
                         </div>
                     </ChatTurnColumn>
                 </Show>
@@ -223,7 +223,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                                 value="TriangleAlert"
                                 class={styles['chat-turn-error-icon']}
                             />
-                            <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                            <Text as="span" inherit>
                                 {msg()}
                             </Text>
                         </ChatTurnColumn>

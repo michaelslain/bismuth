@@ -27,9 +27,7 @@ export type ChatColorDotProps = {
 const ChatColorDot: Component<ChatColorDotProps> = props => (
     <Text
         as="span"
-        size="inherit"
-        tone="inherit"
-        weight="inherit"
+        inherit
         class={`${styles['chat-color-dot']} ${props.none ? styles['chat-color-dot--none'] : ''}`}
         style={
             !props.none && props.color ? { background: props.color } : undefined

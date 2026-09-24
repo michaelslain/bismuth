@@ -27,13 +27,7 @@ export function DragGhost(props: {
                 width: `${props.width}px`,
             }}
         >
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['drag-ghost-label']}
-            >
+            <Text as="span" inherit class={styles['drag-ghost-label']}>
                 {props.label}
             </Text>
         </div>

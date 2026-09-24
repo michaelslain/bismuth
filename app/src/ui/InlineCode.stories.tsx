@@ -28,7 +28,7 @@ export const Playground: Story = {}
 export const InSentence: Story = {
     render: () => (
         <Row label="in a sentence">
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
+            <Text as="span" inherit>
                 Add e.g. <InlineCode>groupBy: note.status</InlineCode> to the
                 view.
             </Text>

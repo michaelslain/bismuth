@@ -252,13 +252,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
             >
                 <Index each={cells()}>
                     {(c, i) => (
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={cellClass(i)}
-                        >
+                        <Text as="span" inherit class={cellClass(i)}>
                             {c()}
                         </Text>
                     )}

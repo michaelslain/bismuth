@@ -18,9 +18,7 @@ const DayNumber: Component<DayNumberProps> = props => {
     return (
         <Text
             as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
+            inherit
             class={[
                 styles.root,
                 props.today ? styles.today : '',

@@ -39,7 +39,7 @@ export function ToastHost() {
             <For each={toasts()}>
                 {t => (
                     <div class={styles['toast-pill']}>
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             {t.message}
                         </Text>
                         {t.action && (

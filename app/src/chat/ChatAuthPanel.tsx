@@ -119,9 +119,7 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
                             <Icon value="KeyRound" />
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles.name}
                             >
                                 {p.name}
@@ -129,9 +127,7 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
                             <Show when={p.kind}>
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles.kind}
                                 >
                                     {p.kind}

@@ -27,9 +27,7 @@ function renderTaskText(text: string): JSX.Element[] {
             out.push(
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles.taskLink}
                     onClick={e => {
                         e.stopPropagation()
@@ -48,9 +46,7 @@ function renderTaskText(text: string): JSX.Element[] {
             out.push(
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles.taskLink}
                     title={url}
                     onClick={e => {
@@ -72,13 +68,7 @@ function renderTaskText(text: string): JSX.Element[] {
         } else if (m[5] !== undefined) {
             if (m[4]) out.push(m[4]) // preserve the whitespace captured before the tag
             out.push(
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles.taskTag}
-                >
+                <Text as="span" inherit class={styles.taskTag}>
                     #{m[5]}
                 </Text>,
             )
@@ -145,18 +135,14 @@ const TaskRow: Component<TaskRowProps> = props => {
             />
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={`${styles.taskBody} ${done() ? styles.done : ''}`}
             >
                 {renderTaskText(desc())}
                 <Show when={priority() && priority() !== 'none'}>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={styles.taskField}
                         title={`${priority()} priority`}
                     >
@@ -164,46 +150,26 @@ const TaskRow: Component<TaskRowProps> = props => {
                     </Text>
                 </Show>
                 <Show when={start()}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.taskField}
-                    >
+                    <Text as="span" inherit class={styles.taskField}>
                         {formatDateField('start', start()!)}
                     </Text>
                 </Show>
                 <Show when={scheduled()}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.taskField}
-                    >
+                    <Text as="span" inherit class={styles.taskField}>
                         {formatDateField('scheduled', scheduled()!)}
                     </Text>
                 </Show>
                 <Show when={due()}>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles.taskField} ${overdue() ? styles.overdue : ''}`}
                     >
                         {formatDateField('due', due()!)}
                     </Text>
                 </Show>
                 <Show when={recurrence()}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.taskField}
-                    >
+                    <Text as="span" inherit class={styles.taskField}>
                         [{recurrence()}]
                     </Text>
                 </Show>

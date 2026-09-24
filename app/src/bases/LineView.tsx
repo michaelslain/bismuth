@@ -29,9 +29,7 @@ export function LineView(props: { result: ViewResult; config: BaseConfig }) {
                                     seg.accent ? (
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles.glyph}
                                         >
                                             {seg.text}

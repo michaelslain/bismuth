@@ -50,8 +50,15 @@ export function reorderColumnKeys(
  *  `reorderColumns` does (optimistic set, then `setViewProperty(..., 'columns', keys)`). */
 export function appendColumnKey(keys: string[], name: string): string[] | null {
     const trimmed = name.trim()
-    if (trimmed === '' || keys.includes(trimmed)) return null
+    if (trimmed === '' || isColumnNameTaken(keys, trimmed)) return null
     return [...keys, trimmed]
+}
+
+/** Whether `name` (trimmed) already matches one of `keys` — the single refusal check shared by
+ *  `appendColumnKey`, `renameColumnKey` and `KanbanColumnNameInput`'s inline `already a column`
+ *  error, so the three can never disagree. */
+export function isColumnNameTaken(keys: string[], name: string): boolean {
+    return keys.includes(name.trim())
 }
 
 /** The column-key order after renaming `from` to `to` (trimmed). Refuses (returns `null`,
@@ -68,7 +75,7 @@ export function renameColumnKey(
     if (trimmed === '') return null
     const idx = keys.indexOf(from)
     if (idx < 0) return null
-    if (keys.includes(trimmed)) return null
+    if (isColumnNameTaken(keys, trimmed)) return null
     const out = [...keys]
     out[idx] = trimmed
     return out
@@ -87,17 +94,14 @@ export function removeColumnKey(keys: string[], key: string): string[] {
  *  round-trips the raw YAML shape, not the engine's normalized `BasePropertyType`. */
 type RawPropertyEntry = string | Record<string, unknown>
 
-/** Appends `value` to a declared `select`/`multiselect` property's `options`, returning a NEW
- *  `properties` array with every other entry (and every other field of the matched entry)
- *  preserved untouched — the caller writes the whole array back with
- *  `api.setProperty(basePath, 'properties', ...)`. Refuses (returns `null`, writes nothing)
- *  when `name` isn't declared, isn't a `select`/`multiselect` `type`, or already has `value`
- *  among its options. */
-export function withPropertyOption(
+/** Finds the `properties:` entry named `name`, refusing (returns `null`) when it isn't declared
+ *  or isn't a `select`/`multiselect` type. `options` is the entry's options normalized to
+ *  `string[]` (`[]` when it has none yet) — the shared lookup behind `withPropertyOption` and
+ *  `renamePropertyOption`, which differ only in what they do with `idx`/`entry`/`options` after. */
+function findSelectEntry(
     properties: unknown[],
     name: string,
-    value: string,
-): unknown[] | null {
+): { idx: number; entry: Record<string, unknown>; options: string[] } | null {
     const idx = properties.findIndex(
         entry =>
             entry !== null &&
@@ -110,6 +114,23 @@ export function withPropertyOption(
     const options = Array.isArray(entry.options)
         ? (entry.options as unknown[]).map(v => String(v))
         : []
+    return { idx, entry, options }
+}
+
+/** Appends `value` to a declared `select`/`multiselect` property's `options`, returning a NEW
+ *  `properties` array with every other entry (and every other field of the matched entry)
+ *  preserved untouched — the caller writes the whole array back with
+ *  `api.setProperty(basePath, 'properties', ...)`. Refuses (returns `null`, writes nothing)
+ *  when `name` isn't declared, isn't a `select`/`multiselect` `type`, or already has `value`
+ *  among its options. */
+export function withPropertyOption(
+    properties: unknown[],
+    name: string,
+    value: string,
+): unknown[] | null {
+    const found = findSelectEntry(properties, name)
+    if (!found) return null
+    const { idx, entry, options } = found
     if (options.includes(value)) return null
     const out = [...properties] as RawPropertyEntry[]
     out[idx] = { ...entry, options: [...options, value] }
@@ -127,18 +148,9 @@ export function renamePropertyOption(
     from: string,
     to: string,
 ): unknown[] | null {
-    const idx = properties.findIndex(
-        entry =>
-            entry !== null &&
-            typeof entry === 'object' &&
-            (entry as Record<string, unknown>).name === name,
-    )
-    if (idx < 0) return null
-    const entry = properties[idx] as Record<string, unknown>
-    if (entry.type !== 'select' && entry.type !== 'multiselect') return null
-    const options = Array.isArray(entry.options)
-        ? (entry.options as unknown[]).map(v => String(v))
-        : []
+    const found = findSelectEntry(properties, name)
+    if (!found) return null
+    const { idx, entry, options } = found
     const trimmed = to.trim()
     const oi = options.indexOf(from)
     if (oi < 0) return null
