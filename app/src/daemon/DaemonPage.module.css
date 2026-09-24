@@ -71,6 +71,13 @@
     margin-inline: var(--sp-3);
 }
 
+/* The facet count, riding inside a SegmentedToggle option's own .textLabel (a flex row with its
+   own gap). A direct flex child so dropping it at 480px (BarLabel's drop="late") takes its gap
+   with it, instead of leaving a dead space where a wrapping element used to sit. */
+.facetCount {
+    color: var(--faint);
+}
+
 /* Off: no facet toggle, no panel — the stage is just the sleeping hub. */
 .page[data-enabled='false'] .stage {
     grid-template-columns: minmax(0, 1fr);
