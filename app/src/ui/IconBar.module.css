@@ -1,0 +1,27 @@
+/* app/src/ui/IconBar.module.css — IconBar.tsx's own local stylesheet.
+
+   Row/band/wrap layout only. IconBar reaches its IconButton children through inherited custom
+   properties (`--iconbar-glyph`, set inline from the JS iconSize number; `--iconbar-box`,
+   `--iconbar-unselected-opacity`, set here) that Button.module.css reads with fallbacks equal to
+   today's values — never a class selector or `:global()` into a child it does not own. */
+
+.bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    --iconbar-box: var(--bar-icon-size);
+    --iconbar-unselected-opacity: 1;
+}
+
+.band {
+    min-height: var(--h-band);
+    padding: 0 var(--sp-5);
+    border-bottom: 1px solid var(--border-soft);
+    box-sizing: border-box;
+}
+
+.wrap {
+    flex-flow: row wrap;
+    justify-content: center;
+    row-gap: 0;
+}
