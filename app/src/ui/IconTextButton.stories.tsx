@@ -90,13 +90,14 @@ function BarFrame(props: { w: string; children: JSX.Element }) {
 /** The collapse ladder (one-button Task 1) squares an `IconTextButton` to the same `[▣]` box as a
  *  plain `IconButton` beside it, once its word tier fires — see ViewBar.module.css's ladder. 900px
  *  keeps every label ("categories", "event", "today"): the bar's content box is well above the
- *  800px tier where "early" words drop. 480px is below both the 800px "early" tier and the 480px
- *  "late" tier, so "categories"/"event" (drop="early") AND "today" (drop="late") have all lost
- *  their words — each renders as `[▣]`/`[+]`, the same box as the native `IconButton` `[⚙]` next
- *  to it, with no leftover gap or padding where the word used to be. */
+ *  800px tier where "early" words drop. 510px is below the 800px "early" tier but above the 465px
+ *  "late" tier's own content-box threshold, so "categories"/"event" (drop="early") have lost their
+ *  words while "today" (drop="late") still shows its own — each dropped label renders as `[▣]`/
+ *  `[+]`, the same box as the native `IconButton` `[⚙]` next to it, with no leftover gap or padding
+ *  where the word used to be. */
 export const Collapse: Story = {
     render: () => (
-        <Row label="collapse ladder // wide (900px) vs narrow (480px)">
+        <Row label="collapse ladder // wide (900px) vs narrow (510px)">
             <BarFrame w="900px">
                 <ViewBar
                     actions={
@@ -115,7 +116,7 @@ export const Collapse: Story = {
                     }
                 />
             </BarFrame>
-            <BarFrame w="480px">
+            <BarFrame w="510px">
                 <ViewBar
                     actions={
                         <>

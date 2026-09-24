@@ -237,6 +237,7 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <SegmentedToggle
                         look="icon"
+                        size="sm"
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
@@ -246,6 +247,7 @@ export function Toolbar(props: {
                         <IconButton
                             icon="ImagePlus"
                             label="Import image"
+                            size="sm"
                             onClick={() => props.onImportImage!()}
                         />
                     </Show>
@@ -255,12 +257,14 @@ export function Toolbar(props: {
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             options={colorOpts()}
                             value={t().color}
                             onChange={c => props.setTools({ color: c })}
                         />
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             options={sizeOpts}
                             value={t().size}
                             onChange={s => props.setTools({ size: s })}
@@ -273,6 +277,7 @@ export function Toolbar(props: {
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
@@ -281,6 +286,7 @@ export function Toolbar(props: {
                         <Show when={props.bg && props.setBackground}>
                             <SegmentedToggle
                                 look="icon"
+                                size="sm"
                                 options={paperOpts}
                                 value={props.bg!()}
                                 onChange={id => props.setBackground!(id)}
@@ -299,6 +305,7 @@ export function Toolbar(props: {
                             duplicate of its markup. */}
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             value={undefined}
                             onChange={id =>
                                 id === 'undo' ? props.onUndo() : props.onRedo()
@@ -331,6 +338,7 @@ export function Toolbar(props: {
                                 <IconButton
                                     icon="ZoomOut"
                                     label="Zoom out"
+                                    size="sm"
                                     onClick={() => props.onZoomOut!()}
                                     disabled={props.zoom!() <= ZOOM_MIN}
                                 />
@@ -347,6 +355,7 @@ export function Toolbar(props: {
                                 <IconButton
                                     icon="ZoomIn"
                                     label="Zoom in"
+                                    size="sm"
                                     onClick={() => props.onZoomIn!()}
                                     disabled={props.zoom!() >= ZOOM_MAX}
                                 />
