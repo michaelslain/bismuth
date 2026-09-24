@@ -291,6 +291,22 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['board.md']).toMatch(/type: kanban\n\s+columns:/)
     })
 
+    test('delete-property with viewIndex deletes from views[i], not top level', async () => {
+        const { fa, files } = memVault({
+            'board.md':
+                '---\ntype: base\ngroupColors: keep\nviews:\n  - type: table\n  - type: kanban\n    groupColors:\n      todo: rose\n---\n',
+        })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/delete-property', {
+            path: 'board.md',
+            viewIndex: 1,
+            key: 'groupColors',
+        })
+        expect(files['board.md']).not.toContain('todo: rose')
+        expect(files['board.md']).toMatch(/^groupColors: keep/m)
+    })
+
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {
         setFileAccess(memVault({}).fa)
         const be = createLocalBackend({ vault: '/v' })
