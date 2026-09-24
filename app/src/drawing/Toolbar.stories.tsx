@@ -119,10 +119,10 @@ export const Minimal: Story = {
         // It is a real segment in the mutually-exclusive tool row, not a stray button: picking
         // it deselects the pen.
         const pen = canvasElement.querySelector<HTMLElement>('[title="Pen"]')!
-        // Exact class, never a substring: `btn--unselected` CONTAINS "selected", so a
-        // substring test reports every segment as on and the assertion below can never fail.
+        // Attribute read, not a class: Button stamps data-state on its root as
+        // 'normal'/'selected'/'unselected', so this reads the real state directly.
         const selected = (el: HTMLElement) =>
-            el.classList.contains('btn--selected')
+            el.getAttribute('data-state') === 'selected'
         expect(selected(pen)).toBe(true)
         lasso!.click()
         expect(selected(lasso!)).toBe(true)
