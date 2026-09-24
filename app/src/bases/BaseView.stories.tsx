@@ -964,6 +964,54 @@ export const TasksKanbanQuery: Story = {
     play: expectQueryToggle,
 }
 
+/**
+ * A PLAIN (non-tasks) own-rows kanban board — a `type: base` with NO `source:` — driven through
+ * the real `BaseView` pipeline rather than mounting `KanbanView` directly, to prove the wiring
+ * between them: `BaseView` computes `ownsRows()` (true whenever neither the view nor the base
+ * declares a `source:`) but, until this fix, never passed it down to `<KanbanView>` at all, so
+ * `props.ownsRows` was always `undefined` in the running app.
+ *
+ * That regressed two things at once: `titleCol()` fell back to the computed `'file.name'`
+ * pseudo-property (no writable key, so the typed title was silently dropped) and `addCard()`
+ * took the file-backed branch, `api.write`-ing a brand-new note nothing reads instead of
+ * appending a row to the base's own body. `play()` types a title into the first column's
+ * composer and waits on the recorded transport call for `api.rowCreate` — a `POST /row/update`
+ * with `index: null` — carrying that title, and asserts no `/file` write ever went out.
+ */
+export const KanbanOwnRowsAddCard: Story = {
+    render: () => {
+        const path = 'boards/kanban-own-rows.md'
+        const body =
+            '---\ntype: base\nviews:\n  - type: kanban\n    groupBy:\n      property: status\n    order:\n      - title\n      - priority\n---\n\n' +
+            '- title: Write docs\n  status: todo\n  priority: low\n' +
+            '- title: Fix bug\n  status: doing\n  priority: high\n'
+        taskPosts = recordingTransport({ files: { [path]: body } }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const addButton = (
+            await waitFor(() => canvas.getAllByLabelText('Add a card'))
+        )[0]!
+        await userEvent.click(addButton)
+        const input = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(input, 'New thing')
+        await userEvent.keyboard('{Enter}')
+        const post = await waitFor(() => {
+            const p = taskPosts.find(
+                x =>
+                    x.path === '/row/update' &&
+                    (x.body as { index: unknown }).index === null,
+            )
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const note = (post.body as { note: Record<string, unknown> }).note
+        expect(note.title).toBe('New thing')
+        expect(taskPosts.some(x => x.path === '/file')).toBe(false)
+    },
+}
+
 /** The table is the ONE kind that does not become a task line: it keeps its columns and gains
  *  two cell affordances instead. `play()` therefore checks BOTH — that the `status` cell's
  *  checkbox writes, and that the `due` cell of the past-due row (and only that one) carries
