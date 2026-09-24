@@ -286,7 +286,7 @@ export const LegacyImageSidecar: Story = {
         await expect(Math.abs(colX! + offX - wantX)).toBeLessThanOrEqual(2)
 
         // Paint-only: no toolbar, and nothing was written back.
-        await expect(canvasElement.querySelector('.draw-toolbar')).toBeNull()
+        await expect(canvasElement.querySelector('[data-draw-toolbar]')).toBeNull()
         await expect(await api.read(IMAGE_SIDECAR)).toBe(
             serializeDoc(legacyImageDoc()),
         )
@@ -405,7 +405,7 @@ export const PdfInkOnSecondPageOnly: Story = {
         // Draw mode docks the toolbar inside the visible scroll area, and — acceptance 5 — it
         // never overhangs the page's own left edge (the toolbar centres on the PAGE's rendered
         // band, not the wider scroll-content width the page-frame gutter adds around it).
-        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        const bar = canvasElement.querySelector('[data-draw-toolbar]') as HTMLElement
         expect(bar).not.toBeNull()
         const scroller = canvasElement.querySelector(
             '[data-testid="page-ink"]',
@@ -476,7 +476,7 @@ export const PdfInkToolbarAtZoom2: Story = {
         await waitFor(() =>
             expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth),
         )
-        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        const bar = canvasElement.querySelector('[data-draw-toolbar]') as HTMLElement
         await waitFor(() =>
             expect(bar?.getBoundingClientRect().width).toBeGreaterThan(50),
         )
@@ -733,7 +733,7 @@ export const PdfMarginInk: Story = {
         // Acceptance 5: draw mode's toolbar stays inside the scroll viewport and never overhangs
         // page 0's own left edge — the margin band to its right is fair game (the toolbar may
         // range across page + scratch), the page's own left edge is not.
-        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        const bar = canvasElement.querySelector('[data-draw-toolbar]') as HTMLElement
         expect(bar).not.toBeNull()
         const scroller = canvasElement.querySelector(
             '[data-testid="page-ink"]',
@@ -940,7 +940,7 @@ export const DrawSavesLogicalStroke: Story = {
                     '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
                 )
                 expect(live).not.toBeNull()
-                expect(canvasElement.querySelector('.draw-toolbar')).not.toBeNull()
+                expect(canvasElement.querySelector('[data-draw-toolbar]')).not.toBeNull()
             },
             { timeout: 5000 },
         )

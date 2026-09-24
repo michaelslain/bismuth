@@ -226,29 +226,26 @@ export function Toolbar(props: {
     const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100)
 
     return (
-        // `.draw-toolbar` stays a deliberate bare literal (not `styles['draw-toolbar']`) — several
-        // `*.stories.tsx` probes outside this task's file list still `querySelector('.draw-toolbar')`
-        // for it. `data-draw-toolbar` is the real cross-file contract: InkOverlay.module.css and
-        // PageInk.module.css select on the attribute, not the class, so this component owns its own
-        // stylesheet's :global() reach count of zero for that rule.
-        <div class="draw-toolbar" data-draw-toolbar>
+        // `data-draw-toolbar` is the real cross-file contract: `*.stories.tsx` probes outside
+        // this task's file list, InkOverlay.module.css and PageInk.module.css all select on the
+        // attribute, not the class — so `.draw-toolbar` itself is free to be a plain hashed
+        // local, same as any other component's own root class.
+        <div class={styles['draw-toolbar']} data-draw-toolbar>
             {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
           tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
             <div class={styles['draw-row']}>
                 <div class={styles['draw-group']}>
                     <SegmentedToggle
-                        look="segment"
+                        look="icon"
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
-                        segmentClass={styles['draw-iconseg']}
                     />
                     {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
                     <Show when={props.onImportImage}>
                         <Button
                             kind="segment"
                             state="unselected"
-                            class={styles['draw-iconseg']}
                             title="Import image"
                             aria-label="Import image"
                             onClick={() => props.onImportImage!()}
@@ -261,19 +258,17 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
-                            look="segment"
+                            look="swatch"
                             options={colorOpts()}
                             value={t().color}
                             onChange={c => props.setTools({ color: c })}
-                            class={styles['draw-colorrow']}
-                            segmentClass={styles['draw-colorseg']}
                         />
                         <SegmentedToggle
-                            look="segment"
+                            look="icon"
                             options={sizeOpts}
                             value={t().size}
                             onChange={s => props.setTools({ size: s })}
-                            segmentClass={styles['draw-iconseg']}
+                            class={styles['draw-vstack-seg']}
                         />
                     </div>
                 </div>
@@ -281,19 +276,19 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
-                            look="segment"
+                            look="icon"
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
-                            segmentClass={styles['draw-iconseg']}
+                            class={styles['draw-vstack-seg']}
                         />
                         <Show when={props.bg && props.setBackground}>
                             <SegmentedToggle
-                                look="segment"
+                                look="icon"
                                 options={paperOpts}
                                 value={props.bg!()}
                                 onChange={id => props.setBackground!(id)}
-                                segmentClass={styles['draw-iconseg']}
+                                class={styles['draw-vstack-seg']}
                             />
                         </Show>
                     </div>
@@ -307,12 +302,12 @@ export function Toolbar(props: {
                             ever "selected" and this composes the real component instead of a raw
                             duplicate of its markup. */}
                         <SegmentedToggle
-                            look="segment"
+                            look="icon"
                             value={undefined}
                             onChange={id =>
                                 id === 'undo' ? props.onUndo() : props.onRedo()
                             }
-                            segmentClass={styles['draw-iconseg']}
+                            class={styles['draw-vstack-seg']}
                             options={[
                                 {
                                     id: 'undo' as const,
@@ -338,10 +333,10 @@ export function Toolbar(props: {
                         >
                             <div class={styles['draw-zoomrow']}>
                                 <SegmentedToggle
-                                    look="segment"
+                                    look="icon"
                                     value={undefined}
                                     onChange={() => props.onZoomOut!()}
-                                    segmentClass={styles['draw-iconseg']}
+                                    class={styles['draw-vstack-seg']}
                                     options={[
                                         {
                                             id: 'out' as const,
@@ -370,10 +365,10 @@ export function Toolbar(props: {
                                     {`${zoomPct()}%`}
                                 </PlainButton>
                                 <SegmentedToggle
-                                    look="segment"
+                                    look="icon"
                                     value={undefined}
                                     onChange={() => props.onZoomIn!()}
-                                    segmentClass={styles['draw-iconseg']}
+                                    class={styles['draw-vstack-seg']}
                                     options={[
                                         {
                                             id: 'in' as const,
