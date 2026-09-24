@@ -40,6 +40,7 @@ import {
 } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { api, apiBase } from './api'
+import { baseName, attachmentTarget } from './attachmentPath'
 import { lastChange } from './serverVersion'
 import { primeNoteCache } from './noteCache'
 // The shared markdown reading+writing stack (live preview + markdown + autocomplete + math +
@@ -396,27 +397,8 @@ const EMBEDDABLE_EXT = new Set([
 
 /** The wikilink markup for an in-vault attachment: an embed for media, a plain link otherwise. */
 const markupFor = (name: string): string => {
-    const base = fileBase(name)
+    const base = baseName(name)
     return `${isEmbeddablePath(base) ? '!' : ''}[[${base}]]`
-}
-
-/** Last path segment, for both separator styles (a Windows drag yields `\`). */
-const fileBase = (p: string): string => p.split(/[\\/]/).pop() ?? p
-
-/** Vault-relative destination for a new attachment, honoring settings.attachments.folder
- *  ("" = vault root, "." = the current note's folder). */
-function attachmentTarget(fileName: string, notePath: string | null): string {
-    // Strip leading + trailing slashes so a stray `folder: /attachments` still lands
-    // vault-relative (the backend would otherwise reject the absolute-looking path).
-    const folder = settings.attachments.folder.trim().replace(/^\/+|\/+$/g, '')
-    if (folder === '.') {
-        const slash = (notePath ?? '').lastIndexOf('/')
-        return (
-            (slash === -1 ? '' : (notePath ?? '').slice(0, slash + 1)) +
-            fileName
-        )
-    }
-    return folder ? `${folder}/${fileName}` : fileName
 }
 
 /** Filename for a pasted clipboard image from the naming template (e.g. "Pasted image 20260603143012.png"). */
@@ -504,13 +486,17 @@ async function uploadEmbed(
                 name = jpegNameFor(name)
             } catch (e) {
                 pushToast(
-                    `Couldn't convert ${fileBase(fileName)} to JPEG — saved as-is`,
+                    `Couldn't convert ${baseName(fileName)} to JPEG — saved as-is`,
                 )
                 console.error('heic conversion failed', e)
             }
         }
         const finalPath = await api.uploadAsset(
-            attachmentTarget(fileBase(name), notePath),
+            attachmentTarget(
+                settings.attachments.folder,
+                baseName(name),
+                notePath,
+            ),
             bytes,
         )
         return markupFor(finalPath)
@@ -695,7 +681,11 @@ async function runDropActions(
                 try {
                     const finalPath = await api.fetchAsset(
                         action.url,
-                        attachmentTarget(fileBase(action.name), notePath),
+                        attachmentTarget(
+                            settings.attachments.folder,
+                            baseName(action.name),
+                            notePath,
+                        ),
                     )
                     insertEmbedStandalone(view, markupFor(finalPath))
                 } catch (e) {
