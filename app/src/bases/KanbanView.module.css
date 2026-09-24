@@ -3,17 +3,20 @@
    .baseKanban, which is itself capped to the pane's height) instead of growing as tall as its
    tallest column. `overflow-x` is this element's own — so its scrollbar renders at the very
    bottom of the (height-capped) board, i.e. the bottom of the window, not below the fold.
-   `align-items: flex-start` is preserved (NOT stretch) so a board with only short columns keeps
-   looking exactly as before — columns size to their own content, not the board's full height;
-   `.kanbanColumn`'s `max-height: 100%` only ever clips a column that's ACTUALLY taller than the
+   `align-items: stretch` makes every column (and the column rule it draws via `border-right`)
+   run the board's full height, even a short/empty column next to a tall one — a board with only
+   short columns now reads as a row of full-height lanes rather than content-height cards;
+   `.kanbanColumn`'s `max-height: 100%` still guards against a column ever growing taller than the
    board. `overflow-y: hidden` guards against the board itself ever growing a second (vertical)
-   scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). */
+   scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). No
+   `gap` — the column rule (`.kanbanColumn`'s `border-right`) sits flush between columns, whose own
+   inner padding supplies the visual gutter on each side (Task 1 fix, even gutters). */
 .kanban {
   display: flex;
-  gap: var(--sp-5);
+  gap: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  align-items: flex-start;
+  align-items: stretch;
   padding: var(--sp-5);
   flex: 1;
   min-height: 0;
@@ -47,12 +50,13 @@
 }
 .kanbanColHeader {
   display: flex; align-items: center; gap: var(--sp-3); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
-  padding: var(--sp-5) var(--sp-5);
+  margin: 0 var(--sp-5);
+  padding: 0 0 var(--sp-3);
   box-sizing: border-box;
-  /* Pins the header to the `…` trigger's own size (--kb-ctl-size: 22px, defined in
+  /* Pins the header to the `…` trigger's own size (--h-control, defined in
      KanbanColumnMenu.module.css) rather than the natural content height, since the trigger is
      absolutely positioned and so cannot size the header itself. */
-  min-height: calc(22px + (2 * var(--sp-5)));
+  min-height: calc(var(--h-control) + var(--sp-3));
   /* Positioning ancestor for the `…` trigger (KanbanColumnMenu.module.css's `.trigger`), which is
      absolutely positioned over the count's slot instead of pushing it sideways. */
   position: relative;
@@ -164,6 +168,7 @@
   align-self: stretch;
   flex: 0 0 5px;
   min-height: 80px;
+  margin: 0 var(--sp-2);
   border-radius: var(--r-0);
   background: var(--bismuth-accent-border);
   box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
