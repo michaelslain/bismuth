@@ -224,9 +224,9 @@ export const ConfirmDelete: Story = {
                     {
                         name: 'morning-brief',
                         file: 'morning-brief',
-                        schedule: '0 7 * * *',
-                        on: 'schedule',
-                        watch: null,
+                        schedule: '',
+                        on: 'file-change',
+                        watch: 'notes/journal/**/daily/*.md',
                         enabled: true,
                         lastFired: null,
                         running: false,
@@ -255,6 +255,11 @@ export const ConfirmDelete: Story = {
         // or focus needed — DaemonRow's `data-confirming`.
         const actionsBox = deleteBtn.closest<HTMLElement>('[class*="actions"]')!
         await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+        // The confirm overlay is ~17ch wide, wider than the status cell alone — a long
+        // schedule/trigger must be hidden too, not just the status word.
+        await expect(
+            getComputedStyle(canvas.getByText(/^on change:/)).visibility,
+        ).toBe('hidden')
     },
 }
 
