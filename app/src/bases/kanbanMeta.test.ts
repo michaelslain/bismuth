@@ -4,11 +4,13 @@ import {
     metaSource,
     hasValue,
     metaVisible,
+    titleOf,
     writableKey,
     storedTitleColumn,
     matchedStoredRowId,
 } from './kanbanMeta'
 import type { Schema } from '../../../core/src/schema/types'
+import type { Row } from '../../../core/src/bases/types'
 
 describe('metaColumns', () => {
     test('drops only the title column', () => {
@@ -204,6 +206,18 @@ describe('matchedStoredRowId', () => {
                 'Doing',
             ),
         ).toBe('b.md#1')
+    })
+})
+
+describe('titleOf', () => {
+    const row = (note: Record<string, unknown>) =>
+        ({ file: { name: 'Card', path: 'b/Card.md' }, note, formula: {} }) as unknown as Row
+    test('reads the title column', () => {
+        expect(titleOf(row({ title: 'Hello' }), 'title')).toBe('Hello')
+    })
+    test('falls back to the file name when missing or an object', () => {
+        expect(titleOf(row({}), 'title')).toBe('Card')
+        expect(titleOf(row({ title: { a: 1 } }), 'title')).toBe('Card')
     })
 })
 

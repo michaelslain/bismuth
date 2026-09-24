@@ -471,17 +471,13 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                     >
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles['vi-theme-swatch']}
                                             style={{ background: t.background }}
                                         >
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['vi-theme-swatch-fg']}
                                                 style={{
                                                     background: t.foreground,
@@ -489,9 +485,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                             />
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['vi-theme-swatch-accent']}
                                                 style={{ background: t.accent }}
                                             />
@@ -530,9 +524,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                             <Icon value={p.icon} />
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['vi-powerup-name']}
                                             >
                                                 {p.name}
@@ -554,9 +546,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         </div>
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles['vi-powerup-desc']}
                                         >
                                             {p.desc}

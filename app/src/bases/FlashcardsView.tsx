@@ -122,9 +122,7 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                             {' // '}
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['card-dir']}
                             >
                                 {d()}
@@ -158,27 +156,21 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             <div class={styles['tally']} data-bar-drop="1" data-testid="fc-tally">
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['a']}
                 >
                     <BarLabel long="HARD" short="H" /> <b>{state.hard()}</b>
                 </Text>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['g']}
                 >
                     <BarLabel long="GOOD" short="G" /> <b>{state.good()}</b>
                 </Text>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['e']}
                 >
                     <BarLabel long="EASY" short="E" /> <b>{state.easy()}</b>
@@ -667,7 +659,7 @@ export function FlashcardsView(props: {
                 aria-valuenow={Math.round(progressPct())}
                 data-testid="fc-progress"
             >
-                <Text as="span" size="inherit" tone="inherit" weight="inherit" aria-hidden="true">
+                <Text as="span" inherit aria-hidden="true">
                     <AsciiMeter value={progressPct() / 100} width={meterCells()} />
                 </Text>
                 {/* Invisible ch-unit probe — see the onMount above for what it measures.
@@ -676,9 +668,7 @@ export function FlashcardsView(props: {
                     the settings-driven one `.asc-meter` (ui.css) actually renders with. */}
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     ref={el => (probeEl = el)}
                     aria-hidden="true"
                     style={{
@@ -731,9 +721,7 @@ export function FlashcardsView(props: {
                                 Hit the{' '}
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['inline-bolt']}
                                 >
                                     <Icon value="Zap" />
@@ -770,9 +758,7 @@ export function FlashcardsView(props: {
                                                     //{' '}
                                                     <Text
                                                         as="span"
-                                                        size="inherit"
-                                                        tone="inherit"
-                                                        weight="inherit"
+                                                        inherit
                                                         class={
                                                             styles['good-text']
                                                         }
@@ -788,9 +774,7 @@ export function FlashcardsView(props: {
                                         Every card is{' '}
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles['good-text']}
                                         >
                                             easy
@@ -887,9 +871,7 @@ export function FlashcardsView(props: {
                                         >
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['g-name']}
                                             >
                                                 {g.response}

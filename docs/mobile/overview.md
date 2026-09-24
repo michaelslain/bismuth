@@ -40,13 +40,14 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | `POST /rows` | `resolveSource(spec, …)` (Bases source resolution) |
 | `POST /search` | `searchVault(vault, query, opts)` |
 
-**Content-only writes** (each ends by `emit([path])` to invalidate the graph + notify subscribers):
+**Content-only writes** (each ends by `emit(paths)` for the paths it wrote, to invalidate the graph + notify subscribers):
 
 | Route | Handler |
 |---|---|
 | `PUT /file` | `FileAccess.writeNote` |
-| `POST /set-property`, `POST /delete-property` | `setFrontmatterKey` / `deleteFrontmatterKey` then write |
-| `POST /row/update`, `POST /row/delete`, `POST /row/reorder` | `upsertRow` / `deleteRow` / `reorderRow` (`bases/rowOps.ts`) |
+| `POST /set-property`, `POST /delete-property` | `setFrontmatterKey` / `deleteFrontmatterKey` then write; a numeric `viewIndex` targets `views[viewIndex][key]` via `setFrontmatterViewKey` / `deleteFrontmatterViewKey` instead (how the kanban view persists per-view column order/colors) |
+| `POST /set-properties` | batched `POST /set-property` — groups writes by `path`, one read-modify-write per path via `setFrontmatterKey`, skips a path that no longer exists rather than failing the whole batch (mirrors `server.ts`; the kanban drag-drop's write path) |
+| `POST /row/update`, `POST /row/delete`, `POST /row/reorder`, `POST /rows/update` | `upsertRow` / `deleteRow` / `reorderRow` / `upsertRows` (`bases/rowOps.ts`) |
 | `POST /tasks/toggle` | `toggleTaskLine` on the target line, then `reorderTaskBlocks` |
 | `POST /cards/review` | dual-mode — row review (`applyReviewToRow` + `upsertRow`) when `{file,index}`, else markdown-card review (`applyReview`) by `{id}` |
 | `POST /replace` | `replaceInVault(vault, query, replacement, opts, scope)` |

@@ -53,7 +53,7 @@ export function UpdateBanner() {
     return (
         <Show when={show()}>
             <Callout class={styles['update-banner']}>
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     Bismuth update available — {plural(behind(), 'commit')}{' '}
                     behind
                 </Text>

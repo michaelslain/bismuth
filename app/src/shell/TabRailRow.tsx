@@ -142,9 +142,7 @@ export function TabRailRow(props: {
         makes the DOM *express* the boundary, instead of the row having to ask about it. */}
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={styles['tab-rail-controls']}
                 onClick={e => e.stopPropagation()}
                 onPointerDown={e => e.stopPropagation()}

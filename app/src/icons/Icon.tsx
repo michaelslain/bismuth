@@ -103,9 +103,7 @@ export const Icon: Component<IconProps> = props => {
     return (
         <Text
             as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
+            inherit
             class={props.class}
             aria-hidden="true"
             style={boxStyle()}
@@ -134,9 +132,7 @@ export const Icon: Component<IconProps> = props => {
                 return (
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         style={{
                             'font-size': `${Math.round(size() * 0.85)}px`,
                             'white-space': 'nowrap',

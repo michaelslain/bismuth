@@ -187,13 +187,3 @@ export function sampleViewResult(
     const builtRows = rows ? rows.map((r, i) => mergeRow(i, r)) : SAMPLE_ROWS
     return runView(sampleBaseConfig(config), builtRows, 0)
 }
-
-/** Convenience preset: the curated sample rows grouped by `status` — the shape a kanban
- *  board or a grouped-table story needs (`ViewResult.groups` with more than one `ResultGroup`). */
-export function sampleGroupedViewResult(): ViewResult {
-    return sampleViewResult(undefined, {
-        views: [
-            { type: 'kanban', name: 'Kanban', groupBy: { property: 'status' } },
-        ],
-    })
-}

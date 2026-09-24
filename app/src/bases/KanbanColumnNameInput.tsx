@@ -8,6 +8,7 @@ import { createSignal, Show, type Component } from 'solid-js'
 import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
+import { isColumnNameTaken } from './kanbanColumnOrder'
 import styles from './KanbanColumnNameInput.module.css'
 
 export type KanbanColumnNameInputProps = {
@@ -38,7 +39,7 @@ const KanbanColumnNameInput: Component<KanbanColumnNameInputProps> = props => {
             props.onCancel()
             return
         }
-        if (props.existing.includes(trimmed)) {
+        if (isColumnNameTaken(props.existing, trimmed)) {
             setError('already a column')
             return
         }

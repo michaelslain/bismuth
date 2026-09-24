@@ -48,29 +48,11 @@ export function TopStrip(props: {
                 status bar's daemon readout already uses. `--wordmark-tracking` is overridden per
                 instance in TopStrip.module.css: the ASCII art needed glyphs to overlap, a real word
                 must not. */}
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['top-strip-mark']}
-            >
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class="asc-wordmark"
-                >
+            <Text as="span" inherit class={styles['top-strip-mark']}>
+                <Text as="span" inherit class="asc-wordmark">
                     bismuth
                 </Text>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class="asc-caret"
-                >
+                <Text as="span" inherit class="asc-caret">
                     _
                 </Text>
             </Text>

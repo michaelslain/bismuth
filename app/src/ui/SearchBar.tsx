@@ -54,9 +54,7 @@ function SearchBar(props: SearchBarProps) {
         >
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={styles['search-bar-lead']}
                 aria-hidden="true"
             >

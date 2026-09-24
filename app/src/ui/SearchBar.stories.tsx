@@ -211,9 +211,7 @@ function TrailingControlsDemo() {
                 >
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         data-testid="count"
                     >
                         {query() ? `${index() + 1}/${total}` : ''}

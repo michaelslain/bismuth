@@ -545,9 +545,7 @@ export function MapView(props: {
                 <div class={styles.mapScale}>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={styles.mapScaleBar}
                         style={{ width: `${scaleBar().widthPx}px` }}
                     />
@@ -564,13 +562,7 @@ export function MapView(props: {
 
                 {/* Offline-vector attribution badge. */}
                 <div class={styles.mapAttribution}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.mapOfflineBadge}
-                    >
+                    <Text as="span" inherit class={styles.mapOfflineBadge}>
                         offline vector
                     </Text>
                     <Show when={markers().length > 0}>

@@ -25,6 +25,7 @@ import { pageSections } from './export/pageBreaks'
 import { drawingToPng } from './export/drawingRaster'
 import { deliverFile, writeToFolder, type Delivery } from './export/download'
 import { readCache, writeCache } from './viewCache'
+import { baseName } from './attachmentPath'
 import { htmlToPdfBytes } from './export/pdfPrint'
 import PdfPages from './preview/PdfPages'
 import type {
@@ -99,10 +100,6 @@ function toVaultRelative(abs: string, vaultRoot: string): string | null {
     if (!root || abs === root) return null
     const prefix = root + '/'
     return abs.startsWith(prefix) ? abs.slice(prefix.length) : null
-}
-
-function baseName(path: string): string {
-    return path.split('/').pop() ?? path
 }
 
 // Remember the last-chosen output folder + calendar span across sessions (browser
@@ -463,9 +460,7 @@ export function ExportView(props: {
                         fallback={
                             <Text
                                 as="div"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['export-empty']}
                             >
                                 Preview failed:{' '}
@@ -705,9 +700,7 @@ export function ExportView(props: {
                     <Show when={format() === 'png' && (pageCount() ?? 1) > 1}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['exp-hint']}
                         >
                             {pageCount()} pages (page breaks) → exports as{' '}
@@ -717,9 +710,7 @@ export function ExportView(props: {
                     <Show when={format() === 'pdf' && pdfPageCount() > 0}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['exp-hint']}
                         >
                             {pdfPageCount()}{' '}

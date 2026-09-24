@@ -166,9 +166,7 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                             {n => (
                                 <Text
                                     as="div"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                 >
                                     {n()}
                                 </Text>
@@ -1004,6 +1002,7 @@ export function BaseView(props: {
                                                         // means threading that discriminator up from the child.
                                                         onChange={refetchAll}
                                                         mode={activeMode()}
+                                                        ownsRows={ownsRows()}
                                                         onToggle={
                                                             toggleTaskRow
                                                         }

@@ -155,9 +155,7 @@ const TaskChip: Component<TaskChipProps> = props => {
         >
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={[styles.marker, writable() ? '' : styles.readOnly]
                     .filter(Boolean)
                     .join(' ')}
@@ -206,9 +204,7 @@ const TaskChip: Component<TaskChipProps> = props => {
             </Text>
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={[
                     styles.title,
                     props.task.row.note.resolved ? styles.resolved : '',
@@ -222,9 +218,7 @@ const TaskChip: Component<TaskChipProps> = props => {
             <Show when={props.task.late > 0}>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles.late}
                 >
                     {props.task.late}d late

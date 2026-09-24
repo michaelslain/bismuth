@@ -219,13 +219,7 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Pencil" />
-                                        <Text
-                                            as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
-                                            data-btn-label
-                                        >
+                                        <Text as="span" inherit data-btn-label>
                                             select
                                         </Text>
                                     </>
@@ -237,13 +231,7 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Link" />
-                                        <Text
-                                            as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
-                                            data-btn-label
-                                        >
+                                        <Text as="span" inherit data-btn-label>
                                             connect
                                         </Text>
                                     </>
@@ -255,13 +243,7 @@ export function EmbeddedGraph(props: {
                                 label: (
                                     <>
                                         <Icon value="Eraser" />
-                                        <Text
-                                            as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
-                                            data-btn-label
-                                        >
+                                        <Text as="span" inherit data-btn-label>
                                             erase
                                         </Text>
                                     </>
@@ -330,12 +312,7 @@ export function EmbeddedGraph(props: {
                 <div class={styles['graph-block-errors']}>
                     <For each={errors}>
                         {e => (
-                            <Text
-                                as="div"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
-                            >
+                            <Text as="div" inherit>
                                 line {e.line}: {e.message}
                             </Text>
                         )}
@@ -384,11 +361,11 @@ export function EmbeddedGraph(props: {
                 </div>
             </Show>
             <div class={styles['graph-block-footer']}>
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     {hint()}
                 </Text>
                 <div class={styles['graph-block-spacer']} />
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     {spec.nodes.length} nodes // {spec.edges.length} edges
                 </Text>
             </div>

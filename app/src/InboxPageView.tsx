@@ -133,9 +133,7 @@ export function InboxPageView(props: {
                     >
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}
                         >
                             This device isn't the daemon owner — approving here
@@ -148,9 +146,7 @@ export function InboxPageView(props: {
                                 <Match when={stuck()}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}
                                     >
                                         {notOwner()
@@ -193,9 +189,7 @@ export function InboxPageView(props: {
                                 <Match when={p.status === 'done'}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['inbox-page-note']}
                                     >
                                         Done
@@ -207,9 +201,7 @@ export function InboxPageView(props: {
                                 <Match when={p.status === 'failed'}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={`${styles['inbox-page-note']} ${styles['inbox-page-note-failed']}`}
                                     >
                                         Failed
@@ -235,9 +227,7 @@ export function InboxPageView(props: {
                                 <Match when={p.status === 'dismissed'}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['inbox-page-note']}
                                     >
                                         Dismissed

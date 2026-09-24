@@ -32,14 +32,12 @@ const DayHeaderRow: Component<DayHeaderRowProps> = props => (
                     >
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles.weekday}
                         >
                             {d.toLocaleString('default', { weekday: 'short' })}
                         </Text>{' '}
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             {d.toLocaleString('default', { month: 'numeric' })}/
                             <DayNumber day={d.getDate()} today={isToday()} inline />
                         </Text>

@@ -502,9 +502,7 @@ export function GraphView(props: {
                 identity={
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={styles['graph-vb-wide']}
                     >
                         <Crumb icon="Share2">Knowledge Graph</Crumb>
@@ -574,9 +572,7 @@ export function GraphView(props: {
                        are GraphView.module.css's to own. */
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
                         <Show when={!props.mini}>
@@ -773,15 +769,13 @@ export function GraphView(props: {
                     content keeps them in normal inline flow, where interior whitespace is not an
                     edge and survives. */}
                     <Popover class={styles['graph-stats']}>
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             {plural(nodeCount(), 'node')} //{' '}
                             {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
                             {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['graph-zoom-pct']}
                             >
                                 {zoomPct()}%
@@ -790,9 +784,7 @@ export function GraphView(props: {
                                 {' '}//{' '}
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     style={{ color: fpsColor(fps()!) }}
                                 >
                                     {fps()} fps

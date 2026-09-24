@@ -739,9 +739,7 @@ export function PreviewView(props: {
                                 >
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['preview-find-count']}
                                         classList={{
                                             [styles['is-empty']]:
@@ -805,9 +803,7 @@ export function PreviewView(props: {
                                 <Icon value="Search" />
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['preview-find-note-text']}
                                 >
                                     In-app PDF search isn't available yet.

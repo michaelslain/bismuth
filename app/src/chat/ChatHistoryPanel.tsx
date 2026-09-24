@@ -98,9 +98,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                 <div class={styles.title}>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                     >
                         Resume a conversation
                     </Text>

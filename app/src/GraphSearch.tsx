@@ -165,9 +165,7 @@ export function GraphSearch(props: {
                   the same object (bismuth-design/ascii tokens/ascii.css --node-linked). */}
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['graph-search-glyph']}
                                     aria-hidden="true"
                                 >

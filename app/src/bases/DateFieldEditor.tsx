@@ -70,9 +70,7 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
             >
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={parsed().date ? undefined : styles.placeholder}
                 >
                     {label()}

@@ -31,9 +31,7 @@ export function TaskCheckbox(props: { status: Accessor<TaskStatus> }) {
     return (
         <Text
             as="span"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
+            inherit
             class="cm-task-checkbox"
             data-status={props.status()}
         >

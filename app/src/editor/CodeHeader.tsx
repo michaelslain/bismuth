@@ -20,13 +20,7 @@ export function CodeHeader(props: { lang: string; body: string }) {
 
     return (
         <div class="cm-code-header">
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class="cm-code-lang"
-            >
+            <Text as="span" inherit class="cm-code-lang">
                 {'```' + props.lang}
             </Text>
             <IconButton

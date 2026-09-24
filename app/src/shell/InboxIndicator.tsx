@@ -64,13 +64,7 @@ export function InboxIndicator(props: { count: number; onOpen: () => void }) {
             onClick={props.onOpen}
         >
             <Show when={pending()}>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['status-inbox-dot']}
-                />
+                <Text as="span" inherit class={styles['status-inbox-dot']} />
             </Show>
             inbox: {props.count}
         </PlainButton>

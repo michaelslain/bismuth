@@ -282,9 +282,7 @@ export function EditCardsModal(props: {
                 <Show when={mode() === 'list'}>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={styles['cards-hint']}
                     >
                         drag # to reorder
@@ -296,13 +294,13 @@ export function EditCardsModal(props: {
             <Show when={mode() === 'list'}>
                 <div class={styles['cards-listwrap']}>
                     <div class={styles['cards-collbl']}>
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             #
                         </Text>
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             front
                         </Text>
-                        <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                        <Text as="span" inherit>
                             back
                         </Text>
                         <div />
@@ -332,9 +330,7 @@ export function EditCardsModal(props: {
                                 >
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                     >
                                         {i() + 1}
                                     </Text>
@@ -434,9 +430,7 @@ export function EditCardsModal(props: {
                     <div class={styles['cards-bulk-toolbar']}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['cards-lab']}
                         >
                             separator
@@ -470,9 +464,7 @@ export function EditCardsModal(props: {
                         <div class={styles['sp']} />
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['cards-hint']}
                         >
                             One card per line // front ‹sep› back
@@ -503,18 +495,14 @@ export function EditCardsModal(props: {
                             <div class={styles['cards-pvhead']}>
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['cards-lab']}
                                 >
                                     preview
                                 </Text>
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles['cards-cnt']}
                                 >
                                     {parsed().length}{' '}
@@ -542,9 +530,7 @@ export function EditCardsModal(props: {
                                             >
                                                 <Text
                                                     as="div"
-                                                    size="inherit"
-                                                    tone="inherit"
-                                                    weight="inherit"
+                                                    inherit
                                                     class={
                                                         styles['cards-pi']
                                                     }

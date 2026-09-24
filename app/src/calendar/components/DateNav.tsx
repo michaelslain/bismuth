@@ -65,9 +65,7 @@ export function DateNav(props: DateNavProps) {
                     so it is the one element where scrollWidth > clientWidth means "date eaten". */}
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['range-text']}
                     data-testid="range"
                 >

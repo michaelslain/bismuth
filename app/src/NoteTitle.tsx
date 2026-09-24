@@ -152,9 +152,7 @@ export function NoteTitle(props: {
           the field is focused (see CSS), then revealed in mono accent. */}
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={styles['note-title-hash']}
                 aria-hidden="true"
             >

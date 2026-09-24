@@ -21,13 +21,8 @@ import { pushToast } from '../Toast'
 import { isTauri } from '../nativeMenu'
 import { nativeDropScale } from '../nativeDropRouting'
 import type { NativeDragDetail } from '../nativeDrop'
-import {
-    attachmentTarget,
-    baseName,
-    imageEmbed,
-    isImageFile,
-    isImagePath,
-} from './kanbanImageDrop'
+import { attachmentTarget, baseName } from '../attachmentPath'
+import { imageEmbed, isImageFile, isImagePath } from './kanbanImageDrop'
 
 /** One image's bytes, ready to upload, keyed by the basename it should take in the vault. */
 export type ImageUpload = { name: string; bytes: ArrayBuffer }

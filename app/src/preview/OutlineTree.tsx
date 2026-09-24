@@ -212,9 +212,7 @@ function OutlineTree(props: OutlineTreeProps) {
                                     three. A node's click is its own — it must not also jump. */}
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     classList={{
                                         [styles['outline-disclosure']!]: true,
                                         [styles['outline-disclosure--leaf']!]:

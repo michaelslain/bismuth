@@ -152,9 +152,7 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
                         {label => (
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles.heatMonthCol}
                             >
                                 {label}
@@ -168,9 +166,7 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
                             <div class={styles.heatRow}>
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles.heatDow}
                                 >
                                     {DOW[i()]}
@@ -181,9 +177,7 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
                                         return (
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]}`}
                                                 title={
                                                     cell
@@ -201,50 +195,42 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
                     </For>
                 </div>
                 <div class={styles.legend}>
-                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    <Text as="span" inherit>
                         less
                     </Text>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles.legendGlyph} ${styles.lv0}`}
                     >
                         .
                     </Text>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles.legendGlyph} ${styles.lv1}`}
                     >
                         -
                     </Text>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles.legendGlyph} ${styles.lv2}`}
                     >
                         +
                     </Text>
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={`${styles.legendGlyph} ${styles.lv3}`}
                     >
                         #
                     </Text>
-                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    <Text as="span" inherit>
                         more
                     </Text>
                     <div class={styles.legendSpacer} />
-                    <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                    <Text as="span" inherit>
                         intensity is the glyph, never the cell size
                     </Text>
                 </div>

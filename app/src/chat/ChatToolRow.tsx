@@ -57,9 +57,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                 </Show>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['chat-tool-status']}
                 >
                     <Show

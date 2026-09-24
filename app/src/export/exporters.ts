@@ -36,7 +36,7 @@ function isBaseText(text: string): boolean {
     return parseFrontmatter(text).data?.type === 'base'
 }
 
-function baseName(path: string): string {
+function stemName(path: string): string {
     const file = path.split('/').pop() ?? path
     const dot = file.lastIndexOf('.')
     return dot === -1 ? file : file.slice(0, dot)
@@ -275,7 +275,7 @@ export async function renderPreview(
     opts: ExportOptions = defaultExportOptions(),
 ): Promise<ExportPreview> {
     const kind = ext(path)
-    const name = baseName(path)
+    const name = stemName(path)
     const palette = paletteFor(theme, opts.palette)
 
     if (kind === 'draw') {
@@ -371,7 +371,7 @@ export async function renderExport(
             `Cannot export ${ext(path) || 'this file'} as ${format}`,
         )
     }
-    const name = baseName(path)
+    const name = stemName(path)
     const kind = ext(path)
     const palette = paletteFor(theme, opts.palette)
 

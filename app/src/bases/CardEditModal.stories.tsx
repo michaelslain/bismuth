@@ -9,6 +9,7 @@
 // (ui/_baseFixtures.ts) so the property vocabulary (status/priority/done/due/tags) matches what
 // the real board declares, rather than a story-invented shape.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
 import { expect, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
@@ -177,5 +178,51 @@ export const FocusesSelectProperty: Story = {
             expect(active).not.toBeNull()
             expect(active!.hasAttribute('data-select-trigger')).toBe(true)
         })
+    },
+}
+
+/** Proves the read-only branch (`file.folder` — not writable per `writableKey`) stays
+ *  reactive: with the modal open, changing `props.row` to a different row must update the
+ *  displayed text. Regression for the bug where `renderControl`'s read-only branch read
+ *  `value(id)` through `untrack`, so a read-only field froze at whatever it resolved to when
+ *  the modal opened. The seam is the story's own `setRow` signal setter — no timeout. */
+export const ReadonlyFieldUpdatesLive: Story = {
+    render: () => {
+        const [row, setRow] = createSignal(SAMPLE_ROWS[1])
+        return (
+            <>
+                <button
+                    type="button"
+                    data-testid="swap-row"
+                    onClick={() => setRow(SAMPLE_ROWS[3])}
+                >
+                    swap row
+                </button>
+                <CardEditModal
+                    row={row()}
+                    titleCol="file.name"
+                    metaCols={[...metaCols, 'file.folder']}
+                    config={config}
+                    siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
+                    onRename={noop}
+                    onSetMeta={noop}
+                    onDelete={noop}
+                    onClose={noop}
+                />
+            </>
+        )
+    },
+    play: async () => {
+        // Same Portal caveat as `Default` above: read document.body, not canvasElement.
+        // SAMPLE_ROWS[1] is in folder "projects", SAMPLE_ROWS[3] is in folder "eng".
+        const readonly = () =>
+            [...document.querySelectorAll('span')].find(
+                el => el.textContent === 'projects' || el.textContent === 'eng',
+            )
+        await waitFor(() => expect(readonly()?.textContent).toBe('projects'))
+        document
+            .querySelector<HTMLButtonElement>('[data-testid="swap-row"]')!
+            .click()
+        await waitFor(() => expect(readonly()?.textContent).toBe('eng'))
     },
 }

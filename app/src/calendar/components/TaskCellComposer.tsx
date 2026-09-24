@@ -51,9 +51,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             <div class={styles.row}>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles.marker}
                     data-testid="task-cell-composer-marker"
                     style={props.color ? { color: props.color } : undefined}
@@ -116,9 +114,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     fallback={
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles.unset}
                         >
                             → no destination note // set one in settings

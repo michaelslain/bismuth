@@ -10,6 +10,7 @@
 // neither the card face nor the edit modal renders (both show the title + declared PROPERTIES) — so
 // the picture was written to disk and shown nowhere ("the image is invisibly attached"). The drop
 // now targets the card's markdown property, which BOTH surfaces already render.
+import { baseName } from '../attachmentPath'
 
 // Image extensions we accept for a card attachment, keyed off the dropped file's NAME (an OS drag
 // exposes only a path/basename, and some drag sources hand a File an empty `type`). Matches the
@@ -25,12 +26,6 @@ const IMAGE_EXT = new Set([
     'bmp',
     'ico',
 ])
-
-/** The basename of a path, tolerant of both `/` and `\` separators (native OS paths are `\` on
- *  Windows). Returns the input unchanged when it has no separator. */
-export function baseName(path: string): string {
-    return path.split(/[\\/]/).pop() ?? path
-}
 
 /** Is this filename/path an image we accept for a card attachment (by extension)? Case-insensitive. */
 export function isImagePath(path: string): boolean {
@@ -49,27 +44,6 @@ export function isImageFile(file: { name: string; type: string }): boolean {
 /** The `![[name]]` wikilink embed for an attachment basename. */
 export function imageEmbed(basename: string): string {
     return `![[${basename}]]`
-}
-
-/** Vault-relative destination for a new attachment, honoring `settings.attachments.folder`:
- *  "" = vault root, "." = the CARD note's own folder, else a named subfolder. Mirrors Editor.tsx's
- *  `attachmentTarget` so a card drop lands exactly where a note-body drop of the same image would.
- *  Leading/trailing slashes on the folder are stripped so a stray `folder: /attachments` still
- *  resolves vault-relative (the backend rejects absolute-looking paths). */
-export function attachmentTarget(
-    folder: string,
-    fileName: string,
-    notePath: string | null,
-): string {
-    const f = folder.trim().replace(/^\/+|\/+$/g, '')
-    if (f === '.') {
-        const slash = (notePath ?? '').lastIndexOf('/')
-        return (
-            (slash === -1 ? '' : (notePath ?? '').slice(0, slash + 1)) +
-            fileName
-        )
-    }
-    return f ? `${f}/${fileName}` : fileName
 }
 
 /** Append an embed block to a markdown PROPERTY's value on its OWN line, keeping existing prose

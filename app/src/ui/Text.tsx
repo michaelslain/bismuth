@@ -22,6 +22,9 @@ export type TextProps = {
      *  (font-weight inherits, so an unset weight would otherwise pick up a bold/medium
      *  ancestor's weight instead of resetting to 400). 'inherit' emits no font-weight, for a Text replacing a bare span whose weight comes from its parent. */
     weight?: TextWeight
+    /** Shorthand for size, tone and weight all 'inherit': the Text only swaps the tag in and
+     *  takes its whole look from the parent rule. An explicit size/tone/weight still wins. */
+    inherit?: boolean
     /** The uppercase, tracked "section label" register (--ls-eyebrow) already hand-rolled
      *  per call site as DaemonList.module.css's .daemon-section-head and
      *  GraphView.module.css's .graph-card-h. Structural only — pass `size="micro"` and a
@@ -33,9 +36,9 @@ export type TextProps = {
 } & Omit<JSX.HTMLAttributes<HTMLElement>, 'class' | 'children'>
 
 function textClass(props: TextProps): string {
-    const size = props.size ?? 'body'
-    const tone = props.tone ?? 'default'
-    const weight = props.weight ?? 'regular'
+    const size = props.size ?? (props.inherit ? 'inherit' : 'body')
+    const tone = props.tone ?? (props.inherit ? 'inherit' : 'default')
+    const weight = props.weight ?? (props.inherit ? 'inherit' : 'regular')
     return [
         styles.text,
         size !== 'inherit' ? styles[`text--${size}`] : '',
@@ -61,6 +64,7 @@ const Text: Component<TextProps> = props => {
         'size',
         'tone',
         'weight',
+        'inherit',
         'eyebrow',
         'class',
         'children',

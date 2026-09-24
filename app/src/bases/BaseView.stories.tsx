@@ -612,12 +612,16 @@ function recordingTransport(seed: FakeTransportSeed): {
             posts.push({ path, body })
             return inner.post(path, body)
         },
-        // PUT as well as POST: a toggle is a POST, but "+ task" on a query-origin view appends a
-        // checkbox LINE through `api.write`, which is a PUT /file. Recording only POSTs would
-        // make that half of the create action silently unassertable.
         put: async (path: string, body: unknown) => {
             posts.push({ path, body })
             return inner.put(path, body)
+        },
+        // JSON posts as well: "+ task" on a query-origin view appends its checkbox LINE through
+        // `api.createTask`, a JSON POST /tasks/create. Recording only `post`/`put` would make
+        // that half of the create action silently unassertable.
+        postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+            posts.push({ path, body })
+            return inner.postJson<T>(path, body)
         },
     })
     return { posts }
@@ -810,13 +814,11 @@ export const TasksListQuery: Story = {
         // the same `appendTaskLine` the calendar's own "+ task" calls.
         await userEvent.click(within(canvasElement).getByTitle('New task'))
         const written = await waitFor(() => {
-            const p = taskPosts.find(x => x.path === '/file')
+            const p = taskPosts.find(x => x.path === '/tasks/create')
             expect(p).toBeTruthy()
             return p!
         })
-        const body = written.body as { path: string; contents: string }
-        expect(body.path).toBe('tasks.md')
-        expect(body.contents.endsWith('- [ ] New task\n')).toBe(true)
+        expect(written.body).toEqual({ file: 'tasks.md', body: 'New task' })
     },
 }
 
@@ -962,6 +964,54 @@ export const TasksKanbanStored: Story = {
 export const TasksKanbanQuery: Story = {
     render: () => queryBase('kanban', 'groupBy: status\n'),
     play: expectQueryToggle,
+}
+
+/**
+ * A PLAIN (non-tasks) own-rows kanban board — a `type: base` with NO `source:` — driven through
+ * the real `BaseView` pipeline rather than mounting `KanbanView` directly, to prove the wiring
+ * between them: `BaseView` computes `ownsRows()` (true whenever neither the view nor the base
+ * declares a `source:`) but, until this fix, never passed it down to `<KanbanView>` at all, so
+ * `props.ownsRows` was always `undefined` in the running app.
+ *
+ * That regressed two things at once: `titleCol()` fell back to the computed `'file.name'`
+ * pseudo-property (no writable key, so the typed title was silently dropped) and `addCard()`
+ * took the file-backed branch, `api.write`-ing a brand-new note nothing reads instead of
+ * appending a row to the base's own body. `play()` types a title into the first column's
+ * composer and waits on the recorded transport call for `api.rowCreate` — a `POST /row/update`
+ * with `index: null` — carrying that title, and asserts no `/file` write ever went out.
+ */
+export const KanbanOwnRowsAddCard: Story = {
+    render: () => {
+        const path = 'boards/kanban-own-rows.md'
+        const body =
+            '---\ntype: base\nviews:\n  - type: kanban\n    groupBy:\n      property: status\n    order:\n      - title\n      - priority\n---\n\n' +
+            '- title: Write docs\n  status: todo\n  priority: low\n' +
+            '- title: Fix bug\n  status: doing\n  priority: high\n'
+        taskPosts = recordingTransport({ files: { [path]: body } }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const addButton = (
+            await waitFor(() => canvas.getAllByLabelText('Add a card'))
+        )[0]!
+        await userEvent.click(addButton)
+        const input = await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.type(input, 'New thing')
+        await userEvent.keyboard('{Enter}')
+        const post = await waitFor(() => {
+            const p = taskPosts.find(
+                x =>
+                    x.path === '/row/update' &&
+                    (x.body as { index: unknown }).index === null,
+            )
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const note = (post.body as { note: Record<string, unknown> }).note
+        expect(note.title).toBe('New thing')
+        expect(taskPosts.some(x => x.path === '/file')).toBe(false)
+    },
 }
 
 /** The table is the ONE kind that does not become a task line: it keeps its columns and gains
@@ -1159,6 +1209,10 @@ function rejectingTransport(
         ...inner,
         post: (p: string, b: unknown) => fail(p, b),
         put: (p: string, b: unknown) => fail(p, b),
+        postJson: async <T,>(p: string, b: unknown): Promise<T> => {
+            if (p === route) throw new Error(message)
+            return inner.postJson<T>(p, b)
+        },
     })
 }
 
@@ -1226,7 +1280,7 @@ export const AddTaskRejected: Story = {
         const body = QUERY_BODY('list')
         rejectingTransport(
             { files: { [path]: body }, rows: QUERY_ROWS },
-            '/file',
+            '/tasks/create',
             'tasks.md is read-only',
         )
         return <BaseView path={path} body={body} />

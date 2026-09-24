@@ -253,6 +253,63 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['Cal.md']).toBe(afterFirstBatch)
     })
 
+    test('set-properties batches per note and skips a vanished note', async () => {
+        const { fa, files } = memVault({
+            'a.md': '---\nstatus: todo\n---\nx',
+            'b.md': '---\nstatus: todo\n---\ny',
+        })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        const seen: string[][] = []
+        be.subscribe(e => seen.push(e.paths))
+        await be.dispatch('POST', '/set-properties', {
+            writes: [
+                { path: 'a.md', key: 'status', value: 'done' },
+                { path: 'a.md', key: 'order', value: 2 },
+                { path: 'b.md', key: 'order', value: 1 },
+                { path: 'gone.md', key: 'order', value: 9 },
+            ],
+        })
+        expect(files['a.md']).toContain('status: done')
+        expect(files['a.md']).toContain('order: 2')
+        expect(files['b.md']).toContain('order: 1')
+        expect(files['gone.md']).toBeUndefined()
+        expect(seen).toEqual([['a.md', 'b.md']])
+    })
+
+    test('set-property with viewIndex writes into views[i], not top level', async () => {
+        const { fa, files } = memVault({
+            'board.md':
+                '---\ntype: base\nviews:\n  - type: table\n  - type: kanban\n---\n',
+        })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/set-property', {
+            path: 'board.md',
+            viewIndex: 1,
+            key: 'columns',
+            value: ['todo', 'done'],
+        })
+        expect(files['board.md']).not.toMatch(/^columns:/m)
+        expect(files['board.md']).toMatch(/type: kanban\n\s+columns:/)
+    })
+
+    test('delete-property with viewIndex deletes from views[i], not top level', async () => {
+        const { fa, files } = memVault({
+            'board.md':
+                '---\ntype: base\ngroupColors: keep\nviews:\n  - type: table\n  - type: kanban\n    groupColors:\n      todo: rose\n---\n',
+        })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/delete-property', {
+            path: 'board.md',
+            viewIndex: 1,
+            key: 'groupColors',
+        })
+        expect(files['board.md']).not.toContain('todo: rose')
+        expect(files['board.md']).toMatch(/^groupColors: keep/m)
+    })
+
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {
         setFileAccess(memVault({}).fa)
         const be = createLocalBackend({ vault: '/v' })

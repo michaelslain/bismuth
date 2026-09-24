@@ -371,9 +371,7 @@ export function SwitcherBar(props: Props) {
             fabricated hint. */}
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={switcherStyles['switcher-esc']}
                 >
                     <Kbd combo="Escape" />
@@ -409,9 +407,7 @@ export function SwitcherBar(props: Props) {
                     <Show when={contentAll().length > 0}>
                         <Text
                             as="div"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={switcherStyles['switcher-section']}
                         >
                             {`In note text // ${plural(contentAll().length, 'note')}`}
@@ -449,18 +445,14 @@ export function SwitcherBar(props: Props) {
                             />
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={switcherStyles['search-ask-ai-label']}
                             >
                                 Ask Bismuth AI about your vault
                             </Text>
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={switcherStyles['search-ask-ai-kbd']}
                             >
                                 <kbd class={switcherStyles['search-kbd']}>⌘↵</kbd>
@@ -490,18 +482,14 @@ export function SwitcherBar(props: Props) {
                                 />
                                 <Text
                                     as="div"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={switcherStyles['search-empty-title']}
                                 >
                                     No matches in file names or note text
                                 </Text>
                                 <Text
                                     as="div"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={switcherStyles['search-empty-hint']}
                                 >
                                     Press{' '}
@@ -527,9 +515,7 @@ export function SwitcherBar(props: Props) {
                         icon={
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={`${switcherStyles['switcher-loading-spinner']} asc-caret`}
                             >
                                 _

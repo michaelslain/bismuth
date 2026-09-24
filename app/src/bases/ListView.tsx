@@ -54,13 +54,7 @@ export function ListView(props: {
                                 class={styles.lghead}
                                 style={{ color: groupColor(group().key) }}
                             >
-                                <Text
-                                    as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
-                                    class={styles.dot}
-                                />
+                                <Text as="span" inherit class={styles.dot} />
                                 {group().key}
                                 <Text
                                     as="span"
@@ -95,9 +89,7 @@ export function ListView(props: {
                                     >
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles.ltextGlyph}
                                             aria-hidden="true"
                                         >

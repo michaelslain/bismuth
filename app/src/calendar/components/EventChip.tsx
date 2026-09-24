@@ -96,13 +96,7 @@ export function EventChip(props: Props) {
             }}
         >
             <Show when={props.event.startTime}>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['event-chip-time']}
-                >
+                <Text as="span" inherit class={styles['event-chip-time']}>
                     {formatTime(props.event.startTime!, military())}
                     {/* Compact (short) events show only the start time so the title gets the room. */}
                     {!props.compact && props.event.endTime
@@ -110,13 +104,7 @@ export function EventChip(props: Props) {
                         : ''}
                 </Text>
             </Show>
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['event-chip-title']}
-            >
+            <Text as="span" inherit class={styles['event-chip-title']}>
                 {props.event.title}
             </Text>
             <Show when={props.event.location || props.event.link}>
@@ -132,9 +120,7 @@ export function EventChip(props: Props) {
                     <Show when={props.event.location}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['event-chip-location']}
                         >
                             {props.event.location}

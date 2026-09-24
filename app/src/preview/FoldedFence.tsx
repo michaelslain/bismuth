@@ -13,7 +13,7 @@ export type FoldedFenceProps = {
 function FoldedFence(props: FoldedFenceProps): JSX.Element {
     return (
         <div class={[styles['folded-fence'], props.class].filter(Boolean).join(' ')}>
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
+            <Text as="span" inherit>
                 --- … ---
             </Text>
         </div>
