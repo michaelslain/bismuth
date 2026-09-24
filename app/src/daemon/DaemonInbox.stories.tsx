@@ -92,7 +92,7 @@ export const EmptyWithResolved: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const section = canvasElement.querySelector('[data-section="inbox"]')!
+        const section = canvasElement.querySelector('[data-testid="daemon-section-inbox"]')!
         const badge = within(section as HTMLElement).getByText('0')
         await expect(badge).toBeInTheDocument()
         await expect(canvas.getByText('nothing needs you')).toBeInTheDocument()

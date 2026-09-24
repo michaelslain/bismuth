@@ -56,9 +56,9 @@ function rows(n: number, label: string) {
 
 const assertSectionOrder = (canvasElement: HTMLElement) => {
     const sections = Array.from(
-        canvasElement.querySelectorAll<HTMLElement>('[data-testid="daemon-section"]'),
+        canvasElement.querySelectorAll<HTMLElement>('[data-testid^="daemon-section-"]'),
     )
-    return sections.map(el => el.getAttribute('data-section'))
+    return sections.map(el => el.dataset.testid!.replace('daemon-section-', ''))
 }
 
 export const AllFilled: Story = {
@@ -142,14 +142,15 @@ export const LongLog: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
         await expect(assertSectionOrder(canvasElement)).toEqual(['inbox', 'crons', 'services', 'log'])
-        const logSection = canvasElement.querySelector<HTMLElement>('[data-section="log"]')!
+        const logSection = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-section-log"]')!
         const body = logSection.querySelector<HTMLElement>(':scope > div:last-child')!
         await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
         // The other three sections stay intact — still present with their full row counts.
-        await expect(
-            canvasElement.querySelector('[data-section="crons"]')?.querySelectorAll('div').length,
-        ).toBeGreaterThan(0)
+        await expect(canvas.getAllByText(/^page \d+$/).length).toBe(2)
+        await expect(canvas.getAllByText(/^cron \d+$/).length).toBe(3)
+        await expect(canvas.getAllByText(/^service \d+$/).length).toBe(2)
     },
 }
 
@@ -185,7 +186,7 @@ export const TallTopSections: Story = {
         const rowH = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
         )
-        const logSection = canvasElement.querySelector<HTMLElement>('[data-section="log"]')!
+        const logSection = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-section-log"]')!
         await expect(logSection.offsetHeight).toBeGreaterThanOrEqual(8 * rowH)
     },
 }
@@ -222,7 +223,7 @@ export const Narrow: Story = {
         const rowH = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
         )
-        const logSection = canvasElement.querySelector<HTMLElement>('[data-section="log"]')!
+        const logSection = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-section-log"]')!
         // Narrow caps the log slot at ~10 rows — well short of the 60 it's holding.
         await expect(logSection.offsetHeight).toBeLessThan(20 * rowH)
     },

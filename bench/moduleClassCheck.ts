@@ -135,14 +135,6 @@ const SKIP_MODULES = new Set<string>([
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
     'chat/ChatSessionProbe.module.css',
-    // daemon-overview plan, Task 4 (this wave): DaemonOverview now has a real production
-    // importer (DaemonPageHost.tsx wires it as DaemonPage's `overview` slot) and was removed
-    // from this list. DaemonSection does NOT yet — Task 3, running in parallel, is what makes
-    // DaemonInbox/DaemonCrons/DaemonProcesses/DaemonLog each render a DaemonSection; until that
-    // branch merges alongside this one, DaemonSection is visible only via its own .stories.tsx
-    // (confirmed via `grep -rln DaemonSection app/src` — only the component and its story file).
-    // Same shape as Callout/Frontmatter/AsciiTree above. Remove this line once Task 3 lands.
-    'daemon/DaemonSection.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

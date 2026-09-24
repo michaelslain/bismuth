@@ -322,11 +322,11 @@ function sectionBadgeCount(section: HTMLElement): number | null {
     return badge ? Number(badge.textContent!.trim()) : null
 }
 
-/** The number of rows a section actually rendered — the direct children of its body (the last
- *  child of the section root, see DaemonSection.tsx). */
+/** The number of rows a section actually rendered — real row components only (DaemonRow,
+ *  InboxRow), never a section's own structural children (heading, badge, trailing "N resolved"
+ *  line). */
 function sectionRowCount(section: HTMLElement): number {
-    const body = section.lastElementChild as HTMLElement
-    return body.children.length
+    return section.querySelectorAll('[data-testid="daemon-row"], [data-testid="inbox-row"]').length
 }
 
 /** Enabled, every section carrying rows: the four sections render in order, no facet toggle
@@ -347,10 +347,10 @@ export const AwakeFilled: Story = {
         await expect(canvasElement.querySelector('.segmented')).toBeNull()
         const sections = [
             ...canvasElement.querySelectorAll<HTMLElement>(
-                '[data-testid="daemon-section"]',
+                '[data-testid^="daemon-section-"]',
             ),
         ]
-        await expect(sections.map(s => s.dataset.section)).toEqual([
+        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
             'inbox',
             'crons',
             'services',
@@ -380,10 +380,10 @@ export const AwakeEmpty: Story = {
         await assertLayout(canvasElement, { chat: true })
         const sections = [
             ...canvasElement.querySelectorAll<HTMLElement>(
-                '[data-testid="daemon-section"]',
+                '[data-testid^="daemon-section-"]',
             ),
         ]
-        await expect(sections.map(s => s.dataset.section)).toEqual([
+        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
             'inbox',
             'crons',
             'services',
@@ -520,11 +520,11 @@ export const Narrow480: Story = {
         )!
         const sections = [
             ...canvasElement.querySelectorAll<HTMLElement>(
-                '[data-testid="daemon-section"]',
+                '[data-testid^="daemon-section-"]',
             ),
         ]
         await expect(sections.length).toBe(4)
-        await expect(sections.map(s => s.dataset.section)).toEqual([
+        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
             'inbox',
             'crons',
             'services',
