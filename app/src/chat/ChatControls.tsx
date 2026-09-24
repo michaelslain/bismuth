@@ -77,9 +77,7 @@ function Readouts(props: { session: ChatSession }) {
                     <Show when={m().tools.length > 0}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles.stat}
                             data-bar-drop="4"
                             data-testid="chat-tools"
@@ -91,9 +89,7 @@ function Readouts(props: { session: ChatSession }) {
                     <Show when={m().mcpServers.length > 0}>
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles.stat}
                             data-bar-drop="4"
                             data-testid="chat-mcp"
@@ -107,9 +103,7 @@ function Readouts(props: { session: ChatSession }) {
                         {c => (
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles.stat}
                                 classList={{
                                     [styles.warn]: c().percentage >= 80,
@@ -143,9 +137,7 @@ function Config(props: { session: ChatSession }) {
                 the agent is writing to the vault unconfirmed. */}
             <Text
                 as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
+                inherit
                 class={styles['bar-item']}
                 data-testid="chat-perm-mode"
             >

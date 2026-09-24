@@ -282,13 +282,7 @@ export function CardEditModal(props: {
                 return v == null || v === '' ? '—' : String(v)
             }
             return (
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles.readonly}
-                >
+                <Text as="span" inherit class={styles.readonly}>
                     {display()}
                 </Text>
             )
@@ -333,9 +327,7 @@ export function CardEditModal(props: {
                 <PlainButton
                     class={styles.boolToggle}
                     aria-pressed={value(id) === true}
-                    onClick={() =>
-                        props.onSetMeta(id, !(value(id) === true))
-                    }
+                    onClick={() => props.onSetMeta(id, !(value(id) === true))}
                 >
                     <BracketToggle checked={value(id) === true} />
                     {value(id) === true ? 'yes' : 'no'}
@@ -400,7 +392,9 @@ export function CardEditModal(props: {
                     <For each={cols()}>
                         {id => (
                             <div ref={el => fieldRefs.set(id, el)}>
-                                <SettingsField label={columnLabel(id, props.config)}>
+                                <SettingsField
+                                    label={columnLabel(id, props.config)}
+                                >
                                     {renderControl(id)}
                                 </SettingsField>
                             </div>

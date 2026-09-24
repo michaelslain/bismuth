@@ -166,9 +166,7 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
                             {n => (
                                 <Text
                                     as="div"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                 >
                                     {n()}
                                 </Text>

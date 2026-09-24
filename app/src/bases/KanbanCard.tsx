@@ -204,7 +204,7 @@ export function KanbanCard(props: {
                 data-edit-target={props.titleCol}
                 title={props.editable ? 'Click to edit card' : undefined}
             >
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">
+                <Text as="span" inherit>
                     {title()}
                 </Text>
             </div>
@@ -252,9 +252,7 @@ export function KanbanCard(props: {
                                         return (
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                             >
                                                 {formatNumberDisplay(
                                                     v,
@@ -269,9 +267,7 @@ export function KanbanCard(props: {
                                     return (
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles.kbMetaBoolChip}
                                         >
                                             <ChipToggle
@@ -295,9 +291,7 @@ export function KanbanCard(props: {
                                     return (
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={
                                                 styles.kbMetaMultiselectDisplay
                                             }
@@ -325,9 +319,7 @@ export function KanbanCard(props: {
                                     >
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={styles.kbMetaLabel}
                                         >
                                             {columnLabel(id, props.config)}
@@ -335,9 +327,7 @@ export function KanbanCard(props: {
                                     </Show>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles.kbMetaValueWrap}
                                         classList={{
                                             [styles.kbMetaClickable]:

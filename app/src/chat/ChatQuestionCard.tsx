@@ -127,9 +127,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                     >
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={
                                                 styles['chat-question-option-main']
                                             }
@@ -222,9 +220,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                 <Show when={q.header}>
                                                     <Text
                                                         as="span"
-                                                        size="inherit"
-                                                        tone="inherit"
-                                                        weight="inherit"
+                                                        inherit
                                                         class={
                                                             styles[
                                                                 'chat-question-chip'
@@ -236,9 +232,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                 </Show>
                                                 <Text
                                                     as="span"
-                                                    size="inherit"
-                                                    tone="inherit"
-                                                    weight="inherit"
+                                                    inherit
                                                 >
                                                     {ans()[q.question]}
                                                 </Text>

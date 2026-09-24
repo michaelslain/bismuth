@@ -612,12 +612,16 @@ function recordingTransport(seed: FakeTransportSeed): {
             posts.push({ path, body })
             return inner.post(path, body)
         },
-        // PUT as well as POST: a toggle is a POST, but "+ task" on a query-origin view appends a
-        // checkbox LINE through `api.write`, which is a PUT /file. Recording only POSTs would
-        // make that half of the create action silently unassertable.
         put: async (path: string, body: unknown) => {
             posts.push({ path, body })
             return inner.put(path, body)
+        },
+        // JSON posts as well: "+ task" on a query-origin view appends its checkbox LINE through
+        // `api.createTask`, a JSON POST /tasks/create. Recording only `post`/`put` would make
+        // that half of the create action silently unassertable.
+        postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+            posts.push({ path, body })
+            return inner.postJson<T>(path, body)
         },
     })
     return { posts }
@@ -810,13 +814,11 @@ export const TasksListQuery: Story = {
         // the same `appendTaskLine` the calendar's own "+ task" calls.
         await userEvent.click(within(canvasElement).getByTitle('New task'))
         const written = await waitFor(() => {
-            const p = taskPosts.find(x => x.path === '/file')
+            const p = taskPosts.find(x => x.path === '/tasks/create')
             expect(p).toBeTruthy()
             return p!
         })
-        const body = written.body as { path: string; contents: string }
-        expect(body.path).toBe('tasks.md')
-        expect(body.contents.endsWith('- [ ] New task\n')).toBe(true)
+        expect(written.body).toEqual({ file: 'tasks.md', body: 'New task' })
     },
 }
 
@@ -1207,6 +1209,10 @@ function rejectingTransport(
         ...inner,
         post: (p: string, b: unknown) => fail(p, b),
         put: (p: string, b: unknown) => fail(p, b),
+        postJson: async <T,>(p: string, b: unknown): Promise<T> => {
+            if (p === route) throw new Error(message)
+            return inner.postJson<T>(p, b)
+        },
     })
 }
 
@@ -1274,7 +1280,7 @@ export const AddTaskRejected: Story = {
         const body = QUERY_BODY('list')
         rejectingTransport(
             { files: { [path]: body }, rows: QUERY_ROWS },
-            '/file',
+            '/tasks/create',
             'tasks.md is read-only',
         )
         return <BaseView path={path} body={body} />

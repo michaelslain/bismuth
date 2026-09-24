@@ -1,5 +1,6 @@
-// Story helpers shared across KanbanView.stories.tsx — the column-menu open sequence and the
-// `views` config literal were each retyped in ~20 stories; this is the one place both live now.
+// Story helpers shared across KanbanView.stories.tsx / KanbanColumns.stories.tsx /
+// KanbanStoredRows.stories.tsx — the column-menu open sequence and the `views` config literal
+// were each retyped in ~20 stories; this is the one place both live now.
 import { userEvent, within } from 'storybook/test'
 
 /** Opens a kanban column's `…` menu: finds the column by `data-kbcol="<colKey>"`, takes its
@@ -20,15 +21,21 @@ export async function openColumnMenu(
 
 /** The kanban `views` config literal — `type: 'kanban'`, `name: 'Kanban'`, grouped by `status`,
  *  ordered by `priority`/`tags` — retyped across ~20 stories. `overrides` replaces only the keys
- *  that vary for a given story (`order`, `groupOrder`, `groupColors`, …). */
+ *  that vary for a given story (`order`, `groupOrder`, `groupColors`, …). An `undefined` value in
+ *  `overrides` OMITS that key entirely rather than setting it to `undefined` — `kanbanViews({
+ *  order: undefined })` yields a literal with no `order` key at all, matching what a hand-written
+ *  literal without `order` would look like. */
 export function kanbanViews(overrides?: Record<string, unknown>) {
+    const clean = Object.fromEntries(
+        Object.entries(overrides ?? {}).filter(([, v]) => v !== undefined),
+    )
     return [
         {
             type: 'kanban' as const,
             name: 'Kanban',
             groupBy: { property: 'status' },
             order: ['priority', 'tags'],
-            ...overrides,
+            ...clean,
         },
     ]
 }

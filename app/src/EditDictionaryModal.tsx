@@ -66,9 +66,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                                 <div class={styles['dict-row']}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles['dict-word']}
                                     >
                                         {w}

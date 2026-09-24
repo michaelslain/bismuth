@@ -260,6 +260,8 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         })
         setFileAccess(fa)
         const be = createLocalBackend({ vault: '/v' })
+        const seen: string[][] = []
+        be.subscribe(e => seen.push(e.paths))
         await be.dispatch('POST', '/set-properties', {
             writes: [
                 { path: 'a.md', key: 'status', value: 'done' },
@@ -272,6 +274,7 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['a.md']).toContain('order: 2')
         expect(files['b.md']).toContain('order: 1')
         expect(files['gone.md']).toBeUndefined()
+        expect(seen).toEqual([['a.md', 'b.md']])
     })
 
     test('set-property with viewIndex writes into views[i], not top level', async () => {

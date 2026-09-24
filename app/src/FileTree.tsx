@@ -1300,9 +1300,7 @@ function Level(props: {
                         >
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['ft-prefix']}
                             >
                                 {prefixFor(i()).trimEnd()}
@@ -1400,9 +1398,7 @@ function Level(props: {
                     >
                         <Text
                             as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
+                            inherit
                             class={styles['ft-prefix']}
                         >
                             {prefixFor(i()).trimEnd()}

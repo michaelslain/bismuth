@@ -56,13 +56,7 @@ export default PaletteFrame
  *  scale. */
 export function PaletteEmpty(props: { children: JSX.Element }) {
     return (
-        <Text
-            as="div"
-            size="inherit"
-            tone="inherit"
-            weight="inherit"
-            class={styles['palette-empty']}
-        >
+        <Text as="div" inherit class={styles['palette-empty']}>
             {props.children}
         </Text>
     )

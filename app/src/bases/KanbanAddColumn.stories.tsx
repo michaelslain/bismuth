@@ -64,7 +64,7 @@ export const Editing: Story = {
         )) as HTMLInputElement
         expect(input).toBe(document.activeElement)
         // The swap must neither move the text nor resize the ghost (which would reflow a board's
-        // real columns) — the same measurement KanbanView.stories' AddColumn asserts.
+        // real columns) — the same measurement KanbanColumns.stories' AddColumn asserts.
         const editOrigin = inputTextOrigin(input)
         expect(Math.abs(editOrigin.x - restOrigin.x)).toBeLessThanOrEqual(1)
         expect(Math.abs(editOrigin.y - restOrigin.y)).toBeLessThanOrEqual(1)
@@ -99,8 +99,6 @@ export const DuplicateRefused: Story = {
         expect(error).toBeVisible()
         expect(addedNames).toEqual([])
         // input is still open and still holds what was typed
-        expect(canvas.getByPlaceholderText('name')).toHaveValue(
-            'Doing',
-        )
+        expect(canvas.getByPlaceholderText('name')).toHaveValue('Doing')
     },
 }

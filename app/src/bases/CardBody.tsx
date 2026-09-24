@@ -128,24 +128,12 @@ export function CardBody(props: {
             </Show>
             <Show when={hasMeta()}>
                 <div class={styles.cardMeta}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.cardMetaLeft}
-                    >
+                    <Text as="span" inherit class={styles.cardMetaLeft}>
                         <Show when={status()}>
                             {s => <StatusText status={s()} />}
                         </Show>
                     </Text>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles.cardMetaRight}
-                    >
+                    <Text as="span" inherit class={styles.cardMetaRight}>
                         <Show
                             when={rating()}
                             fallback={
