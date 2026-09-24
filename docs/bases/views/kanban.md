@@ -129,6 +129,8 @@ descriptionField?: string   // deprecated (#103); ignored
 3. Otherwise, **a property literally named `description`** (bare or `note.description`) defaults to **markdown** — the least-surprising choice, since every pre-#103 board treated it as a multiline markdown field.
 4. Otherwise, it falls back to a runtime-value/known-values heuristic.
 
+On a file-backed board (`titleCol === 'file.name'`), listing `file.basename`, `title`, or `note.title` in `order:` does not open a second title row — all three name the same title slot the dedicated title field already renders, and `metaColumns` (`app/src/bases/kanbanMeta.ts`) drops them from the meta list the same way it drops the title column itself. A stored-row board (a base that owns its rows) has no such alias and only drops its own title column.
+
 Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
 
 Without an `order:`, a base that **declares its own properties** (list-form `properties:` — see the [properties doc](../properties.md)) shows the declared set as the card meta instead (same title/empties exclusions, plus the `groupBy` property is dropped — the column already conveys it), and its add-card composer seeds each declared `default` onto the new note. A base with neither `order:` nor a declaration shows no meta, as before.
@@ -151,7 +153,7 @@ views:
 hideLabels?: boolean   // default false
 ```
 
-When `true`, every card's meta section shows only property **values** — no uppercase label caption above them (tag columns already have no label, and are unaffected). Default `false` (labels shown), so existing boards render unchanged. Set via the view's settings panel — a "Hide meta labels — show property values only" toggle, shown only for kanban views — or by hand:
+When `true`, every card's meta section drops the key column and shows only property **values** (tag columns already have no key, and are unaffected). Default `false` (keys shown), so existing boards render unchanged. Set via the view's settings panel — a "Hide meta labels — show property values only" toggle, shown only for kanban views — or by hand:
 
 ```yaml
 views:
@@ -199,8 +201,8 @@ The following standard fields apply to kanban as they do to other view types. Se
 
 Each card (`app/src/bases/KanbanCard.tsx`) shows:
 
-1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
-2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a **read-only** chip, its label stacked **above** its value, rendered through the property's resolved type (a declared/`type: markdown` property — `description` included, since #103 dropped its dedicated slot — renders as **block markdown**; a `number` through its format; a `boolean`/`multiselect` as chips; everything else via the heuristic `renderCell`). Tapping the card opens the [edit modal](#editable-cards), focused on the tapped property. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`) above the value — unless the view's [`hideLabels`](#hidelabels) is `true`, which suppresses every non-tag label and shows values only. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath`, so no modal opens).
+1. **Title** — the note's filename (`file.name`), rendered in the prose (serif) font. Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. On a file-backed board, `file.basename`/`title`/`note.title` in `order:` all name this same slot and never appear as a second field — see [`order`](#order). Tap it to edit (see [Editable Cards](#editable-cards)).
+2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a **read-only** row, rendered through the property's resolved type (a declared/`type: markdown` property — `description` included, since #103 dropped its dedicated slot — renders as **block markdown**; a `number` through its format; a `boolean`/`multiselect` as chips; everything else via the heuristic `renderCell`). Tapping the card opens the [edit modal](#editable-cards), focused on the tapped property. Each property is one line: its key (`columnLabel`, lowercase as authored, faint) then its value, with keys sitting in a shared column so every value on a card starts at the same x — unless the view's [`hideLabels`](#hidelabels) is `true`, which drops the key column and shows values only. Tag columns render on their own line with no key. A `markdown` property's body renders on its own line, in the prose font, with no key. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath`, so no modal opens).
 
 The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's config explicitly lists appear on the card.
 
