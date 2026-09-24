@@ -47,10 +47,7 @@
    TabRail, TopStrip, ChatTranscript, Graph, Flashcards, SymbolGallery) — see ui.css's own header
    for the full inventory. This is a temporary re-export bridge, not a foreign reach: Button owns
    these classes, `buttonClass.ts` is their one literal writer, and it stays a pure module with no
-   stylesheet import so it can keep exactly one importer (Button.tsx). bridge kept: Sidebar/
-   TabRail/TopStrip still reach `.btn--icon.btn--sm` from their own modules as a container-scoped
-   size override on buttons rendered by `shell/CommandButton.tsx`, which has no `class` prop to
-   retarget to and is out of this task's (one-global-followups Task 4) file scope; ChatComposer/
+   stylesheet import so it can keep exactly one importer (Button.tsx). ChatComposer/
    ChatSetup/ChatTurnParts/Toast/InboxView/PaneTree/ChatTranscript/Graph/Flashcards/SymbolGallery
    are likewise outside this task. The `:global()` wrapper and each ignore comment below come off
    once every remaining caller composes `<Button class={…}>` instead of reaching the class. */
@@ -324,14 +321,15 @@
    instead of accent/danger — invisible until IconBar started defaulting IconButton to size="sm"
    inside a bar (Acceptance 5: the selected mini-graph mode must be `--accent`). Three classes here
    outrank the two-class `.btn--selected`/`.btn--danger` selectors regardless of source order, so
-   normal/unselected stay muted and selected/danger keep their own colour.
+   normal/unselected stay muted and selected keeps its accent — a normal+danger sm icon button
+   still renders muted, as it did before this rule (EditDictionaryModal's delete icon).
    `:not(:disabled)` matters for the SAME reason in the other direction: without it this selector's
    three classes would outrank `.btn--icon:disabled`'s two, and a disabled sm icon button (state
    defaults to "normal") would render muted instead of `--faint`. Excluding `:disabled` here lets
    the disabled rule govern by simply not competing, rather than by winning a specificity race. */
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+/* design-system-ignore globalReach: Button's own .btn--icon family, emitted as literal global strings by buttonClass.ts — stays a :global() bridge until the family is componentized (see file header) */
 :global(.btn--icon.btn--sm.btn--normal:not(:disabled)),
-/* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
+/* design-system-ignore globalReach: Button's own .btn--icon family, emitted as literal global strings by buttonClass.ts — stays a :global() bridge until the family is componentized (see file header) */
 :global(.btn--icon.btn--sm.btn--unselected:not(:disabled)) { color: var(--text-muted); }
 /* design-system-ignore globalReach: bridge kept — Sidebar/TabRail/TopStrip route their toolbar buttons through shell/CommandButton (out of this task's file scope), which still reaches .btn--icon.btn--sm as a container-scoped size override; buttonClass.ts also still emits these as literal global strings, so the family stays a :global() bridge until CommandButton grows a class prop */
 :global(.btn--icon.btn--sm:hover:not(:disabled)) { color: var(--fg); }
