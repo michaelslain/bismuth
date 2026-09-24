@@ -11,45 +11,35 @@
      eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
      below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
   padding: var(--sp-5) 0;
-  /* .kanbanColHeader pins a min-height (calc(22px + 2 * var(--sp-5)), KanbanView.module.css)
-     and centres its title inside it (align-items: center) rather than sitting the title flush
-     at padding-top — and the header itself sits 1px below the column's own top edge (the
-     column's own 1px border, KanbanView.module.css's .kanbanColumn), which this ghost has none
-     of. Measured headless (add-column story, this branch): with the header pin restored, a
-     column title's text-node top sits at document y 51.5, 17.5px below the column's own (and
-     this ghost's) top edge. .trigger's own padding (var(--sp-4)) plus its line-box leading
-     accounts for 11px of that from wherever this padding-top ends, so this padding-top is the
-     remaining 6.5px — not a round token sum, so it's pinned as a measured value rather than
-     forced into an inexact calc. */
-  padding-top: 6.5px;
+  /* Level with a real column's title: .kanbanColHeader (KanbanView.module.css) pins a min-height of
+     calc(22px + 2 * var(--sp-5)) and CENTRES its title in it, one column border (1px) below the
+     column's top edge — a border this ghost has none of. The trigger is a Button, which has one
+     fixed height (--h-control) and centres its label in that, so centring the trigger's box on the
+     header's centre line puts the two glyphs on one centre whatever the font's metrics. (This was a
+     measured 6.5px literal until the trigger became an IconTextButton: Button's fixed height moved
+     the label 5px down inside it, and the literal silently went stale.) */
+  padding-top: calc(1px + (22px + 2 * var(--sp-5) - var(--h-control)) / 2);
 }
 /* Editing state (data-editing, set by KanbanAddColumn.tsx while its input is shown). The trigger
    stays mounted but invisible, so the ghost keeps its exact rest footprint — the swap cannot
    reflow the board by construction, whatever the input's own intrinsic width. */
 .ghost[data-editing] .trigger { visibility: hidden; }
-/* The input overlays the hidden trigger, out of flow, with its text origin on the "column"
-   glyph's — not the leading icon's. x: measured headless (add-column story, this branch) with
-   the trigger now `<IconTextButton icon="Plus">column</IconTextButton>` (brackets + icon added
-   by IconTextButton/Button, not this file): the "column" text glyph starts 23.140625px right of
-   where the old plain-text trigger's label did (the icon box, its gap, and the bracket glyph's
-   own inset all sit ahead of the word now), so that's added to the original `sp-4 - sp-2`
-   difference between the trigger's own padding and KanbanColumnNameInput's input padding — not a
-   round token sum, so it's pinned as a measured value rather than forced into an inexact calc,
-   same reasoning as `.ghost`'s `padding-top` above. y is unaffected — the icon sits inline with
-   the same line box, so the same difference below the trigger's own top still centres the same
-   glyph in the same 18px line.
-   `right: 0` pins the field to the ghost's width; the `.ghost` prefix outranks the shared
-   `.field { min-width: 160px }` (equal specificity alone would leave it to bundle order). */
-.ghost .addField {
+/* The input overlays the hidden trigger, out of flow. Its left/top are NOT set here: KanbanAddColumn
+   measures the trigger's "column" glyph box and the input's own text inset on entering edit mode
+   and sets them inline (kanbanAddColumnOverlay.ts), so the input's text lands on that glyph
+   whatever the trigger's leading geometry is — bracket glyph, icon size setting, gaps, and the
+   fixed --h-control height Button centres its label in. (A hand-measured px literal here went
+   stale twice: once when the icon was added ahead of the word, once when Button's fixed height
+   moved the label down 5px.) `right: 0` pins the field to the ghost's width. */
+.addField {
   position: absolute;
-  top: calc(6.5px + var(--sp-4) - var(--sp-2));
-  left: calc(var(--sp-4) - var(--sp-2) + 18.09375px);
   right: 0;
-  min-width: 0;
 }
-/* Padding kept — see the `.ghost`/`.addField` comments above: `.trigger`'s own inset is part of
-   the documented pixel overlay math between this button and KanbanColumnNameInput's field, not a
-   look override. Everything else IconTextButton itself now owns (brackets, hover, colour). */
+/* Outranks KanbanColumnNameInput's own `.field { min-width: 160px }` (two classes to its one), so
+   the overlay never outgrows the ghost's rest footprint. */
+.addField .nameInput { min-width: 0; }
+/* Padding kept — it sets the ghost's rest width (the overlay follows it by measurement, so it is no longer part of any overlay math). Not a
+   look override: everything else IconTextButton itself owns (brackets, hover, colour). */
 .trigger {
   padding: var(--sp-4);
   white-space: nowrap;
