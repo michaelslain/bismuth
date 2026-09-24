@@ -391,6 +391,39 @@ function findPair(map: YAMLMap, key: string) {
     return map.items.find(p => isScalar(p.key) && p.key.value === key)
 }
 
+/**
+ * Carry a comment onto whatever now sits at `index` in `parent` after a key was
+ * deleted from it — the item that shifted into the removed slot, or, if the removed
+ * key was the section's last, the section key itself (found via `sectionPath`).
+ * Shared by `renameKeys` and `pruneRetiredKeys` so both handle the "last key in a
+ * section" edge the same way.
+ */
+function carryComment(
+    doc: Document,
+    parent: YAMLMap,
+    sectionPath: readonly string[],
+    index: number,
+    comment: string,
+) {
+    const carrier = parent.items[index]
+    if (carrier && isScalar(carrier.key)) {
+        carrier.key.commentBefore = carrier.key.commentBefore
+            ? `${comment}\n${carrier.key.commentBefore}`
+            : comment
+        return
+    }
+    if (!sectionPath.length) return
+    const grandparent = doc.getIn(sectionPath.slice(0, -1), true)
+    const sectionPair = isMap(grandparent)
+        ? findPair(grandparent as YAMLMap, sectionPath[sectionPath.length - 1])
+        : undefined
+    if (sectionPair && isScalar(sectionPair.key)) {
+        sectionPair.key.commentBefore = sectionPair.key.commentBefore
+            ? `${comment}\n${sectionPair.key.commentBefore}`
+            : comment
+    }
+}
+
 // Schema keys renamed since an older Bismuth. Each entry names the OLD full path (section, ...,
 // leaf key) and the new leaf key (renames are always within the same section). renameKeys below
 // runs FIRST in reconcileSettings — before fillMissing — because fillMissing would otherwise see
@@ -420,19 +453,16 @@ function renameKeys(doc: Document): boolean {
         if (!oldPair) continue
         const newPair = findPair(parent as YAMLMap, to)
         if (newPair) {
-            const comment = isScalar(oldPair.key)
-                ? oldPair.key.commentBefore
-                : undefined
+            const comment = [
+                isScalar(oldPair.key) ? oldPair.key.commentBefore : undefined,
+                isScalar(oldPair.value) ? oldPair.value.comment : undefined,
+            ]
+                .filter(Boolean)
+                .join('\n')
             const index = (parent as YAMLMap).items.indexOf(oldPair)
             ;(parent as YAMLMap).delete(oldKey)
-            if (comment) {
-                const carrier = (parent as YAMLMap).items[index]
-                if (carrier && isScalar(carrier.key)) {
-                    carrier.key.commentBefore = carrier.key.commentBefore
-                        ? `${comment}\n${carrier.key.commentBefore}`
-                        : comment
-                }
-            }
+            if (comment)
+                carryComment(doc, parent as YAMLMap, sectionPath, index, comment)
         } else if (isScalar(oldPair.key)) {
             oldPair.key.value = to
         }
@@ -460,31 +490,16 @@ function pruneRetiredKeys(doc: Document): boolean {
         if (!isMap(parent)) continue
         const pair = findPair(parent as YAMLMap, key)
         if (!pair) continue
-        const comment = isScalar(pair.key) ? pair.key.commentBefore : undefined
+        const comment = [
+            isScalar(pair.key) ? pair.key.commentBefore : undefined,
+            isScalar(pair.value) ? pair.value.comment : undefined,
+        ]
+            .filter(Boolean)
+            .join('\n')
         const index = (parent as YAMLMap).items.indexOf(pair)
         ;(parent as YAMLMap).delete(key)
-        if (comment) {
-            const carrier = (parent as YAMLMap).items[index] // the item that shifted into the removed slot
-            if (carrier && isScalar(carrier.key)) {
-                carrier.key.commentBefore = carrier.key.commentBefore
-                    ? `${comment}\n${carrier.key.commentBefore}`
-                    : comment
-            } else if (sectionPath.length) {
-                const grandparent = doc.getIn(sectionPath.slice(0, -1), true)
-                const sectionPair = isMap(grandparent)
-                    ? findPair(
-                          grandparent as YAMLMap,
-                          sectionPath[sectionPath.length - 1],
-                      )
-                    : undefined
-                if (sectionPair && isScalar(sectionPair.key)) {
-                    sectionPair.key.commentBefore = sectionPair.key
-                        .commentBefore
-                        ? `${comment}\n${sectionPair.key.commentBefore}`
-                        : comment
-                }
-            }
-        }
+        if (comment)
+            carryComment(doc, parent as YAMLMap, sectionPath, index, comment)
         mutated = true
     }
     return mutated

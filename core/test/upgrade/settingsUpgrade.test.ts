@@ -309,6 +309,47 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
         expect(second).toBe(false)
         rmSync(vault, { recursive: true, force: true })
     })
+
+    test('a comment above the old key survives when the old key is the section\'s last item', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  toolbarIconSize: 15',
+                '  # my icon comment',
+                '  sidebarIconFontSize: 18',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        expect(text).toContain('# my icon comment')
+        expect(text).not.toContain('sidebarIconFontSize')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a same-line comment on the old key survives when both keys are present', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  toolbarIconSize: 15',
+                '  sidebarIconFontSize: 18 # note',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+
+        expect(text).toContain('# note')
+        expect(text).not.toContain('sidebarIconFontSize')
+        rmSync(vault, { recursive: true, force: true })
+    })
 })
 
 describe('upgrade resilience — a damaged or hostile old file must not make things worse', () => {
