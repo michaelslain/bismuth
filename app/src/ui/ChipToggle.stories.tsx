@@ -6,6 +6,7 @@
 // there is no additional per-tone story beyond the AllTones* pair below.
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import ChipToggle, { type ChipToggleTone } from './ChipToggle'
 import { Row } from './_storyKit'
 
@@ -26,6 +27,33 @@ export const Unselected: Story = {
 
 export const Selected: Story = {
     render: () => <ChipToggle selected>Markdown</ChipToggle>,
+}
+
+/** A selected, tone-less chip must stay `--accent` on hover, not fall back to the unselected
+ *  hover tint. Regression guard for the specificity bug where `.selected` (0,1,0) lost to
+ *  `.chip-toggle:hover` (0,2,0) after the `:global()` bridge was converted to hashed locals —
+ *  compares a hovered selected chip's computed color against an unhovered selected sibling's,
+ *  rather than a hardcoded rgb, so it tracks whatever `--accent` resolves to in the active theme. */
+export const SelectedHover: Story = {
+    render: () => (
+        <Row label="selected hover" gap="10px">
+            <ChipToggle selected data-testid="hovered">
+                Markdown
+            </ChipToggle>
+            <ChipToggle selected data-testid="reference">
+                Markdown
+            </ChipToggle>
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const hovered = canvas.getByTestId('hovered')
+        const reference = canvas.getByTestId('reference')
+        await userEvent.hover(hovered)
+        const hoveredColor = getComputedStyle(hovered).color
+        const referenceColor = getComputedStyle(reference).color
+        expect(hoveredColor).toBe(referenceColor)
+    },
 }
 
 /** A leading icon before the label, and an icon-only chip with no label (Chip's old shape) —
