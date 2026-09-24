@@ -1,11 +1,12 @@
 /* app/src/daemon/DaemonHub.module.css — DaemonHub.tsx is the ONLY importer.
    The column stacks the face region (face + identity, DaemonFace's own `caption` slot) above its
-   own chat region. Resting, the face region takes whatever height the column has left over once
-   the chat's own composer settles to its content height (`.chatRegion { flex: none }`), and
-   centres the face in that space, biased toward the top via `padding-bottom` so it reads as
-   sitting in the hub's upper half rather than dead-centre. The composer itself always sits on the
-   column floor. Compact (chatFills), the face rides the top as a one-line header and hands the
-   rest of the column to the chat. */
+   own chat region. Resting, both regions size to their own content (`.faceRegion { flex: none }`,
+   `.chatRegion { flex: none }`) and the HUB itself carries two generated flex items — no real
+   markup, DaemonHub.tsx toggles a `resting` class instead — that split the column's own leftover
+   space 1:2 above/below the whole face+chat cluster. That lands the cluster in the column's upper
+   third rather than dead-centre, and puts the composer well above the column floor instead of on
+   it. `.chatRegion`'s own `margin-top` is the face-to-composer gap. Compact (chatFills), the face
+   rides the top as a one-line header and hands the rest of the column to the chat — no spacers. */
 
 .hub {
     display: flex;
@@ -15,31 +16,29 @@
     height: 100%;
 }
 
-.faceRegion {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1 1 auto;
-    min-height: 0;
-    min-width: 0;
-    padding-block: var(--sp-6);
-    padding-bottom: var(--sp-7);
-}
-
-/* Resting (non-compact): two generated flex items — no real markup, DaemonHub.tsx stays untouched
-   — bias the face toward the top of the region instead of dead centre. A 1:2 split gives the
-   space above the face a third of the region's own free space and the space below it two thirds,
-   landing the face well inside the column's upper third instead of at its middle (baseline had it
-   centred at ~45% of the hub's own height). Suppressed under `.faceCompact` below, where
-   `justify-content: flex-start` already pins the one-line header flush to the top. */
-.faceRegion::before,
-.faceRegion::after {
+/* Resting (non-compact) only: two generated flex items bias the whole face+chat cluster toward the
+   top of the column instead of dead centre. A 1:2 split gives the free space above the cluster a
+   third of the hub's own leftover space and the space below it two thirds, landing the cluster
+   well inside the column's upper third. Suppressed entirely under `.hub.resting` narrow override
+   below (no free space to bias) and never present at all when compact. */
+.hub.resting::before,
+.hub.resting::after {
     content: '';
     flex: 1 0 0;
     min-height: 0;
 }
-.faceRegion::after {
+.hub.resting::after {
     flex-grow: 2;
+}
+
+.faceRegion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: none;
+    min-height: 0;
+    min-width: 0;
+    padding-block: var(--sp-6);
 }
 
 .faceCompact {
@@ -48,10 +47,6 @@
     align-items: flex-start;
     padding-block: var(--sp-4) var(--sp-2);
 }
-.faceCompact::before,
-.faceCompact::after {
-    content: none;
-}
 
 .chatRegion {
     min-width: 0;
@@ -59,6 +54,11 @@
     display: flex;
     flex-direction: column;
     flex: none;
+}
+
+/* Face → composer gap, resting only — compact keeps today's rules exactly (no margin). */
+.hub.resting .chatRegion {
+    margin-top: var(--sp-6);
 }
 
 .chatFill {
@@ -73,19 +73,23 @@
     white-space: nowrap;
 }
 
-/* Off (`enabled === false`): the face sleeps alone with how to wake it — no identity, no chat. */
+/* Off (`enabled === false`): the face sleeps alone with how to wake it — no identity, no chat.
+   Off is not compact, so it still gets the `.hub.resting` bias above, keeping the sleeping face
+   in the same upper-third position as the awake resting cluster. */
 .off {
     margin: var(--sp-4) 0 0;
 }
 
 /* Narrow (< 760px of DaemonPage's own `.page` size container, the nearest one): the hub no longer
    claims the whole stage height for itself — it sizes to its own content so the panel that
-   follows it starts on-screen instead of below the fold. */
+   follows it starts on-screen instead of below the fold. No free space to bias, so the resting
+   spacers are suppressed too. */
 @container (max-width: 759.98px) {
     .hub {
         height: auto;
     }
-    .faceRegion {
-        flex: none;
+    .hub.resting::before,
+    .hub.resting::after {
+        content: none;
     }
 }
