@@ -1,39 +1,15 @@
-/* app/src/ui/ChipToggle.module.css — moved in from ui/ui.css (one-global-stylesheet Task 6).
-   ChipToggle.tsx is the sole reader of every class below. Nothing outside this file reaches
-   `.chip-toggle` — Chip.tsx was merged into ChipToggle (ds-bridges Task 3); a caller composing
-   its own look layers a class onto ChipToggle's `class` prop instead (KanbanCard.module.css's
-   `.kbMetaBoolChipToggle`).
+/* app/src/ui/ChipToggle.module.css — ChipToggle.tsx is the sole reader of the class below.
 
-   Default tone = accent; tone-<x> tints the SELECTED state's brackets + label to a category
-   color, fill stays transparent.
+   one-button Task 8: ChipToggle now composes ui/Button (`kind="text"`) instead of rendering its
+   own `<button>`, so the bracket glyphs, `--faint`/accent colouring and hover all come from
+   Button.module.css. This file no longer owns any of that look — no `.selected` rule, no
+   `.tone-<x>` rule (tone is Button's `accent` prop now, a `var(--<tone>)` token read by
+   `.btn--text.btn--selected`). chipToggleSpecificity.test.ts, which used to pin this file's own
+   selected/hover specificity (10d3966a), now asserts the delegation instead.
 
-   Modal redesign Task 5: no box (no border, no fill) — `[label]` bracket text in the same
-   register as SegmentedToggle's bracket look and TextButton's `.btn--text` (Button.module.css),
-   which this copies rather than reaches (TextButton itself is off-limits this wave). The `[`/`]`
-   are generated content, so they inherit `color` from the button and need no rule of their own —
-   selected tints text + brackets together, unselected is `--faint`. */
-
-.chip-toggle { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0; border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--faint); background: transparent; border: none; cursor: pointer; white-space: nowrap; }
-/* The bracket glyphs — generated content, not markup, so ChipToggle.tsx stays a plain labelled
-   button; ' / '' hides the literal '[' / ']' from the accessible name, same as .btn--text's. */
-.chip-toggle::before { content: '[' / ''; }
-.chip-toggle::after { content: ']' / ''; }
-.chip-toggle svg { color: var(--faint); }
-.chip-toggle:hover { color: var(--text-muted); }
-/* Same reasoning as .btn:focus-visible in Button.module.css — chip-toggle is a button that
-   opted out of .btn's box model, not out of being keyboard-reachable. */
-.chip-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-.chip-toggle.selected { color: var(--accent); }
-.chip-toggle.selected svg { color: var(--accent); }
-.chip-toggle.tone-teal.selected { color: var(--teal); }
-.chip-toggle.tone-teal.selected svg { color: var(--teal); }
-.chip-toggle.tone-blue.selected { color: var(--blue); }
-.chip-toggle.tone-blue.selected svg { color: var(--blue); }
-.chip-toggle.tone-violet.selected { color: var(--violet); }
-.chip-toggle.tone-violet.selected svg { color: var(--violet); }
-.chip-toggle.tone-green.selected { color: var(--green); }
-.chip-toggle.tone-green.selected svg { color: var(--green); }
-.chip-toggle.tone-gold.selected { color: var(--gold); }
-.chip-toggle.tone-gold.selected svg { color: var(--gold); }
-.chip-toggle.tone-rose.selected { color: var(--rose); }
-.chip-toggle.tone-rose.selected svg { color: var(--rose); }
+   The one rule left is layout, not look: a chip stays a single-line token, same as before this
+   task. `white-space` isn't one of the properties a class passed to a Button-family component may
+   not carry (border, fill, shadow, padding, size, transform, letter-spacing, colour — see the
+   one-button plan's Global Constraints), so it stays here rather than on Button, which has no
+   opinion on whether ITS caller's label wraps. */
+.chip-toggle { white-space: nowrap; }
