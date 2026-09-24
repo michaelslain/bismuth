@@ -19,6 +19,8 @@ import {
     restTextOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
 import { fakeTransport } from '../ui/_fakeTransport'
+import { kanbanViews, openColumnMenu } from '../ui/_kanbanProbes'
+import { PALETTE_NAMES } from './kanbanPalette'
 import type { FakeTransportSeed } from '../ui/_fakeTransport'
 import type { Transport } from '../api'
 import { toasts } from '../toastStore'
@@ -65,14 +67,7 @@ const noop = () => {}
  *  kanban. */
 export const Default: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -88,15 +83,7 @@ export const Default: Story = {
  *  no cards here but stays on the board. */
 export const EditableWithPinnedColumns: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
-            },
-        ]
+        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'] })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -134,9 +121,6 @@ export const NoGroupBy: Story = {
     },
 }
 
-// Every swatch's accessible name + title — parallel to KanbanView's PALETTE_NAMES.
-const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
-
 // Captured by ColorPickerPickAndDismiss's render() and read back in its play().
 let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
 
@@ -155,14 +139,7 @@ let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
  *  behaviour is proved by ColorPickerPickAndDismiss below, which leaves the panel closed. */
 export const ColorPickerOpen: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         setTransport(fakeTransport())
         return (
             <KanbanView
@@ -207,14 +184,7 @@ export const ColorPickerOpen: Story = {
  *  shot shows no picker — that is the point of this story, as opposed to ColorPickerOpen's. */
 export const ColorPickerPickAndDismiss: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         const { transport, calls } = spiedTransport()
         colorPickerPickAndDismissCalls = calls
         setTransport(transport)
@@ -270,15 +240,7 @@ export const ColorPickerPickAndDismiss: Story = {
  *  "selected" either — that color didn't come from this palette. */
 export const ColorPickerOpenThirdColumn: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-                groupOrder: ['Todo', 'Doing', 'Done'],
-            },
-        ]
+        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Done'] })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -324,14 +286,7 @@ const STORED_ROWS: Row[] = [
  */
 export const StoredRows: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         return (
             <KanbanView
@@ -365,13 +320,7 @@ let kanbanCalls: { path: string; body: unknown }[] = []
  *  the assertion below doesn't care about, only that the `columns` one carries `Blocked`. */
 export const AddColumn: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-            },
-        ]
+        const views = kanbanViews({ order: undefined })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
@@ -463,14 +412,7 @@ const STORED_ADD_ROWS: Row[] = [
  *  the row write and never a `/file` PUT. */
 export const StoredRowsAddCard: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
@@ -525,14 +467,7 @@ const STORED_TITLE_ROWS: Row[] = [
  *  so `metaColumns` drops it from the chip list the same way it drops `file.name` normally). */
 export const StoredRowsTitles: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         return (
             <KanbanView
@@ -566,14 +501,7 @@ export const StoredRowsTitles: Story = {
  *  no longer hides either affordance for a stored row. */
 export const StoredRowsRenameDelete: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
@@ -616,7 +544,7 @@ export const StoredRowsRenameDelete: Story = {
             ).toBe(true),
         )
 
-        const deleteButton = await within(document.body).findByText('DELETE')
+        const deleteButton = await within(document.body).findByRole('button', { name: /^delete$/i })
         await userEvent.click(deleteButton)
         await waitFor(() =>
             expect(
@@ -641,14 +569,7 @@ export const RenameColumn: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -671,14 +592,7 @@ export const RenameColumn: Story = {
         // Scope to Todo's own menu trigger rather than assuming it's rendered first — column
         // order is derived data (groupBy option order), not a layout guarantee this story should
         // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
-        const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
-        const todoMenu = todoMenus[0]!
-        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
-        // the count's own slot at rest) — reach it via keyboard focus, same as a real keyboard
-        // user would, rather than a pointer click on an element the CSS may not yet have
-        // revealed for the pointer.
-        todoMenu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Todo')
         await userEvent.click(await body.findByText(/^rename$/i))
         // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
         // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
@@ -773,14 +687,7 @@ export const RenameColumnRoundTrip: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -794,14 +701,7 @@ export const RenameColumnRoundTrip: Story = {
         const body = within(canvasElement.ownerDocument.body)
 
         async function renameVia(fromKey: string, toName: string) {
-            const col = canvasElement.querySelector<HTMLElement>(
-                `[data-kbcol="${fromKey}"]`,
-            )!
-            const menus = within(col).getAllByLabelText('Column menu')
-            const menu = menus[0]!
-            // The trigger sits `pointer-events: none` until hovered/focused — reach it via keyboard focus.
-            menu.focus()
-            await userEvent.keyboard('{Enter}')
+            await openColumnMenu(canvasElement, fromKey)
             await userEvent.click(await body.findByText(/^rename$/i))
             const input = await waitFor(
                 () =>
@@ -852,15 +752,7 @@ export const DeleteEmptyColumn: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
-            },
-        ]
+        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'] })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -871,21 +763,12 @@ export const DeleteEmptyColumn: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
         expect(
             canvasElement.querySelector('[data-kbcol="Blocked"]'),
         ).not.toBeNull()
 
-        const menus = canvas.getAllByLabelText('Column menu')
-        const blockedCol = canvasElement.querySelector(
-            '[data-kbcol="Blocked"]',
-        )!
-        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
-        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
-        // the count's own slot at rest) — reach it via keyboard focus.
-        blockedMenu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Blocked')
         const del = await body.findByText(/^delete$/i)
         await userEvent.click(del)
 
@@ -940,14 +823,7 @@ let deleteShiftRefetch: () => Promise<void> = async () => {}
  *  any real store spliced anything, which is outside a Storybook story's reach. */
 export const StoredRowsDeleteShift: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         let liveRows = storedDeleteRows()
         const base = fakeTransport()
@@ -1010,7 +886,7 @@ export const StoredRowsDeleteShift: Story = {
             '[data-edit-target="description"]',
         )!
         await userEvent.click(title)
-        const deleteButton = await within(document.body).findByText('DELETE')
+        const deleteButton = await within(document.body).findByRole('button', { name: /^delete$/i })
         await userEvent.click(deleteButton)
 
         await waitFor(() =>
@@ -1035,14 +911,7 @@ export const StoredRowsDeleteShift: Story = {
  *  `Add card failed` toast rather than a card that silently vanishes with no explanation. */
 export const StoredAddFails: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         const base = fakeTransport()
         const transport: Transport = {
@@ -1102,14 +971,7 @@ export const RenameColumnPartial: Story = {
             },
         }
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -1122,13 +984,7 @@ export const RenameColumnPartial: Story = {
     play: async ({ canvasElement }) => {
         const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
-        const col = canvasElement.querySelector<HTMLElement>(
-            '[data-kbcol="Todo"]',
-        )!
-        const menu = within(col).getAllByLabelText('Column menu')[0]!
-        // The trigger sits `pointer-events: none` until hovered/focused — reach it via keyboard focus.
-        menu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Todo')
         await userEvent.click(await body.findByText(/^rename$/i))
         const input = await waitFor(
             () =>
@@ -1171,16 +1027,7 @@ export const DeleteColumnPartial: Story = {
             },
         }
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
-                groupColors: { Blocked: '#e06c6c' },
-            },
-        ]
+        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'], groupColors: { Blocked: '#e06c6c' } })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -1191,16 +1038,9 @@ export const DeleteColumnPartial: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
-        const menus = canvas.getAllByLabelText('Column menu')
-        const blockedCol = canvasElement.querySelector(
-            '[data-kbcol="Blocked"]',
-        )!
-        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
-        blockedMenu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Blocked')
         const del = await body.findByText(/^delete$/i)
         await userEvent.click(del)
         await waitFor(() => expect(toasts().length).toBe(before + 1))
@@ -1238,14 +1078,7 @@ const SOURCE_DROP_ROWS: Row[] = [
  *  `resolveCardTarget`), then `pointerup`. */
 export const SourceBoardDropPerPath: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
@@ -1344,15 +1177,7 @@ export const StoredRowsRenameColumn: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-                groupOrder: ['todo'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'], groupOrder: ['todo'] })
         const config = sampleBaseConfig({ views })
         return (
             <KanbanView
@@ -1386,15 +1211,7 @@ export const StoredRowsRenameColumn: Story = {
             ).toBe(true),
         )
 
-        const todoBefore = canvasElement.querySelector<HTMLElement>(
-            '[data-kbcol="todo"]',
-        )!
-        const todoMenus = within(todoBefore).getAllByLabelText('Column menu')
-        const todoMenu = todoMenus[0]!
-        // The trigger sits `pointer-events: none` until hovered/focused (Finding 2 — it occupies
-        // the count's own slot at rest) — reach it via keyboard focus.
-        todoMenu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'todo')
         await userEvent.click(await body.findByText(/^rename$/i))
         const input = await waitFor(
             () =>
@@ -1449,14 +1266,7 @@ export const StoredRowsRenameColumn: Story = {
  *  placeholder for the whole play(). */
 export const StoredAddPendingInert: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['description'],
-            },
-        ]
+        const views = kanbanViews({ order: ['description'] })
         const config = sampleBaseConfig({ views })
         const base = fakeTransport()
         const calls: { path: string; body: unknown }[] = []
@@ -1562,15 +1372,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-                groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
-            },
-        ]
+        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'] })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -1585,13 +1387,7 @@ export const AddColumnFailsRestoresRemoved: Story = {
         const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
 
-        const menus = canvas.getAllByLabelText('Column menu')
-        const blockedCol = canvasElement.querySelector(
-            '[data-kbcol="Blocked"]',
-        )!
-        const blockedMenu = [...menus].find(m => blockedCol.contains(m))!
-        blockedMenu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Blocked')
         const del = await body.findByText(/^delete$/i)
         await userEvent.click(del)
         await waitFor(() =>
@@ -1628,14 +1424,7 @@ export const RenameColumnKeepsAuto: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-                groupBy: { property: 'status' },
-                order: ['priority', 'tags'],
-            },
-        ]
+        const views = kanbanViews()
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -1647,12 +1436,7 @@ export const RenameColumnKeepsAuto: Story = {
     },
     play: async ({ canvasElement }) => {
         const body = within(canvasElement.ownerDocument.body)
-        const col = canvasElement.querySelector<HTMLElement>(
-            '[data-kbcol="Todo"]',
-        )!
-        const menu = within(col).getAllByLabelText('Column menu')[0]!
-        menu.focus()
-        await userEvent.keyboard('{Enter}')
+        await openColumnMenu(canvasElement, 'Todo')
         await userEvent.click(await body.findByText(/^rename$/i))
         const input = await waitFor(() =>
             within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
