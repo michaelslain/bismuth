@@ -18,6 +18,7 @@ export type DaemonMood =
     | 'alert' // inbox has pages needing review
     | 'hurt' // a cron failed in the last 30 minutes
     | 'listening' // the user is typing in the daemon chat
+    | 'thinking' // the daemon chat is busy but no reply text has streamed yet
     | 'talking' // the daemon chat is streaming a reply
 
 export type MoodInput = {
@@ -29,6 +30,9 @@ export type MoodInput = {
     inboxWorking: boolean
     chatBusy: boolean
     composing: boolean
+    /** Text is actively streaming into the reply. Absent (or false) while a reply is pending —
+     *  that reads as `thinking`, not `talking`. */
+    chatSpeaking?: boolean
 }
 
 /** Exactly 8 cells: [0..2] left side, [3..4] eyes, [5..7] right side. Index 2 is always '[' and 5 always ']'. */
@@ -49,13 +53,16 @@ export const FACE_REST: FaceFrame = ['.', ':', '[', '0', '0', ']', ':', '.']
 export const BLINK_MS = 110
 /** Open-eye gap between the two blinks of a double blink. */
 export const DOUBLE_BLINK_GAP_MS = 160
+// Both of the above are EXEMPT from the >=600ms-per-frame rule TICK_MS enforces below — a blink
+// this fast still reads as a blink, and slowing it down to match everything else here would read
+// as sleepy rather than calm (user ruling 2026-09-23).
 /** How long a click-wink (`0-`) holds. */
 export const WINK_MS = 300
 
 /** First match wins — see the priority list in the daemon page plan. */
 export function deriveMood(i: MoodInput): DaemonMood {
     if (!i.enabled || !i.running) return 'asleep'
-    if (i.chatBusy) return 'talking'
+    if (i.chatBusy) return i.chatSpeaking ? 'talking' : 'thinking'
     if (i.composing) return 'listening'
     if (i.recentFailure) return 'hurt'
     if (i.cronsRunning > 0 || i.inboxWorking) return 'busy'
@@ -70,6 +77,10 @@ const SIDES: Sides = ['.', ':', ':', '.']
 
 const BUSY_SCAN = ['=-', '==', '-=', '=='] as const
 const TALK = ['0o', 'o0'] as const
+// A slow, symmetric pulse — soft eyes easing toward a rest-like `..` and back, never the idle
+// `00`, the talking `0o`/`o0` mouth-flip, or a real blink (`--`, a dash, not a dot). Reads as
+// "considering", not busy: both frames are calm and even, so nothing about it looks like chatter.
+const THINK = ['oo', '..'] as const
 
 function eyesFor(mood: DaemonMood, tick: number): string {
     switch (mood) {
@@ -83,6 +94,8 @@ function eyesFor(mood: DaemonMood, tick: number): string {
             return BUSY_SCAN[tick % 4]
         case 'talking':
             return TALK[tick % 2]
+        case 'thinking':
+            return THINK[tick % 2]
         case 'idle':
         case 'listening':
             return '00'
@@ -135,16 +148,19 @@ export function composeFace(
 }
 
 /** The EYE clock per mood. Idle/alert/listening/hurt/asleep eyes hold still between blinks, so
- *  their tick only restarts the frame; busy scans and talking mouths are the ones that move. Talking
- *  is 240ms, not faster: a quicker `0o`/`o0` flip read as chatter rather than speech. */
+ *  their tick only restarts the frame; busy scans, talking mouths and thinking's soft pulse are the
+ *  ones that move. Every value is >= 600ms — anything faster read as flicker, not liveness — so
+ *  busy (was 260ms) and talking (was 240ms) both slowed down; talking still ticks a bit faster than
+ *  the rest so a streaming reply reads as more active than a calm think. */
 const TICK_MS: Record<DaemonMood, number> = {
     asleep: 2400,
-    idle: 1400,
+    idle: 1600,
     alert: 900,
-    listening: 1100,
-    busy: 260,
-    talking: 240,
-    hurt: 1400,
+    listening: 1200,
+    busy: 700,
+    talking: 640,
+    thinking: 900,
+    hurt: 1600,
 }
 
 export function tickMs(mood: DaemonMood): number {
@@ -169,8 +185,50 @@ const LABEL: Record<DaemonMood, string> = {
     hurt: 'hurt',
     listening: 'listening',
     talking: 'talking',
+    thinking: 'thinking',
 }
 
 export function moodLabel(mood: DaemonMood): string {
     return LABEL[mood]
+}
+
+// ── Mood settle ──────────────────────────────────────────────────────────────────────────────
+// The raw derived mood can flip several times a second (a poll, a keystroke). The face should
+// only ever show a mood that has HELD for MOOD_SETTLE_MS — this is the hysteresis. Pure: the
+// component supplies `nowMs` (wall clock) on every prop change and on a timer for the pending
+// deadline, never a sleep.
+
+/** How long a new mood must hold before the face actually shows it. */
+export const MOOD_SETTLE_MS = 1500
+
+export type SettleState = {
+    /** The mood currently painted. */
+    shown: DaemonMood
+    /** A candidate mood waiting to hold long enough to become `shown`; null when nothing is pending. */
+    pending: DaemonMood | null
+    /** When `pending` started being considered (ms, same clock as `nowMs`). */
+    since: number
+}
+
+/** Shows the first mood immediately — there is nothing to settle against yet. */
+export function initialSettle(mood: DaemonMood, nowMs: number): SettleState {
+    return { shown: mood, pending: null, since: nowMs }
+}
+
+/** Feed the latest raw mood + the current time in. `pending` restarts every time `next` changes to
+ *  something new; `shown` only flips to `pending` once it has held `MOOD_SETTLE_MS` without
+ *  changing; `next === shown` just clears any stale pending. */
+export function settleMood(
+    s: SettleState,
+    next: DaemonMood,
+    nowMs: number,
+): SettleState {
+    if (next === s.shown)
+        return s.pending === null
+            ? s
+            : { shown: s.shown, pending: null, since: s.since }
+    if (next !== s.pending) return { shown: s.shown, pending: next, since: nowMs }
+    if (nowMs - s.since >= MOOD_SETTLE_MS)
+        return { shown: next, pending: null, since: nowMs }
+    return s
 }

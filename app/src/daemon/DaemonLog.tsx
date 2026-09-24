@@ -17,12 +17,9 @@ export type DaemonLogProps = {
 
 function DaemonLog(props: DaemonLogProps) {
     const now = () => new Date()
+    // No title/count — the ViewBar facet ("log") is this panel's heading now.
     return (
-        <DaemonPanel
-            title="log"
-            count={props.events.length}
-            class={props.class}
-        >
+        <DaemonPanel class={props.class}>
             <Show
                 when={props.events.length > 0}
                 fallback={<EmptyState blockClass={daemonPanelEmptyClass}>nothing logged yet</EmptyState>}

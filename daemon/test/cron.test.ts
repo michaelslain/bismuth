@@ -4,7 +4,7 @@
 // as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -28,6 +28,7 @@ import {
     type ScheduleCronJob,
 } from '../src/daemon/cron.ts'
 import type { VaultContext } from '../src/lib/config.ts'
+import { parseFrontmatter as parseFrontmatterCore } from '../../core/src/frontmatter.ts'
 
 let cronsDir: string
 let ctx: VaultContext
@@ -233,6 +234,34 @@ test("updateCronJob preserves an existing cron's `incremental`/`checkpointDir` f
     })
 })
 
+// #followup-1: buildCronFile used to write `name: ${opts.name}` bare, and updateCronJob passed
+// its own lookup-key `name` param (the slug) rather than the file's existing frontmatter name —
+// so toggling `enabled` on a display-named cron (created via core's createCron, which writes a
+// quoted display name into a `<slug>.md` file) silently renamed it back to its slug on disk.
+test("updateCronJob keeps the file's existing display name rather than overwriting it with the lookup key (slug)", async () => {
+    cronFile(
+        'answer-emails',
+        'name: "Answer Emails!"\nschedule: 0 9 * * *\nenabled: true',
+    )
+    const res = await updateCronJob('answer-emails', { enabled: false }, ctx)
+    expect(res.ok).toBe(true)
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs[0]).toMatchObject({ name: 'Answer Emails!', enabled: false })
+})
+
+test('updateCronJob re-quotes a display name that needs it (contains a colon) rather than writing it back bare-corrupted', async () => {
+    cronFile(
+        'ops-nightly',
+        'name: "Ops: Nightly"\nschedule: 0 9 * * *\nenabled: true',
+    )
+    const res = await updateCronJob('ops-nightly', { enabled: false }, ctx)
+    expect(res.ok).toBe(true)
+    const content = readFileSync(join(cronsDir, 'ops-nightly.md'), 'utf-8')
+    expect(content).toContain('name: "Ops: Nightly"')
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs[0]).toMatchObject({ name: 'Ops: Nightly', enabled: false })
+})
+
 test('createCronJob + loadCronJobs round-trips `incremental`/`checkpointDir`', async () => {
     const res = await createCronJob(
         {
@@ -260,6 +289,56 @@ test('updateCronJob rejects flipping to file-change without supplying `watch`', 
     const jobs = await loadCronJobs(ctx)
     expect(jobs[0]).toMatchObject({ on: 'schedule', schedule: '0 * * * *' })
 })
+
+// #51-followup: an unrelated update to a file-change cron (toggling `enabled`) must keep
+// `watch`'s glob quoted on disk — `**/*.md` starts with `*`, an unsafe leading char per
+// frontmatterValue — and core's own parseFrontmatter (what the app/snapshot side reads) must
+// still see the block as real frontmatter, not have it collapse to `{}`.
+test('updateCronJob keeps a file-change cron\'s `watch` glob quoted, and core parseFrontmatter still reads the block', async () => {
+    cronFile(
+        'watch-all',
+        'name: watch-all\non: file-change\nwatch: "**/*.md"\nenabled: true',
+    )
+    const res = await updateCronJob('watch-all', { enabled: false }, ctx)
+    expect(res.ok).toBe(true)
+
+    const content = readFileSync(join(cronsDir, 'watch-all.md'), 'utf-8')
+    expect(content).toContain('watch: "**/*.md"')
+
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs[0]).toMatchObject({
+        on: 'file-change',
+        watch: '**/*.md',
+        enabled: false,
+    })
+
+    const { data } = parseFrontmatterCore(content)
+    expect(data).not.toEqual({})
+    expect(data.enabled).toBe(false)
+})
+
+// #followup-1 (daemon page fix): a display-named cron's file is keyed by its FILE slug —
+// loadCronJobs must resolve `job.file` to that slug even though `name` is the display string —
+// while `name` stays the human-readable frontmatter value untouched.
+test('loadCronJobs keys a display-named cron by its file slug, not its display name', async () => {
+    cronFile(
+        'answer-emails',
+        'name: "Answer Emails!"\nschedule: 0 9 * * *',
+    )
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+        file: 'answer-emails',
+        name: 'Answer Emails!',
+    })
+})
+
+// A running-job double-trigger test (firing `answer-emails` again while its first run is still
+// in flight should not start a second run) would need `fireFileChangeCron`/`fireJob`, which call
+// through to `sendMessage` (the Agent SDK session). cron.test.ts has no session/Agent-SDK mocking
+// harness — cronActivity.test.ts notes the same limitation ("fireJob is not directly callable in
+// a test (it calls the Agent SDK)") — so that case is skipped here rather than built on new
+// machinery; `runningJobs`/`jobKey` gating (cron.ts ~1264) is the code path that would cover it.
 
 // ── Retry backoff on consecutive failures ────────────────────────────────────
 //

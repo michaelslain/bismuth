@@ -1,0 +1,91 @@
+/* app/src/daemon/DaemonHub.module.css — DaemonHub.tsx is the ONLY importer.
+   The column stacks the face region (face + identity, DaemonFace's own `caption` slot) above its
+   own chat region. Resting, the face region takes whatever height the column has left over once
+   the chat's own composer settles to its content height (`.chatRegion { flex: none }`), and
+   centres the face in that space, biased toward the top via `padding-bottom` so it reads as
+   sitting in the hub's upper half rather than dead-centre. The composer itself always sits on the
+   column floor. Compact (chatFills), the face rides the top as a one-line header and hands the
+   rest of the column to the chat. */
+
+.hub {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.faceRegion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    padding-block: var(--sp-6);
+    padding-bottom: var(--sp-7);
+}
+
+/* Resting (non-compact): two generated flex items — no real markup, DaemonHub.tsx stays untouched
+   — bias the face toward the top of the region instead of dead centre. A 1:2 split gives the
+   space above the face a third of the region's own free space and the space below it two thirds,
+   landing the face well inside the column's upper third instead of at its middle (baseline had it
+   centred at ~45% of the hub's own height). Suppressed under `.faceCompact` below, where
+   `justify-content: flex-start` already pins the one-line header flush to the top. */
+.faceRegion::before,
+.faceRegion::after {
+    content: '';
+    flex: 1 0 0;
+    min-height: 0;
+}
+.faceRegion::after {
+    flex-grow: 2;
+}
+
+.faceCompact {
+    flex: none;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding-block: var(--sp-4) var(--sp-2);
+}
+.faceCompact::before,
+.faceCompact::after {
+    content: none;
+}
+
+.chatRegion {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    flex: none;
+}
+
+.chatFill {
+    flex: 1;
+    min-height: 0;
+}
+
+/* The compact (chatFills) one-line-header form's bare name, passed to DaemonFace as its `caption`
+   slot beside the small glyph. Resting, DaemonIdentity.tsx owns the whole slot and its own
+   layout instead — see that file. */
+.name {
+    white-space: nowrap;
+}
+
+/* Off (`enabled === false`): the face sleeps alone with how to wake it — no identity, no chat. */
+.off {
+    margin: var(--sp-4) 0 0;
+}
+
+/* Narrow (< 760px of DaemonPage's own `.page` size container, the nearest one): the hub no longer
+   claims the whole stage height for itself — it sizes to its own content so the panel that
+   follows it starts on-screen instead of below the fold. */
+@container (max-width: 759.98px) {
+    .hub {
+        height: auto;
+    }
+    .faceRegion {
+        flex: none;
+    }
+}

@@ -430,6 +430,11 @@ export const api = {
     runCron: (name: string) => post('/daemon/cron/run', { name }),
     setProcessEnabled: (name: string, enabled: boolean) =>
         post('/daemon/process/toggle', { name, enabled }),
+    // Delete a cron/process definition. A running cron rejects (409); unknown name rejects (404).
+    deleteCron: (name: string) =>
+        post('/daemon/cron/delete', { name }).then(() => {}),
+    deleteProcess: (name: string) =>
+        post('/daemon/process/delete', { name }).then(() => {}),
     graphViews: () =>
         getJson<{ second: ViewLayout; third: ViewLayout }>('/graph/views'),
     tree: () => getJson<TreeEntry[]>('/tree'),
@@ -679,6 +684,10 @@ export const api = {
         postJson<ResolveResult>('/daemon/pages/resolve', { path, actionId }),
     markDaemonPageFailed: (path: string) =>
         post('/daemon/pages/mark-failed', { path }).then(() => {}),
+    // Archive = delete the page (and its sidecar) outright, whatever its state — refused (409)
+    // only while the daemon is mid-run on it. Owner-only (403 otherwise).
+    archiveDaemonPage: (path: string) =>
+        post('/daemon/pages/archive', { path }).then(() => {}),
     // Re-register the daemon service — no git pull; the binary updates WITH the app.
     daemonUpdate: () => postJson<SetupResult>('/daemon/update', {}),
     // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.

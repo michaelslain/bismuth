@@ -140,7 +140,7 @@
 /* `.graph-legend-card` / `.daemon-legend` / `.graph-card-h` / `.graph-legend-rows` — the daemon-
    mode legend card — DELETED (Task 5, daemon-page plan): the graph's daemon mode is gone (Task
    2) and the DaemonList that rendered inside this card is deleted too, moved onto the daemon's
-   own page (app/src/daemon/DaemonServices.tsx, composed there by DaemonPanel.tsx instead). Zero
+   own page (app/src/daemon/DaemonProcesses.tsx, composed there by DaemonPanel.tsx instead). Zero
    remaining readers confirmed by `bun bench/moduleClassCheck.ts` before removal.
 
    GEOMETRY — surface from `:global(.asc-popover)` above (same split every other floating card in

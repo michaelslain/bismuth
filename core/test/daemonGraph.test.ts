@@ -226,6 +226,7 @@ test('daemonSnapshot on a nonexistent home degrades to empty (never throws)', ()
 test('buildDaemonGraph: one hub + a node per cron/process, all edges from the hub, NO you-node', () => {
     const snap: DaemonSnapshot = {
         daemon: { label: 'claude-bot', running: true, home: '/tmp/x' },
+        identity: { name: 'claude-bot', blurb: '' },
         crons: [
             {
                 name: 'success-cron',
@@ -308,6 +309,7 @@ test('buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
 test("buildDaemonGraph: a 'skipped' incremental-cron result surfaces its `detail` verbatim as lastResult", () => {
     const snap: DaemonSnapshot = {
         daemon: { label: 'daemon', running: true, home: '/tmp/x' },
+        identity: { name: 'daemon', blurb: '' },
         crons: [
             {
                 name: 'vault-review',
@@ -339,6 +341,7 @@ test("buildDaemonGraph: a 'skipped' incremental-cron result surfaces its `detail
 test("buildDaemonGraph: a 'skipped' result WITHOUT a detail (malformed/legacy) falls back to the bare enum, never throws", () => {
     const snap: DaemonSnapshot = {
         daemon: { label: 'daemon', running: true, home: '/tmp/x' },
+        identity: { name: 'daemon', blurb: '' },
         crons: [
             {
                 name: 'dream',
@@ -386,4 +389,56 @@ test('daemonGraph(home) end-to-end: reads the fixture and builds the graph', () 
     })
     const success = g.nodes.find(n => n.id === 'cron:success-cron')!
     expect(success.daemon).toMatchObject({ on: 'schedule', watch: undefined })
+})
+
+// ── identity blurb (<home>/identity.md's first non-empty body line) ───────────
+
+test("daemonSnapshot reads the blurb from identity.md's first non-empty BODY line, trimmed", () => {
+    const h = tempDir('daemon-identity-')
+    try {
+        mkdirSync(h, { recursive: true })
+        writeFileSync(
+            join(h, 'identity.md'),
+            '---\nname: Atlas\n---\n\n  curious, terse, keeps careful notes  \n\nmore body text\n',
+        )
+        const snap = daemonSnapshot(h, 'Atlas')
+        expect(snap.identity).toEqual({
+            name: 'Atlas',
+            blurb: 'curious, terse, keeps careful notes',
+        })
+    } finally {
+        rmSync(h, { recursive: true, force: true })
+    }
+})
+
+test('daemonSnapshot blurb is empty when identity.md is absent', () => {
+    // The shared fixture `home` has no identity.md.
+    const snap = daemonSnapshot(home)
+    expect(snap.identity).toEqual({ name: 'daemon', blurb: '' })
+})
+
+test('daemonSnapshot blurb is empty when identity.md has frontmatter only, no body', () => {
+    const h = tempDir('daemon-identity-empty-')
+    try {
+        mkdirSync(h, { recursive: true })
+        writeFileSync(join(h, 'identity.md'), '---\nname: Atlas\n---\n')
+        const snap = daemonSnapshot(h, 'Atlas')
+        expect(snap.identity.blurb).toBe('')
+    } finally {
+        rmSync(h, { recursive: true, force: true })
+    }
+})
+
+test('daemonSnapshot blurb tolerates malformed identity.md YAML, never throws', () => {
+    const h = tempDir('daemon-identity-malformed-')
+    try {
+        mkdirSync(h, { recursive: true })
+        writeFileSync(
+            join(h, 'identity.md'),
+            '---\nname: [unterminated\n---\nhello there\n',
+        )
+        expect(() => daemonSnapshot(h)).not.toThrow()
+    } finally {
+        rmSync(h, { recursive: true, force: true })
+    }
 })

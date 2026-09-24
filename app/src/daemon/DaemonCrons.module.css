@@ -1,0 +1,18 @@
+/* app/src/daemon/DaemonCrons.module.css — DaemonCrons.tsx is the ONLY importer.
+   The list is the grid DaemonRow's rows subgrid into: dot // name // schedule // status //
+   actions. Name floors at 12ch and sizes to its own content (`minmax(12ch, max-content)`);
+   schedule floors at 0 and sizes to its own content (`minmax(0, max-content)`), so schedule gives
+   up its room FIRST under pressure and name only starts to shrink once schedule is already at
+   zero. Status floors at its own content and takes the leftover free space
+   (`minmax(max-content, 1fr)`), so any slack in a wide panel lands between status and the
+   trailing `[ run ]` instead of opening a gap between name and schedule — see
+   DaemonRow.module.css's `.meta` for the truncation half of this. */
+.daemon-crons {
+    height: 100%;
+    min-height: 0;
+}
+.list {
+    display: grid;
+    grid-template-columns: auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto;
+    row-gap: 0;
+}

@@ -4,9 +4,15 @@
 // a randomised blink, hover and a click-wink (the side dots never move). What to draw at any
 // moment is daemonFaceModel.ts's job.
 //
-// Motion discipline: every timer stops while the document is hidden and on cleanup; under
-// `prefers-reduced-motion: reduce` the tick never advances (the frame stays at tick 0) but blinks
-// still happen — a blink is a single state change, not movement.
+// `props.mood` is the RAW derived mood, which the caller is free to flip on every poll or
+// keystroke — this component runs the settle (daemonFaceModel.ts's `settleMood`) on its own clock
+// so what actually paints (`renderedMood`) only ever changes after the new mood has held
+// MOOD_SETTLE_MS, and does so through one blink frame rather than a hard cut.
+//
+// Motion discipline: the eye and blink clocks stop while the document is hidden and on cleanup;
+// the one-shot settle/transition timers do not. Under `prefers-reduced-motion: reduce` the tick
+// never advances (the frame stays at tick 0) but blinks still happen — a blink is a single state
+// change, not movement.
 import {
     createEffect,
     createMemo,
@@ -15,6 +21,7 @@ import {
     onCleanup,
     onMount,
     Show,
+    untrack,
     type Component,
     type JSX,
 } from 'solid-js'
@@ -24,11 +31,15 @@ import {
     canBlink,
     composeFace,
     DOUBLE_BLINK_GAP_MS,
+    initialSettle,
     moodLabel,
+    MOOD_SETTLE_MS,
     nextBlinkDelay,
+    settleMood,
     tickMs,
     WINK_MS,
     type DaemonMood,
+    type SettleState,
 } from './daemonFaceModel'
 import styles from './DaemonFace.module.css'
 
@@ -38,6 +49,10 @@ export type DaemonFaceProps = {
     caption?: JSX.Element
     /** Smaller glyph, same caption — the daemon page sets this once a conversation has messages. */
     compact?: boolean
+    /** True while the host has no snapshot yet — the very first `mood` is provisional (derived
+     *  from a NO_SNAPSHOT default), so it must paint immediately with no settle delay once
+     *  `loading` drops rather than being treated as just another mood change. */
+    loading?: boolean
     class?: string
 }
 
@@ -77,6 +92,73 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         reducedMotionQuery()?.matches ?? false,
     )
 
+    // `props.mood` is the RAW derived mood — it can flip several times a second (a poll, a
+    // keystroke). `settle` holds it to `MOOD_SETTLE_MS` before it counts as a real mood change
+    // (daemonFaceModel.ts's hysteresis); `renderedMood` is what is actually painted, one blink
+    // frame behind a settled change (see the transition effect below).
+    const [settle, setSettle] = createSignal<SettleState>(
+        initialSettle(props.mood, Date.now()),
+    )
+    const [renderedMood, setRenderedMood] = createSignal<DaemonMood>(
+        settle().shown,
+    )
+    const [transitionBlink, setTransitionBlink] = createSignal(false)
+
+    // Feed every raw mood change into the settle machine — except while `loading`: the mood
+    // derived from a not-yet-loaded snapshot is provisional, so it must not itself settle or
+    // paint. The moment `loading` drops, the first real mood shows immediately (no settle delay,
+    // no blink) rather than waiting out MOOD_SETTLE_MS like an ordinary change.
+    createEffect((wasLoading: boolean) => {
+        const loading = props.loading ?? false
+        const next = props.mood
+        if (loading) return true
+        if (wasLoading) {
+            setSettle(initialSettle(next, Date.now()))
+            setRenderedMood(next)
+            return false
+        }
+        setSettle(s => settleMood(s, next, Date.now()))
+        return false
+    }, props.loading ?? false)
+
+    // A settle can only flip once its `pending` has held MOOD_SETTLE_MS — that needs a clock of
+    // its own, not just a reaction to prop changes, in case the mood stops changing while waiting.
+    createEffect(() => {
+        const s = settle()
+        if (s.pending === null) return
+        const remaining = s.since + MOOD_SETTLE_MS - Date.now()
+        const id = setTimeout(
+            () =>
+                setSettle(cur =>
+                    settleMood(
+                        cur,
+                        props.mood,
+                        Math.max(Date.now(), cur.since + MOOD_SETTLE_MS),
+                    ),
+                ),
+            Math.max(0, remaining),
+        )
+        onCleanup(() => clearTimeout(id))
+    })
+
+    // A settled mood change paints ONE blink frame before the new mood's eyes — skipped when
+    // either side is `asleep`, which has no open eyes to close.
+    createEffect(() => {
+        const shown = settle().shown
+        const prev = untrack(renderedMood)
+        if (shown === prev) return
+        if (!canBlink(prev) || !canBlink(shown)) {
+            setRenderedMood(shown)
+            return
+        }
+        setTransitionBlink(true)
+        const id = setTimeout(() => {
+            setTransitionBlink(false)
+            setRenderedMood(shown)
+        }, BLINK_MS)
+        onCleanup(() => clearTimeout(id))
+    })
+
     onMount(() => {
         const onVisibility = () => setHidden(isHidden())
         document.addEventListener('visibilitychange', onVisibility)
@@ -89,10 +171,10 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         })
     })
 
-    // The eye clock. Restarts from tick 0 whenever the mood changes, the page comes back into
-    // view, or reduced motion flips.
+    // The eye clock. Restarts from tick 0 whenever the rendered mood changes, the page comes back
+    // into view, or reduced motion flips.
     createEffect(() => {
-        const mood = props.mood
+        const mood = renderedMood()
         setTick(0)
         if (hidden() || reduced()) return
         const id = setInterval(() => setTick(t => t + 1), tickMs(mood))
@@ -102,7 +184,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     // The blink clock: wait a randomised delay, shut the eyes for BLINK_MS (twice, sometimes),
     // then schedule the next one. Runs under reduced motion too; asleep and hurt never blink.
     createEffect(() => {
-        const mood = props.mood
+        const mood = renderedMood()
         if (hidden() || !canBlink(mood)) return
         let timer: Timer | undefined
         const schedule = () => {
@@ -131,7 +213,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
 
     let winkTimer: Timer | undefined
     const wink = () => {
-        if (props.mood === 'asleep') return
+        if (renderedMood() === 'asleep') return
         clearTimeout(winkTimer)
         setWinking(true)
         winkTimer = setTimeout(() => setWinking(false), WINK_MS)
@@ -139,8 +221,8 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     onCleanup(() => clearTimeout(winkTimer))
 
     const cells = createMemo(() =>
-        composeFace(props.mood, tick(), {
-            blinking: blinking(),
+        composeFace(renderedMood(), tick(), {
+            blinking: blinking() || transitionBlink(),
             hovered: hovered(),
             winking: winking(),
         }),
@@ -161,8 +243,8 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                 // shared with the top strip and intro hero; see DaemonFace.module.css `.face`.
                 class={`${styles.face} asc-wordmark`}
                 role="img"
-                aria-label={'daemon — ' + moodLabel(props.mood)}
-                data-mood={props.mood}
+                aria-label={'daemon — ' + moodLabel(renderedMood())}
+                data-mood={renderedMood()}
                 data-testid="daemon-face"
                 onPointerEnter={() => setHovered(true)}
                 onPointerLeave={() => setHovered(false)}

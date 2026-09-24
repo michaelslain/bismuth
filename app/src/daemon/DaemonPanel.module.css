@@ -1,16 +1,14 @@
 /* app/src/daemon/DaemonPanel.module.css — DaemonPanel.tsx is the ONLY importer.
-   The shared frame: hairline border (--rule, radius --r-0 — the flattened §9.2 register the rest
-   of the app's chrome uses; no drop shadow), a fixed head (eyebrow title + count + optional
-   actions), and a body that owns the ONLY scrollbar. The panel itself never scrolls — it fills
-   its grid cell at 100% height (Task 6's three-column layout) and stays that size regardless of
-   how much the body holds. */
+   With only one panel visible at a time and the ViewBar facet acting as its heading, this carries
+   NO border box and NO letter-spaced eyebrow. The head row (plain title + count + optional
+   actions) is the only chrome, and it renders only when the panel has one of those. The body owns
+   the ONLY scrollbar — the panel itself never scrolls, it fills its grid cell at 100% height
+   (Task 6's three-column layout) and stays that size regardless of how much the body holds. */
 .daemon-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    border: var(--rule);
-    border-radius: var(--r-0);
 }
 .daemon-panel-head {
     display: flex;
@@ -18,7 +16,8 @@
     gap: var(--sp-3);
     flex-shrink: 0;
     padding: var(--sp-3) var(--sp-4);
-    border-bottom: var(--rule-soft);
+    /* No rule under the head: its actions hide until the panel is hovered/focused, and a rule
+       left alone at rest reads as a stray hairline over an empty row. */
 }
 .daemon-panel-title {
     min-width: 0;
@@ -26,18 +25,29 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* A token step, not an opacity: 0.6 over the eyebrow's --faint measured ~2.6:1 on ink. The count
-   reads one step up from its title (--text-muted), which is what the dimming was reaching for. */
 .daemon-panel-count {
     color: var(--text-muted);
     flex-shrink: 0;
 }
+/* Hidden at rest, revealed on panel hover/focus-within — opacity only, so the head row's height
+   never shifts and a create field that already has focus (focus-within) stays visible on its own. */
 .daemon-panel-actions {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: var(--sp-3);
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.daemon-panel:hover .daemon-panel-actions,
+.daemon-panel:focus-within .daemon-panel-actions {
+    opacity: 1;
+}
+@media (hover: none) {
+    .daemon-panel-actions {
+        opacity: 1;
+    }
 }
 /* A soft fade on the last 16px, always on: when the body's content is shorter than its box the
    fade just dissolves into empty background (invisible), and when it overflows the fade replaces a
@@ -61,7 +71,7 @@
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
    a row and set in the rows' --fs-ui. No longer reached via `:global(.ui-empty-block)` —
    DaemonPanel.tsx never renders `<EmptyState>` itself (it's opaque `children`), so this class is
-   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonServices,
+   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonProcesses,
    DaemonLog) as `<EmptyState blockClass={daemonPanelEmptyClass}>` (one-global-followups Task 4).
    EmptyState has no compact variant to ask for instead. */
 .panel-empty {

@@ -150,6 +150,7 @@ test('resolveIncrementalRun: first run (no ref yet) never skips, regardless of c
     await commit('init')
     const plan = await resolveIncrementalRun(ctx, {
         name: 'vault-review',
+        file: 'vault-review',
         prompt: `Body ${CHANGED_SINCE_PLACEHOLDER} end`,
     })
     expect(plan.skip).toBe(false)
@@ -163,6 +164,7 @@ test('resolveIncrementalRun: after advancing with no further changes, the plan i
 
     const plan = await resolveIncrementalRun(ctx, {
         name: 'vault-review',
+        file: 'vault-review',
         prompt: `Body ${CHANGED_SINCE_PLACEHOLDER} end`,
     })
     expect(plan.skip).toBe(true)
@@ -179,6 +181,7 @@ test('resolveIncrementalRun: a changed markdown note since the ref -> runs with 
 
     const plan = await resolveIncrementalRun(ctx, {
         name: 'vault-review',
+        file: 'vault-review',
         prompt: `Body\n${CHANGED_SINCE_PLACEHOLDER}\nend`,
     })
     expect(plan.skip).toBe(false)
@@ -198,6 +201,7 @@ test('resolveIncrementalRun: a change OUTSIDE the markdown filter (e.g. a .daemo
 
     const plan = await resolveIncrementalRun(ctx, {
         name: 'vault-review',
+        file: 'vault-review',
         prompt: `Body ${CHANGED_SINCE_PLACEHOLDER}`,
     })
     expect(plan.skip).toBe(true)
@@ -222,10 +226,23 @@ test('resolveIncrementalRun respects checkpointDir: "memory" checks ctx.memoryDi
 
     const plan = await resolveIncrementalRun(ctx, {
         name: 'dream',
+        file: 'dream',
         prompt: CHANGED_SINCE_PLACEHOLDER,
         checkpointDir: 'memory',
     })
     expect(plan.skip).toBe(true)
+})
+
+test('resolveIncrementalRun: a display-named cron resolves its ref from job.file, not job.name', async () => {
+    write('note.md', '# Note')
+    await commit('init')
+
+    const plan = await resolveIncrementalRun(ctx, {
+        name: 'Answer Emails!',
+        file: 'answer-emails',
+        prompt: CHANGED_SINCE_PLACEHOLDER,
+    })
+    expect(plan.ref).toBe(incrementalRefName('answer-emails'))
 })
 
 test('advanceIncrementalCheckpoint moves the ref to HEAD and is reflected by a subsequent checkpointDelta', async () => {

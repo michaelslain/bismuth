@@ -260,4 +260,18 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
             be.dispatch('POST', '/create', { path: 'x.md', kind: 'file' }),
         ).rejects.toThrow(/not supported/i)
     })
+
+    // The HTTP server owner-gates every /daemon/* write (CORS is `*`); this transport has no
+    // notion of an owner channel at all, so it refuses them the same way it refuses the
+    // structural ops above rather than running them unauthenticated.
+    test('daemon cron/process writes report NOT_SUPPORTED (owner-gated on HTTP, no channel here)', async () => {
+        setFileAccess(memVault({}).fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/daemon/cron/toggle', {
+                name: 'x',
+                enabled: true,
+            }),
+        ).rejects.toThrow(/not supported/i)
+    })
 })

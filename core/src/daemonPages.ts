@@ -415,6 +415,35 @@ export function createDaemonPage(
  * "stuck" render and this call, that outcome wins — the daemon is the authoritative writer, and
  * a genuinely-sent email must never be relabeled "failed" by a late click.
  */
+/**
+ * Archive a page from the daemon page's inbox: delete it outright — the page `.md` and its
+ * sidecar — whatever state it is in (pending, failed, done, dismissed), the same removal the
+ * retention GC in `listDaemonPages` performs, just now. A pending page archived this way is
+ * never answered; the daemon simply stops seeing it. Refused while the daemon is mid-run on it
+ * (`working` → 409 EBUSY), since its trigger is in flight and it will write the outcome back.
+ * Recoverable: `.daemon/pages/` is on the vault backup allow-list (core/src/backup.ts).
+ */
+export function archivePage(vault: string, path: string): void {
+    assertPagePath(path)
+    const slug = slugOf(path)
+    if (readPageState(vault, slug)?.status === 'working')
+        throw new AppError(
+            'EBUSY',
+            `page is being worked on: ${path}`,
+            409,
+        )
+    try {
+        unlinkSync(join(vault, path))
+    } catch {
+        throw new AppError('ENOENT', `page not found: ${path}`, 404)
+    }
+    try {
+        unlinkSync(stateFile(vault, slug))
+    } catch {
+        /* a fresh page has no sidecar yet */
+    }
+}
+
 export function markPageFailed(vault: string, path: string): void {
     assertPagePath(path)
     const slug = slugOf(path)

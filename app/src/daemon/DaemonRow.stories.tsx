@@ -1,0 +1,253 @@
+// Visual spec for <DaemonRow> — one row of a shared column grid. Every story wraps its rows in
+// a `.list`-shaped grid (the exact template DaemonCrons/DaemonProcesses use) so the subgrid has
+// real tracks to inherit and the alignment claim is actually demonstrable, not just a single row
+// floating with no shared columns to prove.
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor, within } from 'storybook/test'
+import { For } from 'solid-js'
+import DaemonRow, { type DaemonRowProps } from './DaemonRow'
+import { TextButton } from '../ui/TextButton'
+
+const meta = {
+    title: 'Daemon/DaemonRow',
+    component: DaemonRow,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof DaemonRow>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+const listStyle = {
+    display: 'grid',
+    'grid-template-columns':
+        'auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto',
+    width: '360px',
+} as const
+
+const List = (props: { rows: DaemonRowProps[] }) => (
+    <div style={listStyle}>
+        <For each={props.rows}>{row => <DaemonRow {...row} />}</For>
+    </div>
+)
+
+/** A frame narrow enough that BOTH flexible-ish tracks are under pressure — proves the name
+ *  floor holds and the schedule column gives up its room first (Acceptance 7). */
+const narrowListStyle = {
+    display: 'grid',
+    'grid-template-columns':
+        'auto minmax(12ch, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto',
+    width: '220px',
+} as const
+
+const NarrowList = (props: { rows: DaemonRowProps[] }) => (
+    <div style={narrowListStyle}>
+        <For each={props.rows}>{row => <DaemonRow {...row} />}</For>
+    </div>
+)
+
+/** The 4-column services shape (no schedule track) — used only by `WithoutMeta` below. A row
+ *  must never mix into the 5-column list without `meta`: it has no explicit grid-column
+ *  indices, so a 4-cell row inside a 5-column subgrid would auto-place its cells one column
+ *  short and misalign (see DaemonRow.tsx's header comment). */
+const noMetaListStyle = {
+    display: 'grid',
+    'grid-template-columns': 'auto minmax(12ch, max-content) minmax(max-content, 1fr) auto',
+    width: '280px',
+} as const
+
+const NoMetaList = (props: { rows: DaemonRowProps[] }) => (
+    <div style={noMetaListStyle}>
+        <For each={props.rows}>{row => <DaemonRow {...row} />}</For>
+    </div>
+)
+
+/** Every tone, in a shared grid — the dot colour, the status word and the age all line up in the
+ *  same columns down the list. */
+export const Tones: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'morning-brief',
+                    tone: 'ok',
+                    status: 'ok 4m ago',
+                    meta: 'daily',
+                    onOpen: () => {},
+                },
+                {
+                    name: 'answer-emails',
+                    tone: 'running',
+                    status: 'running',
+                    meta: 'every 15m',
+                    onOpen: () => {},
+                },
+                {
+                    name: 'dream',
+                    tone: 'failed',
+                    status: 'failed 2h ago',
+                    meta: 'every 3h',
+                    onOpen: () => {},
+                },
+                {
+                    name: 'nightly-backup',
+                    tone: 'off',
+                    status: 'off',
+                    meta: 'daily',
+                    dim: true,
+                    onOpen: () => {},
+                },
+                {
+                    name: 'vault-review',
+                    tone: 'idle',
+                    status: 'never',
+                    meta: 'on change',
+                    onOpen: () => {},
+                },
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('ok 4m ago')).toBeInTheDocument()
+        await expect(canvas.getByText('running')).toBeInTheDocument()
+        await expect(canvas.getByText('failed 2h ago')).toBeInTheDocument()
+        await expect(canvas.getByText('off')).toBeInTheDocument()
+        await expect(canvas.getByText('never')).toBeInTheDocument()
+    },
+}
+
+/** A dimmed, disabled row — the whole row steps back, not just the dot. */
+export const Dim: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'nightly-backup',
+                    tone: 'off',
+                    status: 'off',
+                    meta: 'daily',
+                    dim: true,
+                    onOpen: () => {},
+                },
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const name = canvas.getByText('nightly-backup')
+        const status = canvas.getByText('off')
+        // `dim` puts the name in the SAME faint tone the status word already carries via
+        // `.tone-off` — not a separate whole-row opacity (that used to drop text to ~1.8:1
+        // contrast, see DaemonRow.module.css's header).
+        await expect(getComputedStyle(name).color).toBe(getComputedStyle(status).color)
+    },
+}
+
+/** A name long enough that it must ellipsize in the fixed row rather than push the schedule/
+ *  status/actions columns off the edge. */
+export const LongName: Story = {
+    render: () => (
+        <NarrowList
+            rows={[
+                {
+                    name: 'reconcile-every-vault-notes-inbound-link-graph-nightly',
+                    tone: 'ok',
+                    status: 'ok 4m ago',
+                    meta: 'every 3h',
+                    onOpen: () => {},
+                },
+            ]}
+        />
+    ),
+}
+
+/** No `meta` at all — the 4-column services shape, DaemonProcesses' own list template (never
+ *  the 5-column crons list without `meta` — see DaemonRow.tsx's header comment on why). */
+export const WithoutMeta: Story = {
+    render: () => (
+        <NoMetaList
+            rows={[
+                {
+                    name: 'reindex',
+                    tone: 'ok',
+                    status: 'on',
+                    onOpen: () => {},
+                },
+            ]}
+        />
+    ),
+}
+
+/** With `meta` — the schedule column carries the cron's frequency string. */
+export const WithMeta: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'answer-emails',
+                    tone: 'ok',
+                    status: 'ok 10m ago',
+                    meta: 'every 15m',
+                    onOpen: () => {},
+                },
+            ]}
+        />
+    ),
+}
+
+/** A trailing action in the row's last column — `[ run ]`, the crons list's default action.
+ *  Hidden at rest and revealed by :hover/:focus-within — opacity, not visibility, so it stays a
+ *  real tab stop the whole time. */
+export const WithActions: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'morning-brief',
+                    tone: 'ok',
+                    status: 'ok 4m ago',
+                    meta: 'daily',
+                    onOpen: () => {},
+                    actions: <TextButton onClick={() => {}}>run</TextButton>,
+                },
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const button = canvas.getByRole('button', { name: 'run' })
+        await expect(button).toBeInTheDocument()
+        const actionsBox = canvasElement.querySelector<HTMLElement>('[class*="actions"]')!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        // Tabbing straight to the button (as a keyboard user would) reveals it via :focus-within.
+        button.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+    },
+}
+
+/** Focusing the ROW ITSELF (not a control inside it) also reveals its actions — :focus-within
+ *  fires from the host element being focused too, not only from a focused descendant, so tabbing
+ *  onto the row before its buttons still shows what's about to be reachable. */
+export const ActionsRevealOnRowFocus: Story = {
+    render: () => (
+        <List
+            rows={[
+                {
+                    name: 'morning-brief',
+                    tone: 'ok',
+                    status: 'ok 4m ago',
+                    meta: 'daily',
+                    onOpen: () => {},
+                    actions: <TextButton onClick={() => {}}>run</TextButton>,
+                },
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const actionsBox = canvasElement.querySelector<HTMLElement>('[class*="actions"]')!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        const row = canvasElement.querySelector<HTMLElement>('[tabindex="0"]')!
+        row.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+    },
+}
