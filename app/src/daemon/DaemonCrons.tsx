@@ -20,7 +20,6 @@ import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
 import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import DaemonRow from './DaemonRow'
-import DaemonCreateRow from './DaemonCreateRow'
 import { cronTone } from './cronStatus'
 import cronFrequency from './cronFrequency'
 import styles from './DaemonCrons.module.css'
@@ -31,7 +30,6 @@ export type DaemonCronsProps = {
     onOpen: (file: string) => void
     onRun: (name: string) => void
     onToggle: (name: string, enabled: boolean) => void
-    onCreate: (name: string) => Promise<void>
     onDelete: (name: string) => Promise<void>
     class?: string
 }
@@ -153,12 +151,14 @@ function DaemonCrons(props: DaemonCronsProps) {
     return (
         <div class={`${styles['daemon-crons']} ${props.class ?? ''}`}>
             <DaemonPanel>
-                <>
-                    <Show when={props.crons.length === 0}>
+                <Show
+                    when={props.crons.length > 0}
+                    fallback={
                         <EmptyState blockClass={daemonPanelEmptyClass}>
-                            no crons
+                            no crons yet // ask the daemon
                         </EmptyState>
-                    </Show>
+                    }
+                >
                     <div class={styles.list}>
                         <For each={props.crons}>
                             {cron => (
@@ -179,12 +179,8 @@ function DaemonCrons(props: DaemonCronsProps) {
                                 />
                             )}
                         </For>
-                        <DaemonCreateRow
-                            label="new cron"
-                            onCreate={props.onCreate}
-                        />
                     </div>
-                </>
+                </Show>
             </DaemonPanel>
             <Show when={menu()}>
                 {m => (

@@ -22,7 +22,6 @@ const baseProps = {
     onOpen: fn(),
     onRun: fn(),
     onToggle: fn(),
-    onCreate: fn(async () => {}),
     onDelete: fn(async () => {}),
 }
 
@@ -161,59 +160,6 @@ export const LongName: Story = {
     ),
 }
 
-/** The list's last row, `+ new cron`, swapped in place for the inline name field. */
-export const Creating: Story = {
-    render: () => (
-        <div style={{ width: '360px', height: '160px' }}>
-            <DaemonCrons {...baseProps} crons={[]} />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        const newCronBtn = canvas.getByRole('button', { name: 'new cron' })
-        // The create action is the list's own last row, visible at rest (not a hover-revealed
-        // panel-head button).
-        await expect(getComputedStyle(newCronBtn).opacity).toBe('1')
-        await userEvent.click(newCronBtn)
-        await expect(
-            canvas.getByRole('textbox', { name: 'new cron name' }),
-        ).toBeInTheDocument()
-    },
-}
-
-/** A rejected create (409-style name clash) shows its message inline under the field, and stays
- *  in the create state so the name can be adjusted and retried. */
-export const CreateError: Story = {
-    render: () => (
-        <div style={{ width: '360px', height: '160px' }}>
-            <DaemonCrons
-                {...baseProps}
-                crons={[]}
-                onCreate={fn(async () => {
-                    throw new Error('a cron named "dream" already exists')
-                })}
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByRole('button', { name: 'new cron' }))
-        await userEvent.type(
-            canvas.getByRole('textbox', { name: 'new cron name' }),
-            'dream',
-        )
-        await userEvent.keyboard('{Enter}')
-        await expect(
-            canvas.getByText('a cron named "dream" already exists'),
-        ).toBeInTheDocument()
-        // The field must still be alive after a rejected create — Esc cancels it.
-        await userEvent.keyboard('{Escape}')
-        await expect(
-            canvas.getByRole('button', { name: 'new cron' }),
-        ).toBeInTheDocument()
-    },
-}
-
 /** The row's context menu → Delete swaps the trailing action for an inline `[ delete ] [
  *  cancel ]` confirm — no modal. */
 export const ConfirmDelete: Story = {
@@ -268,7 +214,7 @@ export const Empty: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('no crons')).toBeInTheDocument()
+        await expect(canvas.getByText('no crons yet // ask the daemon')).toBeInTheDocument()
     },
 }
 

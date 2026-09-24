@@ -21,7 +21,6 @@ const baseProps = {
     daemonRunning: true,
     onOpen: fn(),
     onToggle: fn(),
-    onCreate: fn(async () => {}),
     onDelete: fn(async () => {}),
 }
 
@@ -116,60 +115,6 @@ export const LongName: Story = {
     },
 }
 
-/** The list's last row, `+ new service`, swapped in place for the inline name field. */
-export const Creating: Story = {
-    render: () => (
-        <div style={{ width: '360px', height: '160px' }}>
-            <DaemonProcesses {...baseProps} processes={[]} />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        const newServiceBtn = canvas.getByRole('button', { name: 'new service' })
-        // The create action is the list's own last row, visible at rest (not a hover-revealed
-        // panel-head button).
-        await expect(getComputedStyle(newServiceBtn).opacity).toBe('1')
-        await userEvent.click(newServiceBtn)
-        await expect(
-            canvas.getByRole('textbox', { name: 'new service name' }),
-        ).toBeInTheDocument()
-    },
-}
-
-/** A rejected create shows its message inline under the field and stays in the create state. */
-export const CreateError: Story = {
-    render: () => (
-        <div style={{ width: '360px', height: '160px' }}>
-            <DaemonProcesses
-                {...baseProps}
-                processes={[]}
-                onCreate={fn(async () => {
-                    throw new Error('a service named "sync-worker" already exists')
-                })}
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await userEvent.click(
-            canvas.getByRole('button', { name: 'new service' }),
-        )
-        await userEvent.type(
-            canvas.getByRole('textbox', { name: 'new service name' }),
-            'sync-worker',
-        )
-        await userEvent.keyboard('{Enter}')
-        await expect(
-            canvas.getByText('a service named "sync-worker" already exists'),
-        ).toBeInTheDocument()
-        // The field must still be alive after a rejected create — Esc cancels it.
-        await userEvent.keyboard('{Escape}')
-        await expect(
-            canvas.getByRole('button', { name: 'new service' }),
-        ).toBeInTheDocument()
-    },
-}
-
 /** The row's context menu → Delete swaps the trailing action for an inline `[ delete ] [
  *  cancel ]` confirm — no modal. */
 export const ConfirmDelete: Story = {
@@ -214,7 +159,7 @@ export const Empty: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(
-            canvas.getByText('no background services'),
+            canvas.getByText('no services yet // ask the daemon'),
         ).toBeInTheDocument()
     },
 }

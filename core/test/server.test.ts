@@ -2539,14 +2539,14 @@ test('daemon routes: status + devices read shared state, owner round-trips', asy
     }
 })
 
-// All seven /daemon/* cron/process writes are owner-gated (CORS is `*`, and the daemon itself
+// All five /daemon/* cron/process writes are owner-gated (CORS is `*`, and the daemon itself
 // never calls these — it acts through the headless CLI). Per route: no token -> 403; token +
 // a missing required field -> 400 (proves the gate isn't standing in for validation); token +
-// a valid body -> 200 with the documented shape; an unknown name -> 404; creating the same
-// slug twice -> 409. The 403 assertions are the ones that would silently pass if the gate line
+// a valid body -> 200 with the documented shape; an unknown name -> 404. (There is no create
+// route — the daemon creates crons/services in chat through the CLI.) The 403 assertions are the ones that would silently pass if the gate line
 // were ever deleted from one route but not another, since every OTHER assertion here exercises
 // validation/lookup code that has nothing to do with the owner channel.
-test('daemon cron/process writes: owner-gated, validate, round-trip, 404 unknown, 409 on re-create', async () => {
+test('daemon cron/process writes: owner-gated, validate, round-trip, 404 unknown', async () => {
     const { vault } = await makeSampleVault()
     await writeNote(
         vault,
@@ -2658,54 +2658,6 @@ test('daemon cron/process writes: owner-gated, validate, round-trip, 404 unknown
                 )
             ).status,
         ).toBe(404)
-
-        // ---- /daemon/cron/create ----
-        expect(
-            (await post('/daemon/cron/create', { name: 'New Cron' })).status,
-        ).toBe(403)
-        expect((await post('/daemon/cron/create', {}, true)).status).toBe(400)
-        const cronCreateOk = await post(
-            '/daemon/cron/create',
-            { name: 'New Cron' },
-            true,
-        )
-        expect(cronCreateOk.status).toBe(200)
-        expect(await cronCreateOk.json()).toEqual({
-            ok: true,
-            file: 'new-cron',
-        })
-        expect(
-            (await post('/daemon/cron/create', { name: 'New Cron' }, true))
-                .status,
-        ).toBe(409)
-
-        // ---- /daemon/process/create ----
-        expect(
-            (await post('/daemon/process/create', { name: 'New Process' }))
-                .status,
-        ).toBe(403)
-        expect(
-            (await post('/daemon/process/create', {}, true)).status,
-        ).toBe(400)
-        const processCreateOk = await post(
-            '/daemon/process/create',
-            { name: 'New Process' },
-            true,
-        )
-        expect(processCreateOk.status).toBe(200)
-        expect(await processCreateOk.json()).toEqual({
-            ok: true,
-            file: 'new-process',
-        })
-        expect(
-            (
-                await post(
-                    '/daemon/process/create',
-                    { name: 'New Process' },
-                    true,
-                )
-            ).status,
-        ).toBe(409)
 
         // ---- /daemon/cron/delete ---- (gate pre-existing; covered here for completeness)
         expect(

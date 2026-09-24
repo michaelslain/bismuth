@@ -430,14 +430,6 @@ export const api = {
     runCron: (name: string) => post('/daemon/cron/run', { name }),
     setProcessEnabled: (name: string, enabled: boolean) =>
         post('/daemon/process/toggle', { name, enabled }),
-    // Create a new cron/process definition from a template (slug = kebab-case of `name`).
-    // Rejects (a 409 rejects the returned promise) on a clashing slug or an empty/invalid name.
-    createCron: (name: string) =>
-        postJson<{ ok: true; file: string }>('/daemon/cron/create', { name }),
-    createProcess: (name: string) =>
-        postJson<{ ok: true; file: string }>('/daemon/process/create', {
-            name,
-        }),
     // Delete a cron/process definition. A running cron rejects (409); unknown name rejects (404).
     deleteCron: (name: string) =>
         post('/daemon/cron/delete', { name }).then(() => {}),

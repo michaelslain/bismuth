@@ -196,19 +196,6 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const { path: p } = body as { path: string }
                 return { trashPath: `.trash/${p}` } as unknown as T
             }
-            // Create routes: ack with a slugged `file`, mirroring core/src/daemon.ts's slugify.
-            if (
-                pathname === '/daemon/cron/create' ||
-                pathname === '/daemon/process/create'
-            ) {
-                const { name } = body as { name: string }
-                const file = name
-                    .toLowerCase()
-                    .replace(/[^a-z0-9-]+/g, '-')
-                    .replace(/-+/g, '-')
-                    .replace(/^-+|-+$/g, '')
-                return { ok: true, file } as unknown as T
-            }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
         },
         writeFileChecked: async (

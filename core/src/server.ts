@@ -175,8 +175,6 @@ import {
     setCronEnabled,
     setProcessEnabled,
     runCron,
-    createCron,
-    createProcess,
     deleteCron,
     deleteProcess,
     migrateDaemonState,
@@ -2031,13 +2029,14 @@ export function createServer(cfg: CoreConfig) {
 
         // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
         // frontmatter in the shared <home>/{crons,processes}/<name>.md), run a cron on command
-        // (drops a trigger file the daemon polls), and create a cron/process definition from a
-        // template. These mutate the daemon's shared files, NOT the vault — so, like
-        // POST /daemon/setup and the /relay/* hooks, they live in the READ routes (no
-        // vault-cache invalidation; the frontend re-polls /daemon/snapshot). Unknown name →
+        // (drops a trigger file the daemon polls). These mutate the daemon's shared files, NOT
+        // the vault — so, like POST /daemon/setup and the /relay/* hooks, they live in the READ
+        // routes (no vault-cache invalidation; the frontend re-polls /daemon/snapshot). Unknown name →
         // setCronEnabled/runCron throw AppError ("ENOENT") → 404 via the dispatch catch.
-        // Owner-gated, all seven of them (these five plus the two deletes below): CORS is `*`,
-        // so any local page could otherwise flip/run/create/delete a service or cron. The
+        // Owner-gated, all five of them (these three plus the two deletes below): CORS is `*`,
+        // so any local page could otherwise flip/run/delete a service or cron. There is no create
+        // route: crons and services are created by the daemon in chat, through the headless
+        // `bismuth daemon cron|process create` CLI (core's createCron/createProcess). The
         // daemon itself never calls these routes — it acts on its own files directly and,
         // for anything vault-facing, through the headless CLI — so gating loses it nothing.
         'POST /daemon/cron/toggle': async req => {
@@ -2070,30 +2069,6 @@ export function createServer(cfg: CoreConfig) {
                 return error('missing name/enabled', 400)
             setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
-        },
-
-        // Response `{ ok: true, file }` — `file` is the slug, matching every other accessor's
-        // `file` field. Empty/invalid slug → `createCron`/`createProcess` throw AppError
-        // ("EINVAL") → 400; a clashing slug → AppError("EEXIST") → 409, both via the dispatch
-        // catch, same as the toggle/run routes above.
-        'POST /daemon/cron/create': async req => {
-            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
-            const { name } = (await req.json()) as { name?: string }
-            if (typeof name !== 'string' || !name) return error('missing name', 400)
-            return ok({
-                ok: true,
-                ...createCron(name, vaultDaemonDir(cfg.vault)),
-            })
-        },
-
-        'POST /daemon/process/create': async req => {
-            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
-            const { name } = (await req.json()) as { name?: string }
-            if (typeof name !== 'string' || !name) return error('missing name', 400)
-            return ok({
-                ok: true,
-                ...createProcess(name, vaultDaemonDir(cfg.vault)),
-            })
         },
 
         // Delete a cron/process definition. Response `{ ok: true }`. Unknown name → 404; a

@@ -93,7 +93,6 @@ const cronsPanel = (
         onOpen={noop}
         onRun={noop}
         onToggle={noop}
-        onCreate={async () => {}}
         onDelete={async () => {}}
     />
 )
@@ -103,7 +102,6 @@ const servicesPanel = (
         daemonRunning
         onOpen={noop}
         onToggle={noop}
-        onCreate={async () => {}}
         onDelete={async () => {}}
     />
 )

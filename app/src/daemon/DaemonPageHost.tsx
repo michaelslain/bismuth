@@ -202,11 +202,10 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
 
-    // ── Panel callbacks: every one wired to `api`. `onCreate` re-throws (no toast — the row's own
-    // inline "couldn't create" message, DaemonCrons/DaemonProcesses, already shows it; toasting
-    // too would show the same error twice); run/toggle/delete/forget have no such inline surface,
-    // so those swallow after the toast — matching the rows' own commit helpers, which have no
-    // catch of their own to feed. ────────────────────────────────────────────────────────────
+    // ── Panel callbacks: every one wired to `api`, each swallowing after its toast — matching the
+    // rows' own commit helpers, which have no catch of their own to feed. There is no create:
+    // crons and services are created by asking the daemon in chat (it writes the definition via
+    // `bismuth daemon cron|process create`, the user approving the call), never from the page. ──
     const onRunCron = async (name: string) => {
         try {
             await api.runCron(name)
@@ -223,11 +222,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             pushToast((e as Error).message || "couldn't update the cron")
         }
     }
-    const onCreateCron = async (name: string): Promise<void> => {
-        const res = await api.createCron(name)
-        props.onOpen(`.daemon/crons/${res.file}.md`)
-        await fetchSnapshot()
-    }
     const onDeleteCron = async (name: string): Promise<void> => {
         try {
             await api.deleteCron(name)
@@ -243,11 +237,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         } catch (e) {
             pushToast((e as Error).message || "couldn't update the service")
         }
-    }
-    const onCreateProcess = async (name: string): Promise<void> => {
-        const res = await api.createProcess(name)
-        props.onOpen(`.daemon/processes/${res.file}.md`)
-        await fetchSnapshot()
     }
     const onDeleteProcess = async (name: string): Promise<void> => {
         try {
@@ -293,7 +282,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 onToggle={(name, on) =>
                                     void onToggleCron(name, on)
                                 }
-                                onCreate={onCreateCron}
                                 onDelete={onDeleteCron}
                             />
                         </Match>
@@ -305,7 +293,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 onToggle={(name, on) =>
                                     void onToggleProcess(name, on)
                                 }
-                                onCreate={onCreateProcess}
                                 onDelete={onDeleteProcess}
                             />
                         </Match>

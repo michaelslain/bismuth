@@ -15,7 +15,6 @@ import { TextButton } from '../ui/TextButton'
 import EmptyState from '../ui/EmptyState'
 import DaemonPanel, { daemonPanelEmptyClass } from './DaemonPanel'
 import DaemonRow, { type DaemonRowTone } from './DaemonRow'
-import DaemonCreateRow from './DaemonCreateRow'
 import styles from './DaemonProcesses.module.css'
 
 export type DaemonProcessesProps = {
@@ -23,7 +22,6 @@ export type DaemonProcessesProps = {
     daemonRunning: boolean
     onOpen: (file: string) => void
     onToggle: (name: string, enabled: boolean) => void
-    onCreate: (name: string) => Promise<void>
     onDelete: (name: string) => Promise<void>
     class?: string
 }
@@ -118,12 +116,14 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     return (
         <div class={`${styles['daemon-processes']} ${props.class ?? ''}`}>
             <DaemonPanel>
-                <>
-                    <Show when={props.processes.length === 0}>
+                <Show
+                    when={props.processes.length > 0}
+                    fallback={
                         <EmptyState blockClass={daemonPanelEmptyClass}>
-                            no background services
+                            no services yet // ask the daemon
                         </EmptyState>
-                    </Show>
+                    }
+                >
                     <div
                         class={styles.list}
                         classList={{ [styles['with-actions']]: deletingName() !== null }}
@@ -146,12 +146,8 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                                 />
                             )}
                         </For>
-                        <DaemonCreateRow
-                            label="new service"
-                            onCreate={props.onCreate}
-                        />
                     </div>
-                </>
+                </Show>
             </DaemonPanel>
             <Show when={menu()}>
                 {m => (
