@@ -46,7 +46,8 @@ export const Default: Story = {
     ),
 }
 
-/** The inbox's live due-count badge — the only story that renders `.toolbar-badge` at all.
+/** The inbox's live due-count badge — one of the two stories that render `.toolbar-badge`
+ *  (with WithBadgeLarge).
  *  Rendered on a dark surface so the badge's `color: var(--bg)` on `background: var(--accent)`
  *  reads correctly. */
 export const WithBadge: Story = {

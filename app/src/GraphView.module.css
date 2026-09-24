@@ -226,17 +226,19 @@
 @container graphroot (max-width: 520px) {
   .graph-vb-wide { display: none; }
   /* Keeps the base .viewbar height (36px = 2x --row-h) and its hairline: in the sidebar this bar sits
-     directly under .sidebar-icons, which has the same 2-row band and the same bottom border, so dropping
-     either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
-     The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
-     mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
+     directly under the sidebar's `IconBar` toolbar row, which has the same 2-row band and the same
+     bottom border, so dropping either made the graph the one section in the sidebar with no divider
+     and an off-grid 41px height. The old height:auto/min-height:41px existed to let five TEXT
+     segments wrap onto a second row — the mini switcher is icons now (see MODE_ICON), so one row
+     always fits. Padding matches the sidebar IconBar's `var(--sp-5)`. */
   /* `.graph-viewbar` (this file) overrides ViewBar's own `.viewbar` padding at ONE class each now
      that `.viewbar` is a hashed local private to ui/ViewBar.module.css — no compound needed to win
      the tie; see this file's header for why import order settles it regardless. */
   .graph-viewbar { padding: 0 var(--sp-5); }
   /* THE MINI BAR IS LEFT-ALIGNED, and that is a DELIBERATE REVERSAL of the centring this block
      carried until now — do not "fix" it back. The mode switcher is the sidebar's control strip, and
-     it sits directly under `.sidebar-icons`, whose own icons start hard against the left padding.
+     it sits directly under the sidebar's `IconBar` toolbar row, whose own icons start hard against
+     the left padding.
      Centring made the graph the one band in that column whose controls floated to the middle,
      reading as a different, unrelated widget rather than the next row of the same rail.
      Nothing here needs to say `justify-content` at all: the base `.viewbar` is `space-between` and

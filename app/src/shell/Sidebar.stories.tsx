@@ -1,9 +1,8 @@
 // Visual spec for <Sidebar> — the left column: toolbar row, "VAULT" eyebrow + file tree, and a
 // "GRAPH" eyebrow + the docked graph square that collapses when a graph pane is already open.
 //
-// WHY THIS FILE EXISTS: 13 `.sidebar*` rules (11 moved outright, `.sidebar-logo` deleted as dead,
-// and the two `.sidebar-icons .btn--icon` context rules copied — not moved, since `.btn--icon`
-// itself still styles four other parents from App.css) moved from the global App.css into
+// WHY THIS FILE EXISTS: 13 `.sidebar*` rules (11 moved outright, `.sidebar-logo` deleted as dead;
+// the toolbar row now renders through `ui/IconBar`) moved from the global App.css into
 // Sidebar.module.css, which HASHES every class name. A name left behind as a string literal
 // still compiles and still renders, it just matches nothing — the column loses its flex layout,
 // the eyebrow rows lose their height, the graph section stops collapsing to `display: none`.

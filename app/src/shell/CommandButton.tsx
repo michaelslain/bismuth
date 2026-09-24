@@ -3,8 +3,8 @@ import { IconButton } from '../ui/IconButton'
 import Badge from '../ui/Badge'
 import styles from './CommandButton.module.css'
 
-// The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
-// the sidebar header bar, the horizontal tab strip, and the vertical tab rail): an icon button
+// The purely-presentational rendering half of App.tsx's configurable toolbar button
+// (shared by the sidebar header bar and the vertical tab rail): an icon button
 // plus an optional numeric badge, wrapped so the two lay out as one inline row (Task 3 fix round
 // 2 — see CommandButton.module.css's `.toolbar-badge` comment for why this is in-flow rather than
 // an absolute corner overlay).
@@ -28,8 +28,8 @@ import styles from './CommandButton.module.css'
 // css.modules.localsConvention, which app/vite.config.ts does not set.
 //
 // `size="sm"` / a hardcoded `iconSize` are GONE (toolbar-iconbar plan, Task 3). Every caller of
-// CommandButton now renders inside a `ui/IconBar` — the sidebar row, the tab rail's action row,
-// the mini-graph mode switcher — and `IconBar` sets the toolbar box and glyph size for every
+// CommandButton now renders inside a `ui/IconBar` — the sidebar row and the tab rail's action
+// row — and `IconBar` sets the toolbar box and glyph size for every
 // `IconButton` beneath it via Solid context, with no `size`/`iconSize` from this component or its
 // caller. An explicit `iconSize` prop passed to THIS component (a caller that genuinely wants a
 // different glyph size than its bar) is still forwarded through and still wins, same as it always
