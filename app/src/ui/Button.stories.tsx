@@ -1,11 +1,10 @@
 // Visual spec for the base <Button> + buttonClass() variant matrix.
 //
-// Three kinds (see buttonClass.ts):
+// Two kinds (see buttonClass.ts):
 //   • kind  — "text" (the bracket look — "[ label ]", lowercase, one size, the default) |
-//             "icon" (borderless icon button) | "segment" (the OLD "text" look — uppercase,
-//             bordered, sized — kept verbatim for SegmentedToggle only)
+//             "icon" (borderless icon button)
 //   • state — "normal" (standalone) | "unselected" (toggle member, off) | "selected" (toggle member, on)
-//   • size  — ignored for "text" (one size); "icon"/"segment" take "sm" | "md" | "lg" (md is the default)
+//   • size  — ignored for "text" (one size); "icon" takes "sm" | "md" | "lg" (md is the default)
 //   • danger — orthogonal destructive tone, layerable on any state
 //   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
 //
@@ -25,7 +24,7 @@ const meta = {
     component: Button,
     parameters: { layout: 'centered' },
     argTypes: {
-        kind: { control: 'inline-radio', options: ['text', 'icon', 'segment'] },
+        kind: { control: 'inline-radio', options: ['text', 'icon'] },
         state: {
             control: 'inline-radio',
             options: ['normal', 'selected', 'unselected'],
@@ -165,25 +164,6 @@ export const Sizes: Story = {
     ),
 }
 
-/** `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, sized), kept verbatim for
- *  SegmentedToggle only. Not a general-purpose register — reach for `kind="text"` for anything
- *  else. */
-export const Segment: Story = {
-    render: () => (
-        <Row label="segment // states">
-            <Button kind="segment" state="normal">
-                NORMAL
-            </Button>
-            <Button kind="segment" state="unselected">
-                UNSELECTED
-            </Button>
-            <Button kind="segment" state="selected">
-                SELECTED
-            </Button>
-        </Row>
-    ),
-}
-
 /** The full matrix at a glance. */
 export const AllVariants: Story = {
     render: () => (
@@ -213,17 +193,6 @@ export const AllVariants: Story = {
             <Row label="text // primary">
                 <Button kind="text" primary>
                     primary
-                </Button>
-            </Row>
-            <Row label="segment // normal / unselected / selected">
-                <Button kind="segment" state="normal">
-                    NORMAL
-                </Button>
-                <Button kind="segment" state="unselected">
-                    UNSELECTED
-                </Button>
-                <Button kind="segment" state="selected">
-                    SELECTED
                 </Button>
             </Row>
             <Row label="icon // normal / unselected / selected / danger">

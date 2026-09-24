@@ -10,7 +10,6 @@ export const ICON_TAGS: ReadonlySet<string> = new Set([
     'IconTextButton',
     'IconBar',
     'Chip',
-    'VBtn',
     'CommandButton',
 ])
 

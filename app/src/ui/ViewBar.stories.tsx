@@ -1,4 +1,4 @@
-// Visual spec for <ViewBar> + <Crumb> + <VBtn> — the canonical 36px view header used across
+// Visual spec for <ViewBar> + <Crumb> — the canonical 36px view header used across
 // graph/bases/calendar/flashcards. The bar takes NAMED REGION SLOTS (identity · locus · facet on
 // the left, readouts · config · actions on the right), not positional children, so these stories
 // compose it exactly as call sites do (see GraphView.tsx / bases/BaseView.tsx) rather than
@@ -6,9 +6,10 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import { createSignal, Show, type JSX } from 'solid-js'
-import ViewBar, { Crumb, VBtn } from './ViewBar'
+import ViewBar, { Crumb } from './ViewBar'
 import { SegmentedToggle } from './SegmentedToggle'
 import { IconButton } from './IconButton'
+import { TextButton } from './TextButton'
 import Text from './Text'
 
 const meta = {
@@ -80,10 +81,10 @@ export const WithTabsAndActions: Story = {
                     }
                     actions={
                         <>
-                            <VBtn
+                            <IconButton
                                 icon="Settings"
-                                title="Settings"
-                                active={settingsOpen()}
+                                label="Settings"
+                                variant={settingsOpen() ? 'selected' : 'unselected'}
                                 onClick={() => setSettingsOpen(v => !v)}
                             />
                             <IconButton icon="Code" label="Source" />
@@ -134,11 +135,11 @@ export const AllRegions: Story = {
         <Frame>
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
-                locus={<VBtn icon="ChevronLeft" title="Previous" />}
-                facet={<VBtn title="TABLE" active />}
+                locus={<IconButton icon="ChevronLeft" label="Previous" />}
+                facet={<TextButton variant="selected">table</TextButton>}
                 readouts={<Text as="span" size="ui" tone="muted">42 rows</Text>}
-                config={<VBtn icon="Settings" title="Settings" />}
-                actions={<VBtn icon="Plus" title="New" />}
+                config={<IconButton icon="Settings" label="Settings" />}
+                actions={<IconButton icon="Plus" label="New" />}
             />
         </Frame>
     ),
@@ -208,10 +209,10 @@ export const EmptyTrailingRegions: Story = {
                 actions={
                     <>
                         <Show when={false}>
-                            <VBtn icon="Plus" title="New" />
+                            <IconButton icon="Plus" label="New" />
                         </Show>
                         <Show when={false}>
-                            <VBtn icon="Settings" title="Settings" />
+                            <IconButton icon="Settings" label="Settings" />
                         </Show>
                     </>
                 }
@@ -337,11 +338,11 @@ export const BelowFloor: Story = {
         <Frame w="400px">
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
-                locus={<VBtn icon="ChevronLeft" title="Previous" />}
-                facet={<VBtn title="TABLE" active>TABLE</VBtn>}
+                locus={<IconButton icon="ChevronLeft" label="Previous" />}
+                facet={<TextButton variant="selected">table</TextButton>}
                 readouts={<Text as="span" size="ui" tone="muted">42 rows</Text>}
-                config={<VBtn icon="Settings" title="Settings" />}
-                actions={<VBtn icon="Plus" title="New" />}
+                config={<IconButton icon="Settings" label="Settings" />}
+                actions={<IconButton icon="Plus" label="New" />}
             />
         </Frame>
     ),
@@ -369,8 +370,8 @@ export const BelowFloor: Story = {
         )
 
         /* KNOWN, not fixed here: `overflow-x: auto` with `overflow-y: visible` computes overflow-y
-         * to `auto` too, so a `.vbtn:focus-visible` outline-offset inside `.vb-lead` gets clipped by
+         * to `auto` too, so a focused button's outline-offset inside `.vb-lead` gets clipped by
          * the scrolling band. Reported to the controller rather than fixed here — the rule lives in
-         * ui/ui.css, which is another task's file. */
+         * ui/ViewBar.module.css, which is another task's file. */
     },
 }

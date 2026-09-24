@@ -17,9 +17,9 @@
    BRACKET RETIRED (bracket-buttons Task 1): the "[ label ]" CLI-confirm look used to be an opt-in
    `.bracket` modifier layered on top of either register via a specificity trick. It is now simply
    what `kind="text"` (the default kind) IS — every text button is `[ label ]`, lowercase, no
-   opt-in prop and no hidden text-transform. `ButtonKind` gained a THIRD kind, `'segment'`, which is
-   the OLD `.btn--text` look (uppercase, bordered, sized) kept verbatim below for SegmentedToggle
-   only — see the `.btn--segment` family's own comment. */
+   opt-in prop and no hidden text-transform. `ButtonKind` is exactly `'text' | 'icon'` — the old
+   `'segment'` kind (the OLD `.btn--text` look, uppercase/bordered/sized, kept for SegmentedToggle)
+   is gone; SegmentedToggle now composes `kind="text"`/`kind="icon"` like everything else. */
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
 /* Every button is one of two KINDS (text | icon) in one of three STATES
@@ -52,54 +52,14 @@
    "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
    has no visible indicator beyond its own hover/selected tones. `outline: none` must be stated:
    with the app's ring gone the UA's own `:focus-visible` ring (Chrome's light-blue `auto`) shows.
-   Buttons never paint a background fill either — hover/selected are carried by ink colour and,
-   for segments, the accent border (user request, 2026-09-23). */
+   Buttons never paint a background fill either — hover/selected are carried by ink colour alone
+   (user request, 2026-09-23). */
 .btn:focus, .btn:focus-visible { outline: none; }
 /* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
    an all-caps label next to an icon reads as floating above the icon's center.
    Nudge label text down 1px so the caps center on the icon. An outside caller building its own
    label span (not through Button) opts in with `data-btn-label` on that span. */
 .btn [data-btn-label] { position: relative; top: 1px; }
-.btn--segment svg { display: block; }
-
-/* ── segment buttons (SegmentedToggle only) ───────────────────────────────────
-   The pre-2026-09-22 `.btn--text` look, kept byte-for-byte so SegmentedToggle continues to render
-   exactly as before bracket-buttons Task 1 changed what `kind="text"` means. Every rule below is a
-   verbatim copy of the old `.btn--text` family, renamed `.btn--segment`. `kind="segment"` is the
-   ONLY register that ever gets this look; do not hand-edit these to "improve" them —
-   SegmentedToggle's own story is graded against the pre-task baseline pixel-for-pixel. */
-.btn--segment {
-  /* Vertical padding must clear the cap-height of an UPPERCASE Monaspace label at
-     --fs-micro/--lh-tight — at 1–2px the caps sit on the hairline border and read
-     as clipped (the graph-mode switcher made this obvious). 4px is the floor. */
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--r-0);
-  border: 1px solid transparent; /* reserved, not drawn — see the note above. Keeping the box
-     model identical to the bordered states stops the label shifting by a pixel on select. */
-  background: transparent;
-  text-transform: uppercase;
-  font-size: var(--fs-micro);
-  letter-spacing: var(--ls-label);
-  color: var(--fg); /* variant-less .btn--segment must not inherit UA black */
-}
-/* normal — standalone, full-strength neutral */
-.btn--segment.btn--normal { color: var(--fg); }
-/* unselected — toggle member, off: structure-dim, no outline emphasis */
-.btn--segment.btn--unselected { color: var(--faint); }
-.btn--segment.btn--unselected:hover:not(:disabled) { color: var(--fg); }
-/* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
-   --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
-   visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
-   selected segment looked like a different surface rather than the same surface, selected. The
-   accent border + accent ink already carry "on" unambiguously. */
-.btn--segment.btn--selected { color: var(--accent); background: transparent; border-color: var(--accent); }
-/* primary — selected + a glow rim. Max one per view. */
-.btn--segment.btn--primary { color: var(--accent); background: transparent; border-color: var(--accent); box-shadow: var(--glow-accent); }
-/* danger tone — destructive actions */
-.btn--segment.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-/* sizes */
-.btn--segment.btn--sm { padding: var(--sp-2) var(--sp-4); }
-.btn--segment.btn--lg { padding: var(--sp-2) var(--sp-5); font-size: var(--fs-ui); }
 
 /* ── text buttons: the bracket register ──────────────────────────────────────
    Every `kind="text"` button (the default kind) renders as `[ label ]` — lowercase, borderless,
@@ -107,8 +67,8 @@
    `.bracket` modifier; it is now simply what kind="text" means, unconditionally. The `::before`/
    `::after` brackets use `content: '[' / ''` (the `/ ''` empty alt text keeps the glyph out of the
    accessible name, so `getByRole('button', { name: 'label' })` still matches on just the label).
-   `kind="segment"` is the one register that still needs the OLD look — see `.btn--segment` above,
-   kept verbatim for SegmentedToggle. */
+   There is no other text register any more — `kind="segment"` (the old uppercase/bordered look
+   kept for SegmentedToggle) is gone; SegmentedToggle composes this same `kind="text"` look. */
 .btn--text {
   gap: 0;
   padding: 0;
