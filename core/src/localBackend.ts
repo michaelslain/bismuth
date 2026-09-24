@@ -26,6 +26,7 @@ import {
     setFrontmatterKey,
     setFrontmatterViewKey,
     deleteFrontmatterKey,
+    deleteFrontmatterViewKey,
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
@@ -242,11 +243,11 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                await access.writeNote(
-                    vault,
-                    b.path,
-                    deleteFrontmatterKey(raw, b.key),
-                )
+                const next =
+                    typeof b.viewIndex === 'number'
+                        ? deleteFrontmatterViewKey(raw, b.viewIndex, b.key)
+                        : deleteFrontmatterKey(raw, b.key)
+                await access.writeNote(vault, b.path, next)
                 emit([b.path])
                 return 'ok'
             }
