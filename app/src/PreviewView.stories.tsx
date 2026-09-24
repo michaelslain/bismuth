@@ -1939,12 +1939,14 @@ export const PdfViewBarLayout: Story = {
         expect(restCs.opacity).toBe('1')
         expect(restCs.borderTopColor).toBe('rgba(0, 0, 0, 0)')
 
-        // SCRATCH on: exactly one frame, on scratch, and nothing moves.
+        // SCRATCH on: still zero accent frames (the button family draws none for a selected
+        // state), one control now selected, and nothing moves.
         const scratchBtn = canvas.getByLabelText('Scratch paper') as HTMLButtonElement
         await fireEvent.click(scratchBtn)
         await waitFor(() => expect(pressedOf(scratchBtn)).toBe('true'))
         const on = probeBar(bar)
-        expect(on.frames, 'scratch on').toBe(1)
+        expect(on.frames, 'accent frames, scratch on').toBe(0)
+        expect(on.selectedCount, 'scratch on').toBe(1)
         expect(getComputedStyle(scratchBtn).borderTopWidth).toBe('1px')
         expect(on.gaps).toEqual(rest.gaps)
         // put the fixture back (the store wrote a margin; turn it off again)
