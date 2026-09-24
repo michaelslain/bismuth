@@ -22,6 +22,7 @@ import {
     listProcesses,
     stopProcessesForVault,
 } from '../src/daemon/process.ts'
+import { parseFrontmatter } from '../src/lib/frontmatter.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 
 let processesDir: string
@@ -85,6 +86,28 @@ test('enableProcess is idempotent: a second call still leaves the file untouched
     await enableProcess('twice', ctx)
     expect(readFileSync(p, 'utf-8')).toBe(afterFirst)
     expect(statSync(p).mtimeMs).toBe(mtimeFirst)
+})
+
+// #followup-1: writeProcessFile's pass-through loop writes every frontmatter value bare
+// (`${key}: ${value}`). Before this task, parseFrontmatter never unquoted anything, so a
+// quoted `name` re-read back into `frontmatter.name` still HELD its own quotes — passing
+// them straight through the identity write was safe by construction. Now that
+// parseFrontmatter unquotes on read, a naive pass-through would write the plain value back
+// bare and corrupt any name that actually needs quoting (a colon, in this case) on the very
+// next enable/disable flip. This pins the fix: `name` alone is re-escaped via
+// frontmatterValue before writeProcessFile writes it.
+test('enableProcess re-quotes a display name that needs it (contains a colon) rather than corrupting it on the next write', async () => {
+    const p = procFile(
+        'ops-nightly',
+        'command: sleep\nname: "Ops: Nightly"\nenabled: false',
+    )
+    const res = await enableProcess('ops-nightly', ctx)
+    expect(res.ok).toBe(true)
+
+    const after = readFileSync(p, 'utf-8')
+    expect(after).toContain('enabled: true')
+    const { frontmatter } = parseFrontmatter(after)
+    expect(frontmatter.name).toBe('Ops: Nightly')
 })
 
 test('enableProcess reports a missing definition instead of throwing', async () => {

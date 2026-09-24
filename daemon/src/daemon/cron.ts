@@ -19,7 +19,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
-import { parseFrontmatter } from '../lib/frontmatter'
+import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { enqueueWrite } from '../lib/writeQueue'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import { heartbeatDevice, isOwner } from '../lib/owner'
@@ -1573,7 +1573,7 @@ function buildCronFile(opts: {
     prompt: string
 }): string {
     const lines = ['---']
-    lines.push(`name: ${opts.name}`)
+    lines.push(`name: ${frontmatterValue(opts.name)}`)
     if (opts.on === 'file-change') {
         lines.push(`on: file-change`)
         if (opts.watch) lines.push(`watch: ${opts.watch}`)
@@ -1724,7 +1724,11 @@ export async function updateCronJob(
     await Bun.write(
         filePath,
         buildCronFile({
-            name,
+            // The file's EXISTING frontmatter `name` (a display name may differ from the
+            // lookup key/slug) — never the `name` param above, which is just how the caller
+            // found this file. Passing the slug here would silently rename a display-named
+            // cron back to its filename on every unrelated update (e.g. toggling `enabled`).
+            name: frontmatter.name || name,
             on: isFileChange ? 'file-change' : undefined,
             schedule: frontmatter.schedule,
             watch: frontmatter.watch,

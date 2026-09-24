@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { readdir, readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
-import { parseFrontmatter } from '../lib/frontmatter'
+import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
@@ -163,7 +163,11 @@ async function writeProcessFile(
 ): Promise<void> {
     const lines = ['---']
     for (const [key, value] of Object.entries(frontmatter)) {
-        lines.push(`${key}: ${value}`)
+        // `frontmatter` values arrive UNQUOTED (parseFrontmatter strips a display name's
+        // quotes on read) — `name` is the one field a caller writes back verbatim without
+        // re-deciding its own quoting, so it alone is re-escaped here via frontmatterValue.
+        // Every other key keeps its pre-existing bare pass-through (e.g. `args: ["x"]`).
+        lines.push(`${key}: ${key === 'name' ? frontmatterValue(value) : value}`)
     }
     lines.push('---')
     lines.push('')

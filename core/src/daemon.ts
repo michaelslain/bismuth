@@ -907,13 +907,16 @@ export function runCron(name: string, home: string): void {
 
 /** Lowercase, `[a-z0-9-]`-only slug: any other character becomes a dash, runs of dashes
  *  collapse to one, and leading/trailing dashes are trimmed. `''` for a name with no
- *  letters or digits at all (e.g. "!!!"). */
+ *  letters or digits at all (e.g. "!!!"). Capped at 100 chars — a filesystem-friendly ceiling
+ *  well under any real path-length limit — with trailing dashes trimmed AGAIN after the cut,
+ *  since slicing mid-run can leave one behind. */
 function slugify(name: string): string {
-    return name
+    const slug = name
         .toLowerCase()
         .replace(/[^a-z0-9-]+/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-+|-+$/g, '')
+    return slug.slice(0, 100).replace(/-+$/, '')
 }
 
 /** A cron/process definition's placeholder body: tells the user what to write, without
@@ -930,12 +933,19 @@ function placeholderBody(kind: 'cron' | 'process', name: string): string {
 /** Create a new cron/process definition under `<home>/<subdir>/<slug>.md`. `slug` is the
  *  kebab-cased `name` — empty (a name with no letters/digits) → `AppError("EINVAL", …, 400)`;
  *  an existing file at that slug → `AppError("EEXIST", …, 409)`. Returns the slug as `file`,
- *  matching the shape every other accessor here keys crons/processes by. */
+ *  matching the shape every other accessor here keys crons/processes by.
+ *
+ *  The existence check and the write are ONE atomic filesystem op (`{ flag: 'wx' }` — fail if
+ *  the path already exists) rather than a separate `existsSync` followed by a write: two calls
+ *  race against a concurrent creator of the same slug (two agents creating the same display
+ *  name at once, say), where the second `existsSync` can observe "absent" a moment before the
+ *  first writer's file lands, then clobber it. `wx` makes the OS itself the single source of
+ *  truth for "did this file already exist", with no window in between. */
 function createDaemonFile(
     subdir: 'crons' | 'processes',
     name: string,
     home: string,
-    buildFrontmatterLines: (slug: string) => string[],
+    buildFrontmatterLines: () => string[],
 ): { file: string } {
     const slug = slugify(name)
     if (!slug) {
@@ -949,38 +959,48 @@ function createDaemonFile(
     const dir = join(home, subdir)
     mkdirSync(dir, { recursive: true })
     const file = join(dir, `${slug}.md`)
-    if (existsSync(file)) {
-        const what = subdir === 'crons' ? 'Cron' : 'Process'
-        throw new AppError('EEXIST', `${what} "${slug}" already exists`, 409)
-    }
     const body = placeholderBody(subdir === 'crons' ? 'cron' : 'process', name)
-    writeFileSync(
-        file,
-        `---\n${buildFrontmatterLines(slug).join('\n')}\n---\n\n${body}`,
-    )
+    try {
+        writeFileSync(
+            file,
+            `---\n${buildFrontmatterLines().join('\n')}\n---\n\n${body}`,
+            { flag: 'wx' },
+        )
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            const what = subdir === 'crons' ? 'Cron' : 'Process'
+            throw new AppError(
+                'EEXIST',
+                `${what} "${slug}" already exists`,
+                409,
+            )
+        }
+        throw err
+    }
     return { file: slug }
 }
 
 /** Create `<home>/crons/<slug>.md` from a template: `name`, a daily 9am `schedule`,
- *  `enabled: false`, and a placeholder prompt body. `name` and `schedule` are written
- *  bare (unquoted) — the cron's name IS its slug (`[a-z0-9-]` only), and the daemon's
- *  own frontmatter reader (`daemon/src/lib/frontmatter.ts`) splits on the first colon
- *  and keeps quote characters, so a quoted value round-trips as a literal `"…"` string.
- *  See `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
+ *  `enabled: false`, and a placeholder prompt body. `name` is the DISPLAY name (trimmed,
+ *  always `JSON.stringify`'d) — it can differ from the file's slug, and is written quoted
+ *  so it round-trips through the daemon's own frontmatter reader
+ *  (`daemon/src/lib/frontmatter.ts`'s `parseFrontmatter`, which JSON-decodes a `"…"`-wrapped
+ *  value) even when it contains a `:`/`#`/leading space that a bare value would mangle. The
+ *  file itself stays `<slug>.md` — see `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
 export function createCron(name: string, home: string): { file: string } {
-    return createDaemonFile('crons', name, home, slug => [
-        `name: ${slug}`,
+    return createDaemonFile('crons', name, home, () => [
+        `name: ${JSON.stringify(name.trim())}`,
         `schedule: 0 9 * * *`,
         `enabled: false`,
     ])
 }
 
 /** Create `<home>/processes/<slug>.md` from a template: `name`, a placeholder `command`,
- *  `enabled: false`. `name` is written bare, same reason as `createCron`. See
+ *  `enabled: false`. `name` is the quoted display name, same reason as `createCron`. See
  *  `createDaemonFile` for the slug/EINVAL/EEXIST contract. */
 export function createProcess(name: string, home: string): { file: string } {
-    return createDaemonFile('processes', name, home, slug => [
-        `name: ${slug}`,
+    return createDaemonFile('processes', name, home, () => [
+        `name: ${JSON.stringify(name.trim())}`,
         `command: echo`,
         `args: ["replace me"]`,
         `enabled: false`,

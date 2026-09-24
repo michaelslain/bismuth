@@ -4,7 +4,7 @@
 // as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -231,6 +231,34 @@ test("updateCronJob preserves an existing cron's `incremental`/`checkpointDir` f
         incremental: true,
         checkpointDir: 'memory',
     })
+})
+
+// #followup-1: buildCronFile used to write `name: ${opts.name}` bare, and updateCronJob passed
+// its own lookup-key `name` param (the slug) rather than the file's existing frontmatter name —
+// so toggling `enabled` on a display-named cron (created via core's createCron, which writes a
+// quoted display name into a `<slug>.md` file) silently renamed it back to its slug on disk.
+test("updateCronJob keeps the file's existing display name rather than overwriting it with the lookup key (slug)", async () => {
+    cronFile(
+        'answer-emails',
+        'name: "Answer Emails!"\nschedule: 0 9 * * *\nenabled: true',
+    )
+    const res = await updateCronJob('answer-emails', { enabled: false }, ctx)
+    expect(res.ok).toBe(true)
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs[0]).toMatchObject({ name: 'Answer Emails!', enabled: false })
+})
+
+test('updateCronJob re-quotes a display name that needs it (contains a colon) rather than writing it back bare-corrupted', async () => {
+    cronFile(
+        'ops-nightly',
+        'name: "Ops: Nightly"\nschedule: 0 9 * * *\nenabled: true',
+    )
+    const res = await updateCronJob('ops-nightly', { enabled: false }, ctx)
+    expect(res.ok).toBe(true)
+    const content = readFileSync(join(cronsDir, 'ops-nightly.md'), 'utf-8')
+    expect(content).toContain('name: "Ops: Nightly"')
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs[0]).toMatchObject({ name: 'Ops: Nightly', enabled: false })
 })
 
 test('createCronJob + loadCronJobs round-trips `incremental`/`checkpointDir`', async () => {
