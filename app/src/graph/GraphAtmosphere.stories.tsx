@@ -16,6 +16,7 @@
 // 2D layout (already normalised node positions from the production layout pipeline) is reused
 // rather than hand-placing bloom sources.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { onMount } from 'solid-js'
 import { GraphAtmosphere, type BloomSink } from './GraphAtmosphere'
 import { buildBloom, type BloomPoint } from './densityField'
@@ -208,6 +209,41 @@ export const VignetteOnly: Story = {
                 <GraphAtmosphere sink={sink} mode="2nd" />
             </Stage>
         )
+    },
+}
+
+/** The remount-at-rest case: a GraphAtmosphere mounted AFTER a renderer
+ *  already emitted its last field must paint that field itself. The renderer
+ *  only emits on dirty frames, so at rest nothing will ever call
+ *  `sink.current` again — here nothing calls it at all. The sink arrives
+ *  pre-filled with `last`, and the only way the bloom canvas gets ink is
+ *  GraphAtmosphere's own on-mount replay of it. */
+export const ReplaysLastFieldOnMount: Story = {
+    render: () => {
+        const sink: BloomSink = {
+            last: buildBloom(pointsFromGraph(0.7, false)),
+        }
+        return (
+            <Stage>
+                <GraphAtmosphere sink={sink} mode="2nd" />
+            </Stage>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const bloom = canvasElement.querySelector(
+            'canvas[data-mode]',
+        ) as HTMLCanvasElement | null
+        await expect(bloom).not.toBeNull()
+        // paint() runs on rAF, so let two frames pass before sampling.
+        await new Promise(r =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+        )
+        const d = bloom!
+            .getContext('2d')!
+            .getImageData(0, 0, bloom!.width, bloom!.height).data
+        let n = 0
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++
+        await expect(n).toBeGreaterThan(0)
     },
 }
 
