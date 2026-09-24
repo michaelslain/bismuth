@@ -9,6 +9,7 @@ import styles from './ChatAuthPanel.module.css'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
+import InlineCode from '../ui/InlineCode'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
 import { pushToast } from '../Toast'
 import { placeBelowOrAbove } from '../ui/popover/placeAnchored'
@@ -142,7 +143,7 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
             </Show>
             <div class={styles.help}>
                 Add or change providers (including opencode Zen) with{' '}
-                <code>{OPENCODE_LOGIN_COMMAND}</code> — it's an interactive
+                <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode> — it's an interactive
                 wizard, so it runs in a terminal.
             </div>
             <div class={styles.actions}>

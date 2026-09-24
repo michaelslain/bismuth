@@ -67,8 +67,9 @@ import { BaseSettings } from './BaseSettings'
 import { capitalize } from './renderValue'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
+import { IconTextButton } from '../ui/IconTextButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
-import ViewBar, { Crumb, VBtn, type ViewBarSlots } from '../ui/ViewBar'
+import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
@@ -762,15 +763,15 @@ export function BaseView(props: {
                 (ownsRows() ? !!editPath() : !!activeViewConfig()?.taskFile)
             }
         >
-            <VBtn
+            <IconTextButton
                 icon="Plus"
                 title="New task"
                 onClick={() =>
                     void addTask().catch(writeFailed('create the task'))
                 }
             >
-                <BarLabel long="TASK" drop="early" />
-            </VBtn>
+                <BarLabel long="task" drop="early" />
+            </IconTextButton>
         </Show>
     )
 
@@ -779,13 +780,17 @@ export function BaseView(props: {
      *  overlay. Extracted verbatim from the old bar body so the `actions` slot stays readable. */
     const BaseSettingsAction = () => (
         <Show when={editPath()}>
-            <VBtn
+            <IconButton
                 icon="Settings"
-                title="Settings"
-                active={
-                    activeType() === 'calendar'
-                        ? showCalendarSettings.value
-                        : settingsMode()
+                label="Settings"
+                variant={
+                    (
+                        activeType() === 'calendar'
+                            ? showCalendarSettings.value
+                            : settingsMode()
+                    )
+                        ? 'selected'
+                        : 'unselected'
                 }
                 onClick={() => {
                     if (activeType() === 'calendar')
@@ -814,9 +819,7 @@ export function BaseView(props: {
         </Show>
     )
 
-    /** SOURCE also shows for an embedded query (edits the fence body). Extracted verbatim; it is an
-     *  IconButton where its neighbour is a VBtn — two button primitives side by side in one region.
-     *  That is a known finding, reported rather than fixed: unifying them is a different change. */
+    /** SOURCE also shows for an embedded query (edits the fence body). Extracted verbatim. */
     const BaseSourceAction = () => (
         <Show when={editPath() || props.embeddedSource}>
             <IconButton

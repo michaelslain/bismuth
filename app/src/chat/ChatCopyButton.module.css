@@ -1,22 +1,22 @@
-/* ChatCopyButton.module.css — ChatCopyButton.tsx is the ONLY importer. Own geometry (top-right
-   corner, 22px) lives here; the hover-reveal itself is driven by the wrapper it sits in
+/* ChatCopyButton.module.css — ChatCopyButton.tsx is the ONLY importer. Placement only
+   (button-family migration): position (top-right corner) + the hover-reveal opacity, both on the
+   allowed placement list — the box itself (`size="sm"` at the call site) and every other look
+   property come from IconButton's own props. The hover-reveal is driven by the wrapper it sits in
    (ChatTextBubble's `[data-chat-bubble-wrap]` hook — a data attribute, not a class, so this module
    can target it without reaching into ChatTextBubble.module.css's hashed names).
 
    AT-REST OPACITY: `ui/Button.module.css`'s `.btn--icon.btn--normal { opacity: 1 }` (two classes)
-   out-specifies a plain `.chat-copy-btn { opacity: 0 }` (one class), which is why the icon was
-   showing at rest instead of only on hover. `.chat-copy-btn.chat-copy-btn` — the local class
-   repeated, not reached into `:global(.btn--icon.btn--normal)` — matches that rule's own 0,0,2,0
-   specificity without depending on stylesheet load order, entirely in a local class. */
+   out-specifies a plain `.chat-copy-btn { opacity: 0 }` (one class) — the exact regression
+   ChatCopyButton.stories.tsx's AtRest play() guards against. `.chat-copy-btn.chat-copy-btn` — the
+   local class repeated, not reached into `:global(.btn--icon.btn--normal)` — matches that rule's
+   own 0,0,2,0 specificity without depending on stylesheet load order, entirely in a local class;
+   the doubling is a specificity device, not a second look property — opacity is the one property
+   this file is allowed to own (hover-reveal). */
 .chat-copy-btn.chat-copy-btn {
     position: absolute;
     top: 0;
     right: 0;
-    width: 22px;
-    height: 22px;
-    padding: 0;
     opacity: 0;
-    background: var(--bg);
     transition: opacity 0.12s ease;
 }
 [data-chat-bubble-wrap]:hover .chat-copy-btn,

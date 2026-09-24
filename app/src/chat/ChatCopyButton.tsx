@@ -17,6 +17,7 @@ export default function ChatCopyButton(props: ChatCopyButtonProps) {
         <IconButton
             icon="Copy"
             label="Copy message"
+            size="sm"
             class={`${styles['chat-copy-btn']} ${props.class ?? ''}`}
             onClick={() => copyChatText(props.text)}
         />

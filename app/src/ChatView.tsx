@@ -20,6 +20,7 @@
 import { createSignal, Show, type JSX } from 'solid-js'
 import styles from './ChatView.module.css'
 import EmptyState from './ui/EmptyState'
+import InlineCode from './ui/InlineCode'
 import ChatHeader from './chat/ChatHeader'
 import ChatTranscript from './chat/ChatTranscript'
 import ChatTurnColumn from './chat/ChatTurnColumn'
@@ -158,7 +159,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                                                 <EmptyState>
                                                     Ask {persona()} anything
                                                     about your vault. Run any{' '}
-                                                    <code>/command</code>,
+                                                    <InlineCode>/command</InlineCode>,
                                                     watch tool calls and
                                                     thinking, and approve tool
                                                     use inline.
