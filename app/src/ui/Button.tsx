@@ -19,7 +19,7 @@ export type ButtonProps = {
     /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`. */
     size?: ButtonSize
     danger?: boolean
-    /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
+    /** Accent + bold, no box — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
     /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
      *  `--btn-accent` on the root, read by `.btn--text.btn--selected` in place of `--accent`. */

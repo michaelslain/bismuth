@@ -91,7 +91,7 @@ export const ModalFooter: Story = {
     ),
 }
 
-/** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
+/** Primary — accent + bold, no box, the view's one emphasized action. Max one per view. */
 export const Primary: Story = {
     render: () => (
         <Row>

@@ -6,7 +6,7 @@
 //   • state — "normal" (standalone) | "unselected" (toggle member, off) | "selected" (toggle member, on)
 //   • size  — ignored for "text" (one size); "icon" takes "sm" | "md" | "lg" (md is the default)
 //   • danger — orthogonal destructive tone, layerable on any state
-//   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
+//   • primary — orthogonal: accent + bold, no box, the view's one emphasized action
 //
 // Button also renders `data-state` on its root (defaulting to `'normal'` when `state` is unset) —
 // the runtime hook outside stylesheets select on (`.x[data-state="selected"]`) instead of reaching
@@ -88,7 +88,7 @@ export const TextStates: Story = {
     ),
 }
 
-/** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
+/** Primary — accent + bold, no box, the view's one emphasized action. Max one per view. */
 export const TextPrimary: Story = {
     render: () => (
         <Row label="text // primary">
