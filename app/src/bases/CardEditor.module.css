@@ -6,5 +6,3 @@
 .cardEditor :global(.cm-editor) { background: transparent; }
 .cardEditor :global(.cm-editor.cm-focused) { outline: none; }
 .cardEditor :global(.cm-scroller) { font-family: var(--prose-font); font-size: var(--prose-font-size); }
-/* Retained for BodyCard's "Loading…" placeholder. */
-.cardKey { color: var(--text-muted); }
