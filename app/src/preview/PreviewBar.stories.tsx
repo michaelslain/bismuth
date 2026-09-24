@@ -82,7 +82,7 @@ function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
     expect(p.annotateGaps, `annotate-group hairline gaps in ${JSON.stringify(p.gaps)}`).toBe(
         annotatePairs,
     )
-    expect(p.glyphSizes, 'glyph sizes').toEqual(['13x13'])
+    expect(p.glyphSizes, 'glyph sizes').toEqual(['12x12'])
     expect(p.iconBoxes, 'icon-only boxes').toHaveLength(1)
     expect(p.outside, 'controls outside the bar').toEqual([])
     expect(p.overlaps, 'overlapping controls').toEqual([])

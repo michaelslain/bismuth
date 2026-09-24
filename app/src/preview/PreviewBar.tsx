@@ -1,10 +1,11 @@
 // app/src/preview/PreviewBar.tsx
 // The PREVIEW tab's view bar (images, PDFs, code/text, anything else): ONE ui/ViewBar, every
-// control a `VBtn`, the same two spacings every other bar in the app uses. Left to right:
+// control from the Button family (IconButton / TextButton), the same two spacings every other bar
+// in the app uses. Left to right:
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
 //   readouts  p. N / M (pdf) // W × H (image)
-//   config    [− 100% + FIT]   [highlight draw scratch]    pdf  ·  [draw] on an image
+//   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [draw] on an image
 //   actions   [bookmarks]      [open-externally reveal]    bookmarks pdf only · file actions Tauri
 //
 // GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap`; between groups
@@ -13,16 +14,20 @@
 // exception is the annotate group's own hairline `--sp-1` gap (`.annotate`), which keeps two
 // adjacent ON toggles (e.g. DRAW + SCRATCH) from reading as one fused frame.
 //
-// ONE FRAME MEANS ONE THING. Only a toggle that is ON wears `active` (HIGHLIGHT while armed, DRAW,
-// SCRATCH, BOOKMARKS). FIT is a one-shot command — `VBtn`'s own doc forbids `active` on those — and
-// the `%` beside it already says whether the page is at fit width. A freshly opened PDF therefore
-// paints no accent frame at all.
+// ONE THING MEANS ONE THING. Only a toggle that is ON renders `variant="selected"` (HIGHLIGHT while
+// armed, DRAW, SCRATCH, BOOKMARKS) — accent brackets + accent glyph, no box (Button.module.css draws
+// no border for a selected state). FIT is a one-shot command — never selected — and the `%` beside
+// it already says whether the page is at fit width. A freshly opened PDF therefore has no control
+// in its selected state at all.
 //
-// NARROW PANES use the shared collapse ladder only (`data-bar-drop`, ui/ui.css): the file actions
-// and the zoom steps at 4 (650px), the page readout at 2 (500px). FIT, the mode toggles and
-// BOOKMARKS never drop — they are the only way into what they open. There is no second row.
-import { type JSX, Show, splitProps } from 'solid-js'
-import ViewBar, { Crumb, VBtn } from '../ui/ViewBar'
+// NARROW PANES use the shared collapse ladder only (`data-bar-drop`, ui/ViewBar.module.css): the
+// file actions and the zoom steps at 4 (650px), the page readout at 2 (500px). FIT, the mode
+// toggles and BOOKMARKS never drop — they are the only way into what they open. There is no second
+// row.
+import { type JSX, Show } from 'solid-js'
+import ViewBar, { Crumb } from '../ui/ViewBar'
+import IconButton from '../ui/IconButton'
+import TextButton from '../ui/TextButton'
 import Label from '../ui/Label'
 import PageReadout from './PageReadout'
 import styles from './PreviewBar.module.css'
@@ -60,25 +65,6 @@ export type PreviewBarProps = {
     nativeActions: () => boolean
     onOpenExternal: (reveal: boolean) => void
     class?: string
-}
-
-/** An icon-only toggle or command: squared to --h-control by the module's `.icon`. */
-function IconVBtn(
-    props: {
-        icon: string
-        label: string
-        mirror?: boolean
-    } & Omit<Parameters<typeof VBtn>[0], 'icon' | 'iconSize' | 'class'>,
-) {
-    const [own, rest] = splitProps(props, ['icon', 'label', 'mirror'])
-    return (
-        <VBtn
-            {...rest}
-            icon={own.icon}
-            aria-label={own.label}
-            class={`${styles.icon} ${own.mirror ? styles.mirror : ''}`}
-        />
-    )
 }
 
 export default function PreviewBar(props: PreviewBarProps): JSX.Element {
@@ -133,7 +119,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 data-bar-drop="4"
                                 data-testid="pdf-zoom-steps"
                             >
-                                <IconVBtn
+                                <IconButton
                                     icon="Minus"
                                     label="Zoom out"
                                     title="Zoom out"
@@ -142,21 +128,20 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 <Label tone="muted" class={styles.zoom}>
                                     {`${Math.round((props.zoom?.() ?? 1) * 100)}%`}
                                 </Label>
-                                <IconVBtn
+                                <IconButton
                                     icon="Plus"
                                     label="Zoom in"
                                     title="Zoom in"
                                     onClick={() => props.onZoomBy?.(1.2)}
                                 />
                             </div>
-                            <VBtn
-                                class={styles.fit}
+                            <TextButton
                                 title="Fit width"
                                 aria-label="Fit width"
                                 onClick={() => props.onFit?.()}
                             >
-                                FIT
-                            </VBtn>
+                                fit
+                            </TextButton>
                         </div>
                     </Show>
                     <div
@@ -164,7 +149,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         data-testid="preview-annotate"
                     >
                         <Show when={pdf()}>
-                            <IconVBtn
+                            <IconButton
                                 icon="Highlighter"
                                 label="Highlight text"
                                 title={
@@ -172,7 +157,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                         ? 'Select text to highlight it (click to cancel)'
                                         : 'Highlight the selected text'
                                 }
-                                active={props.highlightArmed?.() ?? false}
+                                variant={
+                                    props.highlightArmed?.()
+                                        ? 'selected'
+                                        : 'unselected'
+                                }
                                 aria-pressed={props.highlightArmed?.() ?? false}
                                 disabled={!props.annotReady()}
                                 // Keep the PDF's text selection (and focus) where it is — the
@@ -181,21 +170,23 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 onClick={() => props.onHighlight?.()}
                             />
                         </Show>
-                        <IconVBtn
+                        <IconButton
                             icon="Pencil"
                             label="Draw"
                             title={`Draw (${props.drawKey()})`}
-                            active={props.drawMode()}
+                            variant={props.drawMode() ? 'selected' : 'unselected'}
                             aria-pressed={props.drawMode()}
                             disabled={!props.annotReady()}
                             onClick={() => props.onToggleDraw()}
                         />
                         <Show when={pdf()}>
-                            <IconVBtn
+                            <IconButton
                                 icon="Notebook"
                                 label="Scratch paper"
                                 title="Scratch paper beside every page"
-                                active={props.scratchOn?.() ?? false}
+                                variant={
+                                    props.scratchOn?.() ? 'selected' : 'unselected'
+                                }
                                 aria-pressed={props.scratchOn?.() ?? false}
                                 disabled={!props.annotReady()}
                                 onClick={() => props.onToggleScratch?.()}
@@ -208,14 +199,18 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                 <>
                     <Show when={pdf()}>
                         {/* PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the LEFT —
-                            mirrored so it reads as the right-hand panel this control opens. */}
+                            mirrored so it reads as the right-hand panel this control opens. `.mirror`
+                            only flips the inner svg (PLACEMENT of the glyph, not the button's look —
+                            no border/background/padding/size changes here). */}
                         <div class={styles.group}>
-                            <IconVBtn
+                            <IconButton
                                 icon="PanelRight"
                                 label="Bookmarks"
-                                mirror
+                                class={styles.mirror}
                                 title="Bookmarks and outline"
-                                active={props.panelOpen?.() ?? false}
+                                variant={
+                                    props.panelOpen?.() ? 'selected' : 'unselected'
+                                }
                                 aria-pressed={props.panelOpen?.() ?? false}
                                 onClick={() => props.onTogglePanel?.()}
                             />
@@ -230,13 +225,13 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             data-bar-drop="4"
                             data-testid="preview-file-actions"
                         >
-                            <IconVBtn
+                            <IconButton
                                 icon="ExternalLink"
                                 label="Open in default app"
                                 title="Open in default app"
                                 onClick={() => props.onOpenExternal(false)}
                             />
-                            <IconVBtn
+                            <IconButton
                                 icon="FolderOpen"
                                 label="Reveal in file manager"
                                 title="Reveal in file manager"
