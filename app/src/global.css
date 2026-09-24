@@ -473,8 +473,13 @@
 }
 
 /* The view-bar icon rhythm — read only within ui/ui.css's own `.viewbar` section today, but a
-   token rather than chrome, so it lives here regardless of how many consumers it currently has. */
-:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
+   token rather than chrome, so it lives here regardless of how many consumers it currently has.
+   `--bar-icon-gap` was `0px` (one-button Task 1): bracket siblings now carry their own `[`/`]`
+   glyphs, so a 0 gap ran two adjacent bracket buttons together as `][` instead of `] [`. `--sp-4`
+   is the app's bracket-sibling spacing (DESIGN.md); the icon-only rhythm this token used to also
+   serve (glyph-to-glyph inside a single control, e.g. IconBar) is unaffected — that spacing comes
+   from the control's own box, not this gap. */
+:root { --bar-icon-gap: var(--sp-4); --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 
 /* Moved in from ui/popover/popover.css (2026-09-12, CSS modules migration Task 10): the one
    `:root` block that file declared. popover.css itself stays global permanently (see its own

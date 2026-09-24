@@ -147,6 +147,24 @@ export const IconStates: Story = {
     ),
 }
 
+/** Sizes (mirrors IconButton.stories.tsx's `Sizes` — `size` is ignored for `kind="text"`, so this
+ *  exercises it on `kind="icon"`, the register IconButton itself wraps). Audit Q2 #1. */
+export const Sizes: Story = {
+    render: () => (
+        <Row label="icon // sizes">
+            <Button kind="icon" size="sm" title="sm">
+                <Icon value="Search" />
+            </Button>
+            <Button kind="icon" size="md" title="md">
+                <Icon value="Search" />
+            </Button>
+            <Button kind="icon" size="lg" title="lg">
+                <Icon value="Search" />
+            </Button>
+        </Row>
+    ),
+}
+
 /** `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, sized), kept verbatim for
  *  SegmentedToggle only. Not a general-purpose register — reach for `kind="text"` for anything
  *  else. */
