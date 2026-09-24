@@ -57,3 +57,8 @@
      describe what that code DOES; a call site wanting uppercase can pass it itself. */
   letter-spacing: var(--ls-eyebrow);
 }
+
+/* ── register — what a person WROTE (DESIGN.md's register rule) vs mechanism/data, which
+   stays --ui-font-stack by default. ONLY the family changes; size/tone/weight are untouched
+   and stay independent props. */
+.text--prose { font-family: var(--prose-font); }
