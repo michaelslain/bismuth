@@ -142,6 +142,21 @@ const actions = (
     </>
 )
 
+// A badge-free THIRD action, for `PinnedThreeActions` below — none of `Collapsed`/`Expanded`/
+// `Pinned` render three buttons in a row, so there is no coverage of a three-wide action bar at
+// all (toolbar-iconbar plan, Task 3).
+const threeActions = (
+    <>
+        <CommandButton icon="Plus" label="New tab" onClick={noop} />
+        <CommandButton
+            icon="SquareTerminal"
+            label="New terminal"
+            onClick={noop}
+        />
+        <CommandButton icon="MessageSquare" label="New chat" onClick={noop} />
+    </>
+)
+
 /** Resting state: collapsed to 46px, labels hidden — not squeezed. `play` proves each row's
  *  `.tab-rail-label` is both invisible (`visibility: hidden`) and zero-width (`offsetWidth` 0)
  *  rather than merely faded to `opacity: 0`, which a flex-shrunk label still rendered as a
@@ -250,4 +265,17 @@ export const Pinned: Story = {
             expect(getComputedStyle(label).opacity).toBe('1')
         }
     },
+}
+
+/** PINNED with a badge-free THREE-button action row, left-aligned same as `Pinned` above — the
+ *  one story in this file proving the action bar's reveal layout still holds with three buttons,
+ *  not just two. */
+export const PinnedThreeActions: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={threeActions} pinned>
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
 }

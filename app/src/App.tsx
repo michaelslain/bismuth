@@ -139,7 +139,6 @@ import {
     tabBarLabel,
     tabBarIcon,
 } from './panes'
-import { ICON_PX } from './ui/IconButton'
 import { PaneTree } from './PaneTree'
 import { WindowControls } from './shell/WindowControls'
 import { TopStrip } from './shell/TopStrip'
@@ -178,7 +177,6 @@ import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
 import { openContextMenu, isTauri } from './nativeMenu'
 import './global.css'
 import ChatColorDot from './ChatColorDot'
-import toolbarIconSize from './ui/toolbarIconSize'
 import { migrationPollDelays } from './migrationPoll'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
@@ -2788,18 +2786,16 @@ export default function App() {
             icon: string
             tooltip?: string
         }
-        iconSize?: number
     }) {
         const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
         const hidden = () =>
             cmd()?.id === 'open-inbox' && !settings.daemon.enabled
-        // 18 -> ICON_PX (now 14, the app-wide --icon token, audit §9.5): the tab-rail toolbar
-        // renders CommandButtons without an explicit size, so this default WAS the tab toolbar's
-        // icon size — 18px next to 11.5px labels, which made it the largest iconography in the
-        // app for no reason. The sidebar bar passes appearance.sidebarIconFontSize and is
-        // unaffected either way. (This used to name .tabbar-actions as well; that horizontal
-        // strip and its CSS are gone.)
-        const iconSize = () => props2.iconSize ?? ICON_PX
+        // No iconSize passed to CommandButton any more (toolbar-iconbar plan, Task 3): every
+        // caller of ToolbarButton renders inside a `ui/IconBar` now (the sidebar row, the tab
+        // rail's action row), which sizes every button beneath it from one setting,
+        // `appearance.toolbarIconSize`. A caller-supplied `iconSize` prop still exists on
+        // CommandButton and still wins if a future caller genuinely needs a different size than
+        // its bar, but nothing here passes one.
         return (
             <Show when={!hidden()}>
                 <Show
@@ -2807,7 +2803,6 @@ export default function App() {
                     fallback={
                         <CommandButton
                             icon={props2.btn.icon || 'CircleHelp'}
-                            iconSize={iconSize()}
                             disabled
                             label={`Unknown command: ${props2.btn.command}`}
                         />
@@ -2816,7 +2811,6 @@ export default function App() {
                     {c => (
                         <CommandButton
                             icon={props2.btn.icon}
-                            iconSize={iconSize()}
                             label={props2.btn.tooltip ?? c().label}
                             onClick={e => c().action(e)}
                             badge={
@@ -2953,12 +2947,7 @@ export default function App() {
                     }}
                     toolbar={
                         <For each={settings.toolbar}>
-                            {btn => (
-                                <ToolbarButton
-                                    btn={btn}
-                                    iconSize={toolbarIconSize()}
-                                />
-                            )}
+                            {btn => <ToolbarButton btn={btn} />}
                         </For>
                     }
                     tree={
