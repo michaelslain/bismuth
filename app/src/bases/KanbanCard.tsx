@@ -16,7 +16,7 @@ import { renderMarkdown } from './markdown'
 import { renderCell, isTagColumn } from './renderValue'
 import { formatNumberDisplay } from './numberFormat'
 import { columnLabel } from './columnLabel'
-import { metaVisible, writableKey } from './kanbanMeta'
+import { metaVisible, titleOf, writableKey } from './kanbanMeta'
 import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
@@ -25,12 +25,6 @@ import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import styles from './KanbanCard.module.css'
 import EmptyValue from '../ui/EmptyValue'
-
-/** Plain-string title for a card (the display/first column value, falling back to the filename). */
-function titleOf(row: Row, titleCol: string): string {
-    const v = resolveProperty(titleCol, row)
-    return v == null || typeof v === 'object' ? row.file.name : String(v)
-}
 
 /**
  * The face of a kanban card: a read-only title + the view's remaining `order:` properties
