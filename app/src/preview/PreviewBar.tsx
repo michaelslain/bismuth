@@ -62,9 +62,6 @@ export type PreviewBarProps = {
     class?: string
 }
 
-/** Every glyph in the bar, matching the flashcards bar's `iconSize={13}`. */
-const GLYPH = 13
-
 /** An icon-only toggle or command: squared to --h-control by the module's `.icon`. */
 function IconVBtn(
     props: {
@@ -78,7 +75,6 @@ function IconVBtn(
         <VBtn
             {...rest}
             icon={own.icon}
-            iconSize={GLYPH}
             aria-label={own.label}
             class={`${styles.icon} ${own.mirror ? styles.mirror : ''}`}
         />

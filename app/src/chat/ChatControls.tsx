@@ -85,7 +85,7 @@ function Readouts(props: { session: ChatSession }) {
                             data-testid="chat-tools"
                             title={`${m().tools.length} tools available`}
                         >
-                            <Icon value="Wrench" size={13} /> {m().tools.length}
+                            <Icon value="Wrench" /> {m().tools.length}
                         </Text>
                     </Show>
                     <Show when={m().mcpServers.length > 0}>
@@ -99,7 +99,7 @@ function Readouts(props: { session: ChatSession }) {
                             data-testid="chat-mcp"
                             title={`${props.session.mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
                         >
-                            <Icon value="Server" size={13} />{' '}
+                            <Icon value="Server" />{' '}
                             {props.session.mcpConnected()}/{m().mcpServers.length}
                         </Text>
                     </Show>
@@ -117,7 +117,7 @@ function Readouts(props: { session: ChatSession }) {
                                 data-testid="chat-context"
                                 title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
                             >
-                                <Icon value="Gauge" size={13} />{' '}
+                                <Icon value="Gauge" />{' '}
                                 {Math.round(c().percentage)}%
                             </Text>
                         )}

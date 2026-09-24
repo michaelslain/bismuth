@@ -318,7 +318,7 @@ function MultiSelectEditor(props: {
                         onToggle={() => remove(v)}
                         title="Remove"
                     >
-                        <Icon value="X" size={11} />
+                        <Icon value="X" />
                         {v}
                     </ChipToggle>
                 )}

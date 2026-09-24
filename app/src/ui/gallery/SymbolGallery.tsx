@@ -223,6 +223,7 @@ function SymbolGallery(props: Props) {
                             onMouseMove={() => setActive(i())}
                             onClick={() => commit(item.value)}
                         >
+                            {/* icon-size-exempt: the picker previews each icon enlarged so it can be told apart */}
                             <Icon value={item.value} size={20} />
                         </Button>
                     )}

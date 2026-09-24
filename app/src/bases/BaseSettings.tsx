@@ -663,7 +663,6 @@ export function BaseSettings(props: {
                                             <Icon
                                                 value="chevron-right"
                                                 class={styles['propset-chev']}
-                                                size={13}
                                                 strokeWidth={2}
                                             />
                                             <Text
@@ -702,7 +701,6 @@ export function BaseSettings(props: {
                                                         ? 'Hidden from cards/table — click to show'
                                                         : 'Visible on cards/table — click to hide'
                                                 }
-                                                iconSize={15}
                                                 class={styles['propset-eye']}
                                                 onClick={e => {
                                                     e.stopPropagation()
@@ -866,7 +864,6 @@ export function BaseSettings(props: {
                                                     <IconButton
                                                         icon="ArrowUp"
                                                         label="Move up"
-                                                        iconSize={13}
                                                         class={styles['propset-btn']}
                                                         disabled={i === 0}
                                                         onClick={() =>
@@ -876,7 +873,6 @@ export function BaseSettings(props: {
                                                     <IconButton
                                                         icon="ArrowDown"
                                                         label="Move down"
-                                                        iconSize={13}
                                                         class={styles['propset-btn']}
                                                         disabled={
                                                             i ===
@@ -890,7 +886,6 @@ export function BaseSettings(props: {
                                                     <div class={styles['sp']} />
                                                     <IconTextButton
                                                         icon="Trash2"
-                                                        iconSize={13}
                                                         danger
                                                         onClick={() =>
                                                             removePropRow(i)
@@ -918,7 +913,6 @@ export function BaseSettings(props: {
                 leading={
                     <IconTextButton
                         icon="RotateCcw"
-                        iconSize={13}
                         onClick={reset}
                     >
                         reset

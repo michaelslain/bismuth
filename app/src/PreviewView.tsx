@@ -754,7 +754,6 @@ export function PreviewView(props: {
                                     <IconButton
                                         icon="ChevronUp"
                                         label="Previous match (Shift+Enter)"
-                                        iconSize={15}
                                         disabled={matches().length === 0}
                                         onClick={() => {
                                             step(-1)
@@ -764,7 +763,6 @@ export function PreviewView(props: {
                                     <IconButton
                                         icon="ChevronDown"
                                         label="Next match (Enter)"
-                                        iconSize={15}
                                         disabled={matches().length === 0}
                                         onClick={() => {
                                             step(1)
@@ -791,7 +789,6 @@ export function PreviewView(props: {
                                     <IconButton
                                         icon="X"
                                         label="Close (Esc)"
-                                        iconSize={15}
                                         onClick={closeFind}
                                     />
                                 </SearchBar>
@@ -805,7 +802,7 @@ export function PreviewView(props: {
                                 class={`${styles['preview-find']} ${styles['preview-find-note']}`}
                                 onKeyDown={e => e.stopPropagation()}
                             >
-                                <Icon value="Search" size={14} />
+                                <Icon value="Search" />
                                 <Text
                                     as="span"
                                     size="inherit"
@@ -818,7 +815,6 @@ export function PreviewView(props: {
                                 <IconButton
                                     icon="X"
                                     label="Dismiss"
-                                    iconSize={15}
                                     onClick={closeFind}
                                 />
                             </div>

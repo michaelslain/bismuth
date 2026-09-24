@@ -115,7 +115,7 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
                 <For each={props.providers ?? []}>
                     {p => (
                         <div class={styles.row}>
-                            <Icon value="KeyRound" size={13} />
+                            <Icon value="KeyRound" />
                             <Text
                                 as="span"
                                 size="inherit"

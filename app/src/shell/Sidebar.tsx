@@ -1,5 +1,6 @@
 import type { JSX } from 'solid-js'
 import styles from './Sidebar.module.css'
+import IconBar from '../ui/IconBar'
 
 // The left sidebar — toolbar row, file tree, and the docked graph square —
 // lifted out of App.tsx verbatim. Slots over prop-drilling: `toolbar` and `tree` are handed
@@ -17,18 +18,15 @@ import styles from './Sidebar.module.css'
 // module lookup for a name the module never defines would resolve to `undefined`, landing a
 // literal `class="undefined"` on the element.
 //
-// `data-sidebar-toolbar="true"` on the toolbar row is a NEW attribute, not part of the recorded
-// baseline's markup. It exists because `palette/switcher.css`'s
-// `.layout.switcher-active .sidebar-icons { opacity: .35; pointer-events: none; … }` reaches this
-// element from a wholly unrelated component (the Cmd+O switcher dims the sidebar toolbar while
-// active) — a cross-file descendant selector this migration would otherwise break silently, since
+// `data-sidebar-toolbar="true"` on the toolbar row is passed through `IconBar`'s rest-attribute
+// spread onto its root div. It exists because `app/src/global.css`'s
+// `.layout.switcher-active [data-sidebar-toolbar] { opacity: .35; pointer-events: none; … }`
+// reaches this element from a wholly unrelated component (the Cmd+O switcher dims the sidebar
+// toolbar while active) — a cross-file dependency this migration must not break silently, since
 // no Storybook story ever sets `.switcher-active` and the computed-style baseline never renders
-// it. `bench/moduleClassCheck.ts --verbose` is what caught it (a "declared by a global stylesheet
-// too" warning on `sidebar-icons`, traced to `palette/switcher.css:102` — not a stale leftover of
-// this migration, a live cross-component dependency). Attribute selectors are the repo's existing
-// pattern for reaching a class-module element from outside its own file without sharing a module
-// (see `data-tabstrip`/`data-tab-chip` in App.tsx, `data-pane-leaf` in PaneTree.tsx); switcher.css
-// now selects `[data-sidebar-toolbar]` instead of `.sidebar-icons`.
+// it. Attribute selectors are the repo's existing pattern for reaching an element from outside its
+// own file without sharing a module (see `data-tabstrip`/`data-tab-chip` in App.tsx,
+// `data-pane-leaf` in PaneTree.tsx); app/src/global.css selects `[data-sidebar-toolbar]`, not a class.
 export function Sidebar(props: {
     visible: boolean
     graphCollapsed: boolean
@@ -38,9 +36,9 @@ export function Sidebar(props: {
 }) {
     return (
         <aside class={styles['sidebar']} classList={{ hidden: !props.visible }}>
-            <div class={styles['sidebar-icons']} data-sidebar-toolbar="true">
+            <IconBar band label="Sidebar toolbar" data-sidebar-toolbar="true">
                 {props.toolbar}
-            </div>
+            </IconBar>
             {/* NO "VAULT" EYEBROW. The file tree is self-evidently the vault; a label above it
                 named the obvious and cost a full 36px band at the top of the column. Removed
                 2026-08-28 at the user's request. The graph section below lost its "GRAPH" eyebrow

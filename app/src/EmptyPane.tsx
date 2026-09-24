@@ -19,6 +19,7 @@ export function EmptyPane(props: Props) {
             <IconButton
                 icon="SquareTerminal"
                 label="New terminal"
+                /* icon-size-exempt: the empty pane's centred illustration mark, not chrome */
                 iconSize={18}
                 size="sm"
                 onClick={props.onNewTerminal}

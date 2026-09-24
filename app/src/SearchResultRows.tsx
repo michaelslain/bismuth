@@ -61,7 +61,6 @@ export function SearchResultRows(props: {
                         >
                             <Icon
                                 value="FileText"
-                                size={15}
                                 class={styles['sresult-icon']}
                             />
                             {/* weight="inherit": .sresult-title's own font-weight:500 already governs

@@ -32,7 +32,6 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
             <div class={styles['chat-permission-head']}>
                 <Icon
                     value="Lock"
-                    size={14}
                     class={styles['chat-permission-icon']}
                 />
                 <Text as="span" size="ui">
@@ -68,7 +67,6 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
                                         : 'X'
                                     : 'Ban'
                             }
-                            size={13}
                         />
                         {props.part.answered
                             ? props.part.answered.behavior === 'allow'

@@ -78,7 +78,6 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                                         label={`Remove “${w}”`}
                                         danger
                                         size="sm"
-                                        iconSize={15}
                                         onClick={() => remove(w)}
                                     />
                                 </div>

@@ -19,19 +19,13 @@
    three are fully covered by `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac,
    WindowsLinux) — there is no uncovered rule to flag here.
 
-   THE `:global(.btn--icon.btn--sm)` REACH IS GONE (one-global-followups Task 2) — see
-   Sidebar.module.css's identical note for the full account. No CommandButton currently renders
-   inside `.top-strip` (its only child today is WindowControls, which uses `PlainButton`, not
-   IconButton), so this rule is a no-op in the current tree either way; it is kept, converted, for
-   whichever future toolbar button lands here. `shell/CommandButton.tsx` now stamps
-   `data-command-icon="true"` on the button it renders, so this file selects
-   `.top-strip [data-command-icon]` instead of reaching a foreign module's hashed class via
-   `:global()`. */
+   THE `[data-command-icon]` BOX-SIZE OVERRIDE IS GONE (toolbar-iconbar plan, Task 3). No
+   CommandButton renders inside `.top-strip` today (its only child is WindowControls, which uses
+   `PlainButton`, not IconButton) — the rule was dead here either way, and box sizing for any
+   future toolbar button in this strip now comes from wrapping it in `ui/IconBar`, not a
+   per-container attribute selector. `data-command-icon` itself is gone from
+   shell/CommandButton.tsx; nothing in the repo reads it any more. */
 
-/* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
-   shell/CommandButton.tsx stamps on the button it renders — a plain attribute selector, not a
-   foreign class reach, so this carries no `:global()`. */
-.top-strip [data-command-icon] { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 .top-strip {
   flex: 0 0 auto; height: var(--h-band); display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 var(--sp-6);
   border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);

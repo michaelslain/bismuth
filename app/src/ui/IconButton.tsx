@@ -3,6 +3,7 @@ import { Button } from './Button'
 import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon } from './devWarn'
+import { useIconBar } from './iconBarContext'
 import type { ButtonState, ButtonSize } from './buttonClass'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone, full opacity. */
@@ -18,7 +19,7 @@ export type IconButtonProps = {
     /** Destructive tone — orthogonal to variant. */
     danger?: boolean
     size?: ButtonSize
-    /** Icon pixel size (default 16). */
+    /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>
 
@@ -27,38 +28,36 @@ export type IconButtonProps = {
  * registry) — passing a literal glyph/emoji warns in dev.
  * "normal" renders full-opacity; "unselected" is the same dimmed; "selected" is highlighted.
  */
-/**
- * Default glyph size — the app-wide `--icon` token (visual-unification audit §9.5: "we should
- * just have one size i feel no?"). Was 12 (2026-07-29 rationale: sit with the 11.5px --fs-ui
- * text rather than the old 16px default) until the 2026-08-27 audit found SIX different row-icon
- * sizes in the wild (12/13/14/15/16/18) and picked 14 — the median and most-used value — as the
- * ONE size for every icon in chrome, rows, menus, buttons, badges and chevrons. No --icon-sm/-lg
- * exist; a genuinely oversized empty-state mark sets its own literal at the call site instead.
- * Kept as a plain number, not `var(--icon)`, because this feeds a Solid inline style's `size`
- * prop (a JS number, not a CSS length) — the two must be changed together if `--icon` ever moves.
- */
-export const ICON_PX = 14
-
 function IconButton(props: IconButtonProps) {
     const [local, rest] = splitProps(props, [
         'icon',
         'label',
         'variant',
+        'size',
         'iconSize',
         'title',
     ])
     if (import.meta.env?.DEV && !isIconName(local.icon)) {
         warnBadIcon('IconButton', local.icon)
     }
+    // Read an enclosing IconBar (toolbar-iconbar plan) for the toolbar box + glyph size — a plain
+    // Solid context read, never a class selector. `bar` is undefined outside any bar, so every
+    // default below falls through to the standalone behaviour unchanged. An explicit
+    // `size`/`iconSize` prop on THIS button still wins over the bar.
+    const bar = useIconBar()
+    const size = () => local.size ?? (bar ? 'sm' : undefined)
+    // Undefined outside a bar falls through to Icon's own default: the app's one icon size.
+    const iconSize = () => local.iconSize ?? bar?.iconSize()
     return (
         <Button
             kind="icon"
             state={local.variant ?? 'normal'}
+            size={size()}
             aria-label={local.label}
             title={local.title ?? local.label}
             {...rest}
         >
-            <Icon value={local.icon} size={local.iconSize ?? ICON_PX} />
+            <Icon value={local.icon} size={iconSize()} />
         </Button>
     )
 }

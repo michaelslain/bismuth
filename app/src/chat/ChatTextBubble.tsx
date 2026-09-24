@@ -43,8 +43,7 @@ export default function ChatTextBubble(props: ChatTextBubbleProps) {
                 >
                     <div class={styles['chat-command-output']}>
                         <div class={styles['chat-command-output-head']}>
-                            <Icon value="SquareTerminal" size={12} /> Command
-                            output
+                            <Icon value="SquareTerminal" /> Command output
                         </div>
                         <div
                             class={`${styles['chat-bubble']} ${styles[props.role]} ${styles['chat-command-output-body']}`}

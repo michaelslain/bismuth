@@ -14,7 +14,7 @@ Commands are split into **pure data** and **behavior** so the command palette an
 - **`app/src/commands.ts`** — `bindCommands(handlers, dailyNotes)` produces a live `Map<string, BoundCommand>` where each catalog id is mapped to a runnable `{ id, label, icon, action }`. The catalog says *what* each command is; the binding says *what it does*. `App.tsx` passes its handlers in once.
 - **`core/src/schema/settingsSchema.ts`** — defines the `toolbar:` settings key (a list of button objects) and the `dailyNotes:` key (which registers extra `daily-note:<id>` commands).
 
-The sidebar header bar (`.sidebar-icons` in `App.tsx`) is configured entirely by `toolbar:` in `.settings`. There is no GUI for it — you edit `.settings` directly (see [settings overview](./overview.md)).
+The sidebar header bar (the `<IconBar band>` row in `app/src/shell/Sidebar.tsx`, filled by `App.tsx`) is configured entirely by `toolbar:` in `.settings`. There is no GUI for it — you edit `.settings` directly (see [settings overview](./overview.md)).
 
 ## The Command Catalog
 
@@ -410,12 +410,11 @@ Optional hover text. When omitted, the rendered button's label is the resolved c
 
 ### How the toolbar renders (single-command path)
 
-`App.tsx` renders every configured button — the sidebar header bar's `.sidebar-icons` (from `settings.toolbar`) and the tab rail's toolbar (from `settings.tabBar`) alike — through one local `ToolbarButton` wrapper, which resolves a button's `command`/`commands` config to a live command and hands plain props to the purely-presentational `CommandButton` (`app/src/shell/CommandButton.tsx`):
+`App.tsx` renders every configured button — the sidebar header bar (from `settings.toolbar`) and the tab rail's toolbar (from `settings.tabBar`) alike — through one local `ToolbarButton` wrapper, which resolves a button's `command`/`commands` config to a live command and hands plain props to the purely-presentational `CommandButton` (`app/src/shell/CommandButton.tsx`):
 
 ```tsx
 function ToolbarButton(props2: {
     btn: { command?: string, commands?: string[], icon: string, tooltip?: string }
-    iconSize?: number
 }) {
     const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
     const hidden = () => cmd()?.id === 'open-inbox' && !settings.daemon.enabled
@@ -439,6 +438,8 @@ function ToolbarButton(props2: {
     )
 }
 ```
+
+Neither caller passes a size: both rows render inside `ui/IconBar`, which sizes every button from `appearance.iconSize`.
 
 Behavior of the current renderer:
 

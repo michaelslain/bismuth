@@ -240,11 +240,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
                         </div>
                     )}
                 </Index>
-                <IconTextButton
-                    icon="Plus"
-                    iconSize={14}
-                    onClick={() => store.addPage()}
-                >
+                <IconTextButton icon="Plus" onClick={() => store.addPage()}>
                     add page
                 </IconTextButton>
             </div>

@@ -75,7 +75,6 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
             <div class={styles['chat-question-head']}>
                 <Icon
                     value="ListChecks"
-                    size={14}
                     class={styles['chat-question-icon']}
                 />
                 <Text
@@ -142,7 +141,6 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                             ? 'SquareCheck'
                                                             : 'Square'
                                                     }
-                                                    size={13}
                                                     class={
                                                         styles[
                                                             'chat-question-check'
@@ -207,7 +205,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                             when={props.part.answered}
                             fallback={
                                 <>
-                                    <Icon value="Ban" size={13} /> Skipped
+                                    <Icon value="Ban" /> Skipped
                                 </>
                             }
                         >
@@ -220,7 +218,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                     styles['chat-question-answer']
                                                 }
                                             >
-                                                <Icon value="Check" size={13} />
+                                                <Icon value="Check" />
                                                 <Show when={q.header}>
                                                     <Text
                                                         as="span"

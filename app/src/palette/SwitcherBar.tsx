@@ -445,7 +445,6 @@ export function SwitcherBar(props: Props) {
                         >
                             <Icon
                                 value="Sparkles"
-                                size={14}
                                 class={switcherStyles['search-ask-ai-icon']}
                             />
                             <Text
@@ -485,6 +484,7 @@ export function SwitcherBar(props: Props) {
                             >
                                 <Icon
                                     value="Sparkles"
+                                    /* icon-size-exempt: the empty-results illustration mark, not chrome */
                                     size={22}
                                     class={switcherStyles['search-empty-icon']}
                                 />
@@ -547,6 +547,7 @@ export function SwitcherBar(props: Props) {
                         icon={
                             <Icon
                                 value="TriangleAlert"
+                                /* icon-size-exempt: the error empty-state illustration mark, not chrome */
                                 size={24}
                                 class={switcherStyles['switcher-error-icon']}
                             />

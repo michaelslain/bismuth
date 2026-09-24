@@ -44,6 +44,7 @@ import {
 } from './registry'
 import { iconLibraryState, loadIconLibrary } from './iconLibrary'
 import Text from '../ui/Text'
+import iconSize from '../ui/iconSize'
 
 export interface IconProps {
     /** Icon name (any casing, optional Li/Lu prefix) OR an emoji / arbitrary string. */
@@ -84,14 +85,11 @@ export const Icon: Component<IconProps> = props => {
         // show the generic fallback rather than the (broken-looking) raw name text.
         return looksLikeIconName(s) ? FALLBACK_ART : { kind: 'glyph', text: s }
     }
-    /* 14, not 16 — the ONE icon size (visual-unification audit §9.5, `--icon: 14px`). The user's
-       decision was explicit: *"we should just have one size i feel no?"*, so there is no --icon-sm
-       or --icon-lg and nothing should be passing `size` at all. This default is the thing that
-       actually enforces it: wave 3 swept the call sites, but a default of 16 meant every call site
-       that passed NOTHING silently rendered the old size, which is how ui-button--icon-states and
-       PaneHeader were still measuring 16 and 13/12 after the sweep. Keep it in step with
-       ui/IconButton.tsx's ICON_PX, which is the same number for the same reason. */
-    const size = () => props.size ?? 14
+    /* The ONE icon size — `appearance.iconSize` via ui/iconSize.ts (12px default, picked
+       2026-09-24: *"we should just have one size i feel no?"*). This default is what actually
+       enforces it: no call site passes `size`, and ui/iconSizeLint.test.ts refuses a literal one
+       unless it carries an `icon-size-exempt:` comment (an oversized illustration mark). */
+    const size = () => props.size ?? iconSize()
     const boxStyle = (): JSX.CSSProperties => ({
         display: 'inline-flex',
         'align-items': 'center',

@@ -16,23 +16,12 @@
    the selector spells "the rail root". Those moved rules now live in TabRailRow.module.css, next
    to the classes they actually affect; see that file for the full list.
 
-   `.tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }` — MOVED, not copied, from the
-   verbatim "Top action toolbar" block above, but with `:global(...)` ADDED around `.btn--icon`.
-   `bench/moduleClassCheck.ts` caught the reason: the source rule (`.tab-rail-actions .btn--icon {
-   flex: 0 0 auto; }`) targeted a class this stylesheet does not own, and once it lived inside a CSS
-   Module its bare `.btn--icon` hashed too, matching nothing in ui.css's real buttons. Wrapping it is
-   the same fix Sidebar.module.css's own `.sidebar-icons .btn--icon { font-size: … }` needed for the
-   identical reason (Trap 5) — a verbatim MOVE still needs this when the moved selector reaches
-   outside its new module, whereas the two rules right below are full COPIES of a still-live App.css
-   selector list, not moves.
-
-   THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.tab-rail-actions
-   :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
-   copied into Sidebar.module.css/EmptyPane.module.css/GraphView.module.css — that box is now
-   `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
-   shell/CommandButton.tsx, which every button in this toolbar renders through. The `flex: 0 0
-   auto` rule right above this comment is UNRELATED (it stops the buttons shrinking in the
-   wrapped toolbar layout) and stays.
+   THE TOOLBAR ROW'S BOX MODEL IS GONE (toolbar-iconbar plan, Task 3). `.tab-rail-actions` no
+   longer sets its own display/flex-wrap/gap/padding/border — it renders through `ui/IconBar`
+   (`band layout="wrap"`) now, which owns the band height, side padding, bottom hairline, button
+   box and glyph size for every toolbar in the app. What is left on `.tab-rail-actions` (the class
+   passed to IconBar via its `class` prop) is only the reveal-state override — left-aligned,
+   non-wrapping, once the rail is expanded or pinned — see the "Top action toolbar" comment below.
 
    `rail-pinned` IS A SEPARATE NAME FROM `pinned` ON PURPOSE, even though both mean "pinned".
    `pinned` already means A PINNED TAB, on `.tab-rail-row` (now in TabRailRow.module.css); the rail
@@ -44,15 +33,7 @@
    The `@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }` block
    moved here with `.tab-rail-inner` — its animation-affecting sibling, per the parent plan's Trap 6
    (keyframe/media rules are invisible to the `^\.`-anchored ratchet grep but still belong with their
-   family).
-
-   THE `:global(.btn--icon...)` REACHES ARE GONE (one-global-followups Task 2) — see
-   Sidebar.module.css's identical note for the full account. `shell/CommandButton.tsx` now stamps
-   `data-command-icon="true"` on the button it renders, so this file selects
-   `.tab-rail-actions [data-command-icon]` instead of reaching a foreign module's hashed class via
-   `:global()`; CommandButton also grew a `class` prop, but nothing here can use it yet since
-   App.tsx's `ToolbarButton` (out of this task's file scope) is what actually instantiates the
-   button, not this file. */
+   family). */
 
 /* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
    `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
@@ -103,57 +84,24 @@
 .tab-rail.rail-pinned .tab-rail-inner { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
-/* Top action toolbar. A LEFT-packed flex-wrap row whose ASYMMETRIC side padding is what puts
-   the icons on the rail's centre line. The arithmetic, measured not guessed:
-     .tab-rail-inner is 46px border-box with a 1px border-left, so its content starts at x=1
-     and is 45px wide. A tab row below sits at margin 5 + padding 10, so its 16px icon centres
-     at 1+5+10+8 = 24px — THAT is the column these buttons must land on.
-     Buttons are 20px (.btn--icon above) and never shrink (flex:0 0 auto below), so
-     padding-left 13 puts a button centre at 1+13+10 = 24px. ✓
-     padding-right 12 makes the content box exactly 45−13−12 = 20px, i.e. one button wide, so
-     collapsed each button wraps onto its own line → a single centred icon column.
-   Expanded (232px) they fit on one line, still starting on that same 24px centre, so the
-   column stays straight through the hover transition. Do NOT switch this to
-   justify-content:center — that centres the whole row in the 232px expanded rail and the
-   icons slide ~70px sideways on hover. Do NOT make the padding symmetric either: a 19px
-   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs.
-   DO NOT round 12px/13px onto the --sp-* scale (visual-unification wave 2's "frame insets ->
-   --sp-*" sweep) — they are this exact derivation's inputs, not an arbitrary gap; nudging either
-   one off the tabs. The top/bottom 8px and the between-button 3px gap carry no such constraint
-   and are tokenized below (--sp-4, --sp-2). */
-/* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
-   shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
-   plain attribute selector, not a foreign class reach, so this carries no `:global()`. */
-.tab-rail-actions [data-command-icon] { min-width: var(--bar-icon-size); height: var(--bar-icon-size); }
-/* CENTER, not flex-start. The rail is a narrow vertical strip, so `row wrap` puts each icon on its
-   own line and `justify-content` is what positions it ACROSS the rail. The content box is 21px
-   (45px strip minus 12px padding a side) against an 18px icon, so flex-start pinned every icon 1.5px
-   left of centre with the slack all on the right. It was masked while the icons were 24px — they
-   overflowed the content box instead of sitting inside it — and became visible the moment the box
-   shrank to 18. */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: center; gap: var(--bar-icon-gap);
-  /* +1px on the RIGHT only, compensating .tab-rail-inner's left-only 1px border. box-sizing is
-     border-box, so the inner's content box starts 1px in and `justify-content: center` centres on
-     23.5 while the rail's VISIBLE centre is 23. The extra pixel makes this strip's content box
-     symmetric about the visible centre, so its icons land on 0 offset — the same place the tab
-     rows' icons land via their own 5px/10px arithmetic. Without it the two disagree by 0.5px. */
-  padding: var(--sp-4) calc(var(--sp-5) + 1px) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
-.tab-rail-actions [data-command-icon] { flex: 0 0 auto; }
-.tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
-/* CENTRED ONLY WHILE COLLAPSED. The centring above is correct for a 46px strip — it is what lands
-   each icon on the same optical axis as the tab rows' icons below. Expanded to 232px it kept
-   centring the same three icons in five times the width, so the toolbar floated in the middle of
-   an otherwise left-aligned rail with the tab rows beneath it starting at the left edge. Left-align
-   once there is a rail to align to, and drop the +1px optical nudge with it: that pixel exists to
-   centre against the inner's left-only border, and means nothing once the icons are flush left. */
+/* Top action toolbar. Renders through `ui/IconBar` now (`band layout="wrap"`, toolbar-iconbar
+   plan Task 3) — IconBar owns the box model entirely: the 36px band, the 0/var(--sp-5) side
+   padding, the 1px border-soft bottom hairline, the button box and glyph size, and (via
+   `layout="wrap"`) the collapsed centred stack with zero row gap. `.tab-rail-actions` (the class
+   passed to IconBar via its `class` prop, landing on IconBar's root div) now carries only what is
+   genuinely THIS container's concern: not shrinking inside `.tab-rail-inner`'s column layout, and
+   the left-packed, single-line, non-wrapping layout the rail switches to once it is no longer
+   collapsed. */
+.tab-rail-actions { flex: 0 0 auto; }
+/* LEFT-ALIGNED, NOWRAP ONLY WHILE EXPANDED (hover/focus-within) OR PINNED. IconBar's own
+   `layout="wrap"` centres + wraps for the 46px collapsed strip; once the rail widens to 232px
+   there is room for one row, and a left-packed row matches the tab rows' own left-aligned icons
+   below it — centring the same icons in five times the width would float them mid-rail instead. */
 .tab-rail:hover .tab-rail-actions,
 .tab-rail:focus-within .tab-rail-actions,
 .tab-rail.rail-pinned .tab-rail-actions {
   justify-content: flex-start;
   flex-wrap: nowrap;
-  gap: var(--sp-3);
-  padding-left: 10px;
-  padding-right: var(--sp-5);
 }
 
 /* The scrollable row list fills the middle. */

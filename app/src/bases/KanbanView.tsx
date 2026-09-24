@@ -2157,7 +2157,6 @@ export function KanbanView(props: {
                                                     >
                                                         <Icon
                                                             value="Plus"
-                                                            size={16}
                                                         />
                                                     </PlainButton>
                                                 }

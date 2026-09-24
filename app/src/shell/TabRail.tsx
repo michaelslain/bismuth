@@ -14,6 +14,7 @@
 // by this migration.
 import type { JSX } from 'solid-js'
 import styles from './TabRail.module.css'
+import IconBar from '../ui/IconBar'
 
 export function TabRail(props: {
     actions: JSX.Element
@@ -29,7 +30,14 @@ export function TabRail(props: {
             data-rail-pinned={props.pinned ? 'true' : undefined}
         >
             <div class={styles['tab-rail-inner']}>
-                <div class={styles['tab-rail-actions']}>{props.actions}</div>
+                <IconBar
+                    band
+                    layout="wrap"
+                    label="Tab actions"
+                    class={styles['tab-rail-actions']}
+                >
+                    {props.actions}
+                </IconBar>
                 <div class={styles['tab-rail-list']} data-tabstrip="vertical">
                     {props.children}
                 </div>

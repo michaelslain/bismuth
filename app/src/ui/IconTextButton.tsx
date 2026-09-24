@@ -11,7 +11,7 @@ export type IconTextButtonVariant = ButtonState
 export type IconTextButtonProps = {
     /** icon name (rendered before the label). Must resolve to an icon. */
     icon: string
-    /** Icon pixel size (default 12, matching the bracket text register's --fs-ui). */
+    /** Icon pixel size. Defaults to the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
     /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
     variant?: IconTextButtonVariant
@@ -44,7 +44,7 @@ function IconTextButton(props: IconTextButtonProps) {
     }
     return (
         <Button kind="text" state={local.variant ?? 'normal'} {...rest}>
-            <Icon value={local.icon} size={local.iconSize ?? 12} />
+            <Icon value={local.icon} size={local.iconSize} />
             {local.children}
         </Button>
     )

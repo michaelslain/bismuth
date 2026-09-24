@@ -29,7 +29,7 @@
    space-between. ViewBar.tsx's doc comment carries what each region MEANS. */
 /* HEIGHT COMES FROM --h-band, not from a local calc. This used to be `calc(var(--row-h) * 2)`,
    which computed the SAME 36px as --h-band but from its own arithmetic — so the app's three bars
-   (.viewbar here, .top-strip and .sidebar-icons in shell/) agreed only by coincidence, and
+   (.viewbar here, .top-strip in shell/, and ui/IconBar's band) agreed only by coincidence, and
    retuning the bar rhythm meant finding and editing two different expressions that happened to
    match. They are one token now: change --h-band in styles/tokens.css and all three move. */
 /* ── Icon rhythm inside a BAR ──────────────────────────────────────────────────────────────────
@@ -40,11 +40,10 @@
    18px box = 3px a side, and with the bar's gap at 0 that lands exactly on 6px.
 
    WHY THE TWO TOKENS EXIST INSTEAD OF ONE RULE HERE. Only `.viewbar` is a real global class (its
-   literal is written by ui/ViewBar.tsx). `.top-strip`, `.sidebar-icons` and `.tab-rail-actions` are
-   CSS MODULE classes — a rule naming them in this global file hashes to nothing and matches zero
-   elements, silently, which is exactly the trap CLAUDE.md documents. So each bar applies the box
-   in its OWN module file and reads the value from here; the numbers stay in one place even though
-   the selectors cannot.
+   literal is written by ui/ViewBar.tsx). `.top-strip` is a CSS module class — a rule naming it in
+   this global file hashes to nothing and matches zero elements, silently, which is exactly the
+   trap CLAUDE.md documents. So it reads the value from here; the sidebar and tab-rail rows get
+   theirs from ui/IconBar.
 
    TRADEOFF, recorded on purpose: 18px is under WCAG 2.5.8's 24px target minimum, and at gap:0 the
    centres are 18px apart so the criterion's SPACING exception does not rescue it either. These are
@@ -69,9 +68,14 @@
 /* `.btn--icon`/`.btn--sm` are Button.module.css's own bare global literals (Button family not yet
    componentized — Task 4 of this plan owns that file), reached here so a bar's icon buttons
    inherit the bar's own icon-rhythm box. `.viewbar` itself needs no `:global()` any more: it is a
-   real hashed local, matched here inside its own module. */
+   real hashed local, matched here inside its own module.
+   `--iconbar-width` (toolbar-iconbar): an enclosing ui/IconBar sets it to `auto`, so a bracketed
+   IconBar button inside a bar (the mini-graph mode switcher, in the `facet` slot) grows to fit
+   `[` + glyph + `]` instead of being pinned to this 18px square — pinned, the brackets overflowed
+   the box both ways (it centres its content), overlapping each other and clipping the first `[`
+   against `.vb-lead`'s overflow edge. Unset everywhere else, so every other bar is unchanged. */
 /* design-system-ignore globalReach: Button family (.btn--icon/.btn--sm) is out of this task's file scope — Task 4 owns componentizing it */
-.viewbar :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+.viewbar :global(.btn--icon.btn--sm) { width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why

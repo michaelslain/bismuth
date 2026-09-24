@@ -170,7 +170,6 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                                                     value={chatOriginIcon(
                                                         hit.origin,
                                                     )}
-                                                    size={13}
                                                     class={styles['hit-icon']}
                                                 />
                                                 <Text

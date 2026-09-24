@@ -262,7 +262,7 @@ export function EditCardsModal(props: {
                             id: 'list',
                             label: (
                                 <>
-                                    <Icon value="List" size={13} /> cards
+                                    <Icon value="List" /> cards
                                 </>
                             ),
                         },
@@ -270,7 +270,7 @@ export function EditCardsModal(props: {
                             id: 'bulk',
                             label: (
                                 <>
-                                    <Icon value="LayoutGrid" size={13} /> bulk
+                                    <Icon value="LayoutGrid" /> bulk
                                     add
                                 </>
                             ),
@@ -410,7 +410,6 @@ export function EditCardsModal(props: {
                     <div class={styles['cards-addrow']}>
                         <IconTextButton
                             icon="Plus"
-                            iconSize={14}
                             variant="unselected"
                             disabled={busy()}
                             onClick={addDraft}

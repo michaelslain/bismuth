@@ -25,45 +25,11 @@
    each label cost a 36px band). Other surfaces still do, so it is a
    design-system primitive in ui/ui.css, not chrome owned by this component.
 
-   THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.sidebar-icons
-   :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
-   copied into TabRail.module.css/EmptyPane.module.css/GraphView.module.css — that box is now
-   `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
-   shell/CommandButton.tsx, which every button in this toolbar renders through. What remains below
-   is the one override that genuinely belongs to THIS parent: the settings-driven font-size.
-
-   THE `:global(.btn--icon...)` REACHES ARE GONE (one-global-followups Task 2). CommandButton now
-   grows a `class` prop, but nothing here can use it: every button in this toolbar renders through
-   `shell/CommandButton.tsx`, instantiated by App.tsx's `ToolbarButton` (out of this task's file
-   scope) via `Sidebar`'s `toolbar: JSX.Element` slot — Sidebar.tsx never creates the button
-   element itself, so it has no call site to attach a local class to. What DOES close the reach:
-   `shell/CommandButton.tsx` now also stamps `data-command-icon="true"` on the button it renders —
-   a stable, UNHASHED attribute (same shape as `data-sidebar-toolbar` two paragraphs down), so this
-   file can select `.sidebar-icons [data-command-icon]` instead of reaching into a foreign
-   module's hashed class via `:global()`. `--bar-icon-size` (18px) genuinely differs from
-   Button.module.css's own `.btn--icon.btn--sm` default (24px) — not a duplicate to delete, a real
-   per-container override that has to land somewhere.
-
-   `.sidebar-icons` ALSO carries `data-sidebar-toolbar="true"` in Sidebar.tsx now. That attribute
-   is not styled by anything in THIS file — it exists so `palette/switcher.css` (a wholly unrelated
-   component) can keep dimming this row while the Cmd+O switcher is open, which it used to do via a
-   bare `.sidebar-icons` descendant selector that this migration would otherwise have broken
-   silently (no story sets `.switcher-active`, so nothing in this plan's own gate would have caught
-   it — `bench/moduleClassCheck.ts --verbose` did, as a "declared by a global stylesheet too"
-   warning). See the `data-sidebar-toolbar` comment in Sidebar.tsx for the full account.
-
-   THERE IS NO LOCAL `:hover` RULE HERE ANYMORE. A leftover `.sidebar-icons :global(.btn--icon)
-   :hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }` survived the box-model
-   copy's removal above and kept winning the cascade against ui/ui.css's shared
-   `.btn--icon.btn--sm:hover:not(:disabled)` rule (both compute to specificity (0,4,0), and this
-   file's rule happened to come later) — so this toolbar's icon buttons hovered at --hover-bg's
-   5%-alpha instead of --state-hover-bg's 8%-alpha color-mix, the ONE toolzone of the three
-   (Sidebar/TabRail/EmptyPane) not actually sharing the rule. Deleted for real this time
-   (2026-08-28, wave-2 review fix) — hover for this toolbar now comes from ui.css alone, same as
-   every other `.btn--icon.btn--sm` consumer. This is exactly the kind of thing
-   `bench/cssBaseline.ts`'s resting-state recording CANNOT catch: proving it requires forcing
-   `:hover` via CDP (`CSS.forcePseudoState`) and reading the computed background, not reading the
-   stylesheet source. */
+   THE TOOLBAR ROW ITSELF IS GONE (toolbar-iconbar plan, Task 3). `.sidebar-icons` and its two
+   `[data-command-icon]` box/font-size overrides moved into `ui/IconBar` — Sidebar.tsx now renders
+   `<IconBar band label="Sidebar toolbar" data-sidebar-toolbar="true">`, which owns the band height,
+   side padding, bottom hairline, button box and glyph size for every bar in the app, not just this
+   one. Nothing in this file styles the toolbar row any more. */
 
 .sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
@@ -81,38 +47,4 @@
    (the sidebar's own right edge, this row's bottom edge below); this one was the odd one out,
    with no comment explaining why (visual-unification audit §4.8). It wasn't deliberate: fixed. */
 .sidebar-graph { border-top: 1px solid var(--border-soft); height: var(--sidebar-graph-height, 305px); width: auto; }
-/* The left "toolzone" of the design's top strip. Height matches TopStrip (36px = --h-band) so
-   the two top bars' bottom divider lines align into one continuous row across the app.
-   USED TO be calc(row-h*2 + 1px) = 37px — a deliberate-looking +1 that was actually a bug
-   (visual-unification audit §4.8): box-sizing is border-box app-wide (styles/reset.css), so the
-   1px border-bottom below is already INSIDE the box, same as TopStrip's plain `height: 36px`. The
-   +1 didn't compensate for anything; it just made this the one row in the frame that didn't
-   land on the shared rhythm. --h-band is the fix, not a new number. */
-/* The icon box + zero gap that make glyph-to-glyph match the file tree's 6px live in ui/ui.css
-   now, applied to EVERY bar rather than only this one. */
-/* Box size from ui/ui.css's --bar-icon-size, reached via the `data-command-icon` attribute
-   shell/CommandButton.tsx stamps on the button it renders (one-global-followups Task 2) — a
-   plain attribute selector, not a foreign class reach, so this carries no `:global()`.
-
-   `min-width`, not `width` (Task 6b, the same fix ui.css's own `.btn--icon.btn--sm` rule already
-   made for the un-overridden default size — see that rule's comment in Button.module.css): Task 6
-   put `[`/`]` glyphs either side of the icon via `::before`/`::after`, and those glyphs are wider
-   than --bar-icon-size (18px) alone. A fixed `width` clipped/overlapped them — the `clip-x` story-
-   audit finding. `min-width` keeps the 18px floor for a bracket-less state while letting the box
-   grow to fit `[⌕]`; `height` stays fixed since the glyphs add no vertical extent. */
-.sidebar-icons [data-command-icon] { min-width: var(--bar-icon-size); height: var(--bar-icon-size); }
-/* `gap` here is intentionally its OWN value, not `var(--bar-icon-gap)` (which TabRail/TopStrip
-   still use at 0px). Those two rows wrap each icon onto its own line/column, so a zero gap between
-   them is invisible — there is only ever one button per row. This row never wraps: it is a single
-   flex line, so with the brackets now occupying real width, a zero gap collided adjacent buttons'
-   bracket glyphs into each other. `--sp-2` is the design system's own small-gap step (4px), enough
-   to read `[⌕] [I] [✉] [⚙]` as four distinct units without breaking the row's 46px-tall band. */
-.sidebar-icons { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
-/* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
-   unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
-   (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
-   also brings the BUTTON element's own font-size in line so nothing inside it silently reverts.
-   The box model (width/height/padding/radius/hover) that used to sit in a second copy of this
-   same selector moved to ui/ui.css's `.btn--icon.btn--sm` — see this file's header comment. */
-.sidebar-icons [data-command-icon] { font-size: var(--sidebar-icon-font-size); }
 .sidebar canvas { display: block; }

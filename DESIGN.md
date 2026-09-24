@@ -350,7 +350,7 @@ curve is a genuine circle (status dots, at 50%). Lines are one of four named rul
 accent left edge (`--accent-edge`) marks exactly two things: the frontmatter block and a
 callout/proposal.
 
-Icons are 24px-grid pixel art rendered `crispEdges` at a single size (`--icon`, 14px), so the bitmap
+Icons are 24px-grid pixel art rendered `crispEdges` at a single size (`--icon`, 12px — the `appearance.iconSize` setting; no call site passes its own), so the bitmap
 grid stays as hard as the character grid.
 
 ### Named Rules

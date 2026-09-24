@@ -131,7 +131,7 @@ const rows = (
     </>
 )
 
-const actions = (
+const actions = () => (
     <>
         <CommandButton icon="Plus" label="New tab" onClick={noop} />
         <CommandButton
@@ -139,6 +139,21 @@ const actions = (
             label="New terminal"
             onClick={noop}
         />
+    </>
+)
+
+// A badge-free THIRD action, for `PinnedThreeActions` below — none of `Collapsed`/`Expanded`/
+// `Pinned` render three buttons in a row, so there is no coverage of a three-wide action bar at
+// all (toolbar-iconbar plan, Task 3).
+const threeActions = () => (
+    <>
+        <CommandButton icon="Plus" label="New tab" onClick={noop} />
+        <CommandButton
+            icon="SquareTerminal"
+            label="New terminal"
+            onClick={noop}
+        />
+        <CommandButton icon="MessageSquare" label="New chat" onClick={noop} />
     </>
 )
 
@@ -150,7 +165,7 @@ const actions = (
 export const Collapsed: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions}>{rows}</TabRail>
+            <TabRail actions={actions()}>{rows}</TabRail>
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
@@ -182,7 +197,7 @@ export const Collapsed: Story = {
 export const Expanded: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions}>{rows}</TabRail>
+            <TabRail actions={actions()}>{rows}</TabRail>
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
@@ -220,7 +235,7 @@ export const Expanded: Story = {
 export const Pinned: Story = {
     render: () => (
         <Wrap>
-            <TabRail actions={actions} pinned>
+            <TabRail actions={actions()} pinned>
                 {rows}
             </TabRail>
         </Wrap>
@@ -250,4 +265,17 @@ export const Pinned: Story = {
             expect(getComputedStyle(label).opacity).toBe('1')
         }
     },
+}
+
+/** PINNED with a badge-free THREE-button action row, left-aligned same as `Pinned` above — the
+ *  one story in this file proving the action bar's reveal layout still holds with three buttons,
+ *  not just two. */
+export const PinnedThreeActions: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={threeActions()} pinned>
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
 }

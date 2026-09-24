@@ -40,6 +40,13 @@
     "max": null,
     "required": false
   },
+  "appearance.iconSize": {
+    "type": "number",
+    "default": 12,
+    "min": 11,
+    "max": 20,
+    "required": false
+  },
   "appearance.monoScale": {
     "type": "number",
     "default": 1,
@@ -76,13 +83,6 @@
     "default": 305,
     "min": 200,
     "max": 500,
-    "required": false
-  },
-  "appearance.sidebarIconFontSize": {
-    "type": "number",
-    "default": 12,
-    "min": 11,
-    "max": 20,
     "required": false
   },
   "appearance.sidebarWidth": {

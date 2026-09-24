@@ -31,7 +31,7 @@ const OptionRow: Component<OptionRowProps> = props => (
         onClick={() => props.onClick()}
     >
         <span class={styles['option-ic']}>
-            <Icon value={props.icon} size={18} />
+            <Icon value={props.icon} />
         </span>
         <span class={styles['option-txt']}>
             <span class={styles['option-lab']}>{props.label}</span>
@@ -40,7 +40,7 @@ const OptionRow: Component<OptionRowProps> = props => (
             </Show>
         </span>
         <span class={styles['option-chev']}>
-            <Icon value="chevron-right" size={15} />
+            <Icon value="chevron-right" />
         </span>
     </button>
 )
