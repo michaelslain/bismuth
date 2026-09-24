@@ -13,6 +13,7 @@
 //     the EditorView, which never sees this component — so the caller drives highlight moves
 //     through the imperative `handleRef` handle below)
 import { createSignal, For, Show, type Component } from 'solid-js'
+import FormControl from '../ui/FormControl'
 import styles from './DatePicker.module.css'
 
 export type DatePickerKind = 'date' | 'datetime'
@@ -84,14 +85,11 @@ const DatePicker: Component<DatePickerProps> = props => {
     return (
         <div class={`bismuth-popover ${styles.root}`}>
             <div class={styles.head}>
-                {/* design-system-ignore bareElement: Field forces a visible label caption; this
-                    row is a bare side-by-side date+time pair whose purpose is self-evident from
-                    the native OS picker UI each input opens, matching the original (uncaptioned)
-                    design — adding a caption here would be a UX change this task doesn't ask for */}
-                <input /* design-system-ignore bareElement: Field forces a visible caption this uncaptioned native picker row never had */
+                <FormControl
+                    as="input"
                     ref={dateInput}
                     type="date"
-                    class={`ui-input ${styles.dateInput}`}
+                    class={styles.dateInput}
                     value={date()}
                     onChange={e => {
                         const v = e.currentTarget.value
@@ -100,11 +98,11 @@ const DatePicker: Component<DatePickerProps> = props => {
                     }}
                 />
                 <Show when={props.kind === 'datetime'}>
-                    {/* design-system-ignore bareElement: same reasoning as the date input above */}
-                    <input /* design-system-ignore bareElement: same reasoning as the date input above */
+                    <FormControl
+                        as="input"
                         ref={timeInput}
                         type="time"
-                        class={`ui-input ${styles.timeInput}`}
+                        class={styles.timeInput}
                         value={time()}
                         onChange={e => {
                             const v = e.currentTarget.value
