@@ -76,7 +76,10 @@
    `[` + glyph + `]` instead of being pinned to this 18px square — pinned, the brackets overflowed
    the box both ways (it centres its content), overlapping each other and clipping the first `[`
    against `.vb-lead`'s overflow edge. Unset everywhere else, so every other bar is unchanged. */
-.viewbar [data-kind="icon"][data-size="sm"] { width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
+/* `min-width`, not `width` (one-button Task 1, same reasoning as Button.module.css's own
+   `.btn--icon.btn--sm` comment): the icon now sits between `[`/`]` bracket glyphs, which are wider
+   than the bare 18px square this rule used to pin, so a fixed `width` clipped the brackets. */
+.viewbar [data-kind="icon"][data-size="sm"] { min-width: var(--iconbar-width, var(--bar-icon-size)); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why
@@ -227,7 +230,15 @@
         `title`, so the label was a convenience rather than the only signal — and it squares up
         instead of keeping text padding around nothing. */
   .viewbar [data-bar-label='early'] { display: none; }
-  .viewbar .vbtn:has(> [data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
+  /* Matches ANY Button-family control by its data hooks, not just VBtn (one-button Task 1).
+     `IconTextButton` renders `kind="text"`, and Button.tsx wraps its children in an inner
+     `.textLabel` span — the BarLabel sits two levels down from the root, so this has to be a
+     descendant `:has()`, never `> `. `.vbtn` stays alongside it (not replaced) until Task 10
+     deletes the VBtn family once every call site has migrated. No extra rule is needed to close
+     the gap `.textLabel`'s own `gap` would otherwise leave: `gap` only spaces RENDERED flex
+     children, and hiding the label leaves the icon as the sole visible child. */
+  .viewbar .vbtn:has(> [data-bar-label='early']),
+  .viewbar [data-kind="text"]:has([data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 650px) {
   /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
@@ -285,7 +296,9 @@
 @container viewbar (max-width: 480px) {
   /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
   .viewbar [data-bar-label='late'] { display: none; }
-  .viewbar .vbtn:has(> [data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
+  /* Same widening as the 'early' tier above — see its comment. */
+  .viewbar .vbtn:has(> [data-bar-label='late']),
+  .viewbar [data-kind="text"]:has([data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 465px) {
   /* DROP 1 — the LAST whole control goes, because there are no words left to shed. The region wrapper
