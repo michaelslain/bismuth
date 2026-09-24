@@ -77,7 +77,7 @@ export const Row: Story = {
         // register under the same `.row`, so a theme change moves both and the comparison holds.
         const paint = (testid: string) => {
             const trigger = canvasElement.querySelector<HTMLElement>(
-                `[data-testid="${testid}"] .ui-select-trigger`,
+                `[data-testid="${testid}"] [data-select-trigger]`,
             )!
             const cs = getComputedStyle(trigger)
             return { color: cs.color, border: cs.borderTopColor }

@@ -239,7 +239,7 @@ function Modal(props: ModalProps) {
             >
                 <div
                     class={[
-                        'asc-modal',
+                        styles['asc-modal'],
                         props.class,
                         props.panelClass,
                     ]

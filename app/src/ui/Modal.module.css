@@ -1,11 +1,16 @@
 /* app/src/ui/Modal.module.css — the portal-mounted backdrop/scrim Modal.tsx renders behind its
    panel, plus the inner panel's own `.asc-modal` chrome. Moved in from ui/ui.css (2026-09-12,
    CSS modules migration Task 7; `.asc-modal` joined it from ui.css in one-global-stylesheet
-   Task 7) — Modal.tsx is the sole reader of both anywhere in the app. `.asc-modal` is still
-   reached via `:global()` from palette/Palette.module.css
-   (`.palette-panel:global(.asc-modal)`), so it stays a `:global()` bridge here rather than a
-   hashed local — hashing it would silently unstyle the palette (module classes are hashed at
-   build time, so a stale literal compiles, renders and matches nothing, with no error). */
+   Task 7) — Modal.tsx is the sole reader of both anywhere in the app. `.asc-modal` is now
+   Modal's own hashed local (ds-bridges Task 4) — applied via `styles['asc-modal']`. It was kept
+   global until this task only because palette/PaletteFrame.module.css's former
+   `.palette-panel:global(.asc-modal)` specificity-bump rule reached it; that compound rule was
+   already deleted (one-global-followups Task 2) — PaletteFrame now takes its size/font from its
+   own `.palette-panel` local and its surface from `<Modal>` composing this file directly, so
+   nothing outside this file reaches `.asc-modal` by name anymore. FormModal.module.css's own
+   `.panel[data-modal-panel]` rule neutralises this chrome on FormModal instances via the
+   `data-modal-panel` runtime hook (Modal.tsx stamps it on the same element) rather than a
+   `:global()` compound. */
 .ui-overlay {
   position: fixed;
   inset: 0;
@@ -27,5 +32,4 @@
    elevation shadow, radius 0 — the chrome every dialog and floating panel in the app inherits.
    `.asc-modal` sits behind `.ui-overlay`'s scrim (--overlay-bg), which already separates it
    from whatever was open underneath, so it stays fully flat: fill + hairline, nothing else. */
-/* design-system-ignore globalReach: Modal's own class, temporary :global() bridge to palette/Palette.module.css's `.palette-panel:global(.asc-modal)`, until wave 2 */
-:global(.asc-modal) { background: var(--pop-bg-strong); border: var(--rule); border-radius: var(--r-0); }
+.asc-modal { background: var(--pop-bg-strong); border: var(--rule); border-radius: var(--r-0); }

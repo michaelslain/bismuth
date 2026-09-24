@@ -150,3 +150,32 @@ export const FocusesRequestedProperty: Story = {
         })
     },
 }
+
+/** `focusTarget` set to a SELECT-typed property (`status`) — proves the post-hashing
+ *  querySelector list (`input, textarea, [data-select-trigger], button`,
+ *  ds-bridges Task 4) still lands focus on Select's trigger button once `.ui-select-trigger`
+ *  stopped being a literal class this query could ever match (Review Focus 5). */
+export const FocusesSelectProperty: Story = {
+    render: () => (
+        <CardEditModal
+            row={SAMPLE_ROWS[1]}
+            titleCol="file.name"
+            metaCols={metaCols}
+            config={config}
+            focusTarget="status"
+            siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
+            onRename={noop}
+            onSetMeta={noop}
+            onDelete={noop}
+            onClose={noop}
+        />
+    ),
+    play: async () => {
+        // Same Portal caveat as `Default` above: read document.body, not canvasElement.
+        await waitFor(() => {
+            const active = document.activeElement as HTMLElement | null
+            expect(active).not.toBeNull()
+            expect(active!.hasAttribute('data-select-trigger')).toBe(true)
+        })
+    },
+}
