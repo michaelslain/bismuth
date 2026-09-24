@@ -2030,13 +2030,18 @@ export function createServer(cfg: CoreConfig) {
         },
 
         // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
-        // frontmatter in the shared <home>/{crons,processes}/<name>.md), and run a cron on
-        // command (drops a trigger file the daemon polls). These mutate the
-        // daemon's shared files, NOT the vault — so, like POST /daemon/setup and the /relay/*
-        // hooks, they live in the READ routes (no vault-cache invalidation; the frontend
-        // re-polls /daemon/snapshot). Unknown name → setCronEnabled/runCron throw AppError
-        // ("ENOENT") → 404 via the dispatch catch.
+        // frontmatter in the shared <home>/{crons,processes}/<name>.md), run a cron on command
+        // (drops a trigger file the daemon polls), and create a cron/process definition from a
+        // template. These mutate the daemon's shared files, NOT the vault — so, like
+        // POST /daemon/setup and the /relay/* hooks, they live in the READ routes (no
+        // vault-cache invalidation; the frontend re-polls /daemon/snapshot). Unknown name →
+        // setCronEnabled/runCron throw AppError ("ENOENT") → 404 via the dispatch catch.
+        // Owner-gated, all seven of them (these five plus the two deletes below): CORS is `*`,
+        // so any local page could otherwise flip/run/create/delete a service or cron. The
+        // daemon itself never calls these routes — it acts on its own files directly and,
+        // for anything vault-facing, through the headless CLI — so gating loses it nothing.
         'POST /daemon/cron/toggle': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name, enabled } = (await req.json()) as {
                 name?: string
                 enabled?: boolean
@@ -2048,6 +2053,7 @@ export function createServer(cfg: CoreConfig) {
         },
 
         'POST /daemon/cron/run': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
             if (!name) return error('missing name', 400)
             runCron(name, vaultDaemonDir(cfg.vault))
@@ -2055,6 +2061,7 @@ export function createServer(cfg: CoreConfig) {
         },
 
         'POST /daemon/process/toggle': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name, enabled } = (await req.json()) as {
                 name?: string
                 enabled?: boolean
@@ -2065,12 +2072,12 @@ export function createServer(cfg: CoreConfig) {
             return ok({ ok: true })
         },
 
-        // Create a new cron/process definition from a template (slug = kebab-case of `name`).
         // Response `{ ok: true, file }` — `file` is the slug, matching every other accessor's
         // `file` field. Empty/invalid slug → `createCron`/`createProcess` throw AppError
         // ("EINVAL") → 400; a clashing slug → AppError("EEXIST") → 409, both via the dispatch
         // catch, same as the toggle/run routes above.
         'POST /daemon/cron/create': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
             if (typeof name !== 'string' || !name) return error('missing name', 400)
             return ok({
@@ -2080,6 +2087,7 @@ export function createServer(cfg: CoreConfig) {
         },
 
         'POST /daemon/process/create': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
             if (typeof name !== 'string' || !name) return error('missing name', 400)
             return ok({
@@ -2090,7 +2098,6 @@ export function createServer(cfg: CoreConfig) {
 
         // Delete a cron/process definition. Response `{ ok: true }`. Unknown name → 404; a
         // running cron → 409 (EBUSY) via the dispatch catch, same as the routes above.
-        // Owner-gated: CORS is `*`, so any local page could otherwise delete a service/cron.
         'POST /daemon/cron/delete': async req => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const { name } = (await req.json()) as { name?: string }
