@@ -358,7 +358,7 @@ function migrateLegacyAppearance(doc: Document): boolean {
         ['appearance', 'editorFontSize'],
         ['appearance', 'uiFontSize'],
         ['appearance', 'tabFontSize'],
-        ['appearance', 'toolbarIconSize'],
+        ['appearance', 'iconSize'],
         ['appearance', 'paletteInputFontSize'],
         ['appearance', 'monoScale'],
         ['appearance', 'sidebarWidth'],
@@ -429,7 +429,8 @@ function carryComment(
 // runs FIRST in reconcileSettings — before fillMissing — because fillMissing would otherwise see
 // the new key missing and seed it from the schema default, discarding the user's old value.
 const RENAMED_KEYS: readonly { from: readonly string[]; to: string }[] = [
-    { from: ['appearance', 'sidebarIconFontSize'], to: 'toolbarIconSize' },
+    { from: ['appearance', 'sidebarIconFontSize'], to: 'iconSize' },
+    { from: ['appearance', 'toolbarIconSize'], to: 'iconSize' },
 ]
 
 /**

@@ -439,7 +439,7 @@ function ToolbarButton(props2: {
 }
 ```
 
-Neither caller passes a size: both rows render inside `ui/IconBar`, which sizes every button from `appearance.toolbarIconSize`.
+Neither caller passes a size: both rows render inside `ui/IconBar`, which sizes every button from `appearance.iconSize`.
 
 Behavior of the current renderer:
 

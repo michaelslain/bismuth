@@ -77,7 +77,7 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                 >
                     {label()}
                 </Text>
-                <Icon value="Calendar" size={14} class={styles.icon} />
+                <Icon value="Calendar" class={styles.icon} />
             </FormControl>
             <AnchoredPopover
                 anchor={() => triggerRef}

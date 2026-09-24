@@ -170,9 +170,9 @@ function SidebarColumn(props: {
     )
 }
 
-/** Candidate single icon sizes judged IN CONTEXT — the sidebar toolbar and file-tree rows next to
- *  the real 11.5px `--fs-ui` chrome text — plus today's mixed state for reference. A design aid
- *  for picking the one app-wide icon size, not a component variant. */
+/** The app's ONE icon size judged IN CONTEXT — the sidebar toolbar and file-tree rows next to the
+ *  real 11.5px `--fs-ui` chrome text — at the default and at two larger `appearance.iconSize`
+ *  values, so a change to the setting can be previewed before it is made. */
 export const SizesInContext: Story = {
     render: () => (
         <div
@@ -182,14 +182,9 @@ export const SizesInContext: Story = {
                 'align-items': 'flex-start',
             }}
         >
-            <SidebarColumn
-                title="today // toolbar 12px, tree 14px"
-                toolbar={12}
-                tree={14}
-            />
-            <SidebarColumn title="12px everywhere" toolbar={12} tree={12} />
-            <SidebarColumn title="13px everywhere" toolbar={13} tree={13} />
-            <SidebarColumn title="14px everywhere" toolbar={14} tree={14} />
+            <SidebarColumn title="12px // the default" toolbar={12} tree={12} />
+            <SidebarColumn title="14px" toolbar={14} tree={14} />
+            <SidebarColumn title="16px" toolbar={16} tree={16} />
         </div>
     ),
 }

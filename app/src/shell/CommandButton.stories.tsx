@@ -18,7 +18,7 @@
 // FOUR STORIES: `Default` at rest. `WithBadge` — the only story rendering `.toolbar-badge` at a
 // default size, on a dark surface so its `color: var(--bg)` on `background: var(--accent)` is
 // legible. `Disabled` — the unknown-command fallback path, which also wraps in
-// `.toolbar-btn-wrap`. `WithBadgeLarge` — the same badge at `toolbarIconSize` 20 (the schema's
+// `.toolbar-btn-wrap`. `WithBadgeLarge` — the same badge at `iconSize` 20 (the schema's
 // upper bound) with a neighbour button on each side, proving the badge's fixed `--sp-1` corner
 // inset (not a percentage of its own size) still clears the `--sp-2` inter-button gap and never
 // touches either neighbour's bracket (Acceptance 6).
@@ -75,7 +75,7 @@ export const Disabled: Story = {
     ),
 }
 
-/** The badge at the schema's largest `toolbarIconSize` (20px) and smallest (11px), each with a
+/** The badge at the schema's largest `iconSize` (20px) and smallest (11px), each with a
  *  neighbour button on either side — proves the badge (now laid out in-flow after its button,
  *  Task 3 fix round 2) never covers either neighbour's `[`/`]` at the size extremes the setting
  *  allows. BOTH bars are built INLINE, directly as children of their own `<IconBar>`, inside this

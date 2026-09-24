@@ -22,8 +22,8 @@ export default function ChatThinkingBlock(props: ChatThinkingBlockProps) {
                 class={styles['chat-thinking-head']}
                 onClick={() => setOpen(!open())}
             >
-                <Icon value={open() ? 'ChevronDown' : 'ChevronRight'} size={13} />
-                <Icon value="Brain" size={13} />
+                <Icon value={open() ? 'ChevronDown' : 'ChevronRight'} />
+                <Icon value="Brain" />
                 <Text as="span" size="ui" tone="faint">
                     Thinking
                 </Text>

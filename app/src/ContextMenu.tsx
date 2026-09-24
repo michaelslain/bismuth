@@ -248,7 +248,7 @@ export function ContextMenu(props: {
                                     props.onClose()
                                 }}
                             >
-                                <Icon value={a.icon} size={14} />
+                                <Icon value={a.icon} />
                             </PlainButton>
                         )}
                     </For>

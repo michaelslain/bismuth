@@ -188,7 +188,6 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
         config: (
             <VBtn
                 icon="Zap"
-                iconSize={13}
                 title="Cram: review every card, no scheduling changes"
                 active={state.cram()}
                 onClick={() => state.onToggleCram()}
@@ -202,7 +201,6 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             <Show when={state.canEditCards()}>
                 <VBtn
                     icon="Layers"
-                    iconSize={13}
                     title="Browse, add, edit, and delete every card in this deck"
                     onClick={() => state.onCards()}
                 >
@@ -517,14 +515,12 @@ export function FlashcardsView(props: {
             <IconButton
                 icon="Pencil"
                 label="Edit this card"
-                iconSize={13}
                 onClick={openCardEdit}
                 class={styles['card-action-btn']}
             />
             <IconButton
                 icon="Trash2"
                 label="Delete this card"
-                iconSize={13}
                 onClick={deleteCurrent}
                 class={styles['card-action-btn']}
             />
@@ -739,7 +735,7 @@ export function FlashcardsView(props: {
                                     weight="inherit"
                                     class={styles['inline-bolt']}
                                 >
-                                    <Icon value="Zap" size={14} />
+                                    <Icon value="Zap" />
                                 </Text>{' '}
                                 button to review everything anyway.
                             </Show>

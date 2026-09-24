@@ -16,7 +16,7 @@
    ANCHOR (toolbar-iconbar plan, Task 3 fix round 2 — a decision, see `.toolbar-badge` below for
    why two absolute-overlay attempts were abandoned). The badge is a flex sibling after the
    button, never stacked on top of it, so it can never cover a bracket glyph — its own or a
-   neighbour's — regardless of `toolbarIconSize` (11–20) or digit count. */
+   neighbour's — regardless of `iconSize` (11–20) or digit count. */
 .toolbar-btn-wrap { display: inline-flex; align-items: center; gap: var(--sp-1); }
 /* Appearance (font-size/weight/line-height/color/background/border-radius/padding) moved to
    ui/Badge.tsx (`<Badge variant="solid">`) — this class stays empty on purpose (kept as a

@@ -43,7 +43,7 @@ export interface Settings {
         uiFontSize: number // px
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
         tabFontSize: number // px
-        toolbarIconSize: number // px
+        iconSize: number // px
         paletteInputFontSize: number // px
     }
     graph: {

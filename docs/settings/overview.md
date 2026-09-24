@@ -181,7 +181,7 @@ interface SchemaEntry {
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
-| `toolbarIconSize` | number | `12` | 11–20 | Toolbar icon size in px for every icon toolbar — the sidebar row, the tab-rail actions and the mini-graph mode switcher. Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
+| `iconSize` | number | `12` | 11–20 | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
 | `paletteInputFontSize` | number | `15` | 13–18 | Command palette search-input font size in px. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.

@@ -186,7 +186,6 @@ export function CategoryPanel(props: { store: EventStore }) {
                                         <IconButton
                                             icon="x"
                                             label={'Delete ' + c.name}
-                                            iconSize={14}
                                             danger
                                             onClick={() => {
                                                 handleDelete(c.name)
@@ -202,7 +201,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                     {/* new category — separated dashed card */}
                     <div class={styles['cat-add']}>
                         <div class={styles['cat-add-head']}>
-                            <Icon value="plus" size={12} strokeWidth={2.2} />
+                            <Icon value="plus" strokeWidth={2.2} />
                             new category
                         </div>
                         <div class={styles['cat-newrow']}>

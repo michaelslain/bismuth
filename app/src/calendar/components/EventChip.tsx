@@ -145,7 +145,6 @@ export function EventChip(props: Props) {
                             icon="Link"
                             label="Open link"
                             class={styles['event-chip-link']}
-                            iconSize={12}
                             onClick={e => {
                                 e.stopPropagation()
                                 window.open(props.event.link!, '_blank')

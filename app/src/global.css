@@ -306,13 +306,12 @@
      action bar all share this one number. */
   --note-column: 620px;
 
-  /* ── Icon size — NEW (§9.5). ONE size, stricter than §2.2's original 3-step sm/md/lg proposal
-     ("we should just have one size i feel no?"). --icon-sm and --icon-lg are deliberately NOT
-     created — a genuinely oversized empty-state mark sets its own literal at the call site with
-     a comment, and does not get a token. No current call site references --icon yet; the six
-     existing sizes (12/13/14/15/16/18, incl. IconButton.tsx's ICON_PX=12 and Icon.tsx's default)
-     all collapse onto it in a later wave. */
-  --icon: 14px;
+  /* ── Icon size — ONE size for every icon in the app ("we should just have one size i feel no?";
+     picked as 12px 2026-09-24). The live value is `appearance.iconSize`, projected over this by
+     settingsCssVars.ts; this is only the pre-hydration default. JS glyph sizes read the same
+     setting through ui/iconSize.ts. There is no --icon-sm/-lg: a genuinely oversized illustration
+     mark sets its own literal with an `icon-size-exempt:` comment (ui/iconSizeLint.test.ts). */
+  --icon: 12px;
 
   /* ── State — NEW (§2.2's state table, verified against the values already in effect where an
      equivalent exists: --hover-bg (settingsCssVars.ts) is already exactly this 8% mix, so

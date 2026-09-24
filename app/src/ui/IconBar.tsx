@@ -1,6 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
 import { IconBarContext } from './iconBarContext'
-import toolbarIconSize from './toolbarIconSize'
+import iconSize from './iconSize'
 import styles from './IconBar.module.css'
 
 // The unified icon-toolbar primitive (toolbar-iconbar plan). Every icon toolbar in the app — the
@@ -18,7 +18,7 @@ export type IconBarProps = {
     /** true: a chrome band, min-height var(--h-band), 0 var(--sp-5) side padding, 1px var(--border-soft)
      *  bottom hairline. false (default): an inline group inside another bar, e.g. a ViewBar slot. */
     band?: boolean
-    /** Glyph px for every IconButton inside. Default toolbarIconSize(). Stories pass it; app code never does. */
+    /** Glyph px for every IconButton inside. Default iconSize() — the app's one icon size. Stories pass it; app code never does. */
     iconSize?: number
     class?: string
 } & Omit<
@@ -40,17 +40,17 @@ const IconBar: Component<IconBarProps> = props => {
         'class',
         'style',
     ])
-    const iconSize = () => local.iconSize ?? toolbarIconSize()
+    const glyph = () => local.iconSize ?? iconSize()
     const style = (): JSX.CSSProperties | string => {
-        const glyph = { '--iconbar-glyph': `${iconSize()}px` }
-        if (!local.style) return glyph
+        const vars = { '--iconbar-glyph': `${glyph()}px` }
+        if (!local.style) return vars
         if (typeof local.style === 'string') {
-            return `${local.style};--iconbar-glyph:${iconSize()}px`
+            return `${local.style};--iconbar-glyph:${glyph()}px`
         }
-        return { ...local.style, ...glyph }
+        return { ...local.style, ...vars }
     }
     return (
-        <IconBarContext.Provider value={{ iconSize }}>
+        <IconBarContext.Provider value={{ iconSize: glyph }}>
             <div
                 role="toolbar"
                 aria-label={local.label}

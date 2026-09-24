@@ -29,9 +29,7 @@ export type ChatSetupProps = {
 const ChatSetup: Component<ChatSetupProps> = props => (
     <div class={styles['chat-setup']}>
         <div class={styles['chat-setup-icon']}>
-            {/* iconSize is IconButton's sanctioned per-call escape hatch for an oversized
-                illustration mark (visual-unification audit §9.5) — not a bare <Icon size=>
-                override. */}
+            {/* icon-size-exempt: the chat-setup screen's oversized illustration mark, not chrome */}
             <IconButton icon={props.icon} label={props.iconLabel} iconSize={28} disabled />
         </div>
         <Heading level={3}>{props.heading}</Heading>

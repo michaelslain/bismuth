@@ -360,11 +360,14 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
   — `13.5` is the design system's own prose size (`--fs-body-lg`, `ui.css`), deliberately off the
   `11.5px` chrome scale because chrome is scanned and prose is read. The `18px` row unit
   (`--row-h`) is unaffected, so a line of prose still lands on the same grid as a tree row or a tab.
-- **`toolbarIconSize` is `12`, not `11.5`.** It sits above the `11.5px` `--fs-ui` chrome **text**
+- **`iconSize` is `12`, not `11.5`.** It sits above the `11.5px` `--fs-ui` chrome **text**
   size because an icon needs more room than a label at the same optical weight.
 
-  **Every icon toolbar reads this key** — the sidebar row, the tab-rail actions and the mini-graph
-  mode switcher, all through `app/src/ui/toolbarIconSize.ts`'s getter, not a CSS var. Older wording
+  **It is the app's ONE icon size.** Every icon reads it — `icons/Icon.tsx`, `ui/IconButton.tsx`,
+  `ui/IconBar.tsx` and the other icon-bearing primitives default to `app/src/ui/iconSize.ts`'s
+  getter, and it is also projected as the `--icon` CSS token for box sizes. No call site passes a
+  size; `app/src/ui/iconSizeLint.test.ts` fails on a literal one unless it carries an
+  `icon-size-exempt:` comment (an oversized illustration mark, never chrome). Older wording
   described `12` as an exact half-scale of a 24×24 pixel-icon grid;
   that rationale belonged to the retired pixel-icon set and no longer applies, since icons are now
   Phosphor SVG on a 256×256 native grid (see

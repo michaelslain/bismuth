@@ -251,7 +251,28 @@ describe('editorFont deletion round-trips cleanly: key gone, its comment and an 
     })
 })
 
-describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
+describe('sidebarIconFontSize renamed to iconSize', () => {
+    test('the interim toolbarIconSize key is renamed to iconSize in place, keeping its value', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            ['appearance:', '  # toolbar glyphs', '  toolbarIconSize: 15', ''].join(
+                '\n',
+            ),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const lines = text.split('\n')
+        const idx = lines.findIndex(l => /^\s*iconSize:/.test(l))
+
+        expect(text).not.toContain('toolbarIconSize')
+        expect(lines.filter(l => /^\s*iconSize:/.test(l)).length).toBe(1)
+        expect(lines[idx]).toContain('15')
+        expect(lines[idx - 1]).toContain('# toolbar glyphs')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
     test('a file with only the old key renames it in place, keeping the comment and value', async () => {
         const vault = emptyVault()
         writeFileSync(
@@ -264,10 +285,10 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
         await reconcileSettings(vault)
         const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
         const lines = text.split('\n')
-        const idx = lines.findIndex(l => l.includes('toolbarIconSize'))
+        const idx = lines.findIndex(l => l.includes('iconSize'))
 
         expect(text).not.toContain('sidebarIconFontSize')
-        expect(lines.filter(l => l.includes('toolbarIconSize')).length).toBe(1)
+        expect(lines.filter(l => l.includes('iconSize')).length).toBe(1)
         expect(lines[idx]).toContain('18')
         expect(lines[idx - 1]).toContain('# my icons')
         rmSync(vault, { recursive: true, force: true })
@@ -280,7 +301,7 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
             [
                 'appearance:',
                 '  sidebarIconFontSize: 18',
-                '  toolbarIconSize: 15',
+                '  iconSize: 15',
                 '',
             ].join('\n'),
         )
@@ -290,9 +311,9 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
 
         expect(text).not.toContain('sidebarIconFontSize')
         expect(
-            text.split('\n').filter(l => l.includes('toolbarIconSize')).length,
+            text.split('\n').filter(l => l.includes('iconSize')).length,
         ).toBe(1)
-        expect(text).toContain('toolbarIconSize: 15')
+        expect(text).toContain('iconSize: 15')
         rmSync(vault, { recursive: true, force: true })
     })
 
@@ -316,7 +337,7 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
             join(vault, SETTINGS_FILE),
             [
                 'appearance:',
-                '  toolbarIconSize: 15',
+                '  iconSize: 15',
                 '  # my icon comment',
                 '  sidebarIconFontSize: 18',
                 '',
@@ -337,7 +358,7 @@ describe('sidebarIconFontSize renamed to toolbarIconSize', () => {
             join(vault, SETTINGS_FILE),
             [
                 'appearance:',
-                '  toolbarIconSize: 15',
+                '  iconSize: 15',
                 '  sidebarIconFontSize: 18 # note',
                 '',
             ].join('\n'),

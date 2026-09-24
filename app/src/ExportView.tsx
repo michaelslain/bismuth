@@ -523,7 +523,7 @@ export function ExportView(props: {
 
             <div class={styles.exppanel}>
                 <div class={styles['exp-title']}>
-                    <Icon value="Share" size={17} /> Export{' '}
+                    <Icon value="Share" /> Export{' '}
                     {isBase() ? 'base' : 'note'}
                 </div>
 
@@ -546,7 +546,6 @@ export function ExportView(props: {
                         />
                         <IconTextButton
                             icon="FolderOpen"
-                            iconSize={13}
                             onClick={browseSource}
                         >
                             browse
@@ -569,7 +568,6 @@ export function ExportView(props: {
                         />
                         <IconTextButton
                             icon="FolderOpen"
-                            iconSize={13}
                             onClick={browseDest}
                         >
                             browse
@@ -606,7 +604,6 @@ export function ExportView(props: {
                                     <Chip
                                         selected={mode() === m}
                                         icon={MODE_ICON[m]}
-                                        iconSize={13}
                                         onClick={() => pickMode(m)}
                                     >
                                         {MODE_LABEL[m]}
@@ -646,7 +643,6 @@ export function ExportView(props: {
                             <Show when={calStart()}>
                                 <IconTextButton
                                     icon="RotateCcw"
-                                    iconSize={13}
                                     onClick={() => setCalStart('')}
                                 >
                                     today
@@ -690,7 +686,6 @@ export function ExportView(props: {
                                 <Chip
                                     selected={format() === f}
                                     icon={FORMAT_ICON[f]}
-                                    iconSize={13}
                                     onClick={() => setFormat(f)}
                                 >
                                     {LABEL[f]}
@@ -771,7 +766,6 @@ export function ExportView(props: {
                 <div class={styles['exp-footer']}>
                     <IconTextButton
                         icon="Download"
-                        iconSize={14}
                         primary
                         disabled={busy()}
                         onClick={doExport}

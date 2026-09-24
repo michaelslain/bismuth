@@ -297,6 +297,8 @@
      mouse one. The icon itself is unchanged, so nothing about the mark's optical size moves; only
      the hit area grows, and --h-control is already 24px so the button now matches the height every
      other control in a toolbar row already has.
+     `max(var(--h-control), …)` (one-icon-size, 2026-09-24): --icon dropped to 12px, and 12 + 10 is
+     22px — under that same floor — so the box never shrinks below --h-control whatever the setting.
      `min-width`, not `width` (IconButton brackets task): the box used to be a fixed square, but the
      bracket glyphs now sitting either side of the icon are wider than the icon alone, so a fixed
      square clips them. min-width keeps the WCAG floor for a bracket-less state while letting the
@@ -308,8 +310,8 @@
      `--iconbar-box: var(--bar-icon-size)` (18px) and IconBar.tsx sets `--iconbar-glyph` inline from
      the bar's iconSize number. Fallbacks equal today's values exactly, so a button NOT under any
      bar (Review Focus 3) is byte-identical to before this task. */
-  min-width: var(--iconbar-box, calc(var(--icon) + 10px));
-  height: var(--iconbar-box, calc(var(--icon) + 10px));
+  min-width: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
+  height: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
   padding: 0 var(--sp-1);
   border-radius: var(--r-0);
   font-size: var(--iconbar-glyph, var(--fs-body-lg));

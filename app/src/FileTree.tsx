@@ -1305,7 +1305,6 @@ function Level(props: {
                                           ? 'FolderOpen'
                                           : 'Folder'
                                 }
-                                size={14}
                                 class={styles['ft-icon']}
                             />
                             <VisibilityBadge visibility={child.visibility} />
@@ -1401,7 +1400,6 @@ function Level(props: {
                                     ? 'Table'
                                     : 'FileText'
                             }
-                            size={14}
                             class={styles['ft-icon']}
                         />
                         <VisibilityBadge visibility={child.visibility} />

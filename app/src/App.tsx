@@ -2793,7 +2793,7 @@ export default function App() {
         // No iconSize passed to CommandButton any more (toolbar-iconbar plan, Task 3): every
         // caller of ToolbarButton renders inside a `ui/IconBar` now (the sidebar row, the tab
         // rail's action row), which sizes every button beneath it from one setting,
-        // `appearance.toolbarIconSize`. A caller-supplied `iconSize` prop still exists on
+        // `appearance.iconSize`. A caller-supplied `iconSize` prop still exists on
         // CommandButton and still wins if a future caller genuinely needs a different size than
         // its bar, but nothing here passes one.
         return (
