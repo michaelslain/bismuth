@@ -181,7 +181,7 @@ interface SchemaEntry {
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
-| `sidebarIconFontSize` | number | `12` | 11–20 | Sidebar header icon button size in px. 12, not the 11.5px `--fs-ui` text size: the pixel icons are drawn on a 24x24 grid, so 12 is an exact half-scale landing every stem on whole device pixels. |
+| `toolbarIconSize` | number | `12` | 11–20 | Toolbar icon size in px for every icon toolbar — the sidebar row, the tab-rail actions and the mini-graph mode switcher. Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
 | `paletteInputFontSize` | number | `15` | 13–18 | Command palette search-input font size in px. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
@@ -578,7 +578,6 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `appearance.uiFontSize` | `--ui-font-size` |
 | `appearance.monoScale` | `--mono-scale` |
 | `appearance.tabFontSize` | `--tab-font-size` |
-| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` |
 | `appearance.paletteInputFontSize` | `--palette-input-font-size` |
 | `ui.paletteTopOffset` | `--palette-top-offset` |
 | `ui.paneDividerWidth` | `--pane-divider-width` |

@@ -54,7 +54,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
-| `sidebarIconFontSize` | number | `12` | min `11`, max `20` | Sidebar header icon button size (px). Default 12 — larger than the 11.5px `--fs-ui` chrome TEXT size (`styles/tokens.css`), because an icon needs more room than a label at the same optical weight. Only the sidebar toolbar reads this; the tab-rail toolbar sizes its icons from `ICON_PX` (the app-wide `--icon` token, 14px) and is unaffected by this key. |
+| `toolbarIconSize` | number | `12` | min `11`, max `20` | Toolbar icon size (px) for every icon toolbar — the sidebar row, the tab-rail actions and the mini-graph mode switcher. Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
 | `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 
 Example:

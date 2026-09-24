@@ -358,7 +358,7 @@ function migrateLegacyAppearance(doc: Document): boolean {
         ['appearance', 'editorFontSize'],
         ['appearance', 'uiFontSize'],
         ['appearance', 'tabFontSize'],
-        ['appearance', 'sidebarIconFontSize'],
+        ['appearance', 'toolbarIconSize'],
         ['appearance', 'paletteInputFontSize'],
         ['appearance', 'monoScale'],
         ['appearance', 'sidebarWidth'],
@@ -389,6 +389,56 @@ const RETIRED_KEYS: readonly (readonly string[])[] = [
 /** The pair for `key` in `map`, or undefined. */
 function findPair(map: YAMLMap, key: string) {
     return map.items.find(p => isScalar(p.key) && p.key.value === key)
+}
+
+// Schema keys renamed since an older Bismuth. Each entry names the OLD full path (section, ...,
+// leaf key) and the new leaf key (renames are always within the same section). renameKeys below
+// runs FIRST in reconcileSettings — before fillMissing — because fillMissing would otherwise see
+// the new key missing and seed it from the schema default, discarding the user's old value.
+const RENAMED_KEYS: readonly { from: readonly string[]; to: string }[] = [
+    { from: ['appearance', 'sidebarIconFontSize'], to: 'toolbarIconSize' },
+]
+
+/**
+ * Rename any RENAMED_KEYS pair still present under its old name, in place. When only the old key
+ * exists, the key scalar itself is renamed — which keeps the value, the position and the
+ * `commentBefore` untouched. When BOTH the old and new key are present, the new key's value wins
+ * (never overwritten) and the old pair is deleted, carrying its comment onto whichever pair
+ * shifts into its slot — the same approach `pruneRetiredKeys` uses below. Returns true if
+ * anything was renamed or removed.
+ */
+function renameKeys(doc: Document): boolean {
+    let mutated = false
+    for (const { from, to } of RENAMED_KEYS) {
+        const sectionPath = from.slice(0, -1)
+        const oldKey = from[from.length - 1]
+        const parent = sectionPath.length
+            ? doc.getIn(sectionPath, true)
+            : doc.contents
+        if (!isMap(parent)) continue
+        const oldPair = findPair(parent as YAMLMap, oldKey)
+        if (!oldPair) continue
+        const newPair = findPair(parent as YAMLMap, to)
+        if (newPair) {
+            const comment = isScalar(oldPair.key)
+                ? oldPair.key.commentBefore
+                : undefined
+            const index = (parent as YAMLMap).items.indexOf(oldPair)
+            ;(parent as YAMLMap).delete(oldKey)
+            if (comment) {
+                const carrier = (parent as YAMLMap).items[index]
+                if (carrier && isScalar(carrier.key)) {
+                    carrier.key.commentBefore = carrier.key.commentBefore
+                        ? `${comment}\n${carrier.key.commentBefore}`
+                        : comment
+                }
+            }
+        } else if (isScalar(oldPair.key)) {
+            oldPair.key.value = to
+        }
+        mutated = true
+    }
+    return mutated
 }
 
 /**
@@ -479,11 +529,12 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
         return false
     }
     if (!isMap(doc.contents)) return false // empty/scalar/corrupt — leave alone
+    const renamed = renameKeys(doc) // must run BEFORE fillMissing, or it seeds the new key's default
     const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
     const pruned = pruneRetiredKeys(doc)
-    if (filled || migrated || migratedAppearance || pruned) {
+    if (renamed || filled || migrated || migratedAppearance || pruned) {
         await writeNote(
             vault,
             SETTINGS_FILE,
