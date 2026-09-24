@@ -195,9 +195,11 @@ export interface GraphConfig {
      * notes and their real edges (lod.ts, backbone.ts `bandsForT`).
      *
      * Not a settings-backed field — no settingsSchema entry. GraphView sets it directly whenever the
-     * mode is not "local", which makes it the app's shipped default view. With it off, every node
-     * draws as a glyph at every stop and the hierarchy reads through zoom-driven node COLOUR plus the
-     * cluster-name ladder instead.
+     * mode is not "local" and its `[clusters]` toggle is on (graph/graphLayers.ts), which makes it the
+     * app's shipped default view. With it explicitly `false`, every node draws as a glyph at every
+     * stop AND the field is labelled like a flat graph — note names at every zoom, no cluster-name
+     * ladder — in 2D and 3D alike (`layoutLabels`). Left undefined (the intro graph, ```graph blocks),
+     * the masses stay off but the cluster-name ladder is kept.
      *
      * "local" mode must keep it OFF: a local neighbourhood carries no community hierarchy by design
      * (displayGraph.ts's `localSubgraph` strips it), and the LOD path suppresses the individual-note

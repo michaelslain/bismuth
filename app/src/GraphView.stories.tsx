@@ -15,8 +15,8 @@
 //
 // GraphAtmosphere (the phosphor-bloom layer) is NOT storied standalone — it paints from a live
 // per-frame BloomSink the renderer feeds it, so alone it would show only a static vignette. It
-// mounts unconditionally inside GraphView itself, so every story below exercises it as a real
-// layer for free.
+// mounts inside GraphView while the [gradient] toggle (graph/graphLayers.ts) is on — the default —
+// so every story below exercises it as a real layer for free unless the story turns it off.
 //
 // `visible` pauses the renderer's rAF loop (in the app it stops a hidden sidebar slot from
 // burning frames while the main pane shows the graph). Storybook only ever mounts one story's
@@ -24,11 +24,12 @@
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
-import { sampleGraphData } from './ui/_graphFixtures'
+import { SAMPLE_HUB_ID, sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
+import { setGraphClusters, setGraphGradient } from './graph/graphLayers'
 
 const meta = {
     title: 'Graph/GraphView',
@@ -41,6 +42,15 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+// Both layer signals are MODULE-LEVEL (graph/graphLayers.ts) and shared by every GraphView instance
+// in this iframe — Storybook navigates between stories without reloading, so a story that leaves
+// them flipped leaks into whichever story renders next. Every story below calls this at the top of
+// its `render`, before mounting anything, so each one is deterministic regardless of click order.
+const resetLayers = () => {
+    setGraphClusters(true)
+    setGraphGradient(true)
+}
+
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // Calendar/MonthView.stories.tsx's own note on this), and `.graph-root` fills its parent's
 // height (App.css `.graph-root { height: 100% }`).
@@ -51,18 +61,21 @@ const STORY_H = '640px'
  *  renders GraphView (App.tsx's one call site never omits it); the 1:1-square fallback only
  *  the `mini` story below exists for cases that don't pass it. */
 export const Default: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <GraphView
-                graph={sampleGraphData(8)}
-                onOpen={noop}
-                mode="2nd"
-                setMode={noop}
-                active={null}
-                fill
-            />
-        </div>
-    ),
+    render: () => {
+        resetLayers()
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={sampleGraphData(8)}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={null}
+                    fill
+                />
+            </div>
+        )
+    },
 }
 
 /** A 60-note graph — same fixture, much larger — to see the field's respacing, hub labelling,
@@ -70,6 +83,7 @@ export const Default: Story = {
  *  generated note ids so the active-file highlight has something real to draw. */
 export const LargerGraph: Story = {
     render: () => {
+        resetLayers()
         const graph = sampleGraphData(60)
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -95,18 +109,21 @@ export const LargerGraph: Story = {
  *  and the stray `.graph-find-panel { border-radius: 11px; backdrop-filter: blur(10px) }` bug
  *  the material-unification pass fixed was reachable only in the live app. */
 export const FindPanelOpen: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <GraphView
-                graph={sampleGraphData(8)}
-                onOpen={noop}
-                mode="2nd"
-                setMode={noop}
-                active={null}
-                fill
-            />
-        </div>
-    ),
+    render: () => {
+        resetLayers()
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={sampleGraphData(8)}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={null}
+                    fill
+                />
+            </div>
+        )
+    },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const findButton = await canvas.findByText('find')
@@ -132,6 +149,7 @@ export const FindPanelOpen: Story = {
  */
 export const MiniLocal: Story = {
     render: () => {
+        resetLayers()
         const graph = sampleGraphData(8)
         return (
             <div style={{ height: '305px', width: '266px' }}>
@@ -249,6 +267,7 @@ let miniSwitcherOwned = false
 
 export const MiniModeSwitcher: Story = {
     render: () => {
+        resetLayers()
         // OWNER CHECK, ASSERTED IN play() BELOW — this is the whole safety of the restore.
         // `onCleanup` only ever runs if it was registered under a reactive owner; called without
         // one it is a NO-OP that Solid does not throw on, so the restore would silently never
@@ -330,10 +349,10 @@ export const MiniModeSwitcher: Story = {
  * - The hover pill only renders while the mouse is genuinely over a node (`hovered()`, set by the
  *   renderer's own `pointermove` listener on `window` — see AsciiGraphRenderer.ts). There is no
  *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
- *   the canvas. That lands on the self ("You") node deterministically, not by luck:
+ *   the canvas. That lands on the index hub note (`SAMPLE_HUB_ID`) deterministically, not by luck:
  *   `sampleGraphData(8)` and its layout (`computeLayout`) are pure functions of fixed inputs, and
- *   the self node sits at the layout's centroid (it links to every other node) — the renderer
- *   fits+centers the world in the canvas regardless of aspect ratio, so the self node's cell stays
+ *   the hub sits at the layout's centroid (it links to every other note) — the renderer
+ *   fits+centers the world in the canvas regardless of aspect ratio, so the hub's cell stays
  *   under the canvas's own center point at this width just as it did at the old 480px one
  *   (verified empirically the same way: the center always lands inside a node's cell).
  * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
@@ -342,32 +361,35 @@ export const MiniModeSwitcher: Story = {
  * - The trailing assertions check the ruling's own claims directly: "bottoms aligned" — the hover
  *   pill and the `.graph-stats` box share the same CSS `bottom` (6px) / flex `align-items: center`,
  *   which pins both boxes' bottom edges to the same Y regardless of their differing heights/padding
- *   — and "never overlaps" (fix-2-4, ds-polish): the SELF node's label is overridden to 61 chars,
- *   a length nothing bounded the hover pill's width against before `.graph-stats` moved off
+ *   — and "never overlaps" (fix-2-4, ds-polish): the hub note's id is renamed to a 61-char
+ *   title, a length nothing bounded the hover pill's width against before `.graph-stats` moved off
  *   `position: absolute` to become the bottom bar's last flex child (GraphView.module.css). A
  *   local fixture override, not a change to `sampleGraphData` itself, which every other story here
- *   also uses — `hoverLabel()` (GraphView.tsx) returns a 'self' node's `label` verbatim, so
- *   overriding it is the deterministic way to grow the hover pill's text without disturbing which
- *   node the centered pointermove below lands on (still the self node, still at the canvas center,
- *   same guarantee the doc comment above already established).
+ *   also uses — `hoverLabel()` (GraphView.tsx) shows a note as `<id>.md`, so renaming the hub's id
+ *   (and the edges that name it) is the deterministic way to grow the hover pill's text without
+ *   disturbing which node the centered pointermove below lands on (still the hub, still at the
+ *   canvas center, same guarantee the doc comment above already established).
  */
 const LONG_HOVER_LABEL =
     'Quarterly North American Expansion Planning And Budget Review'
 
 export const HudBadges: Story = {
     render: () => {
+        resetLayers()
         const previousShowFps = settings.graph.showFps
         setSettings('graph', 'showFps', true)
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
 
         const graph = sampleGraphData(8)
+        const rename = (id: string) =>
+            id === SAMPLE_HUB_ID ? LONG_HOVER_LABEL : id
         const longLabelGraph = {
-            ...graph,
-            nodes: graph.nodes.map(node =>
-                node.kind === 'self'
-                    ? { ...node, label: LONG_HOVER_LABEL }
-                    : node,
-            ),
+            nodes: graph.nodes.map(node => ({ ...node, id: rename(node.id) })),
+            edges: graph.edges.map(e => ({
+                ...e,
+                from: rename(e.from),
+                to: rename(e.to),
+            })),
         }
 
         return (
@@ -448,9 +470,74 @@ export const HudBadges: Story = {
         // pill's right edge stays clear of the readout's left edge — the regression this story
         // exists to catch. Before the readout moved off `position: absolute`, nothing bounded the
         // pill's width above 520px and a label this long painted straight over the readout text.
-        expect(hoverPill.textContent).toBe(LONG_HOVER_LABEL)
+        expect(hoverPill.textContent).toBe(`${LONG_HOVER_LABEL}.md`)
         expect(hoverPill.getBoundingClientRect().right).toBeLessThanOrEqual(
             stats.getBoundingClientRect().left,
+        )
+    },
+}
+
+/**
+ * THE [clusters]/[gradient] TOGGLES — three stories over a real community hierarchy
+ * (`sampleClusteredGraphData`, six rings of twelve notes each), which `sampleGraphData` never has.
+ * Each sets BOTH layer signals in `render`, before returning JSX — module state leaks across
+ * stories in one Storybook iframe (see `resetLayers` above), so a story cannot rely on whichever
+ * state a previous one left the signals in.
+ */
+const clustered = (clusters: boolean, gradient: boolean) => () => {
+    setGraphClusters(clusters)
+    setGraphGradient(gradient)
+    const graph = sampleClusteredGraphData()
+    return (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <GraphView graph={graph} onOpen={noop} mode="2nd" setMode={noop} active={null} fill />
+        </div>
+    )
+}
+
+/** A real community hierarchy with [clusters] on (the default): zoomed out, each community is one mass. */
+export const Clustered: Story = { render: clustered(true, true) }
+
+/** Same graph, [clusters] off: every note glyph + name at 100% zoom, no masses. */
+export const ClustersOff: Story = { render: clustered(false, true) }
+
+/** [gradient] off: no bloom canvas, no vignette, flat ground. play() turns it back on and the
+ *  atmosphere remounts (Review Focus 1). */
+export const GradientOff: Story = {
+    render: clustered(true, false),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const btn = await c.findByRole('button', { name: /gradient/ })
+        await expect(btn.getAttribute('aria-pressed')).toBe('false')
+        const before = canvasElement.querySelectorAll('canvas').length
+        // The bloom canvas's alpha channel is the ink signal: a field that
+        // never reached it (Finding 1's bug) leaves every pixel transparent.
+        const inked = () => {
+            const b = canvasElement.querySelector(
+                'canvas[data-mode]',
+            ) as HTMLCanvasElement
+            const d = b
+                .getContext('2d')!
+                .getImageData(0, 0, b.width, b.height).data
+            let n = 0
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++
+            return n
+        }
+        await userEvent.click(btn)
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before + 1,
+            ),
+        )
+        await waitFor(() => expect(inked()).toBeGreaterThan(0))
+        // The at-rest replay is pinned renderer-free by GraphAtmosphere's
+        // ReplaysLastFieldOnMount story: live dirty frames make it
+        // unisolatable here.
+        await userEvent.click(btn)
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before,
+            ),
         )
     },
 }

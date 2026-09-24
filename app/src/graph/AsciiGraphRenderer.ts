@@ -3632,8 +3632,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const t = resolutionT(this.res, this.maxRes)
         const cAlpha = clusterLabelAlpha(t)
         const fAlpha = fileLabelAlpha(t)
+        // [clusters] off (GraphView's toggle, graph/graphLayers.ts): the field is a plain every-note graph,
+        // so it is labelled like one — note names at every zoom, no cluster names — in 2D AND 3D (3D has
+        // no masses to drop, so its clusters-on look IS the cluster-name ladder; off swaps it for names).
+        // Keyed on an EXPLICIT false so callers that never set the flag (the intro graph, ```graph
+        // blocks) keep the zoom ladder.
+        const flat = this.cfg.showLodMasses === false
 
-        if (cAlpha > 0.01 && this.levelCount > 0) {
+        if (!flat && cAlpha > 0.01 && this.levelCount > 0) {
             const levelAlphas = clusterLevelAlphas(t, this.levelCount)
             for (let L = 0; L < levelAlphas.length; L++) {
                 const a = levelAlphas[L] * cAlpha
@@ -3676,12 +3682,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // opened at fit actually sits in, so dropping only one of them still shows nothing.
         // A flat graph (levelCount === 0, e.g. below the clustering node-count threshold — see
         // engine.ts's stampCommunities) has no cluster names to fall back on at low zoom, so the normal
-        // zoom-gated reveal would leave it blank instead of showing the only content it has.
+        // zoom-gated reveal would leave it blank instead of showing the only content it has. `flat`
+        // (clusters toggled off) shares that same open budget + pinned alpha below, but NOT the
+        // other-side retry or the never-drop skip a few lines down — a large vault with clusters off
+        // must still DROP colliding names rather than draw them over each other.
         const everyNode =
             this.cfg.labelEveryNode === true || this.levelCount === 0
-        const budget = everyNode
-            ? ordered.length
-            : fileLabelBudget(t, ordered.length)
+        const budget =
+            everyNode || flat ? ordered.length : fileLabelBudget(t, ordered.length)
 
         const forced = (nv: NodeView) => {
             const id = nv.node.id
@@ -3755,7 +3763,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 row,
                 color: this.resolveFillColor(colorSlot),
                 accent,
-                alpha: force || everyNode ? 1 : fAlpha,
+                alpha: force || everyNode || flat ? 1 : fAlpha,
                 widthCells: len,
             })
             drawn++

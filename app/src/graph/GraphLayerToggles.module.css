@@ -1,0 +1,8 @@
+/* app/src/graph/GraphLayerToggles.module.css — the [clusters] [gradient] pair in the graph's
+   ViewBar. --sp-4 is the sibling gap every bracket-button family uses (SegmentedToggle's
+   [data-look="bracket"] rule), so the pair reads as one group exactly like [2d] [3d]. */
+.toggles {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
