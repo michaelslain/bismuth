@@ -9,7 +9,6 @@ import {
     onMount,
 } from 'solid-js'
 import { stringify as yamlStringify } from 'yaml'
-import { Icon } from '../icons/Icon'
 import type {
     ViewResult,
     BaseConfig,
@@ -25,7 +24,6 @@ import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
 import TaskRow from './TaskRow'
 import CardFrame from './CardFrame'
-import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
@@ -40,7 +38,7 @@ import {
     flushEditorsAtOrUnder,
     flushSidecarsAtOrUnder,
 } from '../editorRegistry'
-import { appendOrder } from './kanbanOrder'
+import { appendOrder, padCount } from './kanbanOrder'
 import {
     appendColumnKey,
     removeColumnKey,
@@ -1534,9 +1532,11 @@ export function KanbanView(props: {
             reactively; the inner card <For> is path-keyed. `columnKeys()` folds in the optimistic
             reorder so columns settle instantly instead of snapping back during the write round-trip. */}
                 <For each={columnKeys()}>
-                    {key => {
+                    {(key, colIndex) => {
                         const group = () => groupByKey(key)
                         const color = () => colColor(key)
+                        const isLastCol = () =>
+                            colIndex() === columnKeys().length - 1
                         // Exactly one control is ever marked: a swatch when an override is set
                         // (and it matches the current color), else Auto — never both at once.
                         const hasOverride = () => !!groupColors()[key]
@@ -1562,6 +1562,8 @@ export function KanbanView(props: {
                                             drag.colDrag() !== key,
                                         [styles.kanbanColDragging]:
                                             drag.colDrag() === key,
+                                        [styles.kanbanColumnLast]:
+                                            isLastCol(),
                                     }}
                                     style={{ '--kb-col-color': color() }}
                                 >
@@ -1612,7 +1614,9 @@ export function KanbanView(props: {
                                                 inherit
                                                 class={styles.kanbanCount}
                                             >
-                                                {group().rows.length}
+                                                {padCount(
+                                                    group().rows.length,
+                                                )}
                                             </Text>
                                             <Show when={canAdd()}>
                                                 <KanbanColumnMenu
@@ -1724,6 +1728,11 @@ export function KanbanView(props: {
                                                                             ? 'task'
                                                                             : 'note'
                                                                     }
+                                                                    class={
+                                                                        isTasks()
+                                                                            ? undefined
+                                                                            : styles.kanbanCardPad
+                                                                    }
                                                                     draggable
                                                                     dropTarget={
                                                                         dropCardId() ===
@@ -1776,52 +1785,48 @@ export function KanbanView(props: {
                                                                     <Show
                                                                         when={isTasks()}
                                                                         fallback={
-                                                                            <CardBodyInner
-                                                                                looseGap
-                                                                            >
-                                                                                <KanbanCard
-                                                                                    row={r()}
-                                                                                    titleCol={titleCol()}
-                                                                                    metaCols={metaCols()}
-                                                                                    config={
-                                                                                        props.config
-                                                                                    }
-                                                                                    editable={
-                                                                                        editable() &&
-                                                                                        !isStoredPlaceholder(
-                                                                                            r(),
-                                                                                        )
-                                                                                    }
-                                                                                    hideLabels={hideLabels()}
-                                                                                    onEditingChange={
-                                                                                        setEditing
-                                                                                    }
-                                                                                    onRename={t =>
-                                                                                        void renameCard(
-                                                                                            r(),
-                                                                                            t,
-                                                                                        )
-                                                                                    }
-                                                                                    onSetMeta={(
+                                                                            <KanbanCard
+                                                                                row={r()}
+                                                                                titleCol={titleCol()}
+                                                                                metaCols={metaCols()}
+                                                                                config={
+                                                                                    props.config
+                                                                                }
+                                                                                editable={
+                                                                                    editable() &&
+                                                                                    !isStoredPlaceholder(
+                                                                                        r(),
+                                                                                    )
+                                                                                }
+                                                                                hideLabels={hideLabels()}
+                                                                                onEditingChange={
+                                                                                    setEditing
+                                                                                }
+                                                                                onRename={t =>
+                                                                                    void renameCard(
+                                                                                        r(),
+                                                                                        t,
+                                                                                    )
+                                                                                }
+                                                                                onSetMeta={(
+                                                                                    id,
+                                                                                    v,
+                                                                                ) =>
+                                                                                    void setMetaProperty(
+                                                                                        r(),
                                                                                         id,
                                                                                         v,
-                                                                                    ) =>
-                                                                                        void setMetaProperty(
-                                                                                            r(),
-                                                                                            id,
-                                                                                            v,
-                                                                                        )
-                                                                                    }
-                                                                                    onDelete={() =>
-                                                                                        void deleteCard(
-                                                                                            r(),
-                                                                                        )
-                                                                                    }
-                                                                                    siblingValues={
-                                                                                        siblingValuesFor
-                                                                                    }
-                                                                                />
-                                                                            </CardBodyInner>
+                                                                                    )
+                                                                                }
+                                                                                onDelete={() =>
+                                                                                    void deleteCard(
+                                                                                        r(),
+                                                                                    )
+                                                                                }
+                                                                                siblingValues={
+                                                                                    siblingValuesFor
+                                                                                }
+                                                                            />
                                                                         }
                                                                     >
                                                                         <TaskRow
@@ -1884,7 +1889,13 @@ export function KanbanView(props: {
                                                             setDraft('')
                                                         }}
                                                     >
-                                                        <Icon value="Plus" />
+                                                        <Text
+                                                        as="span"
+                                                        size="ui"
+                                                        tone="muted"
+                                                    >
+                                                        +
+                                                    </Text>
                                                     </PlainButton>
                                                 }
                                             >
