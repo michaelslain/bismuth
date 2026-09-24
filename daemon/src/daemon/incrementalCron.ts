@@ -143,10 +143,10 @@ export interface IncrementalRunPlan {
  */
 export async function resolveIncrementalRun(
     ctx: VaultContext,
-    job: { name: string; prompt: string; checkpointDir?: CheckpointDirKind },
+    job: { name: string; file: string; prompt: string; checkpointDir?: CheckpointDirKind },
 ): Promise<IncrementalRunPlan> {
     const dir = checkpointDirFor(ctx, job.checkpointDir)
-    const ref = incrementalRefName(job.name)
+    const ref = incrementalRefName(job.file)
     const delta = await checkpointDelta(dir, ref)
     const filtered = filterCronPaths(delta.files)
     const refCommitIso = delta.base
