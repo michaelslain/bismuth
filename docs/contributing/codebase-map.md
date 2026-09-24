@@ -979,7 +979,7 @@ Shared card body renderers used by `CardsView` and `FlashcardsView`.
 The shared card frame (background/border/radius/overflow) reused by `CardsView`'s book-cover grid and `KanbanView`'s board, with the context-specific look (click-to-open, draggable, drop-target) as props rather than a descendant selector reaching into a class the caller doesn't own.
 
 #### `bases/CardBodyInner.tsx`
-The padded body wrapper under a card's cover/face, shared by `CardsView` (around `BodyCard`) and `KanbanView` (around its kanban card).
+The padded body wrapper under a `CardsView` card's cover (around `BodyCard`).
 
 #### `bases/CardTitle.tsx`
 A card's title line, shared by `BodyCard` and `CardBody`.

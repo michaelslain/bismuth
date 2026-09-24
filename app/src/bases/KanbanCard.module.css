@@ -1,12 +1,15 @@
 /* The card face wrapper — a tap anywhere opens the focused edit modal (KanbanCard.tsx). Stacks
-   the title + meta with the same gap the cardBodyInner used, so display spacing is unchanged. */
+   the title + meta with the card's own title-to-meta gap, so display spacing is unchanged. */
 .kbCardFace { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .kbFaceEditable { cursor: pointer; }
 
-/* Card face: read-only title + meta chips (frontmatter properties). Clicking opens the modal. */
+/* Card face: read-only title — DESIGN.md's register rule: what a person WROTE is prose
+   (--prose-font, Lora via Text's `register="prose"` prop in KanbanCard.tsx). Only the
+   font-SIZE lives here (never a font-family literal in this stylesheet); weight 500, not
+   bold, so it reads as a heading without shouting. Clicking opens the modal. */
 .kbCardTitle {
-  font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); font-weight: 600; color: var(--fg);
-  line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;
+  font-size: var(--prose-font-size); font-weight: 500; color: var(--fg);
+  line-height: 1.3; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
 
@@ -14,31 +17,43 @@
    property, #103 — no longer a dedicated slot) — each value is a click-to-edit chip
    (text/number/date/select/tags/markdown; booleans toggle a Chip instantly). See
    KanbanCard.tsx + PropertyValueEditor.tsx.
-   #105: each item stacks its label ABOVE the value (was label-left) for tighter
-   horizontal use on narrow cards — a column flex naturally stacks the label span and
-   the value span/chip/editor, whichever is present, as separate rows. */
-.kbMeta { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: 1px; }
-.kbMetaItem {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
+   One line per property (acceptance 7): a CSS grid with a `max-content 1fr` key column, so
+   every value on every row starts at the same x regardless of its own key's width — sized off
+   the card's WIDEST key (CSS grid computes max-content once for the whole column) plus the
+   column-gap standing in for the "+2ch" pad. `.kbMetaItem` sets `display: contents` so its
+   label + value spans become direct grid children of `.kbMeta` — two cells in the SAME row —
+   rather than a nested box the grid can't see into. */
+.kbMeta {
+  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px;
   font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
 }
+/* `hideLabels` (#105): no key column at all — every value starts flush left in one column. */
+.kbMetaHideLabels { grid-template-columns: 1fr; }
+.kbMetaItem { display: contents; }
 .kbMetaLabel {
-  flex: 0 0 auto; font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--faint); line-height: 1.2;
+  font-size: var(--fs-ui); color: var(--faint); line-height: 1.35; white-space: nowrap; align-self: baseline;
 }
+/* A row with no key (tags, a markdown body, or any row once `hideLabels` removes the key
+   column) spans the full grid width instead of sitting in the narrow value column alone. */
+.kbMetaSpan { grid-column: 1 / -1; }
 /* Meta links stay clickable, but must not start a native link-drag (it would cancel the
    pointer-based card drag mid-gesture). */
 .kbMeta a { -webkit-user-drag: none; }
 
-.kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; }
+.kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; align-self: baseline; }
 .kbMetaClickable {
   cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px;
   transition: background 120ms ease, color 120ms ease;
 }
 .kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
 /* A declared `markdown` property (#100): rendered block-markdown display + a multiline
-   editor, both sized to the meta row's smaller type than the card-level description. */
+   editor, both sized to the meta row's smaller type than the card-level description. Prose
+   register (acceptance 9) — font-family + size/tone come from Text's `register="prose"` +
+   `size="body"` + `tone="muted"` props (KanbanCard.tsx); line-height 1.45 is spec'd narrower
+   than Text's own --lh-prose (1.6), so it's pinned here with an element+class selector to
+   out-specificity Text.module.css's `.text--body` regardless of CSS import order. */
 .kbMetaMarkdown { display: block; width: 100%; cursor: text; }
+div.kbMetaMarkdown { line-height: 1.45; }
 .kbMetaMarkdown :global(p) { margin: 0 0 var(--sp-2); }
 .kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
 .kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: var(--sp-1) 0; padding-left: var(--sp-6); }
