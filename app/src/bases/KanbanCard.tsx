@@ -198,6 +198,7 @@ export function KanbanCard(props: {
     // same as `openEdit()` with no argument. Left entirely separate from `onDown`/`onUp` so the
     // pointer-based drag-vs-tap threshold logic above is untouched.
     const onKeyDown = (e: KeyboardEvent) => {
+        if (e.target !== e.currentTarget) return
         if (!props.editable) return
         if (!isConfirmKey(e) && e.key !== ' ') return
         e.preventDefault()
@@ -210,7 +211,7 @@ export function KanbanCard(props: {
             classList={{ [styles.kbFaceEditable]: props.editable }}
             tabIndex={props.editable ? 0 : undefined}
             role={props.editable ? 'button' : undefined}
-            aria-label={props.editable ? 'Edit card' : undefined}
+            aria-label={props.editable ? `Edit ${title()}` : undefined}
             onPointerDown={onDown}
             onPointerUp={onUp}
             onKeyDown={onKeyDown}

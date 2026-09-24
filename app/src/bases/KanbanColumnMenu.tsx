@@ -42,7 +42,7 @@ const KanbanColumnMenu: Component<KanbanColumnMenuProps> = props => {
         <>
             <IconButton
                 ref={el => (triggerRef = el)}
-                icon="Menu"
+                icon="List"
                 label="Column menu"
                 size="sm"
                 class={`${styles.trigger}${props.className ? ` ${props.className}` : ''}`}
