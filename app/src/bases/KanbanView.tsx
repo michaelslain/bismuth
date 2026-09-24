@@ -1889,13 +1889,9 @@ export function KanbanView(props: {
                                                             setDraft('')
                                                         }}
                                                     >
-                                                        <Text
-                                                        as="span"
-                                                        size="ui"
-                                                        tone="muted"
-                                                    >
-                                                        +
-                                                    </Text>
+                                                        <Text as="span" inherit>
+                                                            +
+                                                        </Text>
                                                     </PlainButton>
                                                 }
                                             >
