@@ -866,17 +866,19 @@ export function FlashcardsView(props: {
                             <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
-                                        <TextButton
-                                            danger={g.response === 'hard'}
-                                            onClick={() => grade(g.response)}
-                                        >
-                                            {g.response}{' '}
+                                        <div class={styles['grade-item']}>
+                                            <TextButton
+                                                danger={g.response === 'hard'}
+                                                onClick={() => grade(g.response)}
+                                            >
+                                                {g.response}
+                                            </TextButton>
                                             <Kbd
                                                 combo={
                                                     settings.keybindings[g.id]
                                                 }
                                             />
-                                        </TextButton>
+                                        </div>
                                     )}
                                 </For>
                             </div>
