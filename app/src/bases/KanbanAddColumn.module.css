@@ -8,9 +8,10 @@
   /* Containing block for .addField's out-of-flow overlay below. */
   position: relative;
   /* Trimmed to the label's own width + var(--sp-4) each side, so the ghost column no longer
-     eats board width beyond its "+ column" text. Horizontal padding lives entirely on .trigger
-     below (var(--sp-4)); this side contributes none, only the vertical/baseline correction. */
-  padding: var(--sp-5) 0;
+     eats board width beyond its "+ column" text. Horizontal padding lives here (var(--sp-4))
+     rather than on .trigger below — a class on the ghost, a plain div, is free to size the
+     column; .trigger is a Button-family component and may only be PLACED, not padded. */
+  padding: var(--sp-5) var(--sp-4);
   /* Level with a real column's title: .kanbanColHeader (KanbanView.module.css) pins a min-height of
      calc(22px + 2 * var(--sp-5)) and CENTRES its title in it, one column border (1px) below the
      column's top edge — a border this ghost has none of. The trigger is a Button, which has one
@@ -38,9 +39,9 @@
 /* Outranks KanbanColumnNameInput's own `.field { min-width: 160px }` (two classes to its one), so
    the overlay never outgrows the ghost's rest footprint. */
 .addField .nameInput { min-width: 0; }
-/* Padding kept — it sets the ghost's rest width (the overlay follows it by measurement, so it is no longer part of any overlay math). Not a
-   look override: everything else IconTextButton itself owns (brackets, hover, colour). */
+/* No padding here — that footprint now lives on .ghost above. .trigger only keeps a placement
+   concern (nowrap, so the label never wraps under the ghost's trimmed width); everything else
+   (brackets, hover, colour, box height) is IconTextButton's own. */
 .trigger {
-  padding: var(--sp-4);
   white-space: nowrap;
 }
