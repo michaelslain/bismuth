@@ -24,6 +24,7 @@ import { getFileAccess } from './fileAccess'
 import {
     parseFrontmatter,
     setFrontmatterKey,
+    setFrontmatterViewKey,
     deleteFrontmatterKey,
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
@@ -193,12 +194,48 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                await access.writeNote(
-                    vault,
-                    b.path,
-                    setFrontmatterKey(raw, b.key, b.value),
-                )
+                const next =
+                    typeof b.viewIndex === 'number'
+                        ? setFrontmatterViewKey(
+                              raw,
+                              b.viewIndex,
+                              b.key,
+                              b.value,
+                          )
+                        : setFrontmatterKey(raw, b.key, b.value)
+                await access.writeNote(vault, b.path, next)
                 emit([b.path])
+                return 'ok'
+            }
+            case 'POST /set-properties': {
+                // Batches per-note like server.ts's handler: fold every write to the same
+                // path into one read-modify-write, skip a note that vanished rather than
+                // failing the whole batch, emit each written path once.
+                const writes = (b.writes ?? []) as Array<{
+                    path: string
+                    key: string
+                    value: unknown
+                }>
+                const byPath = new Map<
+                    string,
+                    Array<{ key: string; value: unknown }>
+                >()
+                for (const w of writes) {
+                    const list = byPath.get(w.path) ?? []
+                    list.push({ key: w.key, value: w.value })
+                    byPath.set(w.path, list)
+                }
+                const written: string[] = []
+                for (const [path, ops] of byPath) {
+                    const raw = await readOrNull(path)
+                    if (raw === null) continue // skip a note that vanished; don't fail the batch
+                    let next = raw
+                    for (const op of ops)
+                        next = setFrontmatterKey(next, op.key, op.value)
+                    await access.writeNote(vault, path, next)
+                    written.push(path)
+                }
+                emit(written)
                 return 'ok'
             }
             case 'POST /delete-property': {
