@@ -336,7 +336,7 @@ export const IconLook: Story = {
 }
 
 /** `look="swatch"` — the drawing dock's colour row: butted colour chips inside one shared
- *  `1px var(--border)` frame, zero gap, the selected chip a ring only (no fill). */
+ *  `1px var(--border)` frame, spaced by `--sp-1`, the selected chip a ring only (no fill). */
 export const SwatchLook: Story = {
     render: () => {
         const [v, setV] = createSignal('accent')
@@ -389,7 +389,8 @@ export const SwatchLook: Story = {
             '[data-look="swatch"]',
         ) as HTMLElement
         expect(wrap).not.toBeNull()
-        expect(getComputedStyle(wrap).gap).toBe('0px')
+        const sp1 = getComputedStyle(document.documentElement).getPropertyValue('--sp-1').trim()
+        expect(getComputedStyle(wrap).gap).toBe(sp1)
         const accent = canvasElement.querySelector<HTMLElement>(
             '[aria-label="accent"]',
         )!
