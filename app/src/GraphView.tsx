@@ -384,8 +384,13 @@ export function GraphView(props: {
         renderer.setFpsCallback(setFps)
         renderer.setZoomCallback?.(setZoomPct)
         // Forward through the stable sink, not straight to a signal/effect — see bloomSink's own
-        // comment and GraphAtmosphere.tsx's file-level one.
-        renderer.setBloomCallback?.(field => bloomSink.current?.(field))
+        // comment and GraphAtmosphere.tsx's file-level one. Also stash the field on the sink itself
+        // so a remounted GraphAtmosphere (gradient toggled back on at rest) can replay it immediately
+        // instead of waiting for the next dirty frame.
+        renderer.setBloomCallback?.(field => {
+            bloomSink.last = field
+            bloomSink.current?.(field)
+        })
         if (props.onPaint) renderer.setPaintCallback(props.onPaint)
         renderer.setConfig(buildConfig())
         if (lastGraph) renderGraphNow(rendererGraph())
@@ -572,13 +577,15 @@ export function GraphView(props: {
                         weight="inherit"
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
-                        <GraphLayerToggles
-                            clusters={graphClusters()}
-                            gradient={graphGradient()}
-                            showClusters={graphViewMode() === '2d'}
-                            onClusters={setGraphClusters}
-                            onGradient={setGraphGradient}
-                        />
+                        <Show when={!props.mini}>
+                            <GraphLayerToggles
+                                clusters={graphClusters()}
+                                gradient={graphGradient()}
+                                showClusters={graphViewMode() === '2d'}
+                                onClusters={setGraphClusters}
+                                onGradient={setGraphGradient}
+                            />
+                        </Show>
                         <SegmentedToggle
                             value={graphViewMode()}
                             onChange={setViewMode}
@@ -618,8 +625,10 @@ export function GraphView(props: {
             No `renderer` prop, on purpose — see GraphAtmosphere.tsx's file-level comment and
             bloomSink above. No DOM label overlay: the renderer draws its labels on its own
             canvas. Unmounting clears `bloomSink.current` (GraphAtmosphere's own onCleanup) so the
-            renderer's bloom callback becomes a no-op, and remounting re-registers it — exactly
-            what the bloomSink indirection was built for. */}
+            renderer's bloom callback becomes a no-op, and remounting re-registers it. A remount at
+            REST (no dirty frame since) still paints immediately: `bloomSink.last` holds the most
+            recent field mountRenderer's callback stashed, and GraphAtmosphere replays it on mount
+            instead of waiting for the next emitBloom(). */}
                 <Show when={graphGradient()}>
                     <GraphAtmosphere sink={bloomSink} mode={props.mode} />
                 </Show>

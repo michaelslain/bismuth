@@ -501,13 +501,18 @@ The `three` npm package has been removed from `app/package.json`, along with the
 `GraphAtmosphere` is no longer a cluster-lobe CSS glow — it is a **density-field phosphor bloom**, painted from where the nodes actually are, plus the depth vignette. It replaced an earlier atmosphere of three CSS radial-gradients parked at cluster centroids, tuned against the old saturated category ramp; the redesign's desaturated ramp made that same 26%-alpha screen blend read as a whisper, and soft competing hues (iridescence) also clashed with the ASCII aesthetic's single-hue phosphor look. It is extracted into one component so `GraphView` and the first-run `VaultIntro` render the same atmosphere instead of duplicating the canvas + wiring, and both a hypothetical STANDARD renderer and the shipped `AsciiGraphRenderer` can feed it identically.
 
 ```tsx
-export interface BloomSink { current?: (field: DensityField) => void }
+export interface BloomSink {
+  current?: (field: DensityField) => void
+  last?: DensityField // the last field any renderer pushed — replayed on mount
+}
 export function GraphAtmosphere(props: { sink?: BloomSink; mode?: string }): JSX.Element
 ```
 
 **No `renderer` prop, deliberately.** `GraphAtmosphere.tsx`'s file header explains why a `renderer` prop was tried and rejected as a real bug magnet: Solid compiles a bare-identifier JSX prop (`renderer={renderer}`) to a **static** value, not a reactive getter — `babel-plugin-jsx-dom-expressions` only generates getters for call/member/JSX expressions. `GraphView.tsx`'s `renderer` is a `let` reassigned by a swap effect whenever the ASCII/STANDARD setting changes, which (because the client always boots on the schema default before fetched settings can override it) happens on nearly every load. A keyed `<Show>` remounting the component doesn't fix it either — `Show` re-mounts children in Solid's pure/Updates phase, which runs *before* the swap effect (a user effect, Effects phase) reassigns `renderer`, so the remount faithfully re-captures the about-to-be-destroyed instance. It's also a race (depends on whether the settings fetch resolves before first paint), so it can look correct in one run and silently regress in the next.
 
 Instead the caller (`GraphView.tsx`'s `mountRenderer()`, `VaultIntro.tsx`'s `IntroGraph`) owns a stable `BloomSink` object (`const bloomSink: BloomSink = {}`) and wires `renderer.setBloomCallback((field) => bloomSink.current?.(field))` itself, wherever it (re)assigns `renderer`. `GraphAtmosphere` registers its paint function into `sink.current` exactly once, on mount; every renderer instance that ever exists — past, present, or future — forwards through that same stable object. No remount, no getter, no dependency on Solid's effect-ordering internals.
+
+`GraphView.tsx`'s `mountRenderer()` also stashes each field it forwards onto `bloomSink.last` before calling `bloomSink.current?.(field)`. This matters because `emitBloom()` only fires on a *dirty* frame — a graph at rest never produces one — so toggling `[gradient]` back on while the graph is at rest would otherwise remount `GraphAtmosphere` with a registered `sink.current` but no field ever reaching it (the vignette would reappear; the bloom would stay dark until something next moved). `GraphAtmosphere`'s `onMount`, right after setting `sink.current`, replays `sink.last` if one exists, so a remount at rest still paints immediately. `VaultIntro.tsx`'s `IntroGraph` does not stash `last` — its bloom sink is short-lived (the intro graph is never toggled off and back on), so this doesn't apply there.
 
 - Render it as a **sibling after** the renderer's `<canvas>` inside a positioned container; it fills that container (`inset: 0`). Styling lives in `GraphAtmosphere.module.css`.
 - It renders a `<canvas class="graph-bloom" data-mode={props.mode}>` (the `data-mode` attribute lets a mode theme its glow) plus a `.graph-vignette` div.
