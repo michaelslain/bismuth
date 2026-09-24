@@ -137,8 +137,8 @@ export const NoGroupBy: Story = {
 // Every swatch's accessible name + title — parallel to KanbanView's PALETTE_NAMES.
 const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
 
-// Captured by ColorPickerOpen's render() and read back in its play().
-let colorPickerCalls: { path: string; body: unknown }[] = []
+// Captured by ColorPickerPickAndDismiss's render() and read back in its play().
+let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
 
 /** The column colour picker — Task 6: composes `ui/AnchoredPopover` (the same primitive
  *  KanbanColumnMenu's `…` menu uses), so its content is PORTALED, not a descendant of
@@ -150,10 +150,9 @@ let colorPickerCalls: { path: string; body: unknown }[] = []
  *  has no override set, so no swatch shows the `selected` ring — only Auto reads pressed, exactly
  *  one control marked at a time.
  *
- *  play() proves: the panel opens anchored BELOW its trigger (not the old fixed backdrop popup);
- *  picking a swatch calls the real column-colour setter (`api.setViewProperty` → POST
- *  `/set-property`, `groupColors`); and Escape dismisses the popover (AnchoredPopover's own
- *  window keydown listener, not a handler KanbanView owns). */
+ *  play() proves: the panel opens anchored BELOW its trigger (not the old fixed backdrop popup),
+ *  and stays open — this story's baseline shot IS the open panel. The picking/dismissing
+ *  behaviour is proved by ColorPickerPickAndDismiss below, which leaves the panel closed. */
 export const ColorPickerOpen: Story = {
     render: () => {
         const views = [
@@ -164,9 +163,7 @@ export const ColorPickerOpen: Story = {
                 order: ['priority', 'tags'],
             },
         ]
-        const { transport, calls } = spiedTransport()
-        colorPickerCalls = calls
-        setTransport(transport)
+        setTransport(fakeTransport())
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { views })}
@@ -200,13 +197,51 @@ export const ColorPickerOpen: Story = {
             return el
         })
         expect(swatches.length).toBe(5)
+    },
+}
+
+/** Same board as ColorPickerOpen, but its play() carries the picker through to closed: picking
+ *  a swatch calls the real column-colour setter (`api.setViewProperty` → POST `/set-property`,
+ *  `groupColors`) and closes the popover, then reopening and pressing Escape dismisses it too
+ *  (AnchoredPopover's own window keydown listener, not a handler KanbanView owns). Its baseline
+ *  shot shows no picker — that is the point of this story, as opposed to ColorPickerOpen's. */
+export const ColorPickerPickAndDismiss: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'kanban' as const,
+                name: 'Kanban',
+                groupBy: { property: 'status' },
+                order: ['priority', 'tags'],
+            },
+        ]
+        const { transport, calls } = spiedTransport()
+        colorPickerPickAndDismissCalls = calls
+        setTransport(transport)
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const dot = canvas.getAllByTitle('Column color')[0]!
+
+        await userEvent.click(dot)
+        await body.findByTestId('kanban-color-picker')
+        const violet = body.getByRole('button', { name: 'violet' })
 
         // Picking a swatch calls the real setter and closes the popover. The first column here
         // (no explicit `groupOrder`) is "Doing" — the data's own first-seen status value, not
         // alphabetical or declaration order (ColorPickerOpenThirdColumn below pins order via
         // `groupOrder` instead, which is why that one CAN name its column).
-        await userEvent.click(swatches[1]!) // "violet"
-        expect(colorPickerCalls).toContainEqual({
+        await userEvent.click(violet)
+        expect(colorPickerPickAndDismissCalls).toContainEqual({
             path: '/set-property',
             body: {
                 path: 'stories/kanban-demo.md',
