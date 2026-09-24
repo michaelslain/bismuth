@@ -19,7 +19,6 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
@@ -27,11 +26,31 @@
     padding-bottom: var(--sp-7);
 }
 
+/* Resting (non-compact): two generated flex items — no real markup, DaemonHub.tsx stays untouched
+   — bias the face toward the top of the region instead of dead centre. A 1:2 split gives the
+   space above the face a third of the region's own free space and the space below it two thirds,
+   landing the face well inside the column's upper third instead of at its middle (baseline had it
+   centred at ~45% of the hub's own height). Suppressed under `.faceCompact` below, where
+   `justify-content: flex-start` already pins the one-line header flush to the top. */
+.faceRegion::before,
+.faceRegion::after {
+    content: '';
+    flex: 1 0 0;
+    min-height: 0;
+}
+.faceRegion::after {
+    flex-grow: 2;
+}
+
 .faceCompact {
     flex: none;
     justify-content: flex-start;
     align-items: flex-start;
     padding-block: var(--sp-4) var(--sp-2);
+}
+.faceCompact::before,
+.faceCompact::after {
+    content: none;
 }
 
 .chatRegion {

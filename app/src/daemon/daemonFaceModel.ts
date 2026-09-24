@@ -53,6 +53,9 @@ export const FACE_REST: FaceFrame = ['.', ':', '[', '0', '0', ']', ':', '.']
 export const BLINK_MS = 110
 /** Open-eye gap between the two blinks of a double blink. */
 export const DOUBLE_BLINK_GAP_MS = 160
+// Both of the above are EXEMPT from the >=600ms-per-frame rule TICK_MS enforces below — a blink
+// this fast still reads as a blink, and slowing it down to match everything else here would read
+// as sleepy rather than calm (user ruling 2026-09-23).
 /** How long a click-wink (`0-`) holds. */
 export const WINK_MS = 300
 

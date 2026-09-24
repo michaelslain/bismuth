@@ -3,7 +3,7 @@
    to DaemonPanel; the hub's own layout (face, identity, its chat) belongs to DaemonHub.module.css.
    This file decides WHERE the hub and the one active panel sit and nothing about how either looks.
 
-   Wide (>= 760px of the page's own width): [ viewbar (identity · facet toggle · status) ]
+   Wide (>= 760px of the page's own width): [ viewbar (identity // facet toggle // status) ]
                                              [ hub  |  panel ]
    Two columns, both the stage's own full height with the same inset top and bottom. The panel
    column is never narrower than the hub column — `minmax(320px, 1fr) minmax(360px, 1.2fr)`, so a

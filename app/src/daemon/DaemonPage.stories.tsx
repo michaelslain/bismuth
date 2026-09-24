@@ -318,6 +318,10 @@ export const AwakeInbox: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeGreaterThan(24)
+        // Resting = the full face, never scaled up past the compact/one-line-header ceiling.
+        await expect(
+            parseFloat(getComputedStyle(face).fontSize),
+        ).toBeLessThanOrEqual(42)
     },
 }
 
@@ -331,7 +335,21 @@ export const AwakeCrons: Story = {
             />
         </Frame>
     ),
-    play: ({ canvasElement }) => assertLayout(canvasElement, { chat: true }),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { chat: true })
+        // The resting face sits HIGH in the hub column, not dead centre (baseline ~45%) — its
+        // vertical centre stays inside the column's own upper third.
+        const face = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )!
+        const hub = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page-hub"]',
+        )!
+        const f = rect(face)
+        const h = rect(hub)
+        const centreFraction = (f.top + f.height / 2 - h.top) / h.height
+        await expect(centreFraction).toBeLessThanOrEqual(0.35)
+    },
 }
 
 export const AwakeServices: Story = {
@@ -437,10 +455,11 @@ export const Off: Story = {
     play: async ({ canvasElement }) => {
         await assertLayout(canvasElement, { chat: false })
         const canvas = within(canvasElement)
-        const heading = canvas.getByRole('heading', { level: 2 })
-        await expect(heading.textContent?.toLowerCase()).toContain(
-            'wake it up',
-        )
+        // No title any more — the off line stands alone, lowercase, no trailing period.
+        await expect(canvas.queryByRole('heading', { level: 2 })).toBeNull()
+        await expect(
+            canvas.getByText('set daemon.enabled: true in .settings to wake it'),
+        ).toBeInTheDocument()
         await expect(
             canvasElement.querySelector('[data-testid="vb-facet"]'),
         ).toBeNull()
@@ -480,6 +499,51 @@ export const Narrow: Story = {
             '[data-testid="vb-trail"]',
         )!
         await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
+    },
+}
+
+/** A 480px pane: the ViewBar's facet region (the four inbox/crons/services/log words) has to fit
+ *  without overflowing itself or colliding with the readouts on its right — the counts (BarLabel
+ *  `drop="late"`, ui/ViewBar.module.css's ladder fires at this exact width) give way first, the
+ *  words themselves never do. */
+export const Narrow480: Story = {
+    render: () => (
+        <Frame width="480px">
+            <DaemonPage
+                {...pageProps('idle', 'crons', 'watching', {
+                    panel: cronsPanel,
+                })}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { chat: true, stacked: true })
+        // The SegmentedToggle root's own parentElement is the facet region — ViewBar wraps every
+        // slot in a region whose class is hashed, so this is reached by DOM structure + a stable
+        // global marker class, never a match on that hashed name.
+        const toggle = canvasElement.querySelector<HTMLElement>('.segmented')!
+        const facetRegion = toggle.parentElement!
+        await expect(facetRegion.scrollWidth).toBeLessThanOrEqual(
+            facetRegion.clientWidth,
+        )
+
+        const readouts = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="vb-readouts"]',
+        )!
+        const fr = facetRegion.getBoundingClientRect()
+        const rr = readouts.getBoundingClientRect()
+        const overlaps = fr.right > rr.left && fr.left < rr.right
+        await expect(overlaps).toBe(false)
+
+        // All four facet words stay visible — only their counts are allowed to drop.
+        const buttons = [...toggle.querySelectorAll('button')]
+        await expect(buttons.length).toBe(4)
+        for (const word of ['inbox', 'crons', 'services', 'log']) {
+            const shown = buttons.some(b =>
+                b.textContent?.toLowerCase().includes(word),
+            )
+            await expect(shown).toBe(true)
+        }
     },
 }
 
