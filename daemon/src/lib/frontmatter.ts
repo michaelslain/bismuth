@@ -16,8 +16,55 @@ export function parseFrontmatter(content: string): {
         if (colonIdx === -1) continue
         const key = line.slice(0, colonIdx).trim()
         const value = line.slice(colonIdx + 1).trim()
-        frontmatter[key] = value
+        frontmatter[key] = unquote(value)
     }
 
     return { frontmatter, body: match[2]!.trim() }
+}
+
+/** Undo the quoting `frontmatterValue` applies on write, so a caller sees the plain display
+ *  value regardless of which quote style (or none) is on disk. A value wrapped in matching
+ *  `"…"` is JSON-decoded (falling back to a bare strip of the two quote chars if the JSON is
+ *  malformed); a value wrapped in matching `'…'` is stripped, with an escaped `''` collapsing
+ *  to a literal `'` (the classic YAML single-quote escape). Anything else — including a value
+ *  starting with `[`/`{` (a JSON array/object literal, e.g. `args: ["x"]`) — is returned
+ *  exactly as written. */
+function unquote(value: string): string {
+    if (value.length >= 2 && value[0] === '"' && value.endsWith('"')) {
+        try {
+            return JSON.parse(value)
+        } catch {
+            return value.slice(1, -1)
+        }
+    }
+    if (value.length >= 2 && value[0] === "'" && value.endsWith("'")) {
+        return value.slice(1, -1).replace(/''/g, "'")
+    }
+    return value
+}
+
+/** Leading characters that are unsafe for a bare (unquoted) frontmatter scalar — each one is
+ *  either YAML-meaningful (`"'&*!|>%@` and the brackets `[{`) or would itself trigger the
+ *  quote-stripping `unquote` above on the next read (`` ` `` included defensively alongside
+ *  the two real quote characters). */
+const UNSAFE_LEADING = /^["'[{&*!|>%@`]/
+
+/**
+ * `v` bare when it is safe as a plain YAML scalar AND survives `parseFrontmatter` unchanged:
+ * no `:`/`#` anywhere (either would be ambiguous with this format's syntax), no unsafe leading
+ * character, no leading/trailing whitespace (this parser's own `.trim()` would silently eat it
+ * on the next read), and non-empty. Otherwise `JSON.stringify(v)`, which both quotes and
+ * escapes it, and which `unquote` above reverses exactly via `JSON.parse`.
+ */
+export function frontmatterValue(v: string): string {
+    if (
+        v === '' ||
+        v !== v.trim() ||
+        v.includes(':') ||
+        v.includes('#') ||
+        UNSAFE_LEADING.test(v)
+    ) {
+        return JSON.stringify(v)
+    }
+    return v
 }

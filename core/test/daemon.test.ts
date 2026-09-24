@@ -520,7 +520,7 @@ test('unknown cron/process name throws (404 AppError)', () => {
 
 // ── create / delete (writes a brand-new cron/process definition) ──────────────
 
-test('createCron slugifies the name, writes a template, and returns the slug as `file`', () => {
+test('createCron slugifies the name for the FILE, but writes the quoted DISPLAY name into frontmatter, and returns the slug as `file`', () => {
     const home = makeHome({})
     const result = createCron('Answer Emails!', home)
     expect(result).toEqual({ file: 'answer-emails' })
@@ -528,23 +528,39 @@ test('createCron slugifies the name, writes a template, and returns the slug as 
         join(home, 'crons', 'answer-emails.md'),
         'utf8',
     )
-    expect(md).toContain('name: answer-emails')
+    expect(md).toContain('name: "Answer Emails!"')
     expect(md).toContain('schedule: 0 9 * * *')
     expect(md).toContain('enabled: false')
-    // Bismuth's own reader can see the new cron immediately.
+    // Bismuth's own reader can see the new cron immediately, under its DISPLAY name.
     const snap = daemonSnapshot(home)
     const cron = snap.crons.find(c => c.file === 'answer-emails')
     expect(cron).toMatchObject({
-        name: 'answer-emails',
+        name: 'Answer Emails!',
         schedule: '0 9 * * *',
         enabled: false,
     })
-    // The daemon's own frontmatter reader must see the same bare, unquoted values —
-    // a quoted name/schedule round-trips as a literal `"…"` string there (see
-    // daemon/src/lib/frontmatter.ts) and silently breaks lookups + cron matching.
+    // The daemon's own frontmatter reader must see the SAME display name, unquoted — it
+    // JSON-decodes a `"…"`-wrapped value (see daemon/src/lib/frontmatter.ts), so the quoted
+    // write here round-trips through both readers identically.
     const { frontmatter } = parseFrontmatter(md)
-    expect(frontmatter.name).toBe('answer-emails')
+    expect(frontmatter.name).toBe('Answer Emails!')
     expect(parseCronExpression(frontmatter.schedule!)?.minute).toBe('0')
+})
+
+test('createCron caps an extremely long name to a ≤100-char slug without throwing', () => {
+    const home = makeHome({})
+    const longName = 'a'.repeat(300)
+    const result = createCron(longName, home)
+    expect(result.file.length).toBeLessThanOrEqual(100)
+    expect(existsSync(join(home, 'crons', `${result.file}.md`))).toBe(true)
+})
+
+test('createCron creating the same name twice throws a 409 EEXIST on the second call', () => {
+    const home = makeHome({})
+    createCron('Answer Emails!', home)
+    expect(() => createCron('Answer Emails!', home)).toThrowError(
+        expect.objectContaining({ code: 'EEXIST', statusCode: 409 }),
+    )
 })
 
 test('createCron slug: lowercases, collapses runs of invalid chars into one dash, trims edges', () => {
@@ -574,21 +590,21 @@ test('createCron rejects a clashing slug with a 409 EEXIST, leaving the existing
     expect(readFileSync(join(home, 'crons', 'dream.md'), 'utf8')).toBe(before)
 })
 
-test('createProcess slugifies the name, writes a template with a command placeholder', () => {
+test('createProcess slugifies the name for the FILE, but writes the quoted DISPLAY name, with a command placeholder', () => {
     const home = makeHome({})
     const result = createProcess('Web Search', home)
     expect(result).toEqual({ file: 'web-search' })
     const md = readFileSync(join(home, 'processes', 'web-search.md'), 'utf8')
-    expect(md).toContain('name: web-search')
+    expect(md).toContain('name: "Web Search"')
     expect(md).toContain('command: echo')
     expect(md).toContain('args: ["replace me"]')
     expect(md).toContain('enabled: false')
     const { frontmatter } = parseFrontmatter(md)
-    expect(frontmatter.name).toBe('web-search')
+    expect(frontmatter.name).toBe('Web Search')
     const snap = daemonSnapshot(home)
     expect(
         snap.processes.find(p => p.file === 'web-search'),
-    ).toMatchObject({ name: 'web-search', enabled: false })
+    ).toMatchObject({ name: 'Web Search', enabled: false })
 })
 
 test('createProcess rejects empty/invalid slug (400) and a clashing slug (409)', () => {
