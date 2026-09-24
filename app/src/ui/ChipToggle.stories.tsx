@@ -1,9 +1,13 @@
-// Visual spec for <ChipToggle> — the selectable pill (export options, search toggles).
-// Nothing composes it yet (that lands in a later wave), so this story is the only proof it
-// works. Default tone = accent; tone-<x> tints the SELECTED state to a category color.
+// Visual spec for <ChipToggle> — the selectable pill (export options, search toggles, the
+// vault-intro power-up toggles, the kanban boolean/multiselect chips). Merges the former
+// `ui/Chip.tsx` (ds-bridges Task 3): `icon`/`iconSize` render a leading icon before the label,
+// same as Chip's did. Default tone = accent; tone-<x> tints the SELECTED state to a category
+// color. None of ChipToggle's current callers pass a `tone` other than the default (accent), so
+// there is no additional per-tone story beyond the AllTones* pair below.
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import ChipToggle, { type ChipToggleTone } from './ChipToggle'
+import { Row } from './_storyKit'
 
 const meta = {
     title: 'UI/ChipToggle',
@@ -22,6 +26,20 @@ export const Unselected: Story = {
 
 export const Selected: Story = {
     render: () => <ChipToggle selected>Markdown</ChipToggle>,
+}
+
+/** A leading icon before the label, and an icon-only chip with no label (Chip's old shape) —
+ *  the search Find bar's match-case/whole-word/regex toggles (ui/SearchBar.stories.tsx). */
+export const WithIcon: Story = {
+    render: () => (
+        <Row label="with icon" gap="10px">
+            <ChipToggle icon="Search">Match case</ChipToggle>
+            <ChipToggle icon="Check" selected>
+                Whole word
+            </ChipToggle>
+            <ChipToggle icon="Regex" title="Regex" />
+        </Row>
+    ),
 }
 
 /** Clicking toggles `selected` via the `onToggle` callback — proves the interaction, not just
