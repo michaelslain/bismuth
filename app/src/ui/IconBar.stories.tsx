@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import IconBar from './IconBar'
 import IconButton from './IconButton'
+import Text from './Text'
+import { Icon } from '../icons/Icon'
 
 const meta: Meta<typeof IconBar> = {
     title: 'ui/IconBar',
@@ -75,18 +77,119 @@ export const Sizes: Story = {
     render: () => (
         <div
             style={{
-                display: 'flex',
-                'flex-direction': 'column',
-                gap: 'var(--sp-4)',
+                display: 'grid',
+                'grid-template-columns': 'auto auto',
+                'align-items': 'center',
+                'column-gap': 'var(--sp-6)',
+                'row-gap': 'var(--sp-4)',
+                'justify-content': 'start',
             }}
         >
             {[11, 12, 16, 20].map(n => (
-                <IconBar label={`Toolbar at ${n}px`} iconSize={n}>
+                <>
+                    <Text as="span" size="ui" tone="faint">
+                        {n}px
+                    </Text>
+                    <IconBar label={`Toolbar at ${n}px`} iconSize={n}>
+                        <IconButton icon="Search" label="Search" />
+                        <IconButton icon="Inbox" label="Inbox" />
+                        <IconButton icon="Settings" label="Settings" />
+                    </IconBar>
+                </>
+            ))}
+        </div>
+    ),
+}
+
+/** One file-tree row as the real tree draws it (FileTree.module.css `.ft-row`: `--row-h` tall,
+ *  `var(--sp-3)` between icon and name, `--fs-ui` muted text) — with the glyph at `size`. */
+function TreeRow(props: { icon: string; name: string; size: number }) {
+    return (
+        <div
+            style={{
+                display: 'flex',
+                'align-items': 'center',
+                gap: 'var(--sp-3)',
+                height: 'var(--row-h)',
+                padding: '0 var(--sp-4)',
+            }}
+        >
+            <Icon value={props.icon} size={props.size} />
+            <Text as="span" size="ui" tone="muted">
+                {props.name}
+            </Text>
+        </div>
+    )
+}
+
+const TREE: [string, string][] = [
+    ['Folder', 'archive'],
+    ['Folder', 'dreams'],
+    ['FolderOpen', 'projects'],
+    ['FileText', 'Calendar'],
+    ['FileText', 'reading list'],
+    ['Settings2', 'settings'],
+]
+
+/** A sidebar column: the toolbar band over tree rows, every glyph at `toolbar` / `tree` px. */
+function SidebarColumn(props: {
+    title: string
+    toolbar: number
+    tree: number
+}) {
+    return (
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: 'var(--sp-3)',
+            }}
+        >
+            <Text as="span" size="ui" tone="faint">
+                {props.title}
+            </Text>
+            <div
+                style={{
+                    width: '220px',
+                    background: 'var(--rail)',
+                    border: '1px solid var(--border-soft)',
+                }}
+            >
+                <IconBar band label="Sidebar toolbar" iconSize={props.toolbar}>
                     <IconButton icon="Search" label="Search" />
                     <IconButton icon="Inbox" label="Inbox" />
                     <IconButton icon="Settings" label="Settings" />
                 </IconBar>
-            ))}
+                <div style={{ padding: 'var(--sp-2) 0 var(--sp-4)' }}>
+                    {TREE.map(([icon, name]) => (
+                        <TreeRow icon={icon} name={name} size={props.tree} />
+                    ))}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+/** Candidate single icon sizes judged IN CONTEXT — the sidebar toolbar and file-tree rows next to
+ *  the real 11.5px `--fs-ui` chrome text — plus today's mixed state for reference. A design aid
+ *  for picking the one app-wide icon size, not a component variant. */
+export const SizesInContext: Story = {
+    render: () => (
+        <div
+            style={{
+                display: 'flex',
+                gap: 'var(--sp-7)',
+                'align-items': 'flex-start',
+            }}
+        >
+            <SidebarColumn
+                title="today // toolbar 12px, tree 14px"
+                toolbar={12}
+                tree={14}
+            />
+            <SidebarColumn title="12px everywhere" toolbar={12} tree={12} />
+            <SidebarColumn title="13px everywhere" toolbar={13} tree={13} />
+            <SidebarColumn title="14px everywhere" toolbar={14} tree={14} />
         </div>
     ),
 }
