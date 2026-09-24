@@ -51,4 +51,9 @@
     background: var(--panel);
     border: var(--rule);
     border-radius: var(--r-0);
+    /* The one floating depth cue (Acceptance 14) — "menu" mode gets this for free from
+       PopoverList's shared .bismuth-popover surface (--popover-shadow: var(--lift),
+       global.css); this is the other AnchoredPopover content shape (a bare panel, no
+       PopoverList), so it carries the same shadow itself. */
+    box-shadow: var(--lift);
 }
