@@ -24,9 +24,11 @@ export type SegmentedToggleProps<T> = {
     /** Per-segment extra class (e.g. an underline-tab look). */
     segmentClass?: string
     /** 'bracket' (default): each option is a borderless `[label]` bracket button, `--sp-4`
-     *  apart, `size` ignored. 'segment' (butted boxes): today's boxed look, `size` honoured —
-     *  the drawing dock's icon-only tool groups only. */
-    look?: 'bracket' | 'segment'
+     *  apart, `size` ignored. 'segment' (butted boxes, text): today's boxed look, `size`
+     *  honoured. 'icon' (butted boxes, icon glyphs): selected is an accent glyph on
+     *  `--accent-soft` with a 1px inset accent ring. 'swatch' (butted colour chips inside one
+     *  1px `var(--border)` frame, zero gap): selected is a ring only, no fill. */
+    look?: 'bracket' | 'segment' | 'icon' | 'swatch'
 }
 
 /**
@@ -35,29 +37,27 @@ export type SegmentedToggleProps<T> = {
  * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
  *
  * `look="bracket"` (the default) renders every option as `kind="text"` — the same `[label]`
- * bracket button as everywhere else in the app, spaced `--sp-4` apart, no box. `look="segment"`
- * keeps `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, butted, sized) — for
- * the drawing toolbar's icon-only tool groups.
+ * bracket button as everywhere else in the app, spaced `--sp-4` apart, no box. Every other look
+ * (`segment` / `icon` / `swatch`) keeps `kind="segment"` — the OLD `kind="text"` look (uppercase,
+ * bordered, butted, sized) — for the drawing toolbar's tool/colour groups.
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
     const look = () => props.look ?? 'bracket'
+    const boxed = () => look() !== 'bracket'
     return (
-        // `styles.wrap` is a no-op marker local (see SegmentedToggle.module.css) — without a
-        // real local class referenced from here, the module has zero locals and Rollup
-        // tree-shakes its whole CSS output, same trap as ui/FormControl.module.css.
         <div
-            class={`segmented ${styles.wrap} ${props.class ?? ''}`}
+            class={`${styles.segmented} ${props.class ?? ''}`}
             data-look={look()}
             data-segmented=""
         >
             <For each={props.options}>
                 {opt => (
                     <Button
-                        kind={look() === 'segment' ? 'segment' : 'text'}
+                        kind={boxed() ? 'segment' : 'text'}
                         state={
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
-                        size={look() === 'segment' ? props.size : undefined}
+                        size={boxed() ? props.size : undefined}
                         aria-pressed={
                             look() === 'bracket'
                                 ? opt.id === props.value

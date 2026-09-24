@@ -1,55 +1,66 @@
 /* app/src/ui/SegmentedToggle.module.css — SegmentedToggle.tsx's own local stylesheet.
 
-   The `.segmented` family moved IN from `ui.css` (one-global-stylesheet Task 5). It stays a
-   `:global()` re-export bridge, not fully local: it is reached via `:global()` from GraphView.module.css,
-   drawing/Toolbar.module.css, chat/ChatHistoryPanel.module.css and bases/EditCardsModal.module.css,
-   and this repo's design-system gate (`globalReach`) flags ANY `:global()` reach inside a
-   `*.module.css` file unconditionally, with no self-ownership exemption. The ruling (see
-   .claude/plans/ui-css-ownership.md and the wave-4 EmptyState/ViewBar precedent): keep the
-   `:global()` bridge, with a per-line `design-system-ignore globalReach:` comment on each rule
-   naming it a temporary bridge — that is what the mechanism exists for. A later wave retargets
-   the outside reach-ins to SegmentedToggle's own `class`/`segmentClass` props; the wave after that
-   deletes every `:global()` wrapper and ignore comment here in one pass.
+   `.segmented` is SegmentedToggle's own hashed local now (ds-bridges Task 2) — every outside
+   reach that used to need `:global(.segmented …)` reads the `data-segmented`/`data-look` hooks
+   SegmentedToggle.tsx's root stamps instead (the shared-context hook table), so nothing here
+   needs to stay a `:global()` bridge for `.segmented` itself.
 
-   BRACKET TOGGLES (bracket-toggles Task 1): `look` picks between two renders. The default,
+   The `[data-kind="segment"]` compounds below still style Button's own segment register — this
+   is SegmentedToggle's layout rule (the butted-border overlap / look-specific fills), not
+   Button's, so it stays here rather than in Button.module.css. Button's `.btn--segment` class is
+   itself still a literal global string (buttonClass.ts, until it emits hashed locals), so these
+   compounds target it through the `data-kind`/`data-state`/`data-primary` hooks the seam commit
+   stamped on Button's root — one hook token for one class token, per the translation rule — which
+   is why none of these rules need `:global()` either: an attribute selector was never a class.
+
+   BRACKET TOGGLES (bracket-toggles Task 1): `look` picks between four renders. The default,
    `look="bracket"`, is plain `kind="text"` buttons — no box, no butted border — spaced by the
-   `[data-look="bracket"]` gap rule below; it needs no `.btn--segment` override at all. The BUTTED
-   `.btn--segment` family below is scoped to `[data-look="segment"]` and applies ONLY to the
-   drawing toolbar's icon-only tool groups, the one caller that still opts into `look="segment"`.
+   `[data-look="bracket"]` gap rule below. `look="segment"`/`"icon"`/`"swatch"` all keep
+   `kind="segment"` (today's boxed look) — `segment` is the plain butted-box register (the
+   drawing dock's text/undo-redo/zoom groups), `icon` adds the accent-soft selected fill for the
+   dock's icon-only tool/size/smoothing/paper groups, and `swatch` is the butted-colour-chip
+   register for the dock's colour row (one frame, zero gap, ring-only selected). */
 
-   `.segmented .btn--segment` is a cross-primitive compound: it styles Button.tsx's `.btn--segment`
-   class, but only in the context of being inside SegmentedToggle's own wrapper — it is
-   SegmentedToggle's layout rule (the butted-border overlap), not Button's, so it stays here
-   rather than in Button.module.css. Both halves of the selector are still global class names
-   (Button's `.btn--segment` is itself a `:global()` bridge in Button.module.css per Task 1), so the
-   whole compound is wrapped in `:global()` too. `drawing/Toolbar.tsx`'s undo/redo AND zoom groups
-   now compose this component (one-global-followups Task 3) — the zoom group's percent readout
-   gets its fixed width through `SegmentedOption.class`, now that the option carries one. */
-
-/* The one genuinely module-local class: a no-op marker (a custom property, not a visual rule) so
-   this file exports a real hashed local SegmentedToggle.tsx actually reads (`styles.wrap`) — a
-   `.module.css` with zero local classes reads as dead to Rollup's tree-shaker and ships no CSS
-   at all (the same trap ui/FormControl.module.css documents). */
-.wrap { --segmented-toggle: true; }
-
-/* design-system-ignore globalReach: SegmentedToggle's own class, temporary :global() bridge to the four outside callers above, until a later wave */
-:global(.segmented) { display: inline-flex; align-items: center; }
+.segmented { display: inline-flex; align-items: center; }
 /* Bracket look (the default): plain [label] buttons, no box, no butted border — just spaced
    apart. `--sp-4` is the same sibling gap every other bracket button family uses. */
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented)[data-look="bracket"] { gap: var(--sp-4); }
-/* Segment look (the drawing dock's icon-only tool groups only): today's butted boxes, unchanged. */
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented[data-look="segment"] .btn--segment) { border-radius: 0; position: relative; }
+.segmented[data-look="bracket"] { gap: var(--sp-4); }
+
+/* Segment + icon looks share the same butted-box structure: today's boxed look, unchanged. */
+.segmented[data-look="segment"] [data-kind="segment"],
+.segmented[data-look="icon"] [data-kind="segment"] { border-radius: 0; position: relative; }
 /* Segments share ONE rule between them by overlapping borders, not by dropping the
    left one — a dropped border leaves the selected segment's accent outline open on
    its left edge (it reads as clipped). Overlap + raise the selected/hovered segment
    so its own border draws the full box. */
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented[data-look="segment"] .btn--segment + .btn--segment) { margin-left: -1px; }
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented[data-look="segment"] .btn--segment.btn--selected), :global(.segmented[data-look="segment"] .btn--segment.btn--primary), :global(.segmented[data-look="segment"] .btn--segment:hover:not(:disabled)) { z-index: 1; }
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented[data-look="segment"] .btn--segment:first-child) { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
-/* design-system-ignore globalReach: same bridge as above, until a later wave */
-:global(.segmented[data-look="segment"] .btn--segment:last-child) { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+.segmented[data-look="segment"] [data-kind="segment"] + [data-kind="segment"],
+.segmented[data-look="icon"] [data-kind="segment"] + [data-kind="segment"] { margin-left: -1px; }
+.segmented[data-look="segment"] [data-kind="segment"][data-state="selected"],
+.segmented[data-look="segment"] [data-kind="segment"][data-primary],
+.segmented[data-look="segment"] [data-kind="segment"]:hover:not(:disabled),
+.segmented[data-look="icon"] [data-kind="segment"][data-state="selected"],
+.segmented[data-look="icon"] [data-kind="segment"][data-primary],
+.segmented[data-look="icon"] [data-kind="segment"]:hover:not(:disabled) { z-index: 1; }
+.segmented[data-look="segment"] [data-kind="segment"]:first-child,
+.segmented[data-look="icon"] [data-kind="segment"]:first-child { border-top-left-radius: var(--r-0); border-bottom-left-radius: var(--r-0); }
+.segmented[data-look="segment"] [data-kind="segment"]:last-child,
+.segmented[data-look="icon"] [data-kind="segment"]:last-child { border-top-right-radius: var(--r-0); border-bottom-right-radius: var(--r-0); }
+
+/* Icon look: the active tool/size/smoothing/paper segment — accent glyph on an accent-soft fill
+   with a 1px inset accent ring, instead of the plain segment register's border-only "selected". */
+.segmented[data-look="icon"] [data-kind="segment"][data-state="selected"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Swatch look: the colour row — butted chips (no gaps, no per-chip border) inside one shared
+   --border frame, a different shape from the individually-boxed segment/icon registers above. */
+.segmented[data-look="swatch"] { gap: 0; border: 1px solid var(--border); }
+.segmented[data-look="swatch"] [data-kind="segment"] { padding: 0; border-radius: 0; background: none; }
+/* The active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
+   swatch already IS a color; ringing it in --accent would fight the ink color itself). */
+.segmented[data-look="swatch"] [data-kind="segment"][data-state="selected"] {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--bg), inset 0 0 0 2px var(--fg);
+}

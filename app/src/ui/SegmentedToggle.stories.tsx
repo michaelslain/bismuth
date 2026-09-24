@@ -3,7 +3,7 @@
 // selected/unselected consumer (graph mode, calendar view switcher, Bases view tabs).
 //
 // Props: options (id + label + optional title), value, onChange, size?, class?,
-// segmentClass?, look? ('bracket' default | 'segment').
+// segmentClass?, look? ('bracket' default | 'segment' | 'icon' | 'swatch').
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -86,7 +86,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="BookOpen" size={14} />
-                                <span class="btn-label">2nd</span>
+                                <span data-btn-label>2nd</span>
                             </>
                         ),
                     },
@@ -96,7 +96,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Brain" size={14} />
-                                <span class="btn-label">3rd</span>
+                                <span data-btn-label>3rd</span>
                             </>
                         ),
                     },
@@ -106,7 +106,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Blend" size={14} />
-                                <span class="btn-label">both</span>
+                                <span data-btn-label>both</span>
                             </>
                         ),
                     },
@@ -252,5 +252,147 @@ export const Sizes: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** A disabled option on the default bracket look: it renders `--faint` and is not clickable —
+ *  clicking it must leave the group's value unchanged. */
+export const DisabledOption: Story = {
+    render: () => {
+        const [v, setV] = createSignal('one')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                options={[
+                    { id: 'one', label: 'one' },
+                    { id: 'two', label: 'two', disabled: true },
+                    { id: 'three', label: 'three' },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const buttons = canvasElement.querySelectorAll<HTMLButtonElement>(
+            'button',
+        )
+        const first = buttons[0]!
+        const middle = buttons[1]!
+        expect(middle.disabled).toBe(true)
+        expect(first.getAttribute('aria-pressed')).toBe('true')
+        // A disabled button does not dispatch a click event, so this must be a no-op: the
+        // group's value stays on the first option, which stays the one marked pressed.
+        middle.click()
+        expect(middle.getAttribute('aria-pressed')).toBe('false')
+        expect(first.getAttribute('aria-pressed')).toBe('true')
+    },
+}
+
+/** `look="icon"` — the drawing dock's tool/size/smoothing/paper groups: butted icon-only boxes,
+ *  the selected one an accent glyph on an `--accent-soft` fill with a 1px inset accent ring. */
+export const IconLook: Story = {
+    render: () => {
+        const [v, setV] = createSignal('pen')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="icon"
+                size="sm"
+                options={[
+                    {
+                        id: 'pen',
+                        title: 'Pen',
+                        ariaLabel: 'Pen',
+                        label: <Icon value="Pen" size={14} />,
+                    },
+                    {
+                        id: 'eraser',
+                        title: 'Eraser',
+                        ariaLabel: 'Eraser',
+                        label: <Icon value="Eraser" size={14} />,
+                    },
+                    {
+                        id: 'highlighter',
+                        title: 'Highlighter',
+                        ariaLabel: 'Highlighter',
+                        label: <Icon value="Highlighter" size={14} />,
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="icon"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        const pen = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Pen"]',
+        )!
+        expect(pen.classList.contains('btn--segment')).toBe(true)
+        expect(pen.classList.contains('btn--selected')).toBe(true)
+    },
+}
+
+/** `look="swatch"` — the drawing dock's colour row: butted colour chips inside one shared
+ *  `1px var(--border)` frame, zero gap, the selected chip a ring only (no fill). */
+export const SwatchLook: Story = {
+    render: () => {
+        const [v, setV] = createSignal('accent')
+        const swatch = (fill: string) => (
+            <span
+                style={{
+                    display: 'block',
+                    width: '16px',
+                    height: '16px',
+                    background: fill,
+                }}
+            />
+        )
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="swatch"
+                options={[
+                    {
+                        id: 'fg',
+                        title: 'Default ink',
+                        ariaLabel: 'Default ink',
+                        label: swatch('var(--fg)'),
+                    },
+                    {
+                        id: 'accent',
+                        title: 'accent',
+                        ariaLabel: 'accent',
+                        label: swatch('var(--accent)'),
+                    },
+                    {
+                        id: 'rose',
+                        title: 'rose',
+                        ariaLabel: 'rose',
+                        label: swatch('var(--rose)'),
+                    },
+                    {
+                        id: 'gold',
+                        title: 'gold',
+                        ariaLabel: 'gold',
+                        label: swatch('var(--gold)'),
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="swatch"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        expect(getComputedStyle(wrap).gap).toBe('0px')
+        const accent = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="accent"]',
+        )!
+        expect(accent.classList.contains('btn--selected')).toBe(true)
     },
 }
