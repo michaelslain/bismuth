@@ -6823,22 +6823,26 @@ describe('showLodMasses: false — the [clusters]-off field is labelled like a f
             r as unknown as { labels: { text: string; eyebrow?: boolean }[] }
         ).labels.filter(l => !l.eyebrow)
 
-    it('drops cluster names and names at least as many notes as with clusters on, at fit', () => {
-        const g = twoLevelGraph()
-        const clustered = mountRenderer('2d', g, { showLodMasses: true })
-        // Guard: this fixture DOES carry cluster names at fit — otherwise the flat side's "zero
-        // eyebrows" would pass for having nothing to lose in the first place.
-        expect(eyebrowLabels(clustered.r).length).toBeGreaterThan(0)
-        const clusteredFileCount = fileLabels(clustered.r).length
-        clustered.r.destroy()
+    // Both dimensions: 3D has no masses, so its clusters-on look IS the cluster-name ladder, and
+    // [clusters] off must swap that for note names exactly as 2D does.
+    for (const dim of ['2d', '3d'] as const) {
+        it(`${dim}: drops cluster names and names more notes than with clusters on, at fit`, () => {
+            const g = twoLevelGraph()
+            const clustered = mountRenderer(dim, g, { showLodMasses: true })
+            // Guard: this fixture DOES carry cluster names at fit — otherwise the flat side's "zero
+            // eyebrows" would pass for having nothing to lose in the first place.
+            expect(eyebrowLabels(clustered.r).length).toBeGreaterThan(0)
+            const clusteredFileCount = fileLabels(clustered.r).length
+            clustered.r.destroy()
 
-        const flat = mountRenderer('2d', g, { showLodMasses: false })
-        expect(eyebrowLabels(flat.r).length).toBe(0)
-        expect(fileLabels(flat.r).length).toBeGreaterThanOrEqual(
-            clusteredFileCount,
-        )
-        flat.r.destroy()
-    })
+            const flat = mountRenderer(dim, g, { showLodMasses: false })
+            expect(eyebrowLabels(flat.r).length).toBe(0)
+            expect(fileLabels(flat.r).length).toBeGreaterThan(
+                clusteredFileCount,
+            )
+            flat.r.destroy()
+        })
+    }
 })
 
 /**

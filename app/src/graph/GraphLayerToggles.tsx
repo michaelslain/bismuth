@@ -1,7 +1,8 @@
-// The graph's two display layers as on/off bracket buttons: [clusters] (the zoomed-out community
-// masses vs every note at every zoom) and [gradient] (the phosphor glow + vignette vs a flat
+// The graph's two display layers as on/off bracket buttons: [clusters] (notes read as named
+// community groups — zoomed-out masses in 2D, group names in 3D — vs every note drawn and named at
+// every zoom) and [gradient] (the phosphor glow + vignette vs a flat
 // ground). Presentational — GraphView owns the state (graph/graphLayers.ts) and passes it in.
-import { Show, type Component } from 'solid-js'
+import type { Component } from 'solid-js'
 import TextButton from '../ui/TextButton'
 import Text from '../ui/Text'
 import styles from './GraphLayerToggles.module.css'
@@ -9,8 +10,6 @@ import styles from './GraphLayerToggles.module.css'
 export type GraphLayerTogglesProps = {
     clusters: boolean
     gradient: boolean
-    /** false in 3D — LOD masses are 2D-only, so the clusters button is not rendered at all */
-    showClusters: boolean
     onClusters: (on: boolean) => void
     onGradient: (on: boolean) => void
     class?: string
@@ -24,20 +23,18 @@ const GraphLayerToggles: Component<GraphLayerTogglesProps> = props => (
         weight="inherit"
         class={[styles.toggles, props.class ?? ''].filter(Boolean).join(' ')}
     >
-        <Show when={props.showClusters}>
-            <TextButton
-                variant={props.clusters ? 'selected' : 'unselected'}
-                aria-pressed={props.clusters}
-                title={
-                    props.clusters
-                        ? 'Clusters — zoomed out, each community draws as one mass. Click to show every note'
-                        : 'Every note — shown at every zoom. Click to group into clusters'
-                }
-                onClick={() => props.onClusters(!props.clusters)}
-            >
-                clusters
-            </TextButton>
-        </Show>
+        <TextButton
+            variant={props.clusters ? 'selected' : 'unselected'}
+            aria-pressed={props.clusters}
+            title={
+                props.clusters
+                    ? 'Clusters — notes read as named groups (zoomed-out masses in 2D). Click to show every note'
+                    : 'Every note — drawn and named at every zoom. Click to group into clusters'
+            }
+            onClick={() => props.onClusters(!props.clusters)}
+        >
+            clusters
+        </TextButton>
         <TextButton
             variant={props.gradient ? 'selected' : 'unselected'}
             aria-pressed={props.gradient}

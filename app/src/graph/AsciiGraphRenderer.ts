@@ -3632,10 +3632,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const t = resolutionT(this.res, this.maxRes)
         const cAlpha = clusterLabelAlpha(t)
         const fAlpha = fileLabelAlpha(t)
-        // [clusters] off (GraphView's toggle, graph/graphLayers.ts): the 2D field is a plain every-note graph,
-        // so it is labelled like one — note names at every zoom, no cluster names. Keyed on an EXPLICIT
-        // false so callers that never set the flag (the intro graph, ```graph blocks) keep the zoom ladder.
-        const flat = is2d && this.cfg.showLodMasses === false
+        // [clusters] off (GraphView's toggle, graph/graphLayers.ts): the field is a plain every-note graph,
+        // so it is labelled like one — note names at every zoom, no cluster names — in 2D AND 3D (3D has
+        // no masses to drop, so its clusters-on look IS the cluster-name ladder; off swaps it for names).
+        // Keyed on an EXPLICIT false so callers that never set the flag (the intro graph, ```graph
+        // blocks) keep the zoom ladder.
+        const flat = this.cfg.showLodMasses === false
 
         if (!flat && cAlpha > 0.01 && this.levelCount > 0) {
             const levelAlphas = clusterLevelAlphas(t, this.levelCount)

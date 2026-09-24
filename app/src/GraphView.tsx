@@ -581,7 +581,6 @@ export function GraphView(props: {
                             <GraphLayerToggles
                                 clusters={graphClusters()}
                                 gradient={graphGradient()}
-                                showClusters={graphViewMode() === '2d'}
                                 onClusters={setGraphClusters}
                                 onGradient={setGraphGradient}
                             />

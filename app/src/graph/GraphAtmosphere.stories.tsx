@@ -20,7 +20,7 @@ import { expect } from 'storybook/test'
 import { onMount } from 'solid-js'
 import { GraphAtmosphere, type BloomSink } from './GraphAtmosphere'
 import { buildBloom, type BloomPoint } from './densityField'
-import { sampleGraphData } from '../ui/_graphFixtures'
+import { SAMPLE_HUB_ID, sampleGraphData } from '../ui/_graphFixtures'
 
 const meta = {
     title: 'Graph/GraphAtmosphere',
@@ -80,7 +80,7 @@ function pointsFromGraph(spread: number, colored: boolean): BloomPoint[] {
                 // reads between stories.
                 x: 0.5 + ((x - minX) / spanX - 0.5) * spread,
                 y: 0.5 + ((y - minY) / spanY - 0.5) * spread,
-                weight: n.kind === 'self' ? 2.2 : 1,
+                weight: n.id === SAMPLE_HUB_ID ? 2.2 : 1,
                 rgb:
                     !colored || n.kind !== 'note'
                         ? undefined

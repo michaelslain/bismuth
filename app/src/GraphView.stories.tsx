@@ -27,7 +27,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
-import { sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
+import { SAMPLE_HUB_ID, sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
 import { setGraphClusters, setGraphGradient } from './graph/graphLayers'
 
@@ -349,10 +349,10 @@ export const MiniModeSwitcher: Story = {
  * - The hover pill only renders while the mouse is genuinely over a node (`hovered()`, set by the
  *   renderer's own `pointermove` listener on `window` — see AsciiGraphRenderer.ts). There is no
  *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
- *   the canvas. That lands on the self ("You") node deterministically, not by luck:
+ *   the canvas. That lands on the index hub note (`SAMPLE_HUB_ID`) deterministically, not by luck:
  *   `sampleGraphData(8)` and its layout (`computeLayout`) are pure functions of fixed inputs, and
- *   the self node sits at the layout's centroid (it links to every other node) — the renderer
- *   fits+centers the world in the canvas regardless of aspect ratio, so the self node's cell stays
+ *   the hub sits at the layout's centroid (it links to every other note) — the renderer
+ *   fits+centers the world in the canvas regardless of aspect ratio, so the hub's cell stays
  *   under the canvas's own center point at this width just as it did at the old 480px one
  *   (verified empirically the same way: the center always lands inside a node's cell).
  * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
@@ -361,14 +361,14 @@ export const MiniModeSwitcher: Story = {
  * - The trailing assertions check the ruling's own claims directly: "bottoms aligned" — the hover
  *   pill and the `.graph-stats` box share the same CSS `bottom` (6px) / flex `align-items: center`,
  *   which pins both boxes' bottom edges to the same Y regardless of their differing heights/padding
- *   — and "never overlaps" (fix-2-4, ds-polish): the SELF node's label is overridden to 61 chars,
- *   a length nothing bounded the hover pill's width against before `.graph-stats` moved off
+ *   — and "never overlaps" (fix-2-4, ds-polish): the hub note's id is renamed to a 61-char
+ *   title, a length nothing bounded the hover pill's width against before `.graph-stats` moved off
  *   `position: absolute` to become the bottom bar's last flex child (GraphView.module.css). A
  *   local fixture override, not a change to `sampleGraphData` itself, which every other story here
- *   also uses — `hoverLabel()` (GraphView.tsx) returns a 'self' node's `label` verbatim, so
- *   overriding it is the deterministic way to grow the hover pill's text without disturbing which
- *   node the centered pointermove below lands on (still the self node, still at the canvas center,
- *   same guarantee the doc comment above already established).
+ *   also uses — `hoverLabel()` (GraphView.tsx) shows a note as `<id>.md`, so renaming the hub's id
+ *   (and the edges that name it) is the deterministic way to grow the hover pill's text without
+ *   disturbing which node the centered pointermove below lands on (still the hub, still at the
+ *   canvas center, same guarantee the doc comment above already established).
  */
 const LONG_HOVER_LABEL =
     'Quarterly North American Expansion Planning And Budget Review'
@@ -381,13 +381,15 @@ export const HudBadges: Story = {
         onCleanup(() => setSettings('graph', 'showFps', previousShowFps))
 
         const graph = sampleGraphData(8)
+        const rename = (id: string) =>
+            id === SAMPLE_HUB_ID ? LONG_HOVER_LABEL : id
         const longLabelGraph = {
-            ...graph,
-            nodes: graph.nodes.map(node =>
-                node.kind === 'self'
-                    ? { ...node, label: LONG_HOVER_LABEL }
-                    : node,
-            ),
+            nodes: graph.nodes.map(node => ({ ...node, id: rename(node.id) })),
+            edges: graph.edges.map(e => ({
+                ...e,
+                from: rename(e.from),
+                to: rename(e.to),
+            })),
         }
 
         return (
@@ -468,7 +470,7 @@ export const HudBadges: Story = {
         // pill's right edge stays clear of the readout's left edge — the regression this story
         // exists to catch. Before the readout moved off `position: absolute`, nothing bounded the
         // pill's width above 520px and a label this long painted straight over the readout text.
-        expect(hoverPill.textContent).toBe(LONG_HOVER_LABEL)
+        expect(hoverPill.textContent).toBe(`${LONG_HOVER_LABEL}.md`)
         expect(hoverPill.getBoundingClientRect().right).toBeLessThanOrEqual(
             stats.getBoundingClientRect().left,
         )
