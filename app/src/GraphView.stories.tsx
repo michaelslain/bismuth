@@ -508,9 +508,62 @@ export const GradientOff: Story = {
         const btn = await c.findByRole('button', { name: /gradient/ })
         await expect(btn.getAttribute('aria-pressed')).toBe('false')
         const before = canvasElement.querySelectorAll('canvas').length
+        // The bloom canvas's alpha channel is the ink signal: a field that
+        // never reached it (Finding 1's bug) leaves every pixel transparent.
+        const inked = () => {
+            const b = canvasElement.querySelector(
+                'canvas[data-mode]',
+            ) as HTMLCanvasElement
+            const d = b
+                .getContext('2d')!
+                .getImageData(0, 0, b.width, b.height).data
+            let n = 0
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++
+            return n
+        }
+        // Poll until two consecutive reads 500ms apart agree, so the graph is
+        // genuinely at rest (no dirty frame in flight) before the off/on cycle
+        // below — otherwise a still-settling field could paper over a remount
+        // that never gets pushed anything.
+        const waitUntilSettled = async () => {
+            let last = inked()
+            for (let attempt = 0; attempt < 20; attempt++) {
+                await new Promise(r => setTimeout(r, 500))
+                const next = inked()
+                if (next === last) return
+                last = next
+            }
+            throw new Error('bloom field never settled')
+        }
         await userEvent.click(btn)
-        await waitFor(() => expect(canvasElement.querySelectorAll('canvas').length).toBe(before + 1))
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before + 1,
+            ),
+        )
+        await waitFor(() => expect(inked()).toBeGreaterThan(0))
+        await waitUntilSettled()
+        // One more off→on cycle, at rest: this is the case Finding 1 fixes —
+        // emitBloom() only fires on a dirty frame, so a remount while idle
+        // must replay the sink's last field itself rather than wait for one.
         await userEvent.click(btn)
-        await waitFor(() => expect(canvasElement.querySelectorAll('canvas').length).toBe(before))
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before,
+            ),
+        )
+        await userEvent.click(btn)
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before + 1,
+            ),
+        )
+        await waitFor(() => expect(inked()).toBeGreaterThan(0))
+        await userEvent.click(btn)
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('canvas').length).toBe(
+                before,
+            ),
+        )
     },
 }
