@@ -81,13 +81,15 @@ function DaemonPage(props: DaemonPageProps) {
                     <>
                         {FACET_WORD[f]}
                         <Show when={count !== undefined}>
-                            {' '}
-                            <Text as="span" size="ui" tone="faint">
-                                {/* 'late' — the count is a convenience once the word itself is
-                                    already visible; it drops at 480px so all four facet words
-                                    stay put and only the digits give way. */}
-                                <BarLabel long={String(count)} drop="late" />
-                            </Text>
+                            {/* 'late' — the count is a convenience once the word itself is
+                                already visible; it drops at 480px so all four facet words
+                                stay put and only the digits give way. A direct flex child of
+                                .textLabel (not wrapped in Text) so its gap drops WITH it. */}
+                            <BarLabel
+                                long={String(count)}
+                                drop="late"
+                                class={styles.facetCount}
+                            />
                         </Show>
                     </>
                 ),

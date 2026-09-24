@@ -224,6 +224,26 @@ function pageProps(
 
 const rect = (el: Element) => el.getBoundingClientRect()
 
+/** The bounding rect of the last child of `el` that actually takes up space — skipping
+ *  `display:none` elements (a dropped BarLabel count) and empty text nodes. A plain text node
+ *  has no `getBoundingClientRect`, so it is measured via a Range instead. */
+function lastVisibleChildRect(el: Element): DOMRect {
+    const nodes = [...el.childNodes]
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        const node = nodes[i]
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            if (getComputedStyle(node as Element).display === 'none') continue
+            return (node as Element).getBoundingClientRect()
+        }
+        if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            return range.getBoundingClientRect()
+        }
+    }
+    throw new Error('no visible child found')
+}
+
 /** The layout contract every enabled page must keep: the face centred in the hub column, the
  *  chat (when present) never wider than that column, and — for the wide grid — the panel column
  *  never narrower than the hub column. `stacked: true` (the narrow story) skips that last check:
@@ -349,6 +369,21 @@ export const AwakeCrons: Story = {
         const h = rect(hub)
         const centreFraction = (f.top + f.height / 2 - h.top) / h.height
         await expect(centreFraction).toBeLessThanOrEqual(0.35)
+
+        // Wide: the crons count still shows after the word, with a visible gap between them —
+        // the collapse ladder that drops it at 480px hasn't fired here.
+        const toggle = canvasElement.querySelector<HTMLElement>('.segmented')!
+        const cronsButton = [...toggle.querySelectorAll('button')].find(b =>
+            b.textContent?.toLowerCase().startsWith('crons'),
+        )!
+        const label = cronsButton.querySelector('span')!
+        const barLabel = label.querySelector('[data-bar-label]') as HTMLElement
+        await expect(getComputedStyle(barLabel).display).not.toBe('none')
+        const wordRange = document.createRange()
+        wordRange.selectNodeContents(label.childNodes[0])
+        const wordRect = wordRange.getBoundingClientRect()
+        const countRect = barLabel.getBoundingClientRect()
+        await expect(countRect.left - wordRect.right).toBeGreaterThan(2)
     },
 }
 
@@ -543,6 +578,20 @@ export const Narrow480: Story = {
                 b.textContent?.toLowerCase().includes(word),
             )
             await expect(shown).toBe(true)
+        }
+
+        // The dropped count must not leave a dead gap behind: the label's rendered text carries
+        // no trailing whitespace, and the label's own right edge sits flush with the last
+        // VISIBLE child's right edge (the count span is `display:none` at this width, so its
+        // flex gap collapses with it — a wrapping element around it would keep the gap instead).
+        for (const button of buttons) {
+            const label = button.querySelector('span')!
+            await expect(label.innerText.trimEnd()).toBe(label.innerText)
+            const lastVisible = lastVisibleChildRect(label)
+            const labelRect = label.getBoundingClientRect()
+            await expect(
+                Math.abs(labelRect.right - lastVisible.right),
+            ).toBeLessThanOrEqual(1)
         }
     },
 }
