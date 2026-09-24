@@ -7,6 +7,7 @@ import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
 import Text from '../ui/Text'
+import EmptyState from '../ui/EmptyState'
 import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
 import ModalBody from '../ui/ModalBody'
@@ -329,7 +330,14 @@ export function EditCardsModal(props: {
                                         setDropTo(null)
                                     }}
                                 >
-                                    {i() + 1}
+                                    <Text
+                                        as="span"
+                                        size="inherit"
+                                        tone="inherit"
+                                        weight="inherit"
+                                    >
+                                        {i() + 1}
+                                    </Text>
                                 </div>
                                 <CardCell
                                     value={text(n, ff)}
@@ -517,10 +525,14 @@ export function EditCardsModal(props: {
                                 <Show
                                     when={parsed().length > 0}
                                     fallback={
-                                        <div class={styles['cards-pvempty']}>
+                                        <EmptyState
+                                            blockClass={
+                                                styles['cards-pvempty']
+                                            }
+                                        >
                                             parsed cards appear here as you
                                             paste.
-                                        </div>
+                                        </EmptyState>
                                     }
                                 >
                                     <For each={parsed()}>
@@ -528,9 +540,17 @@ export function EditCardsModal(props: {
                                             <div
                                                 class={`${styles['cards-pvcard']} ${c.back ? '' : styles['bad']}`}
                                             >
-                                                <div class={styles['cards-pi']}>
+                                                <Text
+                                                    as="div"
+                                                    size="inherit"
+                                                    tone="inherit"
+                                                    weight="inherit"
+                                                    class={
+                                                        styles['cards-pi']
+                                                    }
+                                                >
                                                     {i() + 1}
-                                                </div>
+                                                </Text>
                                                 <div>
                                                     <div
                                                         class={
