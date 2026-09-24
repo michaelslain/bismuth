@@ -87,12 +87,12 @@ const composerTheme = EditorView.theme({
     },
     '.cm-placeholder': { color: 'var(--text-muted)', fontStyle: 'normal' },
     '.cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
         {
             backgroundColor:
-                'color-mix(in srgb, var(--accent) 38%, transparent)',
+                'var(--selection)',
         },
 })
 

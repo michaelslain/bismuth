@@ -28,7 +28,7 @@
     transform-origin: 0% 0%;
 }
 .pdf-text-layer :global(::selection) {
-    background: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--selection);
 }
 
 /* THE MISSING HALF of pdf.js's `.textLayer` contract (upstream: pdfjs-dist/web/pdf_viewer.css,
