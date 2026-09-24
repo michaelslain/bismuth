@@ -48,6 +48,7 @@ import { openExternalUrl } from '../appWindow'
 import { settings } from '../settings'
 import { reorderTaskBlocks } from '../../../core/src/taskReorder'
 import { splitCard, type CardMode } from './cardBodySplit'
+import { Loading } from '../ui/EmptyState'
 import styles from './CardEditor.module.css'
 
 // A disk-pulled reload is annotated so the autosave listener skips it — otherwise reloading an
@@ -571,7 +572,7 @@ export function CardEditor(props: {
         <div class={styles.cardEditor}>
             <div ref={host} />
             <Show when={loading()}>
-                <div class={styles.cardKey}>Loading…</div>
+                <Loading />
             </Show>
         </div>
     )

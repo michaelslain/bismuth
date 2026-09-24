@@ -35,11 +35,11 @@
    edge has to be a single hairline broken only by the header's title/close, which a border on
    THIS element can never do (a border is drawn whole, it cannot yield a gap for a sibling to fill
    in). So the border+background .asc-modal normally paints are turned off here, on this element
-   only (bare <Modal>, e.g. the palette, keeps them) via a same-element compound selector — panelClass
-   and .asc-modal land on the one div Modal.tsx renders, so this wins at equal specificity without
-   reaching into another component's stylesheet. */
-/* design-system-ignore globalReach: same-element compound selector (panelClass + .asc-modal land on the one div Modal.tsx renders) neutralising .asc-modal's border/background on FormModal only, per the modal-redesign frame contract — not a reach into Modal.module.css's own layout, only a specificity tool against its two declarations on this shared element */
-.panel:global(.asc-modal) {
+   only (bare <Modal>, e.g. the palette, keeps them) via the `data-modal-panel` runtime hook
+   Modal.tsx stamps on the same div `panelClass` lands on — same specificity as the old same-element
+   compound selector against Modal's own hashed `.asc-modal` local, without this file reaching into
+   Modal.module.css's hashed classes at all. */
+.panel[data-modal-panel] {
     background: none;
     border: none;
 }

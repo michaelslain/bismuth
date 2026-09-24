@@ -83,6 +83,7 @@ import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import TextInput from '../ui/TextInput'
 import Swatch from '../ui/Swatch'
+import AnchoredPopover from '../ui/AnchoredPopover'
 import Callout from '../ui/Callout'
 import InlineCode from '../ui/InlineCode'
 import styles from './KanbanView.module.css'
@@ -1811,6 +1812,7 @@ export function KanbanView(props: {
                         // Exactly one control is ever marked: a swatch when an override is set
                         // (and it matches the current color), else Auto — never both at once.
                         const hasOverride = () => !!groupColors()[key]
+                        let colorAnchorRef: HTMLDivElement | undefined
                         return (
                             <>
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
@@ -1835,7 +1837,10 @@ export function KanbanView(props: {
                                     }}
                                     style={{ '--kb-col-color': color() }}
                                 >
-                                    <div class={styles.kbColorAnchor}>
+                                    <div
+                                        class={styles.kbColorAnchor}
+                                        ref={el => (colorAnchorRef = el)}
+                                    >
                                         <div
                                             class={styles.kanbanColHeader}
                                             onPointerDown={e =>
@@ -1913,64 +1918,66 @@ export function KanbanView(props: {
                                         </div>
 
                                         {/* Color picker popover */}
-                                        <Show
-                                            when={pickerCol() === group().key}
+                                        <AnchoredPopover
+                                            anchor={() => colorAnchorRef}
+                                            open={
+                                                pickerCol() === group().key
+                                            }
+                                            onDismiss={() =>
+                                                setPickerCol(null)
+                                            }
+                                            class={styles.kbColorPanel}
+                                            panelAttrs={{
+                                                'data-testid':
+                                                    'kanban-color-picker',
+                                            }}
                                         >
-                                            <div
-                                                class={styles.kbColorBackdrop}
-                                                onClick={() =>
-                                                    setPickerCol(null)
+                                            <For each={PALETTE}>
+                                                {(c, i) => (
+                                                    <Swatch
+                                                        size="sm"
+                                                        color={c}
+                                                        selected={
+                                                            hasOverride() &&
+                                                            color() === c
+                                                        }
+                                                        label={
+                                                            PALETTE_NAMES[
+                                                                i()
+                                                            ]!
+                                                        }
+                                                        onClick={() =>
+                                                            void setColColor(
+                                                                group().key,
+                                                                c,
+                                                            )
+                                                        }
+                                                    />
+                                                )}
+                                            </For>
+                                            <PlainButton
+                                                class={styles.kbSwatchAuto}
+                                                classList={{
+                                                    [styles.kbSwatchAutoActive]:
+                                                        !hasOverride(),
+                                                }}
+                                                title="Auto"
+                                                aria-label="Auto"
+                                                aria-pressed={
+                                                    hasOverride()
+                                                        ? undefined
+                                                        : 'true'
                                                 }
-                                            />
-                                            <div class={styles.kbColorPop}>
-                                                <For each={PALETTE}>
-                                                    {(c, i) => (
-                                                        <Swatch
-                                                            size="sm"
-                                                            color={c}
-                                                            selected={
-                                                                hasOverride() &&
-                                                                color() === c
-                                                            }
-                                                            label={
-                                                                PALETTE_NAMES[
-                                                                    i()
-                                                                ]!
-                                                            }
-                                                            onClick={() =>
-                                                                void setColColor(
-                                                                    group()
-                                                                        .key,
-                                                                    c,
-                                                                )
-                                                            }
-                                                        />
-                                                    )}
-                                                </For>
-                                                <PlainButton
-                                                    class={styles.kbSwatchAuto}
-                                                    classList={{
-                                                        [styles.kbSwatchAutoActive]:
-                                                            !hasOverride(),
-                                                    }}
-                                                    title="Auto"
-                                                    aria-label="Auto"
-                                                    aria-pressed={
-                                                        hasOverride()
-                                                            ? undefined
-                                                            : 'true'
-                                                    }
-                                                    onClick={() =>
-                                                        void setColColor(
-                                                            group().key,
-                                                            null,
-                                                        )
-                                                    }
-                                                >
-                                                    Auto
-                                                </PlainButton>
-                                            </div>
-                                        </Show>
+                                                onClick={() =>
+                                                    void setColColor(
+                                                        group().key,
+                                                        null,
+                                                    )
+                                                }
+                                            >
+                                                Auto
+                                            </PlainButton>
+                                        </AnchoredPopover>
                                     </div>
 
                                     <div class={styles.kanbanCards}>

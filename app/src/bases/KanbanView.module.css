@@ -180,24 +180,23 @@
   font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
 }
 
-/* Column color picker popover — .kbColorAnchor wraps ONLY .kanbanColHeader (not the whole
-   column, whose height varies with its card count) so its own rendered box is exactly the
-   header's box: an absolutely-positioned popover contributes no height to it, so `top: 100%`
-   below lands precisely at the header's bottom edge with no measured/guessed pixel value, and
-   never covers header text regardless of font size or theme. `left` matches the header's own
-   inner padding (var(--sp-5)) — the same inset `.kanbanCards` uses — so the popover's left edge
-   lines up with the column's content, not its outer border. */
+/* Column color picker popover — anchored under the header WRAPPER (not the color-dot trigger
+   itself) via ui/AnchoredPopover, which owns positioning (portaled, position:fixed, measured off
+   the anchor's own rect) plus outside-click/Escape dismissal. Anchoring to the dot put the panel
+   4px below the dot's bottom, which sits vertically centred inside the header — so the panel
+   started mid-header, crossed the bottom hairline and crowded the column name. .kbColorAnchor
+   still wraps ONLY .kanbanColHeader (not the whole column, whose height varies with its card
+   count), kept as the header's own positioning context for other absolutely-positioned header
+   children (the column menu trigger); it now doubles as the popover's anchor, so the panel opens
+   flush under the header's own bottom edge. .kbColorPanel supplies only this popover's own
+   chrome — AnchoredPopover's `.panel` already carries `position: fixed` + the stacking z-index —
+   plus a left offset so its edge lines up with the cards below rather than the header's padding. */
 .kbColorAnchor { position: relative; }
-.kbColorBackdrop { position: fixed; inset: 0; z-index: 40; }
-.kbColorPop {
-  position: absolute; z-index: 41; top: 100%; left: var(--sp-5);
+.kbColorPanel {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4);
   background: var(--panel); border: var(--rule); border-radius: var(--r-0);
-  /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black.
-     max-width caps at the column's own inner width (100% of the anchor, which spans the full
-     column) minus the same inset on both sides, so the popover never hangs past the column's
-     right edge even on the narrowest (248px) column. */
-  box-shadow: var(--lift); width: max-content; max-width: min(214px, calc(100% - (2 * var(--sp-5))));
+  /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+  box-shadow: var(--lift); width: max-content; max-width: 214px; margin-left: var(--sp-5);
 }
 /* Palette swatches are now the shared ui/Swatch.tsx primitive (Task 14) — the size="sm" variant
    renders the same 20px bordered circle this rule used to hand-roll. The "Auto" reset stays a

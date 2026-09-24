@@ -150,8 +150,8 @@ governance:
   externalClasses: ["bismuth-*", "callout-*", "cm-*", "xterm*"]
   global:
     - app/src/global.css           # the ONE global stylesheet — tokens, reset, runtime-HTML
-                                    # classes, app shell chrome, the shared asc-*/btn/viewbar
-                                    # register, CodeMirror/xterm/Univer theming, the switcher and
+                                    # classes, app shell chrome, the ASCII (asc-*) register,
+                                    # CodeMirror/xterm/Univer theming, the switcher and
                                     # popover runtime literals — each former file its own
                                     # clearly commented section (one-global-stylesheet, Task 14)
   primitives:

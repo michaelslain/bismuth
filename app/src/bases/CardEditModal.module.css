@@ -1,8 +1,9 @@
 /* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome (frame, header
    rule, footer rule) now comes from FormModal/ModalHeader/ModalFooter (modal-redesign Task 8);
    this file only holds what those shared components don't: the --kb-meta-* var bridge to
-   PropertyValueEditor, the DUE trigger's sizing, the Milkdown description surface, the empty
-   state and the boolean toggle. */
+   PropertyValueEditor, the DUE trigger's sizing, the Milkdown description surface and the
+   boolean toggle. The no-editable-properties message is `<EmptyState>` now (ds-bridges Task 4)
+   — no local override needed, so this file no longer carries an `.empty` class. */
 
 /* Carries the --kb-meta-* custom properties PropertyValueEditor.module.css reads for its shared
    .kbMetaInput/.kbMetaSelectTrigger/.kbMetaMultiselectAdd controls (STATUS/PRIORITY/TAGS) — set
@@ -133,13 +134,6 @@
   color: var(--faint);
   pointer-events: none;
 }
-
-.empty {
-  font-size: var(--fs-body);
-  color: var(--text-muted);
-  padding: var(--sp-2) 0;
-}
-
 
 /* Boolean toggle: the product's `[x]`/`[ ]` register (ui/BracketToggle), the SAME one every
    other on/off control uses (ui/ToggleRow, calendar's all-day switch) — not a filled Chip.

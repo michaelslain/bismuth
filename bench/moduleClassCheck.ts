@@ -98,6 +98,26 @@ const ALLOW = new Set<string>([
     // intro/VaultIntro.module.css's own header: no `.tsx` renders `.vi-graph3d-labels`
     // (IntroGraph mounts `.vi-graph3d-canvas` + <GraphAtmosphere>, never a labels layer).
     'intro/VaultIntro.module.css:vi-graph3d-labels',
+    // ui/Button.module.css's `.btn`/`.btn--*` family (ds-bridges Task 1): these ARE reachable —
+    // Button.tsx passes its own `styles` map into `buttonClass(opts, cls)`
+    // (app/src/ui/buttonClass.ts), which reads `cls['btn']`/`` cls[`btn--${kind}`] ``/etc at
+    // runtime. buttonClass.ts deliberately imports no stylesheet (it stays a plain, pure,
+    // unit-tested module — see its own header), so this checker's per-file `styles[...]` read scan
+    // cannot trace a value passed under a different parameter name through a function boundary.
+    // Verified reachable by app/src/ui/buttonClass.test.ts (every key round-trips through a real
+    // `cls` map) and by `bun run verify`'s baseline-identical shots — every one of these classes
+    // visibly paints. Not dead code; a static-analysis blind spot in this exact indirection.
+    'ui/Button.module.css:btn',
+    'ui/Button.module.css:btn--danger',
+    'ui/Button.module.css:btn--icon',
+    'ui/Button.module.css:btn--lg',
+    'ui/Button.module.css:btn--normal',
+    'ui/Button.module.css:btn--primary',
+    'ui/Button.module.css:btn--segment',
+    'ui/Button.module.css:btn--selected',
+    'ui/Button.module.css:btn--sm',
+    'ui/Button.module.css:btn--text',
+    'ui/Button.module.css:btn--unselected',
 ])
 
 /** Modules this check cannot ever pass, structurally — not a violation to fix, so they are

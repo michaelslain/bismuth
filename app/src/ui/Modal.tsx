@@ -51,12 +51,14 @@ const LATE_MOUNT_MS = 2000
  * blocks that EventModal / RecurrenceDialog / CategoryPanel / PaletteModal each
  * reimplemented.
  *
- * The inner panel always carries `.asc-modal` (ui/ui.css: pop-bg-strong fill, hairline border,
- * radius 0, no blur, no shadow — flattened 2026-08-27, visual-unification audit §9.2/§9.3,
- * wave 1) — the ONE floating-panel chrome every modal in the app shares. `props.class` still
- * layers on top for call-site sizing/layout, and a
- * caller with its own background/border/radius can win by pairing its selector with
- * `.asc-modal` (higher specificity than a bare app-level class) rather than editing here.
+ * The inner panel always carries Modal's own `.asc-modal` chrome (a hashed local in
+ * Modal.module.css: pop-bg-strong fill, hairline border, radius 0, no blur, no shadow —
+ * flattened 2026-08-27, visual-unification audit §9.2/§9.3, wave 1), the ONE floating-panel
+ * chrome every modal in the app shares. `props.class` still layers on top for call-site
+ * sizing/layout, and a caller with its own background/border/radius wins by pairing its
+ * selector with `[data-modal-panel]` — the runtime hook Modal.tsx stamps on the same
+ * element (FormModal.module.css's `.panel[data-modal-panel]` is the example) — rather than
+ * editing here.
  *
  * ── Dialog semantics (added 2026-08-29, design critique P0) ────────────────────────────────
  * This used to be a plain `<div>` pair: no `role`, no `aria-modal`, no initial focus, no trap and
@@ -239,12 +241,13 @@ function Modal(props: ModalProps) {
             >
                 <div
                     class={[
-                        'asc-modal',
+                        styles['asc-modal'],
                         props.class,
                         props.panelClass,
                     ]
                         .filter(Boolean)
                         .join(' ')}
+                    data-modal-panel=""
                     role="dialog"
                     aria-modal="true"
                     aria-label={props.label}

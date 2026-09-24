@@ -22,10 +22,9 @@
   cursor: crosshair;
   touch-action: none; /* stylus/touch draw, not scroll — wheel still forwards to the note */
 }
-/* The drawing dock is Toolbar.tsx's `.draw-toolbar` (drawing/Toolbar.module.css) — still a bare,
-   global, unhashed class there (external story probes need the literal string), but this file no
-   longer needs to know that: Toolbar.tsx also carries a `data-draw-toolbar` attribute on the
-   same node, and an attribute selector needs no hashing to stay correct across a build. */
+/* The drawing dock is Toolbar.tsx's `.draw-toolbar` — a plain hashed local in
+   drawing/Toolbar.module.css, so this file reaches it through the `data-draw-toolbar` attribute
+   Toolbar.tsx also carries on the same node instead, same as every external story probe. */
 .ink-host.active [data-draw-toolbar] {
   pointer-events: auto;
 }

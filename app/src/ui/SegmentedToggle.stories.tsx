@@ -3,7 +3,7 @@
 // selected/unselected consumer (graph mode, calendar view switcher, Bases view tabs).
 //
 // Props: options (id + label + optional title), value, onChange, size?, class?,
-// segmentClass?, look? ('bracket' default | 'segment').
+// segmentClass?, look? ('bracket' default | 'segment' | 'icon' | 'swatch').
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -86,7 +86,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="BookOpen" size={14} />
-                                <span class="btn-label">2nd</span>
+                                <span data-btn-label>2nd</span>
                             </>
                         ),
                     },
@@ -96,7 +96,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Brain" size={14} />
-                                <span class="btn-label">3rd</span>
+                                <span data-btn-label>3rd</span>
                             </>
                         ),
                     },
@@ -106,7 +106,7 @@ export const WithIcons: Story = {
                         label: (
                             <>
                                 <Icon value="Blend" size={14} />
-                                <span class="btn-label">both</span>
+                                <span data-btn-label>both</span>
                             </>
                         ),
                     },
@@ -158,7 +158,7 @@ export const SegmentLook: Story = {
         const pen = canvasElement.querySelector<HTMLElement>(
             '[aria-label="Pen"]',
         )!
-        expect(pen.classList.contains('btn--segment')).toBe(true)
+        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
         expect(pen.hasAttribute('aria-pressed')).toBe(false)
     },
 }
@@ -210,7 +210,7 @@ export const NoSelectionWithOptionExtras: Story = {
         expect(out).not.toBeNull()
         expect(reset.classList.contains('fixed-width-demo')).toBe(true)
         // No segment is ever "selected" — this group has no active member.
-        expect(out.classList.contains('btn--selected')).toBe(false)
+        expect(out.getAttribute('data-state') === 'selected').toBe(false)
     },
 }
 
@@ -252,5 +252,153 @@ export const Sizes: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** A disabled option on the default bracket look: it renders `--faint` and is not clickable —
+ *  clicking it must leave the group's value unchanged. */
+export const DisabledOption: Story = {
+    render: () => {
+        const [v, setV] = createSignal('one')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                options={[
+                    { id: 'one', label: 'one' },
+                    { id: 'two', label: 'two', disabled: true },
+                    { id: 'three', label: 'three' },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const buttons = canvasElement.querySelectorAll<HTMLButtonElement>(
+            'button',
+        )
+        const first = buttons[0]!
+        const middle = buttons[1]!
+        const last = buttons[2]!
+        expect(middle.disabled).toBe(true)
+        expect(first.getAttribute('aria-pressed')).toBe('true')
+        // A disabled button does not dispatch a click event, so this must be a no-op: the
+        // group's value stays on the first option, which stays the one marked pressed.
+        middle.click()
+        expect(middle.getAttribute('aria-pressed')).toBe('false')
+        expect(first.getAttribute('aria-pressed')).toBe('true')
+        // A disabled option must read as visibly different from an enabled-but-unselected sibling
+        // ('three') — both are --faint text, so opacity is the only remaining signal.
+        expect(getComputedStyle(middle).opacity).toBe('0.4')
+        expect(getComputedStyle(last).opacity).toBe('1')
+    },
+}
+
+/** `look="icon"` — the drawing dock's tool/size/smoothing/paper groups: butted icon-only boxes,
+ *  the selected one an accent glyph on an `--accent-soft` fill with a 1px inset accent ring. */
+export const IconLook: Story = {
+    render: () => {
+        const [v, setV] = createSignal('pen')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="icon"
+                size="sm"
+                options={[
+                    {
+                        id: 'pen',
+                        title: 'Pen',
+                        ariaLabel: 'Pen',
+                        label: <Icon value="Pen" size={14} />,
+                    },
+                    {
+                        id: 'eraser',
+                        title: 'Eraser',
+                        ariaLabel: 'Eraser',
+                        label: <Icon value="Eraser" size={14} />,
+                    },
+                    {
+                        id: 'highlighter',
+                        title: 'Highlighter',
+                        ariaLabel: 'Highlighter',
+                        label: <Icon value="Highlighter" size={14} />,
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="icon"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        const pen = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Pen"]',
+        )!
+        expect(pen.getAttribute('data-kind') === 'segment').toBe(true)
+        expect(pen.getAttribute('data-state') === 'selected').toBe(true)
+    },
+}
+
+/** `look="swatch"` — the drawing dock's colour row: butted colour chips inside one shared
+ *  `1px var(--border)` frame, spaced by `--sp-1`, the selected chip a ring only (no fill). */
+export const SwatchLook: Story = {
+    render: () => {
+        const [v, setV] = createSignal('accent')
+        const swatch = (fill: string) => (
+            <span
+                style={{
+                    display: 'block',
+                    width: '16px',
+                    height: '16px',
+                    background: fill,
+                }}
+            />
+        )
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="swatch"
+                options={[
+                    {
+                        id: 'fg',
+                        title: 'Default ink',
+                        ariaLabel: 'Default ink',
+                        label: swatch('var(--fg)'),
+                    },
+                    {
+                        id: 'accent',
+                        title: 'accent',
+                        ariaLabel: 'accent',
+                        label: swatch('var(--accent)'),
+                    },
+                    {
+                        id: 'rose',
+                        title: 'rose',
+                        ariaLabel: 'rose',
+                        label: swatch('var(--rose)'),
+                    },
+                    {
+                        id: 'gold',
+                        title: 'gold',
+                        ariaLabel: 'gold',
+                        label: swatch('var(--gold)'),
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="swatch"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        const sp1 = getComputedStyle(document.documentElement).getPropertyValue('--sp-1').trim()
+        expect(getComputedStyle(wrap).gap).toBe(sp1)
+        const accent = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="accent"]',
+        )!
+        expect(accent.getAttribute('data-state') === 'selected').toBe(true)
     },
 }

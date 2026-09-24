@@ -106,9 +106,10 @@ export const CloseDoesNotDrag: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector(
-            `.${styles['pane-header-x']}`,
-        )
+        // The close button no longer carries a PaneHeader-local class (ds-bridges Task 1 dropped
+        // `.pane-header-x` — its only rule was fully redundant with IconButton's own
+        // `variant="unselected"` chrome). Target it by its accessible label instead.
+        const closeBtn = canvasElement.querySelector('[aria-label="Close pane"]')
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.dispatchEvent(

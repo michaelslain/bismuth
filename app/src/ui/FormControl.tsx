@@ -19,18 +19,17 @@ export type FormControlProps =
  * The shared form-control chrome — transparent, an underline rule, accent underline + inset
  * shadow on focus, no fill and no box — behind both TextInput and Select's trigger. Polymorphic:
  * `as="input"`/`"textarea"` is what TextInput composes, `as="button"` is what Select's trigger
- * composes. The chrome itself stays the plain global `.ui-input`/`.ui-select-trigger` class (see
- * FormControl.module.css), not a hashed module local — seven stylesheets outside ui/ and three
- * literal writers still reach those class names directly, and wave 3 of this plan is what
- * migrates them onto the real components.
+ * composes. The chrome is `styles['ui-input']`, FormControl's own hashed local (see
+ * FormControl.module.css) — no other stylesheet reaches it anymore.
  */
 function FormControl(props: FormControlProps) {
     const [local, rest] = splitProps(props, ['as', 'class', 'children'])
-    const cls = () => `${styles.control} ui-input ${local.class ?? ''}`.trim()
+    const cls = () => `${styles['ui-input']} ${local.class ?? ''}`.trim()
     if (local.as === 'textarea') {
         return (
             <textarea
                 class={cls()}
+                data-control={local.as}
                 {...(rest as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
             />
         )
@@ -39,6 +38,7 @@ function FormControl(props: FormControlProps) {
         return (
             <button
                 class={cls()}
+                data-control={local.as}
                 {...(rest as JSX.ButtonHTMLAttributes<HTMLButtonElement>)}
             >
                 {local.children}
@@ -46,7 +46,11 @@ function FormControl(props: FormControlProps) {
         )
     }
     return (
-        <input class={cls()} {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)} />
+        <input
+            class={cls()}
+            data-control={local.as}
+            {...(rest as JSX.InputHTMLAttributes<HTMLInputElement>)}
+        />
     )
 }
 

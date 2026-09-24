@@ -1260,7 +1260,7 @@ as files. `@import` did not resolve it — still N files, and it hoists (see `cs
 That work landed, the global layer is now the target shape (one `app/src/global.css`, nothing
 else), and the baseline was pruned to match: it now holds 13 `globalReach` entries and no
 `oneGlobalFile` entry — down from 34, found by running the gate with an empty baseline and keeping
-exactly the findings that still fire.
+exactly the findings that still fire. The ds-bridges run (2026-09-24) then cleared those too: every `:global()` bridge in `app/src/ui` became a hashed local reached from outside only through `data-*` hooks, so `accepted` is now empty; the only in-line `design-system-ignore globalReach` exemptions left are 7 document-level (`html.kb-dragging`/`html.view-dragging`) or pdf.js (`.markedContent`) rules.
 
 Prefer the two narrower mechanisms. A genuine, permanent exception belongs in `DESIGN.md`'s
 `governance` block (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE,
