@@ -818,7 +818,7 @@ details.callout > summary::-webkit-details-marker {
    `.has-rail` regardless of source order. */
 .layout.has-rail.switcher-active { --rail-w: 0px; }
 /* `.sidebar`, `.sidebar > *`, `.sidebar-eyebrow-row`, `.sidebar-files`, `.sidebar-graph-section`
-   (+ `.collapsed`), `.sidebar-graph`, `.sidebar-icons` (+ its `:global(.btn--icon)` copies) and
+   (+ `.collapsed`), `.sidebar-graph` and
    `.sidebar canvas` moved into shell/Sidebar.module.css. `.sidebar-logo` moved with them only in
    the sense of being deleted — it had zero consumers. `.layout.sidebar-hidden` below is NOT part
    of that family: it belongs to `.layout`, staying here until Task 11's AppFrame. */
@@ -830,15 +830,12 @@ details.callout > summary::-webkit-details-marker {
 /* `.graph-floater` / `.graph-floater.docked` (the always-mounted Knowledge Graph wrapper) moved
    into shell/GraphFloater.module.css. */
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
-   resting color rising to --fg on hover — not full-strength white at rest. Shared by
-   the empty-pane new-terminal icon and the graph-mode icons.
-   The two-parent selector list that used to live here (`.empty-pane .btn--icon, .graph-mode-icons
-   .btn--icon { … }`, plus its `:hover` pair) is now two COPIES, one per owning module:
-   EmptyPane.module.css's `.empty-pane :global(.btn--icon)` and GraphView.module.css's
-   `.graph-mode-icons :global(.btn--icon)` — same idiom shell/Sidebar.module.css and
-   shell/TabRail.module.css already used for their own copies of this same declaration
-   (`.tab-rail-actions .btn--icon` / `.tabbar-actions .btn--icon` — the rail's copy lives in
-   shell/TabRail.module.css, the strip's was deleted outright with the dead horizontal tab strip). */
+   resting color rising to --fg on hover — not full-strength white at rest. The per-component
+   box-model copies that used to live in EmptyPane.module.css / shell/Sidebar.module.css /
+   shell/TabRail.module.css / GraphView.module.css are gone: every icon row (the sidebar header
+   bar, the tab rail's action row, the mini-graph's mode icons, the empty-pane icon) now renders
+   inside `ui/IconBar` or takes `size="sm"` directly on the IconButton, so there is nothing left
+   for a global rule to reach into. */
 /* The file tree's own chrome (.ft-… , plus the `active` / `system` / `drop-target` / `open` /
    `hidden` state classes that only ever ride on it) moved DOWN into FileTree.module.css: one
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
@@ -1874,9 +1871,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
 /* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
    non-interactive — and restores on Esc. Subtle, per the design.
-   Selects `[data-sidebar-toolbar]`, NOT `.sidebar-icons`: that class is now a CSS-Modules local of
-   shell/Sidebar.module.css and hashes at build time, so a bare `.sidebar-icons` here would compile
-   and match nothing. shell/Sidebar.tsx carries the attribute for exactly this reach. */
+   Selects `[data-sidebar-toolbar]`: the sidebar row is a `ui/IconBar` whose hashed classes a
+   global rule cannot name; shell/Sidebar.tsx passes the attribute through IconBar's rest spread. */
 .layout.switcher-active [data-sidebar-toolbar] {
   opacity: 0.35;
   pointer-events: none;

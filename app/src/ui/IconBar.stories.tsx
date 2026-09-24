@@ -69,8 +69,8 @@ export const Disabled: Story = {
     ),
 }
 
-/** The same three buttons at every iconSize the setting allows the low/default/high end of
- *  (Acceptance 8) — glyph and bracket size move together. */
+/** The same three buttons at iconSize 11, 12 (the default), 16 and 20 — glyph and brackets resize
+ *  together (Acceptance 8). */
 export const Sizes: Story = {
     render: () => (
         <div
