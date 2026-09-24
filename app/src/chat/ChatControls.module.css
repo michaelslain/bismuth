@@ -51,13 +51,22 @@
 /* One cluster — a SINGLE child of `.row` — holding the auth pill (opencode only) + history +
    new-chat. `.row > * + *::before` (below) puts exactly one `//` before this whole cluster,
    separating it from the readout groups (model word, permission mode) that precede it; INSIDE the
-   cluster, `--sp-4` alone carries the spacing between the bracket buttons themselves — no `//`
-   between two adjacent commands (Acceptance 7 / the ruling table: "brackets already separate
-   them"). */
+   cluster, spacing carries the gap between the bracket buttons themselves — no `//` between two
+   adjacent commands (Acceptance 7 / the ruling table: "brackets already separate them").
+
+   Spacing is `margin-left` on `* + *`, NOT `gap` — `.actions` is `display: inline-flex`, and the
+   row's own `//` separator (`.row > * + *::before`, below) is a `::before` PSEUDO-ELEMENT of THIS
+   element, which makes it flex item #1 inside `.actions`'s own flex formatting context. A `gap`
+   here would apply between that pseudo and the first real child too, stacking on top of the
+   pseudo's own `margin: 0 var(--sp-2)` and reading as a lopsided `//` (more space after it than
+   before). `margin-left` on `* + *` only ever matches real DOM siblings — never the pseudo, which
+   has no preceding sibling of its own — so the separator's margins stay symmetric. */
 .actions {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-4);
+}
+.actions > * + * {
+    margin-left: var(--sp-4);
 }
 .auth-anchor {
     position: relative;
@@ -87,6 +96,12 @@
     font-size: var(--fs-ui);
     color: var(--faint);
     height: var(--h-control);
+    /* The row's own collapse ladder queries THIS box's width, not the viewport — the daemon
+       centre column and the chat tab give it very different available widths at the same window
+       size. Named `chatrow` (not the bare default) so a descendant's `@container` can say which
+       ancestor it means. */
+    container-type: inline-size;
+    container-name: chatrow;
     /* `overflow: hidden` is the BACKSTOP, not the mechanism — the row's four items (the model
        control, permission mode, history, new chat) are meant to always fit; this only stops a
        pathological model label from ever painting outside the row's own box. There is no longer a
@@ -112,9 +127,40 @@
    (a model's label) shrinks and ellipsizes, and nothing else in the row ever needs to move. */
 .row [data-chat-model] {
     flex-shrink: 1;
-    min-width: 0;
+    /* `3ch`, not `0` — matches `.model-menu .word`'s own floor (ChatModelMenu.module.css). `0`
+       let the bracketed `[history] [new chat]` (pricier than the old bare words) eat the model
+       word down to one letter plus ellipsis at narrow widths; below `chatrow-narrow` (below) those
+       two controls give up their labels instead, so the model word never has to give up its own
+       floor to make room. */
+    min-width: 3ch;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* ── The row's collapse ladder — ONE tier, `data-row-label`. `[history]`/`[new chat]` render
+   through `IconTextButton` now (ChatControls.tsx), each holding an icon plus its word wrapped in
+   `data-row-label`; below the tier the word drops and the icon alone stands in the bracket
+   (`[⟲]`/`[+]`), freeing the width the floored model word (above) needs to keep its 3 characters.
+   `data-row-drop` is reserved on the same ladder for a control a future tier needs to hide WHOLE
+   (a second, narrower level) rather than just de-label — none of today's four controls needs that,
+   so no rule below tags it yet; `chatRowDrop.test.ts` checks whichever `data-row-*` hooks
+   ChatControls.tsx actually uses, so adding one later re-arms the same guard.
+
+   No dangling `//`: the row's separator (`.row > * + *::before`, below) lives on each control's
+   OWN box, not a trailing spot after it — hiding a control with `display: none` (a future
+   `data-row-drop`) removes its whole box, pseudo-element included, so its `//` disappears with it
+   automatically. Nothing here needs to special-case that.
+
+   280px is the threshold: at 360px (Narrow360) the row's four controls plus a floored 3ch model
+   fit with labels intact — nothing here fires. At 260px (Narrow260) they do not: a floored model
+   word plus `bypass` plus two labelled bracket buttons overflow the box, which is the ellipsis-lead
+   defect this task fixes. 280px sits inside the measured 260-280px range where labelled buttons
+   stop fitting, with a few px of margin on the fitting side rather than sitting exactly on the
+   edge. */
+@container chatrow (max-width: 280px) {
+    .row [data-row-label] {
+        display: none;
+    }
 }
 
 /* The `//` separator: content on the SECOND and later direct children only (`* + *`). */

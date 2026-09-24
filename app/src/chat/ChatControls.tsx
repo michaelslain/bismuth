@@ -23,6 +23,7 @@ import type { ChatSession } from './chatSession'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
 import { TextButton } from '../ui/TextButton'
+import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
@@ -40,13 +41,19 @@ import ChatAuthPanel from './ChatAuthPanel'
 
 export type ChatControlSlots = ViewBarSlots
 
-/** A bracket text control for the row's actions (history/new chat) — `TextButton`, the app's
+/** A bracket control for the row's actions (history/new chat) — `IconTextButton`, the app's
  *  standard command control (button-family migration: every clickable command renders as
  *  TextButton/IconButton/IconTextButton, never a hand-styled PlainButton — PlainButton is reserved
  *  for readouts/rows, not commands). `history` is a TOGGLE (the history panel is open or not), so
  *  it gets `variant="selected"|"unselected"` from `active`; `new chat` passes no `active` at all,
- *  so it falls through to plain `variant="normal"` — a one-shot action, not a toggle member. */
+ *  so it falls through to plain `variant="normal"` — a one-shot action, not a toggle member.
+ *
+ *  The word is wrapped in `data-row-label`, the row's own collapse-ladder hook
+ *  (ChatControls.module.css's `@container chatrow` tier) — below that width the label disappears
+ *  and the bracket keeps only its icon (`[⟲]`/`[+]`), which is what frees the room the row's
+ *  floored model word (ChatModelMenu.module.css) needs to keep its own 3-character minimum. */
 function RowAction(props: {
+    icon: string
     label: string
     active?: boolean
     testId?: string
@@ -60,14 +67,17 @@ function RowAction(props: {
               ? 'selected'
               : 'unselected'
     return (
-        <TextButton
+        <IconTextButton
+            icon={props.icon}
             variant={variant()}
             data-testid={props.testId}
             title={props.title}
             onClick={props.onClick}
         >
-            {props.label}
-        </TextButton>
+            <Text as="span" inherit data-row-label>
+                {props.label}
+            </Text>
+        </IconTextButton>
     )
 }
 
@@ -215,6 +225,7 @@ function Actions(props: { session: ChatSession }) {
                 the toggle. */}
             <Show when={providerCan(props.session.provider(), 'sessionPicker')}>
                 <RowAction
+                    icon="RotateCcw"
                     label="history"
                     active={props.session.history.open()}
                     testId="chat-history"
@@ -223,6 +234,7 @@ function Actions(props: { session: ChatSession }) {
                 />
             </Show>
             <RowAction
+                icon="Plus"
                 label="new chat"
                 testId="chat-new"
                 title="New chat"
