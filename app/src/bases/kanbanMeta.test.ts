@@ -8,6 +8,7 @@ import {
     writableKey,
     storedTitleColumn,
     matchedStoredRowId,
+    TITLE_ALIASES,
 } from './kanbanMeta'
 import type { Schema } from '../../../core/src/schema/types'
 import type { Row } from '../../../core/src/bases/types'
@@ -36,6 +37,27 @@ describe('metaColumns', () => {
 
     test('no order → no meta', () => {
         expect(metaColumns(undefined, 'file.name')).toEqual([])
+    })
+
+    test('on a file-backed board, order-listed title aliases (title/note.title/file.basename) never render as a second title field', () => {
+        expect(
+            metaColumns(['title', 'tags', 'description'], 'file.name'),
+        ).toEqual(['tags', 'description'])
+        expect(
+            metaColumns(
+                ['file.name', 'note.title', 'file.basename', 'priority'],
+                'file.name',
+            ),
+        ).toEqual(['priority'])
+        expect(TITLE_ALIASES.has('title')).toBe(true)
+        expect(TITLE_ALIASES.has('note.title')).toBe(true)
+        expect(TITLE_ALIASES.has('file.basename')).toBe(true)
+    })
+
+    test('a stored-row board (titleCol not file.name) has no aliasing — title is a normal property', () => {
+        expect(
+            metaColumns(['description', 'title', 'status'], 'description'),
+        ).toEqual(['title', 'status'])
     })
 })
 
