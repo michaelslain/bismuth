@@ -119,7 +119,7 @@
 }
 .chat-bubble code {
     font-family: var(--ui-font-stack);
-    font-size: calc(1em * var(--mono-scale, 0.85));
+    font-size: var(--fs-rel-code);
     background: var(--chat-surface-2, var(--surface-2));
     padding: 0 var(--sp-2);
     border-radius: var(--r-0);
@@ -171,7 +171,7 @@
 .chat-bubble :global(.bismuth-tag) {
     color: var(--accent);
     font-family: var(--ui-font-stack);
-    font-size: var(--editor-font-size);
+    font-size: var(--code-font-size);
 }
 .chat-bubble img {
     max-width: 100%;
@@ -180,12 +180,12 @@
 
 /* ── Mono pull-back inside a message — matches the editor's own exclusion list (Editor.css), so
    a code fence looks identical whether read in a note or a chat message. Headings and tables stay
-   prose, same as the editor. ──────────────────────────────────────────────────────────────── */
-.chat-bubble code,
+   prose, same as the editor. Sizes are the editor's too: a fence at --code-font-size, inline
+   `code` at --fs-rel-code (the rule above), so it scales inside a heading. ─────────────────── */
 .chat-bubble pre,
 .chat-bubble pre code {
     font-family: var(--ui-font-stack);
-    font-size: var(--editor-font-size, 13.5px);
+    font-size: var(--code-font-size);
 }
 
 /* ── Slash-command output (#28): a boxed "command output" panel — reads like the Claude Code TUI,

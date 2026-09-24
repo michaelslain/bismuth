@@ -26,7 +26,7 @@ import {
 import { taskDescStart } from './editor/taskComplete'
 import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectUiFace, expectEditorSize, expectBoundToUiFont, expectFamilyReallyLoaded } from './ui/_fontFace'
+import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont, expectFamilyReallyLoaded, codeFontPx } from './ui/_fontFace'
 import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
 import {
     insertDrawBlock,
@@ -254,7 +254,10 @@ const lineWith = (root: ParentNode, re: RegExp) =>
  *  code/frontmatter back to the mono face — but every one of those rows must still sit on the same leading, or a code fence reads
  *  as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height: 1.5`,
  *  which put its rows at 20px inside a document whose every other row was 27px. Asserts the
- *  leading is shared and that mono is at the MONO size, not the serif's optically-compensated one.
+ *  leading is shared and that mono is at the ONE code size (--code-font-size) — code line, frontmatter,
+ *  inline code and all four fence rows alike — below the prose size; that the frontmatter `---` and
+ *  the code ```lang rows are one style (height, padding, tone); and that yaml keys in the code block
+ *  read in the frontmatter key colour.
  *
  *  Tables are PROSE too (they were pulled back to the mono face along with code and frontmatter;
  *  the user asked for that reversed) — MIXED_TEXT already renders one, so its cell is asserted
@@ -286,19 +289,40 @@ export const MixedTypography: Story = {
         // The regression this story exists for: a code fence on its own tighter leading.
         await expect(px(styleOf(codeLine)!.lineHeight)).toBe(rhythm)
         await expect(px(styleOf(fmLine)!.lineHeight)).toBe(rhythm)
-        // Mono constructs take --editor-font-size, never --prose-font-size (which is that size
-        // times --prose-scale, a compensation that only means anything for the serif). The
-        // baseline is the CSS custom property itself — the independent source of truth — not
-        // codeLine, which is the element under test: deriving "mono" from the thing being
-        // asserted on would let a shared regression pass every check while measuring a fiction.
-        const root = getComputedStyle(document.documentElement)
-        const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
-        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
-        await expect(parseFloat(styleOf(codeLine)!.fontSize)).toBe(editorPx)
-        await expect(parseFloat(styleOf(fmLine)!.fontSize)).toBe(editorPx)
-        await expect(parseFloat(scroller.fontSize)).toBeGreaterThan(editorPx)
-        // Extra cross-check, not the primary assertion: code and frontmatter agree with each other.
-        await expect(styleOf(codeLine)!.fontSize).toBe(styleOf(fmLine)!.fontSize)
+        // Every mono construct in a note takes ONE size, --code-font-size, a step below prose (the
+        // measurement is in global.css beside the token). The baseline is the token itself,
+        // resolved through a probe — the independent source of truth — not codeLine, which is the
+        // element under test: deriving "mono" from the thing being asserted on would let a shared
+        // regression pass every check while measuring a fiction.
+        const codePx = codeFontPx()
+        await expect(Number.isFinite(codePx) && codePx > 0).toBe(true)
+        const inlineCode = canvasElement.querySelector('.cm-inline-code') as HTMLElement
+        const tops = [...canvasElement.querySelectorAll('.cm-block-top')] as HTMLElement[]
+        const bottoms = [...canvasElement.querySelectorAll('.cm-block-bottom')] as HTMLElement[]
+        // One frontmatter panel + one fenced block: two opening rows, two closing rows.
+        await expect(tops.length).toBe(2)
+        await expect(bottoms.length).toBe(2)
+        for (const el of [codeLine, fmLine, inlineCode, ...tops, ...bottoms])
+            await expect(parseFloat(styleOf(el)!.fontSize)).toBeCloseTo(codePx, 3)
+        await expect(parseFloat(scroller.fontSize)).toBeGreaterThan(codePx)
+        // The two fences are ONE style: a frontmatter `---` row and a code ```lang row open (and
+        // close) their blocks with rows of the same height, padding and fence-text tone.
+        const fenceText = (row: HTMLElement) =>
+            row.querySelector('.cm-fence-syntax, .cm-code-lang') as HTMLElement
+        for (const pair of [tops, bottoms]) {
+            const [a, b] = pair.map(r => r.getBoundingClientRect().height)
+            await expect(Math.abs(a! - b!)).toBeLessThan(0.5)
+            await expect(styleOf(pair[0]!)!.padding).toBe(styleOf(pair[1]!)!.padding)
+            await expect(styleOf(fenceText(pair[0]!))!.color).toBe(
+                styleOf(fenceText(pair[1]!))!.color,
+            )
+        }
+        // A yaml block's keys read like frontmatter keys (muted), not like accent syntax.
+        const keyColor = (el: Element) => styleOf(el.firstElementChild ?? el)!.color
+        const fmKey = fmLine.querySelector('.cm-fm-key')!
+        const yamlKey = codeLine.querySelector('.cm-fm-key')
+        await expect(yamlKey).not.toBeNull()
+        await expect(keyColor(yamlKey!)).toBe(keyColor(fmKey))
         // Prose, headings included, is the proportional face; code is not. Computed font-family
         // returns the DECLARED STACK STRING, not whether the face ever loaded — a stack that
         // silently fell through to the Georgia fallback would still match a family-name regex,
@@ -624,8 +648,8 @@ A paragraph with **bold text**, a #demo-tag, and \`inline code\`.
  *  the --prose-scale optical compensation meant only for prose). The user's exact
  *  report was the revealed "1. " on a numbered list.
  *
- *  Compares against the LIVE --editor-font-size token, never a hardcoded 13.5 — the size is a
- *  user setting (appearance.editorFontSize). .cm-tag is always visible with no caret needed;
+ *  Compares against the LIVE --code-font-size token (expectCodeSize), never a hardcoded px — the
+ *  size derives from a user setting (appearance.editorFontSize). .cm-tag is always visible with no caret needed;
  *  .cm-syntax-mark/.cm-list-marker only render while the caret sits ON the specific token/line
  *  that owns them (livePreview's per-token reveal — moving off unreveals it again), so the
  *  play() checks each one immediately after placing the caret there, rather than moving through
@@ -656,18 +680,10 @@ export const RevealedMarks: Story = {
         // caret moves below have no visible effect at all.
         view.focus()
 
-        // Compare against the token, never a hardcoded 13.5 — the size is a setting.
-        const editorPx = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--editor-font-size'),
-        )
-        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
-
         const assertMonoSize = (sel: string) => {
             const els = canvasElement.querySelectorAll(sel)
             if (!els.length) throw new Error(`${sel} did not render`)
-            for (const el of els) {
-                expect(parseFloat(getComputedStyle(el).fontSize)).toBe(editorPx)
-            }
+            for (const el of els) expectCodeSize(el as HTMLElement)
         }
 
         assertMonoSize('.cm-tag')
@@ -841,7 +857,7 @@ export const TagTypography: Story = {
         await expect(body.length).toBeGreaterThan(0)
         for (const el of body) {
             expectUiFace(el)
-            expectEditorSize(el)
+            expectCodeSize(el)
             expectBoundToUiFont(el)
         }
 
@@ -851,7 +867,7 @@ export const TagTypography: Story = {
         await expect(inTable.length).toBeGreaterThan(0)
         for (const el of inTable) {
             expectUiFace(el)
-            expectEditorSize(el)
+            expectCodeSize(el)
             expectBoundToUiFont(el)
         }
 
@@ -923,7 +939,7 @@ export const TaskFields: Story = {
         await expect(fields.length).toBe(5)
         for (const el of fields) {
             expectUiFace(el)
-            expectEditorSize(el)
+            expectCodeSize(el)
             // The literal syntax IS the chip's content — a mark decorates, it never replaces.
             await expect(el.textContent).toMatch(/^\[.*\]$/)
             // Legible: not collapsed to zero width the way a hidden syntax mark renders

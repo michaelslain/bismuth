@@ -130,11 +130,9 @@ export const latexHighlightTheme = EditorView.theme({
         color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
     },
     // Covering mono font for revealed math source (mathSrcMark), so the gaps between
-    // colored tokens read as code instead of the body serif. Pair the family with the same
-    // `--mono-scale` size offset every other mono region uses (.cm-inline-code / .cm-codeblock
-    // in livePreview.ts) so the Monaspace face doesn't render larger than fenced code.
+    // colored tokens read as code instead of the body serif. The SIZE is global.css's size-reset
+    // list (--code-font-size), the one place every mono run in a note is sized.
     '.cm-math-src': {
         fontFamily: 'var(--ui-font-stack)',
-        fontSize: 'calc(1em * var(--mono-scale, 0.85))',
     },
 })

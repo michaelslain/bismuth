@@ -24,7 +24,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { retainFakeChat } from './chat/_fakeChatSocket'
-import { expectProseFace, expectUiFace, expectEditorSize, expectBoundToUiFont } from './ui/_fontFace'
+import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont } from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 /** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
@@ -514,7 +514,7 @@ export const TagTypography: Story = {
         await expect(tags.length).toBeGreaterThan(0)
         for (const el of tags) {
             expectUiFace(el)
-            expectEditorSize(el)
+            expectCodeSize(el)
             expectBoundToUiFont(el)
         }
     },

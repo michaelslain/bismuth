@@ -3,19 +3,19 @@
    the same fence, just collapsed to one line — never a restyle of it. imported ONLY by
    FoldedFence.tsx.
 
-   font-family / font-size: mirrors livePreview.ts's `.cm-block-top` (~1780: MONO_FONT +
-   `var(--editor-font-size)`).
+   font-family / font-size: mirrors the editor's fence rows — `.cm-block-top`'s MONO_FONT
+   (livePreview.ts) at `var(--code-font-size)` (global.css's size-reset list).
    line-height: mirrors Editor.tsx's own scroller line-height (Editor.tsx:188,
    `calc(var(--row-h, 18px) * var(--prose-line-height, 1))`), so a folded row lands on the same
    row rhythm as a note.
    padding: mirrors `.cm-block-top`'s own `0.15em 0.5em` (livePreview.ts ~1780).
    background: mirrors the block fill `.cm-block-top::after`'s `var(--surface-1)`
    (livePreview.ts ~1820).
-   color: mirrors `.cm-fence-syntax`'s dim (livePreview.ts ~1845,
+   color: mirrors `.cm-fence-syntax`'s dim (livePreview.ts FENCE_TONE,
    `color-mix(in srgb, var(--fg) 30%, transparent)`) — the fence glyphs are structure, not content. */
 .folded-fence {
     font-family: var(--ui-font-stack);
-    font-size: var(--editor-font-size);
+    font-size: var(--code-font-size);
     line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
     padding: 0.15em 0.5em;
     /* mirrors `.cm-content` padding-top 4px + `.cm-block-top` margin-top 2px (livePreview.ts

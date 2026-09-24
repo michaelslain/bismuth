@@ -81,15 +81,24 @@ const CHECKS = `(() => {
     // \`calc(...)\` token, not a pixel value — only computing it on a real element resolves it.
     // 0.88 is the one em-ratio the prose layer uses (.bismuth-tag); any OTHER derived size still
     // reports, so this exempts the scale without blanket-exempting everything inside prose.
+    // --code-font-size is the other derived size: the ONE size every mono run inside a note takes
+    // (code, frontmatter, fences, inline code, #tags, task fields), a step below prose.
     const PROSE_SIZES = (() => {
         try {
-            const probe = document.createElement('span');
-            probe.style.cssText = 'position:absolute;visibility:hidden;font-size:var(--prose-font-size)';
-            document.body.appendChild(probe);
-            const base = parseFloat(getComputedStyle(probe).fontSize);
-            probe.remove();
+            const resolve = (v) => {
+                const probe = document.createElement('span');
+                probe.style.cssText = 'position:absolute;visibility:hidden;font-size:' + v;
+                document.body.appendChild(probe);
+                const px = parseFloat(getComputedStyle(probe).fontSize);
+                probe.remove();
+                return px;
+            };
+            const base = resolve('var(--prose-font-size)');
             if (!base || !isFinite(base)) return [];
-            return [base, base * 0.88].map(v => Math.round(v * 100) / 100);
+            const code = resolve('var(--code-font-size)');
+            const sizes = [base, base * 0.88];
+            if (code && isFinite(code)) sizes.push(code);
+            return sizes.map(v => Math.round(v * 100) / 100);
         } catch { return []; }
     })();
     // MEASURE THE PORTALS TOO, NOT JUST THE STORY ROOT. Modals, popovers and the symbol gallery
