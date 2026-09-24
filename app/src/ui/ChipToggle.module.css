@@ -23,17 +23,17 @@
 /* Same reasoning as .btn:focus-visible in Button.module.css — chip-toggle is a button that
    opted out of .btn's box model, not out of being keyboard-reachable. */
 .chip-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-.selected { color: var(--accent); }
-.selected svg { color: var(--accent); }
-.tone-teal.selected { color: var(--teal); }
-.tone-teal.selected svg { color: var(--teal); }
-.tone-blue.selected { color: var(--blue); }
-.tone-blue.selected svg { color: var(--blue); }
-.tone-violet.selected { color: var(--violet); }
-.tone-violet.selected svg { color: var(--violet); }
-.tone-green.selected { color: var(--green); }
-.tone-green.selected svg { color: var(--green); }
-.tone-gold.selected { color: var(--gold); }
-.tone-gold.selected svg { color: var(--gold); }
-.tone-rose.selected { color: var(--rose); }
-.tone-rose.selected svg { color: var(--rose); }
+.chip-toggle.selected { color: var(--accent); }
+.chip-toggle.selected svg { color: var(--accent); }
+.chip-toggle.tone-teal.selected { color: var(--teal); }
+.chip-toggle.tone-teal.selected svg { color: var(--teal); }
+.chip-toggle.tone-blue.selected { color: var(--blue); }
+.chip-toggle.tone-blue.selected svg { color: var(--blue); }
+.chip-toggle.tone-violet.selected { color: var(--violet); }
+.chip-toggle.tone-violet.selected svg { color: var(--violet); }
+.chip-toggle.tone-green.selected { color: var(--green); }
+.chip-toggle.tone-green.selected svg { color: var(--green); }
+.chip-toggle.tone-gold.selected { color: var(--gold); }
+.chip-toggle.tone-gold.selected svg { color: var(--gold); }
+.chip-toggle.tone-rose.selected { color: var(--rose); }
+.chip-toggle.tone-rose.selected svg { color: var(--rose); }
