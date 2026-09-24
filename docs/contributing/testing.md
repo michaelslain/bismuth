@@ -909,7 +909,7 @@ scale — so it stays meaningful while the design is actively changing and never
 The type-scale check measures against the **mono chrome ladder** (`ui/ui.css`'s `--fs-*`). Note
 prose is deliberately off that ladder — chrome is scanned, prose is read — and its sizes are
 *derived* (`--prose-font-size` = `--editor-font-size` × `--prose-scale`, plus em-relative children
-like `.bismuth-tag` at `0.88em`), so they are **resolved from the live page at runtime**, not listed
+like `.bismuth-tag` at `0.88em`, plus `--code-font-size`, the one mono-in-prose size), so they are **resolved from the live page at runtime**, not listed
 as literals in `SCALE_EXEMPT`. That matters mechanically: `getPropertyValue('--prose-font-size')`
 returns the raw `calc(…)` token, so the check appends a hidden probe span and reads its computed
 `fontSize`. Hardcoding those numbers meant re-editing `invariants.ts` every time the prose face or

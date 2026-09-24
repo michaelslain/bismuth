@@ -33,9 +33,9 @@ export const Default: Story = {
         const text = canvas.getByText('--- … ---')
         await expect(text).toBeInTheDocument()
 
-        // The fence text renders at the note editor's own frontmatter font-size (--editor-font-size),
+        // The fence text renders at the note editor's own fence-row font-size (--code-font-size),
         // resolved on :root the same way the component's own module CSS resolves it.
-        const expectedPx = resolvedFontSize('var(--editor-font-size)')
+        const expectedPx = resolvedFontSize('var(--code-font-size)')
         await expect(getComputedStyle(text).fontSize).toBe(expectedPx)
     },
 }

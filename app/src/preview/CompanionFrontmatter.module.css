@@ -40,7 +40,7 @@
     left: 20px;
     top: calc(
         var(--sp-4) + 6px +
-            (var(--row-h, 18px) * var(--prose-line-height, 1) + 0.3 * var(--editor-font-size)) / 2
+            (var(--row-h, 18px) * var(--prose-line-height, 1) + 0.3 * var(--code-font-size)) / 2
     );
     transform: translate(-50%, -50%);
 }

@@ -1,11 +1,11 @@
 // app/src/ui/_fontFace.ts
 // Story-only assertion helpers: "this element renders in the note PROSE face" and "…in the
-// UI/mono face, at the editor size".
+// UI/mono face, at the code size".
 //
 // Note prose, chat message bodies and note tables paint in --prose-font (Lora), the ONE
 // proportional exception to the app's single mono family — see CLAUDE.md's Typography note and
-// styles/tokens.css. Everything pulled back out of prose (code, frontmatter, #tags) paints in
-// --ui-font-stack at --editor-font-size. Several story files (Editor, ChatView, …) each had a
+// global.css. Everything pulled back out of prose (code, frontmatter, #tags) paints in
+// --ui-font-stack at --code-font-size. Several story files (Editor, ChatView, …) each had a
 // verbatim copy of the prose check with the `first()` helper redefined; the tag unification
 // added more surfaces, which is what made this a shared module.
 //
@@ -38,11 +38,23 @@ export function expectUiFace(el: HTMLElement): void {
     expect(firstFamily(getComputedStyle(el).fontFamily)).toBe(firstFamily(ui))
 }
 
-/** Assert `el` renders at exactly `--editor-font-size`, not a scaled multiple of it. */
-export function expectEditorSize(el: HTMLElement): void {
-    const px = parseFloat(token('--editor-font-size'))
+/** `--code-font-size` resolved to px. It is a calc() off the prose size, so `getPropertyValue`
+ *  would return the raw expression — a probe element resolves it the way a real rule does. */
+export function codeFontPx(): number {
+    const probe = document.createElement('div')
+    probe.style.fontSize = 'var(--code-font-size)'
+    document.body.appendChild(probe)
+    const px = parseFloat(getComputedStyle(probe).fontSize)
+    probe.remove()
+    return px
+}
+
+/** Assert `el` renders at exactly `--code-font-size` — the one size for mono inside prose —
+ *  never the prose size and never the editor size it is derived from. */
+export function expectCodeSize(el: HTMLElement): void {
+    const px = codeFontPx()
     expect(Number.isFinite(px) && px > 0).toBe(true)
-    expect(parseFloat(getComputedStyle(el).fontSize)).toBe(px)
+    expect(parseFloat(getComputedStyle(el).fontSize)).toBeCloseTo(px, 3)
 }
 
 /** A mixed-case pangram, wide enough that two genuinely different faces measure to different

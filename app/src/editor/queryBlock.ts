@@ -234,7 +234,7 @@ function buildDecorations(state: EditorState, hostPath: string): DecorationSet {
 const queryTheme = EditorView.theme({
     '.cm-query-body': {
         fontFamily: 'var(--ui-font-stack)',
-        fontSize: 'calc(1em * var(--mono-scale, 0.85))',
+        fontSize: 'var(--code-font-size)',
     },
 })
 

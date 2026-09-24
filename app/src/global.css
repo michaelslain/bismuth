@@ -188,7 +188,9 @@
   /* ── Relative sizing — NEW (task 1, token literals sweep). Steps expressed in `em`, meant for a
      size that scales WITH its inherited context rather than to an absolute px step in the scale
      above (inline `code` inside prose that itself resizes per --editor-font-size/prose ramp). */
-  --fs-rel-code: 0.9em;   /* inline code, slightly under its surrounding text */
+  /* Inline code, relative to the text around it: the SAME ratio as --code-font-size below, taken off
+     `1em` instead of the prose size, so `code` inside a heading or a table cell scales with it. */
+  --fs-rel-code: calc(1em * var(--code-scale) * var(--mono-scale, 1));
 
   /* ── Font weight — unchanged, moved verbatim from ui.css:41-43. */
   --fw-regular: 400;
@@ -399,6 +401,25 @@
      user's editor size still moves prose with it. */
   --prose-scale: 1.04;
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
+
+  /* THE ONE SIZE FOR MONO INSIDE PROSE — code blocks and both their fences, frontmatter, inline code,
+     #tags, task checkboxes and fields, list/syntax marks, raw table source. It used to be three sizes
+     from three competing sources (a reset to --editor-font-size, a legacy `1em * --mono-scale`
+     fallback of 0.85, and plain inheritance of the prose size).
+     WHY BELOW PROSE. --prose-scale above matches the two faces' x-heights, which is the right
+     constant for PROSE but the wrong one for code set beside it. Measured in-browser (canvas, the
+     real faces, a 39-char lowercase pangram), Lora at 14.04px against Monaspace Xenon at 13.5px:
+       x-height  — Lora 7.02, mono 6.99  (parity, as designed)
+       width     — Lora 263px, mono 326px (+24%)
+       ink       — Lora 743, mono 862     (+16%)
+     so at equal x-height every code run read visibly bigger and heavier than the sentence around
+     it. At 12.5px mono puts down 733 ink against Lora's 743 — ink parity — and 12.5 / 14.04 = 0.89.
+     Picked by eye from a side-by-side of 13.5 / 12.5 / 12px (2026-09-23).
+     DERIVED off --prose-font-size, so it follows appearance.editorFontSize; --mono-scale
+     (appearance.monoScale, default 1) stays a personal multiplier on top. KaTeX output is NOT
+     code and is not sized by this. */
+  --code-scale: 0.89;
+  --code-font-size: calc(var(--prose-font-size) * var(--code-scale) * var(--mono-scale, 1));
 }
 
 /* Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7): these were the two `:root`
@@ -1590,7 +1611,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 .cm-editor .cm-td .bismuth-tag {
   color: var(--gold);
   font-family: var(--ui-font-stack);
-  font-size: var(--editor-font-size);
+  font-size: var(--code-font-size);
 }
 
 /* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────
@@ -1646,34 +1667,48 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   font-family: var(--ui-font-stack);
 }
 
-/* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
-   optically compensated prose size (--prose-font-size, scaled up by --prose-scale), and mono does
-   not need that compensation — inheriting it would render every code span too large.
-   HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own absolute sizes
-   off the fixed type scale (--fs-h1..--fs-h6), so resetting them here would flatten the whole
-   heading ramp to body size. They take the family reset and nothing else.
+/* Size reset: THE one place the editor says "mono inside prose = --code-font-size". A deliberately
+   SHORTER list than the family reset above. The scroller carries the prose size (--prose-font-size),
+   and every mono construct sits a step below it — see --code-font-size in the tokens for the
+   measurement. livePreview.ts sets NO font-size on any class listed here: two rules of equal
+   specificity (`.cm-editor .x` vs the theme's `.ͼN .x`) race on source order, which is exactly how
+   code blocks, frontmatter and checkboxes drifted to three different sizes.
+   HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own sizes off the
+   heading ramp (--fs-h1..--fs-h6), so resetting them here would flatten the ramp.
    TABLES ARE EXCLUDED TOO, but for the opposite reason — see the TABLES ARE PROSE note above the
-   family list: a table has no absolute scale of its own, so leaving the size reset ON is what
-   would flatten it back to mono size after the family reset already moved it to serif.
-   .cm-list-marker / .cm-syntax-mark / .cm-tag set their font-family INLINE in livePreview.ts's
-   EditorView.theme() rather than going through the family list above, and were never added here
-   either — so all three silently inherited --prose-font-size against the 13.5px editor size,
-   exactly the --prose-scale compensation. Any class that sets font-family inline in livePreview.ts
-   needs a matching entry in THIS list too, or it optically renders too large next to the mono size. */
+   family list: a table has no absolute scale of its own, so the size reset would flatten it to mono.
+   INLINE CODE IS NOT HERE: it takes --fs-rel-code (the same ratio off `1em`) so code inside a
+   heading or a table cell scales with the text around it.
+   .cm-list-marker / .cm-syntax-mark / .cm-tag / .cm-task-checkbox set their font-family INLINE in
+   livePreview.ts's EditorView.theme() rather than going through the family list above — any class
+   that does that needs a matching entry in THIS list too, or it inherits the prose size. */
 .cm-editor .cm-codeblock,
-.cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
 .cm-editor .cm-code-headerwrap,
 .cm-editor .cm-code-lang,
 .cm-editor .cm-code-numbered,
+.cm-editor .cm-block-top,
+.cm-editor .cm-block-bottom,
 .cm-editor .cm-frontmatter,
 .cm-editor .cm-fm-key,
-.cm-editor .cm-math,
 .cm-editor .cm-math-src,
-.cm-editor .cm-inline-math,
+.cm-editor .cm-table,
 .cm-editor .cm-list-marker,
 .cm-editor .cm-syntax-mark,
-.cm-editor .cm-tag {
+.cm-editor .cm-tag,
+.cm-editor .cm-task-checkbox {
+  font-size: var(--code-font-size);
+}
+.cm-editor .cm-inline-code,
+.cm-editor .cm-table-rendered code {
+  font-size: var(--fs-rel-code);
+}
+
+/* KaTeX OUTPUT (.cm-math is the rendered widget, .cm-inline-math the table-cell rendering) is not
+   code: it keeps its own size, --editor-font-size under KaTeX's built-in 1.21em. Compared by eye
+   at 1x / 1.1x / 1.21x prose (2026-09-23) and deliberately left where it was. */
+.cm-editor .cm-math,
+.cm-editor .cm-inline-math {
   font-size: var(--editor-font-size);
 }
 
@@ -1683,7 +1718,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    family, and the editor face at the editor size so nothing is scaled out of prose. */
 .cm-editor .cm-task-field {
   font-family: var(--ui-font-stack);
-  font-size: var(--editor-font-size);
+  font-size: var(--code-font-size);
   color: var(--text-muted);
   background: var(--surface-2);
   border-radius: var(--r-0);
