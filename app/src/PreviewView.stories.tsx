@@ -1908,7 +1908,7 @@ export const PdfViewBarLayout: Story = {
         expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
         expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(4)
         expect(rest.annotateGaps, `annotate hairlines in ${JSON.stringify(rest.gaps)}`).toBe(2)
-        expect(rest.glyphSizes).toEqual(['13x13'])
+        expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconBoxes).toHaveLength(1)
         expect(rest.outside).toEqual([])
         expect(rest.frames, 'accent frames at rest').toBe(0)

@@ -79,6 +79,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                 identity: styles.identity,
                 config: styles.config,
                 actions: styles.actions,
+                trail: styles.trail,
             }}
             identity={
                 <Crumb icon={props.icon()} class={styles.crumb}>

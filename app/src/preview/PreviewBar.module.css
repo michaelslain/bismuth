@@ -75,6 +75,25 @@
   /* ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
      shrunk to its minimum — the filename's ellipsis would sit flush against the first control. */
   column-gap: var(--bar-crumb-gap);
+  /* Button.module.css dims an unselected icon button to 0.5 opacity by default (the "toggle
+     member, off" look), with a `--iconbar-unselected-opacity` escape hatch IconBar.module.css sets
+     back to 1 for its own children (a plain row of icon buttons is never "half a toggle"). This bar
+     is not an IconBar but its controls read the same: highlight/draw/scratch/bookmarks/file actions
+     are full-contrast muted ink at rest (task 5's Button-family migration comment above), not a
+     disabled-looking dim — so it sets the same escape hatch for its own tree. */
+  --iconbar-unselected-opacity: 1;
+}
+/* ViewBar's own ≤480px floor tier tightens `.vb-trail`'s own gap from --bar-crumb-gap down to
+   --bar-icon-gap ("the seams between regions tighten... every sibling pair of bracket buttons
+   already keeps") — right for a bar whose trailing controls are meant to read as one continuous
+   bracket run once nothing else is left to shed (the chat bar, the calendar). Wrong here: this
+   bar's groups (zoom · annotate · bookmarks · file actions) must stay visibly grouped at every
+   width, narrow included — the whole point of --bar-crumb-gap. `.bar .trail` (two classes) ties
+   `.viewbar .vb-trail`'s specificity at the floor tier; PreviewBar.module.css loads after
+   ViewBar.module.css (PreviewBar.tsx imports ViewBar first), so this wins the tie outright,
+   the same trick `.bar .lead` uses above for the mask-image override. */
+.bar .trail {
+  gap: var(--bar-crumb-gap);
 }
 .lead {
   flex-shrink: 1000;
