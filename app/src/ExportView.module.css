@@ -118,7 +118,7 @@
 
 .fopts {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-2) var(--sp-4);
   flex-wrap: wrap;
 }
 

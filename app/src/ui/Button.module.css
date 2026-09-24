@@ -128,6 +128,10 @@
 .btn--text.btn--primary { color: var(--accent); font-weight: var(--fw-bold); }
 .btn--text.btn--danger { color: var(--danger); }
 .btn--text:disabled { color: var(--faint); opacity: 1; }
+/* A disabled toggle member must read differently from an enabled-but-unselected one — both are
+   --faint text, so without this a disabled bracket segment is indistinguishable from an off one.
+   0.4 matches the opacity .btn:disabled already uses for every other disabled control. */
+.btn--text.btn--unselected:disabled { opacity: 0.4; }
 .btn--text:not(.btn--unselected):hover:not(:disabled) .textLabel {
   text-decoration: underline;
   text-decoration-thickness: 1px;
