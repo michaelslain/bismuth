@@ -6,6 +6,9 @@ import {
     faceFrame,
     nextBlinkDelay,
     tickMs,
+    initialSettle,
+    settleMood,
+    MOOD_SETTLE_MS,
     FACE_REST,
     type DaemonMood,
     type MoodInput,
@@ -19,6 +22,7 @@ const MOODS: DaemonMood[] = [
     'hurt',
     'listening',
     'talking',
+    'thinking',
 ]
 const base: MoodInput = {
     enabled: true,
@@ -81,19 +85,47 @@ test('busy scans', () => {
     ).toEqual(['=-', '==', '-=', '=='])
 })
 
+test('thinking is calm and distinct from talking and idle', () => {
+    expect(moodLabel('thinking')).toBe('thinking')
+    const thinking0 = faceFrame('thinking', 0, false).slice(3, 5).join('')
+    const thinking1 = faceFrame('thinking', 1, false).slice(3, 5).join('')
+    const talking0 = faceFrame('talking', 0, false).slice(3, 5).join('')
+    const talking1 = faceFrame('talking', 1, false).slice(3, 5).join('')
+    expect(thinking0).not.toBe(talking0)
+    expect(thinking1).not.toBe(talking1)
+    expect(thinking0).not.toBe('00')
+})
+
 test('mood priority', () => {
-    expect(deriveMood({ ...base, running: false, chatBusy: true })).toBe(
-        'asleep',
-    )
+    expect(
+        deriveMood({
+            ...base,
+            running: false,
+            chatBusy: true,
+            chatSpeaking: true,
+        }),
+    ).toBe('asleep')
     expect(deriveMood({ ...base, enabled: false })).toBe('asleep')
     expect(
         deriveMood({
             ...base,
             chatBusy: true,
+            chatSpeaking: true,
             composing: true,
             recentFailure: true,
         }),
     ).toBe('talking')
+    expect(
+        deriveMood({
+            ...base,
+            chatBusy: true,
+            chatSpeaking: false,
+            composing: true,
+            recentFailure: true,
+        }),
+    ).toBe('thinking')
+    // chatSpeaking absent defaults to false, so a busy chat with no streamed text reads as thinking
+    expect(deriveMood({ ...base, chatBusy: true })).toBe('thinking')
     expect(deriveMood({ ...base, composing: true, recentFailure: true })).toBe(
         'listening',
     )
@@ -123,10 +155,18 @@ test('the other moods draw their pinned eyes and sides', () => {
     expect(faceFrame('talking', 0, false).join('')).toBe('.:[0o]:.')
     expect(faceFrame('talking', 1, false).join('')).toBe('.:[o0]:.')
     expect(faceFrame('busy', 2, true).join('')).toBe('.:[--]:.')
+    expect(faceFrame('thinking', 0, false).join('')).toBe('.:[oo]:.')
+    expect(faceFrame('thinking', 1, false).join('')).toBe('.:[..]:.')
+})
+
+test('every tick is at least 600ms', () => {
+    for (const m of MOODS) expect(tickMs(m)).toBeGreaterThanOrEqual(600)
 })
 
 test('tick cadence per mood', () => {
-    expect(MOODS.map(tickMs)).toEqual([2400, 1400, 260, 900, 1400, 1100, 240])
+    expect(MOODS.map(tickMs)).toEqual([
+        2400, 1600, 700, 900, 1600, 1200, 640, 900,
+    ])
 })
 
 test('alert blinks sooner, and asleep never blinks double', () => {
@@ -144,6 +184,7 @@ test('mood labels', () => {
         'hurt',
         'listening',
         'talking',
+        'thinking',
     ])
 })
 
@@ -179,4 +220,45 @@ test('pointer overlays: wink beats blink beats hover, and none wake a sleeper', 
         ),
     ).toBe('.:[OO]:.')
     expect(composeFace('hurt', 0, rest).join('')).toBe('.:[><]:.')
+})
+
+// ── Mood settle ────────────────────────────────────────────────────────────────────────────
+
+test('settle: the first mood is shown immediately', () => {
+    const s = initialSettle('idle', 1000)
+    expect(s).toEqual({ shown: 'idle', pending: null, since: 1000 })
+})
+
+test('settle: a flip-flop burst under 1.5s never changes what is shown', () => {
+    let s = initialSettle('idle', 0)
+    s = settleMood(s, 'busy', 100)
+    expect(s.shown).toBe('idle')
+    s = settleMood(s, 'idle', 200)
+    expect(s.pending).toBeNull()
+    s = settleMood(s, 'busy', 300)
+    s = settleMood(s, 'idle', 400)
+    s = settleMood(s, 'busy', 1400)
+    expect(s.shown).toBe('idle')
+})
+
+test('settle: a held change shows at exactly MOOD_SETTLE_MS, not before', () => {
+    let s = initialSettle('idle', 0)
+    s = settleMood(s, 'busy', 0)
+    expect(s.shown).toBe('idle')
+    s = settleMood(s, 'busy', MOOD_SETTLE_MS - 1)
+    expect(s.shown).toBe('idle')
+    s = settleMood(s, 'busy', MOOD_SETTLE_MS)
+    expect(s.shown).toBe('busy')
+})
+
+test('settle: next equal to shown clears pending, and a later hold restarts the full wait', () => {
+    let s = initialSettle('idle', 0)
+    s = settleMood(s, 'busy', 0)
+    s = settleMood(s, 'idle', 500)
+    expect(s.pending).toBeNull()
+    s = settleMood(s, 'busy', 600)
+    s = settleMood(s, 'busy', 600 + MOOD_SETTLE_MS - 1)
+    expect(s.shown).toBe('idle')
+    s = settleMood(s, 'busy', 600 + MOOD_SETTLE_MS)
+    expect(s.shown).toBe('busy')
 })

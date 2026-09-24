@@ -123,6 +123,10 @@ export function sampleDaemonSnapshot(
 ): DaemonSnapshot {
     const base: DaemonSnapshot = {
         daemon: { label: 'daemon', running: true, home: '/vault/.daemon' },
+        identity: {
+            name: 'daemon',
+            blurb: 'curious, terse, keeps careful notes',
+        },
         crons: [
             {
                 name: 'morning-brief',
@@ -289,3 +293,4 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
         },
     ]
 }
+

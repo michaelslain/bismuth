@@ -1,13 +1,12 @@
 // app/src/daemon/InboxRow.stories.tsx
-// Visual spec for <InboxRow> — one inbox row: status dot + title + time, then source // snippet
-// (or the failure note), and (when due or failed) inline actions. DaemonInbox.tsx is the only importer. Covers every PageStatus
-// the fixture set carries (sampleDaemonPages(), ui/_daemonFixtures.ts) plus the keyboard path: a
-// real <button> (PlainButton) wraps only the dot + main text, since a button can never contain
-// another button and the actions render real ones when due — KeyboardOpen proves Enter on that
-// button opens the row and that a press on a nested action button does NOT also open it.
+// Visual spec for <InboxRow> — one inbox row, one line: status dot + title + time. Covers every
+// PageStatus the fixture set carries (sampleDaemonPages(), ui/_daemonFixtures.ts) plus the
+// keyboard path: a real <button> (PlainButton) wraps only the dot + main text, since a button
+// can never contain another button and archive renders a real one; KeyboardOpen proves Enter on
+// that button opens the row and that a press on the archive button does NOT also open it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import InboxRow from './InboxRow'
 import styles from './InboxRow.module.css'
 import { sampleDaemonPages } from '../ui/_daemonFixtures'
@@ -28,107 +27,79 @@ function Frame(props: { children: JSX.Element }) {
     return <div style={{ width: '360px' }}>{props.children}</div>
 }
 
-/** Due, with its actions live — the APPROVE/DISMISS pair renders and is pressable. */
+/** Due — one line, no source/snippet text, `[archive]` hidden at rest and revealed on hover or
+ *  focus-within. */
 export const Pending: Story = {
     render: () => (
         <Frame>
-            <InboxRow
-                page={pending}
-                onOpen={noop}
-                showActions
-                onChanged={noop}
-            />
+            <InboxRow page={pending} onOpen={noop} onChanged={noop} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(pending.title)).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'submit' }),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: 'dismiss' }),
-        ).toBeInTheDocument()
+        await expect(canvas.queryByText(pending.source!)).toBeNull()
+        const archiveBtn = canvas.getByRole('button', { name: 'archive' })
+        await expect(archiveBtn).toBeInTheDocument()
+        // Overlaid on the row's line, hidden and out of the flow at rest — until the row is
+        // hovered or a control inside it is focused.
+        const actionsBox = canvasElement.querySelector<HTMLElement>(
+            `.${styles['inbox-row-actions']}`,
+        )!
+        await expect(getComputedStyle(actionsBox).opacity).toBe('0')
+        archiveBtn.focus()
+        await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
     },
 }
 
-/** Mid-run — its actions render but are disabled while the daemon works the page. */
+/** Mid-run — no archive button at all (the server refuses archiving a working page). */
 export const Working: Story = {
     render: () => (
         <Frame>
-            <InboxRow
-                page={working}
-                onOpen={noop}
-                showActions
-                onChanged={noop}
-            />
+            <InboxRow page={working} onOpen={noop} onChanged={noop} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(
-            canvas.getByRole('button', { name: 'run now' }),
-        ).toBeDisabled()
+        await expect(canvas.getByText(working.title)).toBeInTheDocument()
+        await expect(canvas.queryByRole('button', { name: 'archive' })).toBeNull()
     },
 }
 
-/** Resolved, terminal — DaemonInbox.tsx always passes `showActions={false}` for "Recently
- *  resolved" rows, so no action buttons ever render here. */
+/** Resolved, terminal — still gets an archive button, hidden at rest same as any other row. */
 export const Done: Story = {
     render: () => (
         <Frame>
-            <InboxRow
-                page={done}
-                onOpen={noop}
-                showActions={false}
-                onChanged={noop}
-            />
+            <InboxRow page={done} onOpen={noop} onChanged={noop} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(done.title)).toBeInTheDocument()
-        // Open button always renders (dot + main); only the actions wrapper is conditional.
-        await expect(
-            canvasElement.querySelector(`.${styles['inbox-row-actions']}`),
-        ).toBeNull()
+        await expect(canvas.getByRole('button', { name: 'archive' })).toBeInTheDocument()
     },
 }
 
-/** Failed keeps its actions live (pressing again re-runs the round-trip): the action that failed
- *  reads RETRY, and the daemon's failure note replaces the snippet, in the danger tone. */
+/** Failed — one line still, no failure-note text; archive stays the only action. */
 export const Failed: Story = {
     render: () => (
         <Frame>
-            <InboxRow
-                page={failed}
-                onOpen={noop}
-                showActions
-                onChanged={noop}
-            />
+            <InboxRow page={failed} onOpen={noop} onChanged={noop} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(failed.title)).toBeInTheDocument()
-        await expect(
-            canvas.getByRole('button', { name: /retry/ }),
-        ).toBeInTheDocument()
-        await expect(
-            canvas.getByText(failed.daemonNote!),
-        ).toBeInTheDocument()
+        await expect(canvas.queryByText(failed.daemonNote!)).toBeNull()
+        await expect(canvas.queryByRole('button', { name: /retry/ })).toBeNull()
+        await expect(canvas.getByRole('button', { name: 'archive' })).toBeInTheDocument()
     },
 }
 
 export const Dismissed: Story = {
     render: () => (
         <Frame>
-            <InboxRow
-                page={dismissed}
-                onOpen={noop}
-                showActions={false}
-                onChanged={noop}
-            />
+            <InboxRow page={dismissed} onOpen={noop} onChanged={noop} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
@@ -140,9 +111,10 @@ export const Dismissed: Story = {
 
 let openedCount = 0
 
-/** Keyboard reachability: the open button (`.inbox-row-open`, a real <button>) is a tab stop and
- *  Enter opens it, same as a click. A press on a nested action button must NOT also open the row
- *  — it lives outside the open button's subtree entirely, so there's nothing to bubble into. */
+/** Keyboard reachability: the open button (`.inbox-row-open`, a real <button>) is a tab stop
+ *  and Enter opens it, same as a click. A press on the archive button must NOT also open the
+ *  row — it lives outside the open button's subtree entirely, so there's nothing to bubble
+ *  into, and archive itself stops propagation on both click and pointerdown. */
 export const KeyboardOpen: Story = {
     render: () => {
         openedCount = 0
@@ -153,7 +125,6 @@ export const KeyboardOpen: Story = {
                     onOpen={() => {
                         openedCount++
                     }}
-                    showActions
                     onChanged={noop}
                 />
             </Frame>
@@ -170,11 +141,10 @@ export const KeyboardOpen: Story = {
         await userEvent.keyboard('{Enter}')
         await expect(openedCount).toBe(1)
 
-        const actionBtn = within(canvasElement).getByRole('button', {
-            name: 'submit',
+        const archiveBtn = within(canvasElement).getByRole('button', {
+            name: 'archive',
         })
-        actionBtn.focus()
-        await userEvent.keyboard('{Enter}')
+        await userEvent.click(archiveBtn)
         await expect(openedCount).toBe(1)
     },
 }

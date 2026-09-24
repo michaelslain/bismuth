@@ -1,0 +1,76 @@
+/* app/src/daemon/DaemonIdentity.module.css — DaemonIdentity.tsx is the ONLY importer.
+
+   The wrapper is the hover/focus surface: `.card` is absolutely positioned against it, hidden at
+   rest and revealed on `:hover`/`:focus-within` of `.wrap` — never on the card's own hover, so a
+   mouse leaving the name straight down onto the card stays inside the hit region the whole way.
+   `:focus-within` alone (no separate `:hover: (hover)` gate) is what keeps this reachable under
+   `@media (hover: none)` — a touch tap that focuses the name still opens the card. */
+
+.wrap {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* The name reads as plain text, not a bracket button — this is the one TextButton in the app
+   whose brackets are switched off, so it can sit directly under the face looking like a label
+   while staying a real, keyboard-focusable control. */
+.nameTrigger {
+    color: var(--fg);
+}
+.nameTrigger::before,
+.nameTrigger::after {
+    content: none;
+}
+
+.card {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: var(--sp-2);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface-1);
+    border: var(--rule-soft);
+    border-radius: var(--r-0);
+    box-shadow: var(--lift);
+    /* Absolutely positioned inside an inline-flex wrapper as wide as the NAME, so without an
+       explicit width it shrink-wraps to that width and the blurb breaks one word per line. */
+    width: max-content;
+    max-width: 40ch;
+    text-align: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* Covers the margin-top gap between the name and the card: the pseudo-element belongs to the
+   card, the card to `.wrap`, so the pointer never leaves `.wrap`'s hover region on its way down
+   to `[ edit ]`. */
+.card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: var(--sp-2);
+}
+
+.wrap:hover .card,
+.wrap:focus-within .card {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.blurb {
+    max-width: 40ch;
+    white-space: normal;
+    overflow-wrap: break-word;
+}

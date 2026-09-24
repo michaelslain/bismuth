@@ -80,31 +80,3 @@ export function failedSorted(pages: DaemonPage[]): DaemonPage[] {
 export function resolvedSorted(pages: DaemonPage[]): DaemonPage[] {
     return pages.filter(p => SETTLED.has(p.status)).sort(newestSettledFirst)
 }
-
-/** A row button's label: the action that failed reads retry, since pressing it re-runs it;
- *  every other label is the page's own, lowercased for TextButton. */
-export function actionLabel(page: DaemonPage, actionId: string): string {
-    if (page.status === 'failed' && page.pressedAction === actionId)
-        return 'retry'
-    const action = page.actions.find(a => a.id === actionId)
-    return (action?.label ?? actionId).toLowerCase()
-}
-
-/**
- * "Approve-all" only appears when every page in the due set exposes the SAME single primary
- * action id (2+ pages) — returns that shared id, or null when there are fewer than two due pages
- * or their primary actions disagree/are missing. "Primary" = the one action whose `kind` is
- * "primary"; a page with zero or more than one primary action never contributes (ambiguous).
- */
-export function sharedPrimaryAction(pages: DaemonPage[]): string | null {
-    if (pages.length < 2) return null
-    let shared: string | null = null
-    for (const p of pages) {
-        const primaries = p.actions.filter(a => a.kind === 'primary')
-        if (primaries.length !== 1) return null
-        const id = primaries[0].id
-        if (shared === null) shared = id
-        else if (shared !== id) return null
-    }
-    return shared
-}

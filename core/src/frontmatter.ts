@@ -14,7 +14,7 @@ export function parseFrontmatter(md: string): Frontmatter {
     // Real vaults contain notes with malformed YAML — tolerate it rather than crash.
     let data: Record<string, unknown> = {}
     try {
-        data = (parse(m[1]) ?? {}) as Record<string, unknown>
+        data = (parse(m[1] ?? '') ?? {}) as Record<string, unknown>
     } catch {
         data = {}
     }

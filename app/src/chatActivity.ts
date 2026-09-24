@@ -9,6 +9,9 @@ const [busyChats, setBusyChats] = createSignal<Map<string, boolean>>(new Map())
 const [composingChats, setComposingChats] = createSignal<Map<string, boolean>>(
     new Map(),
 )
+const [speakingChats, setSpeakingChats] = createSignal<Map<string, boolean>>(
+    new Map(),
+)
 
 /** Whether a chat is currently streaming a response. Reactive; false when unknown. */
 export function chatBusy(chatId: string): boolean {
@@ -20,6 +23,13 @@ export function chatComposing(chatId: string): boolean {
     return composingChats().get(chatId) ?? false
 }
 
+/** Whether a chat is currently streaming assistant TEXT (not just busy with a pending reply).
+ *  Reactive; false when unknown. Lets a listener distinguish `thinking` (busy, no text yet) from
+ *  `talking` (text streaming) — see daemonFaceModel.ts's `deriveMood`. */
+export function chatSpeaking(chatId: string): boolean {
+    return speakingChats().get(chatId) ?? false
+}
+
 /** Publish a chat's busy (streaming) state. */
 export function publishChatBusy(chatId: string, busy: boolean): void {
     setBusyChats(m => {
@@ -27,6 +37,16 @@ export function publishChatBusy(chatId: string, busy: boolean): void {
         if (m.get(chatId) === busy) return m
         const next = new Map(m)
         next.set(chatId, busy)
+        return next
+    })
+}
+
+/** Publish whether a chat is currently streaming assistant text. */
+export function publishChatSpeaking(chatId: string, speaking: boolean): void {
+    setSpeakingChats(m => {
+        if (m.get(chatId) === speaking) return m
+        const next = new Map(m)
+        next.set(chatId, speaking)
         return next
     })
 }
@@ -43,7 +63,7 @@ export function publishChatComposing(chatId: string, composing: boolean): void {
     })
 }
 
-/** Clear both signals for a chat — call on unmount so a closed chat reads as neither. */
+/** Clear all signals for a chat — call on unmount so a closed chat reads as neither. */
 export function clearChatActivity(chatId: string): void {
     setBusyChats(m => {
         if (!m.has(chatId)) return m
@@ -52,6 +72,12 @@ export function clearChatActivity(chatId: string): void {
         return next
     })
     setComposingChats(m => {
+        if (!m.has(chatId)) return m
+        const next = new Map(m)
+        next.delete(chatId)
+        return next
+    })
+    setSpeakingChats(m => {
         if (!m.has(chatId)) return m
         const next = new Map(m)
         next.delete(chatId)

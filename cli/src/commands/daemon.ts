@@ -15,6 +15,10 @@ import {
     setProcessEnabled,
     runCron,
     vaultDaemonDir,
+    createCron,
+    deleteCron,
+    createProcess,
+    deleteProcess,
 } from '../../../core/src/daemon'
 import { daemonGraph } from '../../../core/src/daemonGraph'
 import { readActivity } from '../../../core/src/daemonActivity'
@@ -171,6 +175,51 @@ export const commands: CommandMap = {
                 !bool(args, 'off'),
                 vaultDaemonDir(requireVault(args)),
             )
+            out('ok', args)
+        },
+    },
+    // create/delete exist so the daemon's OWN chat can supervise its crons/services through
+    // the CLI (Bash), with the user approving each tool call in chat — see
+    // docs/daemon/crons-and-processes.md.
+    'daemon cron create': {
+        summary:
+            'Create a new cron job in this vault from a template (disabled by default) — <name> is the display name, the file is its slug',
+        usage: '<name...> --vault <dir>',
+        run: args => {
+            const name = positionals(args).join(' ')
+            if (!name) fail('usage: daemon cron create <name> --vault <dir>')
+            out(createCron(name, vaultDaemonDir(requireVault(args))), args)
+        },
+    },
+    'daemon cron delete': {
+        summary: 'Delete a cron job definition from this vault',
+        usage: '<name> --vault <dir>',
+        run: args => {
+            const name = positionals(args).join(' ')
+            if (!name) fail('usage: daemon cron delete <name> --vault <dir>')
+            deleteCron(name, vaultDaemonDir(requireVault(args)))
+            out('ok', args)
+        },
+    },
+    'daemon process create': {
+        summary:
+            'Create a new background process in this vault from a template (disabled by default) — <name> is the display name, the file is its slug',
+        usage: '<name...> --vault <dir>',
+        run: args => {
+            const name = positionals(args).join(' ')
+            if (!name)
+                fail('usage: daemon process create <name> --vault <dir>')
+            out(createProcess(name, vaultDaemonDir(requireVault(args))), args)
+        },
+    },
+    'daemon process delete': {
+        summary: 'Delete a background process definition from this vault',
+        usage: '<name> --vault <dir>',
+        run: args => {
+            const name = positionals(args).join(' ')
+            if (!name)
+                fail('usage: daemon process delete <name> --vault <dir>')
+            deleteProcess(name, vaultDaemonDir(requireVault(args)))
             out('ok', args)
         },
     },

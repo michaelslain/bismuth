@@ -5,8 +5,6 @@ import {
     scheduledSorted,
     resolvedSorted,
     failedSorted,
-    actionLabel,
-    sharedPrimaryAction,
 } from './daemonInboxLogic'
 import type { DaemonPage } from '../../core/src/daemonPages'
 
@@ -112,91 +110,4 @@ test('failedSorted: failed pages only, newest first', () => {
         'new-failed',
         'old-failed',
     ])
-})
-
-test('actionLabel: the pressed action on a failed page reads RETRY, the rest keep their label', () => {
-    const actions = [
-        { id: 'send', label: 'Send', kind: 'primary' as const, prompt: 'go' },
-        { id: 'dismiss', label: 'Dismiss', kind: 'default' as const },
-    ]
-    const failed = page({
-        slug: 'f',
-        status: 'failed',
-        pressedAction: 'send',
-        actions,
-    })
-    expect(actionLabel(failed, 'send')).toBe('retry')
-    expect(actionLabel(failed, 'dismiss')).toBe('dismiss')
-    const pending = page({ slug: 'p', actions })
-    expect(actionLabel(pending, 'send')).toBe('send')
-})
-
-test('sharedPrimaryAction: 2+ pages with the identical single primary action id', () => {
-    const pages = [
-        page({
-            slug: 'a',
-            actions: [
-                { id: 'send', label: 'Send', kind: 'primary' },
-                { id: 'discard', label: 'Discard', kind: 'danger' },
-            ],
-        }),
-        page({
-            slug: 'b',
-            actions: [{ id: 'send', label: 'Send', kind: 'primary' }],
-        }),
-    ]
-    expect(sharedPrimaryAction(pages)).toBe('send')
-})
-
-test('sharedPrimaryAction: null when fewer than 2 pages', () => {
-    const pages = [
-        page({
-            slug: 'a',
-            actions: [{ id: 'send', label: 'Send', kind: 'primary' }],
-        }),
-    ]
-    expect(sharedPrimaryAction(pages)).toBeNull()
-})
-
-test('sharedPrimaryAction: null when primary action ids disagree', () => {
-    const pages = [
-        page({
-            slug: 'a',
-            actions: [{ id: 'send', label: 'Send', kind: 'primary' }],
-        }),
-        page({
-            slug: 'b',
-            actions: [{ id: 'approve', label: 'Approve', kind: 'primary' }],
-        }),
-    ]
-    expect(sharedPrimaryAction(pages)).toBeNull()
-})
-
-test('sharedPrimaryAction: null when a page has zero or multiple primary actions', () => {
-    const noPrimary = [
-        page({
-            slug: 'a',
-            actions: [{ id: 'send', label: 'Send', kind: 'default' }],
-        }),
-        page({
-            slug: 'b',
-            actions: [{ id: 'send', label: 'Send', kind: 'default' }],
-        }),
-    ]
-    expect(sharedPrimaryAction(noPrimary)).toBeNull()
-
-    const twoPrimary = [
-        page({
-            slug: 'a',
-            actions: [
-                { id: 'send', label: 'Send', kind: 'primary' },
-                { id: 'send2', label: 'Send other', kind: 'primary' },
-            ],
-        }),
-        page({
-            slug: 'b',
-            actions: [{ id: 'send', label: 'Send', kind: 'primary' }],
-        }),
-    ]
-    expect(sharedPrimaryAction(twoPrimary)).toBeNull()
 })

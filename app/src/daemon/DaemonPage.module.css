@@ -1,25 +1,19 @@
 /* app/src/daemon/DaemonPage.module.css — DaemonPage.tsx is the ONLY importer.
-   Layout only. Panel chrome (hairline box, head, internal scroll) belongs to DaemonPanel; the face's
-   glyph size belongs to DaemonFace (it scales off its own column). This file decides WHERE each
-   of them sits and nothing about how they look.
+   Layout only. Panel chrome (no border box any more, a head row only when it has actions) belongs
+   to DaemonPanel; the hub's own layout (face, identity, its chat) belongs to DaemonHub.module.css.
+   This file decides WHERE the hub and the one active panel sit and nothing about how either looks.
 
-   Wide:   [ viewbar                                          ]
-           [ left  |  face, then its own chat  |  right  ]   left = crons + services, right = inbox
-           over log, both full height of the stage with the SAME inset top and bottom (the stage's
-           own padding) — nothing sits below the stage, so there is no separate band or hairline.
-           The centre column stacks the face above its own chat region; .faceRegion/.chatRegion
-           decide how much of the column each gets, which flips with `chatFills` (true while
-           conversing, and also while a full-height pane like chat history has taken the region).
-   Narrow (< 760px of the page's own width): face, chat, left, right stacked in a scrolling column.
-   Resting, the chat region stays content-height (composer + controls) same as wide — no dead space
-   above the composer. Conversing, it takes a fixed ~420px rather than .chatFill's usual flex: 1,
-   because .hub itself now sits inside a scrolling column with no bounded "remaining height" to fill.
-   Short (< 560px of the page's own height, e.g. a split-down pane): the stage keeps a usable row
-   height and scrolls, instead of crushing panels to slivers. */
+   Wide (>= 760px of the page's own width): [ viewbar (identity // facet toggle // status) ]
+                                             [ hub  |  panel ]
+   Two columns, both the stage's own full height with the same inset top and bottom. The panel
+   column is never narrower than the hub column — `minmax(320px, 1fr) minmax(360px, 1.2fr)`, so a
+   long cron name in the panel has at least as much room as the identity block in the hub.
+   Narrow (< 760px): hub then panel, stacked in a scrolling column.
+   Off: one column, just the hub (sleeping face + how to wake it) — no facet toggle, no panel. */
 
 .page {
-    /* A SIZE container, not just inline: the short-pane rules below query the page's height. Safe
-       because the page is always given a definite height (100% of its pane / the story frame). */
+    /* A SIZE container: the narrow rule below queries the page's own width. Safe because the page
+       is always given a definite height (100% of its pane / the story frame). */
     container-type: size;
     display: flex;
     flex-direction: column;
@@ -30,124 +24,34 @@
     overflow: hidden;
 }
 
-/* The centre column gets 1.7x a side's share — the face is THE centrepiece, and its glyph size is
-   bounded by this column's width (any wider and the side panels start truncating cron names).
-   Inline padding is the ViewBar's own 18px (`.viewbar` in ui/ui.css) so the panels' left edges sit
-   under the bar's crumb, not 6px inside it. The side floor of 200px plus the centre floor of 260px
-   (8 cells at the face's 56px floor) fits the 760px narrow threshold. Vertical padding is the same
-   top and bottom, which is what gives the side columns a matching inset at both edges now that
-   nothing sits below the stage. */
 .stage {
     flex: 1;
     min-height: 0;
     display: grid;
     align-items: stretch;
-    grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.7fr) minmax(
-            200px,
-            1fr
-        );
+    grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
     grid-template-rows: minmax(0, 1fr);
-    grid-template-areas: 'left face right';
     gap: var(--sp-7);
     padding: var(--sp-6) 18px;
 }
 
-/* min-height: 0, matching .right below. This column stays flush with the stage's bottom inset
-   (assertLayout() checks it); how its two panels size inside it — to content, capped at half the
-   column, scrolling past that — is DaemonServices' `packToContent` prop, which DaemonPage.tsx sets, not this file's. */
-.left {
-    grid-area: left;
-    min-width: 0;
-    min-height: 0;
-}
-
-/* The centre column: the face region above its own chat region, stacked top to bottom. This rule
-   only stacks them — how much height each gets is decided by .faceRegion/.chatRegion below. */
 .hub {
-    grid-area: face;
+    min-width: 0;
+    min-height: 0;
+}
+
+.panel {
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
 }
 
-/* Resting (not conversing): the face floats centred in the whole column's free space, same as
-   before there was a chat region at all. */
-.faceRegion {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    gap: var(--sp-7);
-}
-
-/* Conversing: the face shrinks (DaemonFace's own `compact` prop) and rides the top of the column
-   instead of centring, handing the rest of the column to .chatFill below. */
-.faceCompact {
-    flex: none;
-    justify-content: flex-start;
-    padding-top: var(--sp-2);
-    gap: var(--sp-4);
-}
-
-/* Resting: exactly as tall as its content (composer + controls row), sitting right under the
-   centred face. Conversing: .chatFill takes over and it fills the rest of the column instead,
-   so the transcript can scroll on its own. */
-.chatRegion {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-}
-.chatFill {
-    flex: 1;
-    min-height: 0;
-}
-
-/* Inbox takes what it needs, up to half the column; the log fills the rest. Each scrolls inside
-   its own DaemonPanel body. `.right >` outranks DaemonPanel's own `height: 100%`. */
-.right {
-    grid-area: right;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-5);
-}
-/* min-height: 0 is load-bearing here, not decorative: `flex: 0 1 auto` lets .inbox SHRINK, but a
-   flex item's default min-height is `auto` — its own content's intrinsic size — which still wins
-   over flex-shrink as a floor. Whenever the inbox's rows want more than 50% of `.right`, that
-   floor forced `.right` (and so the WHOLE stage row, since every column stretches to match) a few
-   pixels taller than the stage's own box, which read as the panels' bottom edge landing flush most
-   of the time while the page's REAL bottom inset (measured against the page, not the panels) came
-   out a few px bigger than the top — design finding #9's "35px under the hairline, 58px above the
-   bottom". */
-.right > .inbox {
-    flex: 0 1 auto;
-    height: auto;
-    max-height: 50%;
-    min-height: 0;
-}
-.right > .log {
-    flex: 1 1 0;
-    height: auto;
-    min-height: 0;
-}
-
-.off {
-    margin: 0;
-}
-
-/* The first readout is composed from USER DATA (a cron's name), so its length is not knowable at
-   design time and ViewBar.module.css's `@container viewbar` tiers — which fire on the bar's WIDTH,
-   not on its content — cannot reach it. The trailing group gives instead, and the status
-   ellipsizes. PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1): these two used
-   to be `.bar :global(.vb-trail)`/`.bar :global(.vb-readouts)`, reaching ViewBar's own unhashed
-   literals. ViewBar's family is real hashed locals now, so DaemonPage.tsx passes
-   `parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}` instead. */
+/* The first readout is composed from USER DATA (the status line), so its length is not knowable
+   at design time and ViewBar.module.css's `@container viewbar` tiers — which fire on the bar's
+   WIDTH, not on its content — cannot reach it. The trailing group gives instead, and the status
+   ellipsizes. PARTS PROPS, NOT REACHES: `parts={{ trail: styles.barTrail, readouts:
+   styles.barReadouts }}` passes real hashed locals instead of reaching ViewBar's own. */
 .barTrail {
     flex: 0 1 auto;
     min-width: 0;
@@ -167,15 +71,19 @@
     margin-inline: var(--sp-3);
 }
 
-/* Off: no side columns, no chat — the stage is just the sleeping face and how to wake it. */
-.page[data-enabled='false'] .stage {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'face';
+/* The facet count, riding inside a SegmentedToggle option's own .textLabel (a flex row with its
+   own gap). A direct flex child so dropping it at 480px (BarLabel's drop="late") takes its gap
+   with it, instead of leaving a dead space where a wrapping element used to sit. */
+.facetCount {
+    color: var(--faint);
 }
 
-/* Narrow: a plain column instead of a grid. An `auto` grid row inside a height-bounded stage is
-   squeezed to fit (tracks only grow to max-content while free space remains), which crushed the
-   panels and clipped the face; a flex column of fixed-height blocks just scrolls. */
+/* Off: no facet toggle, no panel — the stage is just the sleeping hub. */
+.page[data-enabled='false'] .stage {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* Narrow: a plain column instead of a grid, so nothing gets squeezed to a sliver. */
 @container (max-width: 759.98px) {
     .stage {
         display: flex;
@@ -187,52 +95,20 @@
     .stage > * {
         flex: none;
     }
-    /* grid-area does nothing in a flex column; `order` restores face-and-chat-first. Only
-       padding-TOP: a padding-bottom here used to stack on top of .stage's own `gap` below, making
-       the gap after the composer/controls row (~40px) visibly bigger than the gap between the
-       side panels (~16px, .stage's `gap` alone) — the stacking gap is what separates every other
-       pair of stacked blocks, so .hub shouldn't add a second one only on its trailing edge. */
     .hub {
         order: 0;
-        padding-top: var(--sp-7);
     }
-    .left {
+    .panel {
         order: 1;
-        height: 320px;
-    }
-    .right {
-        order: 2;
-        height: 420px;
-    }
-    .page[data-enabled='false'] .hub {
-        flex: 1 0 auto;
-    }
-    /* Stacked, so the face no longer flexes against the stage's own height — it sits at its natural
-       size either way. */
-    .faceRegion {
-        flex: none;
-    }
-    /* Resting: .chatRegion is untouched here, so it keeps the same content-height behaviour as wide
-       (composer + controls, nothing more) — no dead space above the composer. Conversing: .chatFill
-       would normally be `flex: 1`, but the stage scrolls in this breakpoint, so there is no bounded
-       remaining height to fill against — give it a fixed, independently-scrollable box instead. */
-    .chatFill {
-        flex: none;
         height: 420px;
     }
 }
 
-/* Short: a ~330px pane would otherwise leave the stage a sliver (panels one row tall, the face
-   clipped). The stage keeps a 220px row it scrolls, so every panel and the face stay whole. The
-   face rides the TOP of its region here, not the centre, so it and its caption land in the visible
-   slice before any scroll. */
+/* Short: a squeezed pane keeps a usable scrolling row instead of crushing everything to slivers. */
 @container (max-height: 559.98px) {
     .stage {
         grid-template-rows: minmax(220px, 1fr);
         padding-block: var(--sp-4);
         overflow-y: auto;
-    }
-    .faceRegion {
-        justify-content: flex-start;
     }
 }

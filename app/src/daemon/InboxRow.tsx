@@ -1,11 +1,12 @@
 // app/src/daemon/InboxRow.tsx
-// One inbox row, two lines: status dot + title + time, then source // snippet (or the failure
-// note). Due and failed rows add their actions on a third line, aligned to the text column.
+// One inbox row, one line: status dot + title + time. Clicking the row opens the page; the
+// only action is `[archive]`, overlaid over the age on hover/focus-within — every other action
+// (submit/dismiss/approve/retry) now lives at the bottom of the opened page itself.
 // Extracted from the deleted app/src/InboxView.tsx's PageRow — DaemonInbox.tsx is the ONLY
 // importer.
-import { createSignal, For, Show } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { DaemonPage } from '../../../core/src/daemonPages'
-import { STATUS_COLOR, STATUS_WORD, actionLabel } from '../daemonInboxLogic'
+import { STATUS_COLOR, STATUS_WORD } from '../daemonInboxLogic'
 import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'
@@ -18,27 +19,13 @@ import styles from './InboxRow.module.css'
 export type InboxRowProps = {
     page: DaemonPage
     onOpen: (path: string) => void
-    showActions: boolean
     onChanged: () => void
     class?: string
 }
 
-/** ~120-char single-line preview of a page's body — collapse whitespace/markdown noise so the
- *  row reads as a snippet, not a wrapped paragraph. */
-function snippet(body: string): string {
-    const flat = body
-        .replace(/[#*_`>[\]]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-    return flat.length > 120 ? flat.slice(0, 120) + '…' : flat
-}
-
 function InboxRow(props: InboxRowProps) {
-    const [pressingId, setPressingId] = createSignal<string | null>(null)
+    const [archiving, setArchiving] = createSignal(false)
     const failed = () => props.page.status === 'failed'
-    // The section head, the dot and the danger tone already say "failed" — the line carries why.
-    const failure = () =>
-        props.page.daemonNote || 'The daemon could not finish.'
     const time = () => relTimeISO(props.page.createdAt)
 
     // The dot is colour only, so the button carries the words a screen reader needs, in the
@@ -49,29 +36,30 @@ function InboxRow(props: InboxRowProps) {
             STATUS_WORD[props.page.status],
             props.page.source && `from ${props.page.source}`,
             time(),
-            failed() && failure(),
+            failed() && (props.page.daemonNote || 'The daemon could not finish.'),
         ]
             .filter(Boolean)
             .join(', ')
 
-    async function press(actionId: string): Promise<void> {
-        setPressingId(actionId)
+    async function archive(e: MouseEvent): Promise<void> {
+        e.stopPropagation()
+        if (archiving()) return
+        setArchiving(true)
         try {
-            const res = await api.resolveDaemonPage(props.page.path, actionId)
-            if (res.alreadyResolved) pushToast('Already resolved')
+            await api.archiveDaemonPage(props.page.path)
             props.onChanged()
         } catch (e) {
-            pushToast(`Couldn't resolve: ${(e as Error).message}`)
+            pushToast(`Couldn't archive: ${(e as Error).message}`)
         } finally {
-            setPressingId(null)
+            setArchiving(false)
         }
     }
 
     return (
         <div class={`${styles['inbox-row']} ${props.class ?? ''}`}>
             {/* A real button element around only the non-interactive part. ARIA's button role is
-                Children Presentational — wrapping the actions too would hide approve/dismiss
-                from assistive tech, so those stay a sibling instead. */}
+                Children Presentational — wrapping archive too would hide it from assistive tech,
+                so it stays a sibling instead. */}
             <PlainButton
                 class={styles['inbox-row-open']}
                 aria-label={label()}
@@ -94,55 +82,17 @@ function InboxRow(props: InboxRowProps) {
                 >
                     {time()}
                 </Text>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="muted"
-                    class={styles['inbox-row-meta']}
-                >
-                    <Show when={props.page.source}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="faint"
-                            weight="inherit"
-                        >
-                            {props.page.source} //{' '}
-                        </Text>
-                    </Show>
-                    <Show when={failed()} fallback={snippet(props.page.body)}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="inherit"
-                            weight="inherit"
-                            class={styles['inbox-row-failure']}
-                        >
-                            {failure()}
-                        </Text>
-                    </Show>
-                </Text>
             </PlainButton>
-            <Show when={props.showActions}>
+            <Show when={props.page.status !== 'working'}>
                 <div class={styles['inbox-row-actions']}>
-                    <For each={props.page.actions}>
-                        {a => (
-                            <TextButton
-                                variant={
-                                    a.kind === 'primary' ? 'selected' : 'normal'
-                                }
-                                danger={a.kind === 'danger'}
-                                disabled={props.page.status === 'working'}
-                                aria-busy={pressingId() === a.id}
-                                onClick={() => press(a.id)}
-                            >
-                                {props.page.status === 'working' &&
-                                pressingId() === a.id
-                                    ? '…'
-                                    : actionLabel(props.page, a.id)}
-                            </TextButton>
-                        )}
-                    </For>
+                    <TextButton
+                        danger
+                        aria-busy={archiving()}
+                        onClick={archive}
+                        onPointerDown={e => e.stopPropagation()}
+                    >
+                        {archiving() ? '…' : 'archive'}
+                    </TextButton>
                 </div>
             </Show>
         </div>

@@ -1,5 +1,5 @@
 /* app/src/daemon/DaemonChat.module.css — DaemonChat.tsx is the ONLY importer.
-   A flex column filling whatever height DaemonPage.module.css's .chatRegion/.chatFill give it:
+   A flex column filling whatever height DaemonHub.module.css's .chatRegion/.chatFill give it:
    the transcript (when present) grows to fill, the composer stays pinned to the bottom at its own
    content height. Resting (no transcript, no setup/refusal block) the whole thing is just the
    composer's own height — .chatRegion (not conversing) sizes to that automatically. */

@@ -20,6 +20,7 @@ import {
     listDaemonPages,
     resolvePage,
     markPageFailed,
+    archivePage,
     createDaemonPage,
 } from '../src/daemonPages'
 
@@ -394,4 +395,34 @@ test('createDaemonPage rejects a bad slug and refuses to clobber an existing pag
     expect(() => createDaemonPage(vault, { slug: 'once' })).toThrow(
         /already exists/,
     )
+})
+
+test('archivePage deletes a pending page and its sidecar', () => {
+    const vault = makeVault()
+    writePage(vault, 'a1', `type: daemon-page\ntitle: A1\ncreatedAt: 2026-07-06T08:00:00.000Z`)
+    writeState(vault, 'a1', { status: 'failed' })
+    archivePage(vault, '.daemon/pages/a1.md')
+    expect(existsSync(join(vaultPagesDir(vault), 'a1.md'))).toBe(false)
+    expect(existsSync(join(pageStateDir(vault), 'a1.json'))).toBe(false)
+})
+
+test('archivePage deletes a page that has no sidecar yet', () => {
+    const vault = makeVault()
+    writePage(vault, 'a2', `type: daemon-page\ntitle: A2\ncreatedAt: 2026-07-06T08:00:00.000Z`)
+    archivePage(vault, '.daemon/pages/a2.md')
+    expect(existsSync(join(vaultPagesDir(vault), 'a2.md'))).toBe(false)
+})
+
+test('archivePage refuses a page the daemon is working on (409) and leaves it in place', () => {
+    const vault = makeVault()
+    writePage(vault, 'a3', `type: daemon-page\ntitle: A3\ncreatedAt: 2026-07-06T08:00:00.000Z`)
+    writeState(vault, 'a3', { status: 'working' })
+    expect(() => archivePage(vault, '.daemon/pages/a3.md')).toThrow(/being worked on/)
+    expect(existsSync(join(vaultPagesDir(vault), 'a3.md'))).toBe(true)
+})
+
+test('archivePage rejects a path outside .daemon/pages and 404s an unknown page', () => {
+    const vault = makeVault()
+    expect(() => archivePage(vault, '.settings')).toThrow(/not a daemon page/)
+    expect(() => archivePage(vault, '.daemon/pages/nope.md')).toThrow(/page not found/)
 })

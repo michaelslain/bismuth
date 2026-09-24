@@ -1,53 +1,101 @@
 // app/src/daemon/DaemonPage.tsx
-// The daemon page — "face as hub". Presentational only: DaemonPageHost fetches and derives, this
-// lays it out. A ViewBar on top; a three-column stage (crons + services LEFT, the living face +
-// its own chat CENTRE, inbox over log RIGHT) filling the page — no band across the bottom.
+// The daemon page — "hub + one panel". Presentational only: DaemonPageHost fetches and derives,
+// this lays it out. A ViewBar on top — identity, a SegmentedToggle across the four facets
+// (inbox/crons/services/log, each labelled with its own count), and the status readout
+// alone (the old cron/service COUNTS moved onto the facet labels, see daemonPageModel.ts's
+// facetCount). Below it, a two-column stage: DaemonHub (the face, its identity, its own chat) on
+// the left, whichever ONE panel the current facet names on the right — handed in as a slot
+// (`props.panel`) so this file never imports DaemonCrons/DaemonProcesses/DaemonInbox/
+// DaemonLog directly; the host picks the panel for the facet and wires its callbacks.
 //
-// The centre column's chat is a slot: `props.chat`. The host passes the real chat surface (Task 6);
-// stories pass a stub. `props.chatFills` decides both the face's compact size and how the column
-// splits between the face and that chat — see DaemonPage.module.css.
-//
-// Off (`enabled === false`): the face sleeps, the side columns disappear and the centre column
-// gives way to one EmptyState saying how to wake it — and there is no chat at all.
+// Off (`enabled === false`): DaemonHub itself sleeps (no identity, no chat) and this file drops
+// the facet toggle and the panel entirely — there's nothing to facet over while the daemon is
+// off — leaving one EmptyState under the face saying how to wake it.
 import { Index, Show, type JSX } from 'solid-js'
-import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
-import type { DaemonPage as InboxPage } from '../../../core/src/daemonPages'
-import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Text from '../ui/Text'
-import EmptyState from '../ui/EmptyState'
-import DaemonFace from './DaemonFace'
-import DaemonServices from './DaemonServices'
-import DaemonInbox from './DaemonInbox'
-import DaemonLog from './DaemonLog'
+import SegmentedToggle, { type SegmentedOption } from '../ui/SegmentedToggle'
+import DaemonHub from './DaemonHub'
 import type { DaemonMood } from './daemonFaceModel'
+import {
+    DAEMON_FACETS,
+    facetCount,
+    type DaemonFacet,
+} from './daemonPageModel'
 import styles from './DaemonPage.module.css'
+
+export type DaemonFacetCounts = {
+    due: number
+    crons: number
+    services: number
+}
 
 export type DaemonPageProps = {
     name: string
+    /** The daemon's personality blurb — `identity.md`'s first body line. `''` renders nothing. */
+    blurb: string
     enabled: boolean
-    snapshot: DaemonSnapshot
-    pages: InboxPage[]
-    events: ActivityEvent[]
     mood: DaemonMood
+    /** True while the host has no snapshot yet — forwarded to DaemonHub/DaemonFace so the first
+     *  real mood paints immediately instead of settling against the provisional one. */
+    loading?: boolean
+    /** The ONE trailing readout — the status string, or empty (see daemonPageModel.barReadouts). */
     readouts: string[]
-    onOpen: (path: string) => void
-    onChanged: () => void
-    /** The centre column's chat, rendered under the face. Host passes <DaemonChat/>; stories a stub.
-     *  Expected to fill the height it is given (transcript scrolls, composer pinned to its bottom). */
+    facet: DaemonFacet
+    onFacet: (f: DaemonFacet) => void
+    counts: DaemonFacetCounts
+    /** The current facet's panel — the host picks + wires it (DaemonCrons/DaemonProcesses/
+     *  DaemonInbox/DaemonLog). */
+    panel: JSX.Element
+    /** The hub's own chat, rendered under the face/identity. Host passes <DaemonChat/>; stories
+     *  a stub. Expected to fill the height it's given. */
     chat: JSX.Element
-    /** true once the conversation has any items. No longer drives the face directly — see
-     *  `chatFills`, which also covers a full-height pane (like chat history) taking the region. */
+    /** true once the conversation has any items. See `chatFills`. */
     conversing: boolean
-    /** The centre column's chat region fills the column instead of sizing to its content.
-     *  True while conversing, and also while the history pane has taken the region over —
-     *  a full-height pane in a content-height box would be a sliver. */
+    /** The hub's chat region fills the column instead of sizing to its content — true while
+     *  conversing, and also while a full-height pane (like chat history) has taken the region. */
     chatFills: boolean
+    onEditIdentity: () => void
     class?: string
 }
 
+const FACET_WORD: Record<DaemonFacet, string> = {
+    inbox: 'inbox',
+    crons: 'crons',
+    services: 'services',
+    log: 'log',
+}
+
 function DaemonPage(props: DaemonPageProps) {
+    const options = (): SegmentedOption<DaemonFacet>[] =>
+        DAEMON_FACETS.map(f => {
+            const count = facetCount(f, props.counts)
+            return {
+                id: f,
+                ariaLabel:
+                    count === undefined
+                        ? FACET_WORD[f]
+                        : `${FACET_WORD[f]} ${count}`,
+                label: (
+                    <>
+                        {FACET_WORD[f]}
+                        <Show when={count !== undefined}>
+                            {/* 'late' — the count is a convenience once the word itself is
+                                already visible; it drops at 480px so all four facet words
+                                stay put and only the digits give way. A direct flex child of
+                                .textLabel (not wrapped in Text) so its gap drops WITH it. */}
+                            <BarLabel
+                                long={String(count)}
+                                drop="late"
+                                class={styles.facetCount}
+                            />
+                        </Show>
+                    </>
+                ),
+            }
+        })
+
     return (
         <div
             class={`${styles.page} ${props.class ?? ''}`}
@@ -57,6 +105,16 @@ function DaemonPage(props: DaemonPageProps) {
             <ViewBar
                 parts={{ trail: styles.barTrail, readouts: styles.barReadouts }}
                 identity={<Crumb icon="Bot">{props.name}</Crumb>}
+                facet={
+                    <Show when={props.enabled}>
+                        <SegmentedToggle
+                            options={options()}
+                            value={props.facet}
+                            onChange={props.onFacet}
+                            size="sm"
+                        />
+                    </Show>
+                }
                 readouts={
                     <Show when={props.readouts.length > 0}>
                         <Index each={props.readouts}>
@@ -80,50 +138,21 @@ function DaemonPage(props: DaemonPageProps) {
                 }
             />
             <div class={styles.stage} data-testid="daemon-page-stage">
+                <DaemonHub
+                    class={styles.hub}
+                    name={props.name}
+                    blurb={props.blurb}
+                    mood={props.mood}
+                    loading={props.loading}
+                    enabled={props.enabled}
+                    conversing={props.conversing}
+                    chatFills={props.chatFills}
+                    chat={props.chat}
+                    onEditIdentity={props.onEditIdentity}
+                />
                 <Show when={props.enabled}>
-                    <DaemonServices
-                        class={styles.left}
-                        packToContent
-                        crons={props.snapshot.crons}
-                        processes={props.snapshot.processes}
-                        daemonRunning={props.snapshot.daemon.running}
-                        onOpen={props.onOpen}
-                        onChanged={props.onChanged}
-                    />
-                </Show>
-                <div class={styles.hub} data-testid="daemon-page-hub">
-                    <div
-                        class={`${styles.faceRegion} ${props.chatFills ? styles.faceCompact : ''}`}
-                    >
-                        <DaemonFace
-                            mood={props.mood}
-                            caption={props.name}
-                            compact={props.chatFills}
-                        />
-                        <Show when={!props.enabled}>
-                            <EmptyState class={styles.off} title="wake it up">
-                                Set daemon.enabled: true in .settings to wake it.
-                            </EmptyState>
-                        </Show>
-                    </div>
-                    <Show when={props.enabled}>
-                        <div
-                            class={`${styles.chatRegion} ${props.chatFills ? styles.chatFill : ''}`}
-                            data-testid="daemon-page-chat"
-                        >
-                            {props.chat}
-                        </div>
-                    </Show>
-                </div>
-                <Show when={props.enabled}>
-                    <div class={styles.right}>
-                        <DaemonInbox
-                            class={styles.inbox}
-                            pages={props.pages}
-                            onOpen={props.onOpen}
-                            onChanged={props.onChanged}
-                        />
-                        <DaemonLog class={styles.log} events={props.events} />
+                    <div class={styles.panel} data-testid="daemon-page-panel">
+                        {props.panel}
                     </div>
                 </Show>
             </div>

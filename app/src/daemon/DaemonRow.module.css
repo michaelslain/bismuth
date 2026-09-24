@@ -1,0 +1,116 @@
+/* app/src/daemon/DaemonRow.module.css — DaemonRow.tsx is the ONLY importer.
+   The row itself carries no grid-template-columns of its own: `subgrid` inherits whatever the
+   parent list (DaemonCrons.module.css / DaemonProcesses.module.css) defined, which is what keeps
+   every row's dot/name/meta/status/actions aligned to the same x-position down the whole list. */
+.row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: var(--sp-3);
+    height: var(--row-h);
+    padding: 0 0 0 var(--sp-4);
+    border-radius: var(--r-0);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease);
+}
+/* The row's own right inset lives on its LAST rendered cell, not on `.row` itself — whichever
+   that is (`.status` when a services row has no actions, `.actions` otherwise; see DaemonRow.tsx's
+   `<Show when={props.actions !== undefined}>`). Padding is inside the box, so this doesn't change
+   that cell's own outer width (still the full stretched grid-track width) — it only nudges its
+   CONTENT inward, which is what lets `.status` reach all the way to the row's true right edge
+   when it IS the last cell (Acceptance: a services row's on/off cell is its last painted cell).
+   Putting the padding on `.row` itself would leave a gap past whichever cell ends up last. */
+.row > :last-child {
+    padding-right: var(--sp-4);
+}
+/* No hover/focus fill — clickable rows are buttons, and buttons never paint a background
+   (user request, 2026-09-23). Hover reveals the row's actions instead. */
+.row:focus-visible {
+    outline: none;
+}
+/* A disabled definition — name and schedule fall back to --faint, the same tone the status word
+   already gets via `.tone-off` (name gets it through DaemonRow.tsx's `Label tone="faint"`). NOT
+   the old whole-row opacity, which stacked on top of the already-faint tone and dropped disabled
+   text to ~1.8:1 contrast — unreadable. */
+.row.dim .meta {
+    color: var(--faint);
+}
+
+/* The dot itself is ui/StatusDot (its own 6px round + colour) — this wrapper carries only the
+   glow, which StatusDot has no notion of, and stays a fixed-size box so the shadow doesn't
+   nudge the grid's column sizing. */
+.dot-wrap {
+    display: inline-flex;
+    flex-shrink: 0;
+}
+.dot-wrap.glow {
+    box-shadow: var(--glow-accent);
+    border-radius: 50%;
+}
+
+/* `max-width` bounds this column's `max-content` track sizing function (DaemonCrons/
+   DaemonProcesses .list) to a sane cap instead of the row's full untruncated name — without it
+   the track grows to fit whatever the longest name is and Label's own ellipsis trio never
+   engages, since there is never any overflow to clip. Comfortably above every real name in the
+   fixtures; only a LongName-style outlier ever reaches it. */
+.name {
+    min-width: 0;
+    max-width: 28ch;
+}
+
+/* Schedule / trigger. Truncates FIRST — its column floors at 0 width (see the parent list's
+   grid-template-columns), so under pressure the grid shrinks this track toward zero before the
+   name column (floored at 12ch) has to give up any of its own room. */
+.meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Status: a word plus age, never colour alone. Faint (ok/off/idle) by default; accent when
+   live, danger when failed — the same two reusable tone modifiers the old cronStatus/DaemonLog
+   rows already use. */
+.status {
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: var(--faint);
+}
+.tone-ok {
+    color: var(--text-muted);
+}
+.tone-running {
+    color: var(--accent);
+}
+.tone-failed {
+    color: var(--danger);
+}
+.tone-off,
+.tone-idle {
+    color: var(--faint);
+}
+
+/* Hidden at rest, revealed on row hover/focus-within (or mid inline-confirm) — opacity, never
+   `visibility`/`display`, so the row's actions column keeps its reserved grid track (no layout
+   shift) and a tabbed-to button stays in tab order even while invisible. */
+.actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.row:hover .actions,
+.row:focus-within .actions,
+.row[data-confirming] .actions {
+    opacity: 1;
+}
+/* No hover on touch — actions stay visible as before. */
+@media (hover: none) {
+    .actions {
+        opacity: 1;
+    }
+}

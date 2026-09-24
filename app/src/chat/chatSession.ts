@@ -15,6 +15,7 @@ import type { Accessor } from 'solid-js'
 import type { ChatManifest } from '../../../core/src/chat'
 import type { ChatSessionInfo, ChatSearchHit, ChatScope } from '../api'
 import type { TurnItem } from '../chatTranscript'
+import { isSpeaking } from './chatSpeaking'
 import type { ChatProviderChoice } from '../chatProvider'
 import type { FileCandidate } from '../editor/atMention'
 import {
@@ -52,6 +53,7 @@ import { publishChatOrigin } from '../chatOrigin'
 import {
     publishChatBusy,
     publishChatComposing,
+    publishChatSpeaking,
     clearChatActivity,
 } from '../chatActivity'
 import { setChatColor, resolveChatColorArg } from '../chatColors'
@@ -297,6 +299,14 @@ export function createChatSession(chatId: string): ChatSession {
     // Busy/composing signals for any surface animating on this chat's liveness (the daemon face).
     createEffect(() => publishChatBusy(chatId, streaming()))
     createEffect(() => publishChatComposing(chatId, draft().trim().length > 0))
+    // Speaking = busy AND the trailing part of the last assistant turn is actual streamed text —
+    // distinguishes `thinking` (a reply is pending, nothing written yet) from `talking` (text is
+    // flowing) for the daemon face's mood. `isSpeaking` (chatSpeaking.ts) walks back past a
+    // queued follow-up bubble first, so staging another message mid-reply doesn't make the face
+    // stop talking.
+    createEffect(() => {
+        publishChatSpeaking(chatId, isSpeaking(transcript, streaming()))
+    })
 
     // ── onAppend: the one scroll seam ─────────────────────────────────────────────────────────
     const appendListeners = new Set<(force: boolean) => void>()

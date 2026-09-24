@@ -30,7 +30,7 @@
   /* Sit inside the editor's centered 620px column, aligned with the body's
      left/right padding (.cm-content padding-inline: 40px). */
   width: 100%;
-  max-width: 620px;
+  max-width: var(--note-column);
   margin: 0 auto;
   box-sizing: border-box;
   padding: var(--sp-7) 40px var(--sp-3);

@@ -501,7 +501,7 @@ bismuth folder-visibility "Journal" anything --clear --vault ~/vault   # value i
 Reads/writes the **`@bismuth/daemon`** runtime's on-disk state. The daemon is ONE machine process that multiplexes per-vault "brains"; its state is split in two:
 
 - **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update`, `stop`, `restart` — **take no `--vault`**.
-- **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon logs`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
+- **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon logs`, `daemon cron toggle`, `daemon cron run`, `daemon cron create`, `daemon cron delete`, `daemon process toggle`, `daemon process create`, `daemon process delete` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
 
 Mirrors the server's `/daemon/*` routes (plus `stop`/`restart`, which call the daemon workspace's own service-control functions directly — there is no HTTP route for them). See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. `stop`/`restart` are the only commands that touch the running OS service — everything else in this section only reads or writes files the daemon polls.
 
@@ -599,6 +599,37 @@ Enable (default) or, with `--off`, disable a background process in this vault's 
 bismuth daemon process toggle watcher --vault ~/vault
 bismuth daemon process toggle watcher --off --vault ~/vault
 ```
+
+### `daemon cron create <name…>` — **requires `--vault`**
+Create a new cron job definition from a template: disabled by default, a daily 9am `schedule`, and a placeholder prompt body (`createCron(name, vaultDaemonDir(vault))`). `<name…>` is the DISPLAY name — join multiple words with spaces (or quote them) — and is written quoted into the file's `name` frontmatter; the file itself is a kebab-cased slug of that name, `<slug>.md`. Prints `{ file: <slug> }`. An empty slug (a name with no letters/digits) → `400 EINVAL`; a clashing slug → `409 EEXIST`. Missing name → `usage: daemon cron create <name> --vault <dir>`.
+```bash
+bismuth daemon cron create "Answer Emails!" --vault ~/vault
+# → {"file":"answer-emails"}
+```
+
+### `daemon cron delete <name>` — **requires `--vault`**
+Delete a cron job definition, resolved by file basename OR frontmatter `name` (whichever matches — see `daemon cron toggle`'s note above on `resolveDaemonFile`). Prints `ok`. Unknown name → `404 ENOENT`; a cron currently recorded as running → `409 EBUSY`. Missing name → `usage: daemon cron delete <name> --vault <dir>`.
+```bash
+bismuth daemon cron delete "Answer Emails!" --vault ~/vault
+```
+
+### `daemon process create <name…>` — **requires `--vault`**
+Create a new background process definition from a template: a placeholder `command`, disabled by default (`createProcess(name, vaultDaemonDir(vault))`). Same display-name-vs-slug shape as `daemon cron create`. Prints `{ file: <slug> }`. Same `400`/`409` errors. Missing name → `usage: daemon process create <name> --vault <dir>`.
+```bash
+bismuth daemon process create "Web Search" --vault ~/vault
+# → {"file":"web-search"}
+```
+
+### `daemon process delete <name>` — **requires `--vault`**
+Delete a background process definition, then drop a reconcile trigger so a running daemon stops it. Prints `ok`. Unknown name → `404 ENOENT`. Missing name → `usage: daemon process delete <name> --vault <dir>`.
+```bash
+bismuth daemon process delete "Web Search" --vault ~/vault
+```
+
+> **Why these exist:** the daemon's own chat (`::daemon`'s inline `DaemonChat`) supervises its
+> crons/services by running the `bismuth` CLI in a Bash tool call — the user approves each call in
+> chat before it runs. Create/delete give it the same reach over its own definitions that a human
+> already has from the daemon page's UI.
 
 ---
 
@@ -1032,7 +1063,7 @@ bismuth chat search "vault schema" --pretty
 | `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
-| `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
+| `daemon graph` `daemon cron toggle/run/create/delete` `daemon process toggle/create/delete` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |

@@ -12,7 +12,7 @@
 // the transcript when a session can't run; the composer stays visible below it either way, as it
 // always has here.
 //
-// Fills whatever height DaemonPage.module.css's `.chatRegion`/`.chatFill` gives it: content-height
+// Fills whatever height DaemonHub.module.css's `.chatRegion`/`.chatFill` gives it: content-height
 // while resting (composer + controls, nothing above), full column height while conversing (the
 // transcript scrolls, the composer stays pinned to the bottom).
 import { createSignal, Show, type JSX } from 'solid-js'

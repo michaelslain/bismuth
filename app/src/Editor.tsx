@@ -152,7 +152,7 @@ import { keepaliveSaveInit } from './editor/keepaliveSave'
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
     // Prose reads in the mono prose font near --fg with a soft tone (design: color-mix(hi 86%, lo)),
-    // centered in the redesign's 620px prose column. The editor's own ground is --editor (a
+    // centered in the redesign's --note-column prose column. The editor's own ground is --editor (a
     // dedicated paper tone, distinct from the app's --bg chrome), not a transparent pass-through.
     '&': {
         backgroundColor: 'var(--editor)',
@@ -204,7 +204,7 @@ const editorTheme = EditorView.theme({
     '.cm-content': {
         caretColor: 'var(--fg)',
         padding: `8px 0 var(${SCROLL_PAD_VAR}, ${CONTENT_PAD_BOTTOM}px)`,
-        maxWidth: '620px',
+        maxWidth: 'var(--note-column)',
         width: '100%',
         boxSizing: 'border-box',
     },

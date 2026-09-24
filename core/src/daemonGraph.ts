@@ -21,7 +21,7 @@
 //
 // Only crons/processes that EXIST as *.md files are included — stale `.last-fired` entries with
 // no backing file (e.g. a renamed/removed cron) are dropped.
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { daemonMachineDir } from './daemon'
 import {
@@ -30,6 +30,7 @@ import {
     readFrontmatter,
     isEnabled,
 } from './daemonState'
+import { parseFrontmatter } from './frontmatter'
 import type { GraphData, GraphNode, GraphEdge } from './graph'
 
 export const DAEMON_NODE_ID = '::daemon'
@@ -67,6 +68,27 @@ export interface DaemonSnapshot {
     daemon: { label: string; running: boolean; home: string }
     crons: DaemonCron[]
     processes: DaemonProcess[]
+    /** The daemon's identity for the daemon page's face: `name` mirrors `daemon.label`
+     *  (both trace back to `daemonIdentityName`); `blurb` is the first non-empty line of
+     *  `<home>/identity.md`'s BODY (after frontmatter), trimmed — `''` when absent. */
+    identity: { name: string; blurb: string }
+}
+
+/** First non-empty line of `<home>/identity.md`'s BODY (after frontmatter), trimmed; `''`
+ *  when the file is absent, has no body, or fails to read. Never throws. */
+function identityBlurb(home: string): string {
+    try {
+        const { body } = parseFrontmatter(
+            readFileSync(join(home, 'identity.md'), 'utf8'),
+        )
+        const line = body
+            .split('\n')
+            .map(l => l.trim())
+            .find(l => l.length > 0)
+        return line ?? ''
+    } catch {
+        return ''
+    }
 }
 
 /** List `*.md` basenames (without extension) directly under `dir`; [] if the dir is absent. */
@@ -97,6 +119,7 @@ export function daemonSnapshot(
         running: isDaemonAlive(daemonMachineDir()),
         home,
     }
+    const identity = { name, blurb: identityBlurb(home) }
     try {
         const cronsDir = join(home, 'crons')
         const lastFired = readJsonObj(join(cronsDir, '.last-fired.json'))
@@ -165,9 +188,9 @@ export function daemonSnapshot(
             },
         )
 
-        return { daemon, crons, processes }
+        return { daemon, crons, processes, identity }
     } catch {
-        return { daemon, crons: [], processes: [] }
+        return { daemon, crons: [], processes: [], identity }
     }
 }
 

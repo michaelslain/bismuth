@@ -22,6 +22,7 @@ import {
     listProcesses,
     stopProcessesForVault,
 } from '../src/daemon/process.ts'
+import { parseFrontmatter } from '../src/lib/frontmatter.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 
 let processesDir: string
@@ -87,6 +88,28 @@ test('enableProcess is idempotent: a second call still leaves the file untouched
     expect(statSync(p).mtimeMs).toBe(mtimeFirst)
 })
 
+// #followup-1: writeProcessFile's pass-through loop writes every frontmatter value bare
+// (`${key}: ${value}`). Before this task, parseFrontmatter never unquoted anything, so a
+// quoted `name` re-read back into `frontmatter.name` still HELD its own quotes — passing
+// them straight through the identity write was safe by construction. Now that
+// parseFrontmatter unquotes on read, a naive pass-through would write the plain value back
+// bare and corrupt any name that actually needs quoting (a colon, in this case) on the very
+// next enable/disable flip. This pins the fix: `name` alone is re-escaped via
+// frontmatterValue before writeProcessFile writes it.
+test('enableProcess re-quotes a display name that needs it (contains a colon) rather than corrupting it on the next write', async () => {
+    const p = procFile(
+        'ops-nightly',
+        'command: sleep\nname: "Ops: Nightly"\nenabled: false',
+    )
+    const res = await enableProcess('ops-nightly', ctx)
+    expect(res.ok).toBe(true)
+
+    const after = readFileSync(p, 'utf-8')
+    expect(after).toContain('enabled: true')
+    const { frontmatter } = parseFrontmatter(after)
+    expect(frontmatter.name).toBe('Ops: Nightly')
+})
+
 test('enableProcess reports a missing definition instead of throwing', async () => {
     const res = await enableProcess('nope', ctx)
     expect(res.ok).toBe(false)
@@ -113,6 +136,64 @@ test('a process whose command does not exist is reported failed instead of crash
     expect(ghost?.status).toBe('failed')
     expect(ghost?.error).toContain('ENOENT')
     expect(ghost?.restarts).toBe(0) // a missing binary does not fix itself: no restart loop
+
+    await stopProcessesForVault(ctx2)
+})
+
+// #followup-1: `procKey`/pid files/log files must be keyed by the def's FILE slug
+// (`web-search`, from `web-search.md`), never its display name (`name: "Web Search"`
+// in frontmatter) — the two can differ, and every external caller (HTTP/CLI/MCP)
+// already addresses a process by its file basename. This pins the whole chain: a
+// running child started under a display-named def writes its pid/log files under
+// the slug, and disableProcess (looked up by slug) actually stops the live child.
+test('disableProcess stops a running child keyed by the FILE slug, never the display name — pid/log paths use the slug too', async () => {
+    const logsDir = join(processesDir, 'logs')
+    mkdirSync(logsDir, { recursive: true })
+    const ctx2 = {
+        processesDir,
+        root: processesDir,
+        logsDir,
+    } as unknown as VaultContext
+
+    procFile(
+        'web-search',
+        'command: sleep\nargs: ["100"]\nname: "Web Search"\nrestart: never\nenabled: true',
+    )
+
+    await startProcesses(ctx2)
+    await new Promise(r => setTimeout(r, 200)) // let the spawn land
+
+    const before = (await listProcesses(ctx2)).processes.find(
+        p => p.name === 'Web Search',
+    )
+    expect(before?.running).toBe(true)
+    const pid = before!.pid!
+
+    // pid + log files are named by the file slug, never the display name.
+    expect(
+        readFileSync(join(processesDir, '.pids', 'web-search.pid'), 'utf-8'),
+    ).toBe(String(pid))
+    expect(() =>
+        statSync(join(processesDir, '.pids', 'Web Search.pid')),
+    ).toThrow()
+    expect(() =>
+        statSync(join(logsDir, 'web-search.stdout.log')),
+    ).not.toThrow()
+
+    const res = await disableProcess('web-search', ctx2)
+    expect(res.ok).toBe(true)
+
+    await new Promise(r => setTimeout(r, 300)) // SIGTERM + exit handler settle
+
+    const after = (await listProcesses(ctx2)).processes.find(
+        p => p.name === 'Web Search',
+    )
+    expect(after?.running).toBe(false)
+
+    const raw = readFileSync(join(processesDir, 'web-search.md'), 'utf-8')
+    expect(raw).toContain('enabled: false')
+    const { frontmatter } = parseFrontmatter(raw)
+    expect(frontmatter.name).toBe('Web Search')
 
     await stopProcessesForVault(ctx2)
 })

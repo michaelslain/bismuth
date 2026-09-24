@@ -1,19 +1,19 @@
 // app/src/daemon/DaemonPageHost.tsx
 // The daemon page's container (routed by PaneContent for DAEMON_TAB). It owns everything
-// DaemonPage deliberately does not: polling the snapshot + activity log, reading the shared inbox
-// store App already polls, deriving the face's mood/caption and the bar readouts, and looking up
-// the daemon's chat session (if any) to hand DaemonPage as its `chat` slot.
+// DaemonPage/DaemonHub deliberately do not: polling the snapshot + activity log, reading the
+// shared inbox store App already polls, deriving the face's mood/caption/facet-counts, which
+// facet is showing (remembered per window in localStorage), wiring every panel's callbacks to
+// `api` with a toast on failure, and looking up the daemon's chat session (if any) to hand
+// DaemonHub as its `chat` slot.
 //
-// The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin lands
-// on the composer, `chatSession(DAEMON_CHAT_ID)` is undefined and DaemonChat renders its
-// pre-arm composer with no session — so opening this page (which app control may do) never spawns
-// a `claude` session by itself. Arming asks App's `chatContents` memo to retain the session
-// (chatSessions.ts); once it does, the same composer already has focus, so no separate focus
-// request is needed here.
+// The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin
+// lands on the composer, `chatSession(DAEMON_CHAT_ID)` is undefined and DaemonChat renders its
+// pre-arm composer with no session — so opening this page (which app control may do) never
+// spawns a `claude` session by itself.
 //
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
-import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import { createEffect, createMemo, createSignal, Match, onCleanup, Switch } from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
@@ -25,13 +25,26 @@ import {
     inboxPages,
     refreshDaemonPages,
 } from '../daemonInbox'
-import { chatBusy, chatComposing } from '../chatActivity'
+import { chatBusy, chatComposing, chatSpeaking } from '../chatActivity'
 import { DAEMON_CHAT_ID } from '../tabIds'
 import { chatSession } from '../chat/chatSessions'
 import { armDaemonChat } from './daemonChatArm'
+import { resolveWindowId } from '../windowId'
+import { pushToast } from '../toastStore'
 import DaemonChat from './DaemonChat'
+import DaemonInbox from './DaemonInbox'
+import DaemonCrons from './DaemonCrons'
+import DaemonProcesses from './DaemonProcesses'
+import DaemonLog from './DaemonLog'
 import { deriveMood } from './daemonFaceModel'
-import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
+import {
+    barReadouts,
+    faceCaption,
+    hasRecentFailure,
+    initialFacet,
+    shouldSteerToInbox,
+    type DaemonFacet,
+} from './daemonPageModel'
 import DaemonPage from './DaemonPage'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -52,9 +65,28 @@ const NO_SNAPSHOT: DaemonSnapshot = {
     daemon: { label: 'daemon', running: false, home: '' },
     crons: [],
     processes: [],
+    identity: { name: 'daemon', blurb: '' },
 }
 
 const isHidden = () => document.visibilityState === 'hidden'
+
+const facetKey = () => `bismuth.daemonFacet.${resolveWindowId()}`
+
+function readRememberedFacet(): string | null {
+    try {
+        return localStorage.getItem(facetKey())
+    } catch {
+        return null
+    }
+}
+
+function writeRememberedFacet(f: DaemonFacet): void {
+    try {
+        localStorage.setItem(facetKey(), f)
+    } catch {
+        /* best effort — a window that can't persist just re-derives next open */
+    }
+}
 
 function DaemonPageHost(props: DaemonPageHostProps) {
     const [snapshot, setSnapshot] = createSignal<DaemonSnapshot>(NO_SNAPSHOT)
@@ -111,6 +143,36 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         void refreshDaemonPages()
     }
 
+    // ── Facet: which ONE panel is showing ──────────────────────────────────────────────────
+    // `initialFacet` picks it once at mount from whatever due-count is already known; a late-
+    // arriving due count (the inbox poll landing after this component mounts) can still steer it
+    // to `inbox` — but only ONCE per mount (`shouldSteerToInbox`, daemonPageModel.ts), and never
+    // once the user has picked a facet of their own. A mount that already opened on `inbox`
+    // (something was due at initial-facet time) starts pre-steered, so a later due→0→due bounce
+    // doesn't steer it a second time.
+    const [facet, setFacetSignal] = createSignal<DaemonFacet>(
+        initialFacet(dueCount(), readRememberedFacet()),
+    )
+    let userPickedFacet = false
+    let steered = facet() === 'inbox'
+    createEffect(() => {
+        if (
+            shouldSteerToInbox({
+                due: dueCount(),
+                steered,
+                userPicked: userPickedFacet,
+            })
+        ) {
+            steered = true
+            setFacetSignal('inbox')
+        }
+    })
+    const onFacet = (f: DaemonFacet) => {
+        userPickedFacet = true
+        setFacetSignal(f)
+        writeRememberedFacet(f)
+    }
+
     const mood = createMemo(() => {
         const snap = snapshot()
         return deriveMood({
@@ -122,11 +184,12 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             inboxWorking: anyWorking(),
             chatBusy: chatBusy(DAEMON_CHAT_ID),
             composing: chatComposing(DAEMON_CHAT_ID),
+            chatSpeaking: chatSpeaking(DAEMON_CHAT_ID),
         })
     })
 
-    // A trusted press or focus on the composer arms the inline centre-column chat (App's chatContents memo picks
-    // up the armed id and retains a session; chatSession(DAEMON_CHAT_ID) then stops being
+    // A trusted press or focus on the composer arms the inline hub chat (App's chatContents memo
+    // picks up the armed id and retains a session; chatSession(DAEMON_CHAT_ID) then stops being
     // undefined). The gesture lands on the composer itself, so no placeholder-to-real-composer
     // swap and no separate focus request — the composer that was just pressed/focused already has
     // focus.
@@ -139,22 +202,105 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
 
+    // ── Panel callbacks: every one wired to `api`, each swallowing after its toast — matching the
+    // rows' own commit helpers, which have no catch of their own to feed. There is no create:
+    // crons and services are created by asking the daemon in chat (it writes the definition via
+    // `bismuth daemon cron|process create`, the user approving the call), never from the page. ──
+    const onRunCron = async (name: string) => {
+        try {
+            await api.runCron(name)
+            await fetchSnapshot()
+        } catch (e) {
+            pushToast((e as Error).message || "couldn't run the cron")
+        }
+    }
+    const onToggleCron = async (name: string, on: boolean) => {
+        try {
+            await api.setCronEnabled(name, on)
+            await fetchSnapshot()
+        } catch (e) {
+            pushToast((e as Error).message || "couldn't update the cron")
+        }
+    }
+    const onDeleteCron = async (name: string): Promise<void> => {
+        try {
+            await api.deleteCron(name)
+            await fetchSnapshot()
+        } catch (e) {
+            pushToast((e as Error).message || "couldn't delete the cron")
+        }
+    }
+    const onToggleProcess = async (name: string, on: boolean) => {
+        try {
+            await api.setProcessEnabled(name, on)
+            await fetchSnapshot()
+        } catch (e) {
+            pushToast((e as Error).message || "couldn't update the service")
+        }
+    }
+    const onDeleteProcess = async (name: string): Promise<void> => {
+        try {
+            await api.deleteProcess(name)
+            await fetchSnapshot()
+        } catch (e) {
+            pushToast((e as Error).message || "couldn't delete the service")
+        }
+    }
+    const onEditIdentity = () => props.onOpen('.daemon/identity.md')
+
     return (
         <div class="full">
             <DaemonPage
                 name={daemonName()}
+                blurb={snapshot().identity.blurb}
                 enabled={enabled()}
-                snapshot={snapshot()}
-                pages={inboxPages()}
-                events={events()}
                 mood={mood()}
-                readouts={
-                    enabled()
-                        ? barReadouts(snapshot(), dueCount(), status())
-                        : [status()]
+                loading={enabled() && !loaded()}
+                readouts={barReadouts(status())}
+                facet={facet()}
+                onFacet={onFacet}
+                counts={{
+                    due: dueCount(),
+                    crons: snapshot().crons.length,
+                    services: snapshot().processes.length,
+                }}
+                panel={
+                    <Switch>
+                        <Match when={facet() === 'inbox'}>
+                            <DaemonInbox
+                                pages={inboxPages()}
+                                onOpen={props.onOpen}
+                                onChanged={onChanged}
+                            />
+                        </Match>
+                        <Match when={facet() === 'crons'}>
+                            <DaemonCrons
+                                crons={snapshot().crons}
+                                daemonRunning={snapshot().daemon.running}
+                                onOpen={props.onOpen}
+                                onRun={name => void onRunCron(name)}
+                                onToggle={(name, on) =>
+                                    void onToggleCron(name, on)
+                                }
+                                onDelete={onDeleteCron}
+                            />
+                        </Match>
+                        <Match when={facet() === 'services'}>
+                            <DaemonProcesses
+                                processes={snapshot().processes}
+                                daemonRunning={snapshot().daemon.running}
+                                onOpen={props.onOpen}
+                                onToggle={(name, on) =>
+                                    void onToggleProcess(name, on)
+                                }
+                                onDelete={onDeleteProcess}
+                            />
+                        </Match>
+                        <Match when={facet() === 'log'}>
+                            <DaemonLog events={events()} />
+                        </Match>
+                    </Switch>
                 }
-                onOpen={props.onOpen}
-                onChanged={onChanged}
                 conversing={conversing()}
                 chatFills={conversing() || !!session()?.history.open()}
                 chat={
@@ -167,6 +313,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                         tagNames={props.tagNames}
                     />
                 }
+                onEditIdentity={onEditIdentity}
             />
         </div>
     )

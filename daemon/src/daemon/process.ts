@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { readdir, readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
-import { parseFrontmatter } from '../lib/frontmatter'
+import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
@@ -18,13 +18,24 @@ const PIDS_SUBDIR = '.pids'
 // ── Per-vault state keys ──────────────────────────────────────────────────────
 //
 // ONE machine runtime supervises every enabled vault's processes. The `managed`
-// map (and the per-vault trigger intervals) are keyed by `${ctx.root}::${name}`
-// so two vaults can each run a process with the same name without colliding.
+// map (and the per-vault trigger intervals) are keyed by `${ctx.root}::${name}`,
+// where `name` MUST be the def's `file` (its `.md` basename, stable and
+// filesystem-safe) — never its `name` (the free-text display name, which can
+// differ from the file since a definition can carry `name: "Web Search"` in
+// `web-search.md`). Every external caller (HTTP routes, the CLI, MCP, the
+// trigger poller) already addresses a def by its file basename, so keying by
+// anything else makes lookups miss.
 const procKey = (ctx: VaultContext, name: string): string =>
     `${ctx.root}::${name}`
 
 export interface ProcessDef {
+    /** The display name — frontmatter `name:`, falling back to `file` when absent. Never use
+     *  this for keying/paths; see `file`. */
     name: string
+    /** The `.md` basename this definition was loaded from (no extension) — the stable identity
+     *  used for `procKey`, the `managed` map, pid files and log files. Passed to
+     *  `parseProcessFrontmatter` by every caller as the file's own basename. */
+    file: string
     command: string
     args: string[]
     cwd: string
@@ -104,6 +115,7 @@ function parseProcessFrontmatter(
 
     return {
         name: frontmatter.name ?? name,
+        file: name,
         command,
         args,
         cwd,
@@ -163,7 +175,17 @@ async function writeProcessFile(
 ): Promise<void> {
     const lines = ['---']
     for (const [key, value] of Object.entries(frontmatter)) {
-        lines.push(`${key}: ${value}`)
+        // `frontmatter` values arrive UNQUOTED (parseFrontmatter strips quotes on read), so any
+        // free-text field (name, command, …) needs its own quoting re-decided before it goes
+        // back to disk or a value that needs quoting (a colon, a leading dash) corrupts on the
+        // very next rewrite. `frontmatterValue` re-escapes every key EXCEPT: `args`/`env`, whose
+        // values are JSON literals already (`args: ["x"]`) and must pass through verbatim, and
+        // `enabled`, which this module reads/writes as the bare boolean strings 'true'/'false'
+        // on purpose (`frontmatterValue` would now quote a bare "true"/"false" as a numeric/
+        // keyword scalar, which is correct for a real display value but wrong for this one
+        // internal flag).
+        const passthrough = key === 'args' || key === 'env' || key === 'enabled'
+        lines.push(`${key}: ${passthrough ? value : frontmatterValue(value)}`)
     }
     lines.push('---')
     lines.push('')
@@ -448,7 +470,7 @@ export function processActivityEvent(
  */
 function markSpawnFailed(mp: ManagedProcess, err: unknown): void {
     const { def, ctx } = mp
-    void removePidFile(ctx, def.name)
+    void removePidFile(ctx, def.file)
     mp.proc = null
     const code = (err as NodeJS.ErrnoException).code ?? 'error'
     const message = err instanceof Error ? err.message : String(err)
@@ -469,14 +491,14 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     // Defensive orphan reap before forking: a stale pid file or an argv-match
     // in `ps` means a previous instance of this def is still running. Kill it
     // first — otherwise we'd create a duplicate.
-    const stalePid = await readPidFile(ctx, def.name)
+    const stalePid = await readPidFile(ctx, def.file)
     if (stalePid && stalePid !== mp.proc?.pid && isAlive(stalePid)) {
         console.warn(
             `[process] Stale pid ${stalePid} for "${def.name}" — killing before spawn`,
         )
         await killAndConfirm(stalePid)
     }
-    await removePidFile(ctx, def.name)
+    await removePidFile(ctx, def.file)
 
     const psRows = await scanPs()
     const orphans = matchOrphans(def, mp.proc?.pid ?? null, psRows)
@@ -488,8 +510,8 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
         await killAndConfirm(o.pid)
     }
 
-    const stdoutPath = join(ctx.logsDir, `${def.name}.stdout.log`)
-    const stderrPath = join(ctx.logsDir, `${def.name}.stderr.log`)
+    const stdoutPath = join(ctx.logsDir, `${def.file}.stdout.log`)
+    const stderrPath = join(ctx.logsDir, `${def.file}.stderr.log`)
 
     const stdoutFd = openSync(stdoutPath, 'a')
     const stderrFd = openSync(stderrPath, 'a')
@@ -522,7 +544,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
             mp.ctx,
             processActivityEvent(def.name, { event: 'started', pid: spawnedPid }),
         )
-        void writePidFile(ctx, def.name, spawnedPid).catch(err => {
+        void writePidFile(ctx, def.file, spawnedPid).catch(err => {
             console.error(
                 `[process] Failed to write pid file for "${def.name}": ${err}`,
             )
@@ -535,7 +557,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
 
     // Watch for exit
     mp.proc.on('exit', (code, signal) => {
-        void removePidFile(ctx, def.name)
+        void removePidFile(ctx, def.file)
         if (mp.stopping || mp.lastError) return
         const exitInfo = signal ? `signal ${signal}` : `code ${code}`
         console.log(`[process] "${def.name}" exited with ${exitInfo}`)
@@ -580,7 +602,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
 }
 
 function registerDef(def: ProcessDef, ctx: VaultContext): ManagedProcess {
-    const key = procKey(ctx, def.name)
+    const key = procKey(ctx, def.file)
     const existing = managed.get(key)
     if (existing) {
         existing.def = def
@@ -604,7 +626,7 @@ function registerDef(def: ProcessDef, ctx: VaultContext): ManagedProcess {
 export async function startProcesses(ctx: VaultContext): Promise<void> {
     const defs = await loadProcessDefs(ctx)
     for (const def of defs) {
-        const wasRegistered = managed.has(procKey(ctx, def.name))
+        const wasRegistered = managed.has(procKey(ctx, def.file))
         const mp = registerDef(def, ctx)
         // Only auto-spawn if enabled. Disabled defs sit in `managed` ready for
         // a runtime process_start; re-running startProcesses doesn't relaunch
@@ -628,7 +650,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
     if (defs.length === 0) return
 
     for (const def of defs) {
-        const stalePid = await readPidFile(ctx, def.name)
+        const stalePid = await readPidFile(ctx, def.file)
         if (stalePid && isAlive(stalePid)) {
             console.warn(
                 `[process] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`,
@@ -643,7 +665,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
             )
             await killAndConfirm(stalePid)
         }
-        await removePidFile(ctx, def.name)
+        await removePidFile(ctx, def.file)
     }
 
     const psRows = await scanPs()
@@ -723,7 +745,7 @@ async function stopAndClear(
     }
 
     for (const [, mp] of active) {
-        await removePidFile(mp.ctx, mp.def.name)
+        await removePidFile(mp.ctx, mp.def.file)
     }
 
     for (const [key] of entries) managed.delete(key)
@@ -850,7 +872,7 @@ export async function listProcesses(
                 )
                 mp.proc = null
                 status = 'stale'
-                await removePidFile(mp.ctx, mp.def.name)
+                await removePidFile(mp.ctx, mp.def.file)
             }
         }
 
@@ -945,11 +967,11 @@ export async function disableProcess(
     // returned, leaving the bash child to outlive the disable call (and keep
     // firing its inner loop) until something else killed it.
     registerDef({ ...def, enabled: false }, ctx)
-    const mp = managed.get(procKey(ctx, name))
+    const mp = managed.get(procKey(ctx, def.file))
     // Mark stopping even when there's no live proc — a process mid restart-backoff has a pending
     // timer that re-spawns it unless `stopping` is set (stopProcess only covers the live case).
     if (mp) mp.stopping = true
-    if (mp?.proc) await stopProcess(name, ctx)
+    if (mp?.proc) await stopProcess(def.file, ctx)
 
     const isDisabled = frontmatter.enabled === 'false'
     if (!isDisabled) {
@@ -1066,9 +1088,18 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
                 'utf-8',
             )
         } catch {
-            console.warn(
-                `[process] Trigger for unknown process "${name}" — skipping`,
-            )
+            const mp = managed.get(procKey(ctx, name))
+            if (mp) {
+                mp.stopping = true
+                if (mp.proc) await stopProcess(name, ctx)
+                console.log(
+                    `[process] Trigger for deleted process "${name}" — stopped`,
+                )
+            } else {
+                console.warn(
+                    `[process] Trigger for unknown process "${name}" — skipping`,
+                )
+            }
             continue
         }
         const def = parseProcessFrontmatter(
@@ -1083,11 +1114,11 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
         }
 
         // Reconcile runtime ↔ disk using the existing enable/disable/start funcs.
-        const running = isRunning(ctx, def.name)
+        const running = isRunning(ctx, def.file)
         if (def.enabled && !running) {
             console.log(`[process] Trigger starting: ${name}`)
             await enableProcess(name, ctx)
-            startProcess(def.name, ctx)
+            startProcess(def.file, ctx)
         } else if (!def.enabled && running) {
             console.log(`[process] Trigger stopping: ${name}`)
             await disableProcess(name, ctx)

@@ -1895,6 +1895,154 @@ test('daemon logs honours --limit', async () => {
     rmSync(vault, { recursive: true, force: true })
 })
 
+// --- `daemon cron create/delete` + `daemon process create/delete` — #followup-1 -----------------
+// These exist so the daemon's OWN chat can supervise its crons/services through the CLI (Bash),
+// with the user approving each tool call in chat. Spawned as a REAL subprocess (not
+// `commands[...].run()` in-process) because the agent-channel gate the second test proves is
+// checked only at `cli/src/index.ts`'s real dispatch point (see the BISMUTH_AGENT_CHANNEL tests
+// near the top of this file) — calling `.run()` directly bypasses it entirely.
+
+test('`daemon cron create <name> --vault <dir>` creates a display-named cron; `daemon cron delete` removes it', async () => {
+    const vault = makeVault({})
+    const create = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'daemon',
+            'cron',
+            'create',
+            'Answer Emails!',
+            '--vault',
+            vault,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [createOut, createErr, createCode] = await Promise.all([
+        new Response(create.stdout).text(),
+        new Response(create.stderr).text(),
+        create.exited,
+    ])
+    expect(createErr).toBe('')
+    expect(createCode).toBe(0)
+    expect(JSON.parse(createOut)).toEqual({ file: 'answer-emails' })
+    const md = readFileSync(
+        join(vault, '.daemon', 'crons', 'answer-emails.md'),
+        'utf8',
+    )
+    expect(md).toContain('name: "Answer Emails!"')
+
+    const del = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'daemon',
+            'cron',
+            'delete',
+            'Answer Emails!',
+            '--vault',
+            vault,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [delOut, , delCode] = await Promise.all([
+        new Response(del.stdout).text(),
+        new Response(del.stderr).text(),
+        del.exited,
+    ])
+    expect(delCode).toBe(0)
+    expect(delOut.trim()).toBe('ok')
+    expect(existsSync(join(vault, '.daemon', 'crons', 'answer-emails.md'))).toBe(
+        false,
+    )
+})
+
+test('`daemon process create <name> --vault <dir>` creates a display-named process; `daemon process delete` removes it', async () => {
+    const vault = makeVault({})
+    const create = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'daemon',
+            'process',
+            'create',
+            'Web Search',
+            '--vault',
+            vault,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [createOut, , createCode] = await Promise.all([
+        new Response(create.stdout).text(),
+        new Response(create.stderr).text(),
+        create.exited,
+    ])
+    expect(createCode).toBe(0)
+    expect(JSON.parse(createOut)).toEqual({ file: 'web-search' })
+    const md = readFileSync(
+        join(vault, '.daemon', 'processes', 'web-search.md'),
+        'utf8',
+    )
+    expect(md).toContain('name: "Web Search"')
+
+    const del = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'daemon',
+            'process',
+            'delete',
+            'Web Search',
+            '--vault',
+            vault,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [delOut, , delCode] = await Promise.all([
+        new Response(del.stdout).text(),
+        new Response(del.stderr).text(),
+        del.exited,
+    ])
+    expect(delCode).toBe(0)
+    expect(delOut.trim()).toBe('ok')
+    expect(
+        existsSync(join(vault, '.daemon', 'processes', 'web-search.md')),
+    ).toBe(false)
+})
+
+test('`daemon cron create` SUCCEEDS under BISMUTH_AGENT_CHANNEL=daemon — the daemon\'s own chat must be able to supervise its crons, not just read/write vault notes', async () => {
+    const vault = makeVault({})
+    const proc = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'daemon',
+            'cron',
+            'create',
+            'Nightly Sync',
+            '--vault',
+            vault,
+        ],
+        {
+            stdout: 'pipe',
+            stderr: 'pipe',
+            env: { ...process.env, BISMUTH_AGENT_CHANNEL: 'daemon' },
+        },
+    )
+    const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+    ])
+    expect(err).toBe('')
+    expect(code).toBe(0)
+    expect(JSON.parse(out)).toEqual({ file: 'nightly-sync' })
+})
+
 // --- `update status` / `update apply` (commands/update.ts) — dispatch + route JSON passthrough --
 
 /** Spin up a throwaway HTTP server that records every request and answers GET /update/status /
