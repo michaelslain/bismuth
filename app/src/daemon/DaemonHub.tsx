@@ -78,8 +78,8 @@ function DaemonHub(props: DaemonHubProps) {
                     caption={props.enabled ? identity() : undefined}
                 />
                 <Show when={!props.enabled}>
-                    <EmptyState class={styles.off} title="wake it up">
-                        Set daemon.enabled: true in .settings to wake it.
+                    <EmptyState class={styles.off}>
+                        set daemon.enabled: true in .settings to wake it
                     </EmptyState>
                 </Show>
             </div>

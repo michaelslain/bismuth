@@ -241,9 +241,11 @@ export const Off: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        // No title any more — the off line stands alone, lowercase, no trailing period.
+        await expect(canvas.queryByRole('heading', { level: 2 })).toBeNull()
         await expect(
-            canvas.getByRole('heading', { level: 2 }),
-        ).toHaveTextContent(/wake it up/i)
+            canvas.getByText('set daemon.enabled: true in .settings to wake it'),
+        ).toBeInTheDocument()
         await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         await expect(
             canvasElement.querySelector('[data-testid="chat-stub"]'),
