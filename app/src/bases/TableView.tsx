@@ -241,9 +241,7 @@ export function TableView(props: {
                                 <Show when={props.onWidthsChange}>
                                     <Text
                                         as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="inherit"
+                                        inherit
                                         class={styles.thResize}
                                     />
                                 </Show>

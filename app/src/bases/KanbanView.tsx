@@ -5,7 +5,6 @@ import {
     untrack,
     For,
     Show,
-    batch,
     onCleanup,
     onMount,
 } from 'solid-js'
@@ -17,7 +16,10 @@ import type {
     Row,
     ResultGroup,
 } from '../../../core/src/bases/types'
-import { placeholderFile, syntheticBaseFile } from '../../../core/src/bases/types'
+import {
+    placeholderFile,
+    syntheticBaseFile,
+} from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
@@ -27,6 +29,8 @@ import CardBodyInner from './CardBodyInner'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
+import { PALETTE_NAMES } from './kanbanPalette'
+import { parentOf } from '../fileTreeOps'
 import {
     groupUpdatesByPath,
     rollbackPending,
@@ -39,7 +43,6 @@ import {
 import { appendOrder } from './kanbanOrder'
 import {
     appendColumnKey,
-    columnDropIndex,
     removeColumnKey,
     renameColumnKey,
     renamePropertyOption,
@@ -47,6 +50,7 @@ import {
     withPropertyOption,
 } from './kanbanColumnOrder'
 import KanbanAddColumn from './KanbanAddColumn'
+import { createKanbanDrag, type KanbanCardDrop } from './kanbanDrag'
 import KanbanColumnMenu from './KanbanColumnMenu'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
@@ -106,21 +110,13 @@ const PALETTE = [
 // Human names for the PALETTE swatches above, parallel by index — every theme's --graph-0..4
 // ramp is rose/violet/blue/teal/green in that order. Used as each Swatch's accessible name +
 // title (a color, not a token name, reads better to a keyboard/screen-reader user).
-const PALETTE_NAMES = ['rose', 'violet', 'blue', 'teal', 'green']
-
-// Module-level stash for the dragged row's identity (rowId — see rowIdentity.ts).
-let draggedId: string | null = null
+// (PALETTE_NAMES itself lives in ./kanbanPalette, shared with the stories.)
 
 // An optimistic move: the column key + order a just-dropped card should render at, before the
 // backend write + refetch land. Keyed by rowId (see rowIdentity.ts).
 /** `keyOnly`: clear once the card reaches `key`, whatever its stored order (a column rename
  *  moves cards without writing an order, so an order match would never come). */
 type PendingMove = { key: string; order: number; keyOnly?: boolean }
-
-function dirOf(path: string): string {
-    const i = path.lastIndexOf('/')
-    return i >= 0 ? path.slice(0, i) : ''
-}
 
 /** Make a title safe as a filename: strip path/YAML-hostile chars, collapse whitespace. */
 function safeFilename(title: string): string {
@@ -219,25 +215,10 @@ export function KanbanView(props: {
         return groupColors()[key] ?? autoColor(key)
     }
 
-    const [overCol, setOverCol] = createSignal<string | null>(null)
-    const [overIndex, setOverIndex] = createSignal(0)
-    const [dragId, setDragId] = createSignal<string | null>(null)
-    const [fromCol, setFromCol] = createSignal<string | null>(null)
-    // Height of the card currently being dragged, so the drop placeholder is exactly its size
-    // (not a fixed 46px). Projected onto the board as the `--kb-drag-h` CSS var.
-    const [dragH, setDragH] = createSignal(46)
-
     // The card (by rowId) currently highlighted as an IMAGE-drop target (an OS file dragged over
     // it). Set on a native/HTML5 file drag-over, cleared on leave/drop. See the "Image drop onto a
     // card" section.
     const [dropCardId, setDropCardId] = createSignal<string | null>(null)
-
-    // Column (header) drag-reorder state — distinct from card drag above.
-    const [colDrag, setColDrag] = createSignal<string | null>(null)
-    const [colOver, setColOver] = createSignal<string | null>(null)
-    // Which half of the hovered column the cursor is in — drop AFTER it when true. Tracked live so
-    // the drop-gap placeholder (below) and the eventual drop resolve to the exact same slot.
-    const [colAfter, setColAfter] = createSignal(false)
 
     // UI popovers / composers, keyed by column key (only one open at a time).
     const [pickerCol, setPickerCol] = createSignal<string | null>(null)
@@ -284,9 +265,20 @@ export function KanbanView(props: {
     // appends every server key its pending order doesn't know about, so without this exclusion
     // set a just-deleted column would be re-appended and appear to never leave. Cleared once the
     // server no longer reports the key (same shape as the pendingColOrder clear-effect below).
-    const [pendingRemovedCols, setPendingRemovedCols] = createSignal<Set<string>>(
-        new Set(),
-    )
+    const [pendingRemovedCols, setPendingRemovedCols] = createSignal<
+        Set<string>
+    >(new Set())
+
+    /** Roll `pendingColOrder` back to `prevOrder`, but only-if-still-mine: another column action
+     * (reorder/rename/delete) may have written a newer order during this call's await, and an
+     * unconditional restore would clobber that action's own in-flight state. Used by
+     * addColumn/renameColumn/deleteColumn's catch blocks. */
+    function rollbackColOrder(
+        keys: string[],
+        prevOrder: string[] | null,
+    ): void {
+        setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+    }
 
     /** Effective within-column sort order: the pending (optimistic) order if this card has one for
      * this column, else its explicit `order`, else its stable engine position. */
@@ -305,14 +297,13 @@ export function KanbanView(props: {
     // The groups to render: the server groups with any pending optimistic moves applied (a moved
     // card is pulled from its server column and shown in its pending target column). Column set +
     // order are untouched, so the Index below stays stable.
-    const displayGroups = (): ResultGroup[] => {
+    const displayGroups = createMemo((): ResultGroup[] => {
         const pend = pending()
         const adds = pendingAdds()
         const groups = props.result.groups
         if (Object.keys(pend).length === 0 && adds.length === 0) return groups
         const byId = new Map<string, Row>()
-        for (const g of groups)
-            for (const r of g.rows) byId.set(rowId(r), r)
+        for (const g of groups) for (const r of g.rows) byId.set(rowId(r), r)
         const out = groups.map(g => {
             const rows = g.rows.filter(r => {
                 const mv = pend[rowId(r)]
@@ -349,7 +340,7 @@ export function KanbanView(props: {
         }
         for (const [key, rows] of extra) out.push({ key, rows })
         return out
-    }
+    })
 
     // Clear each optimistic move once the freshly-resolved server data matches it exactly (the card
     // is in the target column AND its `order` equals the pending order) — so the overlay hands off to
@@ -429,85 +420,9 @@ export function KanbanView(props: {
         })
     })
 
-    // FLIP (First-Last-Invert-Play): snapshot card rects, let Solid re-render, then
-    // animate each card from its old position back to its new one. Without this the
-    // placeholder pops open and the surrounding cards snap instantly — Trello slides.
+    // The board's root element — the scope the drag engine's FLIP queries run against, and
+    // `cardAtPoint`'s containment check (so a drop in one split pane's kanban can't land in another's).
     let rootEl: HTMLDivElement | undefined
-    const prevRects = new Map<string, DOMRect>()
-    function snapshotRects() {
-        if (!rootEl) return
-        prevRects.clear()
-        for (const el of rootEl.querySelectorAll<HTMLElement>(
-            '[data-kbcard][data-path]',
-        )) {
-            const p = el.dataset.path
-            if (p) prevRects.set(p, el.getBoundingClientRect())
-        }
-    }
-    function playFlip() {
-        if (!rootEl || prevRects.size === 0) return
-        for (const el of rootEl.querySelectorAll<HTMLElement>(
-            '[data-kbcard][data-path]',
-        )) {
-            const p = el.dataset.path
-            const prev = p ? prevRects.get(p) : undefined
-            if (!prev) continue
-            const now = el.getBoundingClientRect()
-            const dx = prev.left - now.left
-            const dy = prev.top - now.top
-            if (dx === 0 && dy === 0) continue
-            el.style.transition = 'none'
-            el.style.transform = `translate(${dx}px, ${dy}px)`
-            // Force a reflow so the next style change actually transitions.
-            el.getBoundingClientRect()
-            el.style.transition = 'transform 180ms cubic-bezier(.2,.7,.2,1)'
-            el.style.transform = 'translate(0, 0)'
-        }
-        prevRects.clear()
-    }
-    // Same FLIP, for whole COLUMNS on a header reorder (they only move horizontally).
-    const prevColRects = new Map<string, DOMRect>()
-    function snapshotColRects() {
-        if (!rootEl) return
-        prevColRects.clear()
-        for (const el of rootEl.querySelectorAll<HTMLElement>('[data-kbcol]')) {
-            const k = el.dataset.kbcol
-            if (k != null) prevColRects.set(k, el.getBoundingClientRect())
-        }
-    }
-    function playColFlip() {
-        if (!rootEl || prevColRects.size === 0) return
-        for (const el of rootEl.querySelectorAll<HTMLElement>('[data-kbcol]')) {
-            const k = el.dataset.kbcol
-            const prev = k != null ? prevColRects.get(k) : undefined
-            if (!prev) continue
-            const dx = prev.left - el.getBoundingClientRect().left
-            if (dx === 0) continue
-            el.style.transition = 'none'
-            el.style.transform = `translateX(${dx}px)`
-            el.getBoundingClientRect()
-            el.style.transition = 'transform 200ms cubic-bezier(.2,.7,.2,1)'
-            el.style.transform = 'translateX(0)'
-        }
-        prevColRects.clear()
-    }
-
-    function clearDrag(): void {
-        draggedId = null
-        batch(() => {
-            setOverCol(null)
-            setDragId(null)
-            setFromCol(null)
-            setColDrag(null)
-            setColOver(null)
-            setColAfter(false)
-        })
-    }
-
-    // Tear any in-progress drag down if the view unmounts mid-drag (removes window listeners + ghost).
-    onCleanup(() => endDrag())
-
-    const dragActive = (): boolean => dragId() !== null
 
     // Cards shown in column: while dragging, lift the dragged card out of EVERY column (the floating
     // ghost represents it) so the placeholder is the only thing marking its new home.
@@ -516,8 +431,8 @@ export function KanbanView(props: {
         const rows = sortedRows(group).filter(
             r => !isRowHidden(deleted, rowId(r), deleteSnapshot(r)),
         )
-        return dragActive()
-            ? rows.filter(r => rowId(r) !== dragId())
+        return drag.dragActive()
+            ? rows.filter(r => rowId(r) !== drag.dragId())
             : rows
     }
     // Id list per column (the <For> is keyed by these primitive strings, so a within-column
@@ -552,28 +467,15 @@ export function KanbanView(props: {
     const groupByKey = (key: string): ResultGroup =>
         displayGroups().find(g => g.key === key) ?? { key, rows: [] }
 
-    // ── Column drop-gap placeholder ──
-    // While a COLUMN header is being dragged, show a slim insertion bar in the slot the column will
-    // land in — the horizontal analogue of the card `kanbanPlaceholder` gap (a card drag opens a gap;
-    // a column drag opens a between-columns gap). `columnDropIndex` (pure, unit-tested) resolves the
-    // insertion index among the OTHER columns from the hovered column + which half the cursor is in.
-    const colDropIndex = (): number | null => {
-        const from = colDrag()
-        const over = colOver()
-        if (from === null || over === null || over === from) return null
-        return columnDropIndex(columnKeys(), from, over, colAfter())
-    }
-    // The placeholder renders BEFORE the column at the drop index (or trailing when it lands last),
-    // computed over the columns MINUS the dragged one so the index lines up with what's rendered.
-    const colGap = createMemo(
-        (): { before: string | null; trailing: boolean } => {
-            const idx = colDropIndex()
-            if (idx === null) return { before: null, trailing: false }
-            const others = columnKeys().filter(k => k !== colDrag())
-            if (idx >= others.length) return { before: null, trailing: true }
-            return { before: others[idx], trailing: false }
-        },
-    )
+    // The pointer-drag + FLIP engine (kanbanDrag.ts). Created here, after `columnKeys`, since its
+    // drop-gap memo reads that on creation; the writes a drop implies stay in this view.
+    const drag = createKanbanDrag({
+        root: () => rootEl,
+        editable,
+        columnKeys,
+        dropCard,
+        reorderColumns,
+    })
 
     // Clear the optimistic column order once the server's column order matches it.
     createEffect(() => {
@@ -604,180 +506,12 @@ export function KanbanView(props: {
         })
     })
 
-    // ── Pointer-based drag ──────────────────────────────────────────────────────────────────────
-    // The packaged app runs in WKWebView, which has broken HTML5 drag-and-drop — so, like the rest of
-    // Bismuth (dnd/viewDrag.ts drives the file tree), the kanban drags with POINTER events: arm on
-    // pointerdown, commit past a small threshold, follow a cloned floating ghost, and resolve the drop
-    // target under the cursor via elementFromPoint on the data-kbcol / data-kbcard attributes.
-    const DRAG_THRESHOLD = 5
-    let armMode: 'card' | 'col' | null = null
-    let armId = ''
-    let armColKey = ''
-    let armOrigin = { x: 0, y: 0 }
-    let armGrab = { dx: 0, dy: 0 }
-    let armSourceEl: HTMLElement | null = null
-    let ghostEl: HTMLElement | null = null
-
-    function startCardDrag(
-        e: PointerEvent,
-        id: string,
-        colKey: string,
-    ): void {
-        if (e.button !== 0 || !editable()) return
-        const t = e.target as HTMLElement
-        if (t.closest('input, textarea, button') || t.isContentEditable) return // let fields/buttons work
-        armMode = 'card'
-        armId = id
-        armColKey = colKey
-        armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
-            '[data-kbcard]',
-        )
-        armPointer(e)
-    }
-    function startColDrag(e: PointerEvent, colKey: string): void {
-        if (e.button !== 0 || !editable()) return
-        if ((e.target as HTMLElement).closest('button')) return // the color-dot picker button
-        // AnchoredPopover portals its panel outside this header's DOM, but Solid delegates
-        // pointerdown through the component tree, so a pointerdown inside the column menu's
-        // popover (the rename TextInput, its padding) still reaches this handler — `closest`
-        // above only exempts buttons. Bail on anything that isn't actually inside the header's
-        // real DOM (the portaled popover content is outside it).
-        if (!(e.currentTarget as Node).contains(e.target as Node)) return
-        armMode = 'col'
-        armColKey = colKey
-        armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
-            '[data-kbcol]',
-        )
-        armPointer(e)
-    }
-    function armPointer(e: PointerEvent): void {
-        if (!armSourceEl) {
-            armMode = null
-            return
-        }
-        const r = armSourceEl.getBoundingClientRect()
-        armOrigin = { x: e.clientX, y: e.clientY }
-        armGrab = { dx: e.clientX - r.left, dy: e.clientY - r.top }
-        window.addEventListener('pointermove', onPointerMove)
-        window.addEventListener('pointerup', onPointerUp)
-        window.addEventListener('pointercancel', endDrag)
-        window.addEventListener('keydown', onDragKey)
-    }
-    // A floating clone of the grabbed element that tracks the cursor (HTML5 DnD gave this for free).
-    function beginGhost(): void {
-        if (!armSourceEl) return
-        const r = armSourceEl.getBoundingClientRect()
-        const g = armSourceEl.cloneNode(true) as HTMLElement
-        // Strip the data-* so the ghost isn't matched by the FLIP / drop-resolution queries.
-        g.removeAttribute('data-kbcard')
-        g.removeAttribute('data-path')
-        g.removeAttribute('data-kbcol')
-        g.querySelectorAll('[data-kbcard],[data-path]').forEach(n => {
-            n.removeAttribute('data-kbcard')
-            n.removeAttribute('data-path')
-        })
-        g.setAttribute('data-kbghost', '')
-        Object.assign(g.style, {
-            position: 'fixed',
-            left: '0',
-            top: '0',
-            width: `${r.width}px`,
-            height: `${r.height}px`,
-            margin: '0',
-            pointerEvents: 'none',
-            zIndex: '10000',
-            opacity: '0.92',
-            // A dragged card is genuinely floating (following the cursor above the board) —
-            // the one legitimate elevation shadow in this view, read off the theme token.
-            boxShadow: 'var(--lift)',
-        } as CSSStyleDeclaration)
-        document.body.appendChild(g)
-        ghostEl = g
-        moveGhost(armOrigin.x, armOrigin.y)
-    }
-    function moveGhost(x: number, y: number): void {
-        if (ghostEl)
-            ghostEl.style.transform = `translate(${x - armGrab.dx}px, ${y - armGrab.dy}px) rotate(2deg)`
-    }
-    function onPointerMove(e: PointerEvent): void {
-        const committed = dragId() !== null || colDrag() !== null
-        if (
-            !committed &&
-            Math.hypot(e.clientX - armOrigin.x, e.clientY - armOrigin.y) <
-                DRAG_THRESHOLD
-        )
-            return
-        e.preventDefault()
-        if (!committed) {
-            document.documentElement.classList.add('kb-dragging')
-            beginGhost()
-            if (armMode === 'card') {
-                draggedId = armId
-                setDragH(armSourceEl ? armSourceEl.offsetHeight : 46)
-                setFromCol(armColKey)
-                setDragId(armId)
-            } else {
-                setColDrag(armColKey)
-            }
-        }
-        moveGhost(e.clientX, e.clientY)
-        if (armMode === 'card') resolveCardTarget(e.clientX, e.clientY)
-        else resolveColTarget(e.clientX, e.clientY)
-    }
-    function resolveCardTarget(x: number, y: number): void {
-        const colEl = (
-            document.elementFromPoint(x, y) as HTMLElement | null
-        )?.closest<HTMLElement>('[data-kbcol]')
-        if (!colEl) return // off the board — keep the last valid slot
-        const key = colEl.dataset.kbcol ?? ''
-        const cardEls = [
-            ...colEl.querySelectorAll<HTMLElement>('[data-kbcard]'),
-        ].filter(el => el.getAttribute('data-path') !== dragId())
-        let idx = cardEls.length
-        for (let k = 0; k < cardEls.length; k++) {
-            const r = cardEls[k].getBoundingClientRect()
-            if (y < r.top + r.height / 2) {
-                idx = k
-                break
-            }
-        }
-        const moved = overCol() !== key || overIndex() !== idx
-        if (moved) snapshotRects()
-        batch(() => {
-            setOverCol(key)
-            setOverIndex(idx)
-        })
-        if (moved) requestAnimationFrame(playFlip)
-    }
-    function resolveColTarget(x: number, y: number): void {
-        const colEl = (
-            document.elementFromPoint(x, y) as HTMLElement | null
-        )?.closest<HTMLElement>('[data-kbcol]')
-        if (!colEl) return // off the board — keep the last valid target so the placeholder holds
-        const r = colEl.getBoundingClientRect()
-        batch(() => {
-            setColOver(colEl.dataset.kbcol ?? null)
-            setColAfter(x > r.left + r.width / 2)
-        })
-    }
-    function onPointerUp(): void {
-        if (armMode === 'card' && dragId() !== null) {
-            void dropCard()
-        } else if (armMode === 'col' && colDrag() !== null) {
-            // Drop where the placeholder is showing — reuse the live-tracked target/half (set by
-            // resolveColTarget on every move) so the column lands exactly in the gap the user saw.
-            const from = colDrag()
-            const over = colOver()
-            if (from !== null && over !== null)
-                void reorderColumns(from, over, colAfter())
-        }
-        endDrag()
-    }
-    async function dropCard(): Promise<void> {
-        const id = draggedId
-        const insertAt = overIndex()
-        const targetKey = overCol()
-        const from = fromCol()
+    // Commit a card drop (called by the drag engine on pointerup, with the drag state it read).
+    async function dropCard(drop: KanbanCardDrop): Promise<void> {
+        const id = drop.id
+        const insertAt = drop.insertAt
+        const targetKey = drop.targetKey
+        const from = drop.from
         if (!id || targetKey === null) return
         const gb = groupBy()
         if (!gb) return
@@ -800,7 +534,7 @@ export function KanbanView(props: {
         const others = sortedRows(group).filter(r => rowId(r) !== id)
         const i = Math.max(0, Math.min(insertAt, others.length))
         const newList = [...others.slice(0, i), dragged, ...others.slice(i)]
-        snapshotRects()
+        drag.snapshotRects()
         setPending(prev => {
             const next = { ...prev }
             newList.forEach((r, k) => {
@@ -808,7 +542,7 @@ export function KanbanView(props: {
             })
             return next
         })
-        requestAnimationFrame(playFlip)
+        requestAnimationFrame(drag.playFlip)
 
         // Two boards, two write APIs. A NOTE board writes frontmatter keys on N different
         // files, which is what `setProperties` batches. An OWN-ROWS board writes N rows of
@@ -858,7 +592,11 @@ export function KanbanView(props: {
         // status change + the dragged card's order + the reindex of shifted siblings are all folded in.
         const writes: Array<{ path: string; key: string; value: unknown }> = []
         if (statusKey !== null && from !== targetKey)
-            writes.push({ path: dragged.file.path, key: statusKey, value: targetKey })
+            writes.push({
+                path: dragged.file.path,
+                key: statusKey,
+                value: targetKey,
+            })
         writes.push({ path: dragged.file.path, key: ORDER_KEY, value: i })
         for (let k = 0; k < newList.length; k++) {
             const row = newList[k]
@@ -867,23 +605,6 @@ export function KanbanView(props: {
                 writes.push({ path: row.file.path, key: ORDER_KEY, value: k })
         }
         await api.setProperties(writes)
-    }
-    function onDragKey(e: KeyboardEvent): void {
-        if (isDismissKey(e)) endDrag()
-    }
-    function endDrag(): void {
-        window.removeEventListener('pointermove', onPointerMove)
-        window.removeEventListener('pointerup', onPointerUp)
-        window.removeEventListener('pointercancel', endDrag)
-        window.removeEventListener('keydown', onDragKey)
-        document.documentElement.classList.remove('kb-dragging')
-        if (ghostEl) {
-            ghostEl.remove()
-            ghostEl = null
-        }
-        armMode = null
-        armSourceEl = null
-        clearDrag()
     }
 
     // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──
@@ -897,9 +618,9 @@ export function KanbanView(props: {
         // Optimistic: reorder instantly (FLIP the columns) so they don't snap back during the write's
         // refetch. The single `columns` write's SSE drives one refetch; the clear-effect then drops the
         // overlay (no props.onChange — a second refetch is unnecessary).
-        snapshotColRects()
+        drag.snapshotColRects()
         setPendingColOrder(keys)
-        requestAnimationFrame(playColFlip)
+        requestAnimationFrame(drag.playColFlip)
         await api.setViewProperty(
             props.basePath,
             props.viewIndex ?? 0,
@@ -933,7 +654,8 @@ export function KanbanView(props: {
         return names.map(name => {
             const def = defs[name]
             const out: Record<string, unknown> = { name }
-            if (def?.displayName !== undefined) out.displayName = def.displayName
+            if (def?.displayName !== undefined)
+                out.displayName = def.displayName
             if (def?.hidden) out.hidden = true
             if (def?.type) {
                 out.type = def.type.kind
@@ -994,13 +716,12 @@ export function KanbanView(props: {
                 declName,
                 name.trim(),
             )
-            if (updated)
-                await api.setProperty(basePath, 'properties', updated)
+            if (updated) await api.setProperty(basePath, 'properties', updated)
         } catch (e) {
             // Only-if-still-mine: another column action (reorder/rename/delete) may have
             // written a newer `pendingColOrder` during this await — restoring `prevOrder`
             // unconditionally would clobber that action's own in-flight state.
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             // Mirrors renameColumn's catch: this call cleared `trimmedName` out of
             // pendingRemovedCols optimistically (to un-hide the re-added column). If the
             // `columns` write never landed, the add never happened server-side — the removal
@@ -1049,7 +770,9 @@ export function KanbanView(props: {
         // excluding stored-row PLACEHOLDERS (a negative `index`, an optimistic add not yet
         // resolved to a real row): sending one to the server as a rename target 400s, and the
         // rollback would then fire after `columns` already landed.
-        const movedRows = groupByKey(from).rows.filter(r => !isStoredPlaceholder(r))
+        const movedRows = groupByKey(from).rows.filter(
+            r => !isStoredPlaceholder(r),
+        )
 
         // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly, the old
         // key is hidden (columnKeys() would otherwise re-append it while the server still reports
@@ -1156,7 +879,7 @@ export function KanbanView(props: {
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev => {
                 const s = rollbackRemoved(prev, alreadyRemoved ? null : from)
                 return targetWasRemoved && !columnsLanded
@@ -1201,11 +924,16 @@ export function KanbanView(props: {
                 if (Object.keys(next).length === 0)
                     await api.deleteViewProperty(basePath, idx, 'groupColors')
                 else
-                    await api.setViewProperty(basePath, idx, 'groupColors', next)
+                    await api.setViewProperty(
+                        basePath,
+                        idx,
+                        'groupColors',
+                        next,
+                    )
             }
             props.onChange()
         } catch (e) {
-            setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
+            rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev =>
                 rollbackRemoved(prev, alreadyRemoved ? null : key),
             )
@@ -1263,7 +991,7 @@ export function KanbanView(props: {
         // description edit to lose in the normal flow; only a description typed into the SAME
         // card during the brief in-flight window of a just-committed rename would be dropped — a
         // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
-        const dir = dirOf(row.file.path)
+        const dir = parentOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
         if (desired === row.file.path) return
         const target = dedupe(desired, takenPaths())
@@ -1317,7 +1045,7 @@ export function KanbanView(props: {
     // ── Add card — create a note in the board's folder with the column's status set. ──
     function boardFolder(): string {
         const first = props.result.groups.flatMap(g => g.rows)[0]
-        if (first) return dirOf(first.file.path)
+        if (first) return parentOf(first.file.path)
         return props.basePath ? props.basePath.replace(/\.md$/, '') : ''
     }
     // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
@@ -1382,22 +1110,23 @@ export function KanbanView(props: {
         // server version, and BaseView's SSE-driven revalidation refetches the board in a
         // useTransition (stale-while-revalidate) — the SMOOTH path. The deletedIds hide covers the
         // gap until that refetch lands and the prune-effect clears it.
-        snapshotRects()
+        drag.snapshotRects()
         setDeletedIds(prev => markDeleted(prev, id, deleteSnapshot(row)))
-        requestAnimationFrame(playFlip)
+        requestAnimationFrame(drag.playFlip)
 
         if (canWriteStoredRow(row)) {
             // The row's OWN file — see `dropCard`'s comment on why never `props.basePath`.
             const path = row.file.path
             const note = { ...storedNote(row) }
             const titleKey = writableKey(titleCol())
-            const name = String((titleKey ? note[titleKey] : undefined) ?? 'card')
+            const name = String(
+                (titleKey ? note[titleKey] : undefined) ?? 'card',
+            )
             try {
                 await api.rowDelete(path, row.index!)
                 pushToast(`Deleted "${name}"`, {
                     label: 'Undo',
-                    onClick: () =>
-                        void restoreStoredCard(path, note, id, name),
+                    onClick: () => void restoreStoredCard(path, note, id, name),
                 })
             } catch (e) {
                 setDeletedIds(prev => unmarkDeleted(prev, id))
@@ -1773,15 +1502,15 @@ export function KanbanView(props: {
         if (to && card.contains(to)) return
         if (dropCardId() === id) setDropCardId(null)
     }
-    async function onCardFileDrop(
-        e: DragEvent,
-        row: Row,
-    ): Promise<void> {
+    async function onCardFileDrop(e: DragEvent, row: Row): Promise<void> {
         if (!editable() || !isFileDrag(e.dataTransfer)) return
         e.preventDefault()
         e.stopPropagation()
         setDropCardId(null)
-        await embedImagesInCard(row, await uploadsFromFiles(e.dataTransfer!.files))
+        await embedImagesInCard(
+            row,
+            await uploadsFromFiles(e.dataTransfer!.files),
+        )
     }
 
     return (
@@ -1790,15 +1519,14 @@ export function KanbanView(props: {
             fallback={
                 <Callout class={styles.kanbanHint}>
                     This kanban view needs a "groupBy" property. Add e.g.{' '}
-                    <InlineCode>groupBy: note.status</InlineCode> to the
-                    view.
+                    <InlineCode>groupBy: note.status</InlineCode> to the view.
                 </Callout>
             }
         >
             <div
                 class={styles.kanban}
                 ref={rootEl}
-                style={{ '--kb-drag-h': `${dragH()}px` }}
+                style={{ '--kb-drag-h': `${drag.dragH()}px` }}
             >
                 {/* Columns are keyed by their group KEY (a stable string), so a header reorder MOVES the
             column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's content,
@@ -1818,7 +1546,7 @@ export function KanbanView(props: {
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
                   (the horizontal analogue of the card placeholder). Rendered BEFORE this column when
                   it's the drop target's neighbour; a trailing one after the <For> handles last-slot. */}
-                                <Show when={colGap().before === key}>
+                                <Show when={drag.colGap().before === key}>
                                     <div class={styles.kanbanColPlaceholder} />
                                 </Show>
                                 <div
@@ -1826,14 +1554,14 @@ export function KanbanView(props: {
                                     data-kbcol={key}
                                     classList={{
                                         [styles.kanbanColumnOver]:
-                                            overCol() === key &&
-                                            colDrag() === null,
+                                            drag.overCol() === key &&
+                                            drag.colDrag() === null,
                                         [styles.kanbanColReorder]:
-                                            colOver() === key &&
-                                            colDrag() !== null &&
-                                            colDrag() !== key,
+                                            drag.colOver() === key &&
+                                            drag.colDrag() !== null &&
+                                            drag.colDrag() !== key,
                                         [styles.kanbanColDragging]:
-                                            colDrag() === key,
+                                            drag.colDrag() === key,
                                     }}
                                     style={{ '--kb-col-color': color() }}
                                 >
@@ -1844,7 +1572,7 @@ export function KanbanView(props: {
                                         <div
                                             class={styles.kanbanColHeader}
                                             onPointerDown={e =>
-                                                startColDrag(e, key)
+                                                drag.startColDrag(e, key)
                                             }
                                         >
                                             <PlainButton
@@ -1866,17 +1594,13 @@ export function KanbanView(props: {
                                             >
                                                 <Text
                                                     as="span"
-                                                    size="inherit"
-                                                    tone="inherit"
-                                                    weight="inherit"
+                                                    inherit
                                                     class={styles.dot}
                                                 />
                                             </PlainButton>
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles.kanbanColTitle}
                                             >
                                                 {group().key === ''
@@ -1885,9 +1609,7 @@ export function KanbanView(props: {
                                             </Text>
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles.kanbanCount}
                                             >
                                                 {group().rows.length}
@@ -1896,8 +1618,8 @@ export function KanbanView(props: {
                                                 <KanbanColumnMenu
                                                     name={group().key}
                                                     canDelete={
-                                                        group().rows
-                                                            .length === 0
+                                                        group().rows.length ===
+                                                        0
                                                     }
                                                     existing={columnKeys().filter(
                                                         k => k !== group().key,
@@ -1920,12 +1642,8 @@ export function KanbanView(props: {
                                         {/* Color picker popover */}
                                         <AnchoredPopover
                                             anchor={() => colorAnchorRef}
-                                            open={
-                                                pickerCol() === group().key
-                                            }
-                                            onDismiss={() =>
-                                                setPickerCol(null)
-                                            }
+                                            open={pickerCol() === group().key}
+                                            onDismiss={() => setPickerCol(null)}
                                             class={styles.kbColorPanel}
                                             panelAttrs={{
                                                 'data-testid':
@@ -1942,9 +1660,7 @@ export function KanbanView(props: {
                                                             color() === c
                                                         }
                                                         label={
-                                                            PALETTE_NAMES[
-                                                                i()
-                                                            ]!
+                                                            PALETTE_NAMES[i()]!
                                                         }
                                                         onClick={() =>
                                                             void setColColor(
@@ -1991,10 +1707,10 @@ export function KanbanView(props: {
                                                     <>
                                                         <div
                                                             class={`${styles.kanbanPlaceholder} ${
-                                                                overCol() ===
+                                                                drag.overCol() ===
                                                                     group()
                                                                         .key &&
-                                                                overIndex() ===
+                                                                drag.overIndex() ===
                                                                     i()
                                                                     ? styles.kanbanPlaceholderActive
                                                                     : ''
@@ -2022,7 +1738,7 @@ export function KanbanView(props: {
                                                                         if (
                                                                             !editing()
                                                                         )
-                                                                            startCardDrag(
+                                                                            drag.startCardDrag(
                                                                                 e,
                                                                                 id,
                                                                                 group()
@@ -2070,7 +1786,12 @@ export function KanbanView(props: {
                                                                                     config={
                                                                                         props.config
                                                                                     }
-                                                                                    editable={editable() && !isStoredPlaceholder(r())}
+                                                                                    editable={
+                                                                                        editable() &&
+                                                                                        !isStoredPlaceholder(
+                                                                                            r(),
+                                                                                        )
+                                                                                    }
                                                                                     hideLabels={hideLabels()}
                                                                                     onEditingChange={
                                                                                         setEditing
@@ -2135,8 +1856,9 @@ export function KanbanView(props: {
                                         </For>
                                         <div
                                             class={`${styles.kanbanPlaceholder} ${
-                                                overCol() === group().key &&
-                                                overIndex() ===
+                                                drag.overCol() ===
+                                                    group().key &&
+                                                drag.overIndex() ===
                                                     visibleRows(group()).length
                                                     ? styles.kanbanPlaceholderActive
                                                     : ''
@@ -2162,9 +1884,7 @@ export function KanbanView(props: {
                                                             setDraft('')
                                                         }}
                                                     >
-                                                        <Icon
-                                                            value="Plus"
-                                                        />
+                                                        <Icon value="Plus" />
                                                     </PlainButton>
                                                 }
                                             >
@@ -2220,7 +1940,7 @@ export function KanbanView(props: {
                     }}
                 </For>
                 {/* Trailing drop-gap: the dragged column lands past the last column. */}
-                <Show when={colGap().trailing}>
+                <Show when={drag.colGap().trailing}>
                     <div class={styles.kanbanColPlaceholder} />
                 </Show>
                 {/* Add-column ghost — same gate as the per-column add-card composer: editable +

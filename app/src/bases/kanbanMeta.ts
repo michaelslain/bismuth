@@ -1,7 +1,17 @@
 // Pure helpers behind the kanban card's property rendering — extracted from the
 // components (like flashcardsQueue) so they're unit-testable without JSX.
+import type { Row } from '../../../core/src/bases/types'
 import type { Schema } from '../../../core/src/schema/types'
+import { resolveProperty } from '../../../core/src/bases/query'
 import { bareName } from './propertyEdit'
+
+/** Plain-string title for a card (the display/first column value, falling back to the
+ * filename). Shared by KanbanCard (the card face) and CardEditModal (the edit modal) so a
+ * change to title resolution only needs to be made once. */
+export function titleOf(row: Row, titleCol: string): string {
+    const v = resolveProperty(titleCol, row)
+    return v == null || typeof v === 'object' ? row.file.name : String(v)
+}
 
 /** The view's `order:` ids to show as meta on each card: everything except the title
  * column. Description is NOT special-cased (#103) — a base that declares (or an `order:`

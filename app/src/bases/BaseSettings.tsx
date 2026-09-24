@@ -667,9 +667,7 @@ export function BaseSettings(props: {
                                             />
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['propset-name-txt']}
                                                 classList={{ [styles['empty']]: !row().name }}
                                             >
@@ -678,9 +676,7 @@ export function BaseSettings(props: {
                                             </Text>
                                             <Text
                                                 as="span"
-                                                size="inherit"
-                                                tone="inherit"
-                                                weight="inherit"
+                                                inherit
                                                 class={styles['propset-kind']}
                                             >
                                                 {row().kind}

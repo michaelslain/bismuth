@@ -81,9 +81,7 @@ export function StatusBar(props: {
             <Show when={!props.connected}>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={styles['status-conn']}
                     role="status"
                 >
@@ -124,19 +122,11 @@ export function StatusBar(props: {
                 `styles['status-daemon-state--' + props.daemon]`: a runtime-built key is invisible
                 to bench/moduleClassCheck.ts, which then downgrades this whole module to
                 "reachability UNCHECKED" — literal keys keep every one of the three verifiable. */}
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['status-daemon']}
-            >
+            <Text as="span" inherit class={styles['status-daemon']}>
                 daemon:{' '}
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     classList={{
                         [styles['status-daemon-state--off']]:
                             props.daemon === 'off',
@@ -150,9 +140,7 @@ export function StatusBar(props: {
                 </Text>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={`asc-caret ${styles['status-caret']}`}
                 >
                     _

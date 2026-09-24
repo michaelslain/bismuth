@@ -16,7 +16,7 @@ export default function ChatSystemNote(props: ChatSystemNoteProps) {
     return (
         <ChatTurnColumn class={`${styles['chat-system-note']} ${props.class ?? ''}`}>
             <Icon value="Info" />
-            <Text as="span" size="inherit" tone="inherit" weight="inherit">
+            <Text as="span" inherit>
                 {props.text}
             </Text>
         </ChatTurnColumn>

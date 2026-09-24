@@ -135,9 +135,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                             fallback={
                                                 <Text
                                                     as="span"
-                                                    size="inherit"
-                                                    tone="inherit"
-                                                    weight="inherit"
+                                                    inherit
                                                     class={styles['cat-name']}
                                                     title="Double-click to rename"
                                                     onDblClick={() => {

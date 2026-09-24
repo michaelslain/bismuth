@@ -63,9 +63,7 @@ const MARK: Record<TaskCheckStatus, string> = {
 const TaskCheck: Component<TaskCheckProps> = props => (
     <Text
         as="span"
-        size="inherit"
-        tone="inherit"
-        weight="inherit"
+        inherit
         class={`${styles.taskCheck} ${props.variant === 'cell' ? styles.cell : ''} ${props.class ?? ''}`}
         data-status={props.status}
         title="Toggle task — right-click to set status"

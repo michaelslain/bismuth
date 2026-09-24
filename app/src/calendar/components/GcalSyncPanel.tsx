@@ -136,9 +136,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     <StatusDot color="var(--green)" />
                     <Text
                         as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
+                        inherit
                         class={styles['gcal-acct']}
                     >
                         {status()!.account}

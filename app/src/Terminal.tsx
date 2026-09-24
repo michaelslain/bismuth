@@ -218,7 +218,7 @@ function shellQuote(p: string): string {
 }
 
 // Vault-relative destination for an attachment dropped onto the terminal, honoring
-// settings.attachments.folder (mirrors Editor.tsx's attachmentTarget, minus the "."
+// settings.attachments.folder (mirrors attachmentPath.ts's attachmentTarget, minus the "."
 // = current-note case — the terminal has no note context). Leading/trailing slashes
 // are stripped so a stray `folder: /attachments` still lands vault-relative.
 function terminalAttachmentTarget(fileName: string): string {

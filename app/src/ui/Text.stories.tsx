@@ -165,7 +165,7 @@ export const Inherit: Story = {
                 </Text>
             </div>
             <div style={{ 'font-weight': 'var(--fw-bold)' }}>
-                <Text as="span" size="inherit" tone="inherit" weight="inherit">inherits bold</Text>
+                <Text as="span" inherit>inherits bold</Text>
             </div>
         </Stack>
     ),

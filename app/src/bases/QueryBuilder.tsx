@@ -460,9 +460,7 @@ export function QueryBuilder(props: {
                                     <div class={qbStyles['qb-connective']}>
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={qbStyles['qb-conn-lab']}
                                         >
                                             match
@@ -484,9 +482,7 @@ export function QueryBuilder(props: {
                                         />
                                         <Text
                                             as="span"
-                                            size="inherit"
-                                            tone="inherit"
-                                            weight="inherit"
+                                            inherit
                                             class={qbStyles['qb-conn-lab']}
                                         >
                                             of these

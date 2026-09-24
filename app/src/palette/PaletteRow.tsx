@@ -37,34 +37,16 @@ function PaletteRow(props: PaletteRowProps) {
             onClick={() => props.onClick?.()}
         >
             <Show when={props.icon}>
-                <Text
-                    as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
-                    class={styles['palette-icon']}
-                >
+                <Text as="span" inherit class={styles['palette-icon']}>
                     <Icon value={props.icon!} />
                 </Text>
             </Show>
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles['palette-text']}
-            >
+            <Text as="span" inherit class={styles['palette-text']}>
                 <Label fill class={styles['palette-label']}>
                     {props.label}
                 </Label>
                 <Show when={props.desc}>
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['palette-desc']}
-                    >
+                    <Text as="span" inherit class={styles['palette-desc']}>
                         {props.desc}
                     </Text>
                 </Show>
@@ -77,9 +59,7 @@ function PaletteRow(props: PaletteRowProps) {
             <Show when={props.shortcut}>
                 <Text
                     as="span"
-                    size="inherit"
-                    tone="inherit"
-                    weight="inherit"
+                    inherit
                     class={`${styles['palette-shortcut']} row-kbd`}
                 >
                     {props.shortcut}
@@ -104,13 +84,7 @@ export function Highlight(p: { text: string; indices: number[] }) {
         <For each={segments()}>
             {s =>
                 s.match ? (
-                    <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        weight="inherit"
-                        class={styles['palette-match']}
-                    >
+                    <Text as="span" inherit class={styles['palette-match']}>
                         {s.text}
                     </Text>
                 ) : (

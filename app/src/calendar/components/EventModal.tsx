@@ -282,9 +282,7 @@ export function EventModal(props: { store: EventStore }) {
                                 />
                                 <Text
                                     as="span"
-                                    size="inherit"
-                                    tone="inherit"
-                                    weight="inherit"
+                                    inherit
                                     class={styles.dash}
                                 >
                                     →

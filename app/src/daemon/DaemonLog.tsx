@@ -53,27 +53,21 @@ function DaemonLog(props: DaemonLogProps) {
                         >
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['log-time']}
                             >
                                 {line.time}
                             </Text>
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['log-who']}
                             >
                                 {line.who}
                             </Text>
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['log-what']}
                                 title={line.what}
                             >
@@ -81,9 +75,7 @@ function DaemonLog(props: DaemonLogProps) {
                             </Text>
                             <Text
                                 as="span"
-                                size="inherit"
-                                tone="inherit"
-                                weight="inherit"
+                                inherit
                                 class={styles['log-duration']}
                             >
                                 {line.duration ?? ''}
