@@ -46,7 +46,7 @@ const harnessTheme = EditorView.theme({
         borderLeftWidth: '2px',
     },
     '.cm-content ::selection': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+        backgroundColor: 'var(--selection)',
     },
 })
 
