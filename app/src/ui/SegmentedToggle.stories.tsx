@@ -278,6 +278,7 @@ export const DisabledOption: Story = {
         )
         const first = buttons[0]!
         const middle = buttons[1]!
+        const last = buttons[2]!
         expect(middle.disabled).toBe(true)
         expect(first.getAttribute('aria-pressed')).toBe('true')
         // A disabled button does not dispatch a click event, so this must be a no-op: the
@@ -285,6 +286,10 @@ export const DisabledOption: Story = {
         middle.click()
         expect(middle.getAttribute('aria-pressed')).toBe('false')
         expect(first.getAttribute('aria-pressed')).toBe('true')
+        // A disabled option must read as visibly different from an enabled-but-unselected sibling
+        // ('three') — both are --faint text, so opacity is the only remaining signal.
+        expect(getComputedStyle(middle).opacity).toBe('0.4')
+        expect(getComputedStyle(last).opacity).toBe('1')
     },
 }
 
