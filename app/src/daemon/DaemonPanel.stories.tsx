@@ -24,8 +24,10 @@ type Story = StoryObj<typeof meta>
 const byModuleClass = (root: HTMLElement, name: string) =>
     root.querySelector<HTMLElement>(`[class*="${name}"]`)
 
-/** A populated panel with a plain title + count (DaemonServices' shape until task 6), a handful
- *  of rows filling the scrolling body. */
+/** A populated panel with a plain title + count — DaemonPanel's own title/count support, kept for
+ *  API coverage even though no real caller passes them any more (every daemon-page panel now uses
+ *  the ViewBar facet as its heading, and passes `actions` alone). A handful of rows filling the
+ *  scrolling body. */
 export const Default: Story = {
     render: () => (
         <div style={{ width: '280px', height: '220px' }}>

@@ -37,11 +37,28 @@ export const Default: Story = {
         await expect(canvas.getByText('on')).toBeInTheDocument()
         // DaemonProcesses rows have no `[ run ]`, but a row's actions cell is still the same
         // DaemonRow.tsx primitive — no reveal to test without an `actions` prop supplied.
+        // Acceptance 5: a services row with no actions renders no actions cell at all (DaemonRow's
+        // `<Show when={props.actions !== undefined}>`) and the list's grid drops the whole track
+        // (`.list` vs `.list.with-actions` in DaemonProcesses.module.css), so every row's status
+        // word is its last painted cell.
+        const rows = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[class*="row"]'),
+        ]
+        await expect(rows.length).toBeGreaterThan(0)
+        for (const row of rows) {
+            await expect(row.querySelector('[class*="actions"]')).toBeNull()
+            // The status word is the row's LAST rendered cell whenever it has no actions — safer
+            // than matching by class, since ui/StatusDot's own `.status-dot` class also contains
+            // the substring "status".
+            const status = row.lastElementChild as HTMLElement
+            const gap = row.getBoundingClientRect().right - status.getBoundingClientRect().right
+            await expect(gap).toBeLessThanOrEqual(2)
+        }
     },
 }
 
-/** An enabled service while the daemon process itself is offline — the dot must fall back to
- *  idle/faint rather than glowing, even though the service is still configured "on". */
+/** A disabled service (`enabled: false`) — reads "off" and dims, regardless of whether the
+ *  daemon process itself is running (see `DaemonOffline` below for that, separate, axis). */
 export const Disabled: Story = {
     render: () => (
         <div style={{ width: '360px', height: '120px' }}>
@@ -77,6 +94,26 @@ export const LongName: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const name = canvas.getByText(
+            'background-vault-reindexing-and-embedding-worker',
+        )
+        // Real clipping, not just presence: the text overflows its own box (DaemonRow.module.css's
+        // `.name` caps the column's `max-content` track sizing at 28ch) and Label's ellipsis trio
+        // is in effect.
+        await expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
+        await expect(getComputedStyle(name).textOverflow).toBe('ellipsis')
+        // …with the status word still fully inside the row, not pushed off the edge by the
+        // un-clipped name.
+        await expect(canvas.getByText('on')).toBeInTheDocument()
+        const row = name.closest<HTMLElement>('[class*="row"]')!
+        const status = row.lastElementChild as HTMLElement
+        const rowRect = row.getBoundingClientRect()
+        const statusRect = status.getBoundingClientRect()
+        await expect(statusRect.right).toBeLessThanOrEqual(rowRect.right + 1)
+        await expect(statusRect.left).toBeGreaterThanOrEqual(rowRect.left)
+    },
 }
 
 /** `[ new service ]` swapped for the inline name field. */
@@ -196,4 +233,15 @@ export const DaemonOffline: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('on')).toBeInTheDocument()
+        const dots = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[class*="dot-wrap"]'),
+        ]
+        await expect(dots.length).toBeGreaterThan(0)
+        for (const dot of dots) {
+            await expect(getComputedStyle(dot).boxShadow).toBe('none')
+        }
+    },
 }

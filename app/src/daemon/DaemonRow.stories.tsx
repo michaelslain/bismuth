@@ -132,6 +132,15 @@ export const Dim: Story = {
             ]}
         />
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const name = canvas.getByText('nightly-backup')
+        const status = canvas.getByText('off')
+        // `dim` puts the name in the SAME faint tone the status word already carries via
+        // `.tone-off` — not a separate whole-row opacity (that used to drop text to ~1.8:1
+        // contrast, see DaemonRow.module.css's header).
+        await expect(getComputedStyle(name).color).toBe(getComputedStyle(status).color)
+    },
 }
 
 /** A name long enough that it must ellipsize in the fixed row rather than push the schedule/
