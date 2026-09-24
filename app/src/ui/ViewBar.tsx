@@ -4,7 +4,7 @@
 // (readouts · config · actions), composed through NAMED SLOTS rather than positional
 // children. Replaces per-view bespoke `.viewbar` markup so every header is
 // structurally identical.
-import { children, type JSX, Show, splitProps } from 'solid-js'
+import { children, type JSX, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import styles from './ViewBar.module.css'
 
@@ -184,69 +184,5 @@ export function Crumb(props: {
                 {props.children}
             </b>
         </span>
-    )
-}
-
-/** A view-bar action button (--h-control tall, square). `active` gives the accent
- *  outline "selected" look — no fill, matching Button's selected treatment.
- *
- *  `active` means SELECTED OR TOGGLED ON, never "this is the primary action". A one-shot
- *  command (calendar's Today) that sets it renders permanently in the same treatment as the
- *  genuinely-selected control beside it, and the bar stops being able to say which is which. */
-export type VBtnProps = {
-    icon?: string
-    iconSize?: number
-    active?: boolean
-    title?: string
-    /** Merged onto the root, so a caller can restyle one instance without forking VBtn. */
-    class?: string
-    onClick?: (e: MouseEvent) => void
-    children?: JSX.Element
-} & JSX.ButtonHTMLAttributes<HTMLButtonElement>
-
-export function VBtn(props: VBtnProps) {
-    // TWO THINGS A CONTROL NEEDS TO PARTICIPATE IN THE COLLAPSE LADDER, both silent when missing:
-    //
-    // 1. THE REST SPREAD BELOW, which is what carries `data-bar-drop` to the DOM. Without it a
-    //    caller tagging a button for the ladder writes an attribute that never lands, the tier rule
-    //    matches nothing, and the control simply never drops — no typecheck error, no failing test,
-    //    just a bar that overflows at a width nobody tested. (IconButton already forwards; this was
-    //    the gap.) app/src/ui/barDropLevels.test.ts guards the other half of that hole: that the
-    //    LEVEL you tag is one the ladder actually defines.
-    //
-    // 2. THE CONTROL MUST BE A `.vbtn` WITH ITS <BarLabel> AS A DIRECT CHILD. The squaring rules
-    //    that reclaim a button's padding once its word is gone are written against that shape, so
-    //    an IconTextButton or a plain Button cannot collapse cleanly no matter how it is tagged.
-    //    Be precise about the failure, because the first diagnosis of it was wrong: ui.css's label
-    //    rule is a DESCENDANT selector and DOES match through a wrapper, so the word does drop —
-    //    what stays is the wrapper's own padding, leaving a wide empty stub where the control was.
-    //    That is why the flashcards CARDS/CRAM controls were converted IconTextButton → VBtn rather
-    //    than tagged in place.
-    const [own, rest] = splitProps(props, [
-        'icon',
-        'iconSize',
-        'active',
-        'title',
-        'class',
-        'onClick',
-        'children',
-    ])
-    return (
-        <button
-            class={cx(styles.vbtn, own.class)}
-            classList={{ [styles.active]: own.active }}
-            /* runtime hook, not test-only: calendar/CalendarFrame.module.css reads [data-active]
-             * to paint its own active-button highlight, since styles.active is a hashed local it
-             * cannot select */
-            data-active={own.active ? '' : undefined}
-            title={own.title}
-            onClick={e => own.onClick?.(e)}
-            {...rest}
-        >
-            <Show when={own.icon}>
-                {i => <Icon value={i()} size={own.iconSize} />}
-            </Show>
-            {own.children}
-        </button>
     )
 }

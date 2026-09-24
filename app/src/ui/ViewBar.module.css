@@ -1,5 +1,5 @@
 /* app/src/ui/ViewBar.module.css
-   Home of the .viewbar / .vbtn / .vb-* / .crumb family — moved here from ui.css (design-system
+   Home of the .viewbar / .vb-* / .crumb family — moved here from ui.css (design-system
    sweep, one-global-stylesheet plan, task 2), at that point still wrapped in `:global()` so the
    unhashed literals ui/ViewBar.tsx wrote by hand (`class="viewbar"`, `class="vb-lead"`, …) kept
    matching for every outside consumer reaching in by string.
@@ -8,11 +8,13 @@
    module's class map and applies the hashed locals directly — a `:global()`-only module ships no
    CSS at all (Rollup tree-shakes the side-effect import; this file was one of
    bench/moduleClassCheck.ts's "emitted NOTHING" findings). Every outside consumer that used to
-   reach `:global(.viewbar)`/`:global(.vbtn)`/`:global(.vb-*)`/`:global(.crumb)` by the bare
+   reach `:global(.viewbar)`/`:global(.vb-*)`/`:global(.crumb)` by the bare
    string has been retargeted: `ViewBarProps.parts` (a class appended to one named slot's wrapper)
-   for a consumer styling a REGION, and the `class` prop `Crumb`/`VBtn` now both accept for styling
-   one instance of either. Nothing outside this file reaches these classes by name any more —
-   anything that needs to find a bar at all keys on the `data-viewbar` attribute.
+   for a consumer styling a REGION, and the `class` prop `Crumb` now accepts for styling
+   one instance. Nothing outside this file reaches these classes by name any more —
+   anything that needs to find a bar at all keys on the `data-viewbar` attribute. The old `.vbtn`/
+   `.vbtn.active` family (VBtn's own stylesheet) is gone — every view-bar control now composes
+   `TextButton`/`IconButton`/`IconTextButton`, which carry their own `Button.module.css` look.
 
    Attribute selectors (`[data-bar-drop='4']`, `[data-bar-label]`, `[data-bar-abbr]`) needed no
    `:global()` wrapper before and need none now — CSS Modules only ever hashes class tokens.
@@ -107,19 +109,6 @@
 .viewbar .crumb svg { color: var(--faint); }
 /* Serif crumb title (standalone calendar month, etc.). */
 .viewbar .crumb b.crumb-serif { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
-/* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1): height 28 -> --h-control
-   (24), radius 7px -> --r-0, tracking 0.03em -> --ls-label. `.active` used to fill (--surface-2 +
-   a --border ring) — the same "selected state should not fill" defect .btn--text.btn--selected
-   was already fixed for (see the Button section's header comment): a filled toggle reads as a
-   lighter patch sitting ON the bar rather than as the same bar, selected. Now it matches that
-   exact treatment — accent text + accent outline, transparent fill — so all three of the app's
-   selected/toggle primitives (Button, VBtn, Chip below) agree. This rule also governs
-   ChatHeader.module.css's four header `<Select>` pickers, which read the same geometry. */
-.vbtn { display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: var(--ls-label); }
-.vbtn:hover { background: var(--hover-bg); color: var(--fg); }
-.vbtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
-.vbtn.active { color: var(--accent); background: transparent; border-color: var(--accent); }
-
 /* ── The collapse ladder ──────────────────────────────────────────────────────────────────────
    Every view bar gets narrow-pane behaviour by TAGGING its controls, not by writing queries. A view
    declares INTENT — `<BarLabel drop="early|late">` on a word, `data-bar-drop` on a whole control —
@@ -130,7 +119,7 @@
 
    THE SUBJECTS ARE DATA ATTRIBUTES, NEVER CLASSES. This is a global stylesheet; a rule here naming
    a CSS-module class hashes to a different local and matches nothing, silently — the trap CLAUDE.md
-   documents and bench/moduleClassCheck.ts exists to catch. `.viewbar`, `.vbtn` and the `.vb-*`
+   documents and bench/moduleClassCheck.ts exists to catch. `.viewbar` and the `.vb-*`
    regions are the exception because ui/ViewBar.tsx writes those literals.
 
    `.viewbar` is the container (declared above) and NO tier's subject is `.viewbar` itself — an
@@ -256,18 +245,16 @@
         `title`, so the label was a convenience rather than the only signal — and it squares up
         instead of keeping text padding around nothing. */
   .viewbar [data-bar-label='early'] { display: none; }
-  /* Matches ANY Button-family control by its data hooks, not just VBtn (one-button Task 1).
-     `IconTextButton` renders `kind="text"`, and Button.tsx wraps its children in an inner
-     `.textLabel` span — the BarLabel sits two levels down from the root, so this has to be a
-     descendant `:has()`, never `> `. `.vbtn` stays alongside it (not replaced) until Task 10
-     deletes the VBtn family once every call site has migrated. No extra rule is needed to close
-     the gap `.textLabel`'s own `gap` would otherwise leave: `gap` only spaces RENDERED flex
-     children, and hiding the label leaves the icon as the sole visible child. */
+  /* Matches ANY Button-family control by its data hooks (one-button Task 1). `IconTextButton`
+     renders `kind="text"`, and Button.tsx wraps its children in an inner `.textLabel` span — the
+     BarLabel sits two levels down from the root, so this has to be a descendant `:has()`, never
+     `> `. No extra rule is needed to close the gap `.textLabel`'s own `gap` would otherwise leave:
+     `gap` only spaces RENDERED flex children, and hiding the label leaves the icon as the sole
+     visible child. */
   /* NO fixed `width` on the Button-family half (one-button fix): a collapsed IconTextButton is
-     `[` + glyph + `]`, 25px at --fs-ui, and the old `width: var(--h-control)` (24px, sized for VBtn's
+     `[` + glyph + `]`, 25px at --fs-ui, and a fixed `width: var(--h-control)` (24px, sized for a
      bare glyph) clipped the brackets by a pixel and made the collapsed control a different width from
      the `[▣]` IconButton beside it. With no text padding left to remove, shrink-to-fit IS square. */
-  .viewbar .vbtn:has(> [data-bar-label='early']),
   .viewbar [data-kind="text"]:has([data-bar-label='early']) { padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 650px) {
@@ -327,7 +314,6 @@
   /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
   .viewbar [data-bar-label='late'] { display: none; }
   /* Same widening as the 'early' tier above — see its comment. */
-  .viewbar .vbtn:has(> [data-bar-label='late']),
   .viewbar [data-kind="text"]:has([data-bar-label='late']) { padding: 0; justify-content: center; }
   /* The crumb's leading icon goes with the late words (one-button fix). It is decoration — the
      title beside it names the view — and its 20px (glyph + gap) is what the calendar's crumb and date

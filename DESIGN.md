@@ -378,7 +378,8 @@ the accent. An outline appears only when it means something.
   ring never touches the next `[`.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
-  groups (the drawing dock, the embedded-graph icon groups) keep the butted `segment` look.
+  groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom, rendered
+  `[▣]` per option — there is no separate butted look any more.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
@@ -395,8 +396,8 @@ the accent. An outline appears only when it means something.
   the text button and `SegmentedToggle`'s bracket look. Unselected `--faint`, selected tints
   brackets + label to `--accent` or, with a `tone`, to that category's own hue.
 - **Segmented toggle:** a row of `[option]` buttons `--sp-4` apart, same bracket idiom; the on
-  option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) opt into the
-  older butted `segment` look instead.
+  option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) render each
+  option as a bracket icon button, `[▣]`, the same idiom rather than a separate look.
 - **On/off toggle row** (`ToggleRow`, settings-form checkboxes): a full `--row-h` row rendering
   `[x]` checked / `[ ]` unchecked (`BracketToggle`) — no box fill, just the bracket glyph flipping.
 
