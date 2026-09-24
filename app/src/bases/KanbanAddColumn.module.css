@@ -41,10 +41,10 @@
   right: 0;
   min-width: 0;
 }
+/* Padding kept — see the `.ghost`/`.addField` comments above: `.trigger`'s own inset is part of
+   the documented pixel overlay math between this button and KanbanColumnNameInput's field, not a
+   look override. Everything else IconTextButton itself now owns (brackets, hover, colour). */
 .trigger {
   padding: var(--sp-4);
-  border-radius: var(--r-0);
   white-space: nowrap;
-  transition: background 120ms ease, color 120ms ease;
 }
-.trigger:hover { background: var(--surface-2); }

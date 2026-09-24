@@ -33,6 +33,7 @@ import Select, { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import Text from '../ui/Text'
 import { IconButton } from '../ui/IconButton'
+import InlineCode from '../ui/InlineCode'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -525,7 +526,7 @@ export function QueryBuilder(props: {
                                                 <IconButton
                                                     icon="x"
                                                     label="Remove filter"
-                                                    class={qbStyles['qb-rm']}
+                                                    danger
                                                     onClick={() =>
                                                         removeRow(i())
                                                     }
@@ -766,7 +767,7 @@ export function QueryBuilder(props: {
                 {/* 4 — PREVIEW */}
                 <SettingsSection>generated query</SettingsSection>
                 <pre class={qbStyles['qb-preview']} data-testid="qb-preview">
-                    <code>{previewBody()}</code>
+                    <InlineCode>{previewBody()}</InlineCode>
                 </pre>
             </ModalBody>
 

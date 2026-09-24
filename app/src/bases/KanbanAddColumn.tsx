@@ -6,8 +6,7 @@
 // Presentational only — KanbanView owns persisting the new column (optimistic `columns` order +
 // the `properties.options` append) via `onAdd`.
 import { createSignal, Show, type Component } from 'solid-js'
-import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
+import IconTextButton from '../ui/IconTextButton'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
 import styles from './KanbanAddColumn.module.css'
 
@@ -30,14 +29,13 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
             {/* The trigger stays mounted while editing — hidden, not removed — so the ghost
                 keeps its exact rest footprint and the board never reflows; the input overlays
                 it out of flow (KanbanAddColumn.module.css's `.addField`). */}
-            <PlainButton
+            <IconTextButton
+                icon="Plus"
                 class={styles.trigger}
                 onClick={() => setEditing(true)}
             >
-                <Text as="span" size="inherit" tone="muted" weight="inherit">
-                    + column
-                </Text>
-            </PlainButton>
+                column
+            </IconTextButton>
             <Show when={editing()}>
                 <KanbanColumnNameInput
                     placeholder="name"

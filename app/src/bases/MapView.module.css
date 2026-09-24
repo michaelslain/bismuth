@@ -88,31 +88,9 @@
 
   box-shadow: var(--lift);
 }
-.mapZoomStack .mapCtrlBtn:first-child { border-bottom: var(--rule-soft, 1px solid var(--border-soft)); }
-.mapCtrlBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-body);
-  cursor: pointer;
-  text-align: center;
-  transition: background 120ms ease;
-}
-.mapCtrlBtn:hover { background: var(--hover-bg); }
-.mapCtrlSolo {
-  border: var(--rule);
-  border-radius: var(--r-0);
-  background: var(--pop-bg);
-
-  box-shadow: var(--lift);
-}
+/* Zoom in/out, reset and locate are now IconButtons (bracket [icon] look owned by Button) — no
+   per-button box/background/border of our own left to give them; .mapZoomStack/.mapControls
+   above are the only look left here, and it's on their container div, not on a button. */
 /* Scale bar, bottom-left above the badge. */
 .mapScale {
   position: absolute;
@@ -168,4 +146,3 @@
   pointer-events: none;
   font-size: var(--fs-body);
 }
-.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px var(--sp-2); border-radius: var(--r-0); }

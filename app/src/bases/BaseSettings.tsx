@@ -30,6 +30,8 @@ import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
+import PlainButton from '../ui/PlainButton'
+import InlineCode from '../ui/InlineCode'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
 import FormModal from '../ui/FormModal'
@@ -455,10 +457,10 @@ export function BaseSettings(props: {
                             <Show when={bidi()}>
                                 {' '}
                                 each direction is scheduled independently
-                                (reverse state lives in <code>
+                                (reverse state lives in <InlineCode>
                                     dueBack
-                                </code> / <code>easeBack</code> /{' '}
-                                <code>intervalBack</code>).
+                                </InlineCode> / <InlineCode>easeBack</InlineCode> /{' '}
+                                <InlineCode>intervalBack</InlineCode>).
                             </Show>
                         </SettingsHint>
                     </Show>
@@ -638,27 +640,14 @@ export function BaseSettings(props: {
                                         class={styles['propset-row']}
                                         classList={{ [styles['open']]: open() }}
                                     >
-                                        <div
+                                        <PlainButton
                                             class={styles['propset-head']}
-                                            role="button"
-                                            tabIndex={0}
                                             aria-expanded={open()}
                                             onClick={() =>
                                                 setEditingProp(
                                                     open() ? null : i,
                                                 )
                                             }
-                                            onKeyDown={e => {
-                                                if (
-                                                    e.key === 'Enter' ||
-                                                    e.key === ' '
-                                                ) {
-                                                    e.preventDefault()
-                                                    setEditingProp(
-                                                        open() ? null : i,
-                                                    )
-                                                }
-                                            }}
                                         >
                                             <Icon
                                                 value="chevron-right"
@@ -709,7 +698,7 @@ export function BaseSettings(props: {
                                                     })
                                                 }}
                                             />
-                                        </div>
+                                        </PlainButton>
 
                                         <Show when={open()}>
                                             <div class={styles['propset-body']}>
