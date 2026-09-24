@@ -5,7 +5,7 @@
 // discrete "run it now" action) — see DaemonProcesses.module.css's `.list` for the narrower
 // 4-column grid. `running` on DaemonProcess is always false (core exposes no per-process
 // liveness file it can trust), so "live" here means enabled AND the daemon process itself is up
-// (`daemonRunning`) — ported from today's DaemonServices.tsx's `live()`.
+// (`daemonRunning`) — the same rule this file's own `toneFor` has always applied.
 import { createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonProcess } from '../../../core/src/daemonGraph'
@@ -188,7 +188,10 @@ function DaemonProcesses(props: DaemonProcessesProps) {
                         </EmptyState>
                     }
                 >
-                    <div class={styles.list}>
+                    <div
+                        class={styles.list}
+                        classList={{ [styles['with-actions']]: deletingName() !== null }}
+                    >
                         <For each={props.processes}>
                             {process => (
                                 <DaemonRow

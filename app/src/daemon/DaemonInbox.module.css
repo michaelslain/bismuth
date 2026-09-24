@@ -12,7 +12,7 @@
 }
 /* No tone passed to <Badge> here (it inherits the eyebrow's own color) — only the dimming
    that's specific to this context stays. Deliberately a DIFFERENT opacity from
-   DaemonServices.module.css's daemon-row-status — a different chip, not unified. */
+   DaemonRow.module.css's `.status` word — a different chip, not unified. */
 .inbox-section-count {
     opacity: 0.65;
     font-weight: 400;

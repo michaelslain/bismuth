@@ -19,10 +19,22 @@
 import { type JSX, Show } from 'solid-js'
 import Text from '../ui/Text'
 import Label from '../ui/Label'
+import StatusDot from '../ui/StatusDot'
 import { isConfirmKey } from '../ui/widgetKeys'
 import styles from './DaemonRow.module.css'
 
 export type DaemonRowTone = 'ok' | 'running' | 'failed' | 'off' | 'idle'
+
+/** Same colours the `.tone-*` status-word classes already carry (DaemonRow.module.css) — the
+ *  dot and its status word have always matched, this just names the mapping once so <StatusDot>
+ *  (which takes a raw colour, not a tone enum) can share it. */
+const TONE_COLOR: Record<DaemonRowTone, string> = {
+    ok: 'var(--text-muted)',
+    running: 'var(--accent)',
+    failed: 'var(--danger)',
+    off: 'var(--faint)',
+    idle: 'var(--faint)',
+}
 
 export type DaemonRowProps = {
     name: string
@@ -71,21 +83,9 @@ function DaemonRow(props: DaemonRowProps) {
             }}
             onContextMenu={props.onContextMenu}
         >
-            <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="inherit"
-                class={styles.dot}
-                classList={{
-                    [styles.glow]: glow(),
-                    [styles['tone-ok']]: props.tone === 'ok',
-                    [styles['tone-running']]: props.tone === 'running',
-                    [styles['tone-failed']]: props.tone === 'failed',
-                    [styles['tone-off']]: props.tone === 'off',
-                    [styles['tone-idle']]: props.tone === 'idle',
-                }}
-            />
+            <div class={styles['dot-wrap']} classList={{ [styles.glow]: glow() }}>
+                <StatusDot color={TONE_COLOR[props.tone]} />
+            </div>
             <Label tone={props.dim ? 'faint' : 'default'} class={styles.name}>
                 {props.name}
             </Label>
@@ -108,7 +108,9 @@ function DaemonRow(props: DaemonRowProps) {
             >
                 {props.status}
             </Text>
-            <div class={styles.actions}>{props.actions}</div>
+            <Show when={props.actions !== undefined}>
+                <div class={styles.actions}>{props.actions}</div>
+            </Show>
         </div>
     )
 }

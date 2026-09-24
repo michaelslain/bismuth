@@ -71,7 +71,7 @@
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
    a row and set in the rows' --fs-ui. No longer reached via `:global(.ui-empty-block)` —
    DaemonPanel.tsx never renders `<EmptyState>` itself (it's opaque `children`), so this class is
-   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonServices,
+   exported as `daemonPanelEmptyClass` and passed by each caller (DaemonInbox, DaemonProcesses,
    DaemonLog) as `<EmptyState blockClass={daemonPanelEmptyClass}>` (one-global-followups Task 4).
    EmptyState has no compact variant to ask for instead. */
 .panel-empty {

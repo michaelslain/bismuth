@@ -9,10 +9,20 @@
     align-items: center;
     column-gap: var(--sp-3);
     height: var(--row-h);
-    padding: 0 var(--sp-4);
+    padding: 0 0 0 var(--sp-4);
     border-radius: var(--r-0);
     cursor: pointer;
     transition: color var(--dur-fast) var(--ease);
+}
+/* The row's own right inset lives on its LAST rendered cell, not on `.row` itself — whichever
+   that is (`.status` when a services row has no actions, `.actions` otherwise; see DaemonRow.tsx's
+   `<Show when={props.actions !== undefined}>`). Padding is inside the box, so this doesn't change
+   that cell's own outer width (still the full stretched grid-track width) — it only nudges its
+   CONTENT inward, which is what lets `.status` reach all the way to the row's true right edge
+   when it IS the last cell (Acceptance: a services row's on/off cell is its last painted cell).
+   Putting the padding on `.row` itself would leave a gap past whichever cell ends up last. */
+.row > :last-child {
+    padding-right: var(--sp-4);
 }
 /* No hover/focus fill — clickable rows are buttons, and buttons never paint a background
    (user request, 2026-09-23). Hover reveals the row's actions instead. */
@@ -27,21 +37,26 @@
     color: var(--faint);
 }
 
-/* A 6px currentColor dot — the shared .status-dot idiom, but the colour is a tone class here
-   (not an inline style) so DaemonRow never receives a raw colour string, only the 5-value enum. */
-.dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
+/* The dot itself is ui/StatusDot (its own 6px round + colour) — this wrapper carries only the
+   glow, which StatusDot has no notion of, and stays a fixed-size box so the shadow doesn't
+   nudge the grid's column sizing. */
+.dot-wrap {
+    display: inline-flex;
     flex-shrink: 0;
 }
-.dot.glow {
+.dot-wrap.glow {
     box-shadow: var(--glow-accent);
+    border-radius: 50%;
 }
 
+/* `max-width` bounds this column's `max-content` track sizing function (DaemonCrons/
+   DaemonProcesses .list) to a sane cap instead of the row's full untruncated name — without it
+   the track grows to fit whatever the longest name is and Label's own ellipsis trio never
+   engages, since there is never any overflow to clip. Comfortably above every real name in the
+   fixtures; only a LongName-style outlier ever reaches it. */
 .name {
     min-width: 0;
+    max-width: 28ch;
 }
 
 /* Schedule / trigger. Truncates FIRST — its column floors at 0 width (see the parent list's

@@ -4,7 +4,7 @@
 // Needs review (due, FIFO), Failed (retryable, newest first), Scheduled (future deliverAt,
 // transparency-only), Recently resolved (done/dismissed, collapsed, newest-first). `pages` is a
 // prop — the daemon page owns the poll and passes the result down, the same way it feeds
-// DaemonServices/DaemonLog. Wrapped in a single shared <DaemonPanel>.
+// DaemonProcesses/DaemonLog. Wrapped in a single shared <DaemonPanel>.
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { DaemonPage } from '../../../core/src/daemonPages'
 import {

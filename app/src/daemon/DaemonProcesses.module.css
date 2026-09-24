@@ -5,15 +5,27 @@
    empty column. Name floors at 12ch and sizes to its own content (`minmax(12ch, max-content)`,
    matching DaemonCrons.module.css); status takes the leftover free space
    (`minmax(max-content, 1fr)`) so slack in a wide panel lands between status and the trailing
-   actions instead of opening a gap right after a short name. */
+   actions instead of opening a gap right after a short name.
+
+   NO ACTIONS TRACK AT REST: a services row only ever gets an `actions` cell while it's mid
+   inline-delete-confirm (DaemonProcesses.tsx's `rowActions`) — every other row's DaemonRow
+   renders no 4th cell at all now (see DaemonRow.tsx's `<Show when={props.actions !== undefined}>`).
+   A grid still reserves `column-gap` between a declared track and its neighbour whether or not
+   any row occupies it, so the base template below has only 3 columns; `.with-actions` (applied
+   by DaemonProcesses.tsx exactly while a row is confirming a delete) adds the 4th back so that
+   row's `[ delete ] [ cancel ]` has somewhere to land. Without this split, `status` was never the
+   row's last painted cell — there was always a trailing empty gap past it. */
 .daemon-processes {
     height: 100%;
     min-height: 0;
 }
 .list {
     display: grid;
-    grid-template-columns: auto minmax(12ch, max-content) minmax(max-content, 1fr) auto;
+    grid-template-columns: auto minmax(12ch, max-content) minmax(max-content, 1fr);
     row-gap: 0;
+}
+.list.with-actions {
+    grid-template-columns: auto minmax(12ch, max-content) minmax(max-content, 1fr) auto;
 }
 .create-field {
     display: flex;

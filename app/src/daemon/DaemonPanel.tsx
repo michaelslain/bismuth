@@ -4,17 +4,18 @@
 // scrolls internally. With only ONE panel showing at a time and the ViewBar facet acting as its
 // heading, there is no border box and no letter-spaced eyebrow here any more — the head row
 // itself only renders when `title` or `actions` is given, so a panel with neither (most of
-// DaemonInbox/DaemonLog now) is chromeless top to bottom. Task 6 lays these into a three-column
-// grid; each must fill its cell's height and never grow the page, which is why the body — not the
-// panel — carries `overflow-y: auto`.
+// DaemonInbox/DaemonLog now) is chromeless top to bottom. The daemon page is a hub column plus
+// one panel column, and each panel must fill its cell's height and never grow the page, which is
+// why the body — not the panel — carries `overflow-y: auto`.
 import { Show, type JSX } from 'solid-js'
 import Text from '../ui/Text'
 import Badge from '../ui/Badge'
 import styles from './DaemonPanel.module.css'
 
 export type DaemonPanelProps = {
-    /** A small plain label, no eyebrow tracking. Optional — DaemonInbox/DaemonLog no longer pass
-     *  one (the ViewBar facet is their heading); DaemonServices still does until task 6 drops it. */
+    /** A small plain label, no eyebrow tracking. Optional — no caller passes one any more (the
+     *  ViewBar facet is every panel's heading now: DaemonCrons/DaemonProcesses/DaemonInbox all
+     *  pass `actions` alone). Kept on the type for DaemonPanel.stories.tsx's own demo shape. */
     title?: string
     count?: number
     actions?: JSX.Element
@@ -63,7 +64,7 @@ function DaemonPanel(props: DaemonPanelProps) {
 export default DaemonPanel
 
 /** `blockClass` for an `<EmptyState>` rendered inside a `DaemonPanel`'s body (DaemonInbox,
- *  DaemonServices, DaemonLog all pass this) — the inset + row-matched font-size a panel's empty
+ *  DaemonProcesses, DaemonLog all pass this) — the inset + row-matched font-size a panel's empty
  *  state needs, formerly `.daemon-panel-body > :global(.ui-empty-block)` reaching EmptyState's
  *  internals by class name. DaemonPanel itself never renders `<EmptyState>` (its `children` are
  *  opaque), so this is exported for each caller to hand to its own `<EmptyState blockClass={...}>`
