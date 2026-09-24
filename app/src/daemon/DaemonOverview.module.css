@@ -1,0 +1,32 @@
+/* app/src/daemon/DaemonOverview.module.css — DaemonOverview.tsx is the ONLY importer.
+   Stacks the four right-column sections (inbox, crons, services, log) with the log slot taking
+   whatever height is left under the other three. Narrow (DaemonPage's `.page` container) drops
+   the fixed height + internal scroll for a stage that scrolls as a whole, capping the log slot at
+   a fixed row count instead of letting it flex. */
+.overview {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    gap: var(--sp-6);
+}
+.slot {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: none;
+}
+.logSlot {
+    flex: 1 1 0;
+    min-height: calc(var(--row-h) * 8);
+}
+@container (max-width: 759.98px) {
+    .overview {
+        height: auto;
+        overflow: visible;
+    }
+    .logSlot {
+        flex: none;
+        height: calc(var(--row-h) * 10);
+    }
+}

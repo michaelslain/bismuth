@@ -1,0 +1,40 @@
+/* app/src/daemon/DaemonSection.module.css — DaemonSection.tsx is the ONLY importer.
+   The shared frame for each of the daemon page's right-column sections (inbox / crons / services
+   / log): a heading row, an optional empty line, then the section's own rows. Copies the panel
+   body's scroll + 16px bottom fade mask from the now-deleted DaemonPanel for `fill` sections. */
+.section {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+}
+.section.fill {
+    flex: 1;
+    min-height: 0;
+}
+.heading {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+    margin-bottom: var(--sp-2);
+}
+.count {
+    opacity: 0.65;
+    font-weight: 400;
+}
+.empty {
+    height: var(--row-h);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-4);
+}
+.body {
+    flex: none;
+}
+.section.fill .body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
+}
