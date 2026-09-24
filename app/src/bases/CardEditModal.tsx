@@ -41,7 +41,7 @@ import { PropertyValueEditor } from './PropertyValueEditor'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { columnLabel } from './columnLabel'
-import { writableKey } from './kanbanMeta'
+import { titleOf, writableKey } from './kanbanMeta'
 import { appendEmbedToValue, isImagePath } from './kanbanImageDrop'
 import {
     isFileDrag,
@@ -56,12 +56,6 @@ import { claimNativeDrop } from '../nativeDropRouting'
 import type { DocEditorHandle } from '../milkdown/milkdownEditor'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import styles from './CardEditModal.module.css'
-
-/** Plain-string title for a card (the display/first column value, falling back to the filename). */
-function titleOf(row: Row, titleCol: string): string {
-    const v = resolveProperty(titleCol, row)
-    return v == null || typeof v === 'object' ? row.file.name : String(v)
-}
 
 export function CardEditModal(props: {
     /** The card's row — reactive (displayRow), so committed values reflect optimistically. */
@@ -283,7 +277,10 @@ export function CardEditModal(props: {
     // row. Reactive VALUE reads stay inside the returned controls (prop getters that update in place).
     function renderControl(id: string): JSX.Element {
         if (!writable(id)) {
-            const v = untrack(() => value(id))
+            const display = () => {
+                const v = value(id)
+                return v == null || v === '' ? '—' : String(v)
+            }
             return (
                 <Text
                     as="span"
@@ -292,7 +289,7 @@ export function CardEditModal(props: {
                     weight="inherit"
                     class={styles.readonly}
                 >
-                    {v == null || v === '' ? '—' : String(v)}
+                    {display()}
                 </Text>
             )
         }
