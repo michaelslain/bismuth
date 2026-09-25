@@ -567,6 +567,10 @@ body, html, #root { margin: 0; height: 100%; }
    the whole ASCII design leans on, so they're off everywhere, app-wide. */
 body, html { font-variant-ligatures: none; }
 body { background: var(--bg); color: var(--fg); }
+/* No rubber-band / bounce scroll anywhere: WKWebView (Tauri on macOS/iPad) and Safari
+   elastic-scroll every scroll container by default. `*` reaches every container, so no
+   component module needs to repeat it. */
+*, html, body { overscroll-behavior: none; }
 
 /* Text selection ("highlighting" a drag-range) tints with the accent palette color
    everywhere. Without this the whole app — and rendered/live-preview "formatter"
