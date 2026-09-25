@@ -85,7 +85,6 @@ import {
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
-import PlainButton from './ui/PlainButton'
 import { IconTextButton } from './ui/IconTextButton'
 import SearchBar from './ui/SearchBar'
 import Text from './ui/Text'
@@ -767,23 +766,20 @@ export function PreviewView(props: {
                                             inputRef?.focus()
                                         }}
                                     />
-                                    <PlainButton
-                                        class={styles['preview-find-case']}
-                                        data-state={
+                                    <IconButton
+                                        icon="CaseSensitive"
+                                        label="Match case"
+                                        variant={
                                             caseSensitive()
                                                 ? 'selected'
                                                 : 'unselected'
                                         }
-                                        title="Match case"
-                                        aria-label="Match case"
                                         aria-pressed={caseSensitive()}
                                         onClick={() => {
                                             setCaseSensitive(v => !v)
                                             inputRef?.focus()
                                         }}
-                                    >
-                                        Aa
-                                    </PlainButton>
+                                    />
                                     <IconButton
                                         icon="X"
                                         label="Close (Esc)"

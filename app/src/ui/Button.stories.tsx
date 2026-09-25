@@ -1,13 +1,12 @@
 // Visual spec for the base <Button> + buttonClass() variant matrix.
 //
-// Three kinds (see buttonClass.ts):
+// Two kinds (see buttonClass.ts):
 //   • kind  — "text" (the bracket look — "[ label ]", lowercase, one size, the default) |
-//             "icon" (borderless icon button) | "segment" (the OLD "text" look — uppercase,
-//             bordered, sized — kept verbatim for SegmentedToggle only)
+//             "icon" (borderless icon button)
 //   • state — "normal" (standalone) | "unselected" (toggle member, off) | "selected" (toggle member, on)
-//   • size  — ignored for "text" (one size); "icon"/"segment" take "sm" | "md" | "lg" (md is the default)
+//   • size  — ignored for "text" (one size); "icon" takes "sm" | "md" | "lg" (md is the default)
 //   • danger — orthogonal destructive tone, layerable on any state
-//   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
+//   • primary — orthogonal: accent + bold, no box, the view's one emphasized action
 //
 // Button also renders `data-state` on its root (defaulting to `'normal'` when `state` is unset) —
 // the runtime hook outside stylesheets select on (`.x[data-state="selected"]`) instead of reaching
@@ -25,7 +24,7 @@ const meta = {
     component: Button,
     parameters: { layout: 'centered' },
     argTypes: {
-        kind: { control: 'inline-radio', options: ['text', 'icon', 'segment'] },
+        kind: { control: 'inline-radio', options: ['text', 'icon'] },
         state: {
             control: 'inline-radio',
             options: ['normal', 'selected', 'unselected'],
@@ -89,7 +88,7 @@ export const TextStates: Story = {
     ),
 }
 
-/** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
+/** Primary — accent + bold, no box, the view's one emphasized action. Max one per view. */
 export const TextPrimary: Story = {
     render: () => (
         <Row label="text // primary">
@@ -147,20 +146,19 @@ export const IconStates: Story = {
     ),
 }
 
-/** `kind="segment"` — the OLD `kind="text"` look (uppercase, bordered, sized), kept verbatim for
- *  SegmentedToggle only. Not a general-purpose register — reach for `kind="text"` for anything
- *  else. */
-export const Segment: Story = {
+/** Sizes (mirrors IconButton.stories.tsx's `Sizes` — `size` is ignored for `kind="text"`, so this
+ *  exercises it on `kind="icon"`, the register IconButton itself wraps). Audit Q2 #1. */
+export const Sizes: Story = {
     render: () => (
-        <Row label="segment // states">
-            <Button kind="segment" state="normal">
-                NORMAL
+        <Row label="icon // sizes">
+            <Button kind="icon" size="sm" title="sm">
+                <Icon value="Search" />
             </Button>
-            <Button kind="segment" state="unselected">
-                UNSELECTED
+            <Button kind="icon" size="md" title="md">
+                <Icon value="Search" />
             </Button>
-            <Button kind="segment" state="selected">
-                SELECTED
+            <Button kind="icon" size="lg" title="lg">
+                <Icon value="Search" />
             </Button>
         </Row>
     ),
@@ -195,17 +193,6 @@ export const AllVariants: Story = {
             <Row label="text // primary">
                 <Button kind="text" primary>
                     primary
-                </Button>
-            </Row>
-            <Row label="segment // normal / unselected / selected">
-                <Button kind="segment" state="normal">
-                    NORMAL
-                </Button>
-                <Button kind="segment" state="unselected">
-                    UNSELECTED
-                </Button>
-                <Button kind="segment" state="selected">
-                    SELECTED
                 </Button>
             </Row>
             <Row label="icon // normal / unselected / selected / danger">

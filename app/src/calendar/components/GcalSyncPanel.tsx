@@ -13,6 +13,7 @@ import { TextButton } from '../../ui/TextButton'
 import { TextInput } from '../../ui/TextInput'
 import Text from '../../ui/Text'
 import { IconTextButton } from '../../ui/IconTextButton'
+import InlineCode from '../../ui/InlineCode'
 import StatusDot from '../../ui/StatusDot'
 import SettingsSection from '../../ui/SettingsSection'
 import SettingsField from '../../ui/SettingsField'
@@ -171,7 +172,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     hint={
                         <>
                             which google calendar this base syncs with.{' '}
-                            <code>primary</code> is your main calendar; paste
+                            <InlineCode>primary</InlineCode> is your main calendar; paste
                             another calendar's id (google calendar → settings →
                             integrate calendar → calendar id) to sync a
                             different one.

@@ -38,38 +38,23 @@
    stays mounted but invisible, so the ghost keeps its exact rest footprint — the swap cannot
    reflow the board by construction, whatever the input's own intrinsic width. */
 .ghost[data-editing] .trigger { visibility: hidden; }
-/* The input overlays the hidden trigger, out of flow: same left inset and vertical centring as
-   the trigger, so the swap doesn't visibly shift the text origin (KanbanAddColumn.stories.tsx's
-   Editing play() asserts this to within 1px) or resize the ghost (fixed height above, and this
-   sits out of flow so its own — wider — intrinsic width never reflows the board). */
-.ghost .addField {
+/* The input overlays the hidden trigger, out of flow. Its left/top are NOT set here: KanbanAddColumn
+   measures the trigger's "column" glyph box and the input's own text inset on entering edit mode
+   and sets them inline (kanbanAddColumnOverlay.ts), so the input's text lands on that glyph
+   whatever the trigger's leading geometry is — bracket glyph, icon size setting, gaps, and the
+   fixed --h-control height Button centres its label in. (A hand-measured px literal here went
+   stale twice: once when the icon was added ahead of the word, once when Button's fixed height
+   moved the label down 5px.) `right: 0` pins the field to the ghost's width. */
+.addField {
   position: absolute;
-  /* x: the trigger's "+" glyph sits flush at its own padding-left (var(--sp-2), no measurable
-     left bearing — measured headless, Editing story: restOrigin.x - ghost.left == 4px, exactly
-     the padding). The input's own text sits var(--sp-2) + 1px inside ITS OWN left edge
-     (KanbanColumnNameInput's padding, plus the 1px hairline border its square chrome now
-     carries). Both paddings are the same var(--sp-2), so they cancel and only that 1px border
-     is left over between the two glyphs' x — this backs it out. `left` is measured from the
-     ghost's PADDING edge (the abspos containing block), so the ghost's own padding-left is added
-     back in to land on the trigger's left edge. */
-  left: calc(var(--sp-7) - 1px);
-  top: 50%;
-  transform: translateY(-50%);
-  min-width: var(--kb-add-field-w);
+  right: 0;
 }
-/* Left-aligned, not centred: the glyph's own left edge sits at the same var(--sp-2) inset as
-   KanbanColumnNameInput's input text (its own padding, KanbanColumnNameInput.module.css), so
-   .addField's overlay above can share that one x without a separate measured offset. */
+/* Outranks KanbanColumnNameInput's own `.field { min-width: 160px }` (two classes to its one), so
+   the overlay never outgrows the ghost's rest footprint. */
+.addField .nameInput { min-width: 0; }
+/* No padding here — that footprint now lives on .ghost above. .trigger only keeps a placement
+   concern (nowrap, so the label never wraps under the ghost's trimmed width); everything else
+   (brackets, hover, colour, box height) is IconTextButton's own. */
 .trigger {
-  width: var(--h-control);
-  height: var(--h-control);
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding-left: var(--sp-2);
-  box-sizing: border-box;
-  border-radius: var(--r-0);
-  color: var(--text-muted);
-  transition: color 120ms ease;
+  white-space: nowrap;
 }
-.trigger:hover { color: var(--fg); }

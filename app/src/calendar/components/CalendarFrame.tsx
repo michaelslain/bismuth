@@ -1,8 +1,9 @@
 // The calendar's root column (was `.calendar-app`). Every calendar view mounts inside one of
-// these so the shared button look (borderless, muted, brighter on hover, a neutral highlight
-// when a child VBtn's global `.active` is on) and the UI font apply once, at the top, instead
-// of being re-declared per view. See CalendarFrame.module.css for why the old Obsidian-compat
-// CSS variable block did not come with it.
+// these so the UI font applies once, at the top, instead of being re-declared per view. It no
+// longer restyles buttons by tag (one-button Task 2) — every button in the calendar is a
+// Button-family component (TextButton/IconButton/IconTextButton) that carries its own bracket
+// look and selected/unselected state, so there is nothing left for the frame to add. See
+// CalendarFrame.module.css for why the old Obsidian-compat CSS variable block did not come with it.
 import type { Component, JSX } from 'solid-js'
 import styles from './CalendarFrame.module.css'
 

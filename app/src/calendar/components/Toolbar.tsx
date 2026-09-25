@@ -5,8 +5,9 @@ import {
     currentView,
     currentDate,
 } from '../state'
-import ViewBar, { VBtn, type ViewBarSlots } from '../../ui/ViewBar'
+import ViewBar, { type ViewBarSlots } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
+import { IconTextButton } from '../../ui/IconTextButton'
 import BarLabel from '../../ui/BarLabel'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
@@ -85,17 +86,17 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                in a pane this narrow either, it is the only control here that is neither navigation
                nor the primary action, and its state is visible again the moment the pane widens. */
             <Show when={!ctx?.isTasks}>
-            <VBtn
+            <IconTextButton
                 data-bar-drop="1"
                 icon="Tag"
                 title="Categories"
-                active={showCategoryPanel.value}
+                variant={showCategoryPanel.value ? 'selected' : 'unselected'}
                 onClick={() =>
                     (showCategoryPanel.value = !showCategoryPanel.value)
                 }
             >
-                <BarLabel long="CATEGORIES" drop="early" />
-            </VBtn>
+                <BarLabel long="categories" drop="early" />
+            </IconTextButton>
             </Show>
         ),
         actions: (
@@ -103,9 +104,9 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                directly — see TasksCalendar's `compose` in CalendarView.tsx — so there is no longer
                a single destination for a bar-level "new task" action to write to. */
             <Show when={!ctx?.isTasks}>
-                <VBtn
-                    class={styles.cta}
+                <IconTextButton
                     icon="Plus"
+                    primary
                     title="New event"
                     onClick={() =>
                         (showEventModal.value = {
@@ -113,8 +114,8 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                         })
                     }
                 >
-                    <BarLabel long="EVENT" drop="early" />
-                </VBtn>
+                    <BarLabel long="event" drop="early" />
+                </IconTextButton>
             </Show>
         ),
     }

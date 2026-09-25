@@ -40,20 +40,8 @@
 /* A valueless op (is set / checked …) leaves the value cell empty but keeps the grid columns. */
 .panel .qb-val:empty::before { content: ''; }
 
-.panel .qb-rm {
-  width: 28px; height: 28px; flex: 0 0 auto;
-  display: grid; place-items: center; justify-content: normal; gap: normal;
-  border-radius: var(--r-0); color: var(--faint);
-  background: none; border: none; cursor: pointer; padding: 0;
-  /* font-size/line-height reset — see BaseSettings.module.css's `.propset-eye` comment: the
-     IconButton swap otherwise leaks `.btn--icon`'s --fs-body-lg font-size onto this box. */
-  font-size: inherit; line-height: inherit;
-  transition: background .14s, color .14s;
-}
-/* --danger, not --rose: "Remove filter" is a destructive control, and --rose is one of the six
-   CATEGORICAL calendar swatches that core/src/theme/tokens.ts keeps deliberately distinct from
-   --danger. Same substitution as ui/OptionRow's delete variant. */
-.panel .qb-rm:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+/* Remove-filter is now a bare IconButton in the row's `auto` grid column — no box/colour of its
+   own left to give it; `.qb-row`'s own `align-items: center` places it. */
 
 /* Generated-query preview — monospace, read-only, the editor's code look.
    NO max-height/overflow of its own: `.body > *` (ui/ModalBody.module.css) forces
@@ -78,4 +66,9 @@
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
+  /* Cancel InlineCode's own surface + padding (a tag selector, so it still matches the <code>
+     InlineCode renders) — this block is already the boxed surface (.qb-preview above), so a
+     second nested surface would double-box the same text. */
+  background: none;
+  padding: 0;
 }

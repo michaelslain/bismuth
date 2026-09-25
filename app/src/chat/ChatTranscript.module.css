@@ -50,52 +50,24 @@
     width: 100%;
 }
 
-/* Jump back to the live tail after scrolling up — a quiet floating pill. */
+/* Jump back to the live tail after scrolling up — `[↓ latest]`, an IconTextButton now
+   (button-family migration, Acceptance line 10: every migrated command is bracketed, no filled
+   pill). This class is PLACEMENT ONLY — position/inset/transform to float it over the transcript;
+   the look (brackets, colour, hover) comes entirely from IconTextButton's own props. */
 .chat-jump-bottom {
     position: absolute;
     bottom: 14px;
     left: 50%;
     transform: translateX(-50%);
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-5);
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    border-radius: var(--r-0);
-    background: var(--chat-surface-1, var(--surface-1));
-    color: var(--text-muted);
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    cursor: pointer;
-    box-shadow: var(--lift);
-}
-.chat-jump-bottom:hover {
-    color: var(--fg);
-    background: var(--chat-surface-2, var(--surface-2));
 }
 
-/* Floating "Reply" button anchored to a text selection inside a message bubble. Fixed to the
-   viewport (positioned from the selection's client rect), nudged above it. */
+/* Floating "Reply" button anchored to a text selection inside a message bubble — `[reply]`, a
+   TextButton now. Fixed to the viewport (positioned from the selection's client rect), nudged
+   above it. PLACEMENT ONLY, same reasoning as `.chat-jump-bottom` above. */
 .chat-sel-reply {
     position: fixed;
     transform: translate(-50%, calc(-100% - 8px));
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-5);
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    border-radius: var(--r-0);
-    background: var(--chat-surface-1, var(--surface-1));
-    color: var(--text-muted);
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    cursor: pointer;
     z-index: 60;
-    box-shadow: var(--lift);
-}
-.chat-sel-reply:hover {
-    color: var(--fg);
-    background: var(--chat-surface-2, var(--surface-2));
 }
 
 /* ── Pre-first-delta "awaiting reply" indicator — a static "working" label + the shared blinking

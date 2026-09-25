@@ -7,6 +7,7 @@
 // when the card appears; it's absolutely positioned over whatever sits below.
 import { createUniqueId, Show, type Component } from 'solid-js'
 import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
 import { TextButton } from '../ui/TextButton'
 import styles from './DaemonIdentity.module.css'
 
@@ -26,12 +27,12 @@ const DaemonIdentity: Component<DaemonIdentityProps> = props => {
     // caption's own centering/spacing rules.
     return (
         <Text as="span" size="inherit" tone="inherit" class={`${styles.wrap} ${props.class ?? ''}`}>
-            <TextButton
+            <PlainButton
                 class={styles.nameTrigger}
                 aria-describedby={props.blurb ? blurbId : undefined}
             >
                 {props.name}
-            </TextButton>
+            </PlainButton>
             <div class={styles.card} data-testid="daemon-identity-card">
                 <Show when={props.blurb}>
                     <Text
@@ -45,7 +46,7 @@ const DaemonIdentity: Component<DaemonIdentityProps> = props => {
                         {props.blurb}
                     </Text>
                 </Show>
-                <TextButton onClick={props.onEdit} class={styles.edit}>
+                <TextButton onClick={props.onEdit}>
                     edit
                 </TextButton>
             </div>

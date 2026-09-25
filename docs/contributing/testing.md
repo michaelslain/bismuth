@@ -1291,7 +1291,7 @@ module whose `styles` object is indexed by a runtime key as UNCHECKABLE rather t
 app to get real bundle output, which makes it the slowest gate step — **~11s measured** on this
 repo — so the trigger is narrowed to stylesheets only as a cost tradeoff, and only runs when a
 stylesheet is staged. This means a **`.tsx`-only** change that reintroduces a stale class literal
-(e.g. `class="vbtn"`) is **NOT caught at pre-commit** — run `bun run bench/moduleClassCheck.ts` by
+(e.g. `class="my-local"`) is **NOT caught at pre-commit** — run `bun run bench/moduleClassCheck.ts` by
 hand for that case. Like every gate step, it reads the working tree, not the staged snapshot.
 
 ### `bench/templateDiff.ts` — did a refactor change the emitted markup?

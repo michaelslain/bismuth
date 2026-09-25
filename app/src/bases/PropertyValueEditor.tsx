@@ -314,7 +314,6 @@ function MultiSelectEditor(props: {
                 {v => (
                     <ChipToggle
                         selected
-                        class={styles.kbMetaMultiselectToggle}
                         onToggle={() => remove(v)}
                         title="Remove"
                     >

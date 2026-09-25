@@ -26,7 +26,7 @@ describe('findIconSizeViolations', () => {
         ).toEqual([{ line: 3, tag: 'IconButton', attr: 'iconSize={15}' }])
     })
     it('flags a size hidden in a constant', () => {
-        expect(findIconSizeViolations('<VBtn icon="X" iconSize={GLYPH} />')).toHaveLength(1)
+        expect(findIconSizeViolations('<IconButton icon="X" iconSize={GLYPH} />')).toHaveLength(1)
     })
     it('passes a primitive forwarding its own prop, a non-icon component, and an exempt mark', () => {
         expect(findIconSizeViolations('<Icon value={v} size={props.iconSize} />')).toEqual([])

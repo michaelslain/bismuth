@@ -17,16 +17,16 @@
    BRACKET RETIRED (bracket-buttons Task 1): the "[ label ]" CLI-confirm look used to be an opt-in
    `.bracket` modifier layered on top of either register via a specificity trick. It is now simply
    what `kind="text"` (the default kind) IS — every text button is `[ label ]`, lowercase, no
-   opt-in prop and no hidden text-transform. `ButtonKind` gained a THIRD kind, `'segment'`, which is
-   the OLD `.btn--text` look (uppercase, bordered, sized) kept verbatim below for SegmentedToggle
-   only — see the `.btn--segment` family's own comment. */
+   opt-in prop and no hidden text-transform. `ButtonKind` is exactly `'text' | 'icon'` — the old
+   `'segment'` kind (the OLD `.btn--text` look, uppercase/bordered/sized, kept for SegmentedToggle)
+   is gone; SegmentedToggle now composes `kind="text"`/`kind="icon"` like everything else. */
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
 /* Every button is one of two KINDS (text | icon) in one of three STATES
    (normal | selected | unselected). normal = standalone; unselected/selected =
    a member of a toggle/series that is off/on. `danger` is an orthogonal tone;
-   `primary` is a second orthogonal tone — selected + a glow rim. At most ONE
-   .btn--primary per view (it is the view's one emphasized action). */
+   `primary` is a second orthogonal tone — accent + bold, no box: the view's
+   one emphasized action. At most ONE .btn--primary per view. */
 .btn {
   font: inherit;
   font-family: var(--ui-font-stack);
@@ -52,54 +52,14 @@
    "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
    has no visible indicator beyond its own hover/selected tones. `outline: none` must be stated:
    with the app's ring gone the UA's own `:focus-visible` ring (Chrome's light-blue `auto`) shows.
-   Buttons never paint a background fill either — hover/selected are carried by ink colour and,
-   for segments, the accent border (user request, 2026-09-23). */
+   Buttons never paint a background fill either — hover/selected are carried by ink colour alone
+   (user request, 2026-09-23). */
 .btn:focus, .btn:focus-visible { outline: none; }
 /* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
    an all-caps label next to an icon reads as floating above the icon's center.
    Nudge label text down 1px so the caps center on the icon. An outside caller building its own
    label span (not through Button) opts in with `data-btn-label` on that span. */
 .btn [data-btn-label] { position: relative; top: 1px; }
-.btn--segment svg { display: block; }
-
-/* ── segment buttons (SegmentedToggle only) ───────────────────────────────────
-   The pre-2026-09-22 `.btn--text` look, kept byte-for-byte so SegmentedToggle continues to render
-   exactly as before bracket-buttons Task 1 changed what `kind="text"` means. Every rule below is a
-   verbatim copy of the old `.btn--text` family, renamed `.btn--segment`. `kind="segment"` is the
-   ONLY register that ever gets this look; do not hand-edit these to "improve" them —
-   SegmentedToggle's own story is graded against the pre-task baseline pixel-for-pixel. */
-.btn--segment {
-  /* Vertical padding must clear the cap-height of an UPPERCASE Monaspace label at
-     --fs-micro/--lh-tight — at 1–2px the caps sit on the hairline border and read
-     as clipped (the graph-mode switcher made this obvious). 4px is the floor. */
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--r-0);
-  border: 1px solid transparent; /* reserved, not drawn — see the note above. Keeping the box
-     model identical to the bordered states stops the label shifting by a pixel on select. */
-  background: transparent;
-  text-transform: uppercase;
-  font-size: var(--fs-micro);
-  letter-spacing: var(--ls-label);
-  color: var(--fg); /* variant-less .btn--segment must not inherit UA black */
-}
-/* normal — standalone, full-strength neutral */
-.btn--segment.btn--normal { color: var(--fg); }
-/* unselected — toggle member, off: structure-dim, no outline emphasis */
-.btn--segment.btn--unselected { color: var(--faint); }
-.btn--segment.btn--unselected:hover:not(:disabled) { color: var(--fg); }
-/* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
-   --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
-   visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
-   selected segment looked like a different surface rather than the same surface, selected. The
-   accent border + accent ink already carry "on" unambiguously. */
-.btn--segment.btn--selected { color: var(--accent); background: transparent; border-color: var(--accent); }
-/* primary — selected + a glow rim. Max one per view. */
-.btn--segment.btn--primary { color: var(--accent); background: transparent; border-color: var(--accent); box-shadow: var(--glow-accent); }
-/* danger tone — destructive actions */
-.btn--segment.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-/* sizes */
-.btn--segment.btn--sm { padding: var(--sp-2) var(--sp-4); }
-.btn--segment.btn--lg { padding: var(--sp-2) var(--sp-5); font-size: var(--fs-ui); }
 
 /* ── text buttons: the bracket register ──────────────────────────────────────
    Every `kind="text"` button (the default kind) renders as `[ label ]` — lowercase, borderless,
@@ -107,8 +67,8 @@
    `.bracket` modifier; it is now simply what kind="text" means, unconditionally. The `::before`/
    `::after` brackets use `content: '[' / ''` (the `/ ''` empty alt text keeps the glyph out of the
    accessible name, so `getByRole('button', { name: 'label' })` still matches on just the label).
-   `kind="segment"` is the one register that still needs the OLD look — see `.btn--segment` above,
-   kept verbatim for SegmentedToggle. */
+   There is no other text register any more — `kind="segment"` (the old uppercase/bordered look
+   kept for SegmentedToggle) is gone; SegmentedToggle composes this same `kind="text"` look. */
 .btn--text {
   gap: 0;
   padding: 0;
@@ -122,8 +82,8 @@
 .btn--text::before { content: '[' / ''; }
 .btn--text::after { content: ']' / ''; }
 .btn--text.btn--normal { color: var(--fg); }
-.btn--text.btn--unselected { color: var(--faint); }
-.btn--text.btn--unselected:hover:not(:disabled) { color: var(--text-muted); }
+.btn--text.btn--unselected { color: var(--text-muted); }
+.btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); }
 .btn--text.btn--selected { color: var(--btn-accent, var(--accent)); font-weight: var(--fw-bold); }
 .btn--text.btn--primary { color: var(--accent); font-weight: var(--fw-bold); }
 .btn--text.btn--danger { color: var(--danger); }
@@ -185,12 +145,12 @@
 .btn--icon:disabled { color: var(--faint); cursor: default; }
 .btn--icon:disabled::before,
 .btn--icon:disabled::after { color: var(--faint); }
-/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) outside any bar.
-   Inside an IconBar there is no half-opacity dim state (Acceptance 5) — `--iconbar-unselected-
-   opacity` is set to 1 by IconBar.module.css's `.bar`, read here with a fallback equal to today's
-   0.5 so every IconButton NOT under a bar is byte-identical to before (Review Focus 3). */
-.btn--icon.btn--unselected { opacity: var(--iconbar-unselected-opacity, 0.5); }
-.btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; }
+/* unselected — toggle member, off: full opacity, muted ink (design-pass finding: opacity is not a
+   state signal — it read as disabled, and dropped faint-bracketed icons below the 3:1 non-text
+   contrast floor). `--iconbar-unselected-opacity` is no longer read here; IconBar.module.css and
+   PreviewBar.module.css still set it, but that variable is now dead. */
+.btn--icon.btn--unselected { opacity: 1; color: var(--text-muted); }
+.btn--icon.btn--unselected:hover:not(:disabled) { color: var(--fg); }
 /* selected — toggle member, on: accent icon on an accent-soft fill */
 /* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
    lighter tile against its container. */
@@ -250,11 +210,21 @@
    inside a bar (Acceptance 5: the selected mini-graph mode must be `--accent`). Three classes here
    outrank the two-class `.btn--selected`/`.btn--danger` selectors regardless of source order, so
    normal/unselected stay muted and selected keeps its accent — a normal+danger sm icon button
-   still renders muted, as it did before this rule (EditDictionaryModal's delete icon).
+   (EditDictionaryModal's delete icon) used to render muted here too; the dedicated danger rule
+   below wins it back to `--danger`.
    `:not(:disabled)` matters for the SAME reason in the other direction: without it this selector's
    three classes would outrank `.btn--icon:disabled`'s two, and a disabled sm icon button (state
    defaults to "normal") would render muted instead of `--faint`. Excluding `:disabled` here lets
    the disabled rule govern by simply not competing, rather than by winning a specificity race. */
 .btn--icon.btn--sm.btn--normal:not(:disabled),
 .btn--icon.btn--sm.btn--unselected:not(:disabled) { color: var(--text-muted); }
+/* `danger` rides alongside `state="normal"` (buttonClass.ts joins them), so the muted rule above
+   also matches a danger sm icon button and, at equal three-class specificity, wins by source order
+   — a delete icon rendered muted instead of --danger. Same specificity, declared after: wins back.
+   Brackets stay --faint like every other sm icon button's at rest, not currentColor (which would
+   otherwise now resolve to --danger too) — a lone red glyph reads, red brackets around it read as
+   an error box. */
+.btn--icon.btn--sm.btn--danger:not(:disabled) { color: var(--danger); }
+.btn--icon.btn--sm.btn--danger:not(:disabled)::before,
+.btn--icon.btn--sm.btn--danger:not(:disabled)::after { color: var(--faint); }
 .btn--icon.btn--sm:hover:not(:disabled) { color: var(--fg); }

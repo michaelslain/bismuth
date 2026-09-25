@@ -13,6 +13,7 @@ import SettingsGrid from './ui/SettingsGrid'
 import SettingsField from './ui/SettingsField'
 import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
+import InlineCode from './ui/InlineCode'
 import { api } from './api'
 import { pushToast } from './Toast'
 import type { BismuthStatus } from '../../core/src/bismuthInstall'
@@ -82,7 +83,7 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
             />
             <ModalBody>
                 <Text size="ui" tone="faint">
-                    installs the <code>bismuth</code> cli on your path and
+                    installs the <InlineCode>bismuth</InlineCode> cli on your path and
                     registers the bismuth mcp in your global claude config, so
                     every terminal and claude session can use them —
                     idempotent, it only reinstalls when the bundled tools

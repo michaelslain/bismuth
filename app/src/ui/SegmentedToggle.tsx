@@ -23,43 +23,46 @@ export type SegmentedToggleProps<T> = {
     class?: string
     /** Per-segment extra class (e.g. an underline-tab look). */
     segmentClass?: string
-    /** 'bracket' (default): each option is a borderless `[label]` bracket button, `--sp-4`
-     *  apart, `size` ignored. 'segment' (butted boxes, text): today's boxed look, `size`
-     *  honoured. 'icon' (butted boxes, icon glyphs): selected is an accent glyph on
-     *  `--accent-soft` with a 1px inset accent ring. 'swatch' (butted colour chips inside one
-     *  1px `var(--border)` frame, `--sp-1` gap): selected is a ring only, no fill. */
-    look?: 'bracket' | 'segment' | 'icon' | 'swatch'
+    /** 'icon': every option renders as a `kind="icon"` bracket — the same square, borderless
+     *  look `IconButton` uses, `--sp-1` apart — for icon-only groups (the drawing dock's tool/
+     *  colour/size/smoothing/paper/undo-redo rows). Default (omitted, 'bracket'): each option
+     *  renders as a `kind="text"` bracket button, `--sp-4` apart — the same `[label]` control as
+     *  everywhere else in the app. `size` is honoured for `look="icon"`; Button itself ignores
+     *  it for `kind="text"`. */
+    look?: 'icon'
 }
 
 /**
  * A row of mutually-exclusive buttons: the active one is `selected`, the rest
  * `unselected`. This is THE canonical selected/unselected consumer — graph mode
- * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
+ * + 2D/3D rows, the calendar view switcher, BaseView's tabs, and the drawing dock's
+ * icon-only tool/colour groups.
  *
- * `look="bracket"` (the default) renders every option as `kind="text"` — the same `[label]`
- * bracket button as everywhere else in the app, spaced `--sp-4` apart, no box. Every other look
- * (`segment` / `icon` / `swatch`) keeps `kind="segment"` — the OLD `kind="text"` look (uppercase,
- * bordered, butted, sized) — for the drawing toolbar's tool/colour groups.
+ * The default renders every option as `kind="text"` — the same `[label]` bracket button as
+ * everywhere else in the app. `look="icon"` renders `kind="icon"` instead — the same square,
+ * borderless bracket `IconButton` uses. Either way, selected-state colour, the brackets
+ * themselves, and the no-box treatment all come from Button's own CSS
+ * (`.btn--text.btn--selected` / `.btn--icon.btn--selected`, Button.module.css) — this component
+ * owns none of that any more.
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
-    const look = () => props.look ?? 'bracket'
-    const boxed = () => look() !== 'bracket'
+    const kind = () => (props.look === 'icon' ? 'icon' : 'text')
     return (
         <div
             class={`${styles.segmented} ${props.class ?? ''}`}
-            data-look={look()}
+            data-look={props.look ?? 'bracket'}
             data-segmented=""
         >
             <For each={props.options}>
                 {opt => (
                     <Button
-                        kind={boxed() ? 'segment' : 'text'}
+                        kind={kind()}
                         state={
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
-                        size={boxed() ? props.size : undefined}
+                        size={props.size}
                         aria-pressed={
-                            look() === 'bracket'
+                            kind() === 'text'
                                 ? opt.id === props.value
                                 : undefined
                         }

@@ -13,15 +13,14 @@
     align-items: center;
 }
 
-/* The name reads as plain text, not a bracket button — this is the one TextButton in the app
-   whose brackets are switched off, so it can sit directly under the face looking like a label
-   while staying a real, keyboard-focusable control. */
+/* The name reads as plain text, not a bracket button — it is a PlainButton (no button chrome
+   at all), so it can sit directly under the face looking like a label while staying a real,
+   keyboard-focusable control. PlainButton's own reset already gives it font/color inherited
+   from ambient text and a pointer cursor; the only thing this adds is swapping the browser's
+   default `inline-block` button display for `inline`, so the name flows in the caption's text
+   like a plain word instead of boxing itself. */
 .nameTrigger {
-    color: var(--fg);
-}
-.nameTrigger::before,
-.nameTrigger::after {
-    content: none;
+    display: inline;
 }
 
 .card {

@@ -17,8 +17,7 @@ import PopoverList, { type PopoverRow } from './ui/popover/PopoverList'
 import { createMenuNav } from './ui/popover/createMenuNav'
 import { placeBelowOrAbove } from './ui/popover/placeAnchored'
 import { registerActiveMenu } from './activeMenu'
-import { Icon } from './icons/Icon'
-import PlainButton from './ui/PlainButton'
+import { IconButton } from './ui/IconButton'
 
 export type MenuItem = PopoverRow & {
     /** Run when the row is picked. Optional for rows that only open a `submenu`. */
@@ -239,17 +238,14 @@ export function ContextMenu(props: {
                 >
                     <For each={props.quickActions}>
                         {a => (
-                            <PlainButton
-                                class="bismuth-popover-rail-btn"
-                                title={a.label}
-                                aria-label={a.label}
+                            <IconButton
+                                icon={a.icon}
+                                label={a.label}
                                 onClick={() => {
                                     a.onSelect()
                                     props.onClose()
                                 }}
-                            >
-                                <Icon value={a.icon} />
-                            </PlainButton>
+                            />
                         )}
                     </For>
                 </div>

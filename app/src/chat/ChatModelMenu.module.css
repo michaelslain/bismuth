@@ -13,11 +13,15 @@
    override in the first place. It inherits the row's own ink rather than setting its own colour. */
 .model-menu .word {
     display: inline-block;
-    /* `min-width: 0`, not just `max-width: 100%` — this is a flex ITEM of `.model-menu`, and a
-       <button>'s intrinsic default is `min-width: auto`, which blocks a flex child from ever
-       shrinking below its content size. Without this the ellipsis below never has anything to
-       clip: the button (and the row) would just overflow instead of truncating. */
-    min-width: 0;
+    /* `min-width: 3ch`, not `0` — this is a flex ITEM of `.model-menu`, and a <button>'s intrinsic
+       default is `min-width: auto`, which blocks a flex child from ever shrinking below its
+       content size, so some floor is still required for the ellipsis below to have anything to
+       clip. But `0` let the row's OTHER controls (the bracketed `[history] [new chat]`, which cost
+       more px than the old bare words) eat the model word down to a single letter plus ellipsis at
+       narrow widths — a floor of 3 characters is the lowest that still reads as a model name
+       fragment rather than noise. `.row [data-chat-model]` (ChatControls.module.css) carries the
+       matching floor on the outer box; this is the inner button's own. */
+    min-width: 3ch;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -6,8 +6,8 @@
 
    OWNS: .flashcards-host, .count/.card-dir/.tally (what the deck contributes to the HOST's view
    bar — see below), .fcmeter/.stage/.grade-row/.cardwrap/.card-actions/.flip-family/
-   .card-appear (+its @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/
-   .g-name/.done/.good-text/.inline-bolt (review stage — .fcmeter is the restored session-progress
+   .card-appear (+its @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/
+   .done/.good-text/.inline-bolt (review stage — .fcmeter is the restored session-progress
    AsciiMeter, on the deck's own surface, NOT inside the bar). The single-card edit modal (the
    card's own ✎ action) owns no classes here any more — modal-redesign Task 8 rebuilt it as a
    plain FormModal/SettingsField composition, so it needs no CardsModal shell and no local chrome.
@@ -28,7 +28,9 @@
    comment, not real usage — grepping for it as a live consumer is a false positive.
 
    :global() — one-global-stylesheet Task 10 re-pointed `.card-actions :global(.btn--icon)` onto
-   a local `.card-action-btn` class handed to both IconButtons via their `class` prop.
+   a local `.card-action-btn` class handed to both IconButtons via their `class` prop; the
+   one-button pass (Task 3) deleted that class in favour of `size="sm"` on the IconButtons
+   themselves — the box model belongs on the component, not a caller-side override.
    `.flashcards-host :global(.ui-empty-block)`/`:global(.ui-empty)` (+ their `h2`/`strong`/`code`)
    are GONE (one-global-followups Task 2): EmptyState grew `titleClass`/`bodyClass`/`blockClass`
    props exactly so this caller no longer needs to reach its internals by class name — see
@@ -42,12 +44,12 @@
      shared `.flip-face`. Left as a plain string in FlashcardsView.tsx's JSX.
 
    STATE CLASSES riding on a base class (become locals, not just the base): .flipped (on
-   .flip-card), .hard/.good/.easy (on .grade — .good happens to share a token with the unrelated
-   top-level `.good-text`; module scoping keeps them distinct).
+   .flip-card). The grade buttons' own `.grade`/`.hard`/`.good`/`.easy` look classes are gone —
+   one-button-family Task 3 replaced them with plain `TextButton`s (`danger` prop for `hard`),
+   so `--blue`'s only other consumer here is now the unrelated top-level `.good-text`.
 
    :hover RULES THE BASELINE HARNESS CANNOT SEE (computed styles are captured at rest):
-   .flip-card:hover .card-actions, .flip-card:hover .flip-face, .grade:hover and its
-   .hard/.good/.easy :hover variants (incl. the :hover .g-name color changes). */
+   .flip-card:hover .card-actions, .flip-card:hover .flip-face. */
 
 /* ── Flashcards ─────────────────────────────────────────────── */
 .flashcards-host {
@@ -81,7 +83,11 @@
 .count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
 .count b { color: var(--fg); }
 .count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
-.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; }
+/* text-transform: lowercase, not lowercase literals — BaseView.stories.tsx's own play test
+   queries this row by the literal text "HARD"/"GOOD"/"EASY" (out of this task's edit list), so the
+   DOM keeps its existing case and only the rendering (which is what the bar's lowercase reading
+   convention actually governs) changes. */
+.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; text-transform: lowercase; }
 .tally b { font-weight: 600; }
 .tally .a b { color: var(--violet); }
 .tally .g b { color: var(--blue); }
@@ -91,7 +97,7 @@
    replaces — restored 2026-09-02 at the user's request: "i liked that flashcards ascii meter").
    NOT `max-width: <n>vw` — the rule this replaces used 42vw, and `vw` is the WINDOW while this
    view lives in a PANE, so in a split pane or beside the sidebar it sized against a viewport far
-   wider than its container. See .grade-row below, which carries the same correction for the same
+   wider than its container. See .cardwrap below, which carries the same correction for the same
    reason. The meter sizes itself in CELLS from the measured width of this box (fitMeterWidth in
    ui/ascii/asciiMeterMath.ts, driven from FlashcardsView.tsx), so this rule only has to define
    the box.
@@ -119,17 +125,23 @@
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center;
   gap: 26px; padding: 26px; overflow: hidden;
 }
-/* 100% of the STAGE, not 92vw. `vw` is the window, but this view lives in a pane — in a split
-   pane or beside the sidebar the card was sized against a viewport far wider than its own
-   container and overhung it. .stage's 26px padding is the breathing room `92vw` was standing in for. */
-.grade-row { flex: 0 0 auto; display: flex; gap: var(--sp-5); width: min(680px, 100%); }
+/* Centered under the (also centered) card now that the grade buttons are plain bracket
+   `TextButton`s rather than the old wide grade cards — the row no longer needs its own
+   pane-relative width, .cardwrap below still does. */
+.grade-row { flex: 0 0 auto; display: flex; justify-content: center; gap: var(--sp-4); }
+/* The key hint sits OUTSIDE the TextButton (a class passed to a button-family control may only
+   place it, never decorate its insides) — the grade label and its Kbd cap are siblings here. */
+.grade-item { display: flex; align-items: center; gap: var(--sp-2); }
 
 /* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
    Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
    hard 420px min-height floor — scrolls (safely centered, so the overflow stays reachable, same
    idiom as .flip-face's "safe center" below) once the pane is shorter than the card. */
 .cardwrap {
-  perspective: 1800px; width: min(680px, 100%);   /* pane-relative, not 92vw — see .grade-row */
+  /* 100% of the STAGE, not 92vw — pane-relative. `vw` is the window, but this view lives in a
+     pane, so in a split pane or beside the sidebar the card was sized against a viewport far
+     wider than its own container and overhung it. */
+  perspective: 1800px; width: min(680px, 100%);
   flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
   overflow-y: auto;
 }
@@ -137,7 +149,6 @@
    flip with the card. Faint at rest, firm on card hover. */
 .card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; display: flex; gap: var(--sp-1); opacity: 0.4; transition: opacity 0.15s; }
 .flip-card:hover .card-actions { opacity: 1; }
-.card-action-btn { width: 28px; height: 28px; padding: 0; border-radius: var(--r-0); }
 .flip-card { width: 100%; min-height: 420px; perspective: 1200px; cursor: pointer; }
 .flip-inner { position: relative; width: 100%; min-height: 420px; transition: transform 0.5s; transform-style: preserve-3d; }
 .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
@@ -211,29 +222,10 @@
 .card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 1)); background: var(--surface-2); padding: var(--sp-5) var(--sp-5); border-radius: var(--r-0); overflow-x: auto; }
 .card-md pre code { background: none; padding: 0; }
 
-/* Grade row: one bespoke button per grade — a colored top edge + name + the shared
-   asc-kbd/asc-key digit badge (1/2/3). (Deliberately not a ui/ Button — it's a
-   two-line accented control unique to this view.) */
-.grade {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
-  background: var(--surface-1); border: var(--rule); border-top-width: 2px;
-  border-radius: var(--r-0); padding: var(--sp-5) var(--sp-4) var(--sp-5); cursor: pointer; position: relative;
-  font-family: var(--ui-font-stack); color: var(--fg); transition: background 0.14s, border-color 0.14s;
-  /* PlainButton's reset sets text-align: inherit (was the native <button>'s UA-default
-     `center`) — restore it explicitly now that the element is no longer a bare <button>. */
-  text-align: center;
-}
-.grade .g-name { font-size: var(--fs-ui); text-transform: uppercase; font-weight: 500; }
-.grade:hover { background: var(--hover-bg); }
-.grade.hard { border-top-color: var(--violet); }
-.grade.good { border-top-color: var(--blue); }
-.grade.easy { border-top-color: var(--teal); }
-.grade.hard:hover { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
-.grade.good:hover { border-color: color-mix(in srgb, var(--blue) 55%, transparent); }
-.grade.easy:hover { border-color: color-mix(in srgb, var(--teal) 55%, transparent); }
-.grade.hard:hover .g-name { color: var(--violet); }
-.grade.good:hover .g-name { color: var(--blue); }
-.grade.easy:hover .g-name { color: var(--teal); }
+/* Grade row: one-button-family pass (Task 3) replaced the bespoke colored-card `.grade`
+   look with plain bracket `TextButton`s (`[hard] [good] [easy]`, `hard` danger) — the
+   selection colour now comes from Button's own `danger` prop, not a per-grade class here.
+   No rules of this file's own are needed for the buttons themselves any more. */
 
 /* Done state (deck/cram complete). Layout wrapper only — the title + message now render through
    <EmptyState> (this task's intentional judgment-finding swap), so `.big`/`.sub` no longer have

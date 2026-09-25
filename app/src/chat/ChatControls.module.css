@@ -15,15 +15,11 @@
    `<Select caretClass={styles['mode-caret']}>`) rather than a `:global(.ui-select-caret)` reach —
    `.mode-caret` below is a plain local class.
 
-   NO `:global()` REACH IN THIS FILE (bracket-buttons Task 2). The row's action controls
-   (RowAction, the auth pill — ChatControls.tsx) used to be ui/Button (`kind="text"`) with a
-   `.row :global(.btn--text)` override stripping the shared text button's uppercase-label chrome
-   down to plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text
-   label"); Button exposed no prop for "quiet, chromeless text control", so this row was the one
-   place that convention was overridden by reaching into Button's own KIND class. They are now
-   `PlainButton` (an unstyled real `<button>`, ui/PlainButton.tsx) carrying `.action` below as
-   their whole look — a LOCAL class, not a foreign reach — with `data-state` set directly by
-   ChatControls.tsx rather than read off a Button prop. */
+   NO `:global()` REACH IN THIS FILE. The row's action controls (RowAction, the auth pill —
+   ChatControls.tsx) are `TextButton` (one-button migration) — every clickable command in this row
+   is a real button-family control (`variant`/`danger` props), never a hand-styled `PlainButton`.
+   `.actions` below is a plain LOCAL layout class (gap only, no look) wrapping the auth pill +
+   history + new-chat into one cluster — see `.actions`' own comment for why. */
 
 .stat {
     display: inline-flex;
@@ -52,22 +48,33 @@
     max-width: 130px;
 }
 
+/* One cluster — a SINGLE child of `.row` — holding the auth pill (opencode only) + history +
+   new-chat. `.row > * + *::before` (below) puts exactly one `//` before this whole cluster,
+   separating it from the readout groups (model word, permission mode) that precede it; INSIDE the
+   cluster, spacing carries the gap between the bracket buttons themselves — no `//` between two
+   adjacent commands (Acceptance 7 / the ruling table: "brackets already separate them").
+
+   Spacing is `margin-left` on `* + *`, NOT `gap` — `.actions` is `display: inline-flex`, and the
+   row's own `//` separator (`.row > * + *::before`, below) is a `::before` PSEUDO-ELEMENT of THIS
+   element, which makes it flex item #1 inside `.actions`'s own flex formatting context. A `gap`
+   here would apply between that pseudo and the first real child too, stacking on top of the
+   pseudo's own `margin: 0 var(--sp-2)` and reading as a lopsided `//` (more space after it than
+   before). `margin-left` on `* + *` only ever matches real DOM siblings — never the pseudo, which
+   has no preceding sibling of its own — so the separator's margins stay symmetric. */
+.actions {
+    display: inline-flex;
+    align-items: center;
+}
+.actions > * + * {
+    margin-left: var(--sp-4);
+}
 .auth-anchor {
     position: relative;
     display: inline-flex;
-    /* `align-items: center`, not the flex default `stretch` — the anchor is itself a `.row` flex
-       ITEM, and its own `::before` separator `//` (the general `.row > * + *::before` rule) is one of
-       ITS flex children too. Without this the separator stretched to the anchor's full cross-axis height
-       and sat pinned near the top instead of centred on the text baseline like every other
-       separator in the row — confirmed live as a visibly HIGH, off-baseline separator (then a `·`) between "Bypass"
-       and "history" before this rule existed. */
+    /* `align-items: center`, not the flex default `stretch` — the anchor is itself an `.actions`
+       flex ITEM. Without this it stretched to the cluster's full cross-axis height instead of
+       centring on the text baseline like its siblings. */
     align-items: center;
-}
-/* Signed-out warning tone for the auth pill's text (Button's own `state="selected"` handles the
-   open/closed look; this is the orthogonal "needs attention" tone, same idea as the permission
-   mode's armed tint). */
-.auth-out {
-    color: var(--danger);
 }
 
 /* ── The quiet row: faint ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
@@ -89,6 +96,12 @@
     font-size: var(--fs-ui);
     color: var(--faint);
     height: var(--h-control);
+    /* The row's own collapse ladder queries THIS box's width, not the viewport — the daemon
+       centre column and the chat tab give it very different available widths at the same window
+       size. Named `chatrow` (not the bare default) so a descendant's `@container` can say which
+       ancestor it means. */
+    container-type: inline-size;
+    container-name: chatrow;
     /* `overflow: hidden` is the BACKSTOP, not the mechanism — the row's four items (the model
        control, permission mode, history, new chat) are meant to always fit; this only stops a
        pathological model label from ever painting outside the row's own box. There is no longer a
@@ -114,9 +127,40 @@
    (a model's label) shrinks and ellipsizes, and nothing else in the row ever needs to move. */
 .row [data-chat-model] {
     flex-shrink: 1;
-    min-width: 0;
+    /* `3ch`, not `0` — matches `.model-menu .word`'s own floor (ChatModelMenu.module.css). `0`
+       let the bracketed `[history] [new chat]` (pricier than the old bare words) eat the model
+       word down to one letter plus ellipsis at narrow widths; below `chatrow-narrow` (below) those
+       two controls give up their labels instead, so the model word never has to give up its own
+       floor to make room. */
+    min-width: 3ch;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* ── The row's collapse ladder — ONE tier, `data-row-label`. `[history]`/`[new chat]` render
+   through `IconTextButton` now (ChatControls.tsx), each holding an icon plus its word wrapped in
+   `data-row-label`; below the tier the word drops and the icon alone stands in the bracket
+   (`[⟲]`/`[+]`), freeing the width the floored model word (above) needs to keep its 3 characters.
+   `data-row-drop` is reserved on the same ladder for a control a future tier needs to hide WHOLE
+   (a second, narrower level) rather than just de-label — none of today's four controls needs that,
+   so no rule below tags it yet; `chatRowDrop.test.ts` checks whichever `data-row-*` hooks
+   ChatControls.tsx actually uses, so adding one later re-arms the same guard.
+
+   No dangling `//`: the row's separator (`.row > * + *::before`, below) lives on each control's
+   OWN box, not a trailing spot after it — hiding a control with `display: none` (a future
+   `data-row-drop`) removes its whole box, pseudo-element included, so its `//` disappears with it
+   automatically. Nothing here needs to special-case that.
+
+   280px is the threshold: at 360px (Narrow360) the row's four controls plus a floored 3ch model
+   fit with labels intact — nothing here fires. At 260px (Narrow260) they do not: a floored model
+   word plus `bypass` plus two labelled bracket buttons overflow the box, which is the ellipsis-lead
+   defect this task fixes. 280px sits inside the measured 260-280px range where labelled buttons
+   stop fitting, with a few px of margin on the fitting side rather than sitting exactly on the
+   edge. */
+@container chatrow (max-width: 280px) {
+    .row [data-row-label] {
+        display: none;
+    }
 }
 
 /* The `//` separator: content on the SECOND and later direct children only (`* + *`). */
@@ -157,40 +201,6 @@
    was `!important`. Reached via Select's own `caretClass` prop now, not `:global()`. */
 .mode-caret {
     display: none !important;
-}
-
-/* The RowAction / auth-pill controls (ChatControls.tsx's `<PlainButton class={styles.action}>`)
-   — a caption-register control, not a toolbar button, so it carries none of `.btn--text`'s usual
-   chrome (UPPERCASE, padding, reserved border, hover fill) in the first place; this class is its
-   entire look, matching the Selects above (plain lowercase text).
-   `color: var(--fg)`, NOT `inherit`: the old `.row :global(.btn--text) { color: inherit }` rule
-   tied in specificity with Button's own `.btn--text.btn--normal { color: var(--fg) }`
-   (both 0,2,0), and that tie was actually won by Button's rule on CSS-module import order —
-   confirmed against the baseline screenshot, where "history"/"new chat" render at full `--fg`
-   strength, not `.row`'s own dimmer `--faint`. PlainButton carries no competing Button class to
-   tie against, so the value has to be written explicitly here to reproduce that same look.
-   `border: 1px solid transparent` (reserved, not drawn — same idiom as ui/Button.module.css's own
-   `.btn--text`) is written explicitly too: PlainButton's reset sets `border: 0`, and without this
-   the control loses the 1px-per-side layout space Button used to reserve, shifting every sibling
-   after it in the row leftward by 2px — confirmed against the baseline screenshot. */
-.action {
-    padding: 0;
-    border: 1px solid transparent;
-    background: transparent;
-    text-transform: none;
-    letter-spacing: normal;
-    font-family: inherit;
-    font-size: inherit;
-    color: var(--fg);
-}
-.action[data-state="normal"]:hover:not(:disabled) {
-    color: var(--fg);
-    background: transparent;
-}
-.action[data-state="selected"] {
-    color: var(--fg);
-    background: transparent;
-    border-color: transparent;
 }
 
 /* The no-session row: Config/Actions render for real (buildDisabledSession() in ChatControls.tsx)

@@ -42,7 +42,7 @@ describe('buttonClass', () => {
         expect(
             buttonClass(
                 {
-                    kind: 'segment',
+                    kind: 'icon',
                     state: 'selected',
                     size: 'lg',
                     danger: true,
@@ -52,7 +52,7 @@ describe('buttonClass', () => {
                 id,
             ),
         ).toBe(
-            'btn btn--segment btn--selected btn--lg btn--danger btn--primary x',
+            'btn btn--icon btn--selected btn--lg btn--danger btn--primary x',
         )
     })
     it('ignores size for kind text — every text button is one size', () => {
@@ -61,11 +61,6 @@ describe('buttonClass', () => {
         ).not.toContain('btn--sm')
         expect(buttonClass({ kind: 'text', size: 'sm' }, id)).toBe(
             'btn btn--text btn--normal',
-        )
-    })
-    it('applies size for kind segment — the old text look, verbatim', () => {
-        expect(buttonClass({ kind: 'segment', size: 'sm' }, id)).toBe(
-            'btn btn--segment btn--normal btn--sm',
         )
     })
     it('still applies size for kind icon', () => {

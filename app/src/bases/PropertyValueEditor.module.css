@@ -32,7 +32,6 @@
    KanbanCard's read-only `.kbMetaMultiselectDisplay`, each chip clickable to remove, plus a
    shrunk "+ Add" Select offering the remaining declared options. */
 .kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1))); }
-.kbMetaMultiselectToggle { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
 /* Select's `class` prop lands on the trigger BUTTON itself (already carrying
    `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
 .kbMetaMultiselectAdd { height: var(--kb-meta-height, 20px); min-height: 0; box-sizing: border-box; padding: var(--sp-1) 20px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0); }

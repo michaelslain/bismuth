@@ -1,17 +1,13 @@
 /* app/src/PreviewView.module.css — read-only file preview tab (images / PDFs / code / binary).
    Moved out of the global PreviewView.css verbatim (2026-08 CSS modularization). Consumed by
-   PreviewView.tsx only. No `:global()` reach anywhere in this file — the match-case toggle
-   (`.preview-find-case`) is a ui/PlainButton (an unstyled real `<button>`, all visuals from its
-   own `class`) carrying a LOCAL class for its whole look, instead of the shared ui/Button plus a
-   `:global(.btn)`/`:global(.btn--text)` override reaching Button's own KIND classes. Its
-   selected/unselected STATE is a `data-state` attribute PreviewView.tsx sets on it directly, not
-   a foreign `:global(.btn--selected)`/`.btn--unselected)` reach.
+   PreviewView.tsx only. No `:global()` reach anywhere in this file — the match-case toggle is now a
+   plain `ui/IconButton` (button-family task 5: `icon="CaseSensitive"`, `variant`
+   selected/unselected), so it carries no look of its own here at all; `.preview-find-case` (its old
+   ui/PlainButton local-class look) is gone.
 
    CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
-   `is-empty` on `.preview-find-count`, `is-active` on `.preview-find-match` (the match-case
-   toggle used to co-ride this same modifier on `.preview-find-case` too, before it became a
-   ui/Button — its selected/unselected look is now driven by the Button's own `state` prop
-   instead). A bare `classList={{ 'is-active': … }}` would silently match nothing once these hash.
+   `is-empty` on `.preview-find-count`, `is-active` on `.preview-find-match`. A bare
+   `classList={{ 'is-active': … }}` would silently match nothing once these hash.
 
    THE JS CLASS-MATCH TRAP: PreviewView.tsx used to scroll the active match into view via
    `codeRef.querySelector('.preview-find-match.is-active')` — a class-name string baked into JS,
@@ -220,39 +216,6 @@
   text-align: right;
 }
 .preview-find-count.is-empty { color: var(--danger); }
-
-/* Match-case toggle ("Aa") — a ui/PlainButton (unstyled real `<button>`) carrying this LOCAL
-   class for its entire look, rather than the shared ui/Button plus a bespoke-chrome override
-   reaching Button's own KIND classes (the `:global(.btn)`/`:global(.btn--text)` idiom several
-   other modules still use — see Button.module.css's own header for the list). The two STATE rules
-   below key on a `data-state` attribute PreviewView.tsx sets directly, not a foreign
-   `:global(.btn--selected)`/`.btn--unselected)` reach. Two things a plain text button would get
-   wrong here anyway: `text-transform: uppercase` would turn the "Aa" label into "AA", and a
-   bordered-not-filled selected look doesn't match this control's filled active state (background
-   var(--accent-soft), no border) — both are just written directly below instead. */
-.preview-find-case {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--r-0);
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  font-family: var(--ui-font, system-ui, sans-serif);
-  transition: background 0.1s ease, color 0.1s ease;
-}
-.preview-find-case[data-state="unselected"] { color: var(--text-muted); }
-.preview-find-case[data-state="selected"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 
 /* PDF variant: an informational note (no input) — the embedded viewer owns text search. This is
    the one `.preview-find` user with several direct children (icon, text, close button), so it

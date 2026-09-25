@@ -445,8 +445,8 @@ export const Flashcards: Story = {
     play: async ({ canvasElement }) => {
         await expectOneBar(canvasElement)
         const canvas = within(canvasElement)
-        expect(isLaidOut(canvas.getByText('CARDS'))).toBe(true)
-        expect(isLaidOut(canvas.getByText('CRAM'))).toBe(true)
+        expect(isLaidOut(canvas.getByText('cards'))).toBe(true)
+        expect(isLaidOut(canvas.getByText('cram'))).toBe(true)
         // The tally at full length, not its abbreviation.
         expect(isLaidOut(canvas.getByText('HARD'))).toBe(true)
         expect(isLaidOut(canvas.getByText('H'))).toBe(false)
@@ -492,7 +492,7 @@ export const Flashcards: Story = {
  *  hardcoded — the wrapper is the only place a width can be set.
  *
  *  502px pane = 466px content box (the bar's `padding: 0 18px` is outside the query), which sits
- *  between the ladder's late-words tier (480) and its drop-1 tier (465): CRAM and CARDS are down to
+ *  between the ladder's late-words tier (480) and its drop-1 tier (465): cram and cards are down to
  *  their icons, the tally is abbreviated, and `data-bar-drop="1"` has NOT fired yet. That last part
  *  is the half of the pair that makes the next story mean something — and this is also the exact
  *  width at which the un-abbreviated tally fused the two groups together. */
@@ -528,7 +528,7 @@ export const FlashcardsTight: Story = {
         expect(isLaidOut(canvas.getByText('HARD'))).toBe(false)
         expect(isLaidOut(canvas.getByText('H'))).toBe(true)
         // Late words are gone at 480 — CRAM's own label, not the whole control.
-        expect(isLaidOut(canvas.getByText('CRAM'))).toBe(false)
+        expect(isLaidOut(canvas.getByText('cram'))).toBe(false)
         expect(canvas.getByTitle(/^Cram:/)).toBeInTheDocument()
         // The two groups still read as two groups. Without the abbreviation this is ~9px.
         expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())

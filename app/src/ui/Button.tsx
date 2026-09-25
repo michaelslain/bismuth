@@ -16,10 +16,10 @@ export type ButtonProps = {
      *  of Button's own. `.btn--selected` etc below are Button.module.css's hashed locals now, not
      *  global literals — an outside caller can no longer reach them by name at all. */
     state?: ButtonState
-    /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`/`segment`. */
+    /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`. */
     size?: ButtonSize
     danger?: boolean
-    /** Selected + a glow rim — the view's one emphasized action. See buttonClass.ts. */
+    /** Accent + bold, no box — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
     /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
      *  `--btn-accent` on the root, read by `.btn--text.btn--selected` in place of `--accent`. */
@@ -31,7 +31,7 @@ export type ButtonProps = {
  * TextButton / IconButton, not this directly.
  *
  * `kind="text"` (the default) renders as `[ label ]` — the bracket look is unconditional now,
- * not an opt-in prop. `kind="segment"` is the OLD text look, kept verbatim for SegmentedToggle.
+ * not an opt-in prop. `kind="icon"` is a borderless icon button, `[▣]`.
  */
 function Button(props: ButtonProps) {
     const [local, rest] = splitProps(props, [

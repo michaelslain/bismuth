@@ -11,7 +11,7 @@
 .bar {
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
+    gap: var(--bar-icon-gap);
     --iconbar-box: var(--bar-icon-size);
     --iconbar-width: auto;
     --iconbar-unselected-opacity: 1;

@@ -602,9 +602,10 @@ used to strand the calendar's controls mid-bar can no longer be expressed.
   `SegmentedToggle` over `[Month, Week, 3 Day, Day]`. The switcher rides in `locus` rather than
   `facet` because "which span of time is on screen" is the same question the prev/next/range label
   answer; in a calendar base with its own multiple views, the base's own tabs hold `facet`.
-- **`config`** — the **Categories** button (`VBtn` with `icon="Tag"`), toggling `showCategoryPanel`.
-- **`actions`** — the **+ Event** button (`icon="Plus"`), opening `EventModal` seeded with
-  `date: toDateStr(currentDate.value)`.
+- **`config`** — the **Categories** button (`IconTextButton` with `icon="Tag"`, label `categories`),
+  toggling `showCategoryPanel`.
+- **`actions`** — the **+ Event** button (`IconTextButton` with `icon="Plus"`, label `event`, `primary`),
+  opening `EventModal` seeded with `date: toDateStr(currentDate.value)`.
 
 The **Settings** gear that opens `CalendarSettings` is not part of `calendarSlots()` — `BaseView.tsx`
 renders it itself in the trailing `actions` group for every base type (calendar included), routing to

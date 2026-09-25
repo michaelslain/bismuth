@@ -90,7 +90,7 @@ components:
     padding: "0"
     height: "24px"
   button-text-unselected:
-    textColor: "{colors.ink-faint}"
+    textColor: "{colors.ink-muted}"
   button-text-selected:
     textColor: "{colors.accent-sage}"
   button-text-primary:
@@ -370,15 +370,18 @@ the accent. An outline appears only when it means something.
   edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
   goes inside the brackets: `[✓ label]`. One size only.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
-  that is off) `--faint`; `selected` `--accent` + bold (or `accent`, if set); `primary` `--accent`
-  + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
-- **Hover:** `unselected` lifts to `--text-muted`; states already at full ink underline the label
+  that is off) `--text-muted`; `selected` `--accent` + bold (or `accent`, if set); `primary`
+  `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
+  No state is ever shown by opacity — `unselected` used to dim to 0.5, which read as disabled and
+  failed contrast; it is full-opacity, muted-ink now, same as every other state.
+- **Hover:** `unselected` lifts to `--fg`; states already at full ink underline the label
   (1px) instead of changing colour.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
   ring never touches the next `[`.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
-  groups (the drawing dock, the embedded-graph icon groups) keep the butted `segment` look.
+  groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom, rendered
+  `[▣]` per option — there is no separate butted look any more.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
@@ -388,15 +391,16 @@ the accent. An outline appears only when it means something.
   `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
   accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
   `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. A
-  24px square hit area, its own sizes.
+  24px square hit area minimum outside a bar; inside a view bar the brackets draw at `--fs-ui`,
+  26px wide.
 
 ### Chips
 - **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as
   the text button and `SegmentedToggle`'s bracket look. Unselected `--faint`, selected tints
   brackets + label to `--accent` or, with a `tone`, to that category's own hue.
 - **Segmented toggle:** a row of `[option]` buttons `--sp-4` apart, same bracket idiom; the on
-  option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) opt into the
-  older butted `segment` look instead.
+  option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) render each
+  option as a bracket icon button, `[▣]`, the same idiom rather than a separate look.
 - **On/off toggle row** (`ToggleRow`, settings-form checkboxes): a full `--row-h` row rendering
   `[x]` checked / `[ ]` unchecked (`BracketToggle`) — no box fill, just the bracket glyph flipping.
 

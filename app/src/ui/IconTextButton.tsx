@@ -17,7 +17,7 @@ export type IconTextButtonProps = {
     variant?: IconTextButtonVariant
     /** Destructive tone — orthogonal to variant. */
     danger?: boolean
-    /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
+    /** Accent + bold, no box — the view's one emphasized action. At most one per view. */
     primary?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 

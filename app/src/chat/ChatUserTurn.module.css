@@ -12,10 +12,9 @@
 .chat-queued-note {
     font-style: italic;
 }
+/* Placement only (button-family migration) — the look (`size="sm"` box, brackets, colour) comes
+   from IconButton's own props at the call site; this class only nudges it off the "queued" label. */
 .chat-queued-cancel {
-    width: 16px;
-    height: 16px;
-    padding: 0;
     margin-left: var(--sp-1);
 }
 .chat-user-images {

@@ -178,6 +178,10 @@ const ALLOWED_FILES: AllowEntry[] = [
         file: 'daemon/DaemonRow.tsx',
         reason: 'Enter reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — it is this row\'s own activation gesture under the WAI-ARIA button pattern (role="button"), same treatment as ui/ToggleRow.tsx',
     },
+    {
+        file: 'bases/KanbanCard.tsx',
+        reason: 'Enter reads isConfirmKey (ui-confirm); Space stays a hardcoded literal — the whole-card face\'s own activation gesture under the WAI-ARIA button pattern (role="button"), same treatment as daemon/DaemonRow.tsx',
+    },
 ]
 
 const ALLOWED_SET = new Set(ALLOWED_FILES.map(e => e.file))

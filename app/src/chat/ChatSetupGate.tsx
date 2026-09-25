@@ -9,6 +9,7 @@ import { Match, Show, Switch, type JSX } from 'solid-js'
 import type { ChatSession } from './chatSession'
 import ChatSetup from '../ChatSetup'
 import Text from '../ui/Text'
+import InlineCode from '../ui/InlineCode'
 import { providerLabel, sanitizeChatProvider } from '../chatProvider'
 import styles from './ChatSetupGate.module.css'
 
@@ -70,10 +71,12 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
                             body={
                                 <Text>
                                     This chat is set to the opencode provider,
-                                    but the <code>opencode</code> CLI wasn't
-                                    found on your machine. Install it from
-                                    opencode.ai (e.g.{' '}
-                                    <code>brew install sst/tap/opencode</code>
+                                    but the <InlineCode>opencode</InlineCode>{' '}
+                                    CLI wasn't found on your machine. Install
+                                    it from opencode.ai (e.g.{' '}
+                                    <InlineCode>
+                                        brew install sst/tap/opencode
+                                    </InlineCode>
                                     ), then reopen this tab.
                                 </Text>
                             }
@@ -88,10 +91,11 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
                             heading="Claude Code isn't available"
                             body={
                                 <Text>
-                                    This chat runs the <code>claude</code> CLI
-                                    on your machine — it isn't installed or
-                                    signed in. Install Claude Code and sign
-                                    in, then reopen this tab.
+                                    This chat runs the{' '}
+                                    <InlineCode>claude</InlineCode> CLI on your
+                                    machine — it isn't installed or signed in.
+                                    Install Claude Code and sign in, then
+                                    reopen this tab.
                                 </Text>
                             }
                             actionLabel="use opencode instead"

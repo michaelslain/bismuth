@@ -16,8 +16,8 @@
 /* The message box: attachment chips + the CodeMirror field + send/stop inside ONE outlined
    surface, capped to the 680px reading column — no fill, radius 3, a hairline border that turns
    --accent on focus. Layout the send/stop button and the attachment-remove button need is handed
-   to IconButton via its own `class` prop (`.send`, `.attachment-remove.attachment-remove`) rather
-   than reached into via `:global()`. */
+   to IconButton via its own `class` prop (`.send`, `.attachment-remove`), placement only — see
+   each class's own comment — rather than reached into via `:global()`. */
 .box {
     /* The composer's one vertical rhythm value — the padding above/below the draft text inside the
        CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
@@ -106,28 +106,14 @@
    DARK in the light themes and would sit invisible on this same dark scrim). Darkened further on
    hover via color-mix on the background token itself, rather than a hardcoded rgba, so a theme's
    own scrim tone still drives the hover state. */
-/* `.attachment-remove.attachment-remove` — the class repeated, not reached into `:global(.btn--
-   icon)` — matches that rule's own 0,0,2,0 specificity (ui/Button.module.css's
-   `.btn--icon.btn--normal { opacity: 1 }`) without depending on stylesheet load order, the same
-   guarantee the old `:global()` compound gave, entirely in local classes.
-   Acceptance: square (--r-0, not a circle), no filled background, glyph in --text-muted (nearest
-   real token to a --fg-muted this app doesn't define), --fg on hover — a plain glyph button over
-   the thumbnail rather than a filled scrim chip. */
-.attachment-remove.attachment-remove {
+/* The remove control is an IconButton now (button-family migration) — this class is PLACEMENT
+   ONLY, pinning it to the thumbnail's top-right corner. The look (bracket glyph, colour, hover)
+   comes entirely from IconButton's own props (`size="sm"` on the call site), never from a rule
+   here. */
+.attachment-remove {
     position: absolute;
     top: 3px;
     right: 3px;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border-radius: var(--r-0);
-    background: none;
-    color: var(--text-muted);
-    opacity: 1;
-}
-.attachment-remove.attachment-remove:hover:not(:disabled) {
-    background: none;
-    color: var(--fg);
 }
 
 /* The slash-command autocomplete popover — a child of `.box` (not `.bar`), so its containing
