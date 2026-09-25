@@ -6,7 +6,9 @@
 // Four controls, in this order: TODAY, prev, the date, next. TODAY is the explicit one-shot jump;
 // the date stays clickable too, as a secondary jump back (see its own comment below).
 import { currentView, currentDate, settings } from '../state'
-import { VBtn } from '../../ui/ViewBar'
+import { IconTextButton } from '../../ui/IconTextButton'
+import { IconButton } from '../../ui/IconButton'
+import { PlainButton } from '../../ui/PlainButton'
 import BarLabel from '../../ui/BarLabel'
 import Text from '../../ui/Text'
 import { rangeLabel, stepDate } from '../dates'
@@ -34,29 +36,32 @@ export function DateNav(props: DateNavProps) {
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
-            {/* NOT `active`. Today is a one-shot jump, not a toggle. `drop="late"` because a
-                calendar glyph inside a calendar is the least self-descriptive mark in the app — a
-                calendar next to a date says nothing the date does not already say — so the word is
-                the last thing this bar gives up. */}
-            <VBtn
-                class={styles.today}
+            {/* NOT selected. Today is a one-shot jump, not a toggle. It never collapses to a bare
+                `[▣]`: a calendar glyph inside a calendar is the least self-descriptive mark in the
+                app, so the word stays until the whole control goes. It goes WHOLE at the bar's
+                DROP 3 tier (`data-bar-drop="3"`, 570px — ui/ViewBar.module.css), because once every
+                control is bracketed the bar cannot hold it, Categories, the crumb and the date at
+                the narrow tiers — and the date below is itself a jump to today, so the bar loses a
+                shortcut rather than a function. */}
+            <IconTextButton
+                data-bar-drop="3"
                 icon="Calendar"
                 title="Today"
                 onClick={jumpToToday}
             >
-                <BarLabel long="TODAY" drop="late" />
-            </VBtn>
-            <VBtn
-                class={styles.step}
+                <BarLabel long="today" />
+            </IconTextButton>
+            <IconButton
                 icon="ChevronLeft"
-                title="Previous"
+                label="Previous"
                 onClick={step(-1)}
             />
             {/* The date stays clickable as a SECONDARY jump back — TODAY is now the explicit
                 control, but clicking the thing that tells you where you are is still the natural
-                way back too. Both label lengths render and CSS picks one — see rangeLabel(). No
-                `drop`: the date must survive every collapse tier. */}
-            <VBtn
+                way back too. Both label lengths render and CSS picks one — see rangeLabel(). This
+                is a READOUT (the current range), not a command, so it stays a PlainButton — the
+                Button family's bracket look is for commands only. */}
+            <PlainButton
                 class={styles.range}
                 title="Jump to today"
                 onClick={jumpToToday}
@@ -71,11 +76,10 @@ export function DateNav(props: DateNavProps) {
                 >
                     <BarLabel long={label().long} short={label().short} />
                 </Text>
-            </VBtn>
-            <VBtn
-                class={styles.step}
+            </PlainButton>
+            <IconButton
                 icon="ChevronRight"
-                title="Next"
+                label="Next"
                 onClick={step(1)}
             />
         </div>

@@ -333,7 +333,7 @@ export const PdfLoadFails: Story = {
         await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom in')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom out')).toBeInTheDocument()
-        await expect(canvas.getByText('FIT')).toBeInTheDocument()
+        await expect(canvas.getByText('fit')).toBeInTheDocument()
         // PdfPages' own load() seam (fetch(assetUrl())) genuinely fails against the fake
         // transport's unfetchable base — see the file header — so its "Couldn't load PDF"
         // EmptyState is what should render here, not a blank pane.
@@ -1902,13 +1902,13 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Three spacings, four group boundaries, two annotate hairlines (highlight/draw/scratch),
-        // one glyph size, one icon box, zero frames at rest.
+        // Two spacings, four group boundaries, two annotate within-group gaps (highlight/draw/
+        // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
         expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(4)
-        expect(rest.annotateGaps, `annotate hairlines in ${JSON.stringify(rest.gaps)}`).toBe(2)
-        expect(rest.glyphSizes).toEqual(['13x13'])
+        expect(rest.annotateGaps, `annotate within-group gaps in ${JSON.stringify(rest.gaps)}`).toBe(2)
+        expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconBoxes).toHaveLength(1)
         expect(rest.outside).toEqual([])
         expect(rest.frames, 'accent frames at rest').toBe(0)
@@ -1937,15 +1937,16 @@ export const PdfViewBarLayout: Story = {
         // Rest: no frame and full-contrast muted ink (not a disabled-looking dim).
         const restCs = getComputedStyle(drawBtn)
         expect(restCs.opacity).toBe('1')
-        expect(restCs.borderTopColor).toBe('rgba(0, 0, 0, 0)')
+        expect(rest.frames, 'accent frames at rest').toBe(0)
 
-        // SCRATCH on: exactly one frame, on scratch, and nothing moves.
+        // SCRATCH on: still zero accent frames (the button family draws none for a selected
+        // state), one control now selected, and nothing moves.
         const scratchBtn = canvas.getByLabelText('Scratch paper') as HTMLButtonElement
         await fireEvent.click(scratchBtn)
         await waitFor(() => expect(pressedOf(scratchBtn)).toBe('true'))
         const on = probeBar(bar)
-        expect(on.frames, 'scratch on').toBe(1)
-        expect(getComputedStyle(scratchBtn).borderTopWidth).toBe('1px')
+        expect(on.frames, 'accent frames, scratch on').toBe(0)
+        expect(on.selectedCount, 'scratch on').toBe(1)
         expect(on.gaps).toEqual(rest.gaps)
         // put the fixture back (the store wrote a margin; turn it off again)
         await fireEvent.click(scratchBtn)

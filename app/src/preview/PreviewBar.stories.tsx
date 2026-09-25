@@ -1,9 +1,9 @@
 // app/src/preview/PreviewBar.stories.tsx
 // Visual + behavioural spec for <PreviewBar> — the preview tab's view bar for images and PDFs. Every
 // play() probes what a person sees (ui/_previewBarAssertions.ts): the gaps between adjacent
-// controls are only the bar's three spacing tokens (icon-gap inside a group, crumb-gap between
-// groups, the annotate group's own hairline), the number of accent frames, one glyph size and
-// one icon box, and nothing leaving the 36px band.
+// controls are only the bar's two spacing tokens (icon-gap inside a group, including the annotate
+// group; crumb-gap between groups), the number of accent frames, one glyph size and one icon box,
+// and nothing leaving the 36px band.
 import { createSignal, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
@@ -70,19 +70,19 @@ function Harness(props: HarnessProps): JSX.Element {
 
 const barOf = (root: HTMLElement) => root.querySelector('[data-viewbar]') as HTMLElement
 
-/** The checks every shape shares: three spacings and nothing else (`--bar-icon-gap` inside a
- *  group, `--bar-crumb-gap` between groups, `--sp-1` inside the annotate group), one glyph size,
- *  one icon box, all inside the band on one centre line, and a visible filename.
- *  `annotatePairs` is the number of adjacent-control pairs INSIDE the annotate group — 2 for
- *  highlight+draw+scratch (pdf), 0 for draw alone (image). */
+/** The checks every shape shares: two spacings and nothing else (`--bar-icon-gap` inside a group,
+ *  including the annotate group; `--bar-crumb-gap` between groups), one glyph size, one icon box,
+ *  all inside the band on one centre line, and a visible filename. `annotatePairs` is the number
+ *  of adjacent-control pairs INSIDE the annotate group — 2 for highlight+draw+scratch (pdf), 0 for
+ *  draw alone (image). */
 function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
     const p = probeBar(bar)
     expect(p.strayGaps, `gaps ${JSON.stringify(p.gaps)}`).toEqual([])
     expect(p.groupBoundaries, `group boundaries in ${JSON.stringify(p.gaps)}`).toBe(groups)
-    expect(p.annotateGaps, `annotate-group hairline gaps in ${JSON.stringify(p.gaps)}`).toBe(
+    expect(p.annotateGaps, `annotate within-group gaps in ${JSON.stringify(p.gaps)}`).toBe(
         annotatePairs,
     )
-    expect(p.glyphSizes, 'glyph sizes').toEqual(['13x13'])
+    expect(p.glyphSizes, 'glyph sizes').toEqual(['12x12'])
     expect(p.iconBoxes, 'icon-only boxes').toHaveLength(1)
     expect(p.outside, 'controls outside the bar').toEqual([])
     expect(p.overlaps, 'overlapping controls').toEqual([])
@@ -92,8 +92,10 @@ function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
 }
 
 /** A freshly opened PDF at 100%: `p. 1 / 12` · `− 100% + FIT` · highlight draw scratch · bookmarks.
- *  Zero accent frames at rest (FIT is a one-shot, never selected). Then SCRATCH on paints exactly
- *  one frame, BOOKMARKS open exactly one more. */
+ *  Zero accent frames at rest (FIT is a one-shot, never selected) AND with any toggle on — the
+ *  button family draws no border for a selected state (DESIGN.md: "states are colour and weight,
+ *  nothing drawn"). SCRATCH on raises `selectedCount` to one, BOOKMARKS open to two, with frames
+ *  staying at zero throughout. */
 export const Pdf: Story = {
     render: () => <Harness width={1000} kind="pdf" />,
     play: async ({ canvasElement }) => {
@@ -101,32 +103,38 @@ export const Pdf: Story = {
         const canvas = within(bar)
         const p = expectCalm(bar, 3, 2)
         await expect(p.frames, 'accent frames at rest').toBe(0)
+        await expect(p.selectedCount, 'selected controls at rest').toBe(0)
         const fit = canvas.getByLabelText('Fit width')
         await expect(fit.getAttribute('aria-pressed')).toBeNull()
 
         const scratch = canvas.getByLabelText('Scratch paper')
         await fireEvent.click(scratch)
         await waitFor(() => expect(scratch.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'scratch on').toBe(1)
+        await expect(probeBar(bar).frames, 'accent frames, scratch on').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'scratch on').toBe(1)
         const bookmarks = canvas.getByLabelText('Bookmarks')
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(bookmarks.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'scratch on + bookmarks open').toBe(2)
-        // Toggling on never moves anything: the frame is a border every state reserves.
+        await expect(probeBar(bar).frames, 'accent frames, scratch on + bookmarks open').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'scratch on + bookmarks open').toBe(2)
+        // Toggling on never moves anything: no frame is drawn, so nothing shifts.
         expectCalm(bar, 3, 2)
         await fireEvent.click(scratch)
         await fireEvent.click(bookmarks)
-        await waitFor(() => expect(probeBar(bar).frames).toBe(0))
+        await waitFor(() => expect(probeBar(bar).selectedCount).toBe(0))
+        await expect(probeBar(bar).frames).toBe(0)
     },
 }
 
-/** Draw, scratch and bookmarks all on: exactly three frames, same boxes, same gaps. */
+/** Draw, scratch and bookmarks all on: zero accent frames (the button family draws none for a
+ *  selected state), three selected controls, same boxes, same gaps. */
 export const PdfModesOn: Story = {
     render: () => <Harness width={1000} kind="pdf" draw scratch panel />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const p = expectCalm(bar, 3, 2)
-        await expect(p.frames).toBe(3)
+        await expect(p.frames, 'accent frames').toBe(0)
+        await expect(p.selectedCount).toBe(3)
         for (const label of ['Draw', 'Scratch paper', 'Bookmarks']) {
             await expect(within(bar).getByLabelText(label).getAttribute('aria-pressed')).toBe('true')
         }
@@ -167,10 +175,12 @@ export const Image: Story = {
         await expect(draw.getAttribute('aria-pressed')).toBe('false')
         await fireEvent.click(draw)
         await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('true'))
-        await expect(probeBar(bar).frames, 'draw on').toBe(1)
+        await expect(probeBar(bar).frames, 'accent frames, draw on').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'draw on').toBe(1)
         await fireEvent.click(draw)
         await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('false'))
-        await expect(probeBar(bar).frames, 'draw off').toBe(0)
+        await expect(probeBar(bar).frames, 'accent frames, draw off').toBe(0)
+        await expect(probeBar(bar).selectedCount, 'draw off').toBe(0)
     },
 }
 

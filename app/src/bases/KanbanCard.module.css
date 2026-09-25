@@ -2,6 +2,7 @@
    the title + meta with the card's own title-to-meta gap, so display spacing is unchanged. */
 .kbCardFace { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .kbFaceEditable { cursor: pointer; }
+.kbFaceEditable:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
 
 /* Card face: read-only title — DESIGN.md's register rule: what a person WROTE is prose
    (--prose-font, Lora via Text's `register="prose"` prop in KanbanCard.tsx). Only the
@@ -69,13 +70,12 @@ div.kbMetaMarkdown { line-height: 1.45; }
   border-radius: var(--r-0);
   margin: var(--sp-2) 0;
 }
-/* A boolean meta property is always a ChipToggle (display AND editor in one) — shrink the
-   generic .chip-toggle chrome to fit the card's compact meta rows. */
-.kbMetaBoolChipToggle { height: var(--h-control); padding: 0; gap: 0; font-size: var(--fs-ui); border-radius: var(--r-0); }
+/* A boolean meta property is always a ChipToggle (display AND editor in one) — ChipToggle
+   composes ui/Button and owns its own size/padding/chrome now (one-button), so this file no
+   longer overrides any of it. */
 
 /* A declared `multiselect` property (#101), READ-ONLY display: a chip per selected value.
    The editable version (add/remove + "+ Add") is PropertyValueEditor's own `.kbMetaMultiselect`
-   — identical chip sizing, kept as two owned rules rather than one shared selector so each
-   file owns only the class it renders. */
+   — each ChipToggle renders at its own default size now, so there is nothing left for either
+   file to own beyond its own layout wrapper. */
 .kbMetaMultiselectDisplay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.kbMetaMultiselectDisplayToggle { height: var(--h-control); padding: 0; gap: 0; font-size: var(--fs-ui); border-radius: var(--r-0); }

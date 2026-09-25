@@ -5,12 +5,13 @@
    wrote by hand, reachable by any outside stylesheet that knew the string. They are real hashed
    CSS-module locals now (ViewBar.module.css, one-global-stylesheet followups task 1), so
    PreviewBar.tsx passes `parts={{ config, actions, lead, identity }}` (a class appended to each
-   named region/group wrapper) and `class={styles.crumb}` straight to `<Crumb>` instead. `.icon`/
-   `.fit` (below) no longer need a `:global(.vbtn)` compound either: VBtn's own hashed base class
-   and these local overrides land on the SAME button element, and PreviewBar.tsx imports ViewBar
-   before its own module.css runs, so this file's rules load after ViewBar's and win any
-   equal-specificity tie by source order — the same reasoning every other `:vbtn`-adjacent local
-   class in the app already relies on. */
+   named region/group wrapper) and `class={styles.crumb}` straight to `<Crumb>` instead.
+
+   BUTTON FAMILY (task 5): every control is a real `IconButton`/`TextButton` now, not a `VBtn` — the
+   old icon-squaring (`.icon`) and FIT-padding (`.fit`) overrides are gone, since `Button.module.css`
+   already squares an icon-only button and gives a text button its own zero padding. `.mirror` below
+   is the one override left on a button element, and it only flips the inner svg glyph (placement of
+   the icon, not the button's look). */
 
 /* ── Two spacings, nothing else ────────────────────────────────────────────────────────────────
    A group is a run of controls at `--bar-icon-gap` (the same gap every ViewBar region uses). Where
@@ -28,34 +29,6 @@
 .config,
 .actions {
   gap: var(--bar-crumb-gap);
-}
-
-/* The annotate group (highlight/draw/scratch) is the one group that can hold TWO toggles at
-   once — turn both on and their accent frames sit at `--bar-icon-gap` (0), which reads as one
-   fused two-cell box instead of two controls. A hairline gap keeps every frame visibly its own
-   without reading as a group boundary (`--bar-crumb-gap` would). Declared after `.group` so
-   source order breaks the tie at equal specificity. Bookmarks stays alone in its own group, so
-   it never needs this. */
-.annotate {
-  gap: var(--sp-1);
-}
-
-/* ── Icon-only VBtns: one box ─────────────────────────────────────────────────────────────────
-   VBtn's base carries text padding (`0 --sp-5`) for a labelled button; an icon-only one squares to
-   --h-control the way ViewBar.module.css's ladder squares a VBtn whose label has dropped. */
-.icon {
-  width: var(--h-control);
-  padding: 0;
-  justify-content: center;
-  flex: 0 0 auto;
-}
-/* ViewBar.module.css defines no disabled `.vbtn` — without this a not-yet-ready toggle still
-   hovers like a live one. Muted further, no hover fill. */
-.icon:disabled {
-  opacity: 0.4;
-  cursor: default;
-  background: transparent;
-  color: var(--text-muted);
 }
 
 /* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the LEFT —
@@ -77,14 +50,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* FIT is the one TEXT VBtn in the bar: VBtn's base `0 var(--sp-5)` padding is sized for a labelled
-   command sitting on its own, and next to the icon-only `−`/`+`/annotate glyphs either side of it
-   (whose visible glyph, not their box, is what the eye measures) it reads as far more air than
-   the icon-to-icon gaps around it. Tightened so its visible text edge sits like an icon's. */
-.fit {
-  padding: 0 var(--sp-2);
-}
-
 /* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
    ViewBar's trail is `flex: 0 0 auto`, so a trail wider than the bar pushes the lead (the
    filename) to zero width. Two overrides, scoped to THIS bar:
@@ -100,6 +65,25 @@
   /* ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
      shrunk to its minimum — the filename's ellipsis would sit flush against the first control. */
   column-gap: var(--bar-crumb-gap);
+  /* Button.module.css dims an unselected icon button to 0.5 opacity by default (the "toggle
+     member, off" look), with a `--iconbar-unselected-opacity` escape hatch IconBar.module.css sets
+     back to 1 for its own children (a plain row of icon buttons is never "half a toggle"). This bar
+     is not an IconBar but its controls read the same: highlight/draw/scratch/bookmarks/file actions
+     are full-contrast muted ink at rest (task 5's Button-family migration comment above), not a
+     disabled-looking dim — so it sets the same escape hatch for its own tree. */
+  --iconbar-unselected-opacity: 1;
+}
+/* ViewBar's own ≤480px floor tier tightens `.vb-trail`'s own gap from --bar-crumb-gap down to
+   --bar-icon-gap ("the seams between regions tighten... every sibling pair of bracket buttons
+   already keeps") — right for a bar whose trailing controls are meant to read as one continuous
+   bracket run once nothing else is left to shed (the chat bar, the calendar). Wrong here: this
+   bar's groups (zoom · annotate · bookmarks · file actions) must stay visibly grouped at every
+   width, narrow included — the whole point of --bar-crumb-gap. `.bar .trail` (two classes) ties
+   `.viewbar .vb-trail`'s specificity at the floor tier; PreviewBar.module.css loads after
+   ViewBar.module.css (PreviewBar.tsx imports ViewBar first), so this wins the tie outright,
+   the same trick `.bar .lead` uses above for the mask-image override. */
+.bar .trail {
+  gap: var(--bar-crumb-gap);
 }
 .lead {
   flex-shrink: 1000;

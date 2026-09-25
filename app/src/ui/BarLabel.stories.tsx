@@ -13,7 +13,9 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import type { JSX } from 'solid-js'
-import ViewBar, { Crumb, VBtn } from './ViewBar'
+import ViewBar, { Crumb } from './ViewBar'
+import { IconTextButton } from './IconTextButton'
+import { TextButton } from './TextButton'
 import BarLabel from './BarLabel'
 
 const meta = {
@@ -33,33 +35,37 @@ function Bar(props: { width: number }): JSX.Element {
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
                 locus={
-                    <VBtn
+                    <IconTextButton
                         icon="Calendar"
                         title="Jump to today"
                         data-testid="late-btn"
                     >
-                        <BarLabel long="TODAY" drop="late" />
-                    </VBtn>
+                        <BarLabel long="today" drop="late" />
+                    </IconTextButton>
                 }
                 facet={
-                    <VBtn title="Month" active data-testid="abbr-btn">
-                        <BarLabel long="MONTH" short="M" />
-                    </VBtn>
+                    <TextButton
+                        variant="selected"
+                        title="Month"
+                        data-testid="abbr-btn"
+                    >
+                        <BarLabel long="month" short="m" />
+                    </TextButton>
                 }
                 config={
-                    <VBtn
+                    <IconTextButton
                         icon="Tag"
                         title="Categories"
                         data-bar-drop="1"
                         data-testid="drop1-btn"
                     >
-                        <BarLabel long="CATEGORIES" drop="early" />
-                    </VBtn>
+                        <BarLabel long="categories" drop="early" />
+                    </IconTextButton>
                 }
                 actions={
-                    <VBtn icon="Plus" title="New" data-testid="action-btn">
-                        <BarLabel long="EVENT" drop="early" />
-                    </VBtn>
+                    <IconTextButton icon="Plus" title="New" data-testid="action-btn">
+                        <BarLabel long="event" drop="early" />
+                    </IconTextButton>
                 }
             />
         </div>
@@ -70,7 +76,7 @@ const shown = (el: Element | null) =>
     !!el && !!(el as HTMLElement).getClientRects().length
 
 /** What the label inside `testid` is actually SHOWING — not what it contains. Both lengths sit in
- *  the DOM at every width, so `textContent` reads "MONTHM" forever and would grade a ladder that
+ *  the DOM at every width, so `textContent` reads "monthm" forever and would grade a ladder that
  *  hides nothing as green. */
 const visibleText = (root: Element, testid: string) =>
     [...root.querySelectorAll(`[data-testid="${testid}"] [data-bar-abbr]`)]
@@ -83,9 +89,9 @@ export const Wide: Story = {
     render: () => <Bar width={1000} />,
     play: async ({ canvasElement }) => {
         const r = canvasElement
-        expect(visibleText(r, 'drop1-btn')).toBe('CATEGORIES')
-        expect(visibleText(r, 'abbr-btn')).toBe('MONTH')
-        expect(visibleText(r, 'late-btn')).toBe('TODAY')
+        expect(visibleText(r, 'drop1-btn')).toBe('categories')
+        expect(visibleText(r, 'abbr-btn')).toBe('month')
+        expect(visibleText(r, 'late-btn')).toBe('today')
         expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(true)
     },
 }
@@ -99,23 +105,23 @@ export const EarlyLabelsDropped: Story = {
         const r = canvasElement
         expect(visibleText(r, 'drop1-btn')).toBe('')
         expect(visibleText(r, 'action-btn')).toBe('')
-        expect(visibleText(r, 'abbr-btn')).toBe('MONTH')
-        expect(visibleText(r, 'late-btn')).toBe('TODAY')
+        expect(visibleText(r, 'abbr-btn')).toBe('month')
+        expect(visibleText(r, 'late-btn')).toBe('today')
         // The button squares up rather than keeping text padding around nothing.
         const btn = r.querySelector<HTMLElement>('[data-testid="drop1-btn"]')!
-        expect(Math.round(btn.getBoundingClientRect().width)).toBe(24)
+        expect(Math.round(btn.getBoundingClientRect().width)).toBe(26)
     },
 }
 
 /** TIER 2 — long labels swap for their abbreviations. Only the label carrying a `short` changes;
- *  TODAY has none and keeps its full text, which is what proves the swap is per-label rather than
+ *  'today' has none and keeps its full text, which is what proves the swap is per-label rather than
  *  a blanket rule on the tier. */
 export const LabelsAbbreviated: Story = {
     render: () => <Bar width={560} />,
     play: async ({ canvasElement }) => {
         const r = canvasElement
-        expect(visibleText(r, 'abbr-btn')).toBe('M')
-        expect(visibleText(r, 'late-btn')).toBe('TODAY')
+        expect(visibleText(r, 'abbr-btn')).toBe('m')
+        expect(visibleText(r, 'late-btn')).toBe('today')
         expect(visibleText(r, 'drop1-btn')).toBe('')
     },
 }

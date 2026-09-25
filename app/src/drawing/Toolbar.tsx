@@ -3,8 +3,8 @@ import { Show, type JSX } from 'solid-js'
 import type { PaperBg } from '../../../core/src/drawing/model'
 import type { ToolState } from './DrawingCanvas'
 import { ZOOM_MIN, ZOOM_MAX } from './DrawingPage'
-import { Button } from '../ui/Button'
-import PlainButton from '../ui/PlainButton'
+import { IconButton } from '../ui/IconButton'
+import { TextButton } from '../ui/TextButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { CATEGORY_SWATCHES, resolveAppearance } from '../themes'
@@ -237,34 +237,34 @@ export function Toolbar(props: {
                 <div class={styles['draw-group']}>
                     <SegmentedToggle
                         look="icon"
+                        size="sm"
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
                     />
                     {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
                     <Show when={props.onImportImage}>
-                        <Button
-                            kind="segment"
-                            state="unselected"
-                            title="Import image"
-                            aria-label="Import image"
+                        <IconButton
+                            icon="ImagePlus"
+                            label="Import image"
+                            size="sm"
                             onClick={() => props.onImportImage!()}
-                        >
-                            <Icon value="ImagePlus" />
-                        </Button>
+                        />
                     </Show>
                 </div>
                 {/* Colors on top, line-weight directly below — same box size + spacing. */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
-                            look="swatch"
+                            look="icon"
+                            size="sm"
                             options={colorOpts()}
                             value={t().color}
                             onChange={c => props.setTools({ color: c })}
                         />
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             options={sizeOpts}
                             value={t().size}
                             onChange={s => props.setTools({ size: s })}
@@ -277,6 +277,7 @@ export function Toolbar(props: {
                     <div class={styles['draw-vstack']}>
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
@@ -285,6 +286,7 @@ export function Toolbar(props: {
                         <Show when={props.bg && props.setBackground}>
                             <SegmentedToggle
                                 look="icon"
+                                size="sm"
                                 options={paperOpts}
                                 value={props.bg!()}
                                 onChange={id => props.setBackground!(id)}
@@ -303,6 +305,7 @@ export function Toolbar(props: {
                             duplicate of its markup. */}
                         <SegmentedToggle
                             look="icon"
+                            size="sm"
                             value={undefined}
                             onChange={id =>
                                 id === 'undo' ? props.onUndo() : props.onRedo()
@@ -332,57 +335,29 @@ export function Toolbar(props: {
                             }
                         >
                             <div class={styles['draw-zoomrow']}>
-                                <SegmentedToggle
-                                    look="icon"
-                                    value={undefined}
-                                    onChange={() => props.onZoomOut!()}
-                                    class={styles['draw-vstack-seg']}
-                                    options={[
-                                        {
-                                            id: 'out' as const,
-                                            label: (
-                                                <Icon
-                                                    value="ZoomOut"
-                                                />
-                                            ),
-                                            title: 'Zoom out',
-                                            ariaLabel: 'Zoom out',
-                                            disabled:
-                                                props.zoom!() <= ZOOM_MIN,
-                                        },
-                                    ]}
+                                <IconButton
+                                    icon="ZoomOut"
+                                    label="Zoom out"
+                                    size="sm"
+                                    onClick={() => props.onZoomOut!()}
+                                    disabled={props.zoom!() <= ZOOM_MIN}
                                 />
-                                {/* A ui/PlainButton (unstyled real <button>), not a SegmentedToggle
-                                    option — this is a readout, not a toggle member, so it must
-                                    never pick up a Button KIND class (bracket-buttons Task 2). Its
-                                    look is `.draw-zoompct` alone, colocated below. */}
-                                <PlainButton
-                                    class={styles['draw-zoompct']}
+                                {/* A real bracket TextButton, not a readout — resetting to 100% is
+                                    a command a person clicks (bracket-buttons: PlainButton is for
+                                    non-buttons only). */}
+                                <TextButton
                                     title="Reset zoom"
                                     aria-label="Reset zoom"
                                     onClick={() => props.onResetZoom!()}
                                 >
                                     {`${zoomPct()}%`}
-                                </PlainButton>
-                                <SegmentedToggle
-                                    look="icon"
-                                    value={undefined}
-                                    onChange={() => props.onZoomIn!()}
-                                    class={styles['draw-vstack-seg']}
-                                    options={[
-                                        {
-                                            id: 'in' as const,
-                                            label: (
-                                                <Icon
-                                                    value="ZoomIn"
-                                                />
-                                            ),
-                                            title: 'Zoom in',
-                                            ariaLabel: 'Zoom in',
-                                            disabled:
-                                                props.zoom!() >= ZOOM_MAX,
-                                        },
-                                    ]}
+                                </TextButton>
+                                <IconButton
+                                    icon="ZoomIn"
+                                    label="Zoom in"
+                                    size="sm"
+                                    onClick={() => props.onZoomIn!()}
+                                    disabled={props.zoom!() >= ZOOM_MAX}
                                 />
                             </div>
                         </Show>

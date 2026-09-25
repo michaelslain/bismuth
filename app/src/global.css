@@ -473,8 +473,13 @@
 }
 
 /* The view-bar icon rhythm — read only within ui/ui.css's own `.viewbar` section today, but a
-   token rather than chrome, so it lives here regardless of how many consumers it currently has. */
-:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
+   token rather than chrome, so it lives here regardless of how many consumers it currently has.
+   `--bar-icon-gap` was `0px` (one-button Task 1): bracket siblings now carry their own `[`/`]`
+   glyphs, so a 0 gap ran two adjacent bracket buttons together as `][` instead of `] [`. `--sp-4`
+   is the app's bracket-sibling spacing (DESIGN.md); the icon-only rhythm this token used to also
+   serve (glyph-to-glyph inside a single control, e.g. IconBar) is unaffected — that spacing comes
+   from the control's own box, not this gap. */
+:root { --bar-icon-gap: var(--sp-4); --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 
 /* Moved in from ui/popover/popover.css (2026-09-12, CSS modules migration Task 10): the one
    `:root` block that file declared. popover.css itself stays global permanently (see its own
@@ -545,7 +550,7 @@
    way; the moment a class selector lands in this file the hoist stops being harmless. */
 * { box-sizing: border-box; }
 /* Buttons don't inherit font-family from ancestors — force it so every button
-   (including non-.btn ones like .vbtn) renders in the app's Monaspace, not the
+   (including non-.btn ones like PlainButton) renders in the app's Monaspace, not the
    browser UA system font.
 
    `outline: none` USED TO RIDE ALONG HERE and it was the single worst accessibility bug in the
@@ -864,7 +869,7 @@ details.callout > summary::-webkit-details-marker {
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
    generic state names from being reachable app-wide. */
 
-/* The shared view bar (.viewbar, .crumb, the .vb-* regions, .vbtn) and the category chips +
+/* The shared view bar (.viewbar, .crumb, the .vb-* regions) and the category chips +
    status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
    unrelated components, so scoping them into any one module would force every other consumer
    to import that module. ui/ui.css records the per-family consumer count and the cascade
@@ -967,7 +972,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
    1. GENUINE cross-component design-system primitives with two or more real consumers, most
       documented at the point of use below: the whole
-      `.viewbar`/`.crumb`/`.vb-*`/`.vbtn` family and its `@container` collapse ladder
+      `.viewbar`/`.crumb`/`.vb-*` family and its `@container` collapse ladder
       (ui/ViewBar.tsx, mounted by six unrelated views), and the `asc-*` ASCII register
       (`.segmented` moved to SegmentedToggle.module.css and `.search-bar`/`.search-bar-lead`/
       `.search-bar-input` moved to SearchBar.module.css in one-global-stylesheet Task 5;
@@ -1073,9 +1078,10 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
        Calendar.module.css was a fourth until Task 15, 2026-09-13, deleted it along with the
        `.cal-viewbar` override below — the calendar toolbar now composes bare `<ViewBar>` slots
        with no bar-level override of its own.)
-     MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
-       calendar/Calendar.module.css used to restyle it under .cal-viewbar — gone with that
-       stylesheet (Task 15, 2026-09-13); nothing restyles .vbtn from the calendar side any more.
+     DELETED (one-button Task 10) — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in
+       calendar/components/Toolbar.tsx; calendar/Calendar.module.css used to restyle it under
+       .cal-viewbar — gone with that stylesheet (Task 15, 2026-09-13), and VBtn itself is gone
+       now too: every view-bar control composes TextButton/IconButton/IconTextButton instead.
      DELETED 2026-08-27 (visual-unification audit §7 wave 1) — .vseg   was documented as one
        primitive with the two above by both calendar/Calendar.module.css and ChatHeader.module.css
        (formerly ChatView.css), but it had ZERO consumers: no .tsx ever wrote the class and no
@@ -1135,7 +1141,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
        now sets `.inbox-page-bar .vb-actions` — two classes, and it wins on specificity rather
        than on load order.) */
 
-/* .viewbar / .vbtn / .vb-* / .crumb + the collapse ladder MOVED to ui/ViewBar.module.css (design-system sweep, one-global-stylesheet task 2) — see that file for the family and the @container tiers. */
+/* .viewbar / .vb-* / .crumb + the collapse ladder MOVED to ui/ViewBar.module.css (design-system sweep, one-global-stylesheet task 2) — see that file for the family and the @container tiers. .vbtn (VBtn's own look) lived there too until one-button Task 10 deleted it: every view-bar control now composes TextButton/IconButton/IconTextButton. */
 
 /* .status-dot MOVED to ui/StatusDot.module.css (one-global-stylesheet Task 4) — grep confirmed
    ui/StatusDot.tsx is the class's ONLY literal writer anywhere in the app, so it went fully
@@ -1161,7 +1167,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    Stage 5 (views) are what will actually render them. Not ported here: the
    "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)
    and .asc-wordmark/.asc-table, which belong to App.css view chrome (later
-   stages). The .viewbar, .crumb and .vbtn set is no longer the exception this
+   stages). The .viewbar and .crumb set is no longer the exception this
    note used to name — it moved INTO this file; see the cross-component
    primitives block directly above.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -2020,26 +2026,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   flex-direction: column;
   gap: var(--sp-1);
 }
-.bismuth-popover-rail-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: var(--popover-row-radius);
-  background: transparent;
-  color: var(--fg);
-  cursor: pointer;
-  /* PlainButton's reset sets text-align: start; restore the UA <button> default this rail
-     relied on (its icon is centered by the flex align/justify above regardless, but keep the
-     computed style unchanged — a bare <button>'s was text-align: center). */
-  text-align: center;
-}
-/* A plain hover, not a selection — this rail has no keyboard-active concept, so it reads at the
-   hover weight rather than borrowing the row list's --popover-selected-bg (audit §7 wave 3). */
-.bismuth-popover-rail-btn:hover { background: var(--state-hover-bg); }
+/* .bismuth-popover-rail-btn (+ :hover) removed (one-button Task 10) — Task 9 made the context
+   menu's rail buttons IconButtons, so nothing renders this class any more. */
 
 /* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
    quick-fix on hover), strip CM's default tooltip chrome so the border/background

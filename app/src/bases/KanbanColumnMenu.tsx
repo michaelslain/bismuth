@@ -13,8 +13,7 @@
 import { createSignal, Show, type Component } from 'solid-js'
 import AnchoredPopover from '../ui/AnchoredPopover'
 import PopoverList from '../ui/popover/PopoverList'
-import PlainButton from '../ui/PlainButton'
-import Text from '../ui/Text'
+import IconButton from '../ui/IconButton'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
 import styles from './KanbanColumnMenu.module.css'
 
@@ -41,20 +40,17 @@ const KanbanColumnMenu: Component<KanbanColumnMenuProps> = props => {
 
     return (
         <>
-            <PlainButton
+            <IconButton
                 ref={el => (triggerRef = el)}
+                icon="List"
+                label="Column menu"
+                size="sm"
                 class={`${styles.trigger}${props.className ? ` ${props.className}` : ''}`}
                 data-kbcolmenu-trigger
                 aria-haspopup="menu"
                 aria-expanded={mode() !== 'closed'}
-                aria-label="Column menu"
-                title="Column menu"
                 onClick={() => setMode(mode() === 'closed' ? 'menu' : 'closed')}
-            >
-                <Text as="span" inherit>
-                    …
-                </Text>
-            </PlainButton>
+            />
             <AnchoredPopover
                 anchor={() => triggerRef}
                 open={mode() !== 'closed'}

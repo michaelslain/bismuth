@@ -17,7 +17,8 @@ import {
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
+import { IconTextButton } from '../ui/IconTextButton'
+import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { openContextMenu } from '../nativeMenu'
 import { copyChatText } from './copyChatText'
@@ -231,18 +232,19 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
             </div>
             {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
             <Show when={!following() && props.items.length > 0}>
-                <PlainButton
+                <IconTextButton
+                    icon="ArrowDown"
                     class={styles['chat-jump-bottom']}
                     onClick={() => scrollToBottom(true)}
                 >
-                    <Icon value="ArrowDown" /> Latest
-                </PlainButton>
+                    latest
+                </IconTextButton>
             </Show>
             {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
                 preventDefault keeps the selection alive so onReply quotes it before it collapses. */}
             <Show when={selReply()}>
                 {s => (
-                    <PlainButton
+                    <TextButton
                         class={styles['chat-sel-reply']}
                         style={{ left: `${s().x}px`, top: `${s().y}px` }}
                         onMouseDown={e => {
@@ -252,8 +254,8 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                             setSelReply(null)
                         }}
                     >
-                        <Icon value="Reply" /> Reply
-                    </PlainButton>
+                        reply
+                    </TextButton>
                 )}
             </Show>
             <Show when={menu()}>

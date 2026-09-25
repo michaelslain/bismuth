@@ -19,6 +19,7 @@ import { columnLabel } from './columnLabel'
 import { metaVisible, titleOf, writableKey } from './kanbanMeta'
 import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
+import { isConfirmKey } from '../ui/widgetKeys'
 import { CardEditModal } from './CardEditModal'
 import ChipToggle from '../ui/ChipToggle'
 import { Icon } from '../icons/Icon'
@@ -190,13 +191,30 @@ export function KanbanCard(props: {
         ) as HTMLElement | null
         openEdit(el?.dataset.editTarget)
     }
+    // Keyboard path for the same whole-card open — ui-confirm (rebindable, default Enter) plus a
+    // hardcoded Space, the card face's own activation gesture under the WAI-ARIA button pattern
+    // (role="button"), same treatment as daemon/DaemonRow.tsx. Acts like a bare-body tap (no
+    // `data-edit-target` under a pointer to resolve), so it opens the modal on the first field,
+    // same as `openEdit()` with no argument. Left entirely separate from `onDown`/`onUp` so the
+    // pointer-based drag-vs-tap threshold logic above is untouched.
+    const onKeyDown = (e: KeyboardEvent) => {
+        if (e.target !== e.currentTarget) return
+        if (!props.editable) return
+        if (!isConfirmKey(e) && e.key !== ' ') return
+        e.preventDefault()
+        openEdit()
+    }
 
     return (
         <div
             class={styles.kbCardFace}
             classList={{ [styles.kbFaceEditable]: props.editable }}
+            tabIndex={props.editable ? 0 : undefined}
+            role={props.editable ? 'button' : undefined}
+            aria-label={props.editable ? `Edit ${title()}` : undefined}
             onPointerDown={onDown}
             onPointerUp={onUp}
+            onKeyDown={onKeyDown}
         >
             <div
                 class={styles.kbCardTitle}
@@ -275,10 +293,7 @@ export function KanbanCard(props: {
                                             inherit
                                             class={styles.kbMetaBoolChip}
                                         >
-                                            <ChipToggle
-                                                selected={on}
-                                                class={styles.kbMetaBoolChipToggle}
-                                            >
+                                            <ChipToggle selected={on}>
                                                 <Icon
                                                     value={on ? 'Check' : 'Square'}
                                                 />
@@ -302,7 +317,7 @@ export function KanbanCard(props: {
                                             }
                                         >
                                             <For each={vals}>
-                                                {t => <ChipToggle selected class={styles.kbMetaMultiselectDisplayToggle}>{t}</ChipToggle>}
+                                                {t => <ChipToggle selected>{t}</ChipToggle>}
                                             </For>
                                         </Text>
                                     )

@@ -175,22 +175,11 @@
   pointer-events: none;
 }
 
-/* Add-card affordance — a bare "+" character (Acceptance 10), no brackets/word/icon glyph. It
-   sits in normal flow right after the cards (the trailing placeholder above it, both plain
-   `.kanbanCards` flex children), so it lands directly under the column's last card and its
-   spacing off that card is the same `--sp-3` flex `gap` every card uses — never pinned to the
-   column's bottom edge. */
-.kbAddBtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--h-control); height: var(--h-control); padding: 0;
-  border: none; background: none; border-radius: var(--r-0); color: var(--text-muted);
-  cursor: pointer; transition: color 120ms ease;
-  font-family: var(--ui-font-stack); font-size: var(--fs-ui);
-  /* The bare <button> centred by default (UA text-align: center); PlainButton's reset sets
-     text-align: inherit, so pin it back explicitly. */
-  text-align: center;
-}
-.kbAddBtn:hover { color: var(--fg); }
+/* Add-card affordance — an IconButton (bare "+"); this file only places it. It sits in normal flow
+   right after the cards (the trailing placeholder above it, both plain `.kanbanCards` flex
+   children), so its spacing off the last card is the same `--sp-3` flex `gap` every card uses —
+   never pinned to the column's bottom edge. The look (colour/hover) is Button's own. */
+.kbAddBtn { align-self: flex-start; }
 /* The composer gets a text caret + real text selection back (a dragged card sets
    user-select:none via CardFrame's `draggable` variant). Both declaration blocks target the
    same `.kbComposer` element — kept as one merged rule (the source file had them as two

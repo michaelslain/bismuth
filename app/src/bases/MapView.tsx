@@ -13,6 +13,8 @@ import { plainLabel } from './renderValue'
 import { settings } from '../settings'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
+import InlineCode from '../ui/InlineCode'
 import styles from './MapView.module.css'
 
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
@@ -469,7 +471,7 @@ export function MapView(props: {
                             const s = toScreen(p.x, p.y)
                             const title = plainLabel(titleCol(), m.row)
                             return (
-                                <div
+                                <PlainButton
                                     class={styles.mapPin}
                                     style={{
                                         left: `${s.x}px`,
@@ -501,44 +503,36 @@ export function MapView(props: {
                                     >
                                         @
                                     </Text>
-                                </div>
+                                </PlainButton>
                             )
                         }}
                     </For>
                 </div>
 
-                {/* Floating controls, top-right — bracket buttons, typed glyphs (no SVG icons). */}
+                {/* Floating controls, top-right — bracket IconButtons. */}
                 <div class={styles.mapControls}>
                     <div class={styles.mapZoomStack}>
-                        <PlainButton
-                            class={styles.mapCtrlBtn}
-                            title="Zoom in"
+                        <IconButton
+                            icon="ZoomIn"
+                            label="Zoom in"
                             onClick={() => zoomBy(1)}
-                        >
-                            +
-                        </PlainButton>
-                        <PlainButton
-                            class={styles.mapCtrlBtn}
-                            title="Zoom out"
+                        />
+                        <IconButton
+                            icon="ZoomOut"
+                            label="Zoom out"
                             onClick={() => zoomBy(-1)}
-                        >
-                            &minus;
-                        </PlainButton>
+                        />
                     </div>
-                    <PlainButton
-                        class={`${styles.mapCtrlBtn} ${styles.mapCtrlSolo}`}
-                        title="Reset view"
+                    <IconButton
+                        icon="RotateCcw"
+                        label="Reset view"
                         onClick={resetView}
-                    >
-                        =
-                    </PlainButton>
-                    <PlainButton
-                        class={`${styles.mapCtrlBtn} ${styles.mapCtrlSolo}`}
-                        title="Locate notes"
+                    />
+                    <IconButton
+                        icon="Pin"
+                        label="Locate notes"
                         onClick={locate}
-                    >
-                        @
-                    </PlainButton>
+                    />
                 </div>
 
                 {/* Scale bar. */}
@@ -580,8 +574,8 @@ export function MapView(props: {
 
                 <Show when={markers().length === 0}>
                     <div class={styles.mapEmpty}>
-                        No notes have valid <code>{latKey()}</code> /{' '}
-                        <code>{lngKey()}</code> properties.
+                        No notes have valid <InlineCode>{latKey()}</InlineCode> /{' '}
+                        <InlineCode>{lngKey()}</InlineCode> properties.
                     </div>
                 </Show>
             </div>

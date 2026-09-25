@@ -104,10 +104,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     </Text>
                     <Show when={props.onNewChat}>
                         {onNewChat => (
-                            <TextButton
-                                class={styles['new-chat']}
-                                onClick={() => onNewChat()()}
-                            >
+                            <TextButton onClick={() => onNewChat()()}>
                                 new chat
                             </TextButton>
                         )}

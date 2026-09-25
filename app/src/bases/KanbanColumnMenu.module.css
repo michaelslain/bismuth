@@ -1,8 +1,9 @@
 /* Trigger button — visibility is driven from OUTSIDE this file: KanbanView.module.css's
    `.kanbanColHeader:hover [data-kbcolmenu-trigger]` / `:focus-within` rule shows it (the
    `data-kbcolmenu-trigger` attribute is the cross-component hook; this file only owns the
-   at-rest/hover/focus-visible states of the button itself). Mirrors .kbDotBtn's sizing so the
-   two header buttons read as a matched pair.
+   at-rest / focus-visible / expanded reveal states of the reveal itself). The button's own box (size,
+   brackets, hover/focus tone) is IconButton's `size="sm"` (KanbanColumnMenu.tsx) — this file
+   only PLACES it.
 
    The trigger sits ABSOLUTELY over the count's slot (`.kanbanColHeader` is the positioning
    ancestor, set in KanbanView.module.css) rather than pushing layout — at rest it is invisible
@@ -12,30 +13,21 @@
    own states) bring the trigger to `opacity: 1; pointer-events: auto` — no margin trick, since
    it no longer needs to move in and out of flow. */
 .trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--h-control);
-    min-width: var(--h-control);
-    min-height: var(--h-control);
-    padding: var(--sp-1);
     position: absolute;
     right: 0;
     top: calc(var(--h-control) / 2);
     transform: translateY(-50%);
-    border: none;
-    background: none;
-    border-radius: var(--r-0);
-    cursor: pointer;
-    color: var(--text-muted);
+    transition: opacity 120ms ease;
+}
+/* Doubled selector: IconButton's own `.btn--icon.btn--normal { opacity: 1 }` (two classes) beats
+   a single `.trigger` on specificity regardless of source order, so the rest state must match
+   its specificity to win. */
+.trigger.trigger.trigger {
     opacity: 0;
     pointer-events: none;
-    outline-offset: 2px;
-    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
-.trigger:hover { color: var(--fg); background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
-.trigger:focus-visible,
-.trigger[aria-expanded='true'] {
+.trigger.trigger.trigger:focus-visible,
+.trigger.trigger.trigger[aria-expanded='true'] {
     opacity: 1;
     pointer-events: auto;
 }

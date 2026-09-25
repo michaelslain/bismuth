@@ -33,7 +33,7 @@
   text-align: center;
 }
 /* Same treatment as `.status-location` — the status bar has no vertical padding to spare for a hover
-   background, so hover buys contrast with colour alone (compare .tab:hover / .vbtn:hover). */
+   background, so hover buys contrast with colour alone (compare .tab:hover). */
 .status-inbox:hover { color: var(--fg); }
 /* Keyboard focus DOES get a ring: this is the one focusable control in the bar, and unlike hover
    it must be locatable without a pointer. Inset so the ring stays inside the 18px row instead of
