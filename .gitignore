@@ -11,6 +11,10 @@ superpowers/
 .DS_Store
 *.log
 
+# env files carry tokens (owner token, API keys) — never committed; a template can be
+.env*
+!.env.example
+
 # plans / scratch (dev artifacts live outside the tree in ~/.claude/bismuth-docs/)
 PLAN.md
 PLANS/
