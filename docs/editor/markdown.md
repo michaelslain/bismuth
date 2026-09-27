@@ -1,6 +1,6 @@
 # Editor Live-Preview Rendering
 
-This document covers every block and inline rendering transformation that Bismuth's CodeMirror editor applies to markdown source text, including the exact trigger conditions, the block kinds supported, how math, raw HTML, and code are processed, and the sanitization pipeline. Read this if you're working on the live-preview extensions, or debugging why a markdown construct renders (or fails to render) as expected. The live-preview is implemented as a set of CodeMirror extensions in `app/src/editor/livePreview.ts`, `htmlPreview.ts`, `mathBlock.ts`, `codeHighlight.ts`, and `codeLineNumbers.ts`, backed by `sanitizeHtml.ts` and `katexLoader.ts`.
+Bismuth's CodeMirror editor applies live-preview rendering to markdown source text — block and inline transformations, trigger conditions, how math/raw HTML/code are processed, and the sanitization pipeline. It's implemented as CodeMirror extensions in `app/src/editor/livePreview.ts`, `htmlPreview.ts`, `mathBlock.ts`, `codeHighlight.ts`, and `codeLineNumbers.ts`, backed by `sanitizeHtml.ts` and `katexLoader.ts`.
 
 ---
 

@@ -2,7 +2,7 @@
 
 The **daemon** is Bismuth's in-repo background agent runtime — the `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes per-vault "brains"**: a single long-lived service started by launchd/systemd, looping over every vault whose daemon is enabled and running that vault's crons, background processes, conversation session, and memory.
 
-This page covers what the daemon **is** now, the machine-vs-vault split, the `daemon.enabled` master switch, the per-vault `identity.md`, the "daemon" graph mode, and how Bismuth's core reads the daemon's state. The deeper pages are indexed at the bottom.
+This page covers what the daemon is, the machine-vs-vault split, the `daemon.enabled` master switch, the per-vault `identity.md`, the "daemon" graph mode, and how Bismuth's core reads the daemon's state. The deeper pages are indexed at the bottom.
 
 > **Where the daemon lives:** it ships as a compiled sidecar binary (`bismuth-daemon`) staged by the bundled app and installed to `~/.bismuth/bin`, then registered as a launchd/systemd **service** so it outlives the app (crons keep firing when Bismuth is closed). It is **not** a Tauri child process. See [lifecycle.md](lifecycle.md).
 
@@ -197,4 +197,4 @@ See also [the docs index](../README.md).
 
 ---
 
-Source: `daemon/src/index.ts`, `daemon/src/daemon/{index`, `cron`, `process`, `session`, `codexSession`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `daemon/src/memory/dream.ts`, `core/src/{daemon`, `daemonState`, `daemonInstall`, `daemonGraph`, `daemonViz`, `fsPaths}.ts`, `core/src/schema/settingsSchema.ts`, `core/src/agentBackends/catalog.ts`, `memory/src/{index`, `graph`, `query`, `search}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `relay/lib/memory.ts`
+Source: `daemon/src/index.ts`, `daemon/src/daemon/{index`, `cron`, `process`, `session`, `codexSession`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `core/src/{daemon`, `daemonState`, `daemonInstall`, `daemonGraph`, `daemonViz`, `fsPaths}.ts`, `core/src/schema/settingsSchema.ts`, `core/src/agentBackends/catalog.ts`, `memory/src/{index`, `graph`, `query`, `search}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `relay/lib/memory.ts`

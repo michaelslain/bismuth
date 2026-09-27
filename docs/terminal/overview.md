@@ -1,8 +1,8 @@
 # Terminal & Relay Registry
 
-This document covers Bismuth's in-app terminal tabs (PTY sessions bridged over WebSocket) and the relay plugin that auto-instruments every `claude` invocation inside those tabs, reporting session + subagent lifecycle into an in-process registry (`core/src/relay.ts`). Together these form a closed system: you → terminal tab session → subagents, scoped entirely to the running app instance.
+This page covers Bismuth's in-app terminal tabs — PTY sessions bridged over WebSocket — and the relay plugin that instruments every `claude` invocation in those tabs. The plugin reports session and subagent lifecycle to the in-process `core/src/relay.ts` registry. The system is scoped to one running app instance: terminal tab, session, and subagents.
 
-There used to be a live "agents" graph mode rendering this registry (a `buildAgentGraph` in `core/src/agents.ts`, plus `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone, and `agents.ts` is now just the `ChatAgentSession`/`ChatAgentSubagent` types). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — and it has a reader again: `GET /relay/snapshot` backs `bismuth relay list`, returning the full snapshot to the vault owner and a `lastMessage`-redacted view to everyone else (see _Core Server Relay Endpoints_ below).
+The former live agents graph mode has been removed: `buildAgentGraph`, `GET /agent-graph`, and its frontend no longer exist, while `agents.ts` now holds only `ChatAgentSession` and `ChatAgentSubagent` types. The registry is still populated and pruned when a tab closes (see _Core Server Relay Endpoints_ and _Scope and Constraints_ below). `GET /relay/snapshot` now backs `bismuth relay list`, returning a full snapshot to the vault owner and a `lastMessage`-redacted view to everyone else (see _Core Server Relay Endpoints_ below).
 
 ## What's in here
 

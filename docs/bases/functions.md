@@ -1,11 +1,11 @@
 # Bases Functions & Methods Reference
 
-This is the **complete, exhaustive reference** for every built-in function and per-type method available in Bismuth's Bases expression language. These are evaluated against a single note (or row) inside formulas, filters, `groupBy`/`sort` properties, and inline ` ```query ` blocks. The expression engine compiles Bases expressions to an AST (`parser.ts` → `ast.ts`) and evaluates them with `evaluate.ts`, which delegates *call* nodes to two dispatch surfaces in `functions.ts`:
+Every built-in function and per-type method in Bismuth's Bases expression language, evaluated against a single note (or row) inside formulas, filters, `groupBy`/`sort` properties, and inline ` ```query ` blocks. The expression engine compiles Bases expressions to an AST (`parser.ts` → `ast.ts`) and evaluates them with `evaluate.ts`, which delegates *call* nodes to two dispatch surfaces in `functions.ts`:
 
 - **Global functions** — `callFunction(name, args, ctx)`: called as bare `name(...)`, e.g. `if(...)`, `max(...)`, `today()`.
 - **Per-type methods** — `callMethod(receiver, name, args, ctx)`: called as `receiver.name(...)`, dispatched by the runtime type of the receiver (file / number / string / array / date).
 
-Every function/method below is documented with its signature, return type, the exact behavior found in the source, and a copy-pasteable example drawn from the actual code or tests. If a name is not in these dispatch tables it evaluates to `undefined` (no error thrown).
+Each entry gives its signature, return type, behavior, and a copy-pasteable example drawn from the code or tests. A name not in these dispatch tables evaluates to `undefined` (no error thrown).
 
 See also: [Bases overview](./overview.md), [filters](./filters.md), [expression grammar / operators](./query-syntax.md).
 

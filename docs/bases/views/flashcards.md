@@ -1,6 +1,6 @@
 # Flashcards View
 
-The flashcards view is a spaced-repetition review UI built on top of a base's rows. It is one of the twelve `ViewType` values (`"flashcards"`) and renders via `FlashcardsView.tsx`. Each row in the underlying base represents one card: a prompt side (front), an answer side (back), and three SM-2 scheduling columns (due date, ease factor, interval). The view handles due-card filtering, queue management, grading, bidirectional review, cram mode, in-session editing, and bulk card creation — all through standard base row operations.
+The flashcards view is a spaced-repetition review UI over a base's rows. It is one of the twelve `ViewType` values (`"flashcards"`) and renders via `FlashcardsView.tsx`. Each row represents one card: a prompt side (front), an answer side (back), and three SM-2 scheduling columns (due date, ease factor, interval). The view handles due-card filtering, queue management, grading, bidirectional review, cram mode, in-session editing, and bulk card creation, all through standard base row operations.
 
 For the SM-2 scheduling algorithm and the markdown-card (`?`/`??`) code path see [../../../flashcards/srs.md](../../flashcards/srs.md).
 
@@ -192,6 +192,8 @@ While the flashcards view is active (and no modal or text field has focus):
 - **3** — grade Easy
 
 Keys `1`/`2`/`3` are ignored until the card is revealed.
+
+These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. The grade key badges shown on each button render `settings.keybindings[id]` too, so a rebind updates the on-screen hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
 
 ---
 
@@ -387,4 +389,4 @@ For grading, the `fields` parameter overrides which due/ease/interval columns ar
 
 ---
 
-Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/bases/FlashcardsView.queue.test.ts`, `core/src/bases/types.ts`, `core/src/srs/reviewRow.ts`, `core/src/srs/scheduler.ts`, `app/src/api.ts`
+Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/bases/FlashcardsView.queue.test.ts`, `core/src/bases/types.ts`, `core/src/srs/reviewRow.ts`, `core/src/srs/scheduler.ts`, `app/src/api.ts`, `core/src/keybindings.ts`, `app/src/keybindings.ts`

@@ -1,6 +1,6 @@
 # Toolbar & Commands
 
-This document is the canonical reference for Bismuth's command system: the pure command catalog (`COMMAND_CATALOG`), how each command id binds to a runnable action, the `toolbar:` settings configuration that places command buttons in the sidebar header bar, and the dynamic `daily-note:<id>` commands. It covers every command id, label, default icon, the `command`/`commands`/`icon`/`tooltip` button fields, button resolution precedence, and the edge cases found in the source. Read this if you're rebinding a toolbar button, wiring up a new command, or tracking down why a button is disabled.
+This page explains Bismuth's command system: the pure `COMMAND_CATALOG`, its runnable bindings, the `toolbar:` configuration for sidebar-header buttons, and dynamic `daily-note:<id>` commands. It lists command ids, labels, default icons, button fields (`command`, `commands`, `icon`, `tooltip`), resolution order, and edge cases. Use it to configure a toolbar, add a command, or debug a disabled button.
 
 > The same item shape drives BOTH bars: `toolbar:` (the sidebar header bar) and `tabBar:`
 > (the buttons right of the tab strip — defaults: `new-tab`, `terminal`, `new-claude-chat`).
@@ -8,7 +8,7 @@ This document is the canonical reference for Bismuth's command system: the pure 
 
 ## Overview
 
-Commands are split into **pure data** and **behavior** so the command palette and the sidebar header toolbar share one source of truth:
+Commands separate metadata from behavior so the command palette and sidebar toolbar stay aligned:
 
 - **`core/src/commands.ts`** — `COMMAND_CATALOG`, a list of `CommandSpec` (`id`, `label`, `icon`). Pure metadata, no frontend imports. The settings schema derives the `toolbar.command` enum from `COMMAND_IDS` (so `.settings` autocomplete and lint know every valid command id). This file is the **single source of truth for command ids**.
 - **`app/src/commands.ts`** — `bindCommands(handlers, dailyNotes)` produces a live `Map<string, BoundCommand>` where each catalog id is mapped to a runnable `{ id, label, icon, action }`. The catalog says *what* each command is; the binding says *what it does*. `App.tsx` passes its handlers in once.

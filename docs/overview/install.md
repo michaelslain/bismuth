@@ -1,8 +1,13 @@
 # Installation and Running Bismuth
 
-This file covers every step required to install, run, and build Bismuth: prerequisites, dependency installation, the optional environment variables for pointing dev at a real vault, all dev-server variants (full-stack, Vite-only, standalone backend), build commands, and how to run multiple instances on non-default ports.
+This guide covers installing, running, and building Bismuth: prerequisites, dependencies, optional
+environment variables for a real development vault, full-stack/Vite-only/standalone server modes,
+build commands, and multiple instances on non-default ports.
 
-**What's here, in order:** prerequisites and Rust setup → repo layout → the two-step dev quick start (install deps, run) → optional environment variables → the standalone backend → one-time macOS code-signing setup → production builds (Vite, Tauri, the self-spawned backend, the first-run intro, bundled resources) → running multiple instances → testing → CORS → common startup errors.
+**Contents:** prerequisites and Rust setup → repository layout → the two-step development quick
+start → optional environment variables → standalone backend → one-time macOS code-signing setup →
+production builds (Vite, Tauri, self-spawned backend, first-run intro, bundled resources) →
+multiple instances → testing → CORS → common startup errors.
 
 ---
 
@@ -86,7 +91,7 @@ This installs dependencies for all seven workspaces. Do not run `npm install` or
 | Variable | Purpose |
 |---|---|
 | `BISMUTH_VAULT` | Absolute path to your 2nd-brain markdown vault directory |
-| `BISMUTH_MEMORY` | Absolute path to your 3rd-brain memory directory (dev only; the bundled app derives it as `<vault>/.daemon/memory`) |
+| `BISMUTH_MEMORY` | Absolute path to your 3rd-brain memory directory (dev only; the bundled app derives it as `<vault>/.daemon/memory`) — but once the vault's daemon is enabled, `effectiveMemoryDir()` in `core/src/server.ts` ignores this and always builds the memory graph from `<vault>/.daemon/memory`, so this variable still drives the file watcher and vault-git-backup scheduling and is echoed back by `GET /config`, but stops controlling where the 3rd-brain graph itself lives |
 
 - **Neither set (the default)** — `resolveDevVault()` materialises a generated example vault at
   repo-root `.dev-vault/` (gitignored, alongside `.claude/`), creating `.dev-vault/vault` and
@@ -346,7 +351,7 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 | `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
 | `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
 | `daemon` | "An agent that never sleeps." — the background Bismuth daemon |
-| `claude` | "Let Claude tend it." — MCP / Claude Code |
+| `agents` | "Bring your own agent." — chat runs on whichever coding agent you already use (Claude Code, Codex, Gemini, opencode, Cline, Goose); Bismuth speaks MCP, so any of them can search the docs and write bases, queries and notes |
 | `powerups` | "Optional power-ups." — toggle which setups to run after the vault opens (see below) |
 | `begin` | "Open your vault." — the final CTA, **"Enter your vault"** |
 
@@ -465,7 +470,7 @@ The backend sets permissive CORS headers on every response:
 ```
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, POST, OPTIONS
-Access-Control-Allow-Headers: Content-Type
+Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token
 ```
 
 This allows the Vite dev server (any port) and the Tauri webview to reach the backend without proxy configuration.

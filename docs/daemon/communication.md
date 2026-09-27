@@ -1,8 +1,8 @@
 # Communication & Hooks
 
-How the daemon's memory reaches your Claude Code sessions (recall/collect hooks), how it coordinates across machines (it doesn't pass messages — it gates on a shared owner file), and what the words "relay", "message", and "owner" actually mean now. The recurring editorial point: **there is no inter-agent or cross-machine message bus in this codebase.** The only multi-device story is file-based single-owner gating; the only thing that crosses *into* your sessions is the vault's memory, injected per-session by the **relay plugin**.
+Covers how the daemon's memory reaches your Claude Code sessions (recall/collect hooks), how it coordinates across machines (it gates on a shared owner file rather than passing messages), and what "relay", "message", and "owner" mean in this codebase. **There is no inter-agent or cross-machine message bus in this codebase.** The only multi-device mechanism is file-based single-owner gating; the only thing that crosses *into* your sessions is the vault's memory, injected per-session by the **relay plugin**.
 
-This page describes the *current* in-repo `@bismuth/daemon` model:
+The current in-repo `@bismuth/daemon` model:
 
 - The `relay/` workspace is a tiny Claude Code plugin (hooks only). Recall + collect are its scripts, not the MCP server's, and not global `~/.claude` hooks.
 - There is **no `message_bot` MCP tool**. The MCP server exposes `remember`/`recall`/`forget` (memory CRUD), not a way to message the daemon session. The daemon's `sendMessage()` is an in-process call driven by crons/processes, never an MCP surface.
@@ -84,8 +84,8 @@ The relay collect-hook, the MCP `remember` tool, and the daemon's own writer all
 
 **There is no inter-agent message bus, no network message queue, and no device-to-device messaging in this codebase.** What might superficially read as networked agent comms is not:
 
-- **`sendMessage()` (`daemon/src/daemon/session.ts`)** is **not** networked agent-to-agent messaging. It is an in-process wrapper that drives one persistent Claude Agent SDK session **per vault** via `claudeQuery({ ..., options: { resume: <vault session id>, cwd: <vault root>, env: { BISMUTH_MEMORY_DIR }, appendSystemPrompt } })`. Callers are all local and internal: cron firing (`cron.ts`), processes (`process.ts`), and dream consolidation (`memory/dream.ts`). One machine runtime multiplexes every enabled vault; the per-call `cwd`/`env`/`resume`/identity are supplied so concurrent vault sessions never race.
-- **The `/relay/*` routes** are local HTTP to *this app's own core server* (`CLAUDE_RELAY_URL`, default `http://localhost:4321`) to feed the in-app agents graph — same-machine, app-local, not device-to-device.
+- **`sendMessage()` (`daemon/src/daemon/session.ts`)** is **not** networked agent-to-agent messaging. It is an in-process wrapper that drives one persistent Claude Agent SDK session **per vault** via `claudeQuery({ ..., options: { resume: <vault session id>, cwd: <vault root>, env: { BISMUTH_MEMORY_DIR }, appendSystemPrompt } })`. Callers are all local and internal: cron firing (`cron.ts`), processes (`process.ts`), and dream consolidation (the `dream` cron, seeded from `daemon/src/daemon/defaultCrons.ts`). One machine runtime multiplexes every enabled vault; the per-call `cwd`/`env`/`resume`/identity are supplied so concurrent vault sessions never race.
+- **The `/relay/*` routes** are local HTTP to *this app's own core server* (`CLAUDE_RELAY_URL`, default `http://localhost:4321`) to feed the in-process relay registry (`core/src/relay.ts`, read by `bismuth relay list` and chat subagent tracking; the old agents graph mode is gone) — same-machine, app-local, not device-to-device.
 
 ## What device coordination does exist: single-owner gating
 

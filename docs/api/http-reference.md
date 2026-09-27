@@ -1,8 +1,15 @@
 # Core HTTP API Reference
 
-This is the complete, exhaustive reference for the Bismuth **core backend** HTTP API, defined in [`core/src/server.ts`](../../core/src/server.ts). Reach for it when you're calling the server directly — a new frontend, a script, an integration, or debugging route behavior — and need the exact request/response shape, error codes, or cache/SSE effects of a specific route. Every route has its own entry below, so jump straight to the one you need rather than reading top to bottom.
+This reference describes the Bismuth **core backend** HTTP API in
+[`core/src/server.ts`](../../core/src/server.ts). Use it when calling the server directly — from a
+frontend, script, integration, or debugging session — and you need a route's request and response
+shape, error behavior, or cache/SSE effect. Each route has its own entry, so use the index to jump
+to the one you need.
 
-The server is a single `Bun.serve` instance created by `createServer({ vault, memory?, port? })`. Every route is dispatched by an exact `"<METHOD> <pathname>"` string key against one of two tables — `routes` (reads) and `mutatingRoutes` (writes) — plus special-cased `GET /terminal`, `GET /chat`, and `GET /ui` WebSocket upgrades.
+The server is one `Bun.serve` instance created by `createServer({ vault, memory?, port? })`.
+Routes are dispatched by exact `"<METHOD> <pathname>"` keys in either `routes` (reads) or
+`mutatingRoutes` (writes), except for the `GET /terminal`, `GET /chat`, and `GET /ui` WebSocket
+upgrades.
 
 **In this reference:**
 - [Server fundamentals](#server-fundamentals) — dispatch, caching, error-code mapping, CORS
@@ -17,8 +24,12 @@ The server is a single `Bun.serve` instance created by `createServer({ vault, me
 
 ### Dispatch and the two tables
 - The fetch handler builds `route = `${req.method} ${url.pathname}`` and looks it up as `routes[route] ?? mutatingRoutes[route]`. No match → `404 "not found"`.
-- **`routes`** (the "read table") — reads + a handful of POSTs that are NOT vault mutations (search, rows resolution, backup, open-folder, relay ingest, daemon writes). Handlers in this table do **not** auto-invalidate caches or publish SSE.
-- **`mutatingRoutes`** — every route here is wrapped by `mutatingHandler(run, pathOf?)`, which after running the handler calls `invalidate(...paths)` (bump `version`, clear the touched caches, publish an SSE event). Never bump `version` manually in a mutating route — the wrapper does it.
+- **`routes`** (the read table) contains reads and POSTs that are not vault mutations: search,
+  row resolution, backup, open-folder, relay ingestion, and daemon writes. These handlers do not
+  automatically invalidate caches or publish SSE.
+- **`mutatingRoutes`** wraps each route with `mutatingHandler(run, pathOf?)`. After the handler
+  runs, it calls `invalidate(...paths)`, which bumps `version`, clears affected caches, and
+  publishes an SSE event. Do not bump `version` manually in a mutating route.
 
 ### `mutatingHandler` mechanics
 `mutatingHandler(run, pathOf?)` clones the request, runs `run(req, url)`, then if `pathOf` is supplied it re-parses the cloned JSON body and passes the result to `pathOf(body)`:
@@ -589,11 +600,12 @@ Dual-mode SRS review.
 - **`pathOf`:** `file` — row-based reviews invalidate the base file; legacy markdown reviews leave `pathOf` returning `undefined` → full invalidation.
 
 ### `POST /daily-note`
+> Listed in the read `routes` table, NOT `mutatingRoutes` — so the no-op case (note already exists) doesn't bump version / broadcast SSE. It's a plain async function, not wrapped in `mutatingHandler`, so it has no `pathOf` at all; when it DOES create the note it calls `await invalidate(path)` itself, invalidating only that path.
 - **Body:** `{ id: string }` — the id of a daily-note config in `.settings`'s `dailyNotes:` list.
-- **Action:** computes today's path (`dailyNotePath(config, now)`). If it already exists, returns it **without** clobbering; otherwise creates it from the configured template (`dailyNoteContent`).
+- **Action:** computes today's path (`dailyNotePath(config, now)`). If it already exists, returns it **without** clobbering and invalidates nothing; otherwise creates it from the configured template (`dailyNoteContent`) and invalidates just the new note's path.
 - **Response:** `{ path: string, created: boolean }` — `created: true` on first creation, `false` when reopening an existing note. Example created path: `Journal/2026-06-07 journal.md`.
 - **Errors:** `400 "unknown daily note: <id>"` for an unknown id.
-- **`pathOf`:** none passed → full invalidation.
+- **Cache/SSE:** `created: false` → none. `created: true` → `invalidate(path)` for the new note's path only (not a full invalidation).
 
 ### `POST /daemon/pages`
 - **Body:** `CreatePageInput` = `{ slug: string, title?, body?, actions?: PageAction[], source?, deliverAt? }`.
@@ -748,6 +760,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/tasks/migration` | read | no |
 | POST | `/rows` | read | no |
 | POST | `/backup` | read | no |
+| POST | `/daily-note` | read | yes (path, only when it creates the note) |
 | POST | `/open-folder` | read | no |
 | POST | `/search` | read | no |
 | POST | `/search-prompt` | read | no |
@@ -795,7 +808,6 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/tasks/archive` | mutating | yes |
 | POST | `/tasks/create` | mutating | yes (full) |
 | POST | `/cards/review` | mutating | yes |
-| POST | `/daily-note` | mutating | yes (full) |
 | POST | `/daemon/pages` | mutating | yes (page path) |
 | POST | `/daemon/owner` | mutating | yes (no-op scope) |
 | POST | `/gcal/sync` | mutating | yes (base file) |

@@ -2,7 +2,7 @@
 
 The daemon is Bismuth's always-on background runtime — the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes many per-vault "brains"**: launched by launchd (macOS) or systemd (Linux), it stays resident and, for **every vault whose `settings.daemon.enabled` is on**, supervises that vault's background processes, runs its crons, and recovers interrupted work after a crash. It holds **no** persistent conversation session — sessions are minted on demand when a cron/page fires (and only on the owner device, gated in `sendMessage`). Machine-level identity (device-id, owner, devices, pid, logs) lives in one place; each vault's brain (crons, processes, memory, session-id, identity) lives under `<vault>/.daemon`.
 
-This page documents the process lifecycle (`daemon/src/daemon/index.ts`), the per-vault session funnel (`daemon/src/daemon/session.ts`), the single-owner device gating it leans on (`daemon/src/lib/owner.ts`), and the install/service glue (`core/src/daemonInstall.ts` + `daemon/src/lib/platform.ts`).
+This page documents the process lifecycle (`daemon/src/daemon/index.ts`), the per-vault session funnel (`daemon/src/daemon/session.ts`), the single-owner device gating (`daemon/src/lib/owner.ts`), and the install/service glue (`core/src/daemonInstall.ts` + `daemon/src/lib/platform.ts`).
 
 Cross-links: [overview.md](overview.md) (Bismuth's read window onto the daemon), [crons-and-processes.md](crons-and-processes.md) (the scheduler + process supervisor), [storage.md](storage.md) (the on-disk layout), [memory.md](memory.md) (the 3rd-brain memory store), [communication.md](communication.md) (sessions, MCP tools, relay hooks). README: [../README.md](../README.md).
 

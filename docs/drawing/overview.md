@@ -1,8 +1,8 @@
 # Drawing: `.draw` Format, Tools, and Export
 
-This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed images and in-place ink on image/PDF previews, rendering architecture, and PNG/PDF export (both headless and browser-side). Read this if you're touching the drawing model, wiring up a new export path, or debugging why a stroke or image renders incorrectly.
+This page documents Bismuth's vector drawing system: the `.draw` JSON format, smoothing, tools and colors, paper backgrounds, placed images, in-place image/PDF ink, rendering, and PNG/PDF export in both headless and browser paths. Use it when changing the model or export pipeline, or debugging a stroke or image.
 
-The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also holds the **ink drawn on an image or a PDF**: its preview tab takes ink in place with the same pen/highlighter tools, stored in a `<file>.draw` sidecar that is only created once something is drawn (see **Images**).
+The subsystem separates a headless backend (`core/src/drawing/`) from a browser frontend (`app/src/drawing/`). Its rendering primitives are pure and independently tested without the DOM. A `.draw` file also stores ink placed directly on an image or PDF preview. That preview uses the same pen and highlighter tools and creates the `<file>.draw` sidecar only after the first mark (see **Images**).
 
 ### What's in here
 

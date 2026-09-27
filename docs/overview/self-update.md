@@ -1,10 +1,15 @@
 # Self-Update (git-based)
 
-The bundled Bismuth app updates itself in place: it detects when the installed `/Applications/Bismuth.app` is behind `origin/main`, and on one click it pulls the latest source, rebuilds the app, and hot-swaps the `.app` bundle — no re-download, no installer, no Homebrew. The whole mechanism is git + a local rebuild, because the app was built from a local clone and the build baked in where that clone lives.
+The bundled Bismuth app can update itself in place. When the installed
+`/Applications/Bismuth.app` is behind `origin/main`, one click pulls the latest source, rebuilds
+the app, and swaps the `.app` bundle. The mechanism uses git and a local rebuild because the build
+records the local clone it came from.
 
 This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, the **on-launch background install** of the bundled `@bismuth/daemon` service, and the **opt-in app self-update**.
 
-> **Self-disables outside a bundled source build.** In `bun run dev:browser` (or any build with no `build-origin.json` / no `BISMUTH_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
+> **Unavailable outside a bundled source build.** In `bun run dev:browser` (or any build with no
+> `build-origin.json` / no `BISMUTH_APP_PATH`), `GET /update/status` returns `available:false`
+> with a `reason`, and the banner does not appear.
 
 ---
 
@@ -71,7 +76,7 @@ interface UpdateStatus {
 Steps (all best-effort, injectable `GitRunner` for tests):
 
 1. `readBuildOrigin()` — no origin/`repoRoot` → `{ available:false, reason:"not-a-source-build" }`.
-2. `git -C <repoRoot> rev-parse --is-inside-work-tree` — fails → `reason:"not-a-git-repo"`.
+2. `git -C <repoRoot> rev-parse --is-inside-work-tree` — fails → `classifyGitFailure()` inspects the spawn result/stderr and returns one of four reasons: `git-not-found` (the spawn itself failed — no `git` on `PATH`), `access-denied` (macOS TCC permission denial — the common case for a Finder-launched app reaching a dev clone under `~/Documents`), `repo-missing` (stderr mentions "no such file or directory"), or `not-a-git-repo` (the fallback, when nothing more specific matched).
 3. `git fetch --quiet origin main` (best-effort, 20 s; offline still reports against the last-known remote).
 4. `git rev-parse origin/main` — fails → `reason:"no-upstream"`.
 5. `localSha = git rev-parse HEAD`, `remoteSha = origin/main`, `behind = git rev-list --count <baseRev>..origin/main` where `baseRev = builtSha || 'HEAD'` (see below), `dirty = git status --porcelain` non-empty.
@@ -162,14 +167,13 @@ It runs at most once per session (a module-level `autoStarted` flag, reset only 
 
 ### `app/src/UpdateBanner.tsx` — the slim top bar
 
-Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to render "Bismuth update available — N commit(s) behind". The **UPDATE** button's `update()` flow:
+Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to render "Bismuth update available — N commit(s) behind". The **UPDATE** button's `update()` calls the same shared `applyUpdateAndRelaunch()` pipeline described above (`app/src/updateCheck.ts`), reflecting each `phase` in the button ("Pulling…" → "Building… (a few min)" → "Relaunching…"):
 
-1. `POST /update/apply` (`api.applyUpdate()`). If it comes back `phase:"error"`, toast the message and stop.
-2. Poll `GET /update/progress` (`api.updateProgress()`) every 2 s, reflecting `phase` in the button ("Pulling…" → "Building… (a few min)" → "Relaunching…"). Transient poll failures are ignored (keep polling).
-3. On `phase:"ready"` → call `quitApp()`.
-4. On `phase:"error"` → toast `message`, re-enable. On `phase:"idle"` (already up to date) → stop + `recheckUpdate()`.
+1. `result:"relaunching"` (the pipeline reached `phase:"ready"` and invoked `quit_app`) → return; the detached relauncher takes over.
+2. `result:"error"` → toast `message`, re-enable the button.
+3. `result:"up-to-date"` (already `phase:"idle"`) → re-enable the button; the pipeline itself already called `recheckUpdate()`.
 
-`quitApp()` dynamically imports `@tauri-apps/api/core` and `invoke("quit_app")`. If that import/invoke fails (e.g. not in Tauri), it falls back to a toast: "Update built — quit and reopen Bismuth to apply it."
+Inside the shared pipeline, on `phase:"ready"` it dynamically imports `@tauri-apps/api/core` and `invoke("quit_app")` so the detached relauncher can swap the `.app` bundle + reopen it. If that import/invoke fails (e.g. not in Tauri, or the app already quit), the failure is silently swallowed — there is no fallback toast; the pipeline still resolves `{result:"relaunching"}`.
 
 ---
 
@@ -228,7 +232,7 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 |---|---|
 | `bun run dev:browser` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `BISMUTH_APP_PATH`/`BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
 | Build with no `build-origin.json` | `readBuildOrigin()` → `null` → `reason:"not-a-source-build"`. |
-| `repoRoot` isn't a git checkout | `reason:"not-a-git-repo"`. |
+| `repoRoot` isn't a git checkout, `git` isn't on `PATH`, or (commonly, on a Finder-launched app reaching a dev clone under `~/Documents`) macOS TCC denies access | `reason` is one of `not-a-git-repo` / `git-not-found` / `repo-missing` / `access-denied`, per `classifyGitFailure()` above. |
 | No `origin/main` upstream | `reason:"no-upstream"`. |
 | Dirty working tree | Status still reports `available`, but `POST /update/apply` refuses (`"won't overwrite"`). |
 

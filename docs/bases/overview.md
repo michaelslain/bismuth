@@ -2,11 +2,11 @@
 
 A **base** in Bismuth is an ordinary markdown note whose YAML frontmatter contains `type: base`. There is **no `.base` file extension** — a base is just a `.md` file. Its frontmatter declares a *source* (where rows come from), optional *filters*, *formulas*, per-property metadata, and one or more *views* (table, cards, kanban, calendar, …). At render time, [`FileView`](../../app/src/FileView.tsx) detects `type: base` and routes the file to [`BaseView`](../../app/src/bases/BaseView.tsx) instead of the text editor; `BaseView` resolves the source to a uniform list of rows and renders the active view.
 
-This document is the reference for anyone writing or debugging a base file: what a base *is*, how it is detected and routed, the complete frontmatter shape, the views array, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
+This covers what a base *is*, how it is detected and routed, the complete frontmatter shape, the views array, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
 
 For the closely-related embedded ` ```query ` block (a *view into* a base inside a regular note), see the [query block doc](./query-block.md). For sources and composition, see the [sources doc](./sources.md).
 
-**What's in here, in order:**
+**In order:**
 
 - **What a base is**, and how `FileView`/`BaseView` route and resolve it — the routing/caching subsections are implementation detail; skip ahead if you just want to write one.
 - **The frontmatter reference** — `filters`, `formulas`, `properties`, `views`, `source`, `schema`.
@@ -121,9 +121,9 @@ source checkbox line; ticking one in the second rewrites the stored row.
 
 [`FileView`](../../app/src/FileView.tsx) is the per-`.md` router. The flow:
 
-1. `FileView` fetches the file body **once** via `api.read(path)` (a missing/unreadable file is treated as `""`, so a brand-new file routes to the Editor, not BaseView).
+1. `FileView` fetches the file body **once**, but through the note-body cache — `readNoteCached(path)` (`app/src/noteCache.ts`), not a direct `api.read` — so a reopen of an unchanged note resolves synchronously (no spinner); a missing/unreadable file is treated as `""`, so a brand-new file routes to the Editor, not BaseView.
 2. It parses the frontmatter client-side with the same `parseFrontmatter` the backend's `/meta` uses, and checks `parseFrontmatter(text).data.type === "base"`.
-3. If true → render `<BaseView path={path} body={body()} onOpen={…} />`. The already-read `body` is **handed to BaseView** so it does not re-read `/file` on first paint.
+3. If true → render `<BaseView path={path} body={…} onOpen={…} />`, but the already-read body is **not** handed over unconditionally: `bodyForPath(path, peekNoteCache(path), prefetched)` (`app/src/bases/prefetchedBody.ts`) only hands over a body that is PROVABLY that path's text — preferring `peekNoteCache(path)` (always keyed correctly), and falling back to the fetched resource's value only when it is tagged with this same path. A foreign/lagging body (`isForeignBody`) is refused (logged via `console.warn`) and `BaseView` reads `/file` itself instead: one extra round-trip, never wrong. This machinery exists because a real bug shipped a wrong base's body into a just-opened tab (a calendar tab showing the previously opened base).
 4. If false → render the text `<Editor>`.
 5. While the body is still loading, `FileView` shows a neutral `<Loading />` spinner (so a base never flashes the raw editor first).
 
@@ -168,6 +168,7 @@ Two `createResource`s, kept deliberately separate so a view-tab click can never 
   Own rows (`{ kind: "base" }` with no `ref`) are read straight off the already-parsed document. Everything else — notes / tasks / a real base-ref composition — is resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`), which follows base composition and scoped tasks. No per-kind logic is duplicated on the client.
 
 - Both caches are module-level `RowCache` instances (`bases/rowCache.ts`), invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base, or switching back to a previously-active view, paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (a spec resolves server-side, so the client can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
+- Both also carry **token-based race protection**: before an async fetch starts, `BaseView` claims a token via `docCache.begin(key)` / `rowCache.begin(key)` (an incrementing per-key counter), then passes it to the matching `set(key, value, version, token)`. A `set()` whose token is no longer the latest one `begin()` issued for that key is dropped — and returns `false` — rather than overwriting fresher data; this is what stops a slow fetch that started before a newer one already settled from clobbering it. A caller that omits the token keeps the old unconditional-write behavior.
 - An SSE version bump (a note feeding this base changed, even in another pane) re-resolves both the document and the active view's rows, filtered through `changeAffectsView` below.
 
 #### Skipping irrelevant re-resolves (`changeRelevance.ts`)
@@ -594,4 +595,4 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - [Embedded query block](./query-block.md) — the ` ```query ` block (a view into a base inside a note).
 - [View docs](./views/) — one doc per `ViewType`.
 
-Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/FileView.tsx`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/rows.test.ts`
+Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`, `app/src/FileView.tsx`, `app/src/noteCache.ts`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/rows.test.ts`

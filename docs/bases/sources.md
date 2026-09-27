@@ -1,17 +1,14 @@
 # Bases: Sources & Row Resolution
 
-Every Bismuth base and every view ultimately resolves a **`SourceSpec`** into a
-uniform `Row[]`. A `SourceSpec` is one of three kinds — `base`, `notes`, or
-`tasks` — and the resolver in `core/src/bases/source.ts` turns it into rows by
-reading vault notes, extracting checkbox tasks, or recursively rendering another
-base (composition). Read this if you're writing a `source:` in frontmatter,
-composing one base from another, or scoping tasks with `from:` — it covers the
-`SourceSpec` shape, how a frontmatter `source:` string/object is normalized into
-one (`normalizeSource`), the `from: [[Base]]` scoping mechanism, recursive base
-composition with cycle-guarding (including symlink cycles), the canonical row
-body parser (`rows.ts`), and the server-side `POST /rows` endpoint with its
-caching and in-flight dedup. Worked examples (incl. scoped tasks) are drawn from
-the actual unit tests.
+Every Bismuth base and every view resolves a **`SourceSpec`** — `base`, `notes`,
+or `tasks` — into a uniform `Row[]`. `core/src/bases/source.ts` reads vault
+notes, extracts checkbox tasks, or recursively renders another base
+(composition). Covers the `SourceSpec` shape, `normalizeSource` (the
+string/object coercion of a frontmatter `source:`), `from: [[Base]]` scoping,
+recursive base composition with cycle-guarding (including symlink cycles), the
+canonical row body parser (`rows.ts`), and the server-side `POST /rows`
+endpoint's caching and in-flight dedup. Worked examples, including scoped
+tasks, are drawn from the unit tests.
 
 See also: [bases overview](./overview.md), [the `query` block & flat view specs](./query-block.md), [tasks](../tasks/syntax.md).
 
@@ -322,12 +319,15 @@ return isDsl
    Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, `sort by …`),
    `translateTaskDsl` (`core/src/bases/taskDsl.ts`) turns it into a Bases
    filter expression **plus** any `sort by …` line as a `SortSpec[]`, and
-   `applyTaskSort` applies that sort in the same pass — this is the one place
-   a legacy `sort by priority` still sorts by rank rather than alphabetically
-   (see [tasks](../tasks/query-dsl.md)). A modern `where` (already a Bases
+   `applyTaskSort` applies that sort in the same pass, ranking a legacy
+   `sort by priority` by urgency rather than alphabetically (see
+   [tasks](../tasks/query-dsl.md)). A modern `where` (already a Bases
    expression, no DSL) is used as-is and carries no sort of its own — sorting
    for a migrated block comes from the flat spec's own `sort:` key instead
-   (see [query blocks](./query-block.md)).
+   (see [query blocks](./query-block.md)), which ranks a `priority` property
+   by the same urgency ordering: `applyTaskSort` and the flat spec's `sort:`
+   both go through one shared comparator, `compareForSort` (`core/src/bases/query.ts`),
+   so a migrated block sorts identically to its un-migrated form.
 
 From `source.test.ts`:
 
@@ -344,7 +344,12 @@ resolveSource({ kind: "tasks", where: "not done" }, { root: dir })
 export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row[]> {
   const seen = ctx.seen ?? new Set<string>();
   const fa = await getFileAccess();
-  const realPath = await fa.realPath(path);     // dereference symlinks for cycle detection
+  // Rooted against the vault first: FileAccess.realPath takes an ABSOLUTE path, so
+  // passing the vault-relative `path` (an earlier bug) resolved against the server's
+  // cwd instead, leaving `seen`/the parse cache cwd-dependent and doing no real
+  // symlink resolution at all.
+  const absPath = `${ctx.root.replace(/\/+$/, "")}/${path}`;
+  const realPath = await fa.realPath(absPath);  // dereference symlinks for cycle detection
   if (seen.has(realPath)) return [];            // cycle → []
   seen.add(realPath);
 
@@ -353,11 +358,26 @@ export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row
   catch { return []; }                          // missing/unreadable → []
 
   const name = fileBasename(path);
-  const { config, rows } = parseBaseFile(text, { name, path });
+  // Cached by CONTENT (not mtime — see below), keyed on `${realPath}\0${path}`, so a
+  // base re-parsed along a composition chain skips parseBaseFile when its raw text
+  // hasn't changed since the last resolve.
+  const parseKey = `${realPath}\0${path}`;
+  const cached = baseParseCache.get(parseKey);
+  const fresh = cached?.raw === text;
+  const { config, rows } = fresh ? cached! : parseBaseFile(text, { name, path });
+  if (!fresh) baseParseCache.set(parseKey, { raw: text, config, rows });
   if (!config.source) return rows;              // own-rows (inline-table) base
   return resolveSource(config.source, { ...ctx, seen });  // re-run its OWN source
 }
 ```
+
+`baseParseCache` is a module-level `Map` keyed on content equality, not mtime —
+filesystem mtime resolution is commonly 1s or coarser, so an edit-then-immediate-read
+within the same tick could otherwise serve a stale parse. The cached value embeds
+`config`/`rows` (whose `rows` carry the write-back `path` via `syntheticBaseFile`),
+which `realPath` no longer determines once symlinked aliases collapse — so the parse
+cache keys on both `realPath` and `path`, while `seen` (cycle detection) stays on
+`realPath` alone.
 
 The composition rule, stated plainly:
 
@@ -636,12 +656,8 @@ The handler (`core/src/server.ts`):
    `tasksCache.warm()`).
 
    Invalidation happens in `applyDirty` (after the 250ms file-watch debounce),
-   and rows and tasks are **not** treated the same:
+   and rows and tasks are now patched the same way:
 
-   - **`tasksCache`** is always invalidated outright on any vault-touching
-     change — `tasksCache.invalidate()` — and rebuilds lazily on the next
-     read, since tasks derive from arbitrary body checkboxes with no cheap
-     incremental patch.
    - **`rowsCache`** is *patched* rather than dropped when the change lists
      specific paths: `await patchVaultRows(cfg.vault, paths, rowsCache).catch(() =>
      rowsCache.invalidate())`. `patchVaultRows` (`core/src/basesData.ts`)
@@ -655,6 +671,15 @@ The handler (`core/src/server.ts`):
      `rowsCache.invalidate()` when there's nothing safe to patch (no cached
      feed yet, the listing failed, or an unreadable note). A change with no
      specific paths (`paths.length === 0`) invalidates outright.
+   - **`tasksCache`** is patched the same way, via `patchTaskRows`
+     (`core/src/bases/tasksData.ts`): `await patchTaskRows(cfg.vault, paths, tasksCache).catch(() =>
+     tasksCache.invalidate())`. Unlike `patchVaultRows`, task-row ORDER doesn't need to
+     match a full rebuild — `reconcileRows` (`app/src/bases/reconcileRows.ts`) keys a task
+     row by `path + description`, not array position — so `patchTaskRows` simply splices out
+     every existing row for a changed path and appends the freshly re-extracted tasks for
+     those paths (`collectTasksFromPaths`), rather than re-walking them into position. It
+     falls back to `tasksCache.invalidate()` on the same failure conditions as the rows
+     patch, and a change with no specific paths invalidates outright.
 
    This patch is **awaited** before the SSE publish (unlike the search-index
    patch, which is fire-and-forget) — a base render persists on screen, so a
@@ -687,19 +712,28 @@ The frontend never re-implements per-kind resolution — it sends the spec to
 `/rows`. `app/src/api.ts`:
 
 ```ts
-resolveRows: (spec: SourceSpec) => {
+resolveRows: (spec: SourceSpec, version?: number) => {
   const key = JSON.stringify(spec);
   const inflight = rowsInflight.get(key);
-  if (inflight) return inflight;                 // dedup identical concurrent specs
-  const p = postJson<Row[]>("/rows", { spec }).finally(() => rowsInflight.delete(key));
-  rowsInflight.set(key, p);
+  if (inflight && inflight.version === version) return inflight.promise;
+  const p = postJson<Row[]>("/rows", { spec }).finally(() => {
+    if (rowsInflight.get(key)?.promise === p) rowsInflight.delete(key);
+  });
+  rowsInflight.set(key, { version, promise: p });
   return p;
 },
 ```
 
 `api.resolveRows` **dedups** identical concurrent specs (the same base reopened
 in a split, or many ` ```query ` blocks pointing at one base) onto a single
-in-flight POST, keyed by the serialized spec and cleared once it settles.
+in-flight POST, keyed by the serialized spec and cleared once it settles — but
+only when the two calls share the same `version`. `version`, when passed, is the
+server version the caller is resolving AT; a call issued after a version bump
+(e.g. right after a write) always issues a fresh POST rather than dedupe onto an
+older in-flight one for the same spec, so a write is never masked by a stale
+in-flight resolve. A caller that omits `version` dedupes purely by spec, matching
+the historical behavior — every call site except `BaseView.tsx`'s revalidation
+path (`app/src/bases/BaseView.tsx`), which stamps the call with `serverVersion()`.
 
 `BaseView` splits this into two steps, on purpose: parsing the file (the
 DOCUMENT) is one HTTP round-trip that must not repeat on every view-tab
@@ -766,19 +800,36 @@ freshness-tracked against the SSE server version (`serverVersion.ts`):
 - `peek(key)` → cached value (even if stale) or `undefined`.
 - `isFresh(key, version)` → true only when a non-stale entry exists at exactly
   `version`. On a fresh hit, `BaseView` **skips the `/rows` round-trip** entirely.
-- `set(key, value, version)` records a fresh entry.
+- `begin(key)` → claims a token for `key` before an async fetch starts, returning an
+  incrementing per-key counter (`tokens.get(key) ?? 0) + 1`, modeled on
+  `core/src/asyncCache.ts`'s `generation` counter one level more granular. The token
+  is passed to the matching `set()` call.
+- `set(key, value, version, token?)` records a fresh entry. When `token` is given,
+  the write is dropped — and `false` returned — unless it is still the LATEST token
+  `begin(key)` issued for this key; an older fetch settling late must not overwrite a
+  newer value. Callers that pass no token keep the unconditional always-writes
+  behavior.
 - `invalidate(version)` marks every entry resolved **before** `version` stale
   (a vault change can alter any base's rows, and the spec is resolved
   server-side so the client can't tell which — over-revalidating is safe). Cached
   values are kept so reopens still paint instantly.
 
+This token/`begin()` pairing is race protection: it drops a slow fetch that started
+before a newer one already settled, instead of letting it clobber fresher data with
+stale results — the same shape used by the `docCache` (document parse cache) and
+`rowCache` (resolved-rows cache) instances `BaseView.tsx` keeps, both `RowCache`s.
+Known gap, paired deliberately rather than routed around: if the newer fetch ERRORS
+it never calls `set()`, so its token stays "latest" and the older fetch's `set()`
+keeps returning `false` — the cache is stuck on its pre-race value until the next
+`invalidate()` lets a fresh `begin()`/`set()` pair revalidate it.
+
 In `BaseView`: an effect calls `rowCache.invalidate(serverVersion())` on every
 version bump; the resource re-runs on view-change **or** version bump; on a fresh
-cache hit it returns the cached rows without calling `/rows`; otherwise it
-resolves, then `rowCache.set(key, result, version)`. Solid keeps the previous
-value painted while revalidating, so reopening a base or opening it in a split
-paints instantly from the last resolution (a `BaseSkeleton` shows only on cold
-load).
+cache hit it returns the cached rows without calling `/rows`; otherwise it claims a
+token via `rowCache.begin(key)` before resolving, then `rowCache.set(key, result,
+version, token)`. Solid keeps the previous value painted while revalidating, so
+reopening a base or opening it in a split paints instantly from the last resolution
+(a `BaseSkeleton` shows only on cold load).
 
 ## Edge cases & gotchas (summary)
 
@@ -803,4 +854,4 @@ load).
 - **`POST /rows` is read-only despite being POST** — no cache invalidation, no
   SSE broadcast; it lives in the read route table.
 
-Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`

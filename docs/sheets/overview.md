@@ -1,12 +1,12 @@
 # Sheets Overview
 
-Bismuth supports in-vault spreadsheets via `.sheet` files — each file is a Univer workbook JSON snapshot persisted directly inside the vault. The spreadsheet editor is powered by `@univerjs/presets` v0.25, code-split so its large JS bundle loads only when a `.sheet` pane is first opened. The implementation spans four modules: `SheetView.tsx` (Solid component, lifecycle), `sheet/univerSheet.ts` (Univer adapter), `sheet/snapshot.ts` (pure parse/serialize), and `sheet/sync.ts` (external-edit reload guard). The Univer chrome is reskinned to match Bismuth's design system via `sheet/univer-theme.css` and `sheet/univer-icons.css`.
+Bismuth keeps spreadsheets in the vault as `.sheet` files: Univer workbook JSON snapshots. The `@univerjs/presets` v0.25 editor is code-split, so its large bundle loads only when a `.sheet` pane first opens. `SheetView.tsx` owns the Solid lifecycle; `sheet/univerSheet.ts` adapts Univer; `sheet/snapshot.ts` parses and serializes snapshots; and `sheet/sync.ts` guards external-edit reloads. `sheet/univer-theme.css` and `sheet/univer-icons.css` reskin Univer to match Bismuth.
 
 ---
 
 ## The `.sheet` File Format
 
-A `.sheet` file is the **plain-text JSON serialization of a Univer `IWorkbookData` object**, pretty-printed with 2-space indentation for human-readable diffs.
+A `.sheet` file is a plain-text serialization of a Univer `IWorkbookData` object, pretty-printed with 2-space indentation so its diffs remain readable.
 
 ### Structure overview
 
@@ -48,7 +48,7 @@ Verified in `snapshot.test.ts`.
 
 ## parse / serialize API (`sheet/snapshot.ts`)
 
-This module is **Univer-free** (no canvas, no DOM) and runs cleanly under Bun for unit testing.
+This module has no Univer, canvas, or DOM dependency, so Bun can test it directly.
 
 ### `WorkbookSnapshot`
 

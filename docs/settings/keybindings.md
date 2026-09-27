@@ -1,12 +1,14 @@
 # Keybindings
 
-Bismuth's global keyboard shortcuts are configured from the `keybindings:` section of `.settings` — all 49 catalog actions are read from that section at match time, never from a literal in a handler. What stays hardcoded is enumerated with a reason per file in `app/src/keybindingCoverage.test.ts`: a menu's or grid's own arrow-key navigation, a dialog's `Tab` focus trap, a find bar's Enter-steps-to-next-match — plus a set of per-widget Enter/Escape handlers still marked `PENDING SWEEP` that have not yet been migrated to `ui-confirm`/`ui-dismiss`. This is the reference for anyone rebinding a shortcut, debugging why a combo won't fire, or wiring up a new keyboard-triggered action: it documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
+Bismuth reads its 49 global shortcuts from the `keybindings:` section of `.settings` at match time. To rebind a command, change its combo there. This page explains the combo grammar, exact modifier rules, aliases, comma-separated alternatives, `event.code` fallback, and the full action catalog.
 
-Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts`'s `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`.
+`KEYBINDING_CATALOG` in `core/src/keybindings.ts` is the source of truth for every id, default combo, and description. The schema derives one `keybind` YAML key per catalog entry; `App.tsx` matches each `KeyboardEvent` with the pure matcher in `app/src/keybindings.ts`.
+
+Some keys deliberately remain local to their UI: list and grid arrow navigation, a dialog's `Tab` trap, and a find bar's Enter-to-next behavior. `app/src/keybindingCoverage.test.ts` records each exception, including widget-level Enter/Escape handlers still marked `PENDING SWEEP` rather than routed through `ui-confirm`/`ui-dismiss`.
 
 ## The `keybindings:` section
 
-In `.settings`, `keybindings:` is a nested object — one key per app-level action, whose value is a `keybind` combo string. It is authored last in a freshly generated `.settings` file (it "sits at the end of the file"), and is a regular nested object (not a list) so the per-key merge — autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` — work without any special-casing.
+In `.settings`, `keybindings:` is a nested object: one `keybind` combo string for each app-level action. A generated file places it last. It stays an object, not a list, so per-key merge, autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` work without special handling.
 
 ```yaml
 keybindings:
@@ -231,7 +233,9 @@ Most transient UI — modals, popovers, context menus, inline rename fields, the
 
 ### Known gaps
 
-Not everything in the allow-list is a design decision. These surfaces have their own local Enter-to-commit / Escape-to-cancel / F2-to-rename handling that was never migrated to `ui-confirm`/`ui-dismiss`, tagged `PENDING SWEEP` in `app/src/keybindingCoverage.test.ts` (see the task-12 report for why they were left): `editor/drawBlock.ts`, `calendar/components/GcalSyncPanel.tsx`, `calendar/components/EventModal.tsx`, `calendar/components/CategoryPanel.tsx`, `chat/ChatQuestionCard.tsx`, `graph/EmbeddedGraph.tsx`, `bases/BaseSettings.tsx`, `bases/EditCardsModal.tsx`, `bases/CardsView.tsx`, `preview/BookmarkRow.tsx`, `ExportView.tsx`. One more, `ui/ToggleRow.tsx`, is tagged `KNOWN GAP` rather than `PENDING SWEEP` — its Enter/Space toggle-activation looks like a genuine `ui-confirm` candidate, not a spatial contract, flagged for a follow-up task rather than fixed in place. If rebinding doesn't seem to work somewhere, check this list before assuming the catalog is wrong.
+Not everything in the allow-list is a design decision. These surfaces have their own local Enter-to-commit / Escape-to-cancel / F2-to-rename handling that was never migrated to `ui-confirm`/`ui-dismiss`, tagged `PENDING SWEEP` in `app/src/keybindingCoverage.test.ts` (see the task-12 report for why they were left): `editor/drawBlock.ts`, `calendar/components/GcalSyncPanel.tsx`, `calendar/components/EventModal.tsx`, `calendar/components/CategoryPanel.tsx`, `chat/ChatQuestionCard.tsx`, `graph/EmbeddedGraph.tsx`, `bases/BaseSettings.tsx`, `bases/EditCardsModal.tsx`, `bases/CardsView.tsx`, `preview/BookmarkRow.tsx`, `ExportView.tsx`. If rebinding doesn't seem to work somewhere, check this list before assuming the catalog is wrong.
+
+`ui/ToggleRow.tsx` was one such gap — its Enter/Space toggle-activation looked like a genuine `ui-confirm` candidate, not a spatial contract — and has since been fixed rather than left pending: Enter now reads `isConfirmKey` (`ui-confirm`) directly, same as every other migrated surface. Space stays a hardcoded literal on purpose — it is the control's own activation gesture under the WAI-ARIA switch pattern (`role="switch"`), not an independently rebindable command, the same treatment `daemon/DaemonRow.tsx` and `bases/KanbanCard.tsx` get for their own `role="button"` Space handling.
 
 ## The full `KEYBINDING_CATALOG`
 

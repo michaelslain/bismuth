@@ -1,14 +1,18 @@
 # Daemon tools (daemon-gated, per-vault)
 
-When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server exposes **eleven more tools** — the daemon control surface: crons, background processes, the daemon activity log, the daemon inbox (pages), and daemon status / device ownership. They live in `mcp/src/daemon.ts`.
+When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server adds eleven tools from `mcp/src/daemon.ts`. They manage crons, background processes, the activity log, inbox pages, daemon status, and device ownership.
 
 ## Gating (same signal as the memory tools)
 
-The gate is `daemonEnabled()` — which is just `memoryDir() != null`, i.e. `process.env.BISMUTH_MEMORY_DIR` is set. `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` (pointing at `<vault>/.daemon/memory`) into a Bismuth tab's PTY **only** when `settings.daemon.enabled` is on for that vault, and the daemon's own session sets it explicitly; the MCP child inherits it. So `ListTools` returns `daemonEnabled() ? [...always-on, ...memoryTools, ...daemonTools] : always-on` — outside a daemon-enabled session a machine-wide Claude session never even sees these tools, so they don't tax its context. (This is the same precedent as the memory tools, not the always-on six — see [overview.md](overview.md).)
+`daemonEnabled()` is the gate: it is `memoryDir() != null`, meaning `process.env.BISMUTH_MEMORY_DIR` is set. `core/src/terminal.ts` injects that variable, pointing to `<vault>/.daemon/memory`, into a Bismuth tab's PTY only when `settings.daemon.enabled` is enabled for that vault. The daemon session sets it explicitly, and its MCP child inherits it.
+
+As a result, `ListTools` returns `daemonEnabled() ? [...always-on, ...memoryTools, ...daemonTools] : always-on`. A machine-wide Claude session outside a daemon-enabled vault does not see these schemas or pay their context cost. This follows the memory-tools precedent rather than the always-on six; see [overview.md](overview.md).
 
 ## Why first-class tools here (vs. app control's "zero new tools")
 
-App control deliberately adds no MCP schemas because it's always-on machine-wide. The daemon tools are different: they're **daemon-gated**, so they cost context only in a session that actually has a daemon — and surfacing them as named tools makes the daemon's own session discover its control surface (run a cron, pause a process, author an inbox page) without having to know the exact `bismuth …` incantation. Under the hood they still **bridge the existing `bismuth` CLI** (`daemon` + `page` groups via `mcp/src/cli.ts`'s `runCli`) rather than reimplementing daemon logic — one code path per operation, and no `@bismuth/core` dependency added to this workspace.
+App control adds no MCP schemas because it is available machine-wide. These tools appear only in a daemon-enabled session, so named schemas are useful without adding a global context cost: the daemon can discover how to run a cron, pause a process, or create an inbox page.
+
+They still bridge the existing `bismuth` CLI — its `daemon` and `page` groups through `mcp/src/cli.ts`'s `runCli` — rather than reimplementing daemon behavior. Each operation therefore has one implementation path, and this workspace does not gain an `@bismuth/core` dependency.
 
 ## The tools
 

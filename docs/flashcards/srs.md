@@ -1,6 +1,6 @@
 # Flashcards / SRS — Deep Reference
 
-This document covers Bismuth's spaced-repetition system end-to-end: the two card models (markdown cards embedded in notes, and row cards stored in base files), the SM-2 scheduler, the deck/tag convention, bidirectional and cram modes, and every HTTP endpoint that reads or writes card data. It's for anyone implementing a new SRS-backed surface, tuning the scheduler, or debugging why a card scheduled the way it did. The frontend review UI (`FlashcardsView.tsx`) is described only as far as it determines API behavior and scheduling semantics.
+This page defines Bismuth's spaced-repetition system: markdown cards in notes, row cards in bases, the SM-2 scheduler, deck tags, bidirectional and cram modes, and every HTTP read/write endpoint. Use it when building an SRS surface, tuning scheduling, or tracing a card's result. It covers `FlashcardsView.tsx` only where the UI determines API behavior or scheduling semantics.
 
 ---
 
@@ -22,7 +22,7 @@ This document covers Bismuth's spaced-repetition system end-to-end: the two card
 
 ## Two Card Models
 
-Bismuth has two independent card models that share the same SM-2 scheduler but differ in how content is stored and how scheduling is persisted:
+Bismuth has two card models. They share the SM-2 scheduler but store content and schedules differently:
 
 | Feature | Markdown cards | Row cards |
 |---|---|---|
@@ -409,6 +409,8 @@ Cram is toggled by the CRAM button in the deck header. Toggling resets the posit
 Source: `core/src/server.ts`
 
 All `/cards/*` read endpoints are GET requests in the read-only route table and do not trigger cache invalidation. `POST /cards/review` goes through `mutatingHandler` and invalidates the vault cache for the file written.
+
+**AI-visibility filtering applies to all four read endpoints.** `GET /cards/decks`, `/cards/all`, `/cards/due`, and `/cards/note` each call `denyEntriesForRequest(req)` and filter their results before returning — `filterByPath(cards, denyEntries, c => c.notePath)` drops any card whose note is AI-visibility-denied for the requesting caller, and `/cards/note` returns **403** outright (`isDeniedPath`) when the requested note itself is denied. `/cards/decks` recomputes deck totals/due-counts from its own filtered card list rather than calling `collectDecks` (which re-derives from an unfiltered `collectCards`), so a restricted note's cards never leak through as deck aggregates either. See [vault/visibility.md](../vault/visibility.md) for what AI-visibility denial means and how it's configured.
 
 ### `GET /cards/decks`
 

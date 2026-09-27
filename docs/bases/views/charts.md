@@ -1,6 +1,6 @@
 # Chart Views: bar, line, stat, heatmap
 
-Bismuth provides four chart view types — `bar`, `line`, `stat`, and `heatmap` — all of which are rendered from the same data-shaping pipeline in `core/src/bases/chart.ts`. Each view type is declared inside the `views:` array of a `type: base` markdown file by setting `type:` to the corresponding string. All four share the same axis/aggregation configuration fields (`x`, `y`, `aggregate`, `bin`) defined on `ViewConfig` in `core/src/bases/types.ts`; the heatmap overrides `bin` to `"day"` unconditionally. Rows flow through `buildChartData()` which buckets them, aggregates numeric values, and returns sorted `ChartPoint[]` consumed by each renderer.
+Bismuth provides four chart view types — `bar`, `line`, `stat`, and `heatmap` — all rendered from the same data-shaping pipeline in `core/src/bases/chart.ts`. Each is declared inside a `type: base` file's `views:` array by setting `type:` to the corresponding string. All four share the same axis/aggregation fields (`x`, `y`, `aggregate`, `bin`) on `ViewConfig` in `core/src/bases/types.ts`; the heatmap overrides `bin` to `"day"` unconditionally. Rows flow through `buildChartData()`, which buckets them, aggregates numeric values, and returns sorted `ChartPoint[]` consumed by each renderer.
 
 **In this doc:** the shared bucketing/aggregation pipeline every chart view runs through → the config fields all four share → per-view-type visual details and a minimal example each (bar, line, stat, heatmap) → edge cases and gotchas.
 
@@ -129,25 +129,21 @@ views:
 
 **File**: `app/src/bases/BarView.tsx`
 
-Renders a vertical bar chart as an inline SVG (`viewBox="0 0 800 300"`, `PAD=28`). Each bucket becomes one bar.
+Renders each bucket as one row of a character-grid bar chart, via `<AsciiChart series={...} width={32} />` (`app/src/ui/ascii/AsciiMeter.tsx`) — the same `#`-fill renderer the design system uses for its progress meters. There is no SVG; the whole chart is monospace text.
 
 ### Visual details
 
-- **SVG dimensions**: 800 × 300 logical units, scales responsively via `width: 100%` CSS.
-- **Padding**: 28px on all sides for axis clearance.
-- **Bar width**: `(800 - 56) / N` pixels per bar, minus 4px total gutter (2px each side), minimum 1px wide.
-- **Bar height**: proportional to `value / max`; `max` is floored to 1 to avoid division-by-zero on a single-value dataset.
-- **Corner radius**: `rx={4}` (rounded tops).
-- **Color**: cycles through 5 theme tokens in order:
+- **One row per bucket**, in a `<div style="white-space: pre">` inside `.barChart` (`app/src/bases/BarView.module.css`: `font-size: var(--fs-ui)`, `line-height: 17px`).
+- **Row layout**: `<label><bar of '#'><padding><value>` — the label is right-padded to the width of the longest label in the series (`chartLabelPad`), the bar is a run of `#` characters, then enough spaces to reach the chart's `width` (32 columns) plus one, then the raw numeric value with no formatting.
+- **Bar length**: `chartFill(value, max, width)` = `Math.round((value / max) * width)` (`app/src/ui/ascii/asciiMeterMath.ts`), where `max` is `chartMax(series)` — the largest value in the series, floored to `1` so an empty or all-≤1 series never divides by zero.
+- **Color**: cycles through 5 theme tokens by bar index, in order:
   1. `var(--graph-0, var(--teal))`
   2. `var(--graph-1, var(--blue))`
   3. `var(--graph-2, var(--violet))`
   4. `var(--graph-3, var(--green))`
   5. `var(--graph-4, var(--gold))`
-  Colors re-tint automatically when the user switches themes. With more than 5 bars the palette wraps modulo 5.
-- **Opacity**: `0.88` on each bar.
-- **X-axis labels**: rendered only when `data().points.length <= 16`. Labels are clipped to the bar width and use `"Monaspace Xenon"` monospace font at 10px, 50% opacity. With 17+ bars the label row is hidden.
-- **Tooltip**: each `<rect>` carries a `<title>` with `"<label>: <value>"`.
+  Colors re-tint automatically when the user switches themes. With more than 5 bars the palette wraps modulo 5 (`BAR_PALETTE[i % 5]` in `BarView.tsx`).
+- **No label cutoff, no tooltip**: every bucket's label is always shown as the row prefix — there is no bar-count threshold that hides labels (that gate now belongs to the line view's x-axis labels, below). No element carries a `title` attribute.
 - **Empty state**: `"No data to chart."` message when `points.length === 0`.
 
 ### Minimal base example (bar)
@@ -169,20 +165,22 @@ views:
 
 ## Line view (`type: line`)
 
-**File**: `app/src/bases/LineView.tsx`
+**File**: `app/src/bases/LineView.tsx` (layout: `app/src/bases/asciiLine.ts`)
 
-Renders a line chart with an area fill as an inline SVG (`viewBox="0 0 800 300"`, `PAD=28`).
+Renders a value over time as an ASCII line plot inside a `<pre>` block — `buildLinePlot(data().points)` lays the points onto a character grid, and `LineView` renders the result as text rows. There is no SVG.
 
 ### Visual details
 
-- **SVG dimensions and padding**: identical to BarView (800 × 300, PAD=28).
-- **X spacing**: evenly distributes points across `W - 2*PAD` pixels. With exactly 1 point, `step=0` (single centered dot).
-- **Line**: `<polyline>` in `var(--blue)`, `stroke-width="2"`, no fill.
-- **Area fill**: `<polygon>` closing down to the baseline at `y = H - PAD`, filled with a `linearGradient` from `var(--blue)` at 35% opacity (top) to 0% opacity (bottom).
-- **Dots**: one `<circle r="2.4">` per point in `var(--teal)`.
-- **No x-axis labels**: the line view does not render any text labels or axes.
-- **No tooltip**: individual point values are not exposed via title attributes.
-- **Empty state**: `"No data to chart."` when `points.length === 0` (the `geom()` memo returns `null`).
+- **Grid size**: `height` rows (default `9`) tall, `points.length * colWidth` columns wide (`colWidth` default `8`) — one column-slot per point, the point centered in its slot at column `i * colWidth + floor(colWidth / 2)`.
+- **Vertical scale**: each point's row is `rowFor(value, max, height)`, proportional to `max = Math.max(0, ...values, 1)` — floored to `1` so an all-zero or empty series never divides by zero. Row 0 is the top (the series max); the bottom row is `0`.
+- **Connecting glyphs**: between two consecutive points, each intervening column gets `/` (row decreasing), `\` (row increasing), or `-` (row unchanged), interpolated linearly between the two points' rows.
+- **Point markers**: each actual data point is drawn as `o`, painted last so it always wins over a connecting glyph landing on the same cell.
+- **Coloring**: each row is split into accent/blank runs (`LineSegment.accent`); non-blank runs (the `/ - \ o` glyphs) render through `<Text class={styles.glyph}>`, colored `var(--accent)`; blank runs are plain text, inheriting `.linePlot`'s `var(--faint)`.
+- **Y-axis gutter**: a 3-character tick column on the left — the top row shows the series max, the bottom row shows `0`, middle rows are blank.
+- **Baseline rule**: a `+---…` axis rule below the grid, sized to the plot width.
+- **X-axis labels**: one label per point, aligned under its column — but only when `points.length <= 16`; with 17+ points `axisLabels` is the empty string and the label row does not render.
+- **No tooltip**: individual point values are not exposed via `title` attributes.
+- **Empty state**: `"No data to chart."` when `plot().rows.length === 0` (zero points).
 
 ### Minimal base example (line)
 
@@ -203,36 +201,34 @@ views:
 
 ## Stat view (`type: stat`)
 
-**File**: `app/src/bases/StatView.tsx`
+**File**: `app/src/bases/StatView.tsx` (tile grid: `app/src/bases/StatTiles.tsx`)
 
-Renders a summary statistics view. The display mode switches between a single big number and a 4-card grid depending on how many points the chart data contains.
+Renders a summary as a grid of plain-number stat tiles — "the largest type in the system, and the one view with no ASCII chart at all" (`StatView.tsx`'s own comment). The number of tiles depends on how many points the chart data contains; there is no sparkline anywhere in this view.
 
-### Single-bucket mode (≤ 1 point)
+### Zero points
 
-When `data().points.length <= 1`, the view shows:
-- A large number in the mono face (`"Monaspace Xenon"`, `var(--fs-display)` = 24px, `.statValue` in `StatTiles.module.css`): the **total** of all point values (sum of the single bucket, or 0 when empty).
-- A subtitle line: `"total <valueLabel> · avg <avg>/bucket"`.
-- A sparkline SVG (200 × 36 px) drawn as a `<polyline>` in `var(--blue)`.
+`tiles()` returns `[]`, and `ChartFrame` renders the empty state `"No data to chart."` instead of any tiles.
 
-The sparkline uses 30px of vertical range (within a 34px viewport), with points mapped the same way as `buildChartData` — proportional to `max`. With zero points the sparkline is an empty string `""` (renders nothing).
+### One point
 
-### Multi-bucket mode (≥ 2 points)
+`tiles()` returns a single tile — `{ label: valueLabel, value: fmt(total) }` — rendered through the same `StatTiles` grid as the multi-point case: the same big-number styling (`.statValue`, `var(--fs-display)`, `var(--ui-font-stack)`), just one tile instead of four. There is no distinct "big number" treatment, no subtitle line, and no sparkline.
 
-When `data().points.length >= 2`, the view renders a 4-column grid of stat cards. The four cards are always:
+### Two or more points
 
-| Card | Label | Value |
+`tiles()` returns a 4-tile grid, always in this order:
+
+| Tile | Label | Value |
 |---|---|---|
-| 1 | `"total <valueLabel>"` | Sum of all bucket values (integer if whole, otherwise 1 decimal place) |
-| 2 | `"average / bucket"` | Mean of all bucket values (1 decimal place) |
+| 1 | `"total <valueLabel>"` | Sum of all bucket values (integer if whole, otherwise 1 decimal place); `tone: "accent"` (colored `var(--accent)`) |
+| 2 | `"average / bucket"` | Mean of all bucket values, always `toFixed(1)` |
 | 3 | `"buckets"` | Count of distinct buckets |
-| 4 | `"peak <valueLabel>"` | Maximum bucket value (integer if whole, otherwise 1 decimal place) |
+| 4 | `"peak <valueLabel>"` | Maximum bucket value (integer if whole, otherwise 1 decimal place); `tone: "faint"` when the peak is `0` |
 
-Card 1 additionally shows a delta line when the **latest bucket value is strictly greater than the previous**:
-`"+<change> ↑ latest"` in green (`var(--green)`). No delta is shown for zero or negative changes.
+Tile 1 additionally carries a delta whenever `latest - previous !== 0` — including a **negative** change (e.g. `"-3 latest"`), not just a strictly positive one: `` `${change > 0 ? '+' : ''}${fmt(change)} latest` ``. The delta renders in `.statDelta`, which is always `var(--faint)` regardless of sign — there is no green/red coloring and no arrow glyph. A zero change shows no delta at all.
 
 ### Number formatting
 
-The `fmt` helper: if the number is a whole integer (`Number.isInteger(n)`), it renders without a decimal point. Otherwise it rounds to 1 decimal place (`n.toFixed(1)`). The average always uses `toFixed(1)`.
+The `fmt` helper: if the number is a whole integer (`Number.isInteger(n)`), it renders without a decimal point. Otherwise it rounds to 1 decimal place (`n.toFixed(1)`). The average tile always uses `toFixed(1)` regardless.
 
 ### Minimal base example (stat)
 
@@ -286,33 +282,39 @@ After `buildChartData`, the heatmap calls `buildHeatmapWeeks(data().points)` fro
 // → weeks[1][6].value === null          (padded tail to Sunday 2026-06-07)
 ```
 
-### Color encoding
+### Glyph and color encoding
 
-Four intensity levels are derived from `var(--teal)` using CSS `color-mix`:
+The heatmap draws intensity as a **glyph**, not a background color or cell size — "intensity is the glyph, never the cell size" (the legend's own caption, echoed in a `HeatmapView.tsx` comment). Each cell's glyph and CSS class come from `levelOf(value, min, max)` (`HeatmapView.tsx`), a discrete 5-way tier (0 = no data, 1–4 = the four glyphs):
 
-| Level | CSS | Used when |
-|---|---|---|
-| Empty | `var(--surface-2, #1a1a22)` | `value === null` |
-| Low | `color-mix(in srgb, var(--teal) 28%, transparent)` | t in [0, 0.25) |
-| Medium-low | `color-mix(in srgb, var(--teal) 50%, transparent)` | t in [0.25, 0.5) |
-| Medium-high | `color-mix(in srgb, var(--teal) 75%, transparent)` | t in [0.5, 0.75) |
-| High | `var(--teal)` | t in [0.75, 1] |
+| Level | Glyph | CSS class | Color | Used when |
+|---|---|---|---|---|
+| 0 | `.` | `lv0` | `var(--faint)` | `value === null` or `value <= 0` |
+| 1 | `.` | `lv0` | `var(--faint)` | `t` in `[0, 0.25)` — visually identical to an empty cell |
+| 2 | `-` | `lv1` | `var(--node-cold, var(--faint))` | `t` in `[0.25, 0.5)` |
+| 3 | `+` | `lv2` | `var(--accent)` | `t` in `[0.5, 0.75)` |
+| 4 | `#` | `lv3` | `var(--accent)` | `t` in `[0.75, 1]` |
 
-Where `t = (value - min) / (max - min)`. When all values are equal (`max === min`), `t` is forced to 1 (full intensity). Colors re-tint when the theme changes.
+Where `t = (value - min) / (max - min)`, using the same `min`/`max` `buildChartData` returns for the whole series. When all values are equal (`max === min`), `t` is forced to `1` (top tier). Colors are plain text colors from `HeatmapView.module.css` and re-tint when the theme changes — there is no `color-mix`, and no `--teal`/`--surface-2` tokens are involved.
+
+Each cell also carries a `title` attribute — `` `${cell.date}: ${cell.value ?? 0}` `` (e.g. `"2026-05-28: 3"`) — so hovering a cell shows its exact value even though the glyph itself only encodes 4 discrete tiers.
+
+The legend row below the grid renders the four tiers directly (`.` `-` `+` `#` under classes `lv0`–`lv3`) between the words `"less"` and `"more"`, followed by the caption `"intensity is the glyph, never the cell size"`.
 
 ### Month label row
 
-Above the grid, a sparse month label row shows the abbreviated month name (e.g. `"May"`, `"Jun"`) at the first column that falls in each new month; other columns are blank. The labels use `"Monaspace Xenon"` monospace at 10px.
+Above the grid, a sparse month label row shows the abbreviated month name (e.g. `"May"`, `"Jun"`) at the first column that falls in each new month; other columns are blank. The labels use `.heatMonths` styling — `var(--fs-micro)`, `var(--faint)`, `var(--ui-font-stack)` (`HeatmapView.module.css`), not a hardcoded font or size.
 
 ### Streak statistics
 
-Below the grid, three stat cards in a 4-column grid (using the same `.statgrid` / `.statCard` CSS as `StatView`) show:
+Below the grid, three tiles — reusing the same `StatTiles` component and `.statgrid` / `.statTile` CSS classes as the stat view (`app/src/bases/StatTiles.tsx`, extracted from a formerly-duplicated `Charts.module.css`) — show:
 
-| Card | Label | Value |
+| Tile | Label | Value |
 |---|---|---|
-| 1 | `"Entries"` | Number of days with `value > 0` |
-| 2 | `"Current streak"` | Length of the consecutive-day streak ending at the last entry date, in days |
-| 3 | `"Longest streak"` | Maximum consecutive-day streak across all data |
+| 1 | `"entries"` | Number of days with `value > 0` |
+| 2 | `"current streak"` | Length of the consecutive-day streak ending at the last entry date, in days |
+| 3 | `"longest streak"` | Maximum consecutive-day streak across all data |
+
+All three labels are lowercase, matching the `streakCards()` literals in `HeatmapView.tsx` — there is no title-casing. Each tile's value renders at a smaller `22px` (`valueStyle={{ 'font-size': '22px' }}`) than `StatView`'s default `var(--fs-display)`, and the grid itself is the same `.statgrid` (`grid-template-columns: repeat(auto-fit, minmax(140px, 1fr))`) as the stat view, not a fixed 4-column layout — with only 3 tiles here it lays out as 3.
 
 Streak counting uses exact date adjacency (`nextDay(prev) === d`). Days with `value === 0` do not count as part of a streak. Both stats pluralize: `"1 day"` vs `"N days"`.
 
@@ -367,15 +369,15 @@ Setting `aggregate: "count"` causes the engine to push `1` per row regardless of
 
 ### Zero and negative max
 
-BarView and LineView floor `max` to `1` when `max <= 0` to avoid division-by-zero rendering. If all rows have a zero value, bars/lines render at zero height rather than erroring.
+`chartMax` (bar, in `asciiMeterMath.ts`) and `buildLinePlot`'s own max calculation (line, in `asciiLine.ts`) both floor the series maximum to `1` — `chartMax` returns `1` whenever the series is empty or every value is `≤ 1`; `buildLinePlot` takes `Math.max(0, ...values, 1)`. Either way, an all-zero or all-negative series renders bars/lines pinned to zero length rather than dividing by zero.
 
 ### Non-numeric y values within a bucket
 
 Within a bucket, `toNumber(v)` is applied to each `y` value. Values that produce `NaN` (e.g. a string `"pending"`) are silently skipped and do not contribute to the aggregate. A bucket where every row has a non-numeric `y` returns `0` from `aggregate()`.
 
-### Bar x-axis label cutoff at 16
+### Line x-axis label cutoff at 16
 
-Bar labels are only rendered when `data().points.length <= 16`. With 17 or more bars the label row is entirely absent. There is no truncation or rotation — it is a binary show/hide.
+Line view labels (`axisLabels` in `asciiLine.ts`) are only rendered when `points.length <= 16`. With 17 or more points `axisLabels` is the empty string and the label row does not render at all. There is no truncation or rotation — it is a binary show/hide. The bar view carries no such cutoff: every bucket always shows its label as the row prefix, regardless of count.
 
 ### Heatmap grid always starts on Monday
 
@@ -387,7 +389,7 @@ Week and month bin keys are ISO date strings representing the start of the inter
 
 ### `stat` view: single-bucket vs. multi-bucket threshold is exactly 1
 
-`cards()` returns `[]` (triggering the single-big-number fallback) when `d.points.length <= 1`. With exactly 0 points, the outer `<Show when={data().points.length > 0}>` renders the empty-state placeholder instead.
+`tiles()` (in `StatView.tsx`) returns `[]` for zero points, a single tile for exactly one point, and the 4-tile grid for two or more. The empty-state placeholder is gated on `tiles().length === 0`, passed as `ChartFrame`'s `empty` prop — not a `<Show>` written inline in `StatView.tsx` itself.
 
 ---
 
@@ -399,4 +401,4 @@ Week and month bin keys are ISO date strings representing the start of the inter
 - `core/src/bases/query.ts` — `resolveProperty` (property id namespacing)
 - `core/src/bases/values.ts` — `toNumber` (value coercion)
 
-Source: `app/src/bases/BarView.tsx`, `app/src/bases/LineView.tsx`, `app/src/bases/StatView.tsx`, `app/src/bases/HeatmapView.tsx`, `core/src/bases/chart.ts`, `core/src/bases/types.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`
+Source: `app/src/bases/BarView.tsx`, `app/src/bases/LineView.tsx`, `app/src/bases/StatView.tsx`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/StatTiles.tsx`, `app/src/bases/ChartFrame.tsx`, `app/src/bases/asciiLine.ts`, `app/src/ui/ascii/AsciiMeter.tsx`, `app/src/ui/ascii/asciiMeterMath.ts`, `core/src/bases/chart.ts`, `core/src/bases/types.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`, `app/src/bases/asciiLine.test.ts`
