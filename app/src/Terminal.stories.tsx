@@ -170,7 +170,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // Fixed px, not vh/%: matches GraphView.stories.tsx's own note — the Storybook preview iframe is
-// short with the Controls panel open, and `.term-host` fills its parent's height (Terminal.css:
+// short with the Controls panel open, and `.term-host` fills its parent's height (global.css's `Terminal.css` section:
 // `.term-host { height: 100% }`).
 const STORY_H = '480px'
 

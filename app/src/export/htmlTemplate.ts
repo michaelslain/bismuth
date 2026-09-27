@@ -226,7 +226,7 @@ ${headingRules}
   pre { background: ${p.head}; margin: ${rule}px 0; padding: ${rule / 2}px 1rem; border-radius: 6px; overflow: auto;
         white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
   /* EVERYTHING PULLED BACK OUT OF PROSE RETURNS TO THE MONO FACE AT THE EDITOR SIZE — the same
-     scoping Editor.css applies in the app, not a guess at what looks code-ish. Its list is
+     scoping global.css's Editor.css section applies in the app, not a guess at what looks code-ish. Its list is
      cm-codeblock, cm-inline-code, cm-code-header, cm-code-lang, cm-code-numbered, cm-frontmatter,
      cm-fm-key, cm-math, cm-math-src, cm-inline-math, cm-list-marker, cm-syntax-mark, cm-tag and
      cm-task-field — and BOTH the family and the SIZE reset, because prose is set at --prose-scale
@@ -255,7 +255,7 @@ ${headingRules}
                opacity: 0.85; line-height: ${rule}px; }
   /* The frontmatter block (htmlTemplate.ts frontmatterBlockHtml) — the one sanctioned
      left-accent border in the system, same token the app's own frontmatter/callout gutter
-     uses (ui.css --accent-edge). */
+     uses (--accent-edge, global.css's styles/tokens.css section). */
   .fmatter { border-left: 2px solid ${p.accent}; margin: 0 0 ${rule}px; padding-left: 0.75rem;
              font-size: 0.85em; line-height: ${rule}px; color: ${p.muted}; }
   .fm-k { color: ${p.muted}; opacity: 0.75; }

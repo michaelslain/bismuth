@@ -1,6 +1,6 @@
 // ---- wordmark hero: the logo mark + the system's one flourish (asc-wordmark sheen) -----
 // Replaces the old spinning/glowing crystal — the ASCII register limits itself to ONE
-// decorative flourish (the wordmark's gradient sheen, ui.css/patterns.css), so the hero
+// decorative flourish (the wordmark's gradient sheen, global.css's `App.css` section), so the hero
 // IS that flourish, not another glow layered around the logo mark.
 import { type Component } from 'solid-js'
 import styles from './WordmarkHero.module.css'

@@ -120,7 +120,7 @@ function ScratchBlock(props: ScratchBlockProps) {
                     onPointerUp={onHandleUp}
                     onPointerCancel={onHandleUp}
                 />
-                {/* The wrapper owns the reveal: ui.css pins an icon button's own opacity. */}
+                {/* The wrapper owns the reveal: ui/Button.module.css pins an icon button's own opacity. */}
                 <div class={styles.delete} data-testid="scratch-delete">
                     <IconButton
                         icon="X"

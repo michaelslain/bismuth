@@ -357,7 +357,7 @@ Two of these defaults deliberately break from the app's `--fs-ui` chrome size (`
 documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 
 - **`editorFontSize` is `13.5`, not `11.5`.** Despite the name, this key sets the **prose** font size
-  — `13.5` is the design system's own prose size (`--fs-body-lg`, `ui.css`), deliberately off the
+  — `13.5` is the design system's own prose size (`--fs-body-lg`, `global.css`), deliberately off the
   `11.5px` chrome scale because chrome is scanned and prose is read. The `18px` row unit
   (`--row-h`) is unaffected, so a line of prose still lands on the same grid as a tree row or a tab.
 - **`iconSize` is `12`, not `11.5`.** It sits above the `11.5px` `--fs-ui` chrome **text**
@@ -390,7 +390,7 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 |---|---|---|
 | `editor.lineHeight` | `--prose-line-height` | `1.5` |
 
-`--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
+`--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `global.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
 in `Editor.tsx`. Default `1.5` → **27px**, not 18px: prose renders in
 the proportional serif face (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the

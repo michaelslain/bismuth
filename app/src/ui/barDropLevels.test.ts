@@ -1,11 +1,11 @@
 // app/src/ui/barDropLevels.test.ts
 //
-// WHY THIS EXISTS. The view bar's collapse ladder is a set of attribute-selector tiers in ui.css
+// WHY THIS EXISTS. The view bar's collapse ladder is a set of attribute-selector tiers in ViewBar.module.css
 // (`[data-bar-drop='4']` at 650px, '3' at 570, '2' at 500, '1' at 465) and a set of `data-bar-drop`
 // attributes on controls. NOTHING connects them. Tag a control with a level the ladder does not
 // define and the attribute lands on the DOM, matches no rule, and the control never collapses —
 // no typecheck error, no failing test, no warning. The bar simply overflows at a width nobody
-// tested. ui.css's own ladder comment states the hole ("nothing typechecks a `data-` attribute");
+// tested. ViewBar.module.css's own ladder comment states the hole ("nothing typechecks a `data-` attribute");
 // this closes it.
 //
 // It is the same family as bench/moduleClassCheck.ts (a hashed class name that still compiles as a
@@ -40,14 +40,14 @@ const UI_CSS = join(import.meta.dir, 'ViewBar.module.css')
  *  match. A genuinely dynamic braced expression (`data-bar-drop={cond ? '2' : '3'}`) has no literal
  *  digit directly against a quote and stays invisible; see the header note above. */
 const WRITE = /data-bar-drop=\{?(?<quote>["'])(?<level>\d+)\k<quote>\}?/g
-/** The ladder's subjects, which ui.css writes SINGLE-quoted inside attribute selectors. */
+/** The ladder's subjects, which ViewBar.module.css writes SINGLE-quoted inside attribute selectors. */
 const DEFINE = /\[data-bar-drop='(\d+)'\]/g
 
 /** Strip comments before matching, on BOTH sides. Several scanned files DISCUSS the attribute in
  *  prose — ui/BarLabel.stories.tsx, ui/ViewBar.stories.tsx, bases/BaseView.stories.tsx,
  *  ui/ViewBar.tsx and ui/BarLabel.tsx all name a level inside a comment, some of them quoted inside
  *  backticks. Counting a documentation mention as a call site would make this test pass or fail on
- *  the wording of a comment. ui.css gets the same treatment for the same reason: its own ladder
+ *  the wording of a comment. ViewBar.module.css gets the same treatment for the same reason: its own ladder
  *  comment already discusses levels in quoted form, and while no comment today happens to use the
  *  bracketed `[data-bar-drop='N']` shape DEFINE matches, a future editor documenting a reserved or
  *  rejected level could add one — which would silently inflate `defined` and let a genuinely
@@ -64,7 +64,7 @@ const walk = (dir: string): string[] =>
         return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(e) ? [p] : []
     })
 
-test('every data-bar-drop level written in app/src is defined by the ui.css ladder', () => {
+test('every data-bar-drop level written in app/src is defined by the ViewBar.module.css ladder', () => {
     const defined = new Set(
         [...stripComments(readFileSync(UI_CSS, 'utf8')).matchAll(DEFINE)].map(m => m[1]),
     )
@@ -91,7 +91,7 @@ test('every data-bar-drop level written in app/src is defined by the ui.css ladd
     const orphans = writes.filter(w => !defined.has(w.level))
     expect(
         orphans.map(o => `${o.file}: data-bar-drop="${o.level}"`),
-        `ui.css defines levels {${[...defined].sort().join(', ')}}. A level it does not define is a ` +
+        `ViewBar.module.css defines levels {${[...defined].sort().join(', ')}}. A level it does not define is a ` +
             `SILENT no-op: the attribute lands on the DOM, no rule matches, the control never drops. ` +
             `Measure your own bar and add a tier, or use the level whose measured width matches.`,
     ).toEqual([])

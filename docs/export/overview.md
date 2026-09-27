@@ -236,7 +236,7 @@ colours `resolvePalette` already resolved:
 
 The UI face (`ThemePalette.font`, used by every NON-prose export) comes from `--ui-font-stack`.
 It used to be read off `getComputedStyle(document.body).fontFamily`, but nothing sets a
-`font-family` on `<body>` — App.css puts the app's `font:` shorthand on `.app-shell` and `.layout` —
+`font-family` on `<body>` — global.css's `App.css` section puts the app's `font:` shorthand on `.app-shell` and `.layout` —
 so that resolved to the browser default and every base/calendar/sheet export rendered in Times.
 
 Leading travels as `ThemePalette.proseLeading`, a ratio, **not** as `editor.lineHeight` itself: that
@@ -343,7 +343,7 @@ Inside, a file's HTML body is built by `bodyHtml` → `renderedBody` → `wrapBo
 
 ### Rasterizer color safety (`export/cssColor.ts`)
 
-html2canvas (1.4.x) throws `Attempting to parse an unsupported color function 'color'` on any CSS Color 4 value — `color()`, `color-mix()`, `oklab()`/`oklch()`, `lab()`/`lch()`. The app's theming leans on `color-mix(in srgb, X n%, transparent)` (`--border`/`--faint`/`--panel`/`--surface-2`…, App.css + settingsCssVars), and Chrome serializes the **computed** value of an alpha-carrying color-mix as `color(srgb r g b / a)` — so `resolvePalette`'s probe alone still fed the rasterizer an unparseable color and every themed pdf/png export died. Two defense layers share `cssColor.ts`:
+html2canvas (1.4.x) throws `Attempting to parse an unsupported color function 'color'` on any CSS Color 4 value — `color()`, `color-mix()`, `oklab()`/`oklch()`, `lab()`/`lch()`. The app's theming leans on `color-mix(in srgb, X n%, transparent)` (`--border`/`--faint`/`--panel`/`--surface-2`…, global.css + settingsCssVars), and Chrome serializes the **computed** value of an alpha-carrying color-mix as `color(srgb r g b / a)` — so `resolvePalette`'s probe alone still fed the rasterizer an unparseable color and every themed pdf/png export died. Two defense layers share `cssColor.ts`:
 
 1. **Palette normalization** — `readThemePalette`'s `lit()` runs every probed value through `normalizeCssColor(value, fallback)`: already-safe values (hex/rgb/hsl/named) pass through; `color(srgb …)` converts via the pure `colorSrgbToRgb` parser; anything else the browser can evaluate resolves through a 1×1-canvas pixel read; a hopeless value falls back to the corresponding `DEFAULT_PALETTE` entry. The export doc's stylesheet therefore only ever carries `rgb()`/`rgba()`/hex.
 2. **Iframe sweep** — `htmlToCanvas` (`htmlToPdf.ts`) calls `sanitizeDocColorsForRaster(doc)` on the laid-out off-screen iframe right before snapshotting: it walks every element, and any computed color property (`color`, `background-color`, the four `border-*-color`s, `outline-color`, `text-decoration-color`) still carrying a modern function gets a normalized `rgb()` inlined over it (an unsafe `box-shadow` is dropped). A clean document is a 0-rewrite no-op; this guards KaTeX/view/extra CSS that never routed through the palette. The body background fed to html2canvas + the PDF page fill is normalized the same way.

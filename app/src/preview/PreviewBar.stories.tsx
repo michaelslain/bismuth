@@ -238,7 +238,7 @@ export const Narrow: Story = {
             await expect(canvas.getByLabelText(label).getClientRects().length, label).toBeGreaterThan(0)
         }
 
-        // Below ui.css's 430px floor tier the lead would otherwise become a masked scroller
+        // Below ViewBar.module.css's 430px floor tier the lead would otherwise become a masked scroller
         // (`.viewbar .vb-lead { mask-image: linear-gradient(...) }`) — the wrong look for a bar
         // whose lead only ever ellipsizes, never overflows. This bar's own override
         // (`.bar:global(.viewbar) :global(.vb-lead)`, three classes) must win on specificity, not

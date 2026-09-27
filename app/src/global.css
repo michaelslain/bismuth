@@ -91,12 +91,12 @@
      wherever a ui/ primitive happens to be used, so its load order relative to other component
      CSS was never guaranteed — exactly why a token declared only there (this app's actual type/
      radius/motion scale) could lose a tie to a same-specificity rule in a differently-ordered
-     bundle (Storybook vs. the app bundle disagreed at least once over exactly this; see
-     ui.css's own `.viewbar` cascade note). Landing the scale here removes that class of bug for
+     bundle (Storybook vs. the app bundle disagreed at least once over exactly this; the
+     view bar's cascade, back when it lived in ui/ui.css). Landing the scale here removes that class of bug for
      every token below, including the brand-new ones this wave adds.
 
      THE RULE FOR THIS WAVE (non-negotiable): nothing may change visually. Every value below is
-     either (a) an EXACT copy of the value already live in ui.css, so no call site's rendered
+     either (a) an EXACT copy of the value already live in ui/ui.css at the time, so no call site's rendered
      output moves, or (b) a genuinely NEW token with no consumer yet, safe to introduce at
      whatever value later waves are meant to consume it at. Where the audit (§2.2) proposes
      COLLAPSING an existing value, this wave ALIASES instead and comments which later wave owns
@@ -260,7 +260,7 @@
      untouched — those are each transition's own considered timing, not this generic step; only
      the CURVE they all already agreed on is now named instead of copy-pasted). The 4 sites that
      already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, GraphView.module.css,
-     ChatComposer, ui.css) pick up the new curve/timing for free — no edit needed there, which is
+     ChatComposer, the `ui/ui.css` section) pick up the new curve/timing for free — no edit needed there, which is
      the entire point of them having been tokenized already. */
   --dur-fast: 80ms;
   --dur: 120ms;
@@ -289,7 +289,7 @@
      from §8.4: the control step is 24 (on the 2/4/6/8 spacing grid, NOT the 18-grid's ugly-to-
      type 27), and PaneHeader — the one real regression the audit found — resolves to
      --h-control (24px), never --h-band (36px): a 4-way split at 36px/header costs 144px of
-     chrome. No current call site references --h-*; --row-h (ui.css) remains the token every
+     chrome. No current call site references --h-*; --row-h (this section) remains the token every
      existing row consumer reads until each surface is migrated. */
   --h-row: 18px;
   --h-control: 24px;
@@ -362,7 +362,7 @@
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
      and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
      and chat message bodies INCLUDING the composer you type them into — never code (blocks and
-     spans), frontmatter or math, which are pulled back to --ui-font-stack in Editor.css and
+     spans), frontmatter or math, which are pulled back to --ui-font-stack in the `Editor.css` section and
      chat/ChatTextBubble.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
@@ -374,7 +374,7 @@
      TABLES MOVED INTO THIS SCOPE 2026-08-31 too, same day, same reasoning: a table in a note is
      the note's own content, not chrome, and rendering it in a different family from the paragraph
      above it made a note look like two documents. Unlike headings, tables also lose the SIZE
-     reset in Editor.css (headings keep it, because livePreview.ts gives them their own absolute
+     reset in the `Editor.css` section (headings keep it, because livePreview.ts gives them their own absolute
      scale; a table has none, so leaving the size reset on would flatten it back to mono size).
 
      Lora (via @fontsource-variable/lora), repointed here from CMU Serif (Computer Modern), which
@@ -646,7 +646,7 @@ body { background: var(--bg); color: var(--fg); }
    wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
    selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell.
    --prose-font-size, NOT --editor-font-size: note tables now render at --prose-font-size
-   (Editor.tsx's editorTheme — see Editor.css's "TABLES ARE PROSE" note), so pinning this to the
+   (Editor.tsx's editorTheme — see the "TABLES ARE PROSE" note in the `Editor.css` section), so pinning this to the
    mono size left an in-note query-block table ~22% smaller than the note's own markdown tables,
    directly under them, serif-at-mono-size — exactly the mismatch this rule exists to prevent. */
 .bismuth-query-block table,
@@ -776,7 +776,7 @@ details.callout > summary::-webkit-details-marker {
    (unchanged internally), and the 18px status bar (1×--row-h). height:100% for the same
    WKWebView-fullscreen reason `.layout` used it (see the comment that used to sit just above
    `.layout` below) — `.app-shell` is now the top-level element under #root instead. */
-/* line-height = --row-h (the ONE app-wide row unit, ui.css :root), not a font-size-relative
+/* line-height = --row-h (the ONE app-wide row unit, the `styles/tokens.css` section's :root), not a font-size-relative
    ratio: every chrome row (sidebar tree, tabs, status bar) shares this same 18px cadence, and
    any descendant that doesn't set its own line-height inherits it here. Prose (note body text)
    opts out explicitly via --prose-line-height (Editor.tsx). */
@@ -965,7 +965,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  * ui/ui.css — shared design-system primitives (asc-* register + cross-component chrome)
  * ============================================================================ */
 /* app/src/ui/ui.css — the app's GLOBAL design-system register, not a component stylesheet.
-   Imported once (side-effect) by each of its 21 consumers; Vite dedupes.
+   Was imported once (side-effect) by each of its 21 consumers until the merge into global.css.
 
    RESHAPED 2026-09-12 (CSS modules migration Task 7). Every class here USED to live in this one
    file regardless of how many components actually read it. The ownership map
@@ -1788,7 +1788,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 
 /* Custom gliding cursor overlay — a blinking underline, matching .asc-caret
-   everywhere else in the system (ui.css), not a solid block. xterm's native cursor
+   everywhere else in the system (the `ui/ui.css` section), not a solid block. xterm's native cursor
    is a class transferred between inline spans, so CSS transitions don't apply — we
    render our own absolutely-positioned bar and animate transform. Terminal.tsx sets
    width to the live cell width (font/zoom-dependent) and height stays CARET_H (2px,
@@ -1859,7 +1859,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 
 /* ── The field ───────────────────────────────────────────────────────────── */
-/* .asc-field (ui.css) already gives us position/overflow and the flat --graph-bg ground the
+/* .asc-field (the `ui/ui.css` section) already gives us position/overflow and the flat --graph-bg ground the
    design calls for — no atmosphere glow, no vignette, no gradient. */
 /* Both classes are on the same element and .asc-field declares `position: relative`, so this rule
    is written at two-class specificity — stylesheet import order must not decide the layout. */
@@ -1942,7 +1942,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  *   5. command/file palette, chat history picker — shares font/selected/shadow TOKENS only
  * A hashed local could never reach the imperative writers (rowDom.ts/DatePicker.tsx's literal classes/
  * yamlFixHover.ts set `.className` directly on elements the bundler never sees), so this file
- * is the same category as Editor.css/Terminal.css: a global mechanism, not a missing component.
+ * is the same category as the `Editor.css`/`Terminal.css` sections: a global mechanism, not a missing component.
  * Multiple importers (App.tsx, ui/Select.tsx) is legitimate here for that reason.
  *
  * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,

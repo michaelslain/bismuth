@@ -419,7 +419,7 @@ export const Empty: Story = {
 /** A markdown table AND an Obsidian-style callout inside an assistant message. `ChatTextBubble`
  *  renders assistant prose through the SAME `renderNoteBody` pipeline notes use, onto
  *  `.chat-bubble` — so a `| … |` pipe table renders as a real `<table>`, and TABLES ARE PROSE
- *  here too (2026-08-31, matching Editor.css): a table is the message's own content, not chrome,
+ *  here too (2026-08-31, matching global.css's `Editor.css` section): a table is the message's own content, not chrome,
  *  so it must render in the same face as the paragraph around it. Asserted against
  *  `--prose-font` rather than a literal family name, same as Editor.stories.tsx's
  *  MixedTypography — the token is the source of truth. The trailing `> [!note]` callout is this

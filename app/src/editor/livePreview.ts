@@ -1636,8 +1636,8 @@ export const livePreview = [
         // editor's mono face at the editor size — the same pair the chat transcript, the Milkdown
         // chip and the in-table chip use, so a #tag reads identically on every surface (the user's
         // call, 2026-09-03). --ui-font-stack rather than the MONO_FONT literal so appearance.uiFont
-        // still governs it, per Editor.css's family-list note; the token's default IS MONO_FONT's
-        // stack, so this is a no-op under default settings. The SIZE comes from Editor.css's size
+        // still governs it, per the family-list note in global.css's `Editor.css` section; the token's default IS MONO_FONT's
+        // stack, so this is a no-op under default settings. The SIZE comes from that section's size
         // list (a class that sets font-family inline here needs an entry there — see that comment).
         '.cm-tag': { color: 'var(--gold)', 'font-family': 'var(--ui-font-stack)' },
         // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
@@ -1960,7 +1960,7 @@ export const livePreview = [
         // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
         // table's top-right corner instead of floating off in the full-width line box.
         // `--cm-td-lh` is the ONE cell line-height, inherited by the display cells, the empty-cell
-        // placeholder (Editor.css `.cm-td-ph`), AND the nested in-cell editor (cellEditor.ts `.cm-scroller`)
+        // placeholder (`.cm-td-ph` in global.css's `Editor.css` section), AND the nested in-cell editor (cellEditor.ts `.cm-scroller`)
         // — so the EDIT face and the DISPLAY face share an identical line box and nothing jumps on blur
         // (#62). Compact (always-on) drops it to 1.3 below.
         '.cm-table-wrap': {

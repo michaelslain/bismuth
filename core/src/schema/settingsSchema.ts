@@ -114,7 +114,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 13.5,
             min: 11,
             max: 28,
-            doc: "Note prose font size (px). 13.5 is the design system's own prose size (--fs-body-lg, ui.css) — prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is scanned and prose is read. The 18px row unit (--row-h) is unchanged, so a line of prose still lands on the same grid as a tree row or a tab.",
+            doc: "Note prose font size (px). 13.5 is the design system's own prose size (--fs-body-lg, app/src/global.css) — prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is scanned and prose is read. The 18px row unit (--row-h) is unchanged, so a line of prose still lands on the same grid as a tree row or a tab.",
         },
         sidebarWidth: {
             type: 'number',
@@ -163,7 +163,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 15,
             min: 13,
             max: 18,
-            doc: 'Search-input font size (px) — the Cmd+P command palette AND the in-window Cmd+O switcher (app/src/palette/switcher.css .switcher-input reads the same token, visual-unification audit §7 wave 3).',
+            doc: 'Search-input font size (px) — the Cmd+P command palette AND the in-window Cmd+O switcher.',
         },
     }),
     graph: object({
@@ -316,7 +316,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 1.25,
             min: 0.8,
             max: 1.8,
-            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1.25 -> 22.5px. Prose is Lora (--prose-font) at 14.04px (13.5 * --prose-scale 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows.",
+            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — app/src/global.css :root), NOT of the font size. Default 1.25 -> 22.5px. Prose is Lora (--prose-font) at 14.04px (13.5 * --prose-scale 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows.",
         },
         mathMacros: {
             type: 'string',

@@ -671,7 +671,7 @@ Guards against a real, shipped bug class: a CSS comment that closes EARLY becaus
 
 ### `app/src/cssLayering.test.ts`
 
-Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (used correctly today by `bases/BaseView.module.css` and `bases/CardEditModal.module.css` to style `.bismuth-task-box`/`.cm-editor` from inside a module). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in the global `App.css` (8, after the App.css/App.tsx componentization's Tasks 6/9/11 — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in `App.css` instead of a component's own module fails the gate immediately rather than growing the pile back.
+Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (used correctly today by `bases/BaseView.module.css` and `bases/CardEditModal.module.css` to style `.bismuth-task-box`/`.cm-editor` from inside a module). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in global.css's `App.css` section (9 today — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in that section instead of a component's own module fails the gate immediately rather than growing the pile back.
 
 ### `app/src/ui/uiLint.test.ts`
 
@@ -911,7 +911,7 @@ control with no hit area, content escaping its container, a font-size off the pr
 scale — so it stays meaningful while the design is actively changing and never needs re-recording.
 `bun bench/invariants.ts --story ui-` scopes to a prefix; `--json` for machine-readable output.
 
-The type-scale check measures against the **mono chrome ladder** (`ui/ui.css`'s `--fs-*`). Note
+The type-scale check measures against the **mono chrome ladder** (the `--fs-*` tokens in global.css's `styles/tokens.css` section). Note
 prose is deliberately off that ladder — chrome is scanned, prose is read — and its sizes are
 *derived* (`--prose-font-size` = `--editor-font-size` × `--prose-scale`, plus em-relative children
 like `.bismuth-tag` at `0.88em`, plus `--code-font-size`, the one mono-in-prose size), so they are **resolved from the live page at runtime**, not listed
@@ -1197,7 +1197,7 @@ checks colour on the `border-top`/`-right`/`-bottom`/`-left` shorthands, `backgr
 custom property in addition to its base allowlist, strips `var(--x, <fallback>)` calls before
 testing for a literal (so a literal *sibling* to a `var()` call is caught, though a literal *inside*
 that `var()`'s own fallback is still deliberately excused), and checks `border-radius` plus all four
-longhand corners. Even widened, it is still a fixed property allowlist — `mask-image` (`ui/ui.css:709`)
+longhand corners. Even widened, it is still a fixed property allowlist — `mask-image` (`ui/ViewBar.module.css`)
 and `column-rule` stay outside it — and it still excuses a `var()` fallback literal on purpose.
 `tokenLint.ts` has neither gap for the rules it kept (radius, colour, spacing): it scans every
 property, custom properties included, has no `var()`-awareness (so it also flags a fallback literal

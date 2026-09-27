@@ -67,8 +67,6 @@ real app takes **three layers**, all wired in `preview.ts` + `preview-head.html`
 
 - Only **`Button`** (via `buttonClass`) and **`Chip`** have real visual variant axes. See
   each `*.stories.tsx` header for the enumerated variants.
-- **`Chip` tones are only partly implemented in CSS**: the `tone` prop accepts 7 values
-  (`accent | teal | blue | violet | green | gold | rose`) but `ui.css` only defines a distinct
-  *selected* appearance for `accent` (default) and `teal`. The other five render identical to
-  `accent` when selected. Preserve the full prop enum in the port, but know the visual spec
-  today is accent + teal.
+- **`ChipToggle` tones**: the `tone` prop (`teal | blue | violet | green | gold | rose`, accent
+  when unset) maps to Button's `accent` prop as `var(--<tone>)`, which `.btn--text.btn--selected`
+  in `ui/Button.module.css` reads — so every tone has its own *selected* colour.
