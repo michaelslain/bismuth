@@ -1,4 +1,6 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
+import { Dynamic } from 'solid-js/web'
+import Band from './Band'
 import { IconBarContext } from './iconBarContext'
 import iconSize from './iconSize'
 import styles from './IconBar.module.css'
@@ -15,8 +17,8 @@ export type IconBarProps = {
     /** 'row' (default): one flex line, var(--sp-2) between buttons.
      *  'wrap': wraps onto more lines, centred, zero row gap (the collapsed tab rail's stacked icons). */
     layout?: 'row' | 'wrap'
-    /** true: a chrome band, min-height var(--h-band), 0 var(--sp-5) side padding, 1px var(--border-soft)
-     *  bottom hairline. false (default): an inline group inside another bar, e.g. a ViewBar slot. */
+    /** true: render through ui/Band — the chrome band (--h-band, --sp-5 side padding, --rule-soft
+     *  hairline) that ViewBar shares. false (default): an inline group inside another bar, e.g. a ViewBar slot. */
     band?: boolean
     /** Glyph px for every IconButton inside. Default iconSize() — the app's one icon size. Stories pass it; app code never does. */
     iconSize?: number
@@ -51,15 +53,18 @@ const IconBar: Component<IconBarProps> = props => {
     }
     return (
         <IconBarContext.Provider value={{ iconSize: glyph }}>
-            <div
+            {/* A `band` bar renders through ui/Band, the one definition of the chrome band's
+                height, side padding and hairline (shared with ViewBar). */}
+            <Dynamic
+                component={local.band ? Band : 'div'}
                 role="toolbar"
                 aria-label={local.label}
-                class={`${styles.bar} ${local.band ? styles.band : ''} ${local.layout === 'wrap' ? styles.wrap : ''} ${local.class ?? ''}`}
+                class={`${styles.bar} ${local.layout === 'wrap' ? styles.wrap : ''} ${local.class ?? ''}`}
                 style={style()}
                 {...rest}
             >
                 {local.children}
-            </div>
+            </Dynamic>
         </IconBarContext.Provider>
     )
 }

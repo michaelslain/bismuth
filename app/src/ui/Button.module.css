@@ -81,6 +81,16 @@
 }
 .btn--text::before { content: '[' / ''; }
 .btn--text::after { content: ']' / ''; }
+/* ONE SIBLING DISTANCE, INK TO INK (icon-brackets, 2026-09-27). A `[`/`]` glyph carries ~0.175em
+   of side bearing, so two bracket buttons `--bar-icon-gap` apart used to LOOK 8px + two bearings
+   apart, and that sum scaled with each size's font (11.5 / 12 / 13.5px) — text buttons in a bar
+   measured 10.5px, toolbar icons 11.5px, standalone icons 12.5px. Pulling each bracket's OUTER
+   bearing in makes the box edge the ink edge, so the container's gap is the visible distance, one
+   number for every kind and size. Shared by `.btn--icon` below. */
+.btn--text::before,
+.btn--icon::before { margin-left: -0.175em; }
+.btn--text::after,
+.btn--icon::after { margin-right: -0.175em; }
 .btn--text.btn--normal { color: var(--fg); }
 .btn--text.btn--unselected { color: var(--text-muted); }
 .btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); }
@@ -115,12 +125,41 @@
   border: none;
   background: transparent;
   color: var(--fg);
-  padding: var(--sp-2) var(--sp-2);
+  /* No collar, in any size (icon-brackets, 2026-09-27): the brackets are the edge, exactly as on a
+     text button. A collar sat OUTSIDE the brackets, so the visible distance between two icon
+     buttons was the container's gap plus two collars, and the collar differed by size (4px here,
+     2px at sm) — three distances in one app where there should be one: siblings sit
+     --bar-icon-gap apart, bracket ink to bracket ink, whatever the button kind or size. The hit
+     height is --h-control (or the bar's box) regardless; the width is the brackets' own. */
+  padding: 0;
   border-radius: var(--r-0);
-  font-size: var(--fs-body-lg);
+  /* ONE BRACKET SIZE (icon-brackets, 2026-09-27): the brackets draw at the icon size — the app's one
+     `appearance.iconSize`, projected as --icon — so `[`, glyph and `]` are one scale. They used to
+     be --fs-body-lg (13.5px) standalone against the icon size (12px) in every toolbar, and a
+     standalone row read airier and heavier than a toolbar row at the same 8px gap. An IconBar's
+     own `iconSize` (stories only) still wins via --iconbar-glyph. */
+  font-size: var(--iconbar-glyph, var(--icon));
 }
 .btn--icon::before { content: '[' / ''; color: var(--faint); }
 .btn--icon::after { content: ']' / ''; color: var(--faint); }
+/* Optical centring + a tight gap (icon-brackets). Two separate defects, both measured from pixels:
+   - CENTRING. Flex-centring the brackets' LINE BOX put the icon 1.6px low in every toolbar and dead
+     centre at 13.5px, because Chrome rounds Monaspace's ascent/descent to whole pixels (12px ->
+     9/3, 13.5px -> 11/3), so where the `[` ink lands inside its line box jumps per font size.
+     `text-box: trim-both cap alphabetic` trims each bracket's box to baseline..cap-height, font
+     metrics the renderer does not round, so the box that gets centred scales linearly with the
+     font. The `[` ink itself runs about +0.80em/-0.20em around the baseline (centre +0.30em)
+     against a cap box centred near +0.35em, so the ink sits ~0.055em below the box centre at every
+     size; the translate lifts it back. Result: icon/bracket ink centres within 0.5px in every
+     sizing path (standalone sm/md/lg, IconBar, ViewBar).
+   - GAP. The `[`/`]` glyphs carry ~0.117em of side bearing and the icon's art ~1px of its own, so
+     the visible air between bracket and icon was 2-3px. -0.1em pulls each bracket in to ~1px.
+     The hit area is unchanged: min-width/height below still hold, and the width saved turns into
+     centring slack OUTSIDE the brackets. */
+.btn--icon::before,
+.btn--icon::after { text-box: trim-both cap alphabetic; translate: 0 -0.055em; }
+.btn--icon::before { margin-right: -0.1em; }
+.btn--icon::after { margin-left: -0.1em; }
 /* focus-visible + hover (normal/unselected) raise the brackets to --accent; selected/danger below
    go `currentColor` instead, so the brackets track whatever tone the icon itself already carries. */
 .btn--icon:focus-visible::before,
@@ -196,11 +235,13 @@
      `--iconbar-box: var(--bar-icon-size)` (18px) and IconBar.tsx sets `--iconbar-glyph` inline from
      the bar's iconSize number. Fallbacks equal today's values exactly, so a button NOT under any
      bar (Review Focus 3) is byte-identical to before this task. */
-  min-width: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
+  /* No width floor (icon-brackets, 2026-09-27): the brackets set the width. A 24px min-width was
+     wider than `[▣]` at --fs-body-lg, and the slack it added OUTSIDE the brackets made a standalone
+     sm button sit further from its neighbour than every other bracket button. WCAG 2.5.8 is met by
+     its spacing exception instead: siblings are --bar-icon-gap apart, so 24px circles centred on
+     ~21px-wide targets never meet. The height keeps the floor. */
   height: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
-  padding: 0 var(--sp-1);
   border-radius: var(--r-0);
-  font-size: var(--iconbar-glyph, var(--fs-body-lg));
 }
 /* Muted tone for the toolzone — scoped to normal/unselected ONLY (toolbar-iconbar Task 1), not a
    blanket `.btn--icon.btn--sm { color }`. Before this the blanket rule sat textually AFTER

@@ -307,6 +307,10 @@ Fixed desktop chrome on a vertical rhythm of 18px rows: a sidebar tree row, a ta
 a graph list row and a line of note prose are all one `--row-h`. Controls (buttons, selects,
 inputs, chips) are `--h-control` (24px). Bands (the top strip, view bars, the sidebar toolzone)
 are `--h-band` (36px, two rows), so a horizontal ruler through the app lands on a row boundary.
+Every view header and toolbar band is one primitive, `ui/Band`: `--h-band` tall, `--sp-5` (12px)
+side padding, a `--rule-soft` bottom hairline. `ViewBar` and a `band` `IconBar` both render through
+it, so a toolbar and a view header stacked in one column start their first control on the same x.
+A band never sets its own padding; a caller that needs one is a missing `Band` prop.
 
 Spacing runs on a dense 2/4/6/8 grid (`--sp-1` … `--sp-7`: 2, 4, 6, 8, 12, 16, 24px). It is denser
 than an 8-grid product on purpose.
@@ -381,7 +385,9 @@ the accent. An outline appears only when it means something.
 - **Hover:** `unselected` lifts to `--fg`; states already at full ink underline the label
   (1px) instead of changing colour.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
-  ring never touches the next `[`.
+  ring never touches the next `[`. That is the distance **ink to ink**, one number for every kind
+  and size: each bracket's outer side bearing (~0.175em) is pulled into the box edge, and no
+  button carries a collar or a width floor that would add slack outside its brackets.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
   groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom, rendered
@@ -394,9 +400,24 @@ the accent. An outline appears only when it means something.
 - **Icon button:** a separate register, no box — `[▣]`, the pixel icon set between generated
   `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
   accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
-  `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. A
-  24px square hit area minimum outside a bar; inside a view bar the brackets draw at `--fs-ui`,
-  26px wide.
+  `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. The
+  brackets are the edge, as on a text button: no collar and no width floor. **One bracket size:**
+  the brackets draw at the icon size (`--icon`, the `appearance.iconSize` setting), standalone or
+  in a toolbar, so `[`, glyph and `]` share one scale. 24px tall outside a
+  bar (WCAG 2.5.8 is met by the spacing exception, siblings being `--sp-4` apart); inside a view
+  bar the brackets draw at `--fs-ui`.
+  - **Centred on the ink, ~1px of air.** The icon's centre and the bracket ink's centre agree
+    within 0.5px at every size: each bracket's box is trimmed to baseline..cap height
+    (`text-box: trim-both cap alphabetic`) and lifted 0.055em, because centring the line box let
+    the renderer's whole-pixel rounding of the font's ascent drop the icon 1.6px low in toolbars.
+    Each bracket is pulled 0.1em towards the icon, leaving about 1px between bracket and icon art;
+    any width that saves becomes slack outside the brackets, never a smaller hit area.
+  - **An `IconBar`'s buttons look the same wherever the bar sits.** The sidebar toolbar, the
+    tab-rail actions and the mini-graph mode switcher (an `IconBar` inside a `ViewBar` slot) all
+    draw 12px brackets and glyphs, 8px apart ink to ink, in one `ui/Band` (36px, 12px side
+    padding). A plain icon button placed directly in a `ViewBar` keeps that bar's `--fs-ui` register.
+  - **Brackets are always drawn**, at rest included — decided 2026-09-27 over a bare-icon-at-rest
+    variant that showed them only on hover, focus and selection.
 
 ### Chips
 - **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as
