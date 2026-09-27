@@ -302,6 +302,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     <DaemonChat
                         session={session()}
                         name={daemonName()}
+                        mood={mood()}
                         onGesture={onGesture}
                         noteNames={props.noteNames}
                         memoryNames={props.memoryNames}

@@ -156,9 +156,8 @@ export const IdentityFocused: Story = {
     },
 }
 
-/** Conversing: the face collapses to a one-line header (small glyph + name, left-aligned) and
- *  the chat takes the rest of the column — blurb and [ edit ] drop out, there's no room next to
- *  a one-line header. */
+/** Conversing: the face region is gone — the face lives in the transcript then, as the avatar on
+ *  its lowest assistant row — and the chat takes the whole column. */
 export const Conversing: Story = {
     render: () => (
         <Frame>
@@ -175,15 +174,14 @@ export const Conversing: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        const face = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-face"]',
-        )!
+        // No header face, no name, no blurb, no [ edit ] — the transcript carries face + name.
         await expect(
-            parseFloat(getComputedStyle(face).fontSize),
-        ).toBeLessThan(30)
+            canvasElement.querySelector('[data-testid="daemon-face"]'),
+        ).toBeNull()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-face-region"]'),
+        ).toBeNull()
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('daemon')).toBeInTheDocument()
-        // Compact: no blurb, no [ edit ] — nowhere for them to go next to a one-line header.
         await expect(canvas.queryByText(/keeps a living model/)).toBeNull()
         await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         const hub = canvasElement.querySelector<HTMLElement>(
@@ -207,6 +205,37 @@ export const Conversing: Story = {
                     chat.getBoundingClientRect().bottom,
             ),
         ).toBeLessThanOrEqual(2)
+    },
+}
+
+/** A full-height pane (chat history) with NO conversation: there is no transcript to carry the
+ *  face, so it keeps the one-line compact header — small glyph, bare name beside it. */
+export const HistoryOpenNoConversation: Story = {
+    render: () => (
+        <Frame>
+            <DaemonHub
+                name="daemon"
+                blurb="keeps a living model of the vault"
+                mood="idle"
+                enabled
+                conversing={false}
+                chatFills
+                chat={<ChatStub tall />}
+                onEditIdentity={noop}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const face = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )!
+        await expect(face).not.toBeNull()
+        await expect(parseFloat(getComputedStyle(face).fontSize)).toBeLessThan(
+            30,
+        )
+        await expect(
+            within(canvasElement).getByText('daemon'),
+        ).toBeInTheDocument()
     },
 }
 
@@ -236,7 +265,9 @@ export const NoBlurb: Story = {
             canvas.getByRole('button', { name: 'edit' }),
         ).toBeInTheDocument()
         await expect(
-            canvasElement.querySelector('[data-testid="daemon-identity-blurb"]'),
+            canvasElement.querySelector(
+                '[data-testid="daemon-identity-blurb"]',
+            ),
         ).toBeNull()
         await expectRestingCluster(canvasElement)
     },
@@ -291,7 +322,9 @@ export const Off: Story = {
         // No title any more — the off line stands alone, lowercase, no trailing period.
         await expect(canvas.queryByRole('heading', { level: 2 })).toBeNull()
         await expect(
-            canvas.getByText('set daemon.enabled: true in .settings to wake it'),
+            canvas.getByText(
+                'set daemon.enabled: true in .settings to wake it',
+            ),
         ).toBeInTheDocument()
         await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         await expect(

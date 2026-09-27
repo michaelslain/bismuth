@@ -3,7 +3,7 @@
 // tool call / permission / question) in arrival order, and a muted footer once the turn's `result`
 // frame lands. Extracted verbatim in markup/behaviour from ChatView.tsx's local `AssistantTurn`
 // closure + part-kind switch.
-import { For, Show } from 'solid-js'
+import { For, Show, type JSX } from 'solid-js'
 import { plural } from '../plural'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
@@ -18,12 +18,17 @@ import styles from './ChatAssistantTurn.module.css'
 export type ChatAssistantTurnProps = {
     item: AssistantItem
     persona: string
+    /** The bot's face, when this is the transcript's lowest assistant turn — see chatAvatar.ts. */
+    avatar?: JSX.Element
     onAnswerPermission: (
         id: string,
         behavior: 'allow' | 'deny',
         always: boolean,
     ) => void
-    onAnswerQuestion: (id: string, answers: Record<string, string> | null) => void
+    onAnswerQuestion: (
+        id: string,
+        answers: Record<string, string> | null,
+    ) => void
     /** Right-click a prose bubble → Reply/Copy — the transcript owns the actual menu. */
     onBubbleContextMenu: (e: MouseEvent, text: string) => void
     class?: string
@@ -32,7 +37,7 @@ export type ChatAssistantTurnProps = {
 export default function ChatAssistantTurn(props: ChatAssistantTurnProps) {
     return (
         <ChatTurnColumn class={`${styles['chat-msg']} ${props.class ?? ''}`}>
-            <ChatTurnLabel label={props.persona} />
+            <ChatTurnLabel label={props.persona} avatar={props.avatar} />
             <div class={styles['chat-turn']}>
                 <For each={props.item.parts}>
                     {part => {

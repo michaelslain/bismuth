@@ -8,6 +8,7 @@
 // respectively, driven by a `ChatSession` (subscribeAppend = session.onAppend).
 import {
     children,
+    createMemo,
     createSignal,
     For,
     onCleanup,
@@ -27,6 +28,9 @@ import ChatTurnLabel from './ChatTurnLabel'
 import ChatUserTurn from './ChatUserTurn'
 import ChatAssistantTurn from './ChatAssistantTurn'
 import ChatSystemNote from './ChatSystemNote'
+import DaemonFace from '../daemon/DaemonFace'
+import type { DaemonMood } from '../daemon/daemonFaceModel'
+import { avatarIndex } from './chatAvatar'
 import type { AssistantItem, TurnItem, UserItem } from '../chatTranscript'
 import styles from './ChatTranscript.module.css'
 
@@ -34,6 +38,10 @@ export type ChatTranscriptProps = {
     items: readonly TurnItem[]
     /** Label for assistant turns (the persona name). */
     persona: string
+    /** The bot's face (the daemon's `.:[00]:.`) — the avatar on the LOWEST assistant row only
+     *  (chatAvatar.ts's `avatarIndex`): earlier turns show just the name. Its mood; default
+     *  `thinking` while a reply is awaited, else `idle`. */
+    avatarMood?: DaemonMood
     awaitingReply: boolean
     turnError: string | null
     /** Shown when items is empty; omit for nothing. */
@@ -43,7 +51,10 @@ export type ChatTranscriptProps = {
         behavior: 'allow' | 'deny',
         always: boolean,
     ) => void
-    onAnswerQuestion: (id: string, answers: Record<string, string> | null) => void
+    onAnswerQuestion: (
+        id: string,
+        answers: Record<string, string> | null,
+    ) => void
     onCancelQueued: (queueId: string) => void
     /** Selection-reply button + bubble context menu "Reply". */
     onReply: (text: string) => void
@@ -78,6 +89,20 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
     // empty↔non-empty flip).
     const empty = children(() => props.empty)
 
+    // Which item carries the face — -1 while the awaiting row below the list holds it instead.
+    const faceAt = createMemo(() =>
+        avatarIndex(props.items, props.awaitingReply),
+    )
+    const face = () => (
+        <DaemonFace
+            mood={
+                props.avatarMood ?? (props.awaitingReply ? 'thinking' : 'idle')
+            }
+            size="avatar"
+            label={props.persona.toLowerCase()}
+        />
+    )
+
     const [following, setFollowing] = createSignal(true)
     const [selReply, setSelReply] = createSignal<{
         x: number
@@ -106,7 +131,9 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
 
     const onListScroll = () => {
         if (!list) return
-        setFollowing(list.scrollHeight - list.scrollTop - list.clientHeight < 40)
+        setFollowing(
+            list.scrollHeight - list.scrollTop - list.clientHeight < 40,
+        )
         // The floating selection-reply button is anchored to a viewport position that scrolling
         // invalidates — drop it (a fresh selection re-shows it).
         if (selReply()) setSelReply(null)
@@ -186,7 +213,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                     <div class={styles['chat-empty']}>{empty()}</div>
                 </Show>
                 <For each={props.items}>
-                    {item => {
+                    {(item, i) => {
                         if (item.role === 'system')
                             return <ChatSystemNote text={item.text} />
                         if (item.role === 'assistant')
@@ -194,7 +221,12 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                                 <ChatAssistantTurn
                                     item={item as AssistantItem}
                                     persona={props.persona}
-                                    onAnswerPermission={props.onAnswerPermission}
+                                    avatar={
+                                        i() === faceAt() ? face() : undefined
+                                    }
+                                    onAnswerPermission={
+                                        props.onAnswerPermission
+                                    }
                                     onAnswerQuestion={props.onAnswerQuestion}
                                     onBubbleContextMenu={onBubbleContextMenu}
                                 />
@@ -210,9 +242,12 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                 </For>
                 <Show when={props.awaitingReply}>
                     <ChatTurnColumn class={styles['chat-row']}>
-                        <ChatTurnLabel label={props.persona} />
+                        <ChatTurnLabel label={props.persona} avatar={face()} />
                         <div class={styles['chat-awaiting-dots']}>
-                            working<Text as="span" inherit class="asc-caret">_</Text>
+                            working
+                            <Text as="span" inherit class="asc-caret">
+                                _
+                            </Text>
                         </div>
                     </ChatTurnColumn>
                 </Show>

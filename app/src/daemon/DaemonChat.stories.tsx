@@ -56,9 +56,12 @@ function Frame(props: { width?: string; children: unknown }) {
         <div
             style={{
                 width: props.width ?? '420px',
-                height: '480px',
+                height: '520px',
                 'max-width': '100%',
                 border: '1px solid var(--border-soft)',
+                // The transcript is `inset="flush"` (its edge IS the composer's edge, as on the
+                // daemon page) — without room inside the outline, every line sat on the border.
+                padding: 'var(--sp-5)',
             }}
         >
             {props.children as never}
@@ -297,8 +300,14 @@ export const Conversation: Story = {
         const frame = canvasElement.querySelector<HTMLElement>('div')!
         const c = composer.getBoundingClientRect()
         const f = frame.getBoundingClientRect()
-        // The composer sits at the bottom of the column, not floating mid-height.
-        await expect(f.bottom - c.bottom).toBeLessThan(4)
+        // The composer sits at the bottom of the column, not floating mid-height — measured to the
+        // frame's CONTENT edge, inside its story-only padding + outline.
+        const fs = getComputedStyle(frame)
+        const contentBottom =
+            f.bottom -
+            parseFloat(fs.paddingBottom) -
+            parseFloat(fs.borderBottomWidth)
+        await expect(contentBottom - c.bottom).toBeLessThan(4)
         await expect(
             canvasElement.textContent?.includes('Faster startup'),
         ).toBe(true)

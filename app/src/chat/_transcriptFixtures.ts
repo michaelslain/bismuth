@@ -23,13 +23,48 @@ export const CONVERSATION_ITEMS: readonly TurnItem[] = [
                     '- Fixed a bug where queued messages could double-send',
                     '- `bismuth daemon logs` now supports `--since`',
                     '',
-                    'The **bold** items above should read at the same size as this sentence,',
-                    'never larger.',
+                    // ONE source line: chat markdown renders a single newline as a hard break,
+                    // so splitting it mid-sentence rendered a ragged three-line paragraph.
+                    'The **bold** items above should read at the same size as this sentence, never larger.',
                 ].join('\n'),
             },
         ],
     },
     { role: 'user', text: 'Nice, thanks.' },
+]
+
+/** Three back-and-forth exchanges ending on a user turn — the bot's face must sit on the LAST
+ *  assistant turn only (the one above the trailing user turn), earlier ones carrying just the name. */
+export const MULTI_TURN_ITEMS: readonly TurnItem[] = [
+    { role: 'user', text: 'Did the dream cron run last night?' },
+    {
+        role: 'assistant',
+        footer: null,
+        parts: [{ kind: 'text', text: 'It did — 02:14, finished in 41s.' }],
+    },
+    { role: 'user', text: 'Anything interesting come out of it?' },
+    {
+        role: 'assistant',
+        footer: null,
+        parts: [
+            {
+                kind: 'text',
+                text: 'Two new links between your reading notes and the garden log.',
+            },
+        ],
+    },
+    { role: 'user', text: 'Show me the garden one.' },
+    {
+        role: 'assistant',
+        footer: { numTurns: 1, costUsd: 0.0061 },
+        parts: [
+            {
+                kind: 'text',
+                text: '[[Garden Log]] now links to [[Soil Notes]] — the compost entries mention the same pH readings.',
+            },
+        ],
+    },
+    { role: 'user', text: 'Nice.' },
 ]
 
 /** A user turn that arrives with sent images attached, no text. */
@@ -74,7 +109,9 @@ export const TOOL_CALL_ITEMS: readonly TurnItem[] = [
                 id: 'tc-2',
                 name: 'Bash',
                 toolKind: 'execute',
-                input: { command: 'bun test app/src/chat/ChatComposer.test.ts' },
+                input: {
+                    command: 'bun test app/src/chat/ChatComposer.test.ts',
+                },
                 result: 'error: Cannot find module app/src/chat/ChatComposer.test.ts',
                 isError: true,
                 pending: false,
@@ -123,8 +160,14 @@ export const INLINE_PROMPT_ITEMS: readonly TurnItem[] = [
                         header: 'scope',
                         multiSelect: false,
                         options: [
-                            { label: 'app', description: 'the frontend workspace' },
-                            { label: 'core', description: 'the backend workspace' },
+                            {
+                                label: 'app',
+                                description: 'the frontend workspace',
+                            },
+                            {
+                                label: 'core',
+                                description: 'the backend workspace',
+                            },
                         ],
                     },
                 ],

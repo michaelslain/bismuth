@@ -5,7 +5,8 @@
 // that a settled mood change blinks through, not cuts.
 //
 // Props: mood ('asleep' | 'idle' | 'busy' | 'alert' | 'hurt' | 'listening' | 'thinking' | 'talking'),
-// caption? (JSX, rendered muted and centred/right of the face), compact?, class?.
+// caption? (JSX, rendered muted and centred/right of the face), size? ('hero' | 'compact' |
+// 'avatar'), label?, class?.
 //
 // Busy, talking and thinking eyes tick every >=600ms, so two shots of them rarely show the same
 // frame — that is the component working, not flake.
@@ -114,7 +115,7 @@ export const Compact: Story = {
     args: {
         mood: 'idle',
         caption: 'watching // last: dream 2h ago',
-        compact: true,
+        size: 'compact',
     },
     play: async ({ canvasElement }) => {
         const face = canvasElement.querySelector<HTMLElement>(
@@ -135,9 +136,40 @@ export const Compact: Story = {
         const faceBox = face!.getBoundingClientRect()
         const captionBox = caption!.getBoundingClientRect()
         await expect(captionBox.left).toBeGreaterThanOrEqual(faceBox.right)
+        await expect(Math.abs(captionBox.top - faceBox.top)).toBeLessThan(
+            faceBox.height,
+        )
+    },
+}
+
+/** The bot's inline avatar on a chat turn's label row (ChatTranscript's lowest assistant row): a
+ *  fixed small glyph at `--fs-lead`, never a caption even when one is passed, named for the persona
+ *  it stands for. One row per animated mood so the eyes can be compared at this size. */
+export const Avatar: Story = {
+    args: { mood: 'idle', size: 'avatar', label: 'claude', caption: 'ignored' },
+    render: args => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '12px' }}
+        >
+            <DaemonFace {...args} />
+            <DaemonFace mood="thinking" size="avatar" />
+            <DaemonFace mood="talking" size="avatar" />
+            <DaemonFace mood="hurt" size="avatar" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const faces = canvasElement.querySelectorAll<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )
+        await expect(faces.length).toBe(4)
         await expect(
-            Math.abs(captionBox.top - faceBox.top),
-        ).toBeLessThan(faceBox.height)
+            canvasElement.querySelector('[data-testid="daemon-face-caption"]'),
+        ).toBeNull()
+        await expect(faces[0].getAttribute('aria-label')).toBe('claude — watching')
+        const px = parseFloat(getComputedStyle(faces[0]).fontSize)
+        await expect(px).toBeGreaterThan(10)
+        await expect(px).toBeLessThan(20)
+        await expect((faces[0].textContent ?? '').length).toBe(8)
     },
 }
 
@@ -166,7 +198,11 @@ function MoodChangeHarness() {
                 type="button"
                 data-testid="go-busy"
                 onClick={() => setMood('busy')}
-                style={{ position: 'absolute', opacity: 0, 'pointer-events': 'none' }}
+                style={{
+                    position: 'absolute',
+                    opacity: 0,
+                    'pointer-events': 'none',
+                }}
             >
                 go busy
             </button>
@@ -174,7 +210,11 @@ function MoodChangeHarness() {
                 type="button"
                 data-testid="go-idle"
                 onClick={() => setMood('idle')}
-                style={{ position: 'absolute', opacity: 0, 'pointer-events': 'none' }}
+                style={{
+                    position: 'absolute',
+                    opacity: 0,
+                    'pointer-events': 'none',
+                }}
             >
                 go idle
             </button>
@@ -221,7 +261,10 @@ export const MoodChange: Story = {
         observer.disconnect()
 
         const settledIndex = frames.findIndex(
-            f => f.startsWith('.:[') && f.endsWith(']:.') && f !== '.:[--]:.' &&
+            f =>
+                f.startsWith('.:[') &&
+                f.endsWith(']:.') &&
+                f !== '.:[--]:.' &&
                 f !== '.:[00]:.',
         )
         await expect(settledIndex).toBeGreaterThan(0)

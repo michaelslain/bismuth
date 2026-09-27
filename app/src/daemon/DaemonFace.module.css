@@ -92,6 +92,28 @@
     gap: var(--sp-5);
 }
 
+/* The bot's avatar on a chat turn's label row (ChatTranscript's lowest assistant row). A fixed
+   size, not a container-relative one — it rides a text row, so it tracks the type scale, not the
+   column. `--fs-lead` sits one step above the prose body: enough for the eyes to read at a glance,
+   small enough to stay part of the row rather than a heading. No caption in this form — the name
+   beside it is ChatTurnLabel's, so the row reads face-then-name like the compact header. */
+.avatar {
+    container-type: normal;
+    --glyph: var(--fs-lead);
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+    flex: none;
+}
+
+/* Optical alignment: the leading `.` is centred in its monospace cell, so its ink starts ~0.15em
+   right of the box — measured 2.3px at 15px against the prose column's first letters. Pulled back
+   by that much the dot's ink sits on the same left edge as the name-only rows and the reply text
+   below. In glyph ems (this is the .face, whose font-size IS the glyph), so it tracks the token. */
+.avatar .face {
+    margin-inline-start: -0.15em;
+}
+
 .caption {
     /* Scales with the glyphs: a fixed gap read as roomy at 28px and let the brackets all but touch
        the caption at 74px. The bracket glyphs fill the whole em box, so the gap is measured from

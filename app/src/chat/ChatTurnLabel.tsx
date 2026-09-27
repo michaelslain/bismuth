@@ -6,7 +6,7 @@
 // the same head style as the daemon panels." An optional trailing slot carries a queued-turn note
 // + cancel button (ChatUserTurn) — kept generic here rather than hardcoded, so the label stays a
 // pure "text + optional trailing content" row.
-import type { JSX } from 'solid-js'
+import { children, type JSX } from 'solid-js'
 import Text from '../ui/Text'
 import styles from './ChatTurnLabel.module.css'
 
@@ -15,14 +15,24 @@ export type ChatTurnLabelProps = {
      *  deliberately never applies a CSS case transform — see ui/Text.module.css — so a capitalized
      *  persona name such as the default "Claude" would otherwise reach the DOM as-is). */
     label: string
+    /** Leading content before the name — the bot's face on the transcript's lowest assistant row
+     *  (ChatTranscript), or nothing. The row then reads face-then-name. */
+    avatar?: JSX.Element
     /** Extra content after the label — the queued note + cancel button, or nothing. */
     trailing?: JSX.Element
     class?: string
 }
 
 export default function ChatTurnLabel(props: ChatTurnLabelProps) {
+    // Resolved ONCE: the avatar is read twice (the class toggle + the slot), and reading a JSX
+    // getter twice would mount the face twice.
+    const avatar = children(() => props.avatar)
     return (
-        <div class={`${styles['chat-turn-label']} ${props.class ?? ''}`}>
+        <div
+            class={`${styles['chat-turn-label']} ${props.class ?? ''}`}
+            classList={{ [styles['with-avatar']]: !!avatar() }}
+        >
+            {avatar()}
             <Text as="span" eyebrow size="micro" tone="faint">
                 {props.label.toLowerCase()}
             </Text>
