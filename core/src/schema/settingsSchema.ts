@@ -158,13 +158,6 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 20,
             doc: 'Icon size (px) for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides. Default 12: an icon needs a little more room than the 11.5px --fs-ui label text beside it.',
         },
-        paletteInputFontSize: {
-            type: 'number',
-            default: 15,
-            min: 13,
-            max: 18,
-            doc: 'Search-input font size (px) — the Cmd+P command palette AND the in-window Cmd+O switcher.',
-        },
     }),
     graph: object({
         spin: {

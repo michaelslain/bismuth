@@ -351,7 +351,6 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
 | `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
-| `appearance.paletteInputFontSize` | `--palette-input-font-size` | `15px` |
 
 Two of these defaults deliberately break from the app's `--fs-ui` chrome size (`11.5px`), each for a
 documented reason (`settingsSchema.ts`'s own `doc` string on the key):
@@ -388,18 +387,18 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `editor.lineHeight` | `--prose-line-height` | `1.5` |
+| `editor.lineHeight` | `--prose-line-height` | `1.25` |
 
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `global.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
-in `Editor.tsx`. Default `1.5` → **27px**, not 18px: prose renders in
-the proportional serif face (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the
-measured `--prose-scale` (`1.04`) ≈ 14px, and 18px of leading on that would be a cramped 1.28 ratio —
-the old default was tuned for 13.5px MONO prose, before the serif face existed. `1.5` gives a loose
-~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a **rational multiple of the
-row unit** on purpose rather than tuned tight to the font size: two prose lines still span exactly
-three tree rows, so the "prose lands on the app's grid" property this token exists to protect
-survives — now as a 2:3 relationship instead of 1:1, rather than an arbitrary one.
+in `Editor.tsx`. Default `1.25` → **22.5px**: prose renders in the proportional serif face
+(`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale`
+(`1.04`) ≈ 14.04px, where 22.5px of leading is a 1.60 ratio — the normal range for serif body text.
+The old default of `1.5` (27px) was tuned for the earlier CMU Serif measurement (`--prose-scale`
+1.28, ~17.28px prose) and was never re-derived when the scale dropped to 1.04. `1.25` is still a
+**rational multiple of the row unit** on purpose rather than tuned tight to the font size: four
+prose lines span exactly five tree rows, so the "prose lands on the app's grid" property this token
+exists to protect survives — now as a 4:5 relationship instead of 1:1, rather than an arbitrary one.
 
 ### From `calendar.*`
 

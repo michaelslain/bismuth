@@ -359,7 +359,6 @@ function migrateLegacyAppearance(doc: Document): boolean {
         ['appearance', 'uiFontSize'],
         ['appearance', 'tabFontSize'],
         ['appearance', 'iconSize'],
-        ['appearance', 'paletteInputFontSize'],
         ['appearance', 'monoScale'],
         ['appearance', 'sidebarWidth'],
         ['editor', 'lineHeight'],
@@ -381,9 +380,12 @@ function migrateLegacyAppearance(doc: Document): boolean {
 // nothing reads it. `appearance.editorFont` is deleted outright here, for every saved value —
 // never translated into `uiFont`, since the two have always defaulted to the same thing and every
 // shipped value was already a Monaspace variant (see migrateLegacyAppearance's doc comment above).
+// `appearance.paletteInputFontSize` went when the search fields took their results' type size
+// (ui/SearchBar.module.css's densities change padding, never text size — DESIGN.md).
 const RETIRED_KEYS: readonly (readonly string[])[] = [
     ['editor', 'defaultMode'],
     ['appearance', 'editorFont'],
+    ['appearance', 'paletteInputFontSize'],
 ]
 
 /** The pair for `key` in `map`, or undefined. */

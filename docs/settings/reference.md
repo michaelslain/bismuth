@@ -57,7 +57,6 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
 | `iconSize` | number | `12` | min `11`, max `20` | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
-| `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 
 Example:
 
@@ -122,7 +121,7 @@ CodeMirror editor behavior.
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper). Independent of spellcheck; off by default. |
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
-| `lineHeight` | number | `1.5` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px — `global.css` `:root`), not the font size. Default `1.5` → 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale` (`1.04`) ≈ 14px; 27px of leading gives it a loose ~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a **rational multiple of the row unit** on purpose rather than tuned tight to the font size — 18px (the pre-redesign default) would only give ~1.28. |
+| `lineHeight` | number | `1.25` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px — `global.css` `:root`), not the font size. Default `1.25` → 22.5px. Prose is Lora (`--prose-font`) at 14.04px (13.5 × `--prose-scale` 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a **rational multiple of the row unit**, so four prose lines span exactly five tree rows. |
 | `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press `*` → `*word*`; press again → `**word**`). |
 | `wrapSelectionChars` | list&lt;string&gt; | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes `( [ { ' " $` already wrap via auto-close, so they're omitted by default. |

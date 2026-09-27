@@ -385,9 +385,8 @@ test('reconcile migrates a legacy-theme .settings file exactly once, resetting t
     expect(appearance.iconSize).toBe(
         DEFAULT_APPEARANCE.iconSize,
     )
-    expect(appearance.paletteInputFontSize).toBe(
-        DEFAULT_APPEARANCE.paletteInputFontSize,
-    )
+    // paletteInputFontSize is a retired key: pruned, not reset to a default it no longer has.
+    expect(appearance.paletteInputFontSize).toBeUndefined()
     expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale)
     expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth)
     expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight)
@@ -496,6 +495,21 @@ describe('reconcile prunes retired schema keys', () => {
         const { data } = (await readSettings(vault))!
         expect((data.editor as any).defaultMode).toBeUndefined()
         expect((data.editor as any).livePreview).toBe(true)
+    })
+
+    test('appearance.paletteInputFontSize is removed on reconcile, siblings kept', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'appearance:\n  theme: cathode\n  paletteInputFontSize: 17\n  editorFontSize: 20\n',
+        )
+        const wrote = await reconcileSettings(vault)
+        expect(wrote).toBe(true)
+        const { data } = (await readSettings(vault))!
+        const appearance = data.appearance as any
+        expect(appearance.paletteInputFontSize).toBeUndefined()
+        expect(appearance.editorFontSize).toBe(20)
     })
 
     test('a file that never had defaultMode is not rewritten by the prune step', async () => {
