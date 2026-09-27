@@ -52,7 +52,7 @@ function MenuRow(props: {
                     {props.detail}
                 </span>
             </Show>
-            {/* row-kbd (ui/ui.css): the caps recede to --faint, the same treatment every
+            {/* row-kbd (global.css's `ui/ui.css` section): the caps recede to --faint, the same treatment every
           .asc-menurow shortcut gets. */}
             <Show when={props.shortcut}>
                 <span class="bismuth-popover-shortcut row-kbd">

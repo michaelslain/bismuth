@@ -1,6 +1,7 @@
 // bench/moduleClassCheck.ts — emitted-CSS ↔ emitted-JS cross-check for CSS Modules.
 //
-// WHY THIS EXISTS. When a rule moves out of the global App.css into a `<Component>.module.css`, the
+// WHY THIS EXISTS. When a rule moves out of the global stylesheet (global.css's `App.css` section)
+// into a `<Component>.module.css`, the
 // class name is HASHED at build time (`.ft-row` -> `._ft-row_163am_18`) and is reachable only through
 // the imported `styles` object. A call site the migration forgot keeps its old string literal:
 //
@@ -248,7 +249,8 @@ log(
 )
 
 /** Every class name any GLOBAL (non-module) stylesheet in app/src also defines. B1/B2 cannot tell a
- *  module's `.active` from App.css's `.active` once both are in one bundle, so they skip these. */
+ *  module's `.active` from global.css's `App.css` section's `.active` once both are in one
+ *  bundle, so they skip these. */
 const globalClasses = new Set<string>()
 for (const f of allFiles(SRC).filter(
     f => f.endsWith('.css') && !f.endsWith('.module.css'),

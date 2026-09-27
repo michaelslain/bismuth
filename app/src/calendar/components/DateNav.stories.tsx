@@ -41,8 +41,9 @@ function nav(date: Date, view: ViewType) {
 }
 
 /** Same composition as `nav()`, at 600px instead of 900px — a 564px `.viewbar` content box (600
- *  minus the bar's 36px of padding, see ui/ui.css's own note on this). That sits under the 640px
- *  ABBREVIATE tier (measured against `.viewbar`'s content box, ui/ui.css:520-536) and above the
+ *  minus the bar's 36px of padding, see global.css's `ui/ui.css` section's own note on this). That
+ *  sits under the 640px ABBREVIATE tier (measured against `.viewbar`'s content box, global.css's
+ *  `ui/ui.css` section) and above the
  *  480px tier that starts dropping whole words next, so the range label is shortened here and
  *  nothing else in the bar has moved yet — exactly the band `*Abbreviated`/`*CrossingYear` need. */
 function navNarrow(date: Date, view: ViewType) {

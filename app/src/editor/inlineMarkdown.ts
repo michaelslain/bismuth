@@ -206,7 +206,8 @@ const BISMUTH_PROTECT_RE =
     /`+[^`\n]*?`+|<[^>]+>|\[[^\]]*?\]\([^)]*?\)|https?:\/\/[^\s<>)\]]+|(?:^|\s)#[\p{L}\d/_-]+/giu
 
 /** Wrap every whole-word "bismuth" in a cell's inline markdown with the shared iridescent
- *  `.bismuth-word` gradient span (App.css, same effect as the reading-mode `.bismuth-word` /
+ *  `.bismuth-word` gradient span (global.css's `App.css` section, same effect as the reading-mode
+ *  `.bismuth-word` /
  *  live-preview `.cm-bismuth`), skipping any that sit inside code / links / URLs / raw HTML / tags.
  *  Shares the mask → wrap → restore transform with the reading-mode renderer via `bismuthWrapSource`
  *  (only the protected-span set differs). The injected span passes through `marked` as inline HTML

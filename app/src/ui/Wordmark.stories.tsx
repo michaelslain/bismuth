@@ -1,5 +1,5 @@
 // Visual spec for the app-shell wordmark — the ASCII mark in the top strip
-// (`app/src/App.tsx`'s `.asc-wordmark` span, styled in `App.css`).
+// (`app/src/App.tsx`'s `.asc-wordmark` span, styled in global.css's `App.css` section).
 //
 // This is chrome, not a `ui/` primitive, so there is no `Wordmark` component to import: the story
 // renders the same span + class the shell does. Kept here anyway because the mark is a brand
@@ -46,7 +46,8 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The shipped mark at its default tracking (-0.22em, App.css `.asc-wordmark`). */
+/** The shipped mark at its default tracking (-0.22em, global.css's `App.css` section
+ *  `.asc-wordmark`). */
 export const Default: Story = {
     render: () => <Strip />,
 }

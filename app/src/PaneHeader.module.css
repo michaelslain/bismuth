@@ -9,7 +9,7 @@
  * inheriting App.css's 18px line-height into a ~26px row that matched none of TopStrip/StatusBar/
  * TabRailRow/its own siblings). A 4-way split costs 4× this row's height in permanent chrome, so
  * it gets the SMALLER of the two non-row bands, not the 36px TopStrip uses for a single global
- * bar. box-sizing:border-box is the app-wide default (styles/reset.css) — the 1px border-bottom
+ * bar. box-sizing:border-box is the app-wide default (global.css's `styles/reset.css` section) — the 1px border-bottom
  * is already inside the 24px, not added on top.
  *
  * THE "FOCUSED" BRIGHTENING IS A CROSS-COMPONENT RULE, READ VIA A DATA ATTRIBUTE, NOT A CLASS.

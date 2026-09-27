@@ -28,8 +28,9 @@ import { DEFAULTS } from './settings'
 const APP_SRC = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(APP_SRC, '..', '..')
 // The :root first-paint fallbacks moved out of App.css into styles/tokens.css (the CSS
-// modularization's global layer) — App.css only @imports it now. This constant is the one thing
-// that had to follow them; every assertion below is unchanged.
+// modularization's global layer) — both are now sections of one file, global.css, with no
+// @import between them. This constant is the one thing that had to follow them; every assertion
+// below is unchanged.
 const APP_CSS = join(APP_SRC, 'global.css')
 const TOKENS = join(ROOT, 'core', 'src', 'theme', 'tokens.ts')
 
@@ -225,7 +226,7 @@ describe('theme guard — semantic + elevation tokens re-theme (light ≠ dark)'
 describe('theme guard — centralized colors never re-duplicate (anti-drift lint)', () => {
     // Step 8: a raw hex for a CENTRALIZED value may live ONLY in the sanctioned sources —
     // core/src/theme/tokens.ts (the source of truth) and, for the dark first-paint fallbacks,
-    // app/src/styles/tokens.css :root (split out of App.css, which now only @imports it).
+    // app/src/styles/tokens.css :root (split out of App.css; both are now sections of global.css).
     // If one reappears anywhere else the 5-copies-that-drift problem is back.
     // (A blanket "no hex anywhere" ban is intentionally NOT used: issue/row refs like #100 or
     // #70a and fixed external palettes — Google event colors, xterm ANSI — are false positives.

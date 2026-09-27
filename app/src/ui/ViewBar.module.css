@@ -33,7 +33,8 @@
    which computed the SAME 36px as --h-band but from its own arithmetic — so the app's three bars
    (.viewbar here, .top-strip in shell/, and ui/IconBar's band) agreed only by coincidence, and
    retuning the bar rhythm meant finding and editing two different expressions that happened to
-   match. They are one token now: change --h-band in styles/tokens.css and all three move. */
+   match. They are one token now: change --h-band in global.css's `styles/tokens.css` section and
+   all three move. */
 /* ── Icon rhythm inside a BAR ──────────────────────────────────────────────────────────────────
    Every toolbar's icons sit at the same glyph-to-glyph distance as the file tree's row contents
    (--sp-3, 6px), so the chrome reads as one rhythm instead of each bar picking its own.

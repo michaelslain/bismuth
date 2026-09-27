@@ -1,11 +1,12 @@
 /* app/src/ui/Text.module.css — the body/prose text primitive (see Text.tsx). Sizes, weights
-   and line-heights read the FIXED type scale already defined once in ui/ui.css's :root block
-   (--fs-*, --fw-*, --lh-*, --ls-eyebrow — transcribed from
+   and line-heights read the FIXED type scale already defined once in global.css's `ui/ui.css`
+   section's :root block (--fs-*, --fw-*, --lh-*, --ls-eyebrow — transcribed from
    bismuth-design/ascii/design-system/tokens/typography.css) — nothing here is a new number.
 
    No font-family here on purpose: the app sets the interface font once, at the shell root
-   (App.css's `.app-shell { font: … "Monaspace Xenon" … }`), and every descendant — including
-   the existing markdown prose in styles/content.css — inherits it rather than re-declaring it.
+   (global.css's `App.css` section: `.app-shell { font: … "Monaspace Xenon" … }`), and every
+   descendant — including the existing markdown prose in global.css's `styles/content.css`
+   section — inherits it rather than re-declaring it.
    `.storybook/preview.ts` reproduces that same root rule on `body` for exactly this reason, so
    Text renders in the real interface font in Storybook too without this file naming it again.
 
@@ -21,7 +22,7 @@
   margin: 0;
 }
 
-/* ── size (ui/ui.css --fs-*) — 'inherit' emits none of these ── */
+/* ── size (global.css's `ui/ui.css` section --fs-*) — 'inherit' emits none of these ── */
 .text--micro { font-size: var(--fs-micro); line-height: var(--lh-ui); overflow-wrap: anywhere; }
 .text--ui { font-size: var(--fs-ui); line-height: var(--lh-ui); overflow-wrap: anywhere; }
 .text--body { font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; }

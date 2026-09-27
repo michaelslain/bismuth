@@ -11,7 +11,7 @@
  *   Foo.stories.tsx      -> the stories in that file (it IS the story)
  *   Foo.tsx              -> Foo.stories.tsx if it exists
  *   Foo.module.css       -> Foo.stories.tsx (colocated by convention)
- *   ui/ui.css, App.css   -> EVERYTHING. These are global; scoping them would be a lie.
+ *   app/src/global.css   -> EVERYTHING. The one global stylesheet; scoping it would be a lie.
  *   theme/tokens.ts      -> EVERYTHING, same reason.
  *
  * A file with no story maps to nothing and is REPORTED, not silently ignored — "no stories matched"
@@ -57,9 +57,7 @@ const appFiles = files.filter(f => f.startsWith('app/src/'))
 /** Files whose reach is the entire catalogue. Scoping a global stylesheet or the token source to a
  *  subset would produce a green run that proves nothing. */
 const GLOBAL = [
-    'app/src/ui/ui.css',
-    'app/src/App.css',
-    'app/src/ui/popover/popover.css',
+    'app/src/global.css',
     'core/src/theme/tokens.ts',
     'app/.storybook/preview.ts',
 ]

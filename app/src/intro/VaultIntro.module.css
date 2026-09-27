@@ -1,8 +1,9 @@
 /* app/src/intro/VaultIntro.module.css — first-run intro takeover, ASCII redesign.
    Themed via the app's CSS vars (--bg/--fg/--accent/--grad/…) so the theme picker
    re-themes the whole surface live. Buttons are the standard ui/ components (.btn chrome
-   from ui.css); eyebrows/wordmark/cards reuse the shared .asc-* primitives (ui.css +
-   App.css). This file only owns the takeover LAYOUT + the parts no shared class covers
+   from global.css's `ui/ui.css` section); eyebrows/wordmark/cards reuse the shared .asc-*
+   primitives (global.css's `ui/ui.css` + `App.css` sections). This file only owns the
+   takeover LAYOUT + the parts no shared class covers
    (the 3D graph host, the theme swatch cards, the power-up rows, the terminal heroes).
    Moved out of the global VaultIntro.css verbatim (2026-08 CSS modularization) except for
    the `:global()` wrapping documented below.

@@ -11,8 +11,9 @@
    is hashed per-file so a shared class name can't cross that boundary), but a `data-*` attribute
    is the correct escape hatch for exactly this case — see CLAUDE.md's "two element-hook forms".
    SearchResultRows.module.css's `.sresult[data-selected]` carries the matching convention for
-   `.sresult` cards; ui/ui.css's `.chip-toggle.selected` and graph/asciiGraph.css's
-   `.cluster-row.selected` are separate, unrelated uses of a plain (non-module) `.selected` class
+   `.sresult` cards; global.css's `ui/ui.css` section's `.chip-toggle.selected` and its
+   `asciiGraph.css` section's `.cluster-row.selected` are separate, unrelated uses of a plain
+   (non-module) `.selected` class
    and are untouched by this.
 
    `:global(.switcher-list)` reaches into SwitcherBar's own results column
@@ -77,7 +78,8 @@
 /* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
 .palette-match { color: var(--accent); font-weight: var(--fw-regular); }
 /* Shortcut caps: a layout slot only — the Kbd primitive (`.asc-kbd`/`.asc-key`) supplies the
-   chip look, and `.row-kbd` (ui/ui.css) makes the caps recede to --faint the way a menu row's
+   chip look, and `.row-kbd` (global.css's `ui/ui.css` section) makes the caps recede to --faint
+   the way a menu row's
    caps do everywhere else in the system. */
 .palette-shortcut {
   margin-left: auto;

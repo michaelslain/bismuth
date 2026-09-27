@@ -351,8 +351,9 @@
      no blur anywhere, ever; the one permitted depth cue is a flat, hard-offset "TUI drop-shadow"
      compositing against --shadow-hard (defined above, projected per-theme from
      core/src/theme/tokens.ts). --shadow-menu/-popup/-card/-modal are deleted (wave 1, §7) — every
-     former consumer reads --lift now. The five backdrop-filter sites outside ui/ui.css's
-     .asc-modal/.asc-popover (Editor.css, PreviewView.module.css, switcher.css) are unchanged by
+     former consumer reads --lift now. The five backdrop-filter sites outside global.css's `ui/ui.css`
+     section's .asc-modal/.asc-popover (the `Editor.css` section, PreviewView.module.css, the
+     `switcher.css` section) are unchanged by
      wave 1 — those surfaces belong to later waves (editor: wave 5, preview: wave 7, palette
      switcher: wave 3). */
   --lift: 2px 2px 0 var(--shadow-hard);
@@ -465,14 +466,14 @@
      primitive (Glyph.tsx, consumed well outside the graph) depending on a single feature's
      stylesheet for its own sizing was the bug this fixed (visual-unification audit §7 wave 0,
      finding §4.6) — this is the one file every ui/ primitive already side-effect-imported, now
-     folded into the token layer proper. --cell-w/--cell-w-dense stay in graph/asciiGraph.css: they
+     folded into the token layer proper. --cell-w/--cell-w-dense stay in global.css's `graph/asciiGraph.css` section: they
      are genuinely graph-specific (the font's own advance width at the graph's --fs-ui), not
      shared geometry. Values unchanged. */
   --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
   --cell-h-dense: 7px;
 }
 
-/* The view-bar icon rhythm — read only within ui/ui.css's own `.viewbar` section today, but a
+/* The view-bar icon rhythm — read only within global.css's `ui/ui.css` section's `.viewbar` section today, but a
    token rather than chrome, so it lives here regardless of how many consumers it currently has.
    `--bar-icon-gap` was `0px` (one-button Task 1): bracket siblings now carry their own `[`/`]`
    glyphs, so a 0 gap ran two adjacent bracket buttons together as `][` instead of `] [`. `--sp-4`
@@ -489,13 +490,13 @@
    palette/SwitcherBar.module.css, and palette/Palette.module.css all consume one or more of
    them. Nothing about their values changes; only the file that defines them does. */
 :root {
-  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
+  /* The ASCII register (global.css's `ui/ui.css` section .asc-popover/.asc-menurow) — panel radius 0, flat rows,
      --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
      Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
      itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
   --popover-radius: var(--r-0);
   --popover-pad: 4px;
-  /* Row height is now the app's row unit (--row-h, styles/tokens.css) via an explicit height
+  /* Row height is now the app's row unit (--row-h, global.css's `styles/tokens.css` section) via an explicit height
      on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
      autocomplete, and the chat history list all snap to the same 18px cadence as the
      sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
@@ -519,7 +520,7 @@
 
 /* Registered custom properties. `@property` registration is document-global — it cannot be scoped
    to a module or a component — so it belongs with the tokens even though the two properties are
-   SET on `.layout` (App.css). Registration order relative to use does not matter; what matters is
+   SET on `.layout` (global.css's `App.css` section). Registration order relative to use does not matter; what matters is
    that the registration exists at all, or the collapse animations below degrade to instant jumps. */
 /* The animated sidebar width lives in a *registered* custom property so it
    interpolates as a real <length>. Transitioning grid-template-columns directly
@@ -544,8 +545,8 @@
    names, so there is nothing here for a module to hash — these rules are global or they do not
    exist at all.
 
-   Cascade note for whoever moves the next batch of rules out of App.css: `@import` hoists, so this
-   file always wins the ORDER contest against anything left in App.css. That is inert here — every
+   Cascade note for whoever moves the next batch of rules out of global.css's `App.css` section: `@import` hoisted this file ahead of App.css when the two were separate stylesheets, so this
+   file always wins the ORDER contest against anything in global.css's `App.css` section. That is inert here — every
    rule below is specificity 0-0-0 or 0-0-1, so any class rule anywhere still beats it. Keep it that
    way; the moment a class selector lands in this file the hoist stops being harmless. */
 * { box-sizing: border-box; }
@@ -559,7 +560,7 @@
    keyboard user the moment they left a text field — in an app that ships user-configurable
    keybindings. It survived because it is unobservable to this repo's gates: `bench/cssBaseline.ts`
    records the RESTING state and no story could pose `:focus-visible`. The focus ring now lives in
-   `ui/ui.css` beside `.btn` (and in each surface's own module for non-.btn controls); this rule is
+   global.css's `ui/ui.css` section beside `.btn` (and in each surface's own module for non-.btn controls); this rule is
    font-only, which is all it ever claimed to be. DO NOT re-add `outline: none` here. */
 button { font: inherit; }
 body, html, #root { margin: 0; height: 100%; }
@@ -605,7 +606,7 @@ body { background: var(--bg); color: var(--fg); }
    The test allows that form and only that form.
 
    DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` still lives in
-   App.css beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
+   global.css's `App.css` section beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
    ever migrates into a module the keyframes block has to stay global or this rule silently
    stops animating — a blank-looking word, not an error. */
 /* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
@@ -619,7 +620,7 @@ body { background: var(--bg); color: var(--fg); }
    rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
 .bismuth-word, .cm-bismuth {
   /* THE SAME GRADIENT AS THE TOP-STRIP WORDMARK, deliberately — `--grad`, exactly what
-     `.asc-wordmark` paints with (App.css). This used to be a bespoke saturated rainbow
+     `.asc-wordmark` paints with (global.css's `App.css` section). This used to be a bespoke saturated rainbow
      (#ff6ec7 → #a06bff → #4d8bff → #22d3d6 → #5ff0a8 → #ffd36e) that shared only the sheen
      animation, so the app's two iridescent surfaces were two different brands. One mark, one
      gradient.
@@ -672,7 +673,7 @@ body { background: var(--bg); color: var(--fg); }
    with the render's inline style) so the native marker never doubles the text glyph.
 
    Moving these out of App.css flipped one precedence pair worth recording so nobody re-litigates
-   it: `.card-md li` sets `margin: 0` and stays in App.css, so it now sorts AFTER this file and
+   it: `.card-md li` sets `margin: 0` and stays in global.css's `App.css` section, so it now sorts AFTER this file and
    would out-rank the `li` margin below at equal specificity. It does not matter. cellList.ts
    writes `margin:0.05em 0` as an INLINE style on every li it emits, and an inline declaration
    beats both rules — before the split and after. The class appears in no other markup, so there
@@ -702,7 +703,7 @@ body { background: var(--bg); color: var(--fg); }
 /* These `.callout` classes are emitted by bases/markdown.ts renderMarkdown — used on every
    in-app rendered-note surface (card faces, `.md` transclusion). Moved here verbatim from the
    deleted BlockEditor.module.css (2026-09, blocks-mode removal): this file is one of the four
-   global stylesheets App.css imports, so the rules still apply wherever those surfaces render.
+   global stylesheets that were merged into global.css alongside App.css's own section, so the rules still apply wherever those surfaces render.
    The export pipeline (htmlTemplate.ts) + the CodeMirror widget (livePreview.ts calloutTheme)
    carry their OWN copies of the equivalent rules.
    PER-TYPE ACCENTS BELOW MUST STAY IN SYNC WITH CALLOUT_TYPES IN editor/callout.ts. */
@@ -785,10 +786,10 @@ details.callout > summary::-webkit-details-marker {
    The Windows/Linux typed window controls that sit at this strip's right edge live in
    shell/WindowControls.module.css, not here. */
 /* `.status-bar` and its `.status-*` fields moved into shell/StatusBar.module.css. `.status-dot`
-   (owned by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never moved with them. */
+   (owned by ui/StatusDot.tsx, in global.css's `ui/ui.css` section) is unrelated and never moved with them. */
 
-/* Wordmark: the system's ONE decorative flourish (bismuth-design/ascii/README.md "App shell" + ui.css's
-   reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
+/* Wordmark: the system's ONE decorative flourish (bismuth-design/ascii/README.md "App shell" + global.css's
+   `ui/ui.css` section's reserved-for-`App.css` note above the ASCII primitives section). A slow iridescent sheen across
    the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
 /* The mark is ASCII art (`,;']--]';,` — a hopper-crystal silhouette), not a word, so it wants
    NEGATIVE tracking: the glyphs have to close up into one shape. `.08em` is right for lettering
@@ -824,7 +825,7 @@ details.callout > summary::-webkit-details-marker {
 
 /* The sidebar/rail collapse used to hardcode its own cubic-bezier(0.22, 1, 0.36, 1) literal —
    the single most visible chrome animation in the app, and untokenized (visual-unification audit
-   §4.7). Wave 2 repointed --ease onto exactly this curve (styles/tokens.css) and swept the
+   §4.7). Wave 2 repointed --ease onto exactly this curve (global.css's `styles/tokens.css` section) and swept the
    literal onto var(--ease) here; 0.26s stays its own literal — a sidebar-width slide is a much
    larger, slower motion than the generic --dur/--dur-fast steps, and unifying the CURVE is the
    point, not forcing every transition in the app onto one duration. */
@@ -858,7 +859,7 @@ details.callout > summary::-webkit-details-marker {
 @media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
 .graph-slot-main { width: 100%; height: 100%; }
 /* `.full` (generic full-box filler — pane placeholders / Suspense fallbacks) moved UP into
-   ui/ui.css: used by both App.tsx and PaneContent.tsx, two unrelated components (Task 4's rule). */
+   global.css's `ui/ui.css` section: used by both App.tsx and PaneContent.tsx, two unrelated components (Task 4's rule). */
 /* `.graph-floater` / `.graph-floater.docked` (the always-mounted Knowledge Graph wrapper) moved
    into shell/GraphFloater.module.css. */
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
@@ -874,9 +875,9 @@ details.callout > summary::-webkit-details-marker {
    generic state names from being reachable app-wide. */
 
 /* The shared view bar (.viewbar, .crumb, the .vb-* regions) and the category chips +
-   status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
+   status dot (.chip, .status-dot) moved UP into global.css's `ui/ui.css` section: each has consumers in several
    unrelated components, so scoping them into any one module would force every other consumer
-   to import that module. ui/ui.css records the per-family consumer count and the cascade
+   to import that module. That section records the per-family consumer count and the cascade
    analysis behind the move. Note the knock-on below: the mini-graph's `.graph-viewbar`
    padding override had to become a two-class selector once `.viewbar` left this file. */
 
@@ -1132,9 +1133,9 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
      .viewbar vs .graph-viewbar — both set `padding` on the same element at one class. This is why
        GraphView.module.css writes `:global(.viewbar).graph-viewbar` (moved there from App.css by
        the 2026-08 CSS modularization, Task 9 — same fix, same specificity, new file). The two
-       surfaces disagree about file order: the app bundle loads this file BEFORE App.css (ui.css
-       rides a dependency chunk), while
-       .storybook/preview.ts imports App.css first and this file after. A one-class override would
+       surfaces disagreed about file order (before the merge into global.css): the app bundle loaded this file BEFORE App.css (ui.css
+       rode a dependency chunk), while
+       .storybook/preview.ts imported App.css first and this file after. A one-class override would
        have won in the app and lost in Storybook — the same source rendering two ways.
      .viewbar vs .cal-viewbar used to tie on `gap` at one class each (calendar/Calendar.module.css,
        which loaded after this one on both surfaces and so kept winning). Task 15 (2026-09-13)
@@ -1170,7 +1171,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    These are unused for now: Stage 4 (app/src/ui/ascii/, Solid components) and
    Stage 5 (views) are what will actually render them. Not ported here: the
    "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)
-   and .asc-wordmark/.asc-table, which belong to App.css view chrome (later
+   and .asc-wordmark/.asc-table, which belong to global.css's `App.css` section's view chrome (later
    stages). The .viewbar and .crumb set is no longer the exception this
    note used to name — it moved INTO this file; see the cross-component
    primitives block directly above.
@@ -1216,7 +1217,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    proposal`/`.asc-frontmatter`/`.asc-callout` used to be bare classes here, exactly the pattern
    Text/Label/Badge were built to eliminate. Now real components with colocated modules:
    ui/Card.tsx (Card.module.css), ui/Callout.tsx (Callout.module.css) — each still shares the one
-   2px accent left border, --accent-edge, defined in styles/tokens.css. (`ui/Frontmatter.tsx` was
+   2px accent left border, --accent-edge, defined in global.css's `styles/tokens.css` section. (`ui/Frontmatter.tsx` was
    the third of these; dropped in the preview redesign — Task 1 — once note frontmatter was ruled
    flat, no accent edge, so the companion strip could match the note editor directly instead.) */
 
@@ -1274,7 +1275,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    grid, and in an inherited proportional font its `.` cells collapse to ~3px while
    `#` stays wide, so the bar reads as a thin dotted line instead of a meter. */
 .asc-meter { white-space: pre; color: var(--accent); font-family: var(--ui-font-stack); }
-/* Namespaced, not `.empty` — App.css's global `.empty` (the empty-pane flex column)
+/* Namespaced, not `.empty` — global.css's `App.css` section's global `.empty` (the empty-pane flex column)
    would otherwise turn this inline run into a block and break the bar onto 3 lines. */
 .asc-meter .asc-meter-empty { color: var(--faint); }
 .asc-field { position: relative; overflow: hidden; background: var(--graph-bg); }
@@ -1633,7 +1634,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* ── Prose vs mono inside the editor ──────────────────────────────────────────────────────────
    `.cm-scroller` now sets --prose-font (Editor.tsx's editorTheme) so note BODY text renders in the
    proportional face. Everything below is explicitly NOT prose and is pulled back to the monospace
-   editor font. The prose scope itself is defined once, in styles/tokens.css's --prose-font block —
+   editor font. The prose scope itself is defined once, in global.css's `styles/tokens.css` section's --prose-font block —
    deliberately NOT re-quoted here: a verbatim copy is exactly what let this drift. It said "never
    headings, tables, ..." long after headings became prose and tables were still on the list below,
    and nothing caught it because the copy had no way to know the source had moved. The two selector
@@ -1894,8 +1895,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    remains here are the rules that MUST stay global — they target OTHER components' DOM by
    `[data-*]` attribute precisely BECAUSE the corresponding classes are already CSS-Modules
    locals owned by those other components, and a module class cannot reach another component's
-   DOM. This file is still loaded at boot (SwitcherBar.tsx eagerly imports it via
-   `import './switcher.css'`, and SwitcherBar is itself eagerly imported by App), so the
+   DOM. This file is still loaded at boot (global.css is eagerly imported once, by App.tsx), so the
    `[data-editor-pane]` positioning context below is in place before the bar ever renders. */
 
 /* Positioning context for the absolute bar. Harmless when idle (no offset children). Selects
@@ -2101,7 +2101,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 
 /* Ribbon tabs (Start / Formulas / Data) → the ASCII system's own SegmentedToggle
-   register (ui/ui.css `.segmented` + `.btn--selected`/`.btn--unselected`, the ONE
+   register (global.css's `ui/ui.css` section `.segmented` + `.btn--selected`/`.btn--unselected`, the ONE
    selected/unselected vocabulary the whole app now shares — graph mode, calendar view
    switcher, BaseView tabs). Inactive tabs are `--faint`, hover lifts to `--text-muted`
    + `--hover-bg`, and the ACTIVE tab is `--accent` text on `--accent-soft` — exactly

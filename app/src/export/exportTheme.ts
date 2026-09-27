@@ -24,11 +24,12 @@ const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif'
 // frontmatter in Helvetica.
 const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 
-// Mirrors app/src/styles/tokens.css (--prose-font, --prose-scale) and editor.lineHeight's schema
-// default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
-// same role DEFAULT_PALETTE plays for colour.
+// Mirrors global.css's `styles/tokens.css` section (--prose-font, --prose-scale) and
+// editor.lineHeight's schema default. A headless (CLI) export has no DOM to probe, so these stand
+// in for the live values — same role DEFAULT_PALETTE plays for colour.
 const DEFAULT_PROSE_FONT = "'Lora Variable', Lora, Georgia, serif"
-// Mirrors styles/tokens.css's --prose-scale for Lora and MUST be kept in sync with it. Measured
+// Mirrors global.css's `styles/tokens.css` section's --prose-scale for Lora and MUST be kept in
+// sync with it. Measured
 // (Task 1, canvas x-height at 100px em): Monaspace Xenon 51.75, Lora Variable 50.00 -> 1.04.
 // Advance-width parity gave 1.02 and disagreed; x-height governs apparent size at a glance, so it
 // wins. 1.04 replaces an earlier 1.28, which was CMU Serif's x-height ratio from before the swap
@@ -40,7 +41,8 @@ export const PROSE_SCALE = 1.04
 // value above.
 const DEFAULT_PROSE_LEADING = 22.5 / (13.5 * PROSE_SCALE)
 
-// The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved
+// The app's note type scale: the fixed design STEPS from global.css's `styles/tokens.css` section,
+// not six resolved
 // heading sizes. The ramp is applied to a document's own body size by headingSizes() — see
 // TypeScale's docs for why carrying resolved pixels coupled heading size to the editor's font
 // size and the line box to the export's point size, two settings nothing ties together.

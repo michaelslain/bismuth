@@ -425,7 +425,7 @@ export const Empty: Story = {
  *  MixedTypography — the token is the source of truth. The trailing `> [!note]` callout is this
  *  repo's ONE rendered-markdown-callout coverage through a card/chat/transclusion surface (as
  *  opposed to the CodeMirror live-preview widget, covered elsewhere) — its `.callout*` rules
- *  moved from the deleted BlockEditor.module.css to styles/content.css (blocks-mode removal). */
+ *  moved from the deleted BlockEditor.module.css to global.css's `styles/content.css` section (blocks-mode removal). */
 export const TableMessage: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>

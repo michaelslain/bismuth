@@ -60,7 +60,7 @@ function hoverLabel(node: HoverNode): string {
 
 // FPS readout color is a fixed traffic-light scale (green/yellow/red), NOT derived
 // from the theme's palette CSS vars — it should mean the same thing in every theme.
-// The scale itself lives as --hud-fps-* tokens in styles/tokens.css.
+// The scale itself lives as --hud-fps-* tokens in global.css's `styles/tokens.css` section.
 function fpsColor(fps: number): string {
     if (fps >= 50) return 'var(--hud-fps-good)' // green: smooth
     if (fps >= 30) return 'var(--hud-fps-ok)' // yellow: usable
@@ -404,7 +404,7 @@ export function GraphView(props: {
     }
 
     // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
-    // draws on the SAME cell in both (the app's unified --row-h rhythm, asciiGraph.css --cell-h) —
+    // draws on the SAME cell in both (the app's unified --row-h rhythm, global.css's `graph/asciiGraph.css` section --cell-h) —
     // there is no denser cell for the mini slot any more. It just fits fewer glyphs; that's expected.
 
     createEffect(() => {

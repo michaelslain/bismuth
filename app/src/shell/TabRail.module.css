@@ -47,7 +47,8 @@
    way; what differs is whether the grid reserves room for it. HOVER stays a pure overlay so the
    editor body never reflows under the pointer; PINNED reflows the editor, because a rail that is
    staying is part of the layout and must not sit on top of the note (queue item 2). The pinned
-   column is set by `.layout.has-rail.rail-pinned` in App.css — App.css, not here, because --rail-w
+   column is set by `.layout.has-rail.rail-pinned` in global.css's `App.css` section — there, not
+   here, because --rail-w
    is consumed by the PARENT grid and a value set on this element would be invisible to it. Layout
    top-to-bottom: the +/terminal/chat action TOOLBAR, then the back/forward nav, then the scrollable
    tab-row list. The toolbar + nav are flex-wrap rows: collapsed (46px) each 28px button drops to its
@@ -69,8 +70,9 @@
 /* PINNED IS A THIRD WAY IN, not a different expanded state: same 232px surface width as hover, it
    just does not need the pointer to stay there. It deliberately DIFFERS from hover in two things —
    see the `box-shadow: none` rule below (naming it rather than counting lines to it, since a line
-   count rots the next time anything is inserted between them), and App.css's
-   `.layout.has-rail.rail-pinned` for the grid column, which hover never reserves. Toggled by the
+   count rots the next time anything is inserted between them), and global.css's `App.css`
+   section's `.layout.has-rail.rail-pinned` for the grid column, which hover never reserves.
+   Toggled by the
    `toggle-tab-rail` command (Alt+Shift+S), which persists in localStorage exactly the way the left
    sidebar's own toggle does. */
 .tab-rail:hover .tab-rail-inner,

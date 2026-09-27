@@ -8,7 +8,8 @@
 // could see it: every ramp was internally consistent, each lived in a different file, and two of
 // them were expressed as `em` multipliers off whatever size they happened to inherit.
 //
-// The ramp is now ONE definition (--fs-h1..h6 / --fw-h1..h6 in styles/tokens.css) that all five
+// The ramp is now ONE definition (--fs-h1..h6 / --fw-h1..h6 in global.css's `styles/tokens.css`
+// section) that all five
 // surfaces read. This story is where the INVARIANT is checked by eye, and headingRamp.test.ts is
 // where it is checked mechanically:
 //

@@ -59,7 +59,8 @@ const QUIET_AFTER_FIRST_PAINT = Number(arg('settle', '400'))
    was trying to avoid, and 6 on a 16-core machine, which left most of the box idle. */
 const CONCURRENCY = Number(arg('concurrency', String(poolSize(8))))
 
-/** The project's type scale (ui/ui.css --fs-*). A size off this list is drift, not a decision —
+/** The project's type scale (global.css's `ui/ui.css` section --fs-*). A size off this list is
+ *  drift, not a decision —
  *  every value here was reconciled against the scale in the 2026-08 standardization pass. */
 const SCALE = [10.5, 11.5, 13, 13.5, 15, 19, 24]
 /** Sizes deliberately off the scale, with the reason. Anything not listed is reported. */

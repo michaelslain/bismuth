@@ -239,8 +239,9 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                 .join(' ')}
         >
             <div
-                // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish (App.css),
-                // shared with the top strip and intro hero; see DaemonFace.module.css `.face`.
+                // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish
+                // (global.css's `App.css` section), shared with the top strip and intro hero; see
+                // DaemonFace.module.css `.face`.
                 class={`${styles.face} asc-wordmark`}
                 role="img"
                 aria-label={'daemon — ' + moodLabel(renderedMood())}

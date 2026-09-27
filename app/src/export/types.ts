@@ -60,7 +60,8 @@ export interface ThemePalette {
     // The app's own NOTE HEADING scale, resolved to concrete values. Exported notes used to set no
     // heading font-size at all, so every level fell back to the browser's defaults — a different
     // ramp AND a different shape from the app's. In the app (editor/livePreview.ts, sizes in
-    // styles/tokens.css) h3 and h4 sit AT body size and differ only in weight, while h5/h6 change
+    // global.css's `styles/tokens.css` section) h3 and h4 sit AT body size and differ only in
+    // weight, while h5/h6 change
     // REGISTER (uppercase + tracking) rather than merely shrinking; the browser defaults instead
     // step h3 ABOVE body and shrink h5/h6 into small body text.
     //

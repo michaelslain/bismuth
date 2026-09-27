@@ -1,10 +1,11 @@
 /* Outer shell: holds the local theme vars + a thin toolbar over a flex-filling body. */
 .host {
   /* A PRIVATE COLOUR SCALE THAT SHADOWED THE REAL ONE. These six were mixed from --fg/--accent by
-     hand, in this file, while styles/tokens.css already defined --text-muted, --surface-1/-2/-3 and
-     --accent-soft for exactly these roles. Because they were derived rather than copied they drifted
-     silently: nothing broke, they just rendered a few percent off the rest of the app. They stay
-     here (rather than moving to styles/tokens.css) because they're still consumed by name across
+     hand, in this file, while global.css's `styles/tokens.css` section already defined --text-muted,
+     --surface-1/-2/-3 and --accent-soft for exactly these roles. Because they were derived rather
+     than copied they drifted silently: nothing broke, they just rendered a few percent off the rest
+     of the app. They stay here (rather than moving to global.css's `styles/tokens.css` section)
+     because they're still consumed by name across
      every split-out bases/*.module.css sibling — the custom properties cascade down through this
      element regardless of which module file the consuming rule lives in. New rules should read the
      real token directly; these should be inlined away the next time a consumer is touched. */

@@ -1,7 +1,8 @@
-/* app/src/ui/BarLabel.module.css — the label's own geometry. Its COLLAPSE lives in ui/ui.css with
- * the rest of the ladder, keyed on `data-bar-label` / `data-bar-abbr`, because those attributes are
- * the only hook a global stylesheet can name: a module class is hashed at build time, so a rule in
- * ui.css naming `.label` would match nothing here, silently. */
+/* app/src/ui/BarLabel.module.css — the label's own geometry. Its COLLAPSE lives in global.css's
+ * `ui/ui.css` section with the rest of the ladder, keyed on `data-bar-label` / `data-bar-abbr`,
+ * because those attributes are the only hook a global stylesheet can name: a module class is
+ * hashed at build time, so a rule in that section naming `.label` would match nothing here,
+ * silently. */
 
 /* `inline`, not `inline-flex`. DateNav's range label wraps this in an ellipsizing box, and
    `text-overflow: ellipsis` only clips INLINE content — an atomic inline-level box (which

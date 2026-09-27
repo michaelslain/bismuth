@@ -166,24 +166,24 @@ const editorTheme = EditorView.theme({
     // `overflowAnchor: none` stops the browser's scroll-anchoring from bumping scrollTop when
     // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
     // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
-    // Line-height is a multiple of the app's row unit (--row-h, ui.css :root), NOT of the
+    // Line-height is a multiple of the app's row unit (--row-h, global.css's `ui/ui.css` section :root), NOT of the
     // font size — editor.lineHeight (--prose-line-height) defaults to 1.25, so prose lines land
     // on a 1.25x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
         // --prose-font (the prose face), NOT --ui-font-stack. This is the ANSWERED monospace-scope
-        // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
+        // decision from the visual-unification wave (global.css's `styles/tokens.css` section §9.1): mono stays the
         // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
         // face is scoped to note prose and chat message bodies. The token existed and was loaded
         // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
         // rendering in Monaspace.
-        // Everything that is NOT prose is pulled back to --ui-font-stack in Editor.css (headings,
+        // Everything that is NOT prose is pulled back to --ui-font-stack in global.css's `Editor.css` section (headings,
         // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
         // overrides this whole scroller for config buffers, and its comment has always called
         // this declaration "editorTheme's prose font" — this makes that true.
         fontFamily: 'var(--prose-font)',
         // --prose-font-size, not --editor-font-size: the serif needs ~15% more nominal px to read
-        // at the same optical size as the mono it replaced (styles/tokens.css --prose-scale carries
-        // the measurement). The mono exclusions in Editor.css reset BOTH family and size, so a code
+        // at the same optical size as the mono it replaced (global.css's `styles/tokens.css` section --prose-scale carries
+        // the measurement). The mono exclusions in global.css's `Editor.css` section reset BOTH family and size, so a code
         // fence or a heading is unaffected by this.
         fontSize: 'var(--prose-font-size)',
         lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',

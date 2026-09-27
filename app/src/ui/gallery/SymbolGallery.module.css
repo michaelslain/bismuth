@@ -1,7 +1,8 @@
 /* SymbolGallery.module.css — scoped chrome for ui/gallery/SymbolGallery.tsx (the searchable
    icon/emoji grid modal). Moved out of the global App.css (2026-08 CSS modularization, Task 11 —
    the "icon" tail family). Single owner: icons/IconPicker.tsx (the other icon-picker-shaped
-   component) writes none of these classes (already noted in ui/ui.css's Task 4 decision record).
+   component) writes none of these classes (already noted in global.css's `ui/ui.css` section's
+   Task 4 decision record).
 
    Class names here are HASHED at build time: reachable only through the imported `styles` object,
    never as a string literal. Nothing outside this component may target them.

@@ -8,7 +8,7 @@
     <title>Bismuth</title>
     <script>
       // Paint the last-known theme BEFORE the bundle loads, so the correct theme shows
-      // immediately instead of flashing App.css's default-theme fallbacks until settings
+      // immediately instead of flashing global.css's `App.css` section's default-theme fallbacks until settings
       // hydrate. Reads the var map the app caches under "oa-theme-vars-v1" (see App.tsx);
       // a cold cache is a no-op (the :root fallbacks apply, exactly as before).
       try {
@@ -24,7 +24,7 @@
          first paint (before the JS bundle loads) until App signals its initial data is ready.
          Self-contained (no bundle CSS) so it renders instantly. Re-skinned to the ASCII register
          (bismuth-design/ascii): the --bg ground plus the typed "bismuth" wordmark (matching .asc-wordmark,
-         App.css) and a blinking .asc-caret underscore — no images, no color gems. Theme vars are
+         global.css's `App.css` section) and a blinking .asc-caret underscore — no images, no color gems. Theme vars are
          already applied by the script above when the cache is warm; every var() here still carries
          a literal fallback (the "ink" theme's tokens, core/src/theme/tokens.ts) for a cold cache,
          same pattern the old markup used. */
@@ -49,7 +49,7 @@
         font: 600 20px/1 "Monaspace Xenon", ui-monospace, "SF Mono", monospace;
         letter-spacing: 0.08em;
       }
-      /* Mirrors .asc-wordmark's sheen (App.css) — the app's one decorative flourish — with a
+      /* Mirrors .asc-wordmark's sheen (global.css's `App.css` section) — the app's one decorative flourish — with a
          hardcoded gradient fallback since --grad/--sheen are computed by settingsCssVars.ts and
          may not exist yet at first paint. */
       #boot-splash .bs-word {
@@ -61,7 +61,7 @@
         animation: bs-sheen var(--sheen, 8s) linear infinite;
       }
       @keyframes bs-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-      /* Mirrors .asc-caret (ui/ui.css) — the app's one blinking cursor glyph. */
+      /* Mirrors .asc-caret (global.css's `ui/ui.css` section) — the app's one blinking cursor glyph. */
       #boot-splash .bs-caret {
         color: var(--accent, #93bdb0);
         animation: bs-blink var(--blink, 1.1s) step-end infinite;

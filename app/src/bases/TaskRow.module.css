@@ -6,7 +6,8 @@
    TaskCheck.module.css — the table renders it without the row.
 
    NOTHING HERE MAY BE NAMED `bismuth-*`. `.bismuth-task-field` is a GLOBAL class written into
-   runtime-generated HTML strings by bases/taskCardMarkup.ts; it stays in styles/content.css —
+   runtime-generated HTML strings by bases/taskCardMarkup.ts; it stays in global.css's
+   `styles/content.css` section —
    this component's fields are styled entirely by the module-local `.taskField` below instead
    of also carrying that global class, since the compact register no longer shares the boxed
    chip look `.bismuth-task-field` draws. app/src/cssLayering.test.ts guards the distinction. */

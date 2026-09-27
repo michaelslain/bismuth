@@ -4,7 +4,7 @@
    them.
 
    `.status-dot` is NOT here and never will be — despite the shared prefix it belongs to
-   ui/StatusDot.tsx via ui/ui.css and is a wholly unrelated component.
+   ui/StatusDot.tsx via global.css's `ui/ui.css` section and is a wholly unrelated component.
 
    `.status-location:hover` is OUTSIDE the computed-style baseline's reach. `bench/cssBaseline.ts`
    records the resting state of every Storybook story; CSS `:hover` follows the real pointer and
@@ -110,7 +110,8 @@
 /* The caret is nested inside .status-daemon, so without this it would sit flush against the final
    letter ("working_"). A small margin gives it the one character of air a terminal prompt has,
    while staying far tighter than the bar's `gap` between siblings — which is the whole reason it
-   moved inside. It deliberately does NOT set a colour: `.asc-caret` (ui/ui.css) paints every
+   moved inside. It deliberately does NOT set a colour: `.asc-caret` (global.css's `ui/ui.css`
+   section) paints every
    cursor in the app --accent, and this one stays part of that family rather than tinting itself
    to whichever daemon state it happens to be sitting next to. */
 .status-caret { margin-left: var(--sp-2); }

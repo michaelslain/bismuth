@@ -125,8 +125,9 @@ const DatePicker: Component<DatePickerProps> = props => {
                             onMouseEnter={() => setHighlight(i())}
                         >
                             {/* design-system-ignore bareElement: bismuth-popover-label/-detail
-                                are the shared runtime `bismuth-*` chrome from ui/popover/popover.css
-                                (DESIGN.md externalClasses) — wrapping in Text would style over it */}
+                                are the shared runtime `bismuth-*` chrome from global.css's
+                                `ui/popover/popover.css` section (DESIGN.md externalClasses) —
+                                wrapping in Text would style over it */}
                             <span class="bismuth-popover-label">{/* design-system-ignore bareElement: bismuth-popover-label is shared runtime chrome, DESIGN.md externalClasses */}{opt.label}</span>
                             <span class="bismuth-popover-detail">{/* design-system-ignore bareElement: bismuth-popover-detail is shared runtime chrome, DESIGN.md externalClasses */}{opt.date}</span>
                         </div>

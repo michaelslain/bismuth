@@ -1,12 +1,14 @@
 /* app/src/graph/EmbeddedGraph.module.css
  * The ```graph note block's card (EmbeddedGraph.tsx): toolbar + canvas + edit row +
- * footer. The canvas itself is the shared AsciiGraphRenderer (asciiGraph.css); its
+ * footer. The canvas itself is the shared AsciiGraphRenderer (global.css's `asciiGraph.css`
+ * section); its
  * .graph-viewport mounts position:absolute inside .graph-block-canvas.
  *
  * The widget's own OUTER wrapper (`.bismuth-graph-block`, set as a plain string by
  * editor/graphBlock.ts's `container.className`, outside this component's own render tree)
  * is NOT here — it's a runtime-emitted class (cssLayering.test.ts's RUNTIME_CLASS_PREFIXES
- * bans `bismuth-*` from any CSS Module) and lives in styles/content.css next to its sibling
+ * bans `bismuth-*` from any CSS Module) and lives in global.css's `styles/content.css` section
+ * next to its sibling
  * `.bismuth-query-block`.
  */
 
