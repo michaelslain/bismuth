@@ -304,7 +304,7 @@ function FlashcardsPane(props: { w: string; path: string }) {
  *  THE BUDGET WAS REWORKED 2026-09-02, when the flashcards deck's AsciiMeter came back (queue item
  *  16's replacement — see FlashcardsView.module.css's `.fcmeter`). The gap between the pane's top and
  *  `.stage`'s top now has TWO legitimate occupants instead of one: the bar (`--h-band`, a fixed
- *  36px — ui.css:474) and the restored session-progress meter (one line of `--fs-ui` text plus its
+ *  36px — global.css's `styles/tokens.css` section) and the restored session-progress meter (one line of `--fs-ui` text plus its
  *  own `--sp-4` top padding, ~19.5px measured live, total chrome ~55.5px). Bumping the old flat
  *  `<= 36` to `<= 56` and stopping there would have been exactly the kind of loosened-until-it-
  *  passes assertion this whole plan keeps finding, so the two occupants are measured and bounded
@@ -538,7 +538,7 @@ export const FlashcardsTight: Story = {
 /** 480px pane = 444px content box: past drop-1 (465), still above the floor (430). The tally goes,
  *  and its REGION goes with it — `.vb-trail` gaps every region, so one left standing over a hidden
  *  only child still charges the bar 12px for a control that is not there. What hides it is
- *  ui.css's `[class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='N'])))` — one copy per tier.
+ *  ViewBar.module.css's `.vbRegion:has(> *):not(:has(> :not([data-bar-drop='N'])))` — one copy per tier.
  *  It hides a region whose every element child is dropping at this tier, so the tally does NOT have
  *  to be the only thing in `readouts`; it has to be the only thing not dropping. (The earlier
  *  `:only-child` form did require that, and this comment used to say so. The `:has(> *)` guard is

@@ -1375,7 +1375,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `uiLint.ts` | Pure dev-time lint helpers (tested): `labelCaseWarning(children)` flags a `TextButton`/`IconTextButton` label that isn't all-lowercase; components call these behind an `import.meta.env.DEV` guard |
 | `ascii/` | `AsciiMeter.tsx`, `AsciiTree.tsx`, `Kbd.tsx`, `TabRail.tsx` (ASCII-rendering primitives) plus their pure math modules (`asciiMeterMath.ts`, `noiseField.ts`, `parseCombo.ts`, `treePrefix.ts`), each tested |
 | `gallery/` | `galleryStore.tsx` (global image gallery), `SymbolGallery.tsx`, `sources.ts`, `types.ts`, `activeItem.ts` (tested), `galleryState.ts` |
-| `popover/` | `PopoverList.tsx`, `MenuRow.tsx`, `createMenuNav.ts`, `iconMap.ts`, `rowDom.ts`, `popover.css` |
+| `popover/` | `PopoverList.tsx`, `MenuRow.tsx`, `createMenuNav.ts`, `iconMap.ts`, `rowDom.ts` |
 
 ---
 

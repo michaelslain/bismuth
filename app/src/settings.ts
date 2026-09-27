@@ -44,7 +44,6 @@ export interface Settings {
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
         tabFontSize: number // px
         iconSize: number // px
-        paletteInputFontSize: number // px
     }
     graph: {
         spin: boolean
