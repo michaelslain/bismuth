@@ -33,6 +33,8 @@ views:
 
 Only `front`/`back` need real values to start — `due`/`ease`/`interval` are populated by the reviewer, not by you.
 
+**The `flashcards` tag is NOT required here.** It only gates the separate markdown-cards deck model (notes scanned by `collectCards`/the `/cards/*` endpoints need `#flashcards` or `#flashcards/sub`). This Bases `flashcards` **view** is a different mechanism — any base with a `flashcards` view draws cards straight from its own rows via `frontField`/`backField`/etc., regardless of tags.
+
 ## Failure modes
 
 - **The CARDS button and per-card edit modal require `basePath`** (a saved base file) — a `flashcards` view inside an embedded ` ```query ` block has no file path, so it cannot open the deck editor or persist grades at all.

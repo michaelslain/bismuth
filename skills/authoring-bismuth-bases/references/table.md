@@ -36,6 +36,7 @@ views:
 | `columnWidths` | `Record<propertyId, number>` | none | Per-column pixel widths; normally written by drag-resize, safe to set by hand. |
 | `limit` | `number` | none | Max rows per group. |
 | `filters` | `FilterNode` | none | Per-view filter, ANDed with the base-level `filters`. |
+| `mode` | `"normal"` \| `"tasks"` | `"normal"` | `table` is the one row view that does NOT fold a task row into a `<TaskRow>` line — a checkbox, description and chips don't fit a cell. In `mode: tasks` the `status` column becomes a live checkbox cell and the `due` column paints overdue; every other column stays an ordinary cell. |
 
 ## Failure modes
 

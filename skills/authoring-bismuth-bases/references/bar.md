@@ -1,6 +1,6 @@
 # bar
 
-A vertical bar chart (inline SVG) — one bar per bucket. Shares its data pipeline (`buildChartData`) with `line`/`stat`/`heatmap`.
+A character-grid bar chart — one row of monospace `#` fill per bucket, via `AsciiChart` (`app/src/ui/ascii/AsciiMeter.tsx`). **No SVG.** Shares its data pipeline (`buildChartData`) with `line`/`stat`/`heatmap`.
 
 ## Working example
 
@@ -29,7 +29,9 @@ views:
 ## Failure modes
 
 - **Auto-detection has a ≥50%-of-rows heuristic and excludes booleans from `y`.** If your data is ambiguous (mixed types, sparse values), omitting `x`/`y` can silently pick the wrong columns — set them explicitly when the chart looks wrong.
-- **X-axis labels vanish entirely above 16 bars** — no rotation, no truncation, just gone. If you need to read individual bar labels with many buckets, use `table` or narrow with `filters`/`limit` instead.
-- **An all-zero or single-value dataset still renders** (max is floored to 1 to avoid divide-by-zero) — flat bars are not an error state, don't mistake them for missing data.
+- **Every bucket's label always shows, at any count — there is no 16-bar cutoff.** (That gate belongs to `line`'s x-axis labels, not `bar`.) Rows just get longer as buckets grow; there's no rotation or truncation because there's no axis to run out of room on.
+- **No tooltip on any bar** — no element carries a `title`. The raw numeric value is printed after the bar instead.
+- **An all-zero or single-value dataset still renders** (max is floored to 1 to avoid divide-by-zero) — flat/short bars are not an error state, don't mistake them for missing data.
+- **Category-axis buckets sort by value descending, not alphabetically** (ties broken alphabetically by key) — the bar order isn't insertion order or the order you wrote filters/categories in.
 
 Full reference: `docs/bases/views/charts.md`

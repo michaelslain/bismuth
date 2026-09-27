@@ -31,7 +31,7 @@ A **base** is an ordinary `.md` file with `type: base` in its YAML frontmatter �
 1. **Pick a kind** from the table above.
 2. **Read `references/<kind>.md`** in this skill for that kind's exact config keys, a working frontmatter example, and its specific failure modes — do not guess a key name from memory or from another kind's shape.
 3. **Create the note**: a `.md` file (any path/name) with `type: base` frontmatter, `source:` if you don't want the whole vault, and a `views:` array with your chosen `type:` plus its fields.
-4. **Verify by reading it back** — re-read the file you wrote (or open it in the app / query it) and confirm the frontmatter parses the way you intended, especially `source:` (see gotcha below): a typo'd `source` silently falls back to a default rather than erroring.
+4. **Verify with `bismuth base validate <path>`** before opening it in the app — it catches bad `views[].type`, unresolvable `source`/`filters`, and invalid `properties` defaults that `parseBaseFile` would otherwise silently downgrade/ignore (e.g. an unrecognized `views[].type` quietly renders as `table` instead of erroring, which `base validate` surfaces explicitly). Then re-read the file (or open it in the app / query it) and confirm the frontmatter parses the way you intended, especially `source:` (see gotcha below): a typo'd `source` silently falls back to a default rather than erroring. `bismuth base create` and `bismuth base render` are the companion CLI commands for scaffolding and previewing a base headlessly.
 
 ## Cross-cutting gotchas (apply to every kind)
 

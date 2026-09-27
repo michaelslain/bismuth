@@ -187,7 +187,7 @@ This produces four sections (Overdue in red-ish accent, This week and Later in a
 - **Task rows bypass column ordering entirely.** The `TaskRow` component reads `row.note` fields directly; `columns` has no effect on which task signifiers appear.
 - **`authorCol` (columns[1]) is suppressed for objects.** If a formula returns an array or object, the secondary label is silently hidden (`typeof author !== "object"` guard).
 - **Empty declared groups are omitted.** If you declare `columns: [todo, done]` but no rows have `done`, the "done" group header does not appear (contrast with `kanban`, which keeps it as an empty drop target).
-- **Group header color requires lowercase key match.** `groupColor("Done")` → `var(--accent)` (miss), `groupColor("done")` → `var(--green)` (hit). The key is `.trim().toLowerCase()` internally, so surrounding whitespace is stripped, but the value itself must be lowercase.
+- **Group header color matches case- and whitespace-insensitively.** `groupColor` runs `.trim().toLowerCase()` before lookup, so `"Done"` and `" done "` both hit `var(--green)`; only names outside the fixed palette fall back to `var(--accent)`.
 
 ---
 
