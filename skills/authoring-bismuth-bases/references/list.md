@@ -35,12 +35,13 @@ view: list
 | `order` | `string[]` | auto-derived | Only the **first three** resolved columns are ever displayed (title, secondary label, right value) — extras are resolved but not shown. |
 | `groupBy` | `{ property, direction? }` | none | Section headers with a colored dot + count. |
 | `columns` (→ `groupOrder`) | `string[]` | value-sorted | Controls **group order only**, not which data columns display. |
+| `mode` | `"normal"` \| `"tasks"` | `"normal"` | General mode axis. In `tasks` mode every row renders as a task line regardless of shape; in `normal` mode a row still renders as a task line if it merely has the shape a task query produces (`isTaskRow`) — `list` is the one view that checks shape as well as the declared mode. |
 | `sort`, `limit`, `filters`, `source` | — | — | Standard fields. |
 
 ## Failure modes
 
 - **Columns beyond index 2 are silently ignored** by the renderer (still resolved by the query engine, just never shown) — use `table` if you need more than three visible fields.
 - **Task rows bypass `order`/column logic entirely** — `TaskRow` reads `row.note.description`/`status`/`priority`/`due`/etc. directly, so declaring `order` has no effect on a tasks-sourced list.
-- **Group header colors need an exact lowercase key match** — `groupColor("Done")` misses (falls back to plain accent color); `groupColor("done")` hits green. Trailing/leading whitespace is trimmed automatically, but case is not.
+- **Group header colors resolve against a fixed status palette, unmatched keys fall back to plain accent color.** `groupColor(key)` normalizes the key itself (`.trim().toLowerCase()`) before lookup, so `"Done"`, `" done "`, and `"done"` all hit green — only a name genuinely absent from the palette (`reading`, `to read`/`toread`, `finished`/`done`/`complete`, `abandoned`/`dropped`) falls back.
 
 Full reference: `docs/bases/views/list-bullets.md`

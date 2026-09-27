@@ -41,7 +41,7 @@ views:
 A row becomes a marker only when both its resolved `lat` and `lng` values are valid numeric coordinates. The filtering rules, applied in order, are:
 
 1. The resolved property value must be a JavaScript `number` or a string that `Number()` can parse without producing `NaN`.
-2. Latitude must be in `[-85, 85]` (Web Mercator clamped range, exclusive of ±85 but checked as `< -85 || > 85`).
+2. Latitude must be in `[-85, 85]` (Web Mercator clamped range, inclusive — rows are dropped only when `< -85 || > 85`).
 3. Longitude must be in `[-180, 180]`.
 
 Rows that fail any of these checks are silently skipped and never appear as markers. There is no error or warning for skipped rows.

@@ -1,6 +1,6 @@
 # line
 
-A line + area-fill chart (inline SVG) — for reading a trend over time. Shares its data pipeline (`buildChartData`) with `bar`/`stat`/`heatmap`.
+An ASCII line plot on a character grid (`/ - \ o` glyphs in a `<pre>` block, `app/src/bases/asciiLine.ts`) — for reading a trend over time. **No SVG.** Shares its data pipeline (`buildChartData`) with `bar`/`stat`/`heatmap`.
 
 ## Working example
 
@@ -28,8 +28,9 @@ views:
 
 ## Failure modes
 
-- **There is no tooltip and no axis labels at all** (unlike `bar`) — the line view shows only the shape of a trend, never exact values. Pair it with `table` or `stat` alongside if the reader needs numbers.
-- **A single data point renders as a centered dot, not a line** (`step` collapses to 0) — don't expect a line shape from a dataset with only one bucket.
+- **There IS a y-axis gutter (top row = series max, bottom row = 0) and x-axis labels** — but only when `points.length <= 16`. With 17+ points, `axisLabels` is the empty string and the label row silently disappears (no rotation/truncation, it's a binary show/hide). `bar` has no such cutoff.
+- **No tooltip** — point values aren't exposed via `title`; pair with `table` or `stat` alongside if the reader needs exact numbers.
+- **A single data point still draws** (as a lone `o` marker, no connecting glyphs since there's nothing to connect) — don't expect a shaped line from a dataset with only one bucket.
 - **Rows with an unparseable/missing `x` date are silently skipped**, not treated as a zero-value bucket — a gap in your data becomes a gap in the chart's bucket set, not a dip to zero.
 
 Full reference: `docs/bases/views/charts.md`
