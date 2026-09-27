@@ -12,11 +12,12 @@
    and deliberately stays there; this module only owns the two rules below plus the split-off
    view-dragging rule.
 
-   `palette/switcher.css` reaches this element from OUTSIDE this module too (an opaque `--bg` fill
-   while the Cmd+O switcher is open), via `[data-graph-floater]` rather than a class — GraphFloater.tsx
-   carries that attribute for exactly this reach, the same pattern Sidebar.tsx's `data-sidebar-toolbar`
-   already established. `bench/moduleClassCheck.ts --verbose`'s "declared by a global stylesheet too"
-   warning is what caught the bare `.graph-floater` selector switcher.css used to write; no story sets
+   global.css's `palette/switcher.css` section reaches this element from OUTSIDE this module too
+   (an opaque `--bg` fill while the Cmd+O switcher is open), via `[data-graph-floater]` rather than
+   a class — GraphFloater.tsx carries that attribute for exactly this reach, the same pattern
+   Sidebar.tsx's `data-sidebar-toolbar` already established. `bench/moduleClassCheck.ts --verbose`'s
+   "declared by a global stylesheet too" warning is what caught the bare `.graph-floater` selector
+   that section used to write; no story sets
    `.switcher-active`, so nothing in this plan's own gate would have.
 
    THE `:global(html.view-dragging)` RULE BELOW IS A SPLIT, NOT A MOVE. App.css used to style

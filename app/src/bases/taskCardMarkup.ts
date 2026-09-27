@@ -51,7 +51,8 @@ function markerFor(status: string, line: number): string {
 
 // Wrap every bracket field in a task line's body in a chip span, escaping its text since vault
 // content is untrusted. `bismuth-task-field` is a class written into this runtime-generated
-// HTML string, so its rule lives in the global layer (styles/content.css) that
+// HTML string, so its rule lives in the global layer (global.css's `styles/content.css` section)
+// that
 // cssLayering.test.ts guards, never a CSS Module — a module class would hash at build time and
 // silently match nothing.
 function wrapFields(text: string): string {

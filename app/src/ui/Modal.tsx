@@ -64,7 +64,8 @@ const LATE_MOUNT_MS = 2000
  * This used to be a plain `<div>` pair: no `role`, no `aria-modal`, no initial focus, no trap and
  * no restore. Opening any modal and pressing Tab walked a keyboard user straight THROUGH the
  * scrim into the page behind it, where their focus was then invisible (the ring was globally
- * suppressed — see styles/reset.css). Fixing the ring without fixing this would have produced a
+ * suppressed — see global.css's `styles/reset.css` section). Fixing the ring without fixing this
+ * would have produced a
  * visible ring wandering around underneath an open dialog, which is worse than no ring at all.
  *
  * All four pieces are here rather than at the ~20 call sites deliberately: every one of them

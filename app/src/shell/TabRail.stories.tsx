@@ -1,8 +1,9 @@
 // Visual spec for <TabRail> — the app's ONLY tab presentation, a right-edge vertical rail.
 // Collapsed (46px, `--rail-w`) it shows just the action toolbar + tab icons; expanded (232px, via
 // :hover / :focus-within / the Alt+Shift+S pin) it widens leftward over the editor without
-// reflowing it. (This header said 48px for a while; nothing anywhere is 48 — App.css sets
-// `.layout.has-rail { --rail-w: 46px }` and `.tab-rail-inner` hardcodes the same 46.)
+// reflowing it. (This header said 48px for a while; nothing anywhere is 48 — global.css's
+// `App.css` section sets `.layout.has-rail { --rail-w: 46px }` and `.tab-rail-inner` hardcodes the
+// same 46.)
 //
 // WHY THIS FILE EXISTS: recorded BEFORE the `.tab-rail*` rules (+ `.tab-rename`, + the
 // `@media (prefers-reduced-motion)` block, invisible to a `^\.`-anchored grep — Trap 6) moved from
@@ -66,8 +67,9 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// In the real app `.tab-rail` is a CSS-grid item of `.layout` (App.css `.layout { display: grid;
-// height: 100%; }`), and grid items stretch to fill BOTH the row height and column width by default
+// In the real app `.tab-rail` is a CSS-grid item of `.layout` (global.css's `App.css` section:
+// `.layout { display: grid; height: 100%; }`), and grid items stretch to fill BOTH the row height
+// and column width by default
 // (`align-items`/`justify-items: stretch`) — so `.tab-rail` always has real height and width, and its
 // absolutely-positioned `.tab-rail-inner` (top:0;right:0;bottom:0) resolves against that box. A plain
 // block `Wrap` does NOT stretch a block child to fill it, so `.tab-rail` collapsed to 0 height here

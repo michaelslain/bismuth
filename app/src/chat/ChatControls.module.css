@@ -205,7 +205,8 @@
 
 /* The no-session row: Config/Actions render for real (buildDisabledSession() in ChatControls.tsx)
    so the control set — and therefore the row's height — is identical to the armed row's. This
-   class only supplies the LOOK (the same dimmed opacity `.btn:disabled` uses elsewhere, ui/ui.css);
+   class only supplies the LOOK (the same dimmed opacity `.btn:disabled` uses elsewhere, global.css's
+   `ui/ui.css` section);
    the actual inertness is the DOM's own `inert` attribute on `.row` (ChatControls.tsx), not
    `pointer-events: none` here — final-findings Group 2 #2: `pointer-events: none` stops a click but
    leaves every control reachable by Tab, so a keyboard user could tab into a picker that does

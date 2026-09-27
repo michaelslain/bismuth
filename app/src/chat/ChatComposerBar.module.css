@@ -97,10 +97,11 @@
     object-fit: cover;
     display: block;
 }
-/* --scrim-bg (styles/tokens.css), not a hardcoded rgba(0,0,0,.55) (final-findings Group 2 #7) — the
-   one token in the palette meant for exactly this: a dark scrim sitting on top of arbitrary photo
-   content, distinct in NAME (if not currently in value) from --overlay-bg's modal-backdrop use.
-   `color` reads --on-scrim (styles/tokens.css), added for exactly this case — an
+/* --scrim-bg (global.css's `styles/tokens.css` section), not a hardcoded rgba(0,0,0,.55)
+   (final-findings Group 2 #7) — the one token in the palette meant for exactly this: a dark scrim
+   sitting on top of arbitrary photo content, distinct in NAME (if not currently in value) from
+   --overlay-bg's modal-backdrop use. `color` reads --on-scrim (global.css's `styles/tokens.css`
+   section), added for exactly this case — an
    "always-legible-on-a-photo" foreground, since the icon has to read against whatever colors the
    attachment thumbnail happens to be in every theme, not against the app's own --fg (which goes
    DARK in the light themes and would sit invisible on this same dark scrim). Darkened further on

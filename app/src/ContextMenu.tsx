@@ -38,7 +38,7 @@ const SUB_WIDTH = 190
 // The rail's own footprint — button (30) + .bismuth-popover padding (2×4) + border (2×1).
 // Fixed, so the rail can be placed to the LEFT of the menu without measuring it first
 // (its right edge is the menu's left edge, which is just props.x). Keep in sync with
-// `.bismuth-popover-rail*` in ui/popover/popover.css.
+// `.bismuth-popover-rail*` in global.css's `ui/popover/popover.css` section.
 const RAIL_WIDTH = 40
 const RAIL_GAP = 6
 

@@ -1,6 +1,6 @@
 // app/src/ui/BarLabel.tsx — a view-bar label that knows how to get smaller.
 //
-// The bar's collapse ladder lives ONCE, in ui/ui.css, and a view opts into it by TAGGING rather
+// The bar's collapse ladder lives ONCE, in global.css's `ui/ui.css` section, and a view opts into it by TAGGING rather
 // than by writing container queries of its own. This is the label half of that vocabulary; the
 // other half is `data-bar-drop` on a whole control (see the ladder's own comment).
 import { type Component, Show } from 'solid-js'

@@ -97,7 +97,8 @@ const tag = Decoration.mark({ class: 'cm-tag' })
 // Editor.tsx mousedown navigation gate (`.cm-link, .cm-wikilink`) opens it with no extra branch.
 const memoryRef = Decoration.mark({ class: 'cm-wikilink cm-memory-ref' })
 // Every whole-word "bismuth" in prose gets the iridescent bismuth-crystal gradient
-// (styled by `.cm-bismuth` in App.css, shared with the reading-mode `.bismuth-word`).
+// (styled by `.cm-bismuth` in global.css's `App.css` section, shared with the reading-mode
+// `.bismuth-word`).
 const bismuthWord = Decoration.mark({ class: 'cm-bismuth' })
 const headingLines = [1, 2, 3, 4, 5, 6].map(l =>
     Decoration.line({ class: `cm-h${l}` }),
@@ -1602,7 +1603,8 @@ export const livePreview = [
         // Legacy optical correction from the serif-prose era: the --mono-scale factor
         // (settings: appearance.monoScale, default 1 — no-op now that prose is Monaspace
         // too) let mono code optically match a serif body. It lives only where mono sits
-        // inside prose (code regions here + the flashcard .card-md code in App.css) —
+        // inside prose (code regions here + the flashcard .card-md code in global.css's
+        // `App.css` section) —
         // NOT on the all-mono UI chrome. Keep all mono regions (inline code, blocks,
         // frontmatter, tables) on it in case a future theme reintroduces the mismatch.
         // Inline code + the same inline-code marks rendered inside a table cell (inlineMarkdown.ts

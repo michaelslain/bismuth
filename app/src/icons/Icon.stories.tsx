@@ -149,7 +149,8 @@ export const AllIcons: Story = {
 /** The same icon at the sizes real call sites actually use (12-32px). Real vector SVG again (after
  *  an interlude as a font glyph), so it scales by the viewBox rather than by font hinting — the
  *  small end is where a too-detailed icon turns to mush, so it is worth checking here and not only
- *  in the gallery. `--icon` (styles/tokens.css) is 14px; there is no --icon-sm/--icon-lg. */
+ *  in the gallery. `--icon` (global.css's `styles/tokens.css` section) is 14px; there is no
+ *  --icon-sm/--icon-lg. */
 export const Sizes: Story = {
     render: () => (
         <Row gap="20px">

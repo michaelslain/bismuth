@@ -23,9 +23,10 @@ import styles from './StatusBar.module.css'
 //
 // Classes below are reached through the imported `styles` object — bracket access, not
 // `styles.statusBar`, since Vite only exposes camelCase aliases under css.modules.localsConvention,
-// which app/vite.config.ts does not set. `.asc-caret` stays a bare global permanently (ui.css,
-// alongside its `@keyframes asc-blink`), not chrome owned by this component. `.status-dot` (owned
-// by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never appears here despite the shared
+// which app/vite.config.ts does not set. `.asc-caret` stays a bare global permanently
+// (global.css's `ui/ui.css` section, alongside its `@keyframes asc-blink`), not chrome owned by
+// this component. `.status-dot` (owned by ui/StatusDot.tsx, in global.css's `ui/ui.css` section)
+// is unrelated and never appears here despite the shared
 // `status-` prefix.
 // The daemon state as the bar SAYS it, distinct from the state itself. The prop keeps the three
 // bare state names ('off' | 'idle' | 'working') because that is what App.tsx computes from

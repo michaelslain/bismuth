@@ -1,8 +1,8 @@
 // app/src/export/cssColor.ts
 // Normalize modern CSS color values to html2canvas-safe rgb()/rgba().
 //
-// The app's theming leans on `color-mix(in srgb, X n%, transparent)` (App.css /
-// settingsCssVars.ts). resolvePalette's probe resolves those through getComputedStyle —
+// The app's theming leans on `color-mix(in srgb, X n%, transparent)` (global.css's `App.css`
+// section / settingsCssVars.ts). resolvePalette's probe resolves those through getComputedStyle —
 // but Chrome serializes a computed color-mix that leaves the sRGB gamut OR carries alpha
 // as a CSS Color 4 function: `color(srgb r g b / a)`. html2canvas (1.4.x) has no parser
 // for `color()`/`oklab()`/`oklch()`/`lab()`/`lch()` and throws

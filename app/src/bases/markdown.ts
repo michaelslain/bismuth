@@ -174,7 +174,8 @@ marked.use({ extensions: [mathBlockExt, mathInlineExt, calloutBlockExt] })
 
 // ── Iridescent "bismuth" ──────────────────────────────────────────────────────
 // Wrap every whole-word (case-insensitive) occurrence of the literal word "bismuth" in a
-// `.bismuth-word` span, styled with a shimmering bismuth-crystal gradient (App.css) — mirroring the
+// `.bismuth-word` span, styled with a shimmering bismuth-crystal gradient (global.css's `App.css`
+// section) — mirroring the
 // editor's live-preview `.cm-bismuth` decoration. Done as a source pre-pass (BEFORE marked) rather
 // than an inline extension because marked re-tokenizes the text INSIDE pre-injected wikilink/tag
 // anchors, which would leak the effect into a wikilink's label. Instead we MASK every region the

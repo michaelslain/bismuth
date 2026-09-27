@@ -4,12 +4,14 @@
 // the always-mounted terminal/chat overlays. Lifted out of App.tsx verbatim.
 //
 // CLASS NAMES ARE SCOPED via EditorPane.module.css (2026-08 CSS modularization, Task 11) — the
-// `data-editor-pane` attribute alongside the module class is palette/switcher.css's cross-boundary
-// reach for the switcher bar's positioning context; see that module's header.
+// `data-editor-pane` attribute alongside the module class is global.css's `palette/switcher.css`
+// section's cross-boundary reach for the switcher bar's positioning context; see that section's
+// header.
 //
 // `.graph-slot-main` (the no-active-tab fallback placeholder) is NOT rendered by this file — it
 // stays inline in App.tsx as part of the `children` slot, exactly like the PaneTree/overlay `<For>`
-// loops, and stays a global App.css page-frame class (App.tsx's own layout slot, not this
+// loops, and stays a global App.css page-frame class (global.css's `App.css` section; App.tsx's
+// own layout slot, not this
 // component's or GraphView's — see GraphView.module.css's header for that decision).
 //
 // `bodyRef` is the callback-ref prop for `editorBodyEl`, which App.tsx's `measureOverlayHosts` and

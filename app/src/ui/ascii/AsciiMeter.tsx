@@ -18,8 +18,9 @@ function AsciiMeter(props: AsciiMeterProps) {
     const width = () => props.width ?? 10
     const filled = () => meterFill(props.value, width())
     const color = () => props.color ?? 'var(--accent)'
-    // The unfilled run is `asc-meter-empty`, NOT a bare `empty` — App.css owns a global
-    // `.empty { display: flex; flex-direction: column }` for the empty-pane state, which
+    // The unfilled run is `asc-meter-empty`, NOT a bare `empty` — global.css's `App.css` section
+    // owns a global `.empty { display: flex; flex-direction: column }` for the empty-pane state,
+    // which
     // matched this span and turned it into a block, breaking `[`, the cells and `]` onto
     // three separate lines. The whole bar must stay one inline glyph run.
     // Width is a fixed cell count and cannot reflow, so callers in a resizable pane pick

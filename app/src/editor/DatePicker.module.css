@@ -1,7 +1,8 @@
 /* app/src/editor/DatePicker.module.css
    The date/datetime frontmatter property popover (DatePicker.tsx). The container reuses the
-   shared `.bismuth-popover` chrome (ui/popover/popover.css, a permanent global — vanilla DOM
-   code stamps that literal class onto elements the bundler never sees), so only the header
+   shared `.bismuth-popover` chrome (global.css's `ui/popover/popover.css` section, a permanent
+   global — vanilla DOM code stamps that literal class onto elements the bundler never sees), so
+   only the header
    inputs + the relative list separator are styled here. */
 
 .root {

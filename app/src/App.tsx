@@ -3115,7 +3115,7 @@ export default function App() {
           BUG #40: also gated on !switcherOpen() (tabRailVisible) — the Cmd+O quick switcher is a
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
-          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */
+          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (global.css's `App.css` section). */
                 <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
                     <TabRail
                         pinned={tabRailPinned()}

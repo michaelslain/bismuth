@@ -24,7 +24,7 @@
    flashcard/editor `.card-*` families belong to bases/FlashcardsView.module.css, not here. Nothing
    to move.
 
-   `.graph-slot-main` STAYS GLOBAL in App.css despite the prefix — it is App.tsx's own top-level
+   `.graph-slot-main` STAYS GLOBAL in global.css's `App.css` section despite the prefix — it is App.tsx's own top-level
    layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.
    shell/EditorPane.tsx's file header documents this explicitly. Page-frame, not a component.
 
@@ -58,8 +58,8 @@
    `.graph-legend-card:global(.asc-popover)`'s `padding: var(--sp-4) var(--sp-5)` it never had before, because that
    story imports THIS module directly (for `.graph-legend-card`/`.graph-card-h`/`.graph-legend-rows`)
    without ever having imported asciiGraph.css — which the pre-migration story genuinely didn't,
-   unlike the real app (GraphView always pulls asciiGraph.css in transitively via
-   AsciiGraphRenderer.ts). Once the surface rule lives in the SAME file the story already imports for
+   unlike the real app (global.css, which now carries the former asciiGraph.css rules as a section, is
+   loaded once globally via App.tsx). Once the surface rule lives in the SAME file the story already imports for
    geometry, it becomes reachable there too — CSS has no way to scope a rule to "only when reached via
    this OTHER import path." The story's own doc comment states its purpose as proving "the panel
    hairline and 5px corner" the shipped surface has; the border/radius half of that was already
@@ -217,7 +217,7 @@
 /* NAMED CONTAINERS, and the split is load-bearing. These queries used to be unnamed, so each rule
    resolved against its own nearest container: the two view-bar descendants below against
    .graph-root, the HUD rules against .graph-area. That worked only because the two are the same
-   width. ui/ui.css now gives every .viewbar `container-type: inline-size`, which would have made
+   width. global.css's `ui/ui.css` section now gives every .viewbar `container-type: inline-size`, which would have made
    the bar itself the nearest container for the first two — silently re-binding them to a box the
    width of the bar and stopping the sidebar mini-graph collapsing, with no error anywhere.
    Naming both containers pins each rule to the box it has always measured. */

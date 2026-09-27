@@ -12,7 +12,8 @@
 // the real app; Storybook's canvas has no such context, so every story wraps in a fixed-height box.
 //
 // `[data-editor-pane] { position: relative }` — the positioning context for the absolutely-
-// positioned switcher bar — lives in palette/switcher.css, not here (see that file's header: it's
+// positioned switcher bar — lives in global.css's `palette/switcher.css` section, not here (see
+// that section's header: it's
 // loaded at boot because SwitcherBar is eagerly imported by App, so the context is always in place
 // before a real switcher bar renders; the selector targets the `data-editor-pane` attribute
 // EditorPane.tsx carries, not the hashed `.editor-pane` class). WithSwitcher's stub stands in for

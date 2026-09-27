@@ -26,7 +26,7 @@ import styles from './TopStrip.module.css'
 // rather than a bare string (a literal would compile and match nothing). Bracket access, not
 // `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention, which
 // app/vite.config.ts does not set. `.asc-wordmark` stays a bare global permanently: it is an
-// `asc-*` design-system class living in App.css's ASCII register alongside its `@keyframes
+// `asc-*` design-system class living in global.css's `App.css` section's ASCII register alongside its `@keyframes
 // asc-sheen` and its reduced-motion `@media`, not chrome owned by this component.
 export function TopStrip(props: {
     mac: boolean

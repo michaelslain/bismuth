@@ -5,7 +5,8 @@
 // than usual — every future call site inherits it.
 //
 // Props: as ('p' default | 'span' | 'div'), size ('micro' | 'ui' | 'body' default | 'body-lg' |
-// 'lead' — ui/ui.css's fixed --fs-* scale), tone ('default' | 'muted' | 'faint'), weight
+// 'lead' — global.css's `ui/ui.css` section's fixed --fs-* scale), tone ('default' | 'muted' |
+// 'faint'), weight
 // ('regular' default | 'medium' | 'bold'), eyebrow (the uppercase/tracked section-label
 // register), class, children.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'

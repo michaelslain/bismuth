@@ -5,8 +5,9 @@
 //
 // WHY THIS FILE EXISTS: recorded BEFORE `.app-shell`/`.layout` + its three state classes
 // (`sidebar-hidden`/`switcher-active`/`has-rail`) move from the global App.css into
-// AppFrame.module.css, plus the `@media (prefers-reduced-motion)` block at App.css:113 (invisible
-// to a `^\.`-anchored grep — Trap 6). See the plan's THE RECIPE for why the recording order is
+// AppFrame.module.css, plus the `@media (prefers-reduced-motion)` block now in global.css's
+// `App.css` section (invisible to a `^\.`-anchored grep — Trap 6). See the plan's THE RECIPE for
+// why the recording order is
 // load-bearing.
 //
 // SIX STORIES — the ONLY coverage the grid template will ever have; without them a broken

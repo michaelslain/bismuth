@@ -8,7 +8,7 @@
 // against `.viewbar` itself, so it responds to the PANE, not the window, and neither Storybook's
 // viewport addon nor bench/probeStory.ts (hardcoded 1280x900, no --width) can exercise that. Each
 // `Narrow*` story pins a real width instead. The widths sit just inside each measured tier — see
-// the ladder's own comment in ui/ui.css for the measurement.
+// the ladder's own comment in global.css's `ui/ui.css` section for the measurement.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'

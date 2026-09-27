@@ -2,7 +2,7 @@
 // reading-mode markdown renderer (a masking pre-pass in bases/markdown.ts) and the live-preview
 // editor decoration (livePreview.ts), so both surfaces agree on exactly what counts as a stylable
 // "bismuth" token. Each wraps the match in an iridescent bismuth-crystal gradient span (see
-// `.bismuth-word` / `.cm-bismuth` in App.css).
+// `.bismuth-word` / `.cm-bismuth` in global.css's `App.css` section).
 //
 // A match is bounded by a non-letter / non-number on BOTH sides (Unicode-aware), so "bismuth" and
 // "bismuth-crystal" match, while "bismuths", "embismuth", and "bismuth2" do not. Case is preserved

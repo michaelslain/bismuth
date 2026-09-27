@@ -184,9 +184,9 @@ function styles(
   }
   /* THE APP'S OWN HEADING SCALE, not the browser's defaults. An exported note used to set no
      heading font-size at all, so every level fell back to the UA stylesheet — a different ramp and
-     a different SHAPE from the app's. In the app (editor/livePreview.ts, sizes in
-     styles/tokens.css) h3 and h4 sit AT body size and differ only in weight, and h5/h6 change
-     REGISTER (uppercase + tracking) rather than merely shrinking. The UA defaults instead step h3
+     a different SHAPE from the app's. In the app (editor/livePreview.ts, sizes in global.css's
+     styles/tokens.css section) h3 and h4 sit AT body size and differ only in weight, and h5/h6
+     change REGISTER (uppercase + tracking) rather than merely shrinking. The UA defaults instead step h3
      ABOVE body and shrink h5/h6 into small body text — which is precisely what the app's own
      comment warns turns h5 into "small body text".
      Sizes arrive already resolved on the palette (resolvePalette probes them through real

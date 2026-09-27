@@ -1,7 +1,8 @@
 /* app/src/ui/ascii/Kbd.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
    Task 7). ui/ascii/Kbd.tsx was the sole reader of this rule anywhere in the app.
 
-   `.asc-kbd` / `.asc-kbd.muted` / `.asc-key` (Kbd's OTHER three classes) STAY in ui.css:
+   `.asc-kbd` / `.asc-kbd.muted` / `.asc-key` (Kbd's OTHER three classes) STAY in global.css's
+   `ui/ui.css` section:
    bases/FlashcardsView.tsx writes `.asc-kbd`/`.asc-key` directly too, bypassing this component —
    see .claude/plans/ui-css-ownership.md, "REPORT, do not switch" ruling.
 

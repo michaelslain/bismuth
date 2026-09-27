@@ -36,7 +36,8 @@
 // that check now lives only in the design-system gate, which is strictly broader for it.
 //
 // WHY CUSTOM PROPERTIES (`--foo: …`) ARE EXEMPT FROM CHECKS 1-4 BUT NOT CHECK 5. A custom property
-// declaration is the TOKEN LAYER ITSELF — `styles/tokens.css` is who is ALLOWED to write
+// declaration is the TOKEN LAYER ITSELF — global.css's `styles/tokens.css` section is who is
+// ALLOWED to write
 // `--shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)`, because that literal only
 // becomes a violation at the moment some component's `box-shadow:` reads it, and by design every
 // component here reads it through `var(--shadow-card)` (checked: no component-level box-shadow
@@ -52,12 +53,12 @@
 // design-system gate (scripts/designSystem/gate.mjs, installed from ~/.claude/skills/design-system's
 // checks.mjs) ALSO flags hardcoded colour, border-radius and font-size — but it is not a superset
 // of this file, and this file is not a superset of it. Concretely, checks.mjs now:
-//   - scans the global layer too (governance.global files — ui/ui.css, App.css, styles/**,
-//     popover.css, Editor.css, Terminal.css, datePicker.css (removed; see DatePicker.module.css), asciiGraph.css, switcher.css); only
+//   - scans the global layer too (governance.global — now the one app/src/global.css, whose
+//     sections are the former ui/ui.css, App.css, styles/**, popover.css, Editor.css, …); only
 //     the token files themselves (where a literal belongs) stay excepted.
 //   - checks colour on border-top/-right/-bottom/-left (not just their -color longhands),
 //     background-image (gradients) and any custom property, on top of the base allowlist — but
-//     it is STILL a fixed allowlist, so mask-image (ui/ui.css:709), column-rule and other
+//     it is STILL a fixed allowlist, so mask-image (global.css's `ui/ui.css` section), column-rule and other
 //     gradient-bearing properties outside that list stay invisible to it; tokenLint's hex-color
 //     rule (check 5) reads ANY property's value and is the only one of the two catching those.
 //   - strips every balanced `var(--x, <fallback>)` call from a value before testing for a literal,

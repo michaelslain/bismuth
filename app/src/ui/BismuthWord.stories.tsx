@@ -4,7 +4,7 @@
 // TWO CLASSES, ONE EFFECT, TWO EMITTERS. `.bismuth-word` is written by the reading-mode markdown
 // renderer (bases/markdown.ts); `.cm-bismuth` is the live-preview editor decoration
 // (editor/livePreview.ts). Both are RUNTIME-GENERATED STRING LITERALS, never imported identifiers,
-// which is why they live in styles/content.css and not in a CSS Module — a module would hash the
+// which is why they live in global.css's `styles/content.css` section and not in a CSS Module — a module would hash the
 // name at build time while the emitter kept writing the literal, and the effect would silently
 // vanish from every note with nothing reporting it. cssLayering.test.ts is the ratchet on that.
 //

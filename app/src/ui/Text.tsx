@@ -14,7 +14,7 @@ export type TextProps = {
     /** Tag to render. 'p' (default) for a paragraph, 'span' for an inline run, 'div' for a
      *  block with no paragraph semantics (wrapping a label + a control, say). */
     as?: TextTag
-    /** Step on the app's fixed type scale (ui/ui.css --fs-*). 'body' (13px — note prose in
+    /** Step on the app's fixed type scale (global.css's `ui/ui.css` section --fs-*). 'body' (13px — note prose in
      *  panels) is the default and adds no class. 'inherit' emits no font-size/line-height at
      *  all, leaving both to whatever ancestor rule already set them. */
     size?: TextSize
