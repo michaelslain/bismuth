@@ -292,7 +292,8 @@ muted). The ramp is relative to the user's editor size, so it holds at every set
 
 **The Register Rule.** Prose is serif; anything pulled back out of prose (code, frontmatter,
 `#tags`, math source) returns to `--ui-font-stack` at ONE size, `--code-font-size` — never the
-prose size, never a per-construct size.
+prose size, never a per-construct size. Outside the editor, `<Text register="prose">` puts a
+run of written text (a card title) in the prose face; the default `chrome` stays mono.
 
 **The One Fence Rule.** A frontmatter `---` and a code block's ```` ``` ```` keep their own
 characters but are one row style: same size, padding, height and dim fence tone; the code fence's
@@ -364,6 +365,9 @@ Terse and technical: borderless at rest, and state is shown by swapping the back
 the accent. An outline appears only when it means something.
 
 ### Buttons
+- **One family:** a clicked command is a `TextButton`, `IconButton`, `IconTextButton`,
+  `SegmentedToggle` or `ChipToggle` — never a raw `<button>` and never `ui/Button` (their shared
+  base) reached directly. `app/src/ui/oneButton.test.ts` enforces it, with a per-file allow-list.
 - **Shape:** square (`--r-0`), fixed 24px height in every variant, so text and icon buttons line up.
 - **Text button:** `[label]` — a lowercase `--fs-ui` label, untracked, with the brackets tight to
   the word and no space inside. No border, no fill, no horizontal padding: **the brackets are the

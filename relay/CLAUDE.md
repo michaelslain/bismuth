@@ -1,7 +1,8 @@
 # relay/ — Bismuth agent-graph plugin
 
 A tiny Claude Code plugin that reports a terminal-tab Claude Code session — and its
-subagents — to Bismuth's **in-app agent graph**. This is NOT a daemon and NOT the old
+subagents — to Bismuth's in-core **relay registry**, and, when the daemon is enabled for
+the vault, recalls memory into prompts and collects transcripts into memory. This is NOT a daemon and NOT the old
 cross-machine `claude-communicate` relay (that standalone Bun/Tailscale system was
 removed when it merged into Bismuth). The relay registry now lives **in core**
 (`core/src/relay.ts`); this workspace is only the hook scripts that feed it.
@@ -26,17 +27,23 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
      terminal-tab session as a root node).
    - `UserPromptSubmit` → `bin/recall-hook.ts` → `POST /relay/session` (re-posting the same
      endpoint acts as a heartbeat; self-registers if SessionStart was missed, e.g. a resumed
-     session — there is no separate `/relay/session/heartbeat` route).
+     session — there is no separate `/relay/session/heartbeat` route). Concurrently, when
+     `BISMUTH_MEMORY_DIR` is set (daemon enabled), `lib/memory.ts`'s `recallContext`
+     (`@bismuth/memory`'s `recallMemory`, 800ms budget) injects matching memories as
+     `additionalContext`.
    - `SubagentStart` → `bin/subagent-start-hook.ts` → `POST /relay/subagent/start` (add a
      child node under the spawning session).
    - `SubagentStop` → `bin/subagent-stop-hook.ts` → `POST /relay/subagent/stop`.
    - `SessionEnd` → `bin/session-end-hook.ts` → `POST /relay/session/end` (drop the
      session node when Claude exits, so it doesn't linger until the pane closes; skips
-     `clear`/`compact`, which keep the terminal's Claude running).
+     `clear`/`compact`, which keep the terminal's Claude running). Concurrently, when
+     `BISMUTH_MEMORY_DIR` is set, `collectTranscript` writes the session transcript into
+     memory as an auto note (skipped on `compact`, since the same session continues).
 3. `core/src/relay.ts` holds the registry (sessions + subagents), pruned when a terminal tab
    closes (`terminal.ts`'s `killSession` → `relay.ts`'s `prune`). The frontend "agents" graph
-   that used to render it (you → session → subagent) was removed; nothing reads the registry
-   today, but it — and these hooks — stay, since `core/src/chat.ts` shares its TTL constants
+   that used to render it (you → session → subagent) was removed; the registry is read by
+   `GET /relay/snapshot` (`bismuth relay list`, `cli/src/commands/relay.ts`;
+   `lastMessage` is redacted for non-owners), and `core/src/chat.ts` shares its TTL constants
    and `core/src/agents.ts`'s `ChatAgentSession` type for its own, separate per-chat subagent
    tracking.
 
@@ -53,6 +60,7 @@ relay/
   hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
   bin/                         # the 5 hook scripts + wrap.ts (the generic wrapper-mode session reporter)
   lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating — reused by wrap.ts too
+  lib/memory.ts                # recallContext + collectTranscript — thin over @bismuth/memory, gated on BISMUTH_MEMORY_DIR
   shim/claude                  # PATH shim: exec real claude --plugin-dir <relay> (unchanged, claude-only)
   shim/agent-shim               # generic multi-call PATH shim for other ("wrapper"-mode) backends
   shim/zdotdir/.zshrc           # defines one shell function per BISMUTH_SHIM_SPECS entry (claude + wrapper backends)

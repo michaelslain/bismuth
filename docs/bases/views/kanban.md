@@ -230,7 +230,7 @@ Each column's color is resolved by `colColor(key)` in `KanbanView.tsx`, in prior
 2. **Known-status palette** — `STATUS_COLOR[key]` from `app/src/ui/StatusDot.tsx` for semantic statuses (`reading`→teal, `done`/`finished`/`complete`→green, `abandoned`/`dropped`→rose, `to read`→blue).
 3. **Theme graph palette** — otherwise the column gets a distinct color from the active theme's `accentPalette` ramp (the `PALETTE` constant: `--graph-0` … `--graph-4`), the slot chosen by a **stable hash of the column key** (not its position), so reordering columns never recolors them. This is the theme's designed set of distinguishable-yet-cohesive colors (a rainbow on `oxide-duotone`, a green family on a forest theme), so custom columns vary out of the box instead of all sharing one accent.
 
-The resolved color is applied to the column header's dot, a subtle header background tint, and the header's bottom border (all via a `--kb-col-color` CSS variable on the column). The column title text stays `var(--fg)`.
+The resolved color is applied to the column header's dot and the header's bottom border only (both via a `--kb-col-color` CSS variable set inline on the column) — there is no header background tint. The column title text stays `var(--fg)`. The header's card count sits right of the name, zero-padded to two digits by `padCount()` (`app/src/bases/kanbanOrder.ts`: `2` → `02`, `128` stays `128`) so an add/remove never shifts the header's width between one and two digits.
 
 **Color picker**: clicking a column header's dot opens a small popover of the five theme-palette swatches plus an **Auto** button (which clears the override back to the automatic color). Picking a swatch writes `groupColors[key]` to the view; Auto deletes the entry.
 
@@ -242,7 +242,7 @@ The resolved color is applied to the column header's dot, a subtle header backgr
 
 Drag a card by clicking and holding anywhere on its surface (the cursor shows `grab`; changes to `grabbing` while dragging). While dragging over a column:
 
-- The target column highlights with an accent border and slightly elevated background.
+- The target column gets a subtle `--surface-2` wash across the whole lane — no border.
 - An animated placeholder shows where the card will land on drop. The placeholder height animates open to the **dragged card's own height** (projected onto the board as the `--kb-drag-h` CSS variable; `46px` is only the fallback) at the insertion point.
 - Other cards in the column animate to their new positions using FLIP (First-Last-Invert-Play) with a `180ms cubic-bezier(.2,.7,.2,1)` transition, so the surrounding cards slide aside smoothly like Trello.
 
@@ -401,10 +401,11 @@ This means a kanban reorder will trigger a re-fetch in all open views of the sam
 
 ## CSS Dimensions and Layout
 
-The kanban board (`styles.kanban`) is a horizontal flex row with `overflow-x: auto` and `padding: 18px`. Each column has:
+The kanban board (`styles.kanban`) is a horizontal flex row with `overflow-x: auto`, `padding: var(--sp-5)` (12px), **no `gap`**, and `align-items: stretch`: every column runs the board's full height, even an empty one beside a tall one, so the board reads as a row of lanes. Columns are separated by a full-height 1px `--border-soft` rule (`border-right` on each column, dropped on the last); each column's own inner padding supplies the gutter on either side of that rule. The column header is inset by the same `--sp-5` as the cards below it, so its colored underline spans exactly the card width. Each column has:
 
 - `min-width: var(--kanban-col-min, 248px)`
 - `max-width: var(--kanban-col-max, 288px)`
+- `max-height: 100%` (a tall column scrolls its own card area; the header stays put)
 - `flex: 1` (columns distribute space evenly up to their max)
 
 To customize column widths, override the CSS variables on the host element or globally:
@@ -416,7 +417,7 @@ To customize column widths, override the CSS variables on the host element or gl
 }
 ```
 
-The column card area (`styles.kanbanCards`) has `padding: 9px 10px 12px` and `gap: 9px` between cards.
+The column card area (`styles.kanbanCards`) has `padding: var(--sp-3) var(--sp-5) var(--sp-5)` (6px 12px 12px) and `gap: var(--sp-3)` (6px) between cards; each card's own padding is `.kanbanCardPad` (`var(--sp-3) var(--sp-5)`), passed to `CardFrame` in place of `CardBodyInner`'s.
 
 ---
 
@@ -473,4 +474,4 @@ This board will:
 - **Drag cleanup on unmount**: a `window` `dragend` listener cleans up drag state if the card's DOM node unmounts mid-drag (e.g. a vault SSE refetch during a drag). This prevents phantom drag state.
 - **`columns` empty vs absent**: an explicit empty list (`columns: []` → `groupOrder: []`) is treated the same as absent — `query.ts` gates on `view.groupOrder && view.groupOrder.length`, so an empty list falls through to value-ordered groups. Note also that the `hasExplicitOrder` check in `KanbanView` reads `props.result.view.order` (the card-body property list), not `groupOrder` — column ordering (`columns:` → `groupOrder`) and card-body property visibility (`order:` → `order`) are separate config fields.
 
-Source: `app/src/bases/KanbanView.tsx`, `app/src/bases/KanbanCard.tsx`, `app/src/bases/CardEditModal.tsx`, `app/src/bases/cardImageDrop.ts`, `app/src/bases/kanbanImageDrop.ts`, `app/src/bases/kanbanCardMenu.ts`, `app/src/bases/kanbanMeta.ts`, `app/src/bases/markdown.ts`, `core/src/server.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `app/src/bases/CardBody.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/KanbanView.module.css`, `app/src/api.ts`, `app/src/bases/TaskRow.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/taskWrite.ts`
+Source: `app/src/bases/KanbanView.tsx`, `app/src/bases/KanbanCard.tsx`, `app/src/bases/CardEditModal.tsx`, `app/src/bases/cardImageDrop.ts`, `app/src/bases/kanbanImageDrop.ts`, `app/src/bases/kanbanCardMenu.ts`, `app/src/bases/kanbanMeta.ts`, `app/src/bases/kanbanOrder.ts`, `app/src/bases/markdown.ts`, `core/src/server.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `app/src/bases/CardBody.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/KanbanView.module.css`, `app/src/api.ts`, `app/src/bases/TaskRow.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/taskWrite.ts`
