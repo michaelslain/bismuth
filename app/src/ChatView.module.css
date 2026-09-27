@@ -1,7 +1,7 @@
 /* ChatView.module.css — ChatView.tsx is the ONLY importer. The chat tab's root host: the column
    layout (header → transcript → composer), the per-chat tint, the `--chat-*` surface-token
-   localisation the transcript parts read (each with a plain-token fallback of its own), and the
-   drag-over drop affordance. The header's bar register is ChatHeader.module.css; the composer box
+   localisation the transcript parts read (each with a plain-token fallback of its own). The
+   drag-over cue is ui/DropCue. The header's bar register is ChatHeader.module.css; the composer box
    is chat/ChatComposerBar.module.css — this file only insets that bar within the pane. */
 
 .host {
@@ -31,20 +31,6 @@
   --chat-border: color-mix(in oklch, var(--chat-tint) 40%, var(--border));
   --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 18%, var(--hover-bg));
   --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
-}
-
-/* Dragging a file over the chat pane — inset accent ring + faint wash signalling the pane will take
-   the drop. Images stage as attachments; every other file is referenced by path in the composer.
-   Mirrors the terminal's drop affordance. */
-.drop-active::after {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border: 1.5px dashed var(--accent);
-  border-radius: var(--r-0);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  pointer-events: none;
-  z-index: 20;
 }
 
 /* The body before the session is retained: holds the transcript's place so the composer already

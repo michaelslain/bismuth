@@ -27,7 +27,10 @@ import {
 import { chatBusy, chatComposing, chatSpeaking } from '../chatActivity'
 import { DAEMON_CHAT_ID } from '../tabIds'
 import { chatSession } from '../chat/chatSessions'
-import { armDaemonChat } from './daemonChatArm'
+import { armDaemonChat, armDaemonChatForDrop } from './daemonChatArm'
+import { createChatDropTarget } from '../chat/createChatDropTarget'
+import DropCue from '../ui/DropCue'
+import styles from './DaemonPageHost.module.css'
 import { pushToast } from '../toastStore'
 import DaemonChat from './DaemonChat'
 import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
@@ -148,6 +151,15 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         armDaemonChat(e)
     }
 
+    // The whole page is a drop target for the daemon's chat: a draggable dropped anywhere on it arms
+    // the chat (the drop is the gesture) and lands in its composer once the session is up.
+    let host: HTMLDivElement | undefined
+    const drop = createChatDropTarget(
+        () => DAEMON_CHAT_ID,
+        () => (enabled() ? host : undefined),
+        { beforeDrop: armDaemonChatForDrop },
+    )
+
     const status = () =>
         enabled() && !loaded()
             ? 'waking // reading the daemon'
@@ -230,7 +242,14 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     }
 
     return (
-        <div class="full">
+        <div
+            class={`full ${styles.host}`}
+            ref={host}
+            onDragOver={e => enabled() && drop.onDragOver(e)}
+            onDragLeave={drop.onDragLeave}
+            onDrop={e => enabled() && drop.onDrop(e)}
+        >
+            <DropCue active={drop.dragActive()} />
             <DaemonPage
                 name={daemonName()}
                 blurb={snapshot().identity.blurb}

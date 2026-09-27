@@ -20,6 +20,7 @@
 import { createSignal, Show, type JSX } from 'solid-js'
 import styles from './ChatView.module.css'
 import EmptyState from './ui/EmptyState'
+import DropCue from './ui/DropCue'
 import InlineCode from './ui/InlineCode'
 import ChatHeader from './chat/ChatHeader'
 import ChatTranscript from './chat/ChatTranscript'
@@ -80,7 +81,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     let host: HTMLDivElement | undefined
     const [composer, setComposer] = createSignal<ComposerHandle>()
     const session = () => chatSession(props.chatId)
-    const drop = createChatDropTarget(session, () => host)
+    const drop = createChatDropTarget(() => props.chatId, () => host)
 
     const persona = () =>
         session()?.persona() ?? chatPersonaName() ?? 'Claude'
@@ -100,7 +101,6 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     return (
         <div
             class={styles.host}
-            classList={{ [styles['drop-active']]: drop.dragActive() }}
             ref={host}
             // Per-chat pane tint: wash the chosen colour into the host background so the whole
             // surface reads as that colour, and expose it as --chat-tint so the transcript's
@@ -118,6 +118,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
             onDragLeave={drop.onDragLeave}
             onDrop={drop.onDrop}
         >
+            <DropCue active={drop.dragActive()} />
             <Show when={session()}>
                 {s => (
                     <ChatHeader

@@ -1,6 +1,7 @@
 // app/src/dnd/noteRef.test.ts
 import { describe, it, expect } from 'bun:test'
 import {
+    chatIdForContent,
     isMarkdown,
     noteNameFromPath,
     wikilinkFor,
@@ -335,5 +336,19 @@ describe('regressions the cross product must catch', () => {
         expect(
             isEditorReferenceDrop('Alpha.md', tab('Beta.md'), 'center', true),
         ).toBe(false)
+    })
+})
+
+describe('chatIdForContent', () => {
+    it('a chat tab, the daemon page, and anything else', () => {
+        expect(chatIdForContent('::chat:abc')).toBe('abc')
+        expect(chatIdForContent('::daemon')).toBe('daemon')
+        expect(chatIdForContent('notes/a.md')).toBeNull()
+        expect(chatIdForContent(undefined)).toBeNull()
+    })
+    it('isChatReferenceDrop accepts the daemon page', () => {
+        expect(
+            isChatReferenceDrop('::daemon', { kind: 'note', path: 'a.md', label: 'a', width: 1 }),
+        ).toBe(true)
     })
 })

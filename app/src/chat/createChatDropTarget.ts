@@ -1,29 +1,40 @@
 // app/src/chat/createChatDropTarget.ts
-// Drag-and-drop staging for a chat surface — moved out of ChatView.tsx (~1117-1306, ~2080-2104:
-// the host-level HTML5 handlers + the Tauri native-drop window listener) so a chat host doesn't
-// have to hand-roll its own copy. Currently used by ONLY the chat tab (ChatView.tsx) — the daemon
-// page's DaemonChat.tsx does not accept drops and has no host element to wire this to (corrected
-// 2026-09-15, final-findings Group 2 #9: this comment used to claim both surfaces shared it).
+// Drag-and-drop intake for a chat surface — the chat tab (ChatView.tsx) and the daemon page's
+// inline chat (DaemonPageHost.tsx). Every draggable from OUTSIDE the app lands here; in-app
+// draggables (sidebar rows, tabs, panes) are pointer drags resolved by App's viewDrag handler, which
+// hands the same chat a `mention` through `deliverChatDrop`. Full matrix: docs/overview/draggables.md.
 //
 // Two transports, both covered:
 //  • Browser / dev build: HTML5 drag events fire — return the three handlers to spread onto the
-//    host element (`onDragOver`/`onDragLeave`/`onDrop`).
-//  • Packaged Tauri app: the native drag-drop handler suppresses the webview's HTML5 `drop` for
-//    external OS files, so those arrive ONLY as a `bismuth-native-drag` window event
-//    (nativeDrop.ts). This installs that listener itself and hit-tests the cursor against
-//    `host()`'s rect (pointInDropRect) so only the pane under the cursor stages the drop.
+//    host element. Files and `file:` URIs stage as files; anything else (a browser image, a link,
+//    dragged text) goes through the same pasteboard planner a note uses (dropIntake.planDrop).
+//  • Packaged Tauri app: the native drag-drop handler suppresses the webview's HTML5 `drop`, so
+//    drags arrive ONLY as a `bismuth-native-drag` window event (nativeDrop.ts), hit-tested against
+//    `host()`'s rect so only the pane under the cursor takes it. A drop with no OS paths (browser
+//    image, link, text, a Photos file promise) reads the drag pasteboard via `read_drag_pasteboard`,
+//    exactly as the note editor does.
 //
-// `session` may report undefined (no session yet, e.g. the daemon pre-arm) — a drop or paste with
-// no session to hand files to is simply ignored; the affordance still shows, since something IS
-// being dragged over the pane, but nothing is staged until a session exists.
+// `beforeDrop` runs once a drop is accepted, before it is delivered — the daemon page arms its chat
+// there, and the drop waits in `deliverChatDrop`'s queue until the session exists.
 import { createSignal, onCleanup, onMount, type Accessor } from 'solid-js'
-import type { ChatSession } from './chatSession'
 import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
+import { claimNativeDrop } from '../nativeDropRouting'
 import { filePathsFromTransfer } from '../fileIntake'
+import {
+    pasteboardFromTransfer,
+    planDrop,
+    type DragPasteboard,
+} from '../dropIntake'
+import { pushToast } from '../toastStore'
+import { deliverChatDrop } from './chatSessions'
+import { chatActionsFromPlan, type ChatDropAction } from './chatDrop'
+
+const ACCEPTED_TYPES = ['Files', 'text/uri-list', 'text/plain', 'text/html']
 
 export function createChatDropTarget(
-    session: Accessor<ChatSession | undefined>,
+    chatId: Accessor<string>,
     host: Accessor<HTMLElement | undefined>,
+    opts: { beforeDrop?: () => void } = {},
 ): {
     dragActive: Accessor<boolean>
     onDragOver: (e: DragEvent) => void
@@ -32,10 +43,18 @@ export function createChatDropTarget(
 } {
     const [dragActive, setDragActive] = createSignal(false)
 
+    const deliver = (actions: ChatDropAction[]) => {
+        if (!actions.length) {
+            pushToast("Couldn't read that drop")
+            return
+        }
+        opts.beforeDrop?.()
+        for (const a of actions) deliverChatDrop(chatId(), a)
+    }
+
     const onDragOver = (e: DragEvent) => {
         const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : []
-        if (!types.includes('Files') && !types.includes('text/uri-list'))
-            return
+        if (!types.some(t => ACCEPTED_TYPES.includes(t))) return
         e.preventDefault()
         setDragActive(true)
     }
@@ -46,32 +65,42 @@ export function createChatDropTarget(
     }
     const onDrop = (e: DragEvent) => {
         setDragActive(false)
-        const paths = filePathsFromTransfer(e.dataTransfer)
-        const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : []
-        if (!paths.length && !files.length) return
+        // The composer's CodeMirror already took a text drop onto itself — don't insert it twice.
+        if (e.defaultPrevented || !e.isTrusted) return
+        const dt = e.dataTransfer
+        const paths = filePathsFromTransfer(dt)
+        const files = dt ? Array.from(dt.files) : []
         e.preventDefault()
-        const s = session()
-        if (!s) return
-        if (paths.length) void s.addDroppedPaths(paths)
-        else void s.addDroppedFiles(files)
+        if (paths.length) deliver([{ kind: 'paths', paths }])
+        else if (files.length) deliver([{ kind: 'files', files }])
+        else deliver(chatActionsFromPlan(planDrop(pasteboardFromTransfer(dt))))
     }
 
     onMount(() => {
-        const onNativeDrag = (e: Event) => {
+        const onNativeDrag = async (e: Event) => {
             const d = (e as CustomEvent<NativeDragDetail>).detail
             const el = host()
             if (!d || !el) return
             const inside = pointInDropRect(el.getBoundingClientRect(), d.x, d.y)
-            if (d.type === 'drop') {
-                setDragActive(false)
-                if (!inside || d.paths.length === 0) return
-                const s = session()
-                if (s) void s.addDroppedPaths(d.paths)
-            } else if (d.type === 'leave') {
-                setDragActive(false)
-            } else {
-                setDragActive(inside)
+            if (d.type === 'leave') setDragActive(false)
+            else if (d.type !== 'drop') setDragActive(inside)
+            if (d.type !== 'drop') return
+            setDragActive(false)
+            if (!inside || !claimNativeDrop(d)) return
+            if (d.paths.length) {
+                deliver([{ kind: 'paths', paths: d.paths }])
+                return
             }
+            let pb: DragPasteboard
+            try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                pb = await invoke<DragPasteboard>('read_drag_pasteboard')
+            } catch (err) {
+                pushToast("Couldn't read that drop")
+                console.error('read_drag_pasteboard failed', err)
+                return
+            }
+            deliver(chatActionsFromPlan(planDrop(pb)))
         }
         window.addEventListener('bismuth-native-drag', onNativeDrag)
         onCleanup(() =>

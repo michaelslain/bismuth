@@ -1,0 +1,11 @@
+/* DropCue.module.css — DropCue.tsx is the ONLY importer. Positioned over the nearest positioned
+   ancestor; never takes the pointer, so the drop still lands on the surface below. */
+.cue {
+  position: absolute;
+  inset: var(--sp-2);
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--r-0);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 20;
+}
