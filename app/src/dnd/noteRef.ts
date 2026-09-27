@@ -6,7 +6,7 @@
 // it's unit-testable headlessly.
 import type { DragDescriptor } from './viewDrag'
 import type { Zone } from './geometry'
-import { CHAT_PREFIX } from '../tabIds'
+import { CHAT_PREFIX, DAEMON_CHAT_ID, DAEMON_TAB } from '../tabIds'
 import { isImagePath, isPdfPath } from '../../../core/src/fileKinds'
 import { linkTargetFor } from '../../../core/src/linkTarget'
 
@@ -78,7 +78,7 @@ export function embedFor(path: string, filePaths: Iterable<string>): string {
 }
 
 /** True when dropping `descriptor` onto a pane showing `content` should insert a CHAT REFERENCE
- *  (a `[[mention]]` in that chat's composer) rather than split/graft the pane: the pane is a chat and
+ *  (a `[[mention]]` in that chat's composer — a chat tab or the daemon page) rather than split/graft the pane: the pane is a chat and
  *  the payload carries a referenceable path. This is the SHARED predicate the drop HANDLER (App) and
  *  the drop-AFFORDANCE highlight (PaneTree) both call — so the split-quadrant overlay is suppressed
  *  EXACTLY when the drop won't split (Row 74: no more confusing four-quadrant highlight over a chat). */
@@ -87,10 +87,18 @@ export function isChatReferenceDrop(
     descriptor: DragDescriptor | null,
 ): boolean {
     return (
-        !!content &&
-        content.startsWith(CHAT_PREFIX) &&
+        chatIdForContent(content) !== null &&
         descriptorChatRefPath(descriptor) !== null
     )
+}
+
+/** The chat a pane's content hosts: a chat tab's own id, or the daemon page's inline chat
+ *  (`::daemon` → DAEMON_CHAT_ID). Null for every other pane. */
+export function chatIdForContent(content: string | undefined): string | null {
+    if (!content) return null
+    if (content.startsWith(CHAT_PREFIX)) return content.slice(CHAT_PREFIX.length)
+    if (content === DAEMON_TAB) return DAEMON_CHAT_ID
+    return null
 }
 
 /** The path a drop of `descriptor` onto a pane showing `content` (with `hasEditor` a live

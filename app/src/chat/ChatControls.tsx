@@ -306,6 +306,8 @@ function buildDisabledSession(chatId?: string): ChatSession {
         addImageFiles: async () => {},
         addDroppedFiles: async () => {},
         addDroppedPaths: async () => {},
+        addDroppedText: () => {},
+        addMention: () => {},
         streaming: () => false,
         awaitingReply: () => false,
         manifest: () => null,

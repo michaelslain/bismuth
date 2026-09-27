@@ -25,3 +25,11 @@ export function armDaemonChat(e: ArmingEvent): boolean {
 export function disarmDaemonChat(): void {
     if (armed()) setArmed(false)
 }
+
+/** Arm from a real drop onto the daemon page. A drop is a user gesture app control cannot forge:
+ *  an HTML5 drop is checked `isTrusted` by the caller, a native drop comes from the OS through
+ *  Tauri's webview (never the `/ui` channel), and an in-app pointer drag ends on a trusted
+ *  pointerup. Callers are exactly those three paths. */
+export function armDaemonChatForDrop(): void {
+    if (!armed()) setArmed(true)
+}

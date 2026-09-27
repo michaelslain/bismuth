@@ -72,6 +72,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Install & run](overview/install.md) — prerequisites, env vars, dev/build, multiple instances
 - [Storage](overview/storage.md) — where everything is stored on disk + in the browser
 - [Status messages](overview/status-messages.md) — what "connection lost — polling", "Open folder failed", and the rest actually mean
+- [Draggables](overview/draggables.md) — every draggable × every drop surface (notes, chat, daemon page) and what each drop does
 - [Data flow](overview/data-flow.md) — file-watch → SSE → frontend, caching, layouts
 - [Self-update](overview/self-update.md) — the git-based in-place app updater (detect → pull → rebuild → swap)
 
