@@ -146,3 +146,31 @@
   pointer-events: none;
   font-size: var(--fs-body);
 }
+/* Unplaced-rows control, top-left (mirrors .mapControls at top-right). Picking a row from
+   its menu arms placement; the next click on the map writes that row's coordinates. */
+.mapUnplaced {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  pointer-events: auto;
+}
+/* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
+   cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
+.mapArmed {
+  cursor: crosshair;
+}
+/* Floating hint that follows the cursor while a row is armed for placement. */
+.mapPlacingLabel {
+  position: absolute;
+  z-index: 1;
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: var(--r-0);
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  background: var(--pop-bg);
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--lift);
+}

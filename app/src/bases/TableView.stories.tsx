@@ -120,3 +120,45 @@ export const StoredRows: Story = {
         )
     },
 }
+
+/** With `basePath` set (openRowEditor.tsx is wired), an owned row's title becomes a real
+ *  button — clicking it opens the row editor rather than doing nothing. */
+export const EditableOwnedRow: Story = {
+    render: () => (
+        <TableView
+            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            config={STORED_CONFIG}
+            basePath="boards/stored-table.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const titleCell = canvasElement.querySelector(
+            'tbody tr:first-child td',
+        )
+        const btn = titleCell!.querySelector('button')
+        expect(btn).toBeTruthy()
+        expect((btn!.textContent ?? '').trim()).toContain('ship the parser')
+    },
+}
+
+/** With `basePath` set, a note row keeps opening its note on a title click and gains an
+ *  edit-properties icon button (hover/focus reveal — present in the DOM either way). */
+export const EditableNoteRow: Story = {
+    render: () => (
+        <TableView
+            result={sampleViewResult()}
+            config={sampleBaseConfig()}
+            basePath="projects/tasks.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const editBtn = canvasElement.querySelector(
+            'button[aria-label="Edit properties"]',
+        )
+        expect(editBtn).toBeTruthy()
+        const titleLink = canvasElement.querySelector(
+            'tbody tr:first-child td a',
+        )
+        expect(titleLink).toBeTruthy()
+    },
+}

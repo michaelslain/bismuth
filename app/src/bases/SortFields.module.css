@@ -1,0 +1,12 @@
+/* SortFields.module.css — "sort by" / "then by" rows: property | direction | remove. */
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+}
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    gap: var(--sp-4);
+    align-items: center;
+}

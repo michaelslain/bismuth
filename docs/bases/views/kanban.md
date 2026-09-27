@@ -21,7 +21,7 @@ The card face shows the note's **title**, then every other property the view's `
 A kanban view **must** have a `groupBy` property. Without it, the view renders:
 
 ```
-This kanban view needs a "groupBy" property. Add e.g. groupBy: note.status to the view.
+This kanban view needs a "group by" property. Open Settings (the gear in the view bar) and set group by.
 ```
 
 Minimal valid config in a `type: base` file:

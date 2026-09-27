@@ -55,3 +55,4 @@
 .panel .propset-btn { flex: 0 0 auto; }
 
 .panel .propset-add { margin-top: var(--sp-1); }
+.error { color: var(--danger); }

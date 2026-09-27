@@ -1,5 +1,6 @@
-import { createSignal, createMemo, For, Show } from 'solid-js'
+import { createSignal, createMemo, onCleanup, For, Show } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
+import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
@@ -128,12 +129,34 @@ export function EditCardsModal(props: {
     basePath: string
     frontField: string
     backField: string
+    /** SM-2 scheduling columns (defaults match core/src/srs/reviewRow.ts's FORWARD_FIELDS) — read
+     *  only to know which keys "reset progress" strips; this modal never schedules a review. */
+    dueField?: string
+    easeField?: string
+    intervalField?: string
+    /** A bidirectional deck also schedules a `*Back` companion triple (flashcardsQueue.ts's
+     *  `backField`) for the reverse direction — reset clears those too. */
+    bidirectional?: boolean
     deckName?: string
     onClose: () => void
     onChanged: () => void
 }) {
     const ff = props.frontField
     const bf = props.backField
+    const dueF = () => props.dueField ?? 'due'
+    const easeF = () => props.easeField ?? 'ease'
+    const intervalF = () => props.intervalField ?? 'interval'
+    // The full set of columns a "reset progress" strips from a card's note — the forward
+    // due/ease/interval triple, plus its `*Back` companions on a bidirectional deck.
+    const resetKeys = () => {
+        const base = [dueF(), easeF(), intervalF()]
+        return props.bidirectional ? [...base, ...base.map(k => `${k}Back`)] : base
+    }
+    const stripSchedule = (n: Note): Note => {
+        const next = { ...n }
+        for (const k of resetKeys()) delete next[k]
+        return next
+    }
 
     const [cards, setCards] = createSignal<Note[]>(
         props.rows.map(r => ({ ...r.note })),
@@ -175,6 +198,54 @@ export function EditCardsModal(props: {
         } finally {
             setBusy(false)
         }
+    }
+
+    // ── Reset progress: drops a card's (or every card's) due/ease/interval columns
+    // so it reviews as new again, without touching front/back or any other field. ──
+    const resetCard = async (index: number) => {
+        if (busy()) return
+        setBusy(true)
+        try {
+            const stripped = stripSchedule(cards()[index])
+            setCards(cards().map((n, i) => (i === index ? stripped : n)))
+            await api.rowUpdate(props.basePath, index, stripped)
+            dirty = true
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    // "Reset all" is inline two-step: the first click just arms it (label flips to a
+    // confirmation, auto-disarming after a few seconds); only the second click, while armed,
+    // actually writes. No `confirm()` — see base-actions-constraints.md.
+    const [confirmResetAll, setConfirmResetAll] = createSignal(false)
+    let resetAllTimer: ReturnType<typeof setTimeout> | undefined
+    onCleanup(() => clearTimeout(resetAllTimer))
+    const resetAll = async () => {
+        if (busy()) return
+        clearTimeout(resetAllTimer)
+        setConfirmResetAll(false)
+        setBusy(true)
+        try {
+            const stripped = cards().map(stripSchedule)
+            setCards(stripped)
+            await api.rowUpdateMany(
+                props.basePath,
+                stripped.map((note, index) => ({ index, note })),
+            )
+            dirty = true
+        } finally {
+            setBusy(false)
+        }
+    }
+    const onResetAllClick = () => {
+        if (confirmResetAll()) {
+            void resetAll()
+            return
+        }
+        setConfirmResetAll(true)
+        clearTimeout(resetAllTimer)
+        resetAllTimer = setTimeout(() => setConfirmResetAll(false), 4000)
     }
 
     // ── Inline add (draft row) ────────────────────────────────────────────
@@ -348,6 +419,13 @@ export function EditCardsModal(props: {
                                     onCommit={v => commitCell(i(), bf, v)}
                                 />
                                 <div class={styles['cards-del']}>
+                                    <IconButton
+                                        icon="RotateCcw"
+                                        label="Reset this card's progress"
+                                        size="sm"
+                                        disabled={busy()}
+                                        onClick={() => resetCard(i())}
+                                    />
                                     <TextButton
                                         aria-label="Delete card"
                                         title="Delete card"
@@ -595,10 +673,24 @@ export function EditCardsModal(props: {
 
             <ModalFooter
                 leading={
-                    <Badge tone="muted" class={styles['cards-count']}>
-                        <b>{cards().length}</b>{' '}
-                        {cards().length === 1 ? 'card' : 'cards'} in deck
-                    </Badge>
+                    <>
+                        <Badge tone="muted" class={styles['cards-count']}>
+                            <b>{cards().length}</b>{' '}
+                            {cards().length === 1 ? 'card' : 'cards'} in deck
+                        </Badge>
+                        <Show when={cards().length > 0}>
+                            <IconTextButton
+                                icon="RotateCcw"
+                                danger={confirmResetAll()}
+                                disabled={busy()}
+                                onClick={onResetAllClick}
+                            >
+                                {confirmResetAll()
+                                    ? 'reset all — click again to confirm'
+                                    : 'reset all progress'}
+                            </IconTextButton>
+                        </Show>
+                    </>
                 }
             >
                 <Show

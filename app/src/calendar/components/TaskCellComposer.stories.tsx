@@ -257,6 +257,69 @@ export const BlurCommitsThenClears: Story = {
     },
 }
 
+/** Task 1 (per-task destination): 2+ `targets` replaces the plain `→ destination` text with a
+ *  picker — proves the picker renders (not the text), shows the CURRENT target's label, and
+ *  that opening it lists every target by name. The picker itself is `ui/Select`, so its own
+ *  open/close/keyboard behaviour is Select's own story's job — this only proves the wiring:
+ *  the composer hands Select the right `options`/`value` and repaints the marker in the picked
+ *  target's colour. */
+export const TargetPicker: Story = {
+    render: () =>
+        monthCell(
+            <TaskCellComposer
+                destination="Work"
+                targets={[
+                    { id: 'work.md', label: 'Work', color: 'var(--blue)' },
+                    { id: 'personal.md', label: 'Personal', color: 'var(--rose)' },
+                ]}
+                target="work.md"
+                onTargetChange={() => {}}
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // the plain destination line is GONE — a picker stands in its place
+        const destination = canvas.getByTestId('task-cell-composer-destination')
+        expect(destination.textContent).not.toContain('no destination note')
+        const trigger = destination.querySelector('[data-select-trigger]') as HTMLElement
+        expect(trigger).not.toBeNull()
+        // includes the trigger's own caret glyph ("▾") after the label
+        expect(trigger.textContent?.trim()).toBe('Work▾')
+        // the marker picked up the CURRENT target's colour, same contract as the plain `color`
+        // prop — see WithCategoryColour above.
+        const marker = canvas.getByTestId('task-cell-composer-marker')
+        expect(marker.style.color).toBe('var(--blue)')
+
+        await userEvent.click(trigger)
+        const body = within(document.body)
+        expect(await body.findByText('Personal')).not.toBeNull()
+    },
+}
+
+/** A single target (or none) never shows a picker — nothing to pick between, so the plain
+ *  `→ destination` text stays exactly as it always has. */
+export const SingleTargetStaysPlainText: Story = {
+    render: () =>
+        monthCell(
+            <TaskCellComposer
+                destination="General Tasks"
+                targets={[{ id: 'general.md', label: 'General Tasks' }]}
+                target="general.md"
+                onTargetChange={() => {}}
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const destination = canvas.getByTestId('task-cell-composer-destination')
+        expect(destination.querySelector('[data-select-trigger]')).toBeNull()
+        expect(destination.textContent?.trim()).toBe('→ General Tasks')
+    },
+}
+
 /** [Important finding] a sourced calendar with no `taskFile` set (a new task calendar's
  *  first-run state) has `destination === ''` — the same state that drives the composer's own
  *  `--danger` "no destination note // set one in settings" hint below the input.

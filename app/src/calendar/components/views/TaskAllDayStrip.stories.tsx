@@ -172,6 +172,9 @@ export const ComposerOpensOnCellClick: Story = {
                     compose={{
                         date: openDate(),
                         destination: 'General Tasks',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
                         open: d => setOpenDate(d),
                         commit: () => setOpenDate(null),
                         cancel: () => setOpenDate(null),
@@ -187,6 +190,51 @@ export const ComposerOpensOnCellClick: Story = {
         await userEvent.click(cells[0])
         await new Promise(r => setTimeout(r, 0))
         expect(cells[0].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+    },
+}
+
+/** Task 2 (discoverable add): the same quiet `+` MonthView.stories.tsx's
+ *  `AddTaskButtonReveals` proves for the month grid, here for the week/3-day/day strip —
+ *  a separate component (TaskAllDayStrip.tsx), so its own wiring needs its own proof. */
+export const AddTaskButtonReveals: Story = {
+    render: () => {
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        return (
+            <CalendarFrame>
+                <TaskAllDayStrip
+                    dates={dates(3)}
+                    placed={new Map()}
+                    onToggleTask={() => {}}
+                    onOpenTask={() => {}}
+                    compose={{
+                        date: openDate(),
+                        destination: 'General Tasks',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
+                        open: d => setOpenDate(d),
+                        commit: () => setOpenDate(null),
+                        cancel: () => setOpenDate(null),
+                    }}
+                />
+            </CalendarFrame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cell = canvasElement.querySelector<HTMLElement>('[data-testid="task-day-cell"]')!
+        const button = cell.querySelector<HTMLElement>('[aria-label="Add task"]')!
+        expect(button).not.toBeNull()
+        expect(getComputedStyle(button).opacity).toBe('0')
+        // See MonthView.stories.tsx's `AddTaskButtonReveals` for why this focuses the button
+        // directly rather than simulating a pointer hover.
+        button.focus()
+        // the opacity change is CSS-transitioned (`--dur`), so the computed value right after
+        // triggering it is still mid-transition — wait past the transition before reading it.
+        await new Promise(r => setTimeout(r, 200))
+        expect(getComputedStyle(button).opacity).toBe('1')
+        await userEvent.click(button)
+        await new Promise(r => setTimeout(r, 0))
+        expect(cell.querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
     },
 }
 
@@ -207,6 +255,9 @@ export const ComposerMovesBetweenCells: Story = {
                     compose={{
                         date: openDate(),
                         destination: 'General Tasks',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
                         open: d => setOpenDate(d),
                         commit: () => setOpenDate(null),
                         cancel: () => setOpenDate(null),
@@ -247,6 +298,9 @@ export const ChipClickDoesNotOpenComposer: Story = {
                     compose={{
                         date: openDate(),
                         destination: 'General Tasks',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
                         open: d => setOpenDate(d),
                         commit: () => setOpenDate(null),
                         cancel: () => setOpenDate(null),
@@ -287,6 +341,9 @@ export const ComposerBelowChips: Story = {
                         date: day,
                         destination: 'General Tasks',
                         color: 'var(--blue)',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
                         open: () => {},
                         commit: () => {},
                         cancel: () => {},

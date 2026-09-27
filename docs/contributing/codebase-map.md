@@ -390,6 +390,9 @@ The bracket-field grammar for task lines (`[due 2026-09-14]`, `[every week]`, `[
 #### `taskReorder.ts`
 Pure task-status and task-block primitives (`statusFromChar`/`statusToChar`/`isResolvedStatus`, `collectBlock`/`reorderTaskBlocks`), split out of `tasks.ts` for the same reason as `taskParse.ts` — so the frontend (`app/src/editor/taskFold.ts`, `app/src/bases/taskWrite.ts`) can value-import them without dragging `tasks.ts`'s filesystem coupling into the WebView bundle. Imports nothing with runtime IO, only an erased `TaskStatus` type from `tasks.ts`. `statusToChar` is also what `core/src/bases/taskRow.ts` uses for a task stored as a base row, which never passed through a checkbox line at all. Re-exported from `tasks.ts` for existing importers.
 
+#### `taskEdit.ts`
+Pure task-line EDITING — `updateTaskLineFields(line, patch)` (replace the description and set/clear `due`/`scheduled`/`start`/priority in bracket form, keeping the checkbox, indent and every other field), `taskItemRange(lines, i)` / `removeTaskItem(lines, i)` (a task's block: the line plus deeper-indented lines). Behind `POST /tasks/update`, `/tasks/delete` and `/tasks/move`. No I/O, so the app can value-import it.
+
 #### `taskLegacy.ts`
 The Obsidian-Tasks emoji reader, read ONE LAST TIME — `hasLegacySignifier(text)`, `readLegacyLine(line, path, lineNo)`. `parseTaskLine` (`tasks.ts`) no longer reads emoji at all; this module exists so `taskMigrate.ts`/`taskMigrateRun.ts` can still convert an old line, and it is imported from nowhere else — a second reader anywhere else would put both spellings back in play.
 
@@ -962,7 +965,19 @@ Flashcard review UI. Uses `flashcardsQueue.ts` for queue logic, calls `POST /car
 `renderMarkdown(md)` — converts markdown to sanitized HTML for cell/card body rendering. Uses `marked` + `sanitizeHtml`.
 
 #### `bases/BaseSettings.tsx`
-Per-base settings panel (view type switcher, field mapping, bidirectional toggle, column visibility).
+Per-view settings panel — view name/kind/mode, source, filters (this view + every view), sort levels, group, limit, columns, summaries, formulas, properties and the per-kind field bindings (chart axes, flashcards, map, cards). Writes only the keys that changed: view keys to `views[viewIndex]` via `setViewProperty` (deleting a flat top-level copy that would override `views[0]`), base keys at the top level. The write plan is pure, in `baseSettingsPlan.ts`; each section is its own component (`ViewIdentityFields`, `SourceFields`, `FiltersEditor` + `FilterConditionRow`, `SortFields`, `SummariesFields`, `FormulasEditor`, `MapFramingFields`, `CardsFields`) over a pure form module (`sourceForm.ts`, `filterForm.ts` + `filterOps.ts`, `formulasForm.ts`, `summariesForm.ts`, `columnsForm.ts`).
+
+#### `bases/ViewTabs.tsx` + `bases/viewsEdit.ts`
+The base's view tab strip: select, `[+]` add a view of any kind, and a per-tab menu (rename, duplicate, change kind, tasks mode, move, view settings, delete). `viewsEdit.ts` is the pure `views:` array editor behind it, which also materialises a `view:` shorthand / flat top-level keys into `views[0]` on the first structural edit.
+
+#### `bases/taskEdit.ts` + `bases/TaskEditModal.tsx` + `bases/openTaskEditor.tsx`
+Edit / delete / move ONE task from any task surface (`TaskRow`'s pencil, a calendar `TaskChip`). `taskEdit.ts` dispatches a line task to `POST /tasks/{update,delete,move}` and a stored task row to `/row/{update,delete}`; `openTaskEditor(opts)` mounts the modal imperatively.
+
+#### `bases/openRowEditor.tsx` + `bases/AddRowAction.tsx`
+Row CRUD for the table/list/bullets/cards views: `openRowEditor` mounts `CardEditModal` for any row (stored row → `/row/*`, note row → frontmatter writes, delete → trash); `AddRowAction` is the bar's `+ row` (a new stored row, or a new note matching a notes source).
+
+#### `bases/mapCoords.ts`
+Pure map projection helpers behind placing, dragging and clearing pins in `MapView` — `screenToLatLng`, `round6`, `pastDragThreshold`, `writableFieldKey`.
 
 #### `bases/BaseSkeleton.tsx`
 Skeleton loading placeholder shown only on cold (never-cached) base loads.

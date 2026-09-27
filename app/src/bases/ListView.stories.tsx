@@ -5,8 +5,9 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import { ListView } from './ListView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
-import { EMPTY_FILE } from '../../../core/src/bases/types'
+import { EMPTY_FILE, syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
+import { runView } from '../../../core/src/bases/query'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
 // The overdue class lives on <TaskRow> now (it was extracted out of ListView), so the class
@@ -28,6 +29,58 @@ export const Default: Story = {
     render: () => (
         <ListView result={sampleViewResult()} config={sampleBaseConfig()} />
     ),
+}
+
+// A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
+const STORED_CONFIG: BaseConfig = {
+    declaredProperties: ['description', 'status'],
+    views: [{ type: 'list', name: 'List' }],
+}
+const STORED_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile('boards/stored-list.md'),
+        note: { description: 'ship the parser', status: 'Todo' },
+        formula: {},
+        index: 0,
+    },
+]
+
+/** With `basePath` set (openRowEditor.tsx wired), an owned row's row button opens the editor
+ *  directly — it has no note of its own to open. */
+export const EditableOwnedRow: Story = {
+    render: () => (
+        <ListView
+            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            config={STORED_CONFIG}
+            basePath="boards/stored-list.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector('button')
+        expect(row).toBeTruthy()
+        expect((row!.textContent ?? '')).toContain('ship the parser')
+        // No separate edit icon on an owned row — the row itself already opens the editor.
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeNull()
+    },
+}
+
+/** With `basePath` set, a note row keeps opening its note and gains a hover/focus-reveal
+ *  edit-properties icon (present in the DOM either way). */
+export const EditableNoteRow: Story = {
+    render: () => (
+        <ListView
+            result={sampleViewResult()}
+            config={sampleBaseConfig()}
+            basePath="projects/tasks.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeTruthy()
+    },
 }
 
 /** Grouped by `status` — a colored group heading + row count per distinct value. */

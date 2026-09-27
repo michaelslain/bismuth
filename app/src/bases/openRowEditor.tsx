@@ -1,0 +1,208 @@
+// Imperative opener for <CardEditModal> from a view that has no per-card component of its
+// own (TableView/ListView/BulletsView/CardsView) — the pattern is app/src/taskStatusMenu.tsx's
+// `openTaskStatusMenu`: mount the shared modal into a detached host node, dispose on close.
+//
+// KanbanCard/KanbanView own the ORIGINAL wiring (rename/meta/delete) for a card inside a board;
+// this module re-derives the same three write paths for a bare Row that isn't sitting inside a
+// KanbanView — same two-target split (`canWriteStoredRow`: a row stored in the base's own body
+// writes by INDEX via `api.rowUpdate`/`rowDelete`; a note row writes via `setProperty`/`move`/
+// `del`, same as FileTree). See taskWrite.ts / KanbanView.tsx's renameCard/setMetaProperty/
+// deleteCard for the originals this mirrors.
+import { render } from 'solid-js/web'
+import type { Row, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
+import { CardEditModal } from './CardEditModal'
+import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
+import { storedTitleColumn, metaColumns, writableKey } from './kanbanMeta'
+import { parentOf } from '../fileTreeOps'
+import {
+    flushEditorsAtOrUnder,
+    flushSidecarsAtOrUnder,
+} from '../editorRegistry'
+import { api } from '../api'
+import { pushToast } from '../Toast'
+
+/** Make a title safe as a filename: strip path/YAML-hostile chars, collapse whitespace.
+ *  Copy of KanbanView's private `safeFilename` (not exported there) — exported here so
+ *  AddRowAction can reuse it for note-source creation without a second implementation. */
+export function safeFilename(title: string): string {
+    const s = title
+        .replace(/[\\/:*?"<>|#[\]]/g, '-')
+        .replace(/\s+/g, ' ')
+        .replace(/^\.+/, '')
+        .trim()
+    return s.slice(0, 120) || 'Untitled'
+}
+
+/** The `order:`/declared-property id list to show as editable meta on a bare row — mirrors
+ *  `metaSource`'s declared-properties fallback (kanbanMeta.ts) minus the `groupBy` exclusion,
+ *  which has no meaning outside a kanban board's grouped columns. An explicit view `order:`
+ *  always wins; otherwise a base that declares its own properties shows those. */
+function fallbackOrder(config: BaseConfig, view: ViewConfig): string[] {
+    if (view.order && view.order.length) return view.order
+    if (config.declaredProperties && config.declaredProperties.length)
+        return config.declaredProperties
+    return []
+}
+
+async function commitRename(
+    row: Row,
+    view: ViewConfig,
+    newTitle: string,
+    onChanged?: () => void,
+): Promise<void> {
+    const t = newTitle.trim()
+    if (!t) return
+    if (canWriteStoredRow(row)) {
+        const key = writableKey(storedTitleColumn(view.order ?? []))
+        if (key === null) return
+        const note = { ...storedNote(row), [key]: t }
+        try {
+            await api.rowUpdate(row.file.path, row.index!, note)
+            onChanged?.()
+        } catch (e) {
+            pushToast(`Rename failed: ${(e as Error).message}`)
+        }
+        return
+    }
+    if (t === row.file.name) return
+    const dir = parentOf(row.file.path)
+    const desired = `${dir ? dir + '/' : ''}${safeFilename(t)}.md`
+    if (desired === row.file.path) return
+    try {
+        await api.move(row.file.path, desired)
+        onChanged?.()
+    } catch (e) {
+        pushToast(`Rename failed: ${(e as Error).message}`)
+    }
+}
+
+async function commitMeta(
+    row: Row,
+    id: string,
+    value: unknown,
+    onChanged?: () => void,
+): Promise<void> {
+    const key = writableKey(id)
+    if (key === null) return
+    try {
+        if (canWriteStoredRow(row)) {
+            const note = { ...storedNote(row) }
+            if (value === null || value === undefined || value === '')
+                delete note[key]
+            else note[key] = value
+            await api.rowUpdate(row.file.path, row.index!, note)
+        } else if (value === null || value === undefined || value === '') {
+            await api.deleteProperty(row.file.path, key)
+        } else {
+            await api.setProperty(row.file.path, key, value)
+        }
+        onChanged?.()
+    } catch (e) {
+        pushToast(`Save failed: ${(e as Error).message}`)
+    }
+}
+
+/** Delete this row — a stored row by index (undo re-creates it, same as KanbanView's
+ *  restoreStoredCard), a note row via trash + undo (mirrors FileTree.doDelete /
+ *  KanbanView.deleteCard, including flushing any pending editor/sidecar write first). */
+async function commitDelete(row: Row, onChanged?: () => void): Promise<void> {
+    if (canWriteStoredRow(row)) {
+        const path = row.file.path
+        const index = row.index!
+        const note = storedNote(row)
+        try {
+            await api.rowDelete(path, index)
+            onChanged?.()
+            pushToast('Deleted row', {
+                label: 'Undo',
+                onClick: () =>
+                    void api
+                        .rowCreate(path, note)
+                        .then(() => onChanged?.())
+                        .catch((e: unknown) =>
+                            pushToast(
+                                `Restore failed: ${(e as Error).message}`,
+                            ),
+                        ),
+            })
+        } catch (e) {
+            pushToast(`Delete failed: ${(e as Error).message}`)
+        }
+        return
+    }
+    const path = row.file.path
+    const name = row.file.name
+    try {
+        await Promise.all([
+            flushEditorsAtOrUnder(path),
+            flushSidecarsAtOrUnder(path),
+        ])
+        const { trashPath } = await api.del(path)
+        onChanged?.()
+        pushToast(`Deleted "${name}"`, {
+            label: 'Undo',
+            onClick: () =>
+                void api
+                    .restore(trashPath, path)
+                    .then(() => onChanged?.())
+                    .catch((e: unknown) =>
+                        pushToast(`Restore failed: ${(e as Error).message}`),
+                    ),
+        })
+    } catch (e) {
+        pushToast(`Delete failed: ${(e as Error).message}`)
+    }
+}
+
+/**
+ * Imperatively mount <CardEditModal> for `row` — for TableView/ListView/BulletsView/CardsView,
+ * none of which host a per-row component (unlike KanbanCard). Self-disposing: closes on save/
+ * Escape/outside-click via FormModal, then removes its host node.
+ *
+ * A `row.index` a caller cannot yet write to (KanbanView's negative optimistic-add sentinel —
+ * `isStoredPlaceholder`) is refused: there is nothing real to edit yet.
+ */
+export function openRowEditor(opts: {
+    row: Row
+    config: BaseConfig
+    view: ViewConfig
+    onChanged?: () => void
+    focusTarget?: string
+}): void {
+    const { row, config, view, onChanged, focusTarget } = opts
+    if (isStoredPlaceholder(row)) return
+    const owned = canWriteStoredRow(row)
+    const titleCol = owned ? storedTitleColumn(view.order ?? []) : 'file.name'
+    const metaCols = metaColumns(fallbackOrder(config, view), titleCol)
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    let dispose = () => {}
+    const close = () => {
+        dispose()
+        host.remove()
+    }
+    dispose = render(
+        () =>
+            CardEditModal({
+                row,
+                titleCol,
+                metaCols,
+                config,
+                focusTarget,
+                // A bare row has no board of siblings to scan for "known values" — the
+                // type-aware editors still work, just without the select-from-history
+                // fallback KanbanCard's `siblingValues` feeds.
+                siblingValues: () => [],
+                hasFileIdentity: true,
+                onRename: t => void commitRename(row, view, t, onChanged),
+                onSetMeta: (id, v) => void commitMeta(row, id, v, onChanged),
+                onDelete: () => {
+                    close()
+                    void commitDelete(row, onChanged)
+                },
+                onClose: close,
+            }),
+        host,
+    )
+}

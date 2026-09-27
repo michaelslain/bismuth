@@ -1,16 +1,30 @@
-import { createSignal, createMemo, createEffect, For, Index, Show } from 'solid-js'
+import {
+    createSignal,
+    createMemo,
+    createEffect,
+    createResource,
+    For,
+    Index,
+    Show,
+    untrack,
+} from 'solid-js'
+import { parse as parseYaml } from 'yaml'
 import { api } from '../api'
 import type {
     BaseConfig,
     BasePropertyKind,
     NumberFormat,
     Row,
+    SortSpec,
     ViewType,
 } from '../../../core/src/bases/types'
 import {
     BASE_PROPERTY_KINDS,
     NUMBER_FORMATS,
+    viewMode,
 } from '../../../core/src/bases/types'
+import { FRONTMATTER_RE } from '../../../core/src/bases/parse'
+import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import { capitalize } from './renderValue'
 import { columnLabel } from './columnLabel'
@@ -23,8 +37,32 @@ import {
     seedPropertyRows,
     type PropertyFormRow,
 } from './basePropertiesForm'
+import {
+    centerOrUndefined,
+    diffPatch,
+    limitOrUndefined,
+    numberOrUndefined,
+    orUndefined,
+    planSettingsWrites,
+    type WriteOp,
+} from './baseSettingsPlan'
+import { filterToForm, formToFilter } from './filterForm'
+import { formToSource, sourceToForm, toWikilink } from './sourceForm'
+import {
+    buildFormulas,
+    duplicateFormulaNames,
+    formulaColumns,
+    seedFormulaRows,
+} from './formulasForm'
+import { buildSummaries, seedSummaryChoices } from './summariesForm'
+import {
+    mergeColumns,
+    orderOf,
+    seedColumns,
+    toggleColumn,
+} from './columnsForm'
 import { Icon } from '../icons/Icon'
-import Select from '../ui/Select'
+import Select, { type SelectOption } from '../ui/Select'
 import Text from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
@@ -42,10 +80,20 @@ import SettingsField from '../ui/SettingsField'
 import SettingsHint from '../ui/SettingsHint'
 import ToggleList from '../ui/ToggleList'
 import ToggleRow from '../ui/ToggleRow'
+import ViewIdentityFields from './ViewIdentityFields'
+import SourceFields from './SourceFields'
+import FiltersEditor from './FiltersEditor'
+import SortFields from './SortFields'
+import SummariesFields from './SummariesFields'
+import FormulasEditor from './FormulasEditor'
+import MapFramingFields, { type MapFraming } from './MapFramingFields'
+import CardsFields, { type CardsLook } from './CardsFields'
 // Composes the same FormModal/ModalBody/ModalHeader/ModalFooter chrome + Settings*/Toggle*
 // primitives the calendar's CalendarSettings uses, so every base type still shares one polished
-// design. BaseSettings.module.css holds only what has no primitive yet — the Properties editor's
-// `.propset-*` rows — plus a `.spaced` helper for two standalone toggle rows.
+// design. Each larger section is its own component (ViewIdentityFields, SourceFields,
+// FiltersEditor, SortFields, SummariesFields, FormulasEditor, MapFramingFields, CardsFields);
+// BaseSettings.module.css holds only what has no primitive yet — the Properties editor's
+// `.propset-*` rows — plus `.spaced` / `.error` helpers.
 import styles from './BaseSettings.module.css'
 
 interface FieldDef {
@@ -53,8 +101,9 @@ interface FieldDef {
     /** Short role label shown next to the column dropdown. */
     role: string
     def: string
-    /** Optional fields offer a "Not set" choice. */
+    /** Optional fields offer a "none" choice, labelled `noneLabel`. */
     optional?: boolean
+    noneLabel?: string
     hint: string
 }
 
@@ -71,11 +120,12 @@ const CHART_FIELDS: FieldDef[] = [
         role: 'Value',
         def: '',
         optional: true,
+        noneLabel: 'count rows',
         hint: 'numeric column to aggregate. leave unset to count rows.',
     },
 ]
 
-// Field-binding settings for non-tabular view types (which column means what).
+// Field-binding settings (which column means what), per view kind.
 const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
     flashcards: [
         {
@@ -96,12 +146,57 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
             def: 'due',
             hint: "column holding each card's next-review date.",
         },
+        {
+            key: 'easeField',
+            role: 'Ease',
+            def: 'ease',
+            hint: "column holding each card's SM-2 ease factor.",
+        },
+        {
+            key: 'intervalField',
+            role: 'Interval',
+            def: 'interval',
+            hint: "column holding each card's review interval, in days.",
+        },
+    ],
+    map: [
+        {
+            key: 'lat',
+            role: 'Latitude',
+            def: 'lat',
+            hint: 'column holding each place’s latitude, in decimal degrees.',
+        },
+        {
+            key: 'lng',
+            role: 'Longitude',
+            def: 'lng',
+            hint: 'column holding each place’s longitude, in decimal degrees.',
+        },
+    ],
+    cards: [
+        {
+            key: 'image',
+            role: 'Image',
+            def: '',
+            optional: true,
+            noneLabel: 'text cover',
+            hint: 'column holding a cover image — a url or a vault image path.',
+        },
     ],
     heatmap: CHART_FIELDS,
     bar: CHART_FIELDS,
     line: CHART_FIELDS,
     stat: CHART_FIELDS,
 }
+
+/** Every field binding across every kind, once each (x/y are shared by the charts). */
+const ALL_FIELDS: FieldDef[] = [
+    ...new Map(
+        Object.values(FIELDS_BY_TYPE)
+            .flat()
+            .map(f => [f!.key, f!]),
+    ).values(),
+]
 
 // Record view types get column-visibility + sort + group-by config.
 const RECORD_TYPES: ViewType[] = [
@@ -154,39 +249,82 @@ const NUMBER_FORMAT_OPTS = NUMBER_FORMATS.map(f => ({
     label: capitalize(f),
 }))
 
+async function runOp(path: string, o: WriteOp): Promise<void> {
+    if (o.op === 'set') await api.setProperty(path, o.key, o.value)
+    else if (o.op === 'delete') await api.deleteProperty(path, o.key)
+    else if (o.op === 'setView')
+        await api.setViewProperty(path, o.index, o.key, o.value)
+    else await api.deleteViewProperty(path, o.index, o.key)
+}
+
+/** The base file's frontmatter as it is on disk right now. */
+async function readFrontmatter(path: string): Promise<Record<string, unknown>> {
+    const text = await api.read(path)
+    const m = text.match(FRONTMATTER_RE)
+    if (!m) return {}
+    const data = parseYaml(m[2])
+    return data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+}
+
 /**
  * Per-view settings as a modal overlay — same FormModal chrome as the calendar's
  * CalendarSettings, so every base type shares one polished design:
- * header / sectioned body with `Select` dropdowns / footer with RESET + CANCEL + SAVE.
- * Floats over the live view instead of replacing it.
+ * header / sectioned body / footer with RESET + CANCEL + SAVE. Floats over the live view.
+ *
+ * Covers every key a base or view reads, so no base has to be configured by editing YAML:
+ * the view's name / kind / mode, its source, base + view filters, columns, sort, group, limit,
+ * per-kind field bindings, table summaries, formulas and the declared property set.
+ *
+ * SAVE writes only the keys that changed (baseSettingsPlan.ts `diffPatch`), VIEW keys into
+ * `views[viewIndex]` and BASE keys at the top level — see `planSettingsWrites` for the
+ * flat-key traps it routes around.
  */
 export function BaseSettings(props: {
     type: ViewType
     config: BaseConfig
     /** Index of the view these settings edit — the active view, not always the first. */
-    viewIdx: number
+    viewIndex?: number
+    /** Older spelling of `viewIndex`, still accepted. */
+    viewIdx?: number
     basePath?: string
     rows: Row[]
     onClose: () => void
     onSaved: () => void
 }) {
-    const view = () => props.config.views[props.viewIdx]
-    const isRecord = () => RECORD_TYPES.includes(props.type)
-    // Kanban gets column-visibility/reorder from the Properties section (declared
-    // fields + their eye toggle + reorder), so the Columns section (table-header-drag
-    // language, redundant visibility toggle) is suppressed for it. Other record views
-    // (table/list/cards/map/bullets) still have no per-property declarations driving
-    // order, so they keep Columns.
-    const showColumns = () => isRecord() && props.type !== 'kanban'
-    const isChart = () => CHART_TYPES.includes(props.type)
-    const fields = () => FIELDS_BY_TYPE[props.type] ?? []
+    const viewIndex = () => props.viewIndex ?? props.viewIdx ?? 0
+    const view = () => props.config.views[viewIndex()]
 
-    // Row-derived columns unioned with the base's own declared properties (list-form
-    // `properties:`), so a declared-but-not-yet-populated field is still offerable.
+    // ---- view identity ----
+    const initialName = view()?.name ?? capitalize(props.type)
+    const [name, setName] = createSignal(initialName)
+    const [kind, setKind] = createSignal<ViewType>(props.type)
+    const [mode, setMode] = createSignal<'normal' | 'tasks'>(
+        view() ? viewMode(view()!) : 'normal',
+    )
+
+    const isRecord = () => RECORD_TYPES.includes(kind())
+    // Kanban gets column-visibility/reorder from the Properties section (declared
+    // fields + their eye toggle + reorder), so the Columns section is suppressed for it.
+    const showColumns = () => isRecord() && kind() !== 'kanban'
+    const isChart = () => CHART_TYPES.includes(kind())
+    const showMode = () => isRecord() || kind() === 'calendar'
+    const fields = () => FIELDS_BY_TYPE[kind()] ?? []
+
+    // ---- formulas (base-level) — their columns join the columns list live ----
+    const [formulaRows, setFormulaRows] = createSignal(
+        seedFormulaRows(props.config.formulas),
+    )
+    const duplicateFormulas = createMemo(() =>
+        duplicateFormulaNames(formulaRows()),
+    )
+
+    // Row-derived columns ∪ the base's declared properties ∪ its formulas, so a declared-but-
+    // not-yet-populated field (or a brand-new formula) is still offerable.
     const allCols = createMemo(() => [
         ...new Set([
             ...columnsOf(props.rows),
             ...declaredPropertyKeys(props.config),
+            ...formulaColumns(formulaRows()),
         ]),
     ])
 
@@ -196,55 +334,65 @@ export function BaseSettings(props: {
         const seen = new Set(allCols())
         const extra = [current, f.def].filter(c => c && !seen.has(c))
         return [
-            ...(f.optional ? [{ value: '', label: 'Count rows' }] : []),
+            ...(f.optional ? [{ value: '', label: f.noneLabel ?? 'none' }] : []),
             ...allCols().map(c => ({ value: c, label: c })),
             ...extra.map(c => ({ value: c, label: c })),
         ]
     }
 
-    // --- field-binding form (flashcards / chart axes) ---
+    // ---- field bindings (flashcards / map / cards / chart axes) ----
     const seedFields = (): Record<string, string> => {
         const v = (view() ?? {}) as unknown as Record<string, unknown>
         const out: Record<string, string> = {}
-        for (const f of fields()) out[f.key] = (v[f.key] as string) ?? f.def
+        for (const f of ALL_FIELDS) out[f.key] = (v[f.key] as string) ?? f.def
         return out
     }
     const [form, setForm] = createSignal<Record<string, string>>(seedFields())
-    // Flashcards: review every card both ways (front→back AND back→front), each direction
-    // scheduled independently in `*Back` companion columns.
+    // Flashcards: review every card both ways, each direction scheduled independently.
     const [bidi, setBidi] = createSignal<boolean>(!!view()?.bidirectional)
     // Kanban (#105): hide each card's meta-row label captions, showing values only.
     const [hideLabels, setHideLabels] = createSignal<boolean>(
         !!view()?.hideLabels,
     )
+    const seedFraming = (): MapFraming => ({
+        zoom: view()?.zoom != null ? String(view()!.zoom) : '',
+        centerLat: view()?.center ? String(view()!.center!.lat) : '',
+        centerLng: view()?.center ? String(view()!.center!.lng) : '',
+    })
+    const [framing, setFraming] = createSignal<MapFraming>(seedFraming())
+    const seedLook = (): CardsLook => ({
+        cardContent: view()?.cardContent ?? '',
+        imageFit: view()?.imageFit ?? '',
+        aspect:
+            view()?.imageAspectRatio != null
+                ? String(view()!.imageAspectRatio)
+                : '',
+    })
+    const [look, setLook] = createSignal<CardsLook>(seedLook())
 
-    // --- record form (columns / sort / group) ---
-    const seedCols = (): { col: string; visible: boolean }[] => {
-        const ord = view()?.order
-        const all = allCols()
-        if (ord && ord.length) {
-            const inOrder = ord
-                .filter(c => all.includes(c))
-                .map(c => ({ col: c, visible: true }))
-            const rest = all
-                .filter(c => !ord.includes(c))
-                .map(c => ({ col: c, visible: false }))
-            return [...inOrder, ...rest]
-        }
-        return all.map(c => ({ col: c, visible: true }))
+    // ---- columns / sort / group / limit ----
+    // Every id already in `order:` stays listed (columnsForm.ts), even one no row carries.
+    const [colState, setColState] = createSignal(
+        seedColumns(view()?.order, allCols()),
+    )
+    const [colsTouched, setColsTouched] = createSignal(false)
+    const cols = createMemo(() =>
+        mergeColumns(colState(), [...(view()?.order ?? []), ...allCols()]),
+    )
+    const visibleCount = () => cols().filter(c => c.visible).length
+    const toggle = (col: string) => {
+        setColState(toggleColumn(cols(), col))
+        setColsTouched(true)
     }
-    const [cols, setCols] = createSignal(seedCols())
-    const [sortProp, setSortProp] = createSignal(
-        view()?.sort?.[0]?.property ?? '',
-    )
-    const [sortDir, setSortDir] = createSignal(
-        view()?.sort?.[0]?.direction ?? 'ASC',
-    )
+    const [sort, setSort] = createSignal<SortSpec[]>(view()?.sort ?? [])
     const [groupProp, setGroupProp] = createSignal(
         view()?.groupBy?.property ?? '',
     )
     const [groupDir, setGroupDir] = createSignal(
         view()?.groupBy?.direction ?? 'ASC',
+    )
+    const [limitText, setLimitText] = createSignal(
+        view()?.limit != null ? String(view()!.limit) : '',
     )
     const [aggregate, setAggregate] = createSignal<
         'sum' | 'avg' | 'count' | 'min' | 'max'
@@ -253,35 +401,52 @@ export function BaseSettings(props: {
         view()?.bin ?? 'day',
     )
 
-    const visibleCount = () => cols().filter(c => c.visible).length
-
-    const toggle = (i: number) => {
-        const arr = [...cols()]
-        // Never allow hiding the LAST visible column. A zero-column table is useless, and
-        // because an empty `order` means "no preference → show all" (query.ts), hiding the
-        // last column would paradoxically show every column instead of none.
-        if (arr[i].visible && visibleCount() <= 1) return
-        arr[i] = { ...arr[i], visible: !arr[i].visible }
-        setCols(arr)
-    }
-
-    // None + every column, for sort/group dropdowns.
+    // Every column, for sort/group/summary pickers.
+    const columnOptions = createMemo<SelectOption[]>(() =>
+        cols().map(c => ({
+            value: c.col,
+            label: columnLabel(c.col, props.config),
+        })),
+    )
     const propOptions = createMemo(() => [
         { value: '', label: 'None' },
-        ...allCols().map(c => ({
-            value: c,
-            label: columnLabel(c, props.config),
-        })),
+        ...columnOptions(),
     ])
+    const visibleCols = createMemo(() => orderOf(cols()))
 
-    // --- properties form (#104: define the base's OWN declared property set) ---
-    // Base-level, not per-view — shown regardless of `props.type`. Seeded ONLY from an
+    // ---- table summaries ----
+    const [summaryChoices, setSummaryChoices] = createSignal(
+        seedSummaryChoices(view()?.summaries, cols().map(c => c.col)),
+    )
+
+    // ---- filters: this view's + every view's (base-level) ----
+    const [viewFilters, setViewFilters] = createSignal(
+        filterToForm(view()?.filters),
+    )
+    const [baseFilters, setBaseFilters] = createSignal(
+        filterToForm(props.config.filters),
+    )
+
+    // ---- source: the view's own override when it has one, else the base's ----
+    const sourceScope: 'base' | 'view' = view()?.source ? 'view' : 'base'
+    const [sourceForm, setSourceForm] = createSignal(
+        sourceToForm(view()?.source ?? props.config.source),
+    )
+    // Base pickers (`from` / `ref`): every note, as `[[name]]`.
+    const [tree] = createResource<TreeEntry[]>(() => api.tree())
+    const baseOptions = createMemo<SelectOption[]>(() =>
+        (tree() ?? [])
+            .filter(e => e.kind !== 'dir' && e.path.endsWith('.md'))
+            .map(e => ({ value: toWikilink(e.path), label: noteLabel(e.path) }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+    )
+
+    // ---- properties form (#104: define the base's OWN declared property set) ----
+    // Base-level, not per-view — shown regardless of the kind. Seeded ONLY from an
     // existing list-form declaration (`declaredProperties`); a base using classic map-form
     // metadata (or no `properties:` at all) starts from an empty list so the panel never
     // surfaces entries it can't losslessly round-trip as a list. `hadDeclared` is captured
-    // once (not reactive) so save() only rewrites `properties:` when there's something to
-    // write — either the base already declared a list, or the user added one here — instead
-    // of clobbering an untouched map-form base with an empty list on every unrelated save.
+    // once so save() only rewrites `properties:` when there's something to write.
     const hadDeclared = props.config.declaredProperties !== undefined
     const [propRows, setPropRows] = createSignal<PropertyFormRow[]>(
         seedPropertyRows(props.config),
@@ -318,100 +483,202 @@ export function BaseSettings(props: {
         setEditingProp(cur => (cur === i ? j : cur === j ? i : cur))
     }
 
+    // ---- what SAVE would write: the full desired value of every managed key ----
+    const desiredView = (): Record<string, unknown> => {
+        const f = form()
+        const out: Record<string, unknown> = {
+            name: name().trim() || initialName,
+            type: kind(),
+            mode: mode(),
+            filters: formToFilter(viewFilters()),
+            limit: limitOrUndefined(limitText()),
+            order: colsTouched() ? orderOf(cols()) : view()?.order,
+            sort: sort().length ? sort() : undefined,
+            groupBy: groupProp()
+                ? { property: groupProp(), direction: groupDir() }
+                : undefined,
+            hideLabels: hideLabels(),
+            summaries: buildSummaries(
+                view()?.summaries,
+                visibleCols(),
+                summaryChoices(),
+            ),
+            bidirectional: bidi(),
+            aggregate: aggregate(),
+            bin: bin(),
+            zoom: numberOrUndefined(framing().zoom),
+            center: centerOrUndefined(framing().centerLat, framing().centerLng),
+            cardContent: orUndefined(look().cardContent),
+            imageFit: orUndefined(look().imageFit),
+            imageAspectRatio: numberOrUndefined(look().aspect),
+        }
+        for (const fd of ALL_FIELDS)
+            out[fd.key] = fd.optional ? orUndefined(f[fd.key] ?? '') : f[fd.key]
+        if (sourceScope === 'view') out.source = formToSource(sourceForm())
+        return out
+    }
+    const desiredBase = (): Record<string, unknown> => ({
+        filters: formToFilter(baseFilters()),
+        formulas: buildFormulas(formulaRows()),
+        properties:
+            hadDeclared || propRows().length > 0
+                ? buildPropertiesYaml(propRows())
+                : undefined,
+        ...(sourceScope === 'base'
+            ? { source: formToSource(sourceForm()) }
+            : {}),
+    })
+    // The keys the CURRENT kind manages — switching kind never deletes another kind's settings.
+    const viewKeys = (): string[] => {
+        const k = kind()
+        const keys = ['name', 'type', 'filters']
+        if (sourceScope === 'view') keys.push('source')
+        if (showMode()) keys.push('mode')
+        if (isRecord() || isChart()) keys.push('limit')
+        if (isRecord()) keys.push('sort', 'groupBy')
+        if (showColumns()) keys.push('order')
+        if (k === 'kanban') keys.push('hideLabels')
+        if (k === 'table') keys.push('summaries')
+        keys.push(...fields().map(f => f.key))
+        if (k === 'flashcards') keys.push('bidirectional')
+        if (isChart()) keys.push('aggregate')
+        if (isChart() && k !== 'heatmap') keys.push('bin')
+        if (k === 'map') keys.push('zoom', 'center')
+        if (k === 'cards') keys.push('cardContent', 'imageFit', 'imageAspectRatio')
+        return keys
+    }
+    const BASE_KEYS = ['source', 'filters', 'formulas', 'properties']
+    // Captured once, from the seeded form — diffed against at SAVE.
+    const initialView = untrack(desiredView)
+    const initialBase = untrack(desiredBase)
+
     const reset = () => {
-        setForm(Object.fromEntries(fields().map(f => [f.key, f.def])))
-        setCols(allCols().map(c => ({ col: c, visible: true })))
-        setSortProp('')
-        setSortDir('ASC')
+        setName(initialName)
+        setKind(props.type)
+        setMode(view() ? viewMode(view()!) : 'normal')
+        setForm(Object.fromEntries(ALL_FIELDS.map(f => [f.key, f.def])))
+        setColState(allCols().map(c => ({ col: c, visible: true })))
+        setColsTouched(true)
+        setSort([])
         setGroupProp('')
         setGroupDir('ASC')
+        setLimitText('')
         setAggregate(view()?.y ? 'sum' : 'count')
         setBin('day')
+        setBidi(false)
         setHideLabels(false)
+        setFraming({ zoom: '', centerLat: '', centerLng: '' })
+        setLook({ cardContent: '', imageFit: '', aspect: '' })
+        setSummaryChoices({})
+        setViewFilters(filterToForm(view()?.filters))
+        setBaseFilters(filterToForm(props.config.filters))
+        setSourceForm(sourceToForm(view()?.source ?? props.config.source))
+        setFormulaRows(seedFormulaRows(props.config.formulas))
         setPropRows(seedPropertyRows(props.config))
         setEditingProp(null)
     }
 
+    const [saving, setSaving] = createSignal(false)
+    const [error, setError] = createSignal<string | null>(null)
+    const blocked = () =>
+        duplicateNames().size > 0 || duplicateFormulas().size > 0 || saving()
+
     const save = async () => {
-        if (props.basePath) {
-            if (isRecord()) {
-                // Kanban has no Columns UI (Properties supersedes it — see isRecordWithColumns
-                // below), so its field order must come from the declared `properties:` list, not
-                // a stale cols()-derived `order`. Writing `order` here would freeze whatever
-                // order existed at modal-open time instead of following Properties reordering.
-                if (props.type !== 'kanban') {
-                    await api.setProperty(
-                        props.basePath,
-                        'order',
-                        cols()
-                            .filter(c => c.visible)
-                            .map(c => c.col),
-                    )
-                }
-                await api.setProperty(
-                    props.basePath,
-                    'sort',
-                    sortProp()
-                        ? [{ property: sortProp(), direction: sortDir() }]
-                        : [],
-                )
-                await api.setProperty(
-                    props.basePath,
-                    'groupBy',
-                    groupProp()
-                        ? { property: groupProp(), direction: groupDir() }
-                        : null,
-                )
-                if (props.type === 'kanban')
-                    await api.setProperty(
-                        props.basePath,
-                        'hideLabels',
-                        hideLabels(),
-                    )
-            } else {
-                for (const f of fields())
-                    await api.setProperty(props.basePath, f.key, form()[f.key])
-                if (props.type === 'flashcards')
-                    await api.setProperty(
-                        props.basePath,
-                        'bidirectional',
-                        bidi(),
-                    )
-                if (isChart()) {
-                    await api.setProperty(
-                        props.basePath,
-                        'aggregate',
-                        aggregate(),
-                    )
-                    if (props.type !== 'heatmap')
-                        await api.setProperty(props.basePath, 'bin', bin())
-                }
-            }
-            if (hadDeclared || propRows().length > 0) {
-                await api.setProperty(
-                    props.basePath,
-                    'properties',
-                    buildPropertiesYaml(propRows()),
-                )
-            }
+        const path = props.basePath
+        const viewPatch = diffPatch(initialView, desiredView(), viewKeys())
+        const basePatch = diffPatch(initialBase, desiredBase(), BASE_KEYS)
+        if (
+            !path ||
+            (Object.keys(viewPatch).length === 0 &&
+                Object.keys(basePatch).length === 0)
+        ) {
+            props.onSaved()
+            return
         }
-        props.onSaved()
+        setSaving(true)
+        setError(null)
+        try {
+            const plan = planSettingsWrites({
+                frontmatter: await readFrontmatter(path),
+                viewIndex: viewIndex(),
+                view: viewPatch,
+                base: basePatch,
+                current: { type: kind(), name: desiredView().name as string },
+            })
+            if ('error' in plan) {
+                setError(plan.error)
+                return
+            }
+            for (const o of plan.ops) await runOp(path, o)
+            props.onSaved()
+        } catch (e) {
+            setError(
+                `couldn't save // ${e instanceof Error ? e.message : String(e)}`,
+            )
+        } finally {
+            setSaving(false)
+        }
     }
 
     return (
         <FormModal
             onClose={props.onClose}
-            label={`${props.type} settings`}
+            label={`${kind()} settings`}
             class={styles.panel}
         >
             <ModalHeader
-                title={`${props.type} settings`}
+                title={`${kind()} settings`}
                 subtitle={props.basePath ? noteLabel(props.basePath) : undefined}
                 onClose={props.onClose}
             />
 
             <ModalBody>
-                {/* Field-binding types: flashcards / chart axes */}
+                <SettingsSection>view</SettingsSection>
+                <ViewIdentityFields
+                    name={name()}
+                    kind={kind()}
+                    mode={mode()}
+                    showMode={showMode()}
+                    onName={setName}
+                    onKind={setKind}
+                    onMode={setMode}
+                />
+
+                <SettingsSection>source</SettingsSection>
+                <SourceFields
+                    value={sourceForm()}
+                    onChange={setSourceForm}
+                    bases={baseOptions()}
+                    scope={sourceScope}
+                    viewCount={props.config.views.length}
+                    properties={allCols()}
+                    rows={props.rows}
+                    config={props.config}
+                />
+
+                <SettingsSection>filters</SettingsSection>
+                <SettingsField label="this view" span>
+                    <FiltersEditor
+                        value={viewFilters()}
+                        onChange={setViewFilters}
+                        properties={allCols()}
+                        rows={props.rows}
+                        config={props.config}
+                        emptyHint="no conditions — this view keeps every row."
+                    />
+                </SettingsField>
+                <SettingsField label="every view" span>
+                    <FiltersEditor
+                        value={baseFilters()}
+                        onChange={setBaseFilters}
+                        properties={allCols()}
+                        rows={props.rows}
+                        config={props.config}
+                        emptyHint="no conditions. these apply to every view of the base, on top of each view's own."
+                    />
+                </SettingsField>
+
+                {/* Field bindings: flashcards / map / cards / chart axes */}
                 <Show when={fields().length > 0}>
                     <SettingsSection>column mapping</SettingsSection>
                     <SettingsGrid>
@@ -428,11 +695,7 @@ export function BaseSettings(props: {
                                             f,
                                             form()[f.key] ?? '',
                                         )}
-                                        placeholder={
-                                            f.optional
-                                                ? 'Count rows'
-                                                : 'Not set'
-                                        }
+                                        placeholder={f.noneLabel ?? 'Not set'}
                                         onChange={c =>
                                             setForm({ ...form(), [f.key]: c })
                                         }
@@ -441,7 +704,7 @@ export function BaseSettings(props: {
                             )}
                         </For>
                     </SettingsGrid>
-                    <Show when={props.type === 'flashcards'}>
+                    <Show when={kind() === 'flashcards'}>
                         <ToggleRow
                             class={styles.spaced}
                             wrap
@@ -464,6 +727,20 @@ export function BaseSettings(props: {
                             </Show>
                         </SettingsHint>
                     </Show>
+                </Show>
+
+                <Show when={kind() === 'map'}>
+                    <SettingsSection>opening frame</SettingsSection>
+                    <MapFramingFields value={framing()} onChange={setFraming} />
+                </Show>
+
+                <Show when={kind() === 'cards'}>
+                    <SettingsSection>cards</SettingsSection>
+                    <CardsFields
+                        value={look()}
+                        onChange={setLook}
+                        hasImage={!!form().image}
+                    />
                 </Show>
 
                 {/* Chart types: aggregate + (non-heatmap) date bucket */}
@@ -489,7 +766,7 @@ export function BaseSettings(props: {
                                 }
                             />
                         </SettingsField>
-                        <Show when={props.type !== 'heatmap'}>
+                        <Show when={kind() !== 'heatmap'}>
                             <SettingsField
                                 label="date bucket"
                                 hint="group date values by day, week, or month."
@@ -503,10 +780,23 @@ export function BaseSettings(props: {
                                 />
                             </SettingsField>
                         </Show>
+                        <SettingsField
+                            label="row limit"
+                            badge="optional"
+                            hint="only the first N rows are charted."
+                        >
+                            <TextInput
+                                type="number"
+                                min="1"
+                                value={limitText()}
+                                placeholder="no limit"
+                                onInput={setLimitText}
+                            />
+                        </SettingsField>
                     </SettingsGrid>
                 </Show>
 
-                {/* Record types: columns + sort + group */}
+                {/* Record types: columns + sort + group + limit */}
                 <Show when={isRecord()}>
                     <Show when={showColumns()}>
                         <SettingsSection>columns</SettingsSection>
@@ -516,7 +806,7 @@ export function BaseSettings(props: {
                         </SettingsHint>
                         <ToggleList>
                             <Index each={cols()}>
-                                {(item, i) => {
+                                {item => {
                                     const locked = () =>
                                         item().visible && visibleCount() <= 1
                                     return (
@@ -526,7 +816,7 @@ export function BaseSettings(props: {
                                                 props.config,
                                             )}
                                             checked={item().visible}
-                                            onToggle={() => toggle(i)}
+                                            onToggle={() => toggle(item().col)}
                                             muted={!item().visible}
                                             locked={locked()}
                                             title={
@@ -543,25 +833,11 @@ export function BaseSettings(props: {
 
                     <SettingsSection>sort &amp; group</SettingsSection>
                     <SettingsGrid>
-                        <SettingsField label="sort by">
-                            <Select
-                                value={sortProp()}
-                                options={propOptions()}
-                                placeholder="None"
-                                onChange={setSortProp}
-                            />
-                        </SettingsField>
-                        <Show when={sortProp()}>
-                            <SettingsField label="sort direction">
-                                <Select
-                                    value={sortDir()}
-                                    options={DIR_OPTS}
-                                    onChange={v =>
-                                        setSortDir(v as 'ASC' | 'DESC')
-                                    }
-                                />
-                            </SettingsField>
-                        </Show>
+                        <SortFields
+                            sort={sort()}
+                            onChange={setSort}
+                            options={columnOptions()}
+                        />
                         <SettingsField label="group by">
                             <Select
                                 value={groupProp()}
@@ -581,9 +857,26 @@ export function BaseSettings(props: {
                                 />
                             </SettingsField>
                         </Show>
+                        <SettingsField
+                            label="row limit"
+                            badge="optional"
+                            hint={
+                                groupProp()
+                                    ? 'at most N rows in each group.'
+                                    : 'show at most N rows.'
+                            }
+                        >
+                            <TextInput
+                                type="number"
+                                min="1"
+                                value={limitText()}
+                                placeholder="no limit"
+                                onInput={setLimitText}
+                            />
+                        </SettingsField>
                     </SettingsGrid>
 
-                    <Show when={props.type === 'kanban'}>
+                    <Show when={kind() === 'kanban'}>
                         <ToggleRow
                             class={styles.spaced}
                             label="hide meta labels — show property values only"
@@ -592,6 +885,27 @@ export function BaseSettings(props: {
                         />
                     </Show>
                 </Show>
+
+                <Show when={kind() === 'table'}>
+                    <SettingsSection>summaries</SettingsSection>
+                    <SettingsHint>
+                        a footer row under the table, one aggregation per column.
+                    </SettingsHint>
+                    <SummariesFields
+                        columns={visibleCols()}
+                        choices={summaryChoices()}
+                        onChange={setSummaryChoices}
+                        config={props.config}
+                    />
+                </Show>
+
+                <SettingsSection>formulas</SettingsSection>
+                <SettingsHint>
+                    computed columns for every view — use one as{' '}
+                    <InlineCode>formula.name</InlineCode> in columns, sort,
+                    group and filters.
+                </SettingsHint>
+                <FormulasEditor rows={formulaRows()} onChange={setFormulaRows} />
 
                 {/* Properties: the base's OWN declared property set — base-level, shown for every
             view type (#104). Progressive disclosure: every row collapses to a single quiet
@@ -892,6 +1206,9 @@ export function BaseSettings(props: {
                         add property
                     </IconTextButton>
                 </div>
+                <Show when={error()}>
+                    <SettingsHint class={styles.error}>{error()}</SettingsHint>
+                </Show>
             </ModalBody>
 
             <ModalFooter
@@ -910,7 +1227,7 @@ export function BaseSettings(props: {
                 <IconTextButton
                     icon="Check"
                     primary
-                    disabled={duplicateNames().size > 0}
+                    disabled={blocked()}
                     onClick={save}
                 >
                     save

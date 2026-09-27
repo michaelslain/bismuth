@@ -89,3 +89,11 @@ td.cellMuted { color: var(--text-muted); }
    Qualifying by tag ties the specificity, and this rule's later position decides it. Measured:
    without the `td.` the story's overdue cell rendered in --fg. */
 td.cellOverdue { color: var(--danger); }
+
+/* Row-editing affordances (openRowEditor.tsx). An owned row's title becomes a plain button
+   (no destination note to open, so no anchor); a note row keeps its existing renderTitle
+   anchor and gains a hover/focus-reveal edit icon beside it. */
+.titleCellWrap { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.titleBtn { font: inherit; color: inherit; text-align: left; }
+.editBtn { opacity: 0; transition: opacity 0.12s ease; }
+tr:hover .editBtn, .titleCellWrap:focus-within .editBtn { opacity: 1; }

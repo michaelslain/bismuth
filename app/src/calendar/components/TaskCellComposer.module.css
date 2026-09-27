@@ -33,6 +33,9 @@
    also a flex item, and a flex item's default min-width:auto refuses to shrink below its own
    content — which silently defeats text-overflow: ellipsis. */
 .destination {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
     min-width: 0;
     color: var(--text-muted);
     white-space: nowrap;
@@ -44,4 +47,32 @@
    --text-muted the resolved-destination case above gets. */
 .unset {
     color: var(--danger);
+}
+/* → in front of the picker, matching the plain-text destination line's own spacing (the arrow
+   there is just a JSX literal followed by a space; here the picker is a separate flex sibling,
+   so the arrow needs its own gap, supplied by `.destination`'s own gap above). */
+.destinationLabel {
+    flex-shrink: 0;
+}
+/* The target picker reads as part of this same quiet destination line, not as a form field
+   dropped into a cell — no underline, no height/padding beyond the line it sits on, same
+   micro size and muted colour as the plain `→ destination` text it replaces. */
+.targetSelect {
+    display: inline-flex;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.targetTrigger {
+    height: auto;
+    padding: 0;
+    border-bottom: none;
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    gap: var(--sp-1);
+}
+.targetTrigger:focus, .targetTrigger:focus-within {
+    border-bottom: none;
+}
+.targetCaret {
+    font-size: var(--fs-micro);
 }

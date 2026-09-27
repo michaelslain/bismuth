@@ -1,0 +1,23 @@
+/* FilterConditionRow.module.css — one filter condition: property | operator | value | actions,
+   or, for a raw expression, one full-width field | remove. */
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr) auto;
+    gap: var(--sp-4);
+    align-items: center;
+}
+.raw {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+.val {
+    min-width: 0;
+}
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+.expr {
+    width: 100%;
+    font-family: var(--ui-font-stack);
+}

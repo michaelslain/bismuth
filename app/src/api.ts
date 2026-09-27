@@ -128,6 +128,7 @@ import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
 import type { MigrationReport } from '../../core/src/taskMigrateRun'
+import type { TaskPatch } from '../../core/src/taskEdit'
 import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
 import type {
     BismuthStatus,
@@ -581,6 +582,23 @@ export const api = {
         field: 'due' | 'scheduled' | 'start',
         date: string,
     ) => post('/tasks/reschedule', { path, line, field, date }),
+
+    // Edit a task line's description and/or due/scheduled/start/priority fields in place.
+    // A patch key set to null clears that field; an absent key leaves it untouched.
+    // /tasks/update returns plain "ok" (a mutation), not JSON, like toggle/reschedule.
+    updateTaskLine: (path: string, line: number, patch: TaskPatch) =>
+        post('/tasks/update', { path, line, patch }).then(() => ({ path })),
+
+    // Delete a task LINE's whole block (the line plus any deeper-indented sub-tasks/wrapped
+    // continuation lines) from its note. Permanent — git history retains the prior state.
+    deleteTaskLine: (path: string, line: number) =>
+        post('/tasks/delete', { path, line }).then(() => ({ path })),
+
+    // Move a task LINE's whole block to another note. `to` is a taskFile-style ref (wikilink,
+    // bare name, or path), resolved server-side exactly like createTask's `file`. Moving onto
+    // the note the task is already in is a no-op that still resolves.
+    moveTaskLine: (path: string, line: number, to: string) =>
+        postJson<{ path: string }>('/tasks/move', { path, line, to }),
 
     // Permanently remove completed/cancelled tasks. Pass a path to archive that note only;
     // omit it to sweep the whole vault. Returns how many tasks (and files) were affected.

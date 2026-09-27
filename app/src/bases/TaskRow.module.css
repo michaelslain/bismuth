@@ -40,3 +40,15 @@
 /* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
    list's 18px gutter — the card already has one — and drop to --fs-micro, TaskChip's size. */
 .inCard { padding-left: 0; padding-right: 0; font-size: var(--fs-micro); }
+
+/* The trailing edit pencil: invisible until the row is hovered/focused, but never removed
+   from layout or the tab order — opacity, not display, so it stays keyboard-reachable
+   (Tab lands on it, which then reveals it via :focus-visible) and never causes a reflow. */
+.editBtn {
+  flex-shrink: 0;
+  opacity: 0;
+}
+.taskItem:hover .editBtn,
+.taskItem:focus-within .editBtn {
+  opacity: 1;
+}

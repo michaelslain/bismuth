@@ -24,3 +24,10 @@ export function isDismissKey(e: KeyboardEvent): boolean {
 export function isConfirmKey(e: KeyboardEvent): boolean {
     return matchesKeybinding(e, settings.keybindings['ui-confirm'])
 }
+
+/** Does this event mean "open the context menu from the keyboard"? The platform's own
+ *  convention — the dedicated ContextMenu key or Shift+F10 — not a rebindable command, the
+ *  same pair calendar/taskChipKeys.ts reads for a task chip. */
+export function isMenuKey(e: KeyboardEvent): boolean {
+    return e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)
+}

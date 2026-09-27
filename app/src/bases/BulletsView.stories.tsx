@@ -2,8 +2,12 @@
 // `sampleViewResult` end to end: real rows, run through the real query engine
 // (core/src/bases/query.ts `runView`), rendered by the real BulletsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { BulletsView } from './BulletsView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
+import { syntheticBaseFile } from '../../../core/src/bases/types'
+import type { Row, BaseConfig } from '../../../core/src/bases/types'
+import { runView } from '../../../core/src/bases/query'
 
 const meta = {
     title: 'Bases/BulletsView',
@@ -19,6 +23,60 @@ export const Default: Story = {
     render: () => (
         <BulletsView result={sampleViewResult()} config={sampleBaseConfig()} />
     ),
+    // A bullet must open its row (the bug this fix addresses: BulletsView used to render a
+    // bare, unclickable `renderValue` for every row). A note row's bullet is a live anchor.
+    play: async ({ canvasElement }) => {
+        const link = canvasElement.querySelector('li a')
+        expect(link).toBeTruthy()
+    },
+}
+
+// A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
+const STORED_CONFIG: BaseConfig = {
+    declaredProperties: ['description', 'status'],
+    views: [{ type: 'bullets', name: 'Bullets' }],
+}
+const STORED_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile('boards/stored-bullets.md'),
+        note: { description: 'ship the parser', status: 'Todo' },
+        formula: {},
+        index: 0,
+    },
+]
+
+/** With `basePath` set (openRowEditor.tsx wired), an owned row's bullet becomes a real button
+ *  that opens the row editor — it has no note of its own to open. */
+export const EditableOwnedRow: Story = {
+    render: () => (
+        <BulletsView
+            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            config={STORED_CONFIG}
+            basePath="boards/stored-bullets.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector('li button')
+        expect(btn).toBeTruthy()
+        expect((btn!.textContent ?? '')).toContain('ship the parser')
+    },
+}
+
+/** With `basePath` set, a note row's bullet keeps opening the note and gains a hover/focus-
+ *  reveal edit-properties icon. */
+export const EditableNoteRow: Story = {
+    render: () => (
+        <BulletsView
+            result={sampleViewResult()}
+            config={sampleBaseConfig()}
+            basePath="projects/tasks.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeTruthy()
+    },
 }
 
 /** Grouped by `status` — a group heading per distinct value, same `ResultGroup` shape

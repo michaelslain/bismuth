@@ -16,6 +16,10 @@ import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
+import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { openRowEditor } from './openRowEditor'
 import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -37,6 +41,12 @@ export function TableView(props: {
     mode?: 'normal' | 'tasks'
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
+    /** The base file, so a cell can open the row/property editor. Optional: a view rendered
+     *  read-only (an embedded ```query block, a story with no base of its own) gets none of
+     *  the row-editing affordances below, same gate as KanbanView's `editable()`. */
+    basePath?: string
+    /** Refetch after a row edit/delete lands — BaseView's `refetchAll`. */
+    onChange?: () => void
 }) {
     const cols = (): string[] => props.result.columns
     const isTasks = () => props.mode === 'tasks'
@@ -48,6 +58,19 @@ export function TableView(props: {
     // Index of the column currently being resized (drives the visual cue + table-layout:fixed lock).
     const [resizing, setResizing] = createSignal<number | null>(null)
     let theadRef: HTMLTableSectionElement | undefined
+
+    const editable = () => !!props.basePath
+    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    function openEditor(row: Row, focusTarget?: string): void {
+        if (!rowEditable(row)) return
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+            focusTarget,
+        })
+    }
 
     // Re-apply persisted widths whenever they change (e.g. on reload / refetch).
     // TableView stays mounted across BaseView refetches, so the createSignal
@@ -292,19 +315,79 @@ export function TableView(props: {
                                                                     todayISO(),
                                                                 ),
                                                         }}
+                                                        onDblClick={() =>
+                                                            openEditor(row, c)
+                                                        }
                                                     >
                                                         <Show
                                                             when={check()}
                                                             fallback={
-                                                                ci() === 0
-                                                                    ? renderTitle(
-                                                                          c,
-                                                                          row,
-                                                                      )
-                                                                    : renderCell(
-                                                                          c,
-                                                                          row,
-                                                                      )
+                                                                ci() === 0 ? (
+                                                                    <Show
+                                                                        when={
+                                                                            rowEditable(
+                                                                                row,
+                                                                            ) &&
+                                                                            canWriteStoredRow(
+                                                                                row,
+                                                                            )
+                                                                        }
+                                                                        fallback={
+                                                                            <div
+                                                                                class={
+                                                                                    styles.titleCellWrap
+                                                                                }
+                                                                            >
+                                                                                {renderTitle(
+                                                                                    c,
+                                                                                    row,
+                                                                                )}
+                                                                                <Show
+                                                                                    when={rowEditable(
+                                                                                        row,
+                                                                                    )}
+                                                                                >
+                                                                                    <IconButton
+                                                                                        icon="Pencil"
+                                                                                        label="Edit properties"
+                                                                                        class={
+                                                                                            styles.editBtn
+                                                                                        }
+                                                                                        onClick={(
+                                                                                            e: MouseEvent,
+                                                                                        ) => {
+                                                                                            e.stopPropagation()
+                                                                                            openEditor(
+                                                                                                row,
+                                                                                            )
+                                                                                        }}
+                                                                                    />
+                                                                                </Show>
+                                                                            </div>
+                                                                        }
+                                                                    >
+                                                                        <PlainButton
+                                                                            class={
+                                                                                styles.titleBtn
+                                                                            }
+                                                                            onClick={() =>
+                                                                                openEditor(
+                                                                                    row,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            {renderTitle(
+                                                                                c,
+                                                                                row,
+                                                                            )}
+                                                                        </PlainButton>
+                                                                    </Show>
+                                                                ) : (
+                                                                    renderCell(
+                                                                        c,
+                                                                        row,
+                                                                    )
+                                                                )
                                                             }
                                                         >
                                                             <TaskCheck

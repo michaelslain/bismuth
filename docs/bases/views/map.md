@@ -46,7 +46,7 @@ A row becomes a marker only when both its resolved `lat` and `lng` values are va
 
 Rows that fail any of these checks are silently skipped and never appear as markers. There is no error or warning for skipped rows.
 
-Each marker renders as a pin with a label chip. The label text comes from the first column in `result.columns` (which defaults to `"file.name"` when no explicit `order:` is given). Clicking a marker calls `onOpen` with the row's `file.path`, opening that note in the editor.
+Each marker renders as a pin with a label chip. The label text comes from the first column in `result.columns` (which defaults to `"file.name"` when no explicit `order:` is given). Clicking a marker calls `onOpen` with the row's `file.path`, opening that note in the editor — unless the click was actually the end of a drag (see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins) below), in which case it relocates the pin instead.
 
 ## Initial Framing Logic
 
@@ -68,9 +68,38 @@ The view re-runs this framing logic reactively whenever `result` changes (e.g., 
 - **Locate button (`Pin` icon button, "Locate notes")**: same as Reset — re-centers and re-fits on the current markers. (Both buttons call the same `initialView()` logic.)
 - Zoom is clamped to `[1, 18]`.
 
+## Placing, Moving and Removing Pins
+
+Rows are no longer only readable off hand-written frontmatter — a pin can be placed, dragged to a new spot, or removed straight from the map, as long as the view's `lat`/`lng` fields resolve to a real frontmatter key (a bare name or an explicit `note.*` id). A `formula.*`, `file.*` or `this.*` coordinate has nothing to write back to, so on a view configured that way the map is **read-only**: the "unplaced" control is hidden and a pin's context menu offers only "open note".
+
+### Placing a row with no coordinates yet
+
+Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. When there is at least one, a `[ unplaced (N) ]` button appears at the top-left of the map. Clicking it opens a menu listing every unplaced row by its title (the same first-column label a marker's chip shows); picking one **arms placement** — the map shows a "placing `<title>` — esc to cancel" hint that follows the cursor, and the *next click anywhere on the map* writes that row's coordinates at the clicked point and disarms. Pressing `Escape` disarms without writing.
+
+### Moving a pin
+
+A placed pin can be dragged to a new position: press and drag it, and its coordinates update on drop. A pointer-down/up with no real movement is still a plain **click**, which opens the row's note exactly as before — dragging never interferes with the click-to-open behavior. The same "move" is also reachable from a pin's context menu (see below), which re-arms placement for that row instead of requiring a drag.
+
+### Removing a pin from the map
+
+Right-clicking a pin (or pressing `Shift+F10` — or the `ContextMenu` key — while it's focused) opens a menu with three actions:
+
+- **open note** — same as a plain click.
+- **move…** — arms placement for that row (the same armed state the unplaced menu starts), so the next map click relocates it.
+- **remove from map** — deletes the row's `lat`/`lng` fields, turning it back into an unplaced row. It does not delete the note or any other property.
+
+### How the write lands
+
+- A **note row** (an ordinary vault note, read straight off its frontmatter) writes/clears its coordinates via `PATCH`-style property writes — both fields in one request when setting, one request per field when clearing.
+- An **own-rows row** (an inline row stored in the base file's own body — e.g. a base with no `source:`) writes back by row index instead, the same write handle every other stored-row action in Bases uses (kanban drag, task status, …). A row with no write handle (a placeholder row mid-creation) gets no placement affordance.
+- Written coordinates are rounded to 6 decimal places (roughly 11cm of precision) — enough for any note's purposes, and short enough that a placed or dragged pin doesn't leave 17 significant digits of float noise in the note's frontmatter.
+- A write's mutation already invalidates the base's cache and pushes an SSE update, so the view refetches on its own; nothing further is required to see the pin move.
+
 ## Settings Integration
 
-Two `.settings` entries affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
+The `lat`, `lng`, `zoom` and `center` fields above are set per-view, in the view's own entry inside the base file's frontmatter — the base's own **settings panel** (opened from the view's config affordance) exposes fields for all four, so a map view's coordinate source and initial framing no longer require hand-editing the base file's YAML.
+
+Two `.settings` entries additionally affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
 
 | Setting | Default | Range | Description |
 |---|---|---|---|
@@ -82,8 +111,10 @@ Two `.settings` entries affect the map view — `mapDefaultZoom` lives under `gr
 The map renders several overlaid elements:
 
 - **SVG basemap** — sea background, graticule grid (30° meridians, 20° parallels; equator and prime meridian drawn bolder), and landmass polygons.
-- **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator.
+- **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator. Draggable, right-clickable and (when focused) `Shift+F10`-able when the view's coordinates are writable — see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins).
 - **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Pin` locate).
+- **Unplaced-rows control** (top-left) — a `[ unplaced (N) ]` button, shown only when at least one row lacks valid coordinates and the view's fields are writable; opens a menu that arms placement for the picked row.
+- **Placing hint** — a small floating label reading "placing `<title>` — esc to cancel", shown while a row is armed for placement.
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
 - **Attribution badge** (bottom-right) — `WifiOff` icon + "Offline vector" label, plus a marker count (`N places`) when markers are present.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.
@@ -153,5 +184,7 @@ views:
 - **The title chip uses the first resolved column**, not necessarily `file.name`. If a view declares `order: [status, file.name]`, markers will be labeled with `status` values.
 - **No tile network dependency**: the basemap is entirely self-contained vector geometry hardcoded in the component. Markers will render correctly in air-gapped environments.
 - **ResizeObserver drives the map size**: the component observes its container and re-projects on resize. Initial SSR/static size assumptions (800×600) are replaced once the element mounts.
+- **A `formula.*`, `file.*` or `this.*` `lat`/`lng` makes the map read-only**: there is no frontmatter key to write those back to, so the "unplaced" control never appears and a pin's context menu drops "move…"/"remove from map" down to "open note" only.
+- **Written coordinates are rounded to 6 decimal places**, whether from a placement click or a drag — a base whose notes carry more precise hand-written coordinates keeps them until a pin over that row is placed/moved again.
 
-Source: `app/src/bases/MapView.tsx`, `core/src/bases/types.ts`, `core/test/bases/parse.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `app/src/bases/MapView.module.css`
+Source: `app/src/bases/MapView.tsx`, `app/src/bases/mapCoords.ts` (pure projection + coordinate-write math, unit-tested in `app/src/bases/mapCoords.test.ts`), `app/src/bases/taskWrite.ts` (`canWriteStoredRow`/`storedNote`, shared with the rest of Bases' row-index write seam), `core/src/bases/types.ts`, `core/test/bases/parse.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `app/src/bases/MapView.module.css`

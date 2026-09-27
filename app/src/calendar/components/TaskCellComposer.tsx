@@ -7,18 +7,29 @@
 import type { Component } from 'solid-js'
 import { createSignal, Show } from 'solid-js'
 import { TextInput } from '../../ui/TextInput'
+import Select from '../../ui/Select'
 import Text from '../../ui/Text'
 import { isDismissKey, isConfirmKey } from '../../ui/widgetKeys'
+import type { TaskComposeTarget } from '../taskCompose'
 import styles from './TaskCellComposer.module.css'
 
 export type TaskCellComposerProps = {
     /** Shown under the input as `→ {destination}`, or an explicit hint when no destination is
-     *  configured — see the destination line below. */
+     *  configured — see the destination line below. Ignored (in favour of the picked target's
+     *  own label) once `targets` carries more than one option. */
     destination: string
     /** Resolved CSS colour of the destination's default category, painted on the `[ ]` marker.
      *  Undefined → the marker's default --text-muted — the same contract as TaskChip's own
-     *  `color` prop. */
+     *  `color` prop. Ignored once `targets` is non-empty — the picked target's own colour wins. */
     color?: string
+    /** Every destination a commit could land in — one per source note (sourced base) or one
+     *  per category (own-rows base). Fewer than 2 entries renders the plain `→ destination`
+     *  text as before (nothing to pick between); 2+ renders a picker in its place. */
+    targets?: TaskComposeTarget[]
+    /** The currently-picked target's `id` — required together with `onTargetChange` whenever
+     *  `targets` has 2+ entries. */
+    target?: string
+    onTargetChange?: (id: string) => void
     onCommit: (text: string) => void
     onCancel: () => void
     class?: string
@@ -34,9 +45,16 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
     // if blur then fires anyway, onBlur below must NOT also commit the very text Escape (or an
     // empty Enter) just discarded.
     let done = false
+    let root: HTMLDivElement | undefined
+    const targets = () => props.targets ?? []
+    const markerColor = () =>
+        targets().length > 0
+            ? targets().find(t => t.id === props.target)?.color
+            : props.color
 
     return (
         <div
+            ref={root}
             class={[styles.composer, props.class ?? ''].filter(Boolean).join(' ')}
             // Stop all four so the day cell this sits inside (which wires its own click to open
             // the "create event" modal, and mousedown to start a drag — see TaskChip.tsx's own
@@ -54,7 +72,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     inherit
                     class={styles.marker}
                     data-testid="task-cell-composer-marker"
-                    style={props.color ? { color: props.color } : undefined}
+                    style={markerColor() ? { color: markerColor() } : undefined}
                 >
                     [ ]
                 </Text>
@@ -95,8 +113,13 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         if (props.destination) setText('')
                         else done = true
                     }}
-                    onBlur={() => {
+                    onBlur={e => {
                         if (done) return
+                        // Tab/click moving focus to the target picker below is not "leaving the
+                        // composer" — it must not cancel a not-yet-typed draft nor commit an
+                        // empty one out from under the user reaching for the picker.
+                        const related = e.relatedTarget as Node | null
+                        if (related && root?.contains(related)) return
                         const trimmed = text().trim()
                         // Same as the Enter path: commit, then clear. The caller keeps the
                         // composer mounted, so leaving the committed text in the input would
@@ -110,18 +133,31 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             </div>
             <div class={styles.destination} data-testid="task-cell-composer-destination">
                 <Show
-                    when={props.destination}
+                    when={targets().length > 1}
                     fallback={
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles.unset}
+                        <Show
+                            when={props.destination}
+                            fallback={
+                                <Text as="span" inherit class={styles.unset}>
+                                    → no destination note // set one in settings
+                                </Text>
+                            }
                         >
-                            → no destination note // set one in settings
-                        </Text>
+                            → {props.destination}
+                        </Show>
                     }
                 >
-                    → {props.destination}
+                    <Text as="span" inherit class={styles.destinationLabel}>
+                        →
+                    </Text>
+                    <Select
+                        value={props.target ?? ''}
+                        options={targets().map(t => ({ value: t.id, label: t.label }))}
+                        onChange={id => props.onTargetChange?.(id)}
+                        class={styles.targetSelect}
+                        triggerClass={styles.targetTrigger}
+                        caretClass={styles.targetCaret}
+                    />
                 </Show>
             </div>
         </div>

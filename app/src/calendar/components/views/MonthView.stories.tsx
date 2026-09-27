@@ -222,6 +222,9 @@ export const ComposerOpensOnCellClick: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -256,6 +259,9 @@ export const ComposerMovesBetweenCells: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -278,6 +284,61 @@ export const ComposerMovesBetweenCells: Story = {
     },
 }
 
+/** Task 2 (discoverable add): a quiet `+` sits in the top-right corner of every tasks-register
+ *  cell, invisible until the cell is hovered or a control inside it holds focus — otherwise this
+ *  is the finding the whole plan started from ("there is no way to add a task"), just moved from
+ *  "click empty space" to "click a labelled button", so the affordance must actually be there to
+ *  find. Proves it's present, quiet at rest, revealed on hover, and opens the SAME composer a
+ *  bare cell click does. */
+export const AddTaskButtonReveals: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={new Map()}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
+                            open: d => setOpenDate(d),
+                            commit: () => setOpenDate(null),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
+        const cell = cells[10]
+        const button = cell.querySelector<HTMLElement>('[aria-label="Add task"]')!
+        expect(button).not.toBeNull()
+        // quiet at rest
+        expect(getComputedStyle(button).opacity).toBe('0')
+        // Real pointer hover isn't reliably reproducible through synthetic events in this
+        // runner, so this proves the OTHER half of "quiet by default, reachable by keyboard":
+        // giving the button itself real DOM focus reveals it via `.month-cell:focus-within`,
+        // which is unconditional on HOW focus arrived (unlike `:hover`, which needs a real
+        // pointer move) — this is exactly the path a keyboard user tabbing through the grid
+        // takes.
+        button.focus()
+        // the opacity change is CSS-transitioned (`--dur`), so the computed value right after
+        // triggering it is still mid-transition — wait past the transition before reading it.
+        await new Promise(r => setTimeout(r, 200))
+        expect(getComputedStyle(button).opacity).toBe('1')
+        await userEvent.click(button)
+        await new Promise(r => setTimeout(r, 0))
+        expect(cell.querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+    },
+}
+
 /** TaskChip already stops its own click from bubbling — clicking a chip must open its note
  *  (onOpenTask) and must never also open the month cell's composer underneath it. */
 export const ChipClickDoesNotOpenComposer: Story = {
@@ -296,6 +357,9 @@ export const ChipClickDoesNotOpenComposer: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -342,6 +406,9 @@ export const ComposerBelowChips: Story = {
                             date: '2026-01-14',
                             destination: 'General Tasks',
                             color: 'var(--blue)',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: () => {},
                             commit: () => {},
                             cancel: () => {},

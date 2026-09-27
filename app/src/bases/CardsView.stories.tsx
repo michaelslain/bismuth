@@ -2,7 +2,10 @@
 // default). Exercises `sampleViewResult` end to end: real rows, run through the real query
 // engine (core/src/bases/query.ts `runView`), rendered by the real CardsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import type { Row } from '../../../core/src/bases/types'
+import { expect } from 'storybook/test'
+import type { Row, BaseConfig } from '../../../core/src/bases/types'
+import { syntheticBaseFile } from '../../../core/src/bases/types'
+import { runView } from '../../../core/src/bases/query'
 import { CardsView } from './CardsView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 
@@ -21,6 +24,56 @@ export const Default: Story = {
     render: () => (
         <CardsView result={sampleViewResult()} config={sampleBaseConfig()} />
     ),
+}
+
+// A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
+const STORED_CARDS_CONFIG: BaseConfig = {
+    declaredProperties: ['description', 'status'],
+    views: [{ type: 'cards', name: 'Cards' }],
+}
+const STORED_CARDS_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile('boards/stored-cards.md'),
+        note: { description: 'ship the parser', status: 'Todo' },
+        formula: {},
+        index: 0,
+    },
+]
+
+/** With `basePath` set (openRowEditor.tsx wired), an owned row's card opens the row editor on
+ *  click — it has no note of its own to open, so it gets no separate edit icon. */
+export const EditableOwnedRow: Story = {
+    render: () => (
+        <CardsView
+            result={runView(STORED_CARDS_CONFIG, STORED_CARDS_ROWS, 0)}
+            config={STORED_CARDS_CONFIG}
+            basePath="boards/stored-cards.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector('[role="button"]')
+        expect(card).toBeTruthy()
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeNull()
+    },
+}
+
+/** With `basePath` set, a note card keeps opening the note on click and gains a hover/focus-
+ *  reveal edit-properties icon, top-right over the cover. */
+export const EditableNoteRow: Story = {
+    render: () => (
+        <CardsView
+            result={sampleViewResult()}
+            config={sampleBaseConfig()}
+            basePath="projects/tasks.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeTruthy()
+    },
 }
 
 // A tiny inline placeholder "cover" — a flat rect, not a design token — so the image-cover

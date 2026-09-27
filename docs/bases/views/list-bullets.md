@@ -141,7 +141,7 @@ Text between matches is emitted as plain strings. The regex is global with stick
 
 ### Open-On-Click
 
-Non-task rows fire `window.dispatchEvent(new CustomEvent("bismuth-open", { detail: row.file.path }))` on click. This is the same mechanism used by wikilinks in the editor and all other note-opening interactions in the app.
+Non-task rows fire `window.dispatchEvent(new CustomEvent("bismuth-open", { detail: row.file.path }))` on click. This is the same mechanism used by wikilinks in the editor and all other note-opening interactions in the app. A row **stored in the base's own body** (no note behind it) has nowhere to open, so clicking it opens the row/property editor instead — see [Adding, Editing and Deleting Rows](#adding-editing-and-deleting-rows-list-and-bullets) below.
 
 ### Embedded Query Block Usage
 
@@ -225,19 +225,15 @@ view: bullets
 
 ### Column Behavior
 
-`BulletsView` reads only `result.columns[0]` (falls back to `"file.name"`). Every other column is ignored — bullets is a single-column view by design. The value is rendered by `renderValue(col, row)`.
+`BulletsView` reads only `result.columns[0]` (falls back to `"file.name"`). Every other column is ignored — bullets is a single-column view by design. The value is rendered by `renderTitle(col, row)` — the same title renderer `table`'s first column and `list`'s title use, **not** the plain `renderValue` an earlier version of this view used. That earlier version rendered every bullet as static text with no click handler at all, regardless of value type; `renderTitle` is what makes a bullet open its row (see [Adding, Editing and Deleting Rows](#adding-editing-and-deleting-rows-list-and-bullets) below).
 
-`renderValue` behavior for the first column:
+`renderTitle` behavior for the first column:
 
 | Value type | Rendered as |
 |---|---|
-| `null` / `undefined` | `—` (faint em-dash) |
-| `Link` object (from `file.asLink()`, `link()`, or link-typed schema) | Clickable `<a>` tag; display = `link.display` or path stem |
-| `"file.name"` specifically | Clickable `<a>` that opens the note via `bismuth-open` |
-| `Array` | Comma-joined string |
-| `boolean` | Typed glyph, not an icon: `"x"` if true, blank if false |
-| `Date` | ISO date string `YYYY-MM-DD` |
-| anything else | `String(v)` |
+| `Link` object (from `file.asLink()`, `link()`, or link-typed schema) | Clickable `<a>` tag; display = `link.display` or path stem; opens the link's own target |
+| A row backed by a real note (any other value) | Clickable `<a>`; opens that note via `bismuth-open` |
+| A row **stored in the base's own body** (no note) | Plain text, not a link — clicking the bullet opens the row/property editor instead |
 
 ### Grouping
 
@@ -276,6 +272,16 @@ When `groupBy` is absent, a single group with `key: ""` is produced; the heading
 | Inline markdown in task descriptions | Yes (same `<TaskRow>`) | Yes |
 | Suitable for notes/quote collections | Yes | Yes |
 | Suitable for task lists | Yes | Yes |
+
+---
+
+## Adding, Editing and Deleting Rows (List and Bullets)
+
+Every non-task row in either view is reachable from the UI — no action requires hand-editing the base file or a note's frontmatter. Requires a saved base file (`basePath` set); an embedded `query` block is read-only.
+
+- **Add a row**: the "+ row" button in the view bar (mode `normal` only — `mode: tasks` keeps its own "+ task" button). A base that **owns its rows** (no `source:`) appends a new row to the base's own body; a **notes-sourced** base creates a new note in the base's folder. Either way the row/property editor opens immediately to fill it in; a toast warns if the base's filters would hide the new row from this view.
+- **Edit a row's properties**: a row stored in the base's own body opens the editor on a plain click (it has no note to open, so its click target is the editor). A note-backed row keeps opening the note on click and gets a hover/focus-reveal pencil icon (`list`: at the row's trailing edge; `bullets`: beside the bullet) that opens the property editor instead.
+- **Delete a row**: open the editor (above) and use "delete" in its footer — a stored row is removed by index, a note is moved to trash, both with an Undo toast.
 
 ---
 

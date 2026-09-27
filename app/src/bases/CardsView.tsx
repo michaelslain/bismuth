@@ -6,8 +6,11 @@ import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
+import IconButton from '../ui/IconButton'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
+import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { openRowEditor } from './openRowEditor'
 import styles from './CardsView.module.css'
 
 /** A value is already a usable image src (remote URL or inline data) vs a vault path. */
@@ -30,6 +33,11 @@ export function CardsView(props: {
     mode?: 'normal' | 'tasks'
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
+    /** The base file, so a "properties" card can open the row/property editor — same gate as
+     *  TableView's/ListView's/BulletsView's. Body/tasks cards ignore this (out of scope). */
+    basePath?: string
+    /** Refetch after a row edit/delete lands — BaseView's `refetchAll`. */
+    onChange?: () => void
 }) {
     const cols = () => props.result.columns
     // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on
@@ -47,6 +55,18 @@ export function CardsView(props: {
     // Title = first column; author = second column (used for the generated text cover).
     const titleCol = (): string => cols()[0] ?? 'file.name'
     const authorCol = (): string | undefined => cols()[1]
+
+    const editable = () => !!props.basePath
+    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    function openEditor(row: Row): void {
+        if (!rowEditable(row)) return
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+        })
+    }
 
     // Cover image config: which property holds the cover, plus fit/aspect-ratio.
     const imageProp = (): string | undefined => props.result.view.image
@@ -86,6 +106,12 @@ export function CardsView(props: {
                 detail: { path: row.file.path },
             }),
         )
+    /** Owned rows have no note to open — the card itself opens the editor; a note row keeps
+     *  opening the note, with a separate hover-reveal edit icon for its properties. */
+    const cardClick = (row: Row) => {
+        if (rowEditable(row) && canWriteStoredRow(row)) openEditor(row)
+        else openCard(row)
+    }
 
     return (
         <div class={styles.cards}>
@@ -120,12 +146,36 @@ export function CardsView(props: {
                                                         interactive
                                                         role="button"
                                                         tabindex={0}
-                                                        onClick={() => openCard(row)}
+                                                        onClick={() => cardClick(row)}
                                                         onKeyDown={e => {
                                                             if (e.key === 'Enter')
-                                                                openCard(row)
+                                                                cardClick(row)
                                                         }}
                                                     >
+                                                        <Show
+                                                            when={
+                                                                rowEditable(
+                                                                    row,
+                                                                ) &&
+                                                                !canWriteStoredRow(
+                                                                    row,
+                                                                )
+                                                            }
+                                                        >
+                                                            <IconButton
+                                                                icon="Pencil"
+                                                                label="Edit properties"
+                                                                class={
+                                                                    styles.cardEditBtn
+                                                                }
+                                                                onClick={(e: MouseEvent) => {
+                                                                    e.stopPropagation()
+                                                                    openEditor(
+                                                                        row,
+                                                                    )
+                                                                }}
+                                                            />
+                                                        </Show>
                                                         {/* An image cover (when configured + present) replaces the generated
                                     text cover; title/author then move into the body below. A row whose
                                     cover property is empty falls back to the text cover. */}

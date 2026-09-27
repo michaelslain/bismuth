@@ -1,0 +1,30 @@
+/* FormulasEditor.module.css — name | expression | delete rows, each with its own warnings. */
+.editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-width: 0;
+}
+.rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+}
+.item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+}
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr) auto;
+    gap: var(--sp-4);
+    align-items: center;
+}
+.expr {
+    width: 100%;
+    font-family: var(--ui-font-stack);
+}
+.warn {
+    color: var(--danger);
+}
