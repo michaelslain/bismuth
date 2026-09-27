@@ -94,14 +94,21 @@ function overviewRows(
     const scheduled = scheduledSorted(pages, now).length
     const resolved = resolvedSorted(pages).length
     return {
-        inbox: { total: due + failed + scheduled, attention: due + failed, extraLines: resolved > 0 ? 1 : 0 },
+        inbox: {
+            total: due + failed + scheduled,
+            attention: due + failed,
+            extraLines: resolved > 0 ? 1 : 0,
+        },
         crons: {
             total: crons.length,
-            attention: crons.filter(c => cronNeedsAttention(c, daemonRunning)).length,
+            attention: crons.filter(c => cronNeedsAttention(c, daemonRunning))
+                .length,
         },
         services: {
             total: processes.length,
-            attention: processes.filter(p => processNeedsAttention(p, daemonRunning)).length,
+            attention: processes.filter(p =>
+                processNeedsAttention(p, daemonRunning),
+            ).length,
         },
         log: { total: events.length, attention: 0 },
     }
@@ -114,9 +121,20 @@ function fullOverview(): JSX.Element {
     const events = sampleActivity()
     return (
         <DaemonOverview
-            rows={overviewRows(pages, SNAPSHOT.crons, SNAPSHOT.processes, events, true)}
+            rows={overviewRows(
+                pages,
+                SNAPSHOT.crons,
+                SNAPSHOT.processes,
+                events,
+                true,
+            )}
             inbox={limit => (
-                <DaemonInbox pages={pages} limit={limit()} onOpen={noop} onChanged={noop} />
+                <DaemonInbox
+                    pages={pages}
+                    limit={limit()}
+                    onOpen={noop}
+                    onChanged={noop}
+                />
             )}
             crons={limit => (
                 <DaemonCrons
@@ -150,7 +168,14 @@ function emptyOverview(): JSX.Element {
     return (
         <DaemonOverview
             rows={overviewRows([], [], [], [], true)}
-            inbox={limit => <DaemonInbox pages={[]} limit={limit()} onOpen={noop} onChanged={noop} />}
+            inbox={limit => (
+                <DaemonInbox
+                    pages={[]}
+                    limit={limit()}
+                    onOpen={noop}
+                    onChanged={noop}
+                />
+            )}
             crons={limit => (
                 <DaemonCrons
                     crons={[]}
@@ -205,7 +230,11 @@ function crowdedOverview(): {
         enabled: true,
         lastFired:
             i === 10
-                ? { timestamp: new Date().toISOString(), result: 'failed', detail: 'boom' }
+                ? {
+                      timestamp: new Date().toISOString(),
+                      result: 'failed',
+                      detail: 'boom',
+                  }
                 : { timestamp: new Date().toISOString(), result: 'success' },
         running: false,
         startedAt: null,
@@ -227,7 +256,14 @@ function crowdedOverview(): {
     const overview = (
         <DaemonOverview
             rows={overviewRows(pages, crons, processes, events, true)}
-            inbox={limit => <DaemonInbox pages={pages} limit={limit()} onOpen={noop} onChanged={noop} />}
+            inbox={limit => (
+                <DaemonInbox
+                    pages={pages}
+                    limit={limit()}
+                    onOpen={noop}
+                    onChanged={noop}
+                />
+            )}
             crons={limit => (
                 <DaemonCrons
                     crons={crons}
@@ -362,7 +398,13 @@ const rect = (el: Element) => el.getBoundingClientRect()
  *  last check: the columns are no longer side by side. */
 async function assertLayout(
     canvasElement: HTMLElement,
-    opts: { chat: boolean; stacked?: boolean; compact?: boolean },
+    opts: {
+        chat: boolean
+        stacked?: boolean
+        compact?: boolean
+        /** Messages exist: the hub has no face at all (it rides the transcript instead). */
+        conversing?: boolean
+    },
 ) {
     const page = canvasElement.querySelector<HTMLElement>(
         '[data-testid="daemon-page"]',
@@ -376,18 +418,24 @@ async function assertLayout(
         '[data-testid="daemon-page-hub"]',
     )
     const face = page!.querySelector('[data-testid="daemon-face"]')
-    await expect(face).not.toBeNull()
     await expect(hub).not.toBeNull()
-    const f = rect(face!)
     const h = rect(hub!)
-    await expect(f.width).toBeGreaterThan(0)
+    // Conversing: no hub face — the transcript's lowest assistant row carries it (the stub chat
+    // here has no transcript, so the whole page has none).
+    if (opts.conversing) {
+        await expect(face).toBeNull()
+    } else {
+        await expect(face).not.toBeNull()
+        await expect(rect(face!).width).toBeGreaterThan(0)
+    }
+    const f = face ? rect(face) : undefined
     // Resting: the face is centred in the hub column. Compact (chatFills) — the one-line header
     // form, see DaemonHub — it rides left-aligned at the top instead, flush with the hub column.
-    if (!opts.compact) {
+    if (f && !opts.compact) {
         await expect(
             Math.abs(f.left + f.width / 2 - (h.left + h.width / 2)),
         ).toBeLessThanOrEqual(8)
-    } else {
+    } else if (f) {
         await expect(Math.abs(f.left - h.left)).toBeLessThanOrEqual(24)
     }
 
@@ -437,7 +485,8 @@ async function assertLayout(
 function sectionBadgeCount(section: HTMLElement): number | null {
     const badge = [...section.querySelectorAll<HTMLElement>('*')].find(
         el =>
-            el.children.length === 0 && /^\d+$/.test(el.textContent?.trim() ?? ''),
+            el.children.length === 0 &&
+            /^\d+$/.test(el.textContent?.trim() ?? ''),
     )
     return badge ? Number(badge.textContent!.trim()) : null
 }
@@ -446,7 +495,9 @@ function sectionBadgeCount(section: HTMLElement): number | null {
  *  InboxRow), never a section's own structural children (heading, badge, trailing "N resolved"
  *  line). */
 function sectionRowCount(section: HTMLElement): number {
-    return section.querySelectorAll('[data-testid="daemon-row"], [data-testid="inbox-row"]').length
+    return section.querySelectorAll(
+        '[data-testid="daemon-row"], [data-testid="inbox-row"]',
+    ).length
 }
 
 /** Enabled, every section carrying rows: the four sections render in order, no facet toggle
@@ -470,12 +521,9 @@ export const AwakeFilled: Story = {
                 '[data-testid^="daemon-section-"]',
             ),
         ]
-        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
-            'inbox',
-            'crons',
-            'services',
-            'log',
-        ])
+        await expect(
+            sections.map(s => s.dataset.testid!.replace('daemon-section-', '')),
+        ).toEqual(['inbox', 'crons', 'services', 'log'])
         for (const section of sections) {
             const badge = sectionBadgeCount(section)
             if (badge === null) continue
@@ -503,12 +551,9 @@ export const AwakeEmpty: Story = {
                 '[data-testid^="daemon-section-"]',
             ),
         ]
-        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
-            'inbox',
-            'crons',
-            'services',
-            'log',
-        ])
+        await expect(
+            sections.map(s => s.dataset.testid!.replace('daemon-section-', '')),
+        ).toEqual(['inbox', 'crons', 'services', 'log'])
     },
 }
 
@@ -521,7 +566,9 @@ export const AwakeCrowded: Story = {
         const { overview } = crowdedOverview()
         return (
             <Frame>
-                <DaemonPage {...pageProps('busy', 'needs you // 8 due', { overview })} />
+                <DaemonPage
+                    {...pageProps('busy', 'needs you // 8 due', { overview })}
+                />
             </Frame>
         )
     },
@@ -530,27 +577,35 @@ export const AwakeCrowded: Story = {
         const overviewEl = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-page-overview"] [data-testid="daemon-overview"]',
         )!
-        await expect(overviewEl.scrollHeight).toBeLessThanOrEqual(overviewEl.clientHeight + 1)
+        await expect(overviewEl.scrollHeight).toBeLessThanOrEqual(
+            overviewEl.clientHeight + 1,
+        )
         const sections = [
-            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid^="daemon-section-"]'),
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid^="daemon-section-"]',
+            ),
         ]
-        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
-            'inbox',
-            'crons',
-            'services',
-            'log',
-        ])
+        await expect(
+            sections.map(s => s.dataset.testid!.replace('daemon-section-', '')),
+        ).toEqual(['inbox', 'crons', 'services', 'log'])
         for (const section of sections) {
             await expect(section.offsetHeight).toBeGreaterThan(0)
         }
         await expect(
-            canvasElement.querySelectorAll('[data-testid="daemon-more-line"]').length,
+            canvasElement.querySelectorAll('[data-testid="daemon-more-line"]')
+                .length,
         ).toBeGreaterThan(0)
         const cronsSection = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-section-crons"]',
         )!
-        const cronRows = [...cronsSection.querySelectorAll<HTMLElement>('[data-testid="daemon-row"]')]
-        await expect(cronRows.some(r => r.textContent?.includes('cron-10'))).toBe(true)
+        const cronRows = [
+            ...cronsSection.querySelectorAll<HTMLElement>(
+                '[data-testid="daemon-row"]',
+            ),
+        ]
+        await expect(
+            cronRows.some(r => r.textContent?.includes('cron-10')),
+        ).toBe(true)
     },
 }
 
@@ -566,14 +621,21 @@ export const AwakeCrowdedExpanded: Story = {
         const cronsSection = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-section-crons"]',
         )!
-        const cronsMoreLine = cronsSection.querySelector<HTMLElement>('[data-testid="daemon-more-line"]')
+        const cronsMoreLine = cronsSection.querySelector<HTMLElement>(
+            '[data-testid="daemon-more-line"]',
+        )
         await expect(cronsMoreLine).not.toBeNull()
         await fireEvent.click(cronsMoreLine!)
         await waitFor(() =>
-            expect(cronsSection.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12),
+            expect(
+                cronsSection.querySelectorAll('[data-testid="daemon-row"]')
+                    .length,
+            ).toBe(12),
         )
         await waitFor(() =>
-            expect(overviewEl.scrollHeight).toBeGreaterThan(overviewEl.clientHeight),
+            expect(overviewEl.scrollHeight).toBeGreaterThan(
+                overviewEl.clientHeight,
+            ),
         )
     },
 }
@@ -603,8 +665,8 @@ export const Thinking: Story = {
     play: ({ canvasElement }) => assertLayout(canvasElement, { chat: true }),
 }
 
-/** Messages exist: the hub's face collapses to a one-line header and the chat fills the rest of
- *  the column. */
+/** Messages exist: the hub's face region goes (the face rides the transcript's lowest assistant
+ *  row instead) and the chat fills the column. */
 export const Conversing: Story = {
     render: () => (
         <Frame>
@@ -618,20 +680,16 @@ export const Conversing: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        await assertLayout(canvasElement, { chat: true, compact: true })
-        const hub = canvasElement.querySelector('[data-testid="daemon-page-hub"]')!
+        await assertLayout(canvasElement, { chat: true, conversing: true })
+        const hub = canvasElement.querySelector(
+            '[data-testid="daemon-page-hub"]',
+        )!
         const chat = canvasElement.querySelector(
             '[data-testid="daemon-page-chat"]',
         )!
         await expect(
             rect(chat).height / rect(hub).height,
         ).toBeGreaterThanOrEqual(0.5)
-        const face = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-face"]',
-        )!
-        await expect(
-            parseFloat(getComputedStyle(face).fontSize),
-        ).toBeLessThan(30)
     },
 }
 
@@ -653,7 +711,9 @@ export const Off: Story = {
         // No title any more — the off line stands alone, lowercase, no trailing period.
         await expect(canvas.queryByRole('heading', { level: 2 })).toBeNull()
         await expect(
-            canvas.getByText('set daemon.enabled: true in .settings to wake it'),
+            canvas.getByText(
+                'set daemon.enabled: true in .settings to wake it',
+            ),
         ).toBeInTheDocument()
         await expect(
             canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
@@ -710,12 +770,9 @@ export const Narrow480: Story = {
             ),
         ]
         await expect(sections.length).toBe(4)
-        await expect(sections.map(s => s.dataset.testid!.replace('daemon-section-', ''))).toEqual([
-            'inbox',
-            'crons',
-            'services',
-            'log',
-        ])
+        await expect(
+            sections.map(s => s.dataset.testid!.replace('daemon-section-', '')),
+        ).toEqual(['inbox', 'crons', 'services', 'log'])
         const hubBottom = rect(hub).bottom
         for (const section of sections) {
             await expect(rect(section).top).toBeGreaterThanOrEqual(
@@ -730,7 +787,7 @@ export const Narrow480: Story = {
     },
 }
 
-/** Narrow AND conversing: the chat holds a fixed box, with the compact face above it. */
+/** Narrow AND conversing: the chat holds a fixed box, no hub face above it. */
 export const ConversingNarrow: Story = {
     render: () => (
         <Frame width="640px">
@@ -747,14 +804,8 @@ export const ConversingNarrow: Story = {
         await assertLayout(canvasElement, {
             chat: true,
             stacked: true,
-            compact: true,
+            conversing: true,
         })
-        const face = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-face"]',
-        )!
-        await expect(
-            parseFloat(getComputedStyle(face).fontSize),
-        ).toBeLessThan(30)
     },
 }
 
@@ -773,7 +824,9 @@ export const HistoryOpen: Story = {
     ),
     play: async ({ canvasElement }) => {
         await assertLayout(canvasElement, { chat: true, compact: true })
-        const hub = canvasElement.querySelector('[data-testid="daemon-page-hub"]')!
+        const hub = canvasElement.querySelector(
+            '[data-testid="daemon-page-hub"]',
+        )!
         const chat = canvasElement.querySelector(
             '[data-testid="daemon-page-chat"]',
         )!

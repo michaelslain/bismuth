@@ -5,11 +5,12 @@
 // column out.
 //
 // Resting, DaemonIdentity sits centred under the full-size face, showing only the name — its
-// blurb + `[ edit ]` card stays hidden until hovered or focused (see DaemonIdentity.tsx). Once the
-// chat has taken the column (conversing, or a full-height pane like chat history — see
-// `chatFills`), the face collapses to DaemonFace's own `compact` one-line-header form and the
-// identity shrinks to a bare name riding beside it — no hover card, there's no room for it next
-// to a one-line header.
+// blurb + `[ edit ]` card stays hidden until hovered or focused (see DaemonIdentity.tsx). Once a
+// conversation has messages the face region goes entirely: the face lives IN the transcript then,
+// as the avatar on its lowest assistant row beside the name (ChatTranscript), and one face on
+// screen is the point. A full-height pane with no conversation (chat history — see `chatFills`)
+// still collapses the face to DaemonFace's `compact` one-line-header form with a bare name beside
+// it — there is no transcript to carry the face there.
 //
 // Off (`enabled === false`): no identity, no chat — DaemonFace stays asleep and the caller
 // (DaemonPage) is the one that decides what replaces this column's usual content.
@@ -29,8 +30,8 @@ export type DaemonHubProps = {
      *  paints immediately instead of settling against the provisional NO_SNAPSHOT-derived one. */
     loading?: boolean
     enabled: boolean
-    /** true once the conversation has any items. No longer drives the face directly — see
-     *  `chatFills`, which also covers a full-height pane (like chat history) taking the region. */
+    /** true once the conversation has any items — the face region is dropped, since the face
+     *  then rides the transcript's lowest assistant row instead. */
     conversing: boolean
     /** The chat region fills the column instead of sizing to its content — true while
      *  conversing, and also while a full-height pane has taken the region over. Also what
@@ -72,22 +73,24 @@ function DaemonHub(props: DaemonHubProps) {
             data-testid="daemon-page-hub"
             data-resting={compact() ? 'false' : 'true'}
         >
-            <div
-                class={`${styles.faceRegion} ${compact() ? styles.faceCompact : ''}`}
-                data-testid="daemon-face-region"
-            >
-                <DaemonFace
-                    mood={props.mood}
-                    loading={props.loading}
-                    compact={compact()}
-                    caption={props.enabled ? identity() : undefined}
-                />
-                <Show when={!props.enabled}>
-                    <EmptyState class={styles.off}>
-                        set daemon.enabled: true in .settings to wake it
-                    </EmptyState>
-                </Show>
-            </div>
+            <Show when={!props.conversing}>
+                <div
+                    class={`${styles.faceRegion} ${compact() ? styles.faceCompact : ''}`}
+                    data-testid="daemon-face-region"
+                >
+                    <DaemonFace
+                        mood={props.mood}
+                        loading={props.loading}
+                        size={compact() ? 'compact' : 'hero'}
+                        caption={props.enabled ? identity() : undefined}
+                    />
+                    <Show when={!props.enabled}>
+                        <EmptyState class={styles.off}>
+                            set daemon.enabled: true in .settings to wake it
+                        </EmptyState>
+                    </Show>
+                </div>
+            </Show>
             <Show when={props.enabled}>
                 <div
                     class={`${styles.chatRegion} ${compact() ? styles.chatFill : ''}`}

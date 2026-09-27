@@ -27,6 +27,7 @@ import type { ComposerHandle } from '../ChatComposer'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
 import { DAEMON_CHAT_ID } from '../tabIds'
+import type { DaemonMood } from './daemonFaceModel'
 import styles from './DaemonChat.module.css'
 
 export type DaemonChatProps = {
@@ -34,6 +35,9 @@ export type DaemonChatProps = {
     session: ChatSession | undefined
     /** The daemon's display name — composer placeholder `Message <name>` and assistant turn label. */
     name: string
+    /** The daemon's full mood (DaemonPageHost's), shown by its face on the transcript's lowest
+     *  assistant row — so hurt / alert / asleep reach the conversation, not just thinking/talking. */
+    mood?: DaemonMood
     /** Trusted-gesture hook for arming: forwarded to ChatComposerBar's own pointerdown/focusin. */
     onGesture: (e: PointerEvent | FocusEvent) => void
     noteNames: () => NoteCandidate[]
@@ -73,10 +77,19 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
                                     inset="flush"
                                     items={items()}
                                     persona={props.name}
+                                    avatarMood={props.mood}
                                     awaitingReply={s().awaitingReply()}
                                     turnError={s().turnError()}
-                                    onAnswerPermission={(id, behavior, always) =>
-                                        s().answerPermission(id, behavior, always)
+                                    onAnswerPermission={(
+                                        id,
+                                        behavior,
+                                        always,
+                                    ) =>
+                                        s().answerPermission(
+                                            id,
+                                            behavior,
+                                            always,
+                                        )
                                     }
                                     onAnswerQuestion={(id, answers) =>
                                         s().answerQuestion(id, answers)

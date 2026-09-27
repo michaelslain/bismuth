@@ -7,3 +7,9 @@
     gap: var(--sp-2);
     margin: 0 0 var(--sp-3);
 }
+
+/* With the bot's face leading the row: a wider face-to-name gap than label-to-trailing, matching
+   the space DaemonFace's own compact header leaves between glyph and name. */
+.with-avatar {
+    gap: var(--sp-4);
+}

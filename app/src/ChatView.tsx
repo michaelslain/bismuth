@@ -38,6 +38,8 @@ import { chatColor } from './chatColors'
 import { chatTitle, resolveChatHeaderTitle } from './chatTitles'
 import { chatPersonaName } from './daemonIdentity'
 import { chatOrigin, chatOriginIcon } from './chatOrigin'
+import { chatBusy, chatComposing, chatSpeaking } from './chatActivity'
+import { chatAvatarMood } from './chat/chatAvatar'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 
@@ -81,10 +83,19 @@ export function ChatView(props: ChatViewProps): JSX.Element {
     let host: HTMLDivElement | undefined
     const [composer, setComposer] = createSignal<ComposerHandle>()
     const session = () => chatSession(props.chatId)
-    const drop = createChatDropTarget(() => props.chatId, () => host)
+    // The bot's face on the transcript's lowest assistant row animates by this chat's liveness.
+    const avatarMood = () =>
+        chatAvatarMood({
+            busy: chatBusy(props.chatId),
+            speaking: chatSpeaking(props.chatId),
+            composing: chatComposing(props.chatId),
+        })
+    const drop = createChatDropTarget(
+        () => props.chatId,
+        () => host,
+    )
 
-    const persona = () =>
-        session()?.persona() ?? chatPersonaName() ?? 'Claude'
+    const persona = () => session()?.persona() ?? chatPersonaName() ?? 'Claude'
     // Same precedence the TAB uses: the user-set tab name, else the session's backend title, else
     // the daemon persona / "Chat".
     const title = () =>
@@ -153,6 +164,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                                     <ChatTranscript
                                         items={s().transcript}
                                         persona={s().persona()}
+                                        avatarMood={avatarMood()}
                                         awaitingReply={s().awaitingReply()}
                                         turnError={s().turnError()}
                                         empty={
@@ -160,14 +172,18 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                                                 <EmptyState>
                                                     Ask {persona()} anything
                                                     about your vault. Run any{' '}
-                                                    <InlineCode>/command</InlineCode>,
-                                                    watch tool calls and
+                                                    <InlineCode>
+                                                        /command
+                                                    </InlineCode>
+                                                    , watch tool calls and
                                                     thinking, and approve tool
                                                     use inline.
                                                 </EmptyState>
                                             </ChatTurnColumn>
                                         }
-                                        onAnswerPermission={s().answerPermission}
+                                        onAnswerPermission={
+                                            s().answerPermission
+                                        }
                                         onAnswerQuestion={s().answerQuestion}
                                         onCancelQueued={s().cancelQueued}
                                         onReply={reply}
