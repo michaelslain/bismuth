@@ -54,13 +54,6 @@
     "max": 1,
     "required": false
   },
-  "appearance.paletteInputFontSize": {
-    "type": "number",
-    "default": 15,
-    "min": 13,
-    "max": 18,
-    "required": false
-  },
   "appearance.proseFont": {
     "type": {
       "kind": "enum",

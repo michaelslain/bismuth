@@ -275,7 +275,7 @@ So `- a<br>- b<br>- c` renders a **real `<ul><li>`** exactly like a note body wo
 
 **Embeds** (`![[img]]` / `![alt](url)`) are cut out *before* the block render into sanitize-surviving `span.cm-cell-embed-slot` placeholders and swapped for the real media DOM (`renderEmbedHtml`: img / pdf iframe / audio / video / note chip with GET /asset URLs) *after* `innerHTML` assignment (`upgradeCellEmbeds`) — DOMPurify would otherwise strip a PDF `<iframe>`.
 
-Cell-scoped CSS in `Editor.css` (`.cm-td p/ul/ol/...`) zeroes block margins so row height never explodes (still auto, #52); the reader's chips are styled there to match the editor's `.cm-wikilink`/`.cm-tag` marks, and the cell click handler opens **both** chip shapes (#33). The EDIT face and the read-back (`cellSourceFromDom`) are untouched.
+Cell-scoped CSS in global.css's `Editor.css` section (`.cm-td p/ul/ol/...`) zeroes block margins so row height never explodes (still auto, #52); the reader's chips are styled there to match the editor's `.cm-wikilink`/`.cm-tag` marks, and the cell click handler opens **both** chip shapes (#33). The EDIT face and the read-back (`cellSourceFromDom`) are untouched.
 
 The canonical cell source is stored in `data-src`. On the cell's `mousedown` (or a Tab/Enter cell hop) the widget calls `enterEdit`, which clears the display face and mounts the nested `cellEditor.ts` editor seeded from `data-src` (`<br>`→`\n` via `cellSourceToBlockMarkdown`). On `focusout` the widget calls `leaveEdit`, which reads the nested editor's doc back (`cmDocToCellSource`, `<br>`-joined), stores it in `data-src`, destroys the view, and re-renders the display face. The `readGrid` commit path reads the currently-edited cell from its live `_cellCM.state.doc`, every other cell from `data-src`.
 
@@ -436,7 +436,7 @@ A GFM table is an atomic block-replace widget that **hides its source**, so a Cm
 - **`tableFindHighlight`** (a `ViewPlugin` in `tableWidget.ts`, added to the editor next to `findExtension()`) reacts to doc / selection / search-query / viewport / panel changes. It reads the live `getSearchQuery(view.state)` and `searchPanelOpen(view.state)` from `@codemirror/search` — no new state field.
 - On each apply it **clears** every prior find `<mark>` from all `.cm-table-wrap`s (unwrap + `normalize`), then, while the panel is open with a valid non-empty query, walks each **display** cell's text nodes (skipping any cell in edit mode) and wraps each literal query occurrence in `<mark class="cm-table-find-match">`.
 - The **active match** (the block the find selection is genuinely inside, resolved via `groupTableBlocks` + `cellCoordForOffset` → `parseRowCellSpans`) gets the extra `cm-table-find-active` class and is `scrollIntoView`-ed.
-- Styling lives in `Editor.css` (`.cm-table-rendered mark.cm-table-find-match` / `.cm-table-find-active`), mirroring the prose `.cm-searchMatch` / `-selected` accent wash so a match reads the same in a cell as in prose.
+- Styling lives in global.css's `Editor.css` section (`.cm-table-rendered mark.cm-table-find-match` / `.cm-table-find-active`), mirroring the prose `.cm-searchMatch` / `-selected` accent wash so a match reads the same in a cell as in prose.
 - It **never dispatches a transaction or reveals source**, and only touches the display face — so an in-progress cell edit is never disturbed. Closing the bar (empty query / panel closed) clears every mark.
 
 `findPanel.ts` therefore carries **zero** table logic — it just moves the selection like anywhere else, and the highlighter reacts.
@@ -577,7 +577,7 @@ The convention round-trips losslessly through the pipe-table markdown: `serializ
 - **Editor widget** — `inlineMarkdown.ts` `renderInlineMarkdown` tries the list first, else renders the cell inline as before.
 - **Note reader / cards / export** — `bases/markdown.ts` overrides `marked`'s `tablecell` renderer to emit the list, else falls back to marked's default inline cell.
 
-Both emit `<ul class="bismuth-cell-list">` / `<ol …>`; a single global rule in `App.css` gives the list compact in-cell spacing.
+Both emit `<ul class="bismuth-cell-list">` / `<ol …>`; a single global rule in global.css's `styles/content.css` section gives the list compact in-cell spacing.
 
 ### Limitations
 

@@ -146,7 +146,7 @@ function buildTerminalTheme(): ITheme {
     return {
         background: cssVar('--term-bg'),
         foreground: cssVar('--term-fg'),
-        // Native cursor stays fully invisible — .xterm-custom-cursor (Terminal.css) draws the
+        // Native cursor stays fully invisible — .xterm-custom-cursor (global.css's `Terminal.css` section) draws the
         // actual caret, since xterm's native cursor can't CSS-transition between cells.
         // cursorAccent = fg keeps the underlying character rendering in its normal color.
         cursor: 'rgba(0,0,0,0)',
@@ -192,7 +192,7 @@ const wsBase = () => apiBase().replace(/^http/, 'ws') // http→ws, https→wss
 const enc = new TextEncoder()
 
 // Caret thickness (px) for the custom cursor overlay — a blinking underline matching
-// .asc-caret, not a solid block. See Terminal.css .xterm-custom-cursor.
+// .asc-caret, not a solid block. See .xterm-custom-cursor in global.css's `Terminal.css` section.
 const CARET_H = 2
 
 // --- Drag-and-drop file paths into the terminal -----------------------------------
@@ -632,7 +632,7 @@ export function TerminalTab(props: {
         // Custom cursor overlay that glides smoothly between positions — xterm's native
         // cursor is a class transferred between inline spans, so CSS transitions don't
         // apply. We render our own absolutely-positioned div and animate transform. Shaped
-        // as a blinking underline (CARET_H, Terminal.css) to match .asc-caret everywhere
+        // as a blinking underline (CARET_H, global.css's `Terminal.css` section) to match .asc-caret everywhere
         // else in the system, not a solid block.
         cursorEl = document.createElement('div')
         cursorEl.className = 'xterm-custom-cursor'

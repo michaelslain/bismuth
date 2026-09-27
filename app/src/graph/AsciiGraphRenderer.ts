@@ -1649,7 +1649,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     /**
      * The field's GROUND, per `GraphConfig.transparent`.
      *
-     * `.asc-field` (ui.css) paints an opaque `--graph-bg` behind the canvas — right for a graph pane,
+     * `.asc-field` (global.css's `ui/ui.css` section) paints an opaque `--graph-bg` behind the canvas — right for a graph pane,
      * wrong for the first-run Vault Intro, which cross-fades TWO full-bleed graph layers (opacity
      * 0↔1) over the page's own `--bg`. An opaque ground there fades the entire page background
      * between `--bg` and `--graph-bg` on every slide change, and those two tokens differ in three of

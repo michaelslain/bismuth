@@ -328,7 +328,7 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
  * WIDTH: `Frame w="400px"` renders a `.viewbar` measuring 398x36 (`probeStory.ts`, its own 1px border
  * either side of the 400px frame), whose content box — what the container query actually sees, since
  * it sits inside the bar's own `padding: 0 18px` — is 362px. That is 68px below the 430px floor-tier
- * boundary (`@container viewbar (max-width: 430px)` in ui.css): deep enough that a small change to
+ * boundary (`@container viewbar (max-width: 430px)` in ViewBar.module.css): deep enough that a small change to
  * `--h-band` or the bar's own padding cannot drift the story across the line and turn it into a
  * confusing failure in some other tier's territory. (400 is chosen as a round, deliberately-narrow
  * story width, not because it sits near any tier edge — contrast `FlashcardsTight`'s 502px, which is

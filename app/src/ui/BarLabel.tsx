@@ -25,8 +25,8 @@ export type BarLabelProps = {
 /** A bar label that knows how to get smaller. Both lengths are in the DOM and CSS picks one — the
  *  only honest way to abbreviate, since CSS cannot rewrite text.
  *
- *  THE HOOKS ARE `data-*`, NEVER CLASSES. The rules that read them live in the GLOBAL ui.css, and a
- *  global rule naming a CSS-module class hashes to a different local and matches nothing, silently
+ *  THE HOOKS ARE `data-*`, NEVER CLASSES. The rules that read them live in ViewBar.module.css, and a
+ *  rule there naming this module's class hashes to a different local and matches nothing, silently
  *  — the trap CLAUDE.md documents and bench/moduleClassCheck.ts exists to catch. Attribute
  *  selectors are never hashed.
  *
@@ -36,8 +36,8 @@ export type BarLabelProps = {
  *
  *  `data-bar-label` IS ALWAYS EMITTED, empty when there is no `drop`, and that empty string is
  *  load-bearing. The abbreviate tier has to out-specify this file's own default
- *  `.label [data-bar-abbr='short'] { display: none }` — same two-class weight, and BarLabel.module.css
- *  is emitted AFTER ui.css on both surfaces, so a tie loses. Matching through `[data-bar-label]`
+ *  `.label [data-bar-abbr='short'] { display: none }` — same two-class weight, and the order the bundler
+ *  emits BarLabel.module.css and ViewBar.module.css in is not something a tie can rely on. Matching through `[data-bar-label]`
  *  gives the tier a third compound and it wins on specificity rather than on load order, which is
  *  the thing that differs between the app bundle and Storybook. Dropping the attribute when `drop`
  *  is unset would exclude exactly the plain labels the tier most needs to reach. */

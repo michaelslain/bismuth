@@ -182,7 +182,6 @@ interface SchemaEntry {
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
 | `iconSize` | number | `12` | 11–20 | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
-| `paletteInputFontSize` | number | `15` | 13–18 | Command palette search-input font size in px. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
 
@@ -220,7 +219,7 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1.5` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.5` -> 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale` (`1.04`) ≈ 14px; 27px of leading gives it a loose ~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a rational multiple of the row unit on purpose — 18px (the pre-redesign default) would only give ~1.28. |
+| `lineHeight` | number | `1.25` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.25` -> 22.5px. Prose is Lora (`--prose-font`) at 14.04px (13.5 × `--prose-scale` 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows. |
 | `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
 | `wrapSelectionChars` | list (string) | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes already wrap via auto-close, so they're omitted by default. |
@@ -578,7 +577,6 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `appearance.uiFontSize` | `--ui-font-size` |
 | `appearance.monoScale` | `--mono-scale` |
 | `appearance.tabFontSize` | `--tab-font-size` |
-| `appearance.paletteInputFontSize` | `--palette-input-font-size` |
 | `ui.paletteTopOffset` | `--palette-top-offset` |
 | `ui.paneDividerWidth` | `--pane-divider-width` |
 | `ui.cardGridMinWidth` | `--card-grid-min` |
