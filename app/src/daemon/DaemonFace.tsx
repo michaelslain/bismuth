@@ -47,8 +47,13 @@ export type DaemonFaceProps = {
     mood: DaemonMood
     /** A status line centred under the face, e.g. `watching // last: dream 2h ago`. */
     caption?: JSX.Element
-    /** Smaller glyph, same caption — the daemon page sets this once a conversation has messages. */
-    compact?: boolean
+    /** `hero` (default): the daemon page's resting focal point, scaled to its column. `compact`: the
+     *  one-line header form, glyph with the caption to its right. `avatar`: the bot's small inline
+     *  face on a chat turn's label row (ChatTranscript) — fixed size, never a caption. */
+    size?: 'hero' | 'compact' | 'avatar'
+    /** Who the face is, for its accessible name — the chat persona in a transcript. Default
+     *  `daemon`. */
+    label?: string
     /** True while the host has no snapshot yet — the very first `mood` is provisional (derived
      *  from a NO_SNAPSHOT default), so it must paint immediately with no settle delay once
      *  `loading` drops rather than being treated as just another mood change. */
@@ -232,7 +237,8 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         <div
             class={[
                 styles.root,
-                props.compact ? styles.compact : '',
+                props.size === 'compact' ? styles.compact : '',
+                props.size === 'avatar' ? styles.avatar : '',
                 props.class,
             ]
                 .filter(Boolean)
@@ -244,7 +250,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                 // DaemonFace.module.css `.face`.
                 class={`${styles.face} asc-wordmark`}
                 role="img"
-                aria-label={'daemon — ' + moodLabel(renderedMood())}
+                aria-label={`${props.label ?? 'daemon'} — ${moodLabel(renderedMood())}`}
                 data-mood={renderedMood()}
                 data-testid="daemon-face"
                 onPointerEnter={() => setHovered(true)}
@@ -259,7 +265,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                     )}
                 </Index>
             </div>
-            <Show when={props.caption}>
+            <Show when={props.size !== 'avatar' && props.caption}>
                 {/* Text (ui/Text.tsx) now forwards every other HTML attribute, incl. data-*, so
                     `data-testid` lands directly on it — no bare wrapper span needed. */}
                 <Text

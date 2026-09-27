@@ -6,6 +6,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import ChatTurnLabel from './ChatTurnLabel'
 import Text from '../ui/Text'
+import DaemonFace from '../daemon/DaemonFace'
 
 const meta = {
     title: 'Chat/ChatTurnLabel',
@@ -47,5 +48,29 @@ export const WithTrailing: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('queued')).toBeInTheDocument()
+    },
+}
+
+/** The transcript's lowest assistant row: the bot's face leads, the name sits to its right on the
+ *  same line — face-then-name, so the face never stands in for who you are talking to. */
+export const WithAvatar: Story = {
+    args: {
+        label: 'Sage',
+        avatar: <DaemonFace mood="idle" size="avatar" label="sage" />,
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const name = canvas.getByText('sage')
+        const face = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )
+        await expect(face).not.toBeNull()
+        const f = face!.getBoundingClientRect()
+        const n = name.getBoundingClientRect()
+        // Name to the RIGHT of the face, on the same line (vertical centres within a few px).
+        await expect(n.left).toBeGreaterThan(f.right)
+        await expect(
+            Math.abs(n.top + n.height / 2 - (f.top + f.height / 2)),
+        ).toBeLessThan(4)
     },
 }

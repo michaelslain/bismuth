@@ -12,6 +12,7 @@ import {
     CONVERSATION_ITEMS,
     IMAGE_TURN_ITEMS,
     INLINE_PROMPT_ITEMS,
+    MULTI_TURN_ITEMS,
     QUEUED_ITEMS,
     SYSTEM_NOTE_ITEMS,
     THINKING_ITEMS,
@@ -63,13 +64,66 @@ export const Conversation: Story = {
         await fireEvent.contextMenu(bubble)
         const replyRow = await canvas.findByText('Reply')
         await userEvent.click(replyRow)
-        await expect(noop.onReply).toHaveBeenCalledWith(conversationAssistantText)
+        await expect(noop.onReply).toHaveBeenCalledWith(
+            conversationAssistantText,
+        )
         // Inline code must not break mid-token (design #8) — `.chat-bubble`'s prose
         // `overflow-wrap: anywhere` was splitting `--since` into `-`/`-since` across the line.
         const code = canvas.getByText('--since')
         const codeStyle = getComputedStyle(code)
         await expect(codeStyle.overflowWrap).toBe('normal')
         await expect(codeStyle.wordBreak).toBe('keep-all')
+    },
+}
+
+/** Every face in the canvas, and every label reading `name`, top to bottom. */
+function facesAndLabels(canvasElement: HTMLElement, name: string) {
+    const faces = [
+        ...canvasElement.querySelectorAll<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        ),
+    ]
+    const labels = within(canvasElement)
+        .getAllByText(name)
+        .map(el => el.getBoundingClientRect())
+        .sort((a, b) => a.top - b.top)
+    return { faces, labels }
+}
+
+/** The one face sits on the row of the LAST `name` label, to its left. */
+async function expectFaceOnLastLabel(canvasElement: HTMLElement, name: string) {
+    const { faces, labels } = facesAndLabels(canvasElement, name)
+    await expect(faces.length).toBe(1)
+    const f = faces[0].getBoundingClientRect()
+    const last = labels[labels.length - 1]
+    await expect(
+        Math.abs(f.top + f.height / 2 - (last.top + last.height / 2)),
+    ).toBeLessThan(4)
+    await expect(f.right).toBeLessThan(last.left)
+    return { face: faces[0], labels }
+}
+
+/** Several exchanges: the bot's face is the avatar of the LOWEST assistant turn only, with the name
+ *  to its right; every earlier assistant turn shows just the name. */
+export const LowestTurnAvatar: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '620px', display: 'flex' }}>
+            <ChatTranscript
+                items={MULTI_TURN_ITEMS}
+                persona="Sage"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const { face, labels } = await expectFaceOnLastLabel(
+            canvasElement,
+            'sage',
+        )
+        await expect(labels.length).toBe(3)
+        await expect(face.getAttribute('aria-label')).toBe('sage — watching')
     },
 }
 
@@ -113,7 +167,9 @@ export const InlinePrompts: Story = {
     args: { onAnswerPermission: fn() },
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getAllByRole('button', { name: 'allow' })[0])
+        await userEvent.click(
+            canvas.getAllByRole('button', { name: 'allow' })[0],
+        )
         await expect(args.onAnswerPermission).toHaveBeenCalledWith(
             'perm-1',
             'allow',
@@ -164,12 +220,16 @@ export const Empty: Story = {
     },
 }
 
-/** Pre-first-delta — the "working" indicator under the persona's label. */
+/** Pre-first-delta — the "working" indicator under the persona's label, which carries the face
+ *  while it waits. */
 export const AwaitingReply: Story = {
     render: () => (
         <div style={{ width: '760px', height: '520px', display: 'flex' }}>
             <ChatTranscript
-                items={[{ role: 'user', text: 'Summarize the vault.' }]}
+                items={[
+                    ...CONVERSATION_ITEMS,
+                    { role: 'user', text: 'Summarize the vault.' },
+                ]}
                 persona="bismuth"
                 awaitingReply
                 turnError={null}
@@ -180,6 +240,10 @@ export const AwaitingReply: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(/working/)).toBeInTheDocument()
+        // The working row is the lowest assistant row, so it takes the face (thinking) and the
+        // finished turn above it goes back to just the name.
+        const { face } = await expectFaceOnLastLabel(canvasElement, 'bismuth')
+        await expect(face.dataset.mood).toBe('thinking')
     },
 }
 
@@ -245,7 +309,9 @@ export const Narrow360: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText(/A few things landed/)).toBeInTheDocument()
+        await expect(
+            canvas.getByText(/A few things landed/),
+        ).toBeInTheDocument()
     },
 }
 
@@ -295,9 +361,9 @@ export const Flush: Story = {
         ) as HTMLElement
         const bubble = canvas.getAllByText(/A few things landed/)[0]
         // The reading column's left edge sits at the wrap's own left edge — no inline padding.
-        await expect(
-            Math.round(bubble.getBoundingClientRect().left),
-        ).toBe(Math.round(wrap.getBoundingClientRect().left))
+        await expect(Math.round(bubble.getBoundingClientRect().left)).toBe(
+            Math.round(wrap.getBoundingClientRect().left),
+        )
     },
 }
 
