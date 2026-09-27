@@ -1,14 +1,13 @@
 # Bismuth
 
-**A knowledge vault that thinks with you.** Bismuth keeps your notes as plain markdown on your own
-disk — wikilinks, tags, YAML frontmatter, no lock-in — and builds a live knowledge graph on top of
-them. Around that it adds the things a vault usually makes you leave: queryable database views,
-tasks, spaced repetition, a calendar, drawing, spreadsheets, terminals, and AI that can actually
-read your vault.
+**A local-first knowledge vault.** Bismuth keeps notes as plain Markdown on your disk, with
+wikilinks, tags, and YAML frontmatter. It builds a live graph from that vault and keeps related
+tools — queryable views, tasks, spaced repetition, calendar, drawing, spreadsheets, terminals, and
+AI access — in the same application.
 
 ### The three-brain model
 
-The idea the whole app is organised around:
+Bismuth connects your notes with the memory its optional daemon keeps about your work:
 
 | | what it is | where it lives |
 |---|---|---|
@@ -16,32 +15,31 @@ The idea the whole app is organised around:
 | **2nd brain** | your vault — markdown notes, links, tags | your chosen folder |
 | **3rd brain** | the daemon's memory — what the assistant has learned about your work, linked back into your notes | `<vault>/.daemon/memory` |
 
-The graph merges all three, so a note and the thing an agent remembered about it are one connected
-structure rather than two disconnected tools.
+The graph joins the vault and daemon memory, so a note and an agent memory about it are part of the
+same structure.
 
 ### What's in the box
 
-- **Knowledge graph** — 2D/3D, rendered as a character grid; five modes including a *local* view of one note's neighbourhood
+- **Knowledge graph** — 2D/3D, rendered as a character grid; four modes including a *local* view of one note's neighbourhood
 - **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
 - **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
 - **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
-- **AI, on your terms** — in-app terminals, a visual chat that runs on any of **nine** agent backends (Claude Code, opencode, Codex, and six more), a **skill** (`skills/`) that teaches any of them how to author a Bases view correctly, and per-file/folder **visibility controls** that fence agents out of what you don't want read
+- **AI** — in-app terminals, visual chat through **nine** agent backends (Claude Code, opencode, Codex, and six more), a **skill** (`skills/`) for authoring Bases views, and per-file/folder **visibility controls** for restricting agent access
 - **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
 - **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
 
-Everything is local-first and file-based: no account, no sync service, no database.
+Everything is local-first and file-based: no account, sync service, or database.
 
 ---
 
 ## About this documentation
 
-Bismuth is a Bun monorepo of **seven workspaces** — `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon` — plus three top-level directories that are **not**
-workspaces: `skills/` (agent-facing skill guides), `app/.storybook/` (the Storybook 9
-component catalog for `app/src/`, `bun run storybook`, port `6006`), and `bench/` (the visual
-verification tooling that drives its own Chrome over that catalog — `bun run visual`, see
-[Testing](contributing/testing.md)). This is the full reference: every page is code-anchored,
-with copy-pasteable examples drawn from the real implementation.
+Bismuth is a Bun monorepo with **seven workspaces**: `core` (backend), `app` (Solid + Tauri),
+`cli`, `relay`, `mcp`, `memory`, and `daemon`. Three top-level directories are not workspaces:
+`skills/` (agent-facing skill guides), `app/.storybook/` (the Storybook 9 component catalog for
+`app/src/`, `bun run storybook`, port `6006`), and `bench/` (visual verification that drives its
+own Chrome over that catalog — `bun run visual`; see [Testing](contributing/testing.md)). This
+reference is code-anchored and its examples come from the implementation.
 
 ## Get started (macOS)
 
@@ -108,7 +106,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 ## Tasks
 
-- [Task syntax](tasks/syntax.md) — bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`); the legacy Obsidian-Tasks emoji signifiers still parse forever
+- [Task syntax](tasks/syntax.md) — bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`); the legacy Obsidian-Tasks emoji signifiers no longer parse
 - [Query DSL (legacy)](tasks/query-dsl.md) — the old `tasks:` query language is gone; what replaced it and how to migrate
 
 ## Feature subsystems

@@ -1,10 +1,12 @@
 # Settings Reference
 
-This is the canonical, exhaustive reference for Bismuth's vault `.settings` file (a single hidden, extensionless YAML file at the vault root — `SETTINGS_FILE` in `core/src/settings.ts`). It documents **every** top-level section and **every** key in the settings schema (`core/src/schema/settingsSchema.ts`), including each key's name, type, default value, min/max bounds or enum values, and its in-app documentation string. The schema is the single source of truth: the first-launch writer authors a fully commented `.settings` from it, the editor's autocomplete and linter validate against it, and the frontend store seeds from the derived `DEFAULTS`. Defaults always equal the previously hardcoded values, so a fresh install behaves identically to an unconfigured one.
+This is the complete reference for a vault's `.settings` file: the hidden, extensionless YAML file at the vault root (`SETTINGS_FILE` in `core/src/settings.ts`). It lists every schema section and key, including type, default, bounds or enum values, and in-app documentation.
 
-There is **no settings GUI** in Bismuth — the "settings page" is literally `.settings` opened in the editor, with schema-aware autocomplete (each key's doc + valid range) and lint. To change a setting, edit the YAML; the backend is the single writer and merges one key in place via `POST /set-setting` (preserving comments and key order). Editing `.settings` does not require a server restart — it is re-read per request. (A legacy vault-root `settings.yaml` — or the interim `.settings/settings.yaml` folder from an earlier build — is migrated into the `.settings` file automatically on first open; see `migrateSettingsLocation` in `core/src/settings.ts`.)
+The schema in `core/src/schema/settingsSchema.ts` is the source of truth. It drives first-launch output, editor autocomplete and lint, and the derived `DEFAULTS` that seed the frontend. Defaults preserve the behavior of an unconfigured install.
 
-For how this machinery actually works under the hood — file lifecycle, the frontend store, the CSS projection — see the [Settings Overview](overview.md). This page is the flat reference: every section, every key.
+Open `.settings` in the editor to change a value. The backend updates one key at a time through `POST /set-setting`, preserving comments and order; it re-reads the file per request, so no server restart is required. On first open, `migrateSettingsLocation` moves a legacy vault-root `settings.yaml` or interim `.settings/settings.yaml` layout into `.settings`.
+
+For lifecycle, frontend-store, and CSS-projection details, see the [Settings Overview](overview.md).
 
 ## Schema overview
 

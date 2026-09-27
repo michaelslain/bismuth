@@ -1,8 +1,8 @@
 # Tasks Query DSL (legacy)
 
-**The tasks query DSL is gone.** `core/src/tasks-query.ts` (`runTaskQuery`) — the small evaluator this page used to document in full — has been deleted. Task filtering now runs through the **same Bases filter language** `source: notes` uses (see [filters](../bases/filters.md)): a plain `!note.resolved`-shaped expression, not a bespoke `not done` keyword grammar.
+**The tasks query DSL is gone.** `core/src/tasks-query.ts` (`runTaskQuery`), the small evaluator this page used to document, has been deleted. Task filtering now uses the **same Bases filter language** `source: notes` uses (see [filters](../bases/filters.md)): a plain `!note.resolved`-shaped expression, not the old `not done` keyword grammar.
 
-This page exists only so a dangling link doesn't break the docs build, and so anyone who still has the old keywords memorized can find the replacement. Nothing below is callable code any more.
+This page exists so a dangling link doesn't break the docs build, and so anyone who remembers the old keywords can find the replacement. Nothing below is callable code.
 
 ## Your old queries still work
 
@@ -15,7 +15,7 @@ bismuth base migrate-queries --vault <vault>          # rewrites tasks: DSL bloc
 bismuth base migrate-queries --vault <vault> --dry-run # reports what would change, writes nothing
 ```
 
-It is idempotent (running it twice makes no further changes) and leaves a block it can't safely convert untouched, reported as unconvertible rather than guessed at — that's a block that already has its own `where:` or `sort:` key alongside a DSL `tasks:`, or one whose `sort by priority` has no lossless modern spelling (see [the priority-rank gotcha](#leaf-by-leaf-translation) below).
+It is idempotent (running it twice makes no further changes) and leaves a block it can't safely convert untouched, reported as unconvertible rather than guessed at — that's a block that already has its own `where:` or `sort:` key alongside a DSL `tasks:`, or one with a date leaf that names a weekday (`due friday`), which has no live Bases form.
 
 ## The replacement shape
 
@@ -61,7 +61,7 @@ Every DSL leaf the old evaluator accepted, and the Bases expression `translateTa
 
 **Boolean structure carries over unchanged** — only the spellings differ: `AND`/`OR` (uppercase, DSL) become `&&`/`||` (Bases); parentheses mean the same thing in both. An unrecognized leaf degrades to the literal `true` rather than dropping its line or failing the whole query, reproducing the old evaluator's own "unrecognized filter, keep going" behavior — so a typo'd leaf in an old query still filters by whatever the rest of the line said, exactly as before.
 
-`sort by priority` sorts by **rank** (`highest` < `high` < `medium` < `none` < `low` < `lowest`), not alphabetically — `applyTaskSort` (`core/src/bases/taskDsl.ts`) does this for a legacy `tasks:` value, at the SOURCE level. **This is a case `bismuth base migrate-queries` deliberately leaves alone.** The modern `sort:` key is applied later, at the VIEW level (`runView` in `core/src/bases/query.ts`), through the same generic comparator every other view's sort uses — which has no priority-rank table, so it would sort `note.priority` alphabetically (`high`, `highest`, `low`, `lowest`, `medium`, `none`). Rewriting `sort by priority` into `sort: note.priority` would therefore silently change the row order, so the migration tool reports such a block as unconvertible and leaves it in its legacy (still correctly rank-sorted) form instead.
+`sort by priority` sorts by **rank** (`highest` < `high` < `medium` < `none` < `low` < `lowest`), not alphabetically — `applyTaskSort` (`core/src/bases/taskDsl.ts`) does this for a legacy `tasks:` value, at the SOURCE level. The modern `sort:` key is applied later, at the VIEW level (`runView` in `core/src/bases/query.ts`), through `compareForSort` — which `applyTaskSort` imports, and which ranks any property whose bare name is `priority` by the same table. So `bismuth base migrate-queries` rewrites `sort by priority` into `sort: note.priority` without changing the row order (see `migrateQueryBody` in `cli/src/commands/base.ts`).
 
 ## Where this lives in the code now
 

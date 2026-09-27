@@ -1,10 +1,19 @@
 # Bismuth Architecture Overview
 
-Bismuth is a personal knowledge management system built as a Bun monorepo with seven workspaces. This page maps that monorepo — what each workspace does, how the three-brain model becomes one merged knowledge graph, and how that graph reaches the frontend — and is the place to start when orienting yourself in the codebase.
+Bismuth is a personal knowledge-management system built as a Bun monorepo with seven workspaces.
+This page explains their roles, how the three-brain model becomes one knowledge graph, and how that
+graph reaches the frontend. Start here when orienting yourself in the codebase.
 
-The central concept is the **three-brain model**: a "2nd brain" (vault of markdown files) and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app.
+The central concept is the **three-brain model**: a "2nd brain" (a vault of Markdown files) and a
+"3rd brain" (per-vault daemon memory notes under `<vault>/.daemon/memory`, present only when
+`daemon.enabled`). The core backend merges them into one knowledge graph, precomputes 2D and 3D
+layouts, and serves the result over HTTP to a Tauri + Solid.js desktop app.
 
-The relay plugin reports Claude Code sessions and subagents running inside the app's own terminal tabs into an in-process registry on the core server — it no longer powers a graph mode (the "agents" graph was removed in `a6687c0`), but the registry still backs `chat.ts`'s subagent lifetime tracking and `terminal.ts`'s tab-close pruning. The mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
+The relay plugin reports Claude Code sessions and subagents from the app's terminal tabs to an
+in-process core registry. It no longer provides a graph mode (the "agents" graph was removed in
+`a6687c0`), but the registry still supports `chat.ts` subagent lifetime tracking and
+`terminal.ts` tab-close pruning. The mcp workspace is a stdio MCP server that auto-attaches to
+those sessions to serve the docs and CLI.
 
 **What's in this doc:** monorepo layout and workspace roles → the three-brain model → graph composition and types → graph modes (2nd/3rd/both/daemon/local) → vault-change data flow → HTTP API summary → settings architecture → caching strategy.
 
@@ -295,6 +304,7 @@ This summary lists every route these two dictionaries currently serve, grouped b
 | `PUT /file` | Write vault file (also invalidates caches) |
 | `GET /asset?path=` | Serve vault media file as binary (filename-first resolution) |
 | `POST /asset?path=` | Upload attachment (≤100 MB); returns actual path after de-collision |
+| `POST /asset/fetch {url, path}` | Owner-only: fetch a remote image URL and write it into the vault as an attachment (SSRF-guarded) |
 | `POST /convert/heic` | Transcode HEIC/HEIF bytes to JPEG for a paste/drop the browser can't decode |
 | `POST /tmp-file?name=` | Stage pasted/dropped bytes at a real filesystem path outside the vault, so chat can reference them by path |
 | `GET /abs-path?path=` | Resolve a vault-relative path to its absolute filesystem path (owner-gated; backs "Reveal in Finder") |
@@ -321,10 +331,13 @@ This summary lists every route these two dictionaries currently serve, grouped b
 | `POST /daemon/update` | Re-run the adopt-only install (the daemon updates WITH the app; no git pull) |
 | `POST /daemon/cron/toggle {name, enabled}` | Enable/disable a cron |
 | `POST /daemon/cron/run {name}` | Trigger a cron immediately |
+| `POST /daemon/cron/delete {name}` | Delete a cron definition; `409` if it's currently running |
 | `POST /daemon/process/toggle {name, enabled}` | Enable/disable a process |
+| `POST /daemon/process/delete {name}` | Delete a process definition (also drops its reconcile trigger) |
 | `GET /daemon/pages` | The daemon's inbox: pages under `.daemon/pages/*.md` awaiting an approve/dismiss action |
 | `POST /daemon/pages/resolve {path, actionId}` | Resolve a pressed inbox action — approve (runs a `prompt`) or dismiss |
 | `POST /daemon/pages/mark-failed {path}` | Force a stuck "working" page sidecar to `failed`, no daemon involvement (client escape hatch) |
+| `POST /daemon/pages/archive {path}` | Owner-only: permanently delete an inbox page and its `.state` sidecar, whatever its status |
 | `GET /bismuth/install` | Machine-wide `bismuth` CLI + MCP install status |
 | `POST /bismuth/install` | Idempotent, version-gated install/update of the CLI + MCP, machine-wide |
 | `GET /update/status` | Whether the running build is behind `origin/main` (git-based self-update) |
@@ -375,6 +388,7 @@ This summary lists every route these two dictionaries currently serve, grouped b
 | `POST /tasks/toggle {path, line, status?}` | Toggle (or set an exact status on) a checkbox task in-place |
 | `POST /tasks/reschedule {path, line, field, date}` | Calendar drag-to-reschedule: rewrite a task's `due`/`scheduled`/`start` date |
 | `POST /tasks/archive {path?}` | Archive completed/cancelled tasks — one note, or the whole vault when `path` is omitted |
+| `POST /tasks/create {file, body}` | Append a new task line to a note resolved from a `taskFile` ref (wikilink) |
 | `POST /cards/review` | Apply SRS review (markdown cards or row cards) |
 | `POST /row/update {file, index, note}` | Create (`index:null`) or update a base row |
 | `POST /rows/update {file, updates}` | Batch create/update of many base rows in one request |

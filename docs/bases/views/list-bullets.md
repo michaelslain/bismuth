@@ -1,6 +1,6 @@
 # List and Bullets Views
 
-This document covers two closely related but intentionally distinct Bases view kinds: **`list`** and **`bullets`**. Both render rows as a vertical sequence rather than a table grid, but they serve different purposes and have different rendering rules. Both also render task rows the same way: whenever a row IS a task — see [tasks mode](#tasks-mode-rendering-shared-by-both-views) below — it renders as a checkbox line (priority, dates and recurrence as bracket-field chips) instead of the view's normal row/item markup. `list` is additionally a structured, clickable, optionally-grouped view for non-task rows; `bullets` is a plain prose-style `<ul>` that mirrors how a note's own `- item` content looks — no row chrome, no icons, no borders.
+Two Bases view kinds: **`list`** and **`bullets`**. Both render rows as a vertical sequence rather than a table grid, with different purposes and different rendering rules. Both render a task row the same way: whenever a row IS a task — see [tasks mode](#tasks-mode-rendering-shared-by-both-views) below — it renders as a checkbox line (priority, dates and recurrence as bracket-field chips) instead of the view's normal row/item markup. `list` is a structured, clickable, optionally-grouped view for non-task rows; `bullets` is a plain prose-style `<ul>` that mirrors how a note's own `- item` content looks — no row chrome, no icons, no borders.
 
 ---
 
@@ -235,7 +235,7 @@ view: bullets
 | `Link` object (from `file.asLink()`, `link()`, or link-typed schema) | Clickable `<a>` tag; display = `link.display` or path stem |
 | `"file.name"` specifically | Clickable `<a>` that opens the note via `bismuth-open` |
 | `Array` | Comma-joined string |
-| `boolean` | Checkmark icon if true, empty if false |
+| `boolean` | Typed glyph, not an icon: `"x"` if true, blank if false |
 | `Date` | ISO date string `YYYY-MM-DD` |
 | anything else | `String(v)` |
 

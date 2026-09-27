@@ -1,6 +1,6 @@
 # Kanban View
 
-The kanban view renders a base's rows as a Trello-style board of columns, one column per group value. It requires a `groupBy` property in the view config; without one, the view renders a hint message instead of a board.
+The kanban view renders a base's rows as a Trello-style board of columns, one column per group value. It requires a `groupBy` property in the view config; without one, it renders a hint message instead of a board.
 
 Each card is a note. On a board backed by a real base file (`props.basePath` set — i.e. not an embedded ```` ```query ```` block), the board is fully editable:
 

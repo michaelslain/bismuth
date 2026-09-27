@@ -1,12 +1,12 @@
 # Template Token Syntax
 
-This document is the canonical reference for Bismuth's template token syntax — the `{{...}}` tokens that get expanded when you insert a template (via the template palette / Option+T) or create a daily note. Read it if you're writing a template, adding a new token, or debugging why a token expanded to the wrong thing (or didn't expand at all).
+This page defines Bismuth's `{{...}}` template tokens. They expand when you insert a template with the palette / Option+T or create a daily note. Use it to author a template, add a token, or explain an unexpected expansion.
 
-It covers every recognised token (`{{date}}`, `{{time}}`, `{{title}}`, `{{cursor}}`), their optional date/time **offset** modifiers (`+1d`, `-30m`, …) and moment-style **format** modifiers (`:YYYY-MM`, `:h:mm A`, …), the exact `expandTemplate` algorithm (including how unknown/malformed tokens are handled and how the cursor offset is computed), the moment-style format token vocabulary, and the daily-note configuration (`folder`/`fileName`/`template`) that drives `dailyNotePath` and `dailyNoteContent`. Everything here is verified against `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts` and their tests.
+It covers the recognized tokens (`{{date}}`, `{{time}}`, `{{title}}`, `{{cursor}}`), date/time offsets (`+1d`, `-30m`, …), moment-style formats (`:YYYY-MM`, `:h:mm A`, …), `expandTemplate`, malformed-token behavior, cursor offsets, format vocabulary, and the `folder`/`fileName`/`template` daily-note configuration behind `dailyNotePath` and `dailyNoteContent`. The reference follows `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts`, and their tests.
 
 ## Where templates are used
 
-There are two consumers of template expansion in the codebase, both calling the same pure `expandTemplate(raw, ctx)`:
+Two code paths call the same pure `expandTemplate(raw, ctx)`:
 
 1. **Template insertion** (`app/src/palette/TemplatePalette.tsx`, Option+T) — a fuzzy picker of the vault's template `.md` files. Selecting one reads the file, calls `expandTemplate(raw, { now: new Date(), title })`, and inserts the result into the last-focused editor with the caret landing at `cursorOffset` (where `{{cursor}}` was). The template list comes from `GET /templates`, which lists `.md` files under the `templates.folder` setting (default `"Templates"` — see `core/src/files.ts` `listTemplates`).
 2. **Daily notes** (`core/src/dailyNote.ts`, `POST /daily-note`) — a configured daily-note type produces a filename via `expandTemplate(cfg.fileName, …)` and an initial body via `expandTemplate(templateRaw, …)`. See [Daily notes](#daily-notes) below.
@@ -25,7 +25,7 @@ A token is `{{` … `}}`. The inner content follows this grammar (from `parseTok
 <format> = : <moment-style format string> (non-empty)
 ```
 
-Key parsing rules, verified in code:
+The parser follows these rules:
 
 - The inner content **must start with** one of the four names: `date`, `time`, `title`, `cursor` (matched by `/^(date|time|title|cursor)/`). Anything else (e.g. `{{foo}}`) is unrecognised → emitted verbatim.
 - The **offset** is matched by `/^([+-])(\d+)([a-z])/` immediately after the name. Sign is required (`+` or `-`), amount is one-or-more digits, unit is exactly one lowercase letter.

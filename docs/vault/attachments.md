@@ -1,13 +1,13 @@
 # Vault Attachments & Embeds
 
-This document covers how Bismuth embeds and serves vault media — for anyone working on the editor's embed renderer, the asset upload pipeline, or the `attachments:` settings that control where new files land. It covers:
+Bismuth embeds and serves vault media through two syntaxes, an asset upload pipeline, and the `attachments:` settings that control where new files land. This page covers:
 
 - The two embed syntaxes, `![[file]]` and `![](url)`
-- How each media kind is rendered: image, PDF, audio, video, live HTML artifact, `.md` transclusion
-- The drag-resize mechanism and how the persisted `|WxH` size works
+- How each media kind renders: image, PDF, audio, video, live HTML artifact, `.md` transclusion
+- The drag-resize mechanism and the persisted `|WxH` size
 - How the backend resolves asset filenames via `resolveAsset`
-- The `POST /asset` upload endpoint, including its size cap and collision-avoidance
-- The `attachments` settings section that controls where new files land
+- The `POST /asset` upload endpoint, its size cap, and collision avoidance
+- The `attachments` settings section controlling where new files land
 
 ---
 

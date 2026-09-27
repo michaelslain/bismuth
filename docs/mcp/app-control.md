@@ -1,8 +1,8 @@
 # App control — driving a running Bismuth window
 
-A Claude session (or any shell) can drive a **running Bismuth app**: list its open windows, list/open/close/focus/rename/pin/reorder tabs, run a safe UI command, and author a daemon inbox page. This is the one surface that reaches into the live webview from outside it.
+App control lets a Claude session or shell operate a running Bismuth window: it can inspect windows and tabs, manage tabs, run an approved UI command, and author a daemon inbox page. It is the only external route into the live webview.
 
-It adds **zero new MCP tools**. Everything routes through the existing `bismuth_cli` tool via two CLI groups — `app` (needs a running app) and `page` (headless). See [overview.md](overview.md) for why (a machine-wide MCP mustn't grow its always-listed tool set).
+It adds no MCP schemas. The existing `bismuth_cli` tool reaches the `app` CLI group for operations that need a running window and the headless `page` group for inbox pages. This keeps the machine-wide MCP catalog small; see [overview.md](overview.md).
 
 ---
 
@@ -13,8 +13,8 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 ```
 
 - Each open window holds a **control WebSocket** to core at `GET /ui?w=<windowId>` (`app/src/uiControlClient.ts`). Core keys windows by their stable `?w=` id (`windowId.ts`; the primary window is `main`).
-- The window **heartbeats** its tab layout (`{type:"tabs", snapshot}`), piggybacked on App's existing tab-persistence effect — that's what `GET /ui/windows` lists.
-- A command is a request/reply round-trip (`core/src/uiControl.ts`, modeled on `chat.ts`'s pending-reply idiom): core pushes `{type:"command", reqId, action, args}`, the window answers `{type:"reply", reqId, ok, result|error}`. A window that never answers resolves `{ok:false}` after ~8s — it never hangs the caller.
+- The window reports its tab layout as `{type:"tabs", snapshot}` through App's existing tab-persistence effect. `GET /ui/windows` reads that report.
+- A command is a request/reply round-trip in `core/src/uiControl.ts`, following `chat.ts`'s pending-reply pattern. Core sends `{type:"command", reqId, action, args}` and the window returns `{type:"reply", reqId, ok, result|error}`. If a window does not reply, the request resolves `{ok:false}` after about 8 seconds instead of hanging.
 - Both `/ui/windows` and `/ui/command` are **read-table** routes (no cache invalidation): any vault mutation a command triggers runs its own invalidation path.
 
 ## HTTP routes
@@ -39,19 +39,21 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 | `reorder-tab` | `{tabId, index}` | Move a tab to a new 0-based position in the tab strip |
 | `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated; the window awaits the action before replying, and an interactive command's `result` says so (see below) |
 
-`content` is a vault path (`reading/x.md`) or a sentinel: `::graph`, `::daemon`, `.settings`, `::term:<uuid>`. (There is no `::search` sentinel — search is the in-window Cmd+O switcher, not a tab. A retired sentinel is rewritten the way a restored layout's is — `panes.ts` `LEGACY_CONTENT_IDS` — so an old script's `::inbox` opens `::daemon`.) **`::chat:*` is refused** — opening a live recursive Agent-SDK chat is a deliberately different trust boundary. Opening `::daemon` is allowed because its inline chat is **gesture-armed**: the page opens with the real composer but no chat session behind it, and spawns no session until a trusted user press or focus on that composer arms it (`app/src/daemon/daemonChatArming.ts`) — something app control cannot produce.
+`content` is a vault path such as `reading/x.md` or one of `::graph`, `::daemon`, `.settings`, and `::term:<uuid>`. There is no `::search` sentinel: search is the in-window Cmd+O switcher, not a tab. `panes.ts` maps retired values through `LEGACY_CONTENT_IDS`, so an older script opening `::inbox` reaches `::daemon`.
+
+`::chat:*` is refused because opening a live recursive Agent-SDK chat crosses a different trust boundary. `::daemon` is allowed: its inline chat has the real composer but no session until a trusted user press or focus arms it in `app/src/daemon/daemonChatArming.ts`, and app control cannot produce that gesture.
 
 ## `run-command`'s result: completed vs. waiting on a person
 
-The window doesn't reply `ok:true` the instant it fires the command — it **awaits** the action first, so `detect-ai`, `gcal-sync`, and `archive-tasks` (all async) only report success once they've actually run.
+The window waits for an action before replying `ok:true`. Async commands such as `detect-ai`, `gcal-sync`, and `archive-tasks` report success only after they finish.
 
-A handful of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — don't *complete* a task at all: their action just **opens a modal** and hands off to a person (a picker, a connect/setup/install dialog). These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `core/src/commands.ts`'s `CommandSpec.interactive` marks these seven, and `run-command`'s `result` reflects it —
+A small set of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — only opens a modal for a person to complete. They remain available through app control so, for example, an agent can open the Google Calendar connection dialog when asked how to connect it. `CommandSpec.interactive` in `core/src/commands.ts` marks these seven commands, and `run-command` reports that state:
 
 ```json
 { "ok": true, "result": { "interactive": true, "label": "Connect Google Calendar…", "note": "Opened \"Connect Google Calendar…\" — this needs a person to finish it in the app." } }
 ```
 
-— versus an ordinary command's plain `{ "ok": true }`. An agent (or `bismuth app run`'s caller) can branch on `result.interactive`: present, the task isn't done — a dialog is now open and waiting on someone at the keyboard.
+An ordinary command returns `{ "ok": true }`. Callers can use `result.interactive` to distinguish finished work from a dialog waiting for someone at the keyboard.
 
 ## `bismuth app` (needs a running app)
 

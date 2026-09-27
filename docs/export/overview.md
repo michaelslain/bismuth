@@ -1,10 +1,10 @@
 # Export
 
-Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or a drawing — into a downloadable file: Markdown, HTML, PNG, PDF, or (bases only) CSV. This is the reference for anyone building an export format, adding a new exportable file kind, or debugging a mismatch between what the export pane shows and what actually gets written to disk.
+Bismuth exports vault notes, bases, spreadsheets, and drawings as Markdown, HTML, PNG, PDF, or — only for bases — CSV. Use this reference to add an export format or file kind, or to trace a result from the export pane to disk.
 
-The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths (markdown, HTML, CSV, the pure table/view builders) are fully headless already; rasterizing a note/base/sheet's HTML to PNG/PDF is where the two faces diverge in *how*, not *whether*. For PDF specifically, the app no longer rasterizes in its own browser process for every case: the desktop app prints the export document to PDF through its own native WebKit engine (a `print_pdf` Tauri command — see "Desktop: native WebKit print" below), and only falls back to the browser-side `html2canvas`/`jsPDF` rasterizer when WebKit can't (browser dev mode, iPad). The CLI launches a disposable headless Chrome over CDP (`core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`) to do the same job with no running app to borrow a browser from. Drawings rasterize through the headless core renderer (`core/src/drawing/export.ts`) either way.
+The app's dedicated export pane (`ExportView.tsx`, opened by `::export:<path>`) and `bismuth export` share `renderExport()`. Bases can render as their native view — a calendar, cards, kanban, or list — or as a flat table; visual calendars also select a span and anchor day. Markdown, HTML, CSV, and pure table/view builders already run headlessly. PNG/PDF HTML rasterization changes engine by surface: the desktop app uses its native WebKit `print_pdf` command and falls back to browser-side `html2canvas`/`jsPDF` in browser dev mode or on iPad; the CLI starts disposable headless Chrome over CDP through `core/src/render/htmlRaster.ts` and `core/src/render/chromeSession.ts`. Drawings use `core/src/drawing/export.ts` in either path.
 
-**What's in here**: the pane's controls and how a source file is classified as a base ([The export pane](#the-export-pane-exportviewtsx)); which formats each file kind supports ([Targets × formats](#targets--formats)); the visual-vs-data render mode for bases ([Visual vs data render mode](#visual-vs-data-render-mode-bases)); the frontmatter toggle, the markdown-syntax toggle, and page-break splitting ([Include/exclude frontmatter](#includeexclude-frontmatter), [Markdown syntax markers](#markdown-syntax-markers), [Page breaks](#page-breaks)); how a note's document fonts get embedded ([Font embedding](#font-embedding)); the shared renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)); what runs in-app vs. headless ([Headless vs browser-only paths](#headless-vs-browser-only-paths)); the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)); and how a completed export actually reaches disk ([Download flow](#download-flow)).
+The sections below cover the pane and base detection ([The export pane](#the-export-pane-exportviewtsx)), targets and formats ([Targets × formats](#targets--formats)), visual/data mode ([Visual vs data render mode](#visual-vs-data-render-mode-bases)), content options ([Include/exclude frontmatter](#includeexclude-frontmatter), [Markdown syntax markers](#markdown-syntax-markers), [Page breaks](#page-breaks)), font embedding ([Font embedding](#font-embedding)), renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)), headless behavior ([Headless vs browser-only paths](#headless-vs-browser-only-paths)), the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)), and delivery to disk ([Download flow](#download-flow)).
 
 ## The export pane (`ExportView.tsx`)
 
@@ -156,7 +156,15 @@ own native pagination, and a line box or table row is simply never a candidate c
 first place. `printCss.ts`'s `WEBKIT_PRINT_HEAD` adds `break-inside: avoid` on `tr`/`table`/`img`/
 `svg`/`.katex-display` so a *block* doesn't straddle a page either (a table taller than one page
 still breaks internally — `avoid` is a preference, not a hard constraint at that scale). No
-measurement, no gate: the engine's own layout pass is the source of truth.
+measurement, no gate: the engine's own layout pass is the source of truth. A heading needs its own
+mechanism: WebKit ignores `break-after`/`break-before: avoid` on `h1`–`h6` outright, so a rule
+using either still let a heading get stranded alone at the foot of a page with its body on the
+next. What holds instead is a keep-with-next wrap — `WEBKIT_PRINT_HEAD`'s injected script (running
+inside the `document.fonts.ready` callback, before `document.title` is set to the ready marker)
+wraps every heading and its next sibling element in a `div.bismuth-keep`, and `break-inside: avoid`
+on that wrapper (not the heading itself) is what WebKit actually honours. `htmlTemplate.ts` also
+gives `table` a real bottom margin (`margin: 0 0 ${rule}px`) instead of relying on the
+table-then-caption element spacing to supply it.
 
 **html2canvas + jsPDF (the fallback — browser dev mode, iPad)** has no such engine underneath it:
 it rasterizes a DOM snapshot and slices the raster with arithmetic, so page boundaries have to be
@@ -222,7 +230,7 @@ colours `resolvePalette` already resolved:
 
 | | source | where |
 |---|---|---|
-| face | `--prose-font` (the proportional note face, Lora Variable) | `:root`, `styles/tokens.css` |
+| face | `--prose-font` (the proportional note face, Lora Variable) | `:root`, `global.css` (tokens section) |
 | leading | the app's own `calc(var(--row-h) * var(--prose-line-height))`, read back as a **ratio of the type** | `--prose-line-height` = `editor.lineHeight` |
 | colours | `--bg`/`--fg`/`--accent`/the category tokens | probed — see "html2canvas and modern CSS colors" |
 
@@ -258,7 +266,7 @@ reads the vault's own `.settings` (via `readSettings`) and builds a `ThemePalett
   when the vault has no `.settings` or leaves the key unset) and `appearance.editorFontSize`
   (falling back to `13.5`), using the **same ratio the live app's DOM probe computes**:
   `proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)`, where `ROW_H_PX = 18`
-  (the app's `--row-h` row unit) and `PROSE_SCALE = 1.04` (`styles/tokens.css`'s `--prose-scale`)
+  (the app's `--row-h` row unit) and `PROSE_SCALE = 1.04` (`global.css`'s `--prose-scale` (tokens section))
   are read from `exportTheme.ts`'s exported `PROSE_SCALE` and a local `ROW_H_PX`, so a change to
   either token in the app is the only place this can drift from.
 - **`monoFont`** — `appearance.uiFont` resolved through `FONT_STACKS` (the same setting and map
@@ -412,6 +420,15 @@ engine just renders the page).
   `Err("unsupported")` on any non-macOS target (iPad's native route is deferred — see the plan); any
   other error string is a real print failure. Registered in `lib.rs`'s `generate_handler!` as
   `print_pdf::print_pdf`; no `capabilities/default.json` entry, same as `open_path`/`set_ui_zoom`.
+  **Concurrency safety**: `print_pdf_blocking` runs on a `spawn_blocking` thread, never on an
+  async-runtime worker, and holds a process-wide `PRINT_LOCK` mutex for the whole call, so a second
+  concurrent `print_pdf` invocation (ExportView fires one per option change, plus `doExport` —
+  two concurrent calls are normal) waits rather than racing the first for the one `ACTIVE` session
+  and its delegate. `step_release` moves a still-pending session into a module-level `ORPHANS` list
+  instead of dropping it, so a session AppKit still holds a pointer to stays alive for the rest of
+  the process rather than being torn down under an in-flight operation. This fixes a real
+  use-after-free where a second concurrent call could let a second session replace `ACTIVE` while
+  AppKit still held a pointer to the first.
 - **`app/src/export/pdfPrint.ts`** — the engine chooser + fallback. `pickPdfEngine({ tauri })` picks
   `'webkit'` inside a Tauri webview, `'canvas'` everywhere else (the native command itself is what
   decides platform support and answers `"unsupported"` where it can't print — the picker doesn't

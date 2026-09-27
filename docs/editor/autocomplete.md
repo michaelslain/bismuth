@@ -1,8 +1,8 @@
 # Editor Autocomplete
 
-This is the reference for every autocomplete source in Bismuth's editors — read it when adding a new completion trigger or tracking down why two sources fight for the same keystroke.
+Bismuth's editors share a single CodeMirror `autocompletion()` extension for every completion source, registered in `app/src/editor/autocomplete.ts`. Use this reference when adding a completion trigger or tracking down why two sources fight for the same keystroke.
 
-All editor autocompletion in Bismuth is implemented as a single CodeMirror `autocompletion()` extension registered in `app/src/editor/autocomplete.ts`. Because multiple `autocompletion()` extensions conflict, every source — wikilinks, tags, emoji, frontmatter properties, task metadata, `query` block keys, and `.settings` fields — lives in one `override` array. The `.settings` editor uses a separate extension (`settingsComplete.ts`) registered only on the vault's `.settings` file. Each source is a pure `CompletionSource` function with a matching pure helper (in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`) that can be unit-tested without a browser.
+Because multiple `autocompletion()` extensions conflict, every source — wikilinks, tags, emoji, frontmatter properties, task metadata, `query` block keys, and `.settings` fields — lives in one `override` array. The `.settings` editor uses a separate extension (`settingsComplete.ts`) registered only on the vault's `.settings` file. Each source is a pure `CompletionSource` function with a matching pure helper (in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`) that can be unit-tested without a browser.
 
 ---
 
@@ -24,13 +24,15 @@ Sources are listed in the `override` array in the following order (first match w
 2. `iconValueSource` — `icon:` value (gated to frontmatter)
 3. `enumValueSource` — enum property value (gated to frontmatter)
 4. `tagListSource` — `tags:` value comma list (gated to frontmatter)
-5. `querySource` — inside a ` ```query ` block
-6. `taskSource` — on a `- [ ]` task line
-7. `templateTokenSource` — `{{token}}` in body or frontmatter
-8. `wikilinkSource` — `[[wikilink]]`
-9. `memoryRefSource` — `??memory-ref` (only when the host supplies `getMemories`)
-10. `tagSource` — `#tag`
-11. `emojiSource` — `:emoji:`
+5. `slashSource` — `/` at the start of a line (composer-only opt-out via `slashMenu: false`)
+6. `querySource` — inside a ` ```query ` block
+7. `taskSource` — on a `- [ ]` task line
+8. `templateTokenSource` — `{{token}}` in body or frontmatter
+9. `atMentionSource` — `@file` mention (only when the host supplies `getFiles`; composer-only)
+10. `wikilinkSource` — `[[wikilink]]`
+11. `memoryRefSource` — `??memory-ref` (only when the host supplies `getMemories`)
+12. `tagSource` — `#tag`
+13. `emojiSource` — `:emoji:`
 
 ---
 
@@ -42,13 +44,13 @@ Sources are listed in the `override` array in the following order (first match w
 
 **Behavior:**
 - Calls `getNotes()` lazily on each popup open to get the current vault's note list.
-- Each option shows the note's basename as `label` and its top-level folder as `detail`.
-- The `apply` function checks whether `]]` is already immediately ahead of the cursor (to avoid double `]]`). If it is, inserts just the label; otherwise appends `]]`. In both cases the cursor lands just past the `]]`.
+- Each option shows the note's basename as `label` and its **full parent directory path** (`dirOf(path)`, `''` at vault root) as `detail` — not just the top-level folder.
+- The `apply` function inserts `o.target`, not the bare label: `target` is the bare basename (`baseOf(path)`) when it is unique among the vault's notes, but the **full vault path** when another note shares that basename — this is `wikilinkOptions()` (`wikilinkOptions.ts`), counted by `baseOf(path)` over the whole candidate list. It then checks whether `]]` is already immediately ahead of the cursor (to avoid double `]]`); if not, it appends `]]`. In both cases the cursor lands just past the `]]`.
 - `validFor: /^[^\]\n]*$/` — the popup stays open as long as the typed text contains no `]` or newline.
 
-**Example:** Typing `[[Proj` opens a popup listing all notes; picking "Project Alpha" inserts `[[Project Alpha]]` with the cursor after `]]`.
+**Example:** Typing `[[Proj` opens a popup listing all notes; picking "Project Alpha" (a unique basename) inserts `[[Project Alpha]]` with the cursor after `]]`. If a second note anywhere in the vault is also named "Project Alpha.md", picking either one instead inserts its full path, e.g. `[[work/Project Alpha]]`.
 
-**Note resolution:** `resolveNotePath` in `wikilink.ts` matches exact vault paths first, then basenames. `[[My Note]]` matches `reading/My Note.md` by basename. Ambiguous matches are undefined.
+**Note resolution:** `resolveNotePath` in `wikilink.ts` matches exact vault paths first, then basenames via `pickByBase` (`core/src/linkTarget.ts`). `[[My Note]]` matches `reading/My Note.md` by basename. A basename collision is no longer left undefined — `pickByBase` deterministically picks one match via `preferId` (shortest path wins; a tie breaks alphabetically).
 
 ---
 
@@ -182,6 +184,59 @@ updates.
 
 ---
 
+## Slash Block-Insert Menu (`/`)
+
+**File:** `app/src/editor/slashComplete.ts` → `slashSource`, catalog + pure matcher in `slashMenu.ts`
+
+**Trigger:** The `/` must be the **first content character on the line** (Notion-style), ignoring leading indentation and an optional list/number marker — `/^(\s*(?:[-*+]\s+|\d+[.)]\s+)?)\/(\w*)$/` (`matchSlashPrefix`). This is what keeps the menu quiet on a mid-text slash (`and/or`, a file path, `TODO: 6/9`) while still firing after a `- ` bullet or `1. ` number. Gated out of frontmatter (the property sources own that position) and out of a fenced code/query block (`inCodeFence`).
+
+**Behavior:**
+- `filterSlashItems` ranks the catalog against the typed query in three tiers — exact label/keyword match, prefix match, subsequence match (`tbl` finds "table", `h1` finds "Heading 1") — ties keep declared order; an empty query returns the whole catalog in declared order.
+- Each item's `apply` replaces the `/query` span with its `snippet`, a literal string with a single `$0` marking where the caret lands (`parseSnippet`). An item with `reTrigger: true` calls `startCompletion(view)` after inserting, so e.g. picking "Link to note" immediately re-opens completion with the wikilink source live inside the fresh `[[]]`.
+- `filter: false` (the source owns ranking) and no `validFor` — it re-queries every keystroke, so the list narrows live and a space or other non-word character closes the menu.
+
+**Item catalog** (`SLASH_ITEMS` in `slashMenu.ts`, in declared/default order), plus one dynamic item (today's date) appended after it:
+
+| Item | Snippet inserted | Notes |
+|---|---|---|
+| Heading 1 / 2 / 3 | `# `, `## `, `### ` | |
+| Bulleted list | `- ` | |
+| Numbered list | `1. ` | |
+| Task | `- [ ] ` | |
+| Quote | `> ` | |
+| Callout | a `> [!note]` block | |
+| Table | a starter GFM pipe table | |
+| Code block | a ` ``` ` fence | |
+| Query block | a ` ```query ` fence | `reTrigger: true` — re-opens completion so `querySource` can offer keys inside the fresh fence |
+| **Query builder** | *(no snippet — opens a modal instead)* | `action: 'queryBuilder'`; only offered when the host supplies `getHostPath` (the note Editor only, never the chat composer or a table cell) — see below |
+| Graph block | a ` ```graph ` fence | embedded editable node/edge graph |
+| Math block | a `$$` block | |
+| Divider | a leading blank line + `---` | the blank line forces a real `<hr>` rather than a SETEXT heading underline |
+| Page break | `<!-- pagebreak -->` | invisible on screen; the PDF exporter slices a new page at it |
+| Link to note | `[[]]` | `reTrigger: true` |
+| Embed | `![[]]` | `reTrigger: true` |
+| Properties | a `---`/`tags: `/`---` frontmatter block | `when: 'docStart'` — offered only when the `/` sits at the true start of the document (line 1, column 0) **and** no frontmatter block already exists below, so a stray `/` above existing frontmatter can't insert a second `---` block |
+| Today's date | today's ISO date | built dynamically (`dateItem()`), not part of the static catalog, so it can't go stale |
+
+**The "Query builder" item** deletes the `/…` trigger text, opens the `QueryBuilder` modal (dynamically imported, since it transitively pulls in a Solid component bun's headless test transform can't compile), and on confirm inserts the generated ` ```query ` fence at the trigger's original position; on cancel nothing is inserted. The position-tracking lives in `queryBuilderInsert.ts`.
+
+---
+
+## `@`-Mention Completion (chat composer only)
+
+**File:** `app/src/editor/autocomplete.ts` → `atMentionSource`, matcher in `atMention.ts`
+
+Lets the chat composer's `@file` mention reference any vault file, wired into the same shared `override` array as every other source but gated on `opts.getFiles` — the note editor and table cells supply no `getFiles`, so the source is simply absent there (`atMentionSource` is never added to the array).
+
+**Trigger:** `matchAtMentionPrefix` (`atMention.ts`), and only outside code (`inCode`/`inInlineCode` both return `false`) — `@` is left literal in a code span or block (decorators, npm scopes).
+
+**Behavior:**
+- `rankFileCandidates(getFiles(), query)` ranks the full vault file list against the typed query, capped at 50 results; each option shows the file's label with its folder as `detail`.
+- `filter: false` (own ranking) and no `validFor` — re-queries every keystroke, mirroring the emoji source.
+- `apply` fires the optional `onPick(path)` callback (so `ChatView` can wire the picked file into the chat's context via `chatContext.ts`) and inserts `[[Name]] ` — built from the display label, so the popup pick and the inserted text always agree — with the caret parked just past the trailing space.
+
+---
+
 ## Template Token Completion (`{{token}}`)
 
 **File:** `app/src/editor/autocomplete.ts` → `templateTokenSource`, helpers in `templateToken.ts`
@@ -249,7 +304,9 @@ before the cursor.
 
 ### Mode 1: Keyword → Bracket Field
 
-**Trigger:** The trailing word before the cursor is a "keyword" context — no open date/recurrence bracket immediately before it (see modes 2/3). Suppressed unless `context.explicit` is true OR the typed word is ≥ 2 characters. A keyword typed right after an **open bracket** the user typed by hand (`[due`) is matched too — `/(?<![\p{L}\[])(\[?)([\p{L}]+)$/u` — and `from` is set to the bracket's own position rather than past it, so accepting the completion **replaces** the existing `[` instead of inserting a second one next to it. The lookbehind excludes a preceding letter as well as `[`, which is what keeps `[[due` (a wikilink being typed) from matching a truncated `ue` and completing into the middle of it.
+**Trigger:** The trailing word before the cursor is a "keyword" context — no open date/recurrence bracket immediately before it (see modes 2/3). Suppressed unless `context.explicit` is true OR the typed word is ≥ 2 characters. `classifyTaskContext` runs **two separate matches**, each with its own guard, rather than one combined regex with an optional `[?`:
+- The **bracket arm**, `/(?<!\[)\[([\p{L}]+)$/u`, fires on a keyword typed right after an **open bracket** the user typed by hand (`[due`); `from` is set to the bracket's own position rather than past it, so accepting the completion **replaces** the existing `[` instead of inserting a second one next to it. Its only guard is `(?<!\[)` (keep a wikilink's second `[` out) — a preceding **letter** is allowed, so `pay[due` completes too, matching what `parseFields` (`core/src/taskFields.ts`) already accepts.
+- The **bare-word arm**, `/(?<![\p{L}\[])([\p{L}]+)$/u`, fires on a bare keyword with no open bracket. Its lookbehind excludes a preceding letter as well as `[`, which is what keeps `[[due` (a wikilink being typed) from matching a truncated `ue` and completing into the middle of it.
 
 **Behavior:** Calls `matchTaskFields(query)` which returns all `TASK_FIELDS` entries where any keyword starts with the query (case-insensitive). Selecting a field inserts the bracket opener (and, for a bare priority field, the whole closed bracket) then, for a dated or recurring field, calls `startCompletion(view)` to immediately re-open the popup for the value (mode 2 or 3).
 
@@ -522,4 +579,4 @@ Inside the `properties:` section the key completion is suppressed (property name
 - Keybinding catalog: `core/src/keybindings.ts`
 - Template expansion: `core/src/templates.ts`
 
-Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `app/src/propertyRegistry.ts`, `app/src/serverVersion.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`
+Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/editor/slashComplete.ts`, `app/src/editor/slashMenu.ts`, `app/src/editor/queryBuilderInsert.ts`, `app/src/editor/atMention.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/wikilinkOptions.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `app/src/propertyRegistry.ts`, `app/src/serverVersion.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/linkTarget.ts`

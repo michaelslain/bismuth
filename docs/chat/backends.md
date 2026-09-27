@@ -1,10 +1,9 @@
 # Agent backends — the catalog, the capabilities, the six surfaces
 
-Bismuth drives **agent CLIs**. Claude Code is the default and the most deeply integrated, but the
-integration is no longer written around it: which CLIs exist, and what each one can do, is **data**
-in one catalog that every surface reads.
+Bismuth drives **agent CLIs**. Claude Code is the default and the most deeply integrated, but which
+CLIs exist and what each one can do is **data** in one catalog that every surface reads.
 
-Start here for the model. Per-surface detail lives in [providers.md](providers.md) (chat),
+This page is the model. Per-surface detail lives in [providers.md](providers.md) (chat),
 [../terminal/overview.md](../terminal/overview.md), [../daemon/overview.md](../daemon/overview.md),
 and [../mcp/overview.md](../mcp/overview.md).
 

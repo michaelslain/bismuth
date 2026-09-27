@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor: every GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells. Read this if you're touching table editing, cell rendering, or diagnosing a table-widget bug.
+Bismuth renders every GFM pipe table in a note as a fully interactive `<table>` DOM widget with contenteditable cells, edited live inside the CodeMirror editor. Use this reference for table editing, cell rendering, or diagnosing a table-widget bug.
 
 ### Widget features at a glance
 
@@ -634,7 +634,7 @@ The widget wires the nested editor via `CellEditorHooks`. The highest-precedence
 | `Shift+Tab` | `onNav("prev")` (previous cell). |
 | `Escape` | Popup open → let the completion keymap close it; else `onEscape()` (blur → commit). |
 | `Enter` | Popup open → defer to the completion keymap (accept). Non-last row → defer to `enterKeymap` (list continuation or a plain in-cell newline). Last row: on a list/blockquote line (`LIST_OR_QUOTE_LINE`) defer to `enterKeymap`; otherwise `onGrowRow()` — append a blank body row and drop the caret into it (#42). |
-| `Ctrl-Space` | `startCompletion`. |
+| `Ctrl-Space` (default) | `startCompletion`. Not hardcoded like the rows above — wired via `buildSettingsKeymap([{ id: 'open-completion', run: startCompletion }])` (`settingsKeymap.ts`), the same `open-completion` catalog id (`core/src/keybindings.ts`) every other editing surface uses, so `Ctrl-Space` here is only the default and rebinding `open-completion` in `.settings` retargets it too — see [keybindings](../settings/keybindings.md#the-full-keybinding_catalog). |
 
 `onGrowRow` sets `pendingCellFocus = { r: cells.length, c }` then commits `insertRow(g, g.cells.length)`; the rebuilt widget claims that pending focus by document position (#42/#62). Focus lands with `preventScroll` (#50), and the caret is placed at the click coordinates (`posAtCoords(atCoords)`) when the cell was entered by click, else at the doc end.
 
@@ -709,4 +709,4 @@ Native rich-text shortcuts that would inject `<b>`, `<i>`, `<u>` HTML elements i
 
 The separator row does not exist in the DOM (it is consumed during parse). The context menu rows all count from the `cells` grid, where row 0 is the header. "Delete row" is disabled when only the header row exists (`rowCount <= 1`).
 
-Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/tableResizeDrag.ts`, `app/src/editor/cellEditor.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/inlineMarkdown.ts`, `app/src/editor/tableModel.test.ts`, `app/src/editor/inlineMarkdown.test.ts`, `app/src/editor/livePreview.ts`
+Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/tableResizeDrag.ts`, `app/src/editor/cellEditor.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/settingsKeymap.ts`, `app/src/editor/inlineMarkdown.ts`, `app/src/editor/tableModel.test.ts`, `app/src/editor/inlineMarkdown.test.ts`, `app/src/editor/livePreview.ts`

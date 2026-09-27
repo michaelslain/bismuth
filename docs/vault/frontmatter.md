@@ -1,6 +1,6 @@
 # Frontmatter: Parsing, Mutation, Property Registry, and Bases Integration
 
-This document covers everything Bismuth does with YAML frontmatter — for anyone editing note metadata, building editor autocomplete/lint, or querying notes through Bases. It covers:
+YAML frontmatter is how Bismuth stores note metadata. This page covers:
 
 - How frontmatter is parsed (tolerantly) from markdown files
 - How individual keys are set or deleted while preserving formatting
@@ -270,7 +270,8 @@ All valid type values accepted in `properties:`:
 | `datetime` | ISO-8601 string or `Date` | Parsed via `Date.parse`; any valid ISO string passes |
 | `file` | `string` (note path or `[[WikiLink]]`) | Resolved via wikilink extraction; a missing link produces a **warning** (not an error) |
 | `icon` | `string` | Any string passes — a Lucide icon name or emoji; never flagged |
-| `keybind` | `string` | Any string passes (validated leniently); used only in `.settings` |
+
+`keybind` is a real `PropertyType` internally, but only for the settings schema's own `keybindings` object — `SCALAR_PROPERTY_TYPES` (the set `parseType` actually recognizes for a user's `properties:` map) does not include it, so declaring `type: keybind` on a property silently falls back to `type: string` rather than being rejected. Validation behavior ends up identical either way (any string passes), so this only matters if you're relying on the declared type name itself.
 
 #### Composite types (object form)
 

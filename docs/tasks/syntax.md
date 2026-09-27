@@ -16,14 +16,13 @@ below. Every task is one markdown checkbox line; the parser tracks its
 source file and 0-indexed line number so the line can be toggled,
 rescheduled, or rewritten back in place.
 
-This document is the canonical reference for the exact task line shape,
-checkbox status characters, the bracket-field grammar (and its disambiguation
-rules against wikilinks/markdown links and plain bracketed text), recurrence
-rules, tag handling, the completion/toggle behaviors, migrating a vault off
-the old emoji spelling (automatic and manual), what the old emoji syntax
-used to mean, and how resolved tasks sink/fold/archive within a block — all
-drawn directly from `core/src/taskFields.ts`, `core/src/tasks.ts`,
-`core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`,
+This page covers the exact task line shape, checkbox status characters, the
+bracket-field grammar (and its disambiguation against wikilinks, markdown
+links, and plain bracketed text), recurrence rules, tag handling, the
+completion/toggle behaviors, migrating a vault off the old emoji spelling
+(automatic and manual), what the old emoji syntax meant, and how resolved
+tasks sink/fold/archive within a block — drawn from `core/src/taskFields.ts`,
+`core/src/tasks.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`,
 `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`,
 `app/src/editor/taskFold.ts`, and `app/src/editor/taskComplete.ts`.
 
@@ -35,25 +34,30 @@ source — `source: tasks` — and `mode: tasks` is what makes any other base
 view render its rows as tasks), [calendar view](../bases/views/calendar.md)
 (the tasks register places, drags, and creates tasks on a grid).
 
-**What's in here**: the exact [task line](#the-task-line) shape and [checkbox
+**In this page**: the [task line](#the-task-line) shape and [checkbox
 status characters](#checkbox-status-characters); the
 [bracket-field grammar](#the-bracket-field-grammar) and its
 [disambiguation rules](#disambiguation-a-bracket-group-is-not-always-a-field);
 every [date](#date-fields), [priority](#priority), and
 [recurrence](#recurrence) field; how [tags](#tags) and the
 [description](#description) are derived; how [toggling a task](#toggling-tasks-completion)
-and [rescheduling by drag](#rescheduling-a-date-field) write back — always in
+and [rescheduling by drag](#rescheduling-a-date-field) write back, always in
 bracket form, always ISO; [migrating a vault off the old emoji
 syntax](#migrating-from-the-emoji-syntax), automatically and by hand with
-[`bismuth task migrate`](#bismuth-task-migrate); [what the emoji syntax used
-to mean](#history-the-emoji-signifiers), for anyone reading an un-migrated
-note or an old export; how resolved items
+[`bismuth task migrate`](#bismuth-task-migrate); [what the emoji syntax
+meant](#history-the-emoji-signifiers), for reading an un-migrated note or an
+old export; how resolved items
 [sink, fold, and archive](#task-blocks-sinking-folding-archiving) within a
 block; and the full [`Task` object shape](#the-task-object-shape).
 
 ## The task line
 
-A task line is matched by this regex (`core/src/tasks.ts`):
+A task line is matched by this regex (`TASK_LINE`, defined in
+`core/src/taskParse.ts` — split out of `core/src/tasks.ts` so the frontend
+can value-import the parser without pulling in `tasks.ts`'s `fileAccess.ts`/
+`node:fs` dependency; `tasks.ts` re-exports `TASK_LINE`, `parseTaskLine`, and
+`extractTasks` unchanged, so every existing `from "./tasks"` importer keeps
+working):
 
 ```
 /^(\s*)[-*+] \[(.)\] (.*)\r?$/
@@ -576,8 +580,14 @@ local git snapshot taken first, and a report afterward** — never a
 confirmation dialog. `core/src/taskMigrateRun.ts`'s `runTaskMigration(root)`
 runs once, fire-and-forget, right after the vault opens (desktop/dev only —
 see below), and its report is served from `GET /tasks/migration`, which
-`app/src/App.tsx` polls once on mount (retrying after 2 seconds if the pass
-is still running).
+`app/src/App.tsx` polls once on mount. If the report still reads `ran:
+null` (the migration is still running — on a large vault the server's own
+tree build can push the scan's start well past a single fixed retry), it
+keeps polling on an **exponential backoff schedule**: 2s, 4s, 8s, 16s, …
+doubling each time, capped at a 60s total elapsed budget
+(`migrationPollDelays()`, `app/src/migrationPoll.ts` — pure and
+unit-tested apart from `App.tsx`). Once the budget is exhausted with no
+result, it gives up silently.
 
 The pass, in order:
 
@@ -606,7 +616,7 @@ Toasted outcomes (`app/src/App.tsx`), by example:
 
 | Outcome | Toast |
 | --- | --- |
-| Converted | `Converted 34 task lines in 9 notes to the bracket syntax · snapshot taken` (the `· snapshot taken` suffix is omitted when the vault's git repo was already clean, so no new commit was needed — HEAD is just as recoverable) |
+| Converted | `Converted 34 task lines in 9 notes to the bracket syntax // snapshot taken` (the `// snapshot taken` suffix is omitted when the vault's git repo was already clean, so no new commit was needed — HEAD is just as recoverable) |
 | Blocked (snapshot failed) | `Task syntax could not be converted — a vault snapshot failed, so nothing was changed` |
 | Some lines flagged | `2 lines could not be converted — see the console` (plus one `task migration: could not convert <file>:<line> — <text>` console warning per line) |
 | Some notes skipped | `3 notes were left un-migrated — see the console` (plus one console warning per file, naming the reason: `not-snapshotted`, `unreadable`, `modified-during-migration`, or `write-failed`) |
@@ -949,4 +959,4 @@ The pre-migration spelling of the same task —
 the vault is opened, or by running `bismuth task migrate` by hand; the
 parser itself no longer reads it.
 
-Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`
+Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskParse.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/migrationPoll.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`

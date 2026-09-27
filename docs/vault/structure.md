@@ -1,6 +1,6 @@
 # Vault Structure
 
-This document covers how Bismuth models a vault — the markdown file tree that constitutes the "2nd brain" — from graph construction to file I/O to the sidebar UI that renders and edits it. It's the reference for anyone working on any of those three layers. Specifically, it covers:
+A vault is Bismuth's markdown file tree, the "2nd brain". This page covers how it becomes graph nodes and edges, its file I/O, and the sidebar UI that renders and edits it:
 
 - How notes are discovered and turned into graph nodes and edges (the two-pass algorithm in `buildVaultGraph`)
 - The shared `buildGraphFromNotes` helper

@@ -1,6 +1,8 @@
 # Storage: Where Everything Is Kept
 
-This document exhaustively covers every on-disk and in-browser location that Bismuth reads or writes, including vault file conventions, settings, the layout cache, localStorage keys, the daemon's machine + per-vault state, git snapshots, and the relay plugin's PTY environment. Each section describes the path, format, ownership, and any edge-case behaviour verified in the source and tests.
+This page maps the on-disk and browser storage Bismuth reads and writes: vault files, settings,
+layout cache, `localStorage`, daemon state, git snapshots, and the relay plugin's PTY environment.
+Each section records the path, format, ownership, and relevant edge cases.
 
 ---
 
@@ -409,11 +411,12 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 |-----|------|---------|
 | `bismuth-tabs-v1` | `App.tsx` | Serialized tab/pane layout (restored on next launch) |
 | `bismuth-sidebar-visible-v1` | `App.tsx` | Sidebar visible/hidden boolean (`"1"` / `"0"`) |
-| `bismuth-graph-cache-v1` | `App.tsx` | Last fetched `GraphData` (structure only, no `views` layouts); seeds the graph on boot so it paints instantly |
+| `bismuth-tab-rail-pinned-v1` | `App.tsx` | Right tab rail held-open boolean (`"1"` / `"0"`); toggled by the "Toggle tab rail" command/keybinding, defaults OFF (hover-to-expand still works) |
+| `bismuth-graph-cache-v2` | `App.tsx` | Last fetched `GraphData` (structure only, no `views` layouts); seeds the graph on boot so it paints instantly |
 | `bismuth-theme-vars-v1` | `App.tsx` | CSS variable map for the active theme; also read by an inline `<head>` script in `index.html` to apply the theme before the bundle loads |
 | `bismuth-settings-cache-v1` | `app/src/settings.ts` | Last hydrated `Settings` object; seeds the reactive store on the next launch |
 | `three-brains.settings` | `app/src/settings.ts` | **Legacy key** — read once for first-launch migration, then removed |
-| `oa:graph:viewMode` | `app/src/GraphView.tsx` | 2D / 3D toggle (`"2d"` or `"3d"`); **not** in `.settings` |
+| `bismuth:graph:viewMode` | `app/src/GraphView.tsx` | 2D / 3D toggle (`"2d"` or `"3d"`); **not** in `.settings` |
 | `bismuth-folds:<vault-relative-path>` | `app/src/editor/foldBlocks.ts` | Set of locked-open fold block ids per note; absent = no locks |
 | `three-brains.harper` | `app/src/editor/harperStore.ts` | Harper spell-checker personal dictionary and ignored lints (`{ words, ignoredLints }`) |
 
@@ -476,10 +479,11 @@ $BISMUTH_VAULT/.daemon/                 # this vault's daemon BRAIN (per-vault) 
 Browser localStorage:
   bismuth-tabs-v1                         # tab/pane layout
   bismuth-sidebar-visible-v1              # sidebar state
-  bismuth-graph-cache-v1                  # last GraphData for instant boot paint
+  bismuth-tab-rail-pinned-v1              # right tab rail held-open state
+  bismuth-graph-cache-v2                  # last GraphData for instant boot paint
   bismuth-theme-vars-v1                   # CSS variable map for pre-bundle theme apply
   bismuth-settings-cache-v1               # last Settings object for instant boot seed
-  oa:graph:viewMode                  # "2d" or "3d" toggle (not in .settings)
+  bismuth:graph:viewMode             # "2d" or "3d" toggle (not in .settings)
   bismuth-folds:<path>                    # per-note locked fold block ids
   three-brains.harper                # Harper spell-checker state
   three-brains.settings              # legacy key (imported once, then deleted)

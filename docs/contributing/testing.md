@@ -1,8 +1,13 @@
 # Testing
 
-This is the canonical reference for how tests work in Bismuth — read it before writing a test, running the suite, or touching the commit/push gates. It covers the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the `bun run typecheck` TypeScript gate, and a tour of every key test file and the patterns they establish.
+Use this reference before writing a test, running the suite, or changing the commit/push gates. It
+covers the test runner, file conventions, the suite across `core/` and `app/`, test filtering,
+adding tests, the `bun run typecheck` gate, and the key test-file patterns.
 
-**In this doc:** the commit/push gate and what it runs · upgrade-safety tests · running and filtering tests · the TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault test helper · a tour of key test files · how to add a new test · the `bench/` visual-verification toolchain · what Bun does not test.
+**In this doc:** commit/push gates · upgrade-safety tests · running and filtering tests · the
+TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault
+test helper · key test files · adding a test · the `bench/` visual-verification toolchain · what
+Bun does not test.
 
 ---
 
@@ -1179,15 +1184,15 @@ design token instead: a literal non-zero px `border-radius` (any longhand corner
 excepted), `padding`/`margin`/`gap` (and their longhands), a `box-shadow` with a non-zero blur
 radius, any `backdrop-filter` other than `none`, or a hardcoded hex/`rgb()`/`rgba()` colour. Only
 the colour rule reads inside custom-property (`--foo: …`) declarations — the rest exempt them,
-because the token layer itself (`styles/tokens.css`) is who is allowed to write the literal a
+because the token layer itself (the tokens section of `global.css`) is who is allowed to write the literal a
 component later reads via `var(...)`.
 
 **The design-system gate below ALSO flags hardcoded colour, border-radius and font-size, and the
 two do not fully overlap** (reconciled 2026-09-18, ds-conformance final review Important #1, after
 task 24 first removed these rules on the false claim they were now redundant; updated again after
 task 2 the same day widened the design-system gate's own checks — see `checks.mjs`'s change log for
-the exact deltas). The design-system gate now scans the global layer too (`governance.global` files —
-`ui/ui.css`, `App.css`, `styles/**`, and friends — with only the token files themselves excepted),
+the exact deltas). The design-system gate now scans the global layer too (`governance.global` — now the one file,
+`app/src/global.css`, with only its token definitions excepted),
 checks colour on the `border-top`/`-right`/`-bottom`/`-left` shorthands, `background-image` and any
 custom property in addition to its base allowlist, strips `var(--x, <fallback>)` calls before
 testing for a literal (so a literal *sibling* to a `var()` call is caught, though a literal *inside*

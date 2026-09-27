@@ -1,9 +1,9 @@
 # Chat providers (Claude Code / opencode)
 
-> **Scope.** This page is the deep reference for the two **natively driven** providers below. The
-> backend model that governs all of them — the catalog, the capability flags that decide which header
-> controls render, the other five integration surfaces, and the shared ACP driver that covers
-> additional CLIs — is in [backends.md](backends.md). Read that first if you are adding a backend.
+> **Scope.** This page covers the two **natively driven** providers below. The backend model that
+> governs all of them — the catalog, the capability flags that decide which header controls render,
+> the other five integration surfaces, and the shared ACP driver that covers additional CLIs — is in
+> [backends.md](backends.md). Read that first if you are adding a backend.
 >
 > Where this page says a control is hidden "for opencode", the mechanism is now a capability flag on
 > the backend descriptor, not a provider comparison: `providerCan(provider, "permissionModes")` and

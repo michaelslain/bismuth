@@ -1,10 +1,9 @@
 # Status messages
 
-What the messages Bismuth shows actually mean, and what (if anything) you should do about
-them. Short-lived pop-ups (toasts, top-right) come from `pushToast` (`app/src/Toast.tsx`). The
-connection messages below are both driven by the `ConnectionState` tracked in
-`app/src/serverVersion.ts`: the status-bar label is rendered from it in `app/src/App.tsx`, and
-the toast is pushed directly from `serverVersion.ts` itself.
+This page explains Bismuth's messages and the action, if any, they call for. Short-lived pop-ups
+(top-right toasts) come from `pushToast` (`app/src/Toast.tsx`). The connection messages below use
+the `ConnectionState` in `app/src/serverVersion.ts`: `app/src/App.tsx` renders the status-bar
+label, while `serverVersion.ts` pushes the toast.
 
 ## The connection
 

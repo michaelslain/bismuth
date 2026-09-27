@@ -64,8 +64,8 @@ The view re-runs this framing logic reactively whenever `result` changes (e.g., 
 - **Pan**: left-click drag anywhere on the map. The cursor changes to `grabbing` during drag.
 - **Zoom wheel**: scroll up to zoom in, scroll down to zoom out. The world point under the cursor stays anchored (cursor-anchored zoom).
 - **Zoom buttons**: `+` and `−` buttons in the top-right controls panel zoom around the map center.
-- **Reset (Compass button)**: resets center and zoom back to the computed initial framing.
-- **Locate button**: same as Reset — re-centers and re-fits on the current markers. (Both buttons call the same `initialView()` logic.)
+- **Reset (`RotateCcw` icon button, "Reset view")**: resets center and zoom back to the computed initial framing.
+- **Locate button (`Pin` icon button, "Locate notes")**: same as Reset — re-centers and re-fits on the current markers. (Both buttons call the same `initialView()` logic.)
 - Zoom is clamped to `[1, 18]`.
 
 ## Settings Integration
@@ -82,8 +82,8 @@ Two `.settings` entries affect the map view — `mapDefaultZoom` lives under `gr
 The map renders several overlaid elements:
 
 - **SVG basemap** — sea background, graticule grid (30° meridians, 20° parallels; equator and prime meridian drawn bolder), and landmass polygons.
-- **Marker layer** — absolutely positioned `<div>` pins above the SVG. Each pin has a text label chip and a teardrop indicator.
-- **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo buttons (Compass / LocateFixed icon).
+- **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator.
+- **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Pin` locate).
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
 - **Attribution badge** (bottom-right) — `WifiOff` icon + "Offline vector" label, plus a marker count (`N places`) when markers are present.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.

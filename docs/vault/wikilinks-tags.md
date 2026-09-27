@@ -1,6 +1,6 @@
 # Wikilinks and Tags
 
-This document is the exhaustive reference for how Bismuth extracts `[[WikiLink]]` wikilinks and `#tag` tags from vault notes, how both are resolved into graph nodes and edges, what ambiguity rules govern filename-based link resolution, and how the editor surfaces autocomplete for both syntax forms. The extraction logic lives in `core/src/wikilinks.ts` and `core/src/tags.ts`; the graph integration lives in `core/src/vault.ts`; the editor autocomplete helpers live in `app/src/editor/wikilink.ts` and `app/src/editor/tag.ts`.
+Bismuth extracts `[[WikiLink]]` wikilinks and `#tag` tags from vault notes, resolves both into graph nodes and edges, and applies ambiguity rules to filename-based link resolution; the editor surfaces autocomplete for both syntax forms. Extraction: `core/src/wikilinks.ts` and `core/src/tags.ts`. Graph integration: `core/src/vault.ts`. Editor autocomplete: `app/src/editor/wikilink.ts` and `app/src/editor/tag.ts`.
 
 ---
 

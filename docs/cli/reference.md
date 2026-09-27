@@ -1,10 +1,20 @@
 # Bismuth CLI Reference
 
-The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace — the reference for anyone scripting a vault, wiring it into an agent, or driving it from a terminal instead of the app. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live.
+`bismuth` is the `@bismuth/cli` workspace: a shell interface for scripting a vault, connecting an
+agent, or working without the app. It is a thin wrapper over `@bismuth/core`; nearly every command
+works directly against vault files, without a running HTTP server. If the app is running, its file
+watcher picks up those writes.
 
-A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/rename/pin/reorder/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), `update status`/`update apply`, `gcal status/connect/sync/disconnect` (`gcal targets`/`gcal health` are headless — see the [gcal section](#google-calendar-sync-commands-commandsgcalts)), `relay list` (needs a running server — see that section), and `serve` itself, which *starts* the server.
+A few commands need a live server: `api` (in-memory server state or any route), the
+**`app`-control commands** (`app windows/tabs/open/close/focus/rename/pin/reorder/run/commands`,
+which drive a running Bismuth window over `/ui/*`; see [App-control commands](#app-control-commands-commandsappts)
+for discovery precedence), `update status`/`update apply`, `gcal status/connect/sync/disconnect`
+(`gcal targets`/`gcal health` are headless; see the [gcal section](#google-calendar-sync-commands-commandsgcalts)),
+`relay list`, and `serve`, which starts the server.
 
-This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model — jump to the [Command index](#command-index-by-domain) for a table of every command grouped by domain, vault requirement, and output shape.
+This page covers every command in `cli/src/commands/*.ts`, its flags, shared environment variables,
+output conventions, and dispatch rules. The [Command index](#command-index-by-domain) groups
+commands by domain, vault requirement, and output shape.
 
 ## Invocation & Binary
 

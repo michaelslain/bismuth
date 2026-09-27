@@ -1,10 +1,10 @@
 # Themes & Palette System
 
-This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. Read it if you're picking exact color values, wiring a new themed component, debugging a color mismatch, or adding a fifth theme (see [Adding a New Theme](#adding-a-new-theme)). For the `appearance` section's non-color keys (sizing, fonts by name) alongside every other setting, see the [Settings Reference](reference.md).
+This page covers Bismuth's named themes, the `appearance` settings that select them, the `:root` CSS-variable projection, graph accents, and editor fonts. Use it when choosing a token, wiring a themed component, investigating a color mismatch, or adding a fifth theme (see [Adding a New Theme](#adding-a-new-theme)). The [Settings Reference](reference.md) covers the rest of `appearance` and every other setting.
 
-The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
+A theme supplies the app's colors for canvas, surfaces, borders, text, accents, graph nodes, terminal, and category swatches from one place, with no per-color overrides. `core/src/theme/tokens.ts` owns those definitions so core consumers — Google Calendar color mapping, drawing paper and ink, and the settings-schema enum — can import them, and core cannot import `app` (the dependency runs app → core). `app/src/themes.ts` is a thin, byte-identical re-export so the frontend keeps its `"./themes"` import path; `app/src/settingsCssVars.ts` projects its tokens into CSS variables.
 
-The four themes are the **ASCII redesign's** four scopes (`bismuth-design/ascii/design-system/tokens/colors.css`): `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream + indigo, light).
+The ASCII redesign defines four themes in `bismuth-design/ascii/design-system/tokens/colors.css`: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), and `riso` (cream + indigo, light).
 
 ---
 
@@ -292,7 +292,7 @@ before — only the shape of what it returns changed. `settingsCssVars.ts` proje
 `--shadow-hard`.
 
 `hard` is **not itself a box-shadow value** — it is the flat shadow *color* that the actual depth cue
-composites against. That cue is `--lift`, defined once in `app/src/styles/tokens.css` (not
+composites against. That cue is `--lift`, defined once in the tokens section of `app/src/global.css` (not
 per-theme):
 
 ```css
@@ -329,9 +329,9 @@ shadow at all.
 This is the **one ramp** that used to be hand-copied — and had drifted — into four places; all now source from `tokens.ts`:
 
 - **Drawing toolbar** (`core/src/drawing/theme.ts`): `themeColors()` reads `THEMES[…]` / `DEFAULT_THEME` for a drawing's paper + default ink (dark → `ink`, light → `paper`).
-- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the App.css default `#93BDB0`, the ink accent).
+- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the `global.css` default `#93BDB0`, the ink accent).
 - **gcal color map** (`core/src/gcal/colors.ts`): resolves category tokens via `CATEGORY_SWATCHES` and the `accent` token via `THEME_ACCENTS` before snapping to the nearest Google event color.
-- **App.css `:root` fallbacks**: the first-paint literal values mirror these swatches (documented in `tokens.ts`).
+- **`global.css` `:root` fallbacks**: the first-paint literal values mirror these swatches (documented in `tokens.ts`).
 
 ---
 
@@ -430,7 +430,7 @@ The interface is **one monospace family throughout**, with exactly one proportio
 | `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
 | `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
 
-`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
+`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/global.css`'s `:root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`global.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
 
 ### The prose face (`--prose-font`)
 

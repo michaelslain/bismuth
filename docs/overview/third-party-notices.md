@@ -1,7 +1,7 @@
 # Third-party notices
 
-Assets bundled into Bismuth that carry their own attribution requirements. (Ordinary
-open-source dependencies are covered by their own package licenses and are not listed here.)
+This page lists bundled Bismuth assets with their own attribution requirements. Ordinary
+open-source dependencies remain covered by their package licenses and are not listed here.
 
 ## Phosphor Icons
 

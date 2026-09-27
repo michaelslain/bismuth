@@ -1,6 +1,10 @@
 # Data Flow: Reactive Loop, Caching, and Layouts
 
-This document covers the complete reactive pipeline that keeps the Bismuth frontend synchronized with the vault on disk: the file-watch → debounce → change classification → cache invalidation → version bump → SSE broadcast path, the `/version` poll fallback, the server-side cache architecture (`graphCache` / `treeCache` / `rowsCache` / `tasksCache`), and the backend-precomputed layout system that ships precomputed node positions to the browser. Every claim is grounded in the actual implementation files listed at the bottom.
+This page follows the reactive pipeline that keeps the Bismuth frontend synchronized with the vault:
+file watch → debounce → classification → cache invalidation → version bump → SSE broadcast. It
+also covers the `/version` fallback poll, server-side caches (`graphCache` / `treeCache` /
+`rowsCache` / `tasksCache`), and the backend-precomputed layouts sent to the browser. The source
+files behind the behavior are listed at the bottom.
 
 ---
 
@@ -41,8 +45,9 @@ watch(cfg.vault, { recursive: true }, (_event, filename) => {
   if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && isWatchIgnored(filename)) return;
   // The API is (or just was) writing this exact path itself (see
   // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
-  // external change. See consumeSelfWritten for why only the first echo is swallowed,
-  // and unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
+  // external change. See consumeSelfWritten for why every echo whose on-disk stamp
+  // still matches what the write left behind is swallowed, however many arrive, and
+  // unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
   // response — can't leave a false positive here.
   if (filename && consumeSelfWritten(filename)) return;
   scheduleVault(filename ?? undefined);
@@ -63,12 +68,14 @@ export function createSelfWriteMarks(opts: {
   now: () => number
   debounceMs: () => number
   graceMs: number
+  // The path's current on-disk stamp (mtime + size); null when the path doesn't exist.
+  stampOf: (path: string) => string | null
 }) {
-  const until = new Map<string, number>()
+  const marks = new Map<string, { expiresAt: number, resolved: boolean, stamp?: string | null }>()
   return {
     mark(paths: string[]): void { /* now + debounceMs(), before the write */ },
-    rearm(paths: string[]): void { /* now + max(debounceMs(), graceMs), once the write RESOLVES */ },
-    consume(path: string): boolean { /* deletes on read regardless of expiry */ },
+    rearm(paths: string[]): void { /* now + max(debounceMs(), graceMs), once the write RESOLVES; records stampOf(path) */ },
+    consume(path: string): boolean { /* true (and KEPT) while stampOf(path) still matches the stamp the write left; deleted the moment it doesn't */ },
     unmark(paths: string[]): void { /* undoes mark() for a write that never happened */ },
   }
 }
@@ -86,7 +93,7 @@ Four design points, all called out in the source comments:
 
 - **The mark is made on intent, before the write happens** — `mutatingHandler` and `PUT /file` both call `markSelfWritten(paths)` before performing the write (see §9/§11), closing the race where the OS watcher could notice the write before the server has recorded it as self-written. A mark made *after* the write would sometimes lose that race and let the echo through.
 - **`rearmSelfWritten` re-arms the mark once the write actually RESOLVES**, extending its expiry to `now + max(fileWatchDebounceMs, SELF_WRITE_GRACE_MS)` (a 2s floor). This is the fix for a real bug: the original mark's expiry was fixed at MARK time (before the write) plus the debounce, so a write slower than the debounce — a `/move` whose destination takes a while to settle, a slow disk — let its own echo through as a second, spurious invalidation (measured: a rename's own echo landing 800ms–2s after the write, well past the 250ms debounce). Every marked path (see below for exactly which ones those are) is re-armed right after its write resolves, before `invalidate()`. Wave 3 review: `rearm` only extends an entry that is STILL PRESENT in the map — a multi-path write (e.g. `POST /set-properties` touching several notes, one `writeNote` per note) marks every path together, but the watcher can consume one path's echo while a later path in the same batch is still being written; re-arming unconditionally would have resurrected that already-consumed entry for a fresh 2s window, during which a genuine external edit to it would be silently swallowed as a phantom second echo.
-- **`consumeSelfWritten` deletes the entry on read regardless of expiry.** This is what bounds the swallowing to at most **one** echo per write: the very first watcher callback for that path consumes the entry, so a genuine external write to the same path — the CLI, an agent, a `git checkout`, the daemon — landing right after the echo still schedules normally instead of being silently dropped too.
+- **`consumeSelfWritten` matches an echo by on-disk STATE, not by counting.** One write does not reliably produce one watcher event — under load FSEvents splits a single write into two deliveries ~50ms apart, so swallowing exactly one echo let the second through as a spurious change. So once a write resolves, `rearm` records the path's on-disk stamp (mtime + size); `consume` keeps the mark and swallows the echo for as long as `stampOf(path)` still equals that stamp, however many echoes arrive, and deletes the mark (letting the event through) the instant it finds the file changed. A genuine external write to the same path — the CLI, an agent, a `git checkout`, the daemon — changes the stamp, so it schedules normally instead of being silently dropped.
 - **Unmarking is fail-safe in the direction that matters.** Because the mark is made on intent rather than confirmed success, a write can still fail with nothing actually written — an `EEXIST` on `/move` or `/create`, a validation failure, a thrown `writeNote` — so a failed request must take the mark back off (`unmarkSelfWritten`) or it leaves the path armed with nothing on disk to ever produce the echo that would consume it, silently swallowing the *next* genuine external write instead. If a route ever returns `>= 400` after a write genuinely landed, unmarking costs at most one redundant invalidation wave — never a lost external change.
 
 **`PUT /file` marks its own write too.** It bypasses `mutatingHandler` (it's a read-table route, not a `mutatingRoutes` entry — see §11), so it used to never mark its write at all: every save produced two SSE events, the handler's direct `invalidate()` and the watcher's unsuppressed echo of the same write. It now follows the identical mark → write → (unmark on throw | rearm on success) → `invalidate()` sequence inline.
@@ -603,4 +610,4 @@ POST /create { path, kind }
 
 ---
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/daemon.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/daemon.ts`, `core/src/selfWriteMarks.ts`

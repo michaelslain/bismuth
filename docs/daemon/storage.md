@@ -247,8 +247,12 @@ Add a future seedable by appending one entry to `seedsFor()`.
   daemon's parsers check `frontmatter.enabled !== "false"`, and core's reader checks `data.enabled !== false`.
 - **Keying differs.** A cron's runtime/display name is `frontmatter.name ?? filename`; a process's
   is likewise `frontmatter.name ?? filename`. Trigger files and `.pids/` files, however, are always
-  named by the **file basename**. In-memory runtime state is keyed `${ctx.root}::${name}` so two
-  vaults can each own an identically-named cron/process without colliding.
+  named by the **file basename**. In-memory runtime state (the running set, abort controllers, the
+  managed process map) is keyed `${ctx.root}::${file}` — the `.md` basename, never the display
+  `name` — so two vaults can each own an identically-named cron/process without colliding, and a
+  lookup by file basename (every external caller: HTTP routes, the CLI, MCP) never misses because a
+  job's frontmatter `name:` differs from its filename (e.g. `name: "Web Search"` in
+  `web-search.md`).
 - **Trigger files: unlink-first, then act.** Dotfiles are excluded from the trigger scan; a non-owner
   daemon consumes a trigger without acting on it.
 - **All identity/owner writes are atomic** (tmp + rename). Cron state writes additionally go through a
