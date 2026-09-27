@@ -3,7 +3,8 @@ import { For } from 'solid-js'
 import styles from './FontSpecimen.module.css'
 
 /** The prose face this app actually ships, loaded via @fontsource-variable/lora (index.tsx) and
- *  consumed via --prose-font (styles/tokens.css). Repointed here from CMU Serif: leaving the old
+ *  consumed via --prose-font (global.css's `styles/tokens.css` section). Repointed here from CMU
+ *  Serif: leaving the old
  *  constant would have rendered the Georgia FALLBACK while the page still claimed to be
  *  specimening CMU — the package is uninstalled — which is the exact silent-fallback failure
  *  the previous comment warned about, just from the other direction. The family string must be

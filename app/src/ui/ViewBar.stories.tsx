@@ -314,7 +314,8 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
 }
 
 /**
- * BELOW THE FLOOR (queue item 8). `ui/ui.css`'s `@container viewbar (max-width: 430px)` rule makes
+ * BELOW THE FLOOR (queue item 8). global.css's `ui/ui.css` section's `@container viewbar
+ * (max-width: 430px)` rule makes
  * `.vb-lead` scroll (`overflow-x: auto` + a right-edge fade mask) instead of letting the row overflow
  * the bar or push `.vb-trail` off it. That rule applies to ALL SIX bars built on `<ViewBar>`, but
  * every OTHER story in this file mounts at 640px — above every tier — so until now the floor was

@@ -2,7 +2,8 @@
    HASHED at build time: they are reachable only through the imported `styles` object, never as a
    string literal, and nothing outside InboxIndicator.tsx may target them.
 
-   `.status-inbox-dot` is NOT ui/ui.css's `.status-dot` despite the near-identical name and shape.
+   `.status-inbox-dot` is NOT global.css's `ui/ui.css` section's `.status-dot` despite the
+   near-identical name and shape.
    That one is written by ui/StatusDot.tsx as a plain global and is sized 6px for table/kanban
    rows; this one is 5px because it sits in an 18px --fs-micro bar where 6px reads as a bullet
    rather than a signal. Sharing the global would couple this bar's density to every Bases view's,

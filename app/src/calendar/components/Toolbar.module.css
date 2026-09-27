@@ -4,7 +4,8 @@
  * THE COLLAPSE RULES ARE GONE FROM HERE. They were four measured @container tiers against a
  * `caltoolbar` container this file created — the only narrow-pane behaviour in the app, reachable
  * by no other view, and with two of its thresholds duplicated in DateNav.module.css under a comment
- * asking the two files to stay in step. They live in ui/ui.css now, once, keyed on the `data-*`
+ * asking the two files to stay in step. They live in global.css's `ui/ui.css` section now, once,
+ * keyed on the `data-*`
  * attributes Toolbar.tsx and DateNav.tsx tag their controls with. The container scaffolding
  * (`.toolbar`, `.row`, `.spacer`) went with them, and so did the transitional
  * `:global(.vb-locus):has(> .toolbar) { flex: 1 1 auto }` that only existed because `.toolbar`

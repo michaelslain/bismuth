@@ -71,7 +71,7 @@
 }
 
 /* ── Pre-first-delta "awaiting reply" indicator — a static "working" label + the shared blinking
-   .asc-caret (ui/ui.css). No card. ─────────────────────────────────────────────────────────── */
+   .asc-caret (global.css's `ui/ui.css` section). No card. ──────────────────────────────────── */
 .chat-awaiting-dots {
     display: inline-flex;
     align-items: center;

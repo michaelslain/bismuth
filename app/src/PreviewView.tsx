@@ -25,7 +25,7 @@
 //     Pressing it while armed disarms. Arming exits draw; entering draw disarms.
 //   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
 //   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
-// Narrow panes shed controls through the shared collapse ladder (ui/ui.css) — never a second row.
+// Narrow panes shed controls through the shared collapse ladder (global.css's `ui/ui.css` section) — never a second row.
 // HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
 // a no-op before then.
 //

@@ -9,7 +9,8 @@
    classList would still compile and match nothing.
 
    `.asc-wordmark` and `.asc-caret` do NOT live here and never will. They are `asc-*` design-system
-   classes in App.css / ui.css's ASCII register, alongside their own `@keyframes asc-sheen` /
+   classes in global.css's `App.css` / `ui/ui.css` sections' ASCII register, alongside their own
+   `@keyframes asc-sheen` /
    `asc-blink` and reduced-motion `@media` — TopStrip.tsx keeps rendering them as bare global string
    literals on purpose. `.top-strip-mark` below is this module's own wrapper around the pair, and is
    where the per-instance tracking override lives.

@@ -11,9 +11,10 @@
 // (THE LAW: zoom is resolution — the cell never changes size, the grid subdivides), and
 // bismuth-design/ascii/PORTING.md §4.
 
-/** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — asciiGraph.css --cell-w / --cell-h. CELL_W is
- *  the font's own advance width at that size; CELL_H is the app's unified row unit (--row-h, owned
- *  by ui/ui.css — same rhythm the sidebar tree/tabs/tables use), NOT derived from the font metric.
+/** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — global.css's `asciiGraph.css` section
+ *  --cell-w / --cell-h. CELL_W is the font's own advance width at that size; CELL_H is the app's
+ *  unified row unit (--row-h, owned by global.css's `ui/ui.css` section — same rhythm the sidebar
+ *  tree/tabs/tables use), NOT derived from the font metric.
  *  Both the main field and the sidebar mini-graph draw on this one cell — there is no denser variant
  *  any more (killed with setDense; see AsciiGraphRenderer). Fallbacks only: the renderer reads the
  *  live --cell-h/--row-h off the host at runtime, these are just the pre-mount / test defaults. */

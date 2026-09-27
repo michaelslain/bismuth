@@ -594,9 +594,10 @@ export function FlashcardsView(props: {
     // --ui-font-stack). THE PROBE MUST DECLARE `font-family: var(--ui-font-stack)` ITSELF — it
     // does NOT inherit the right font by sitting inside `.fcmeter`. `.fcmeter` sets no
     // font-family of its own, so without an explicit declaration the probe inherits from
-    // `.app-shell`/`.layout`, which hardcode the literal "Monaspace Xenon" stack (App.css), while
-    // the glyph run it is supposed to be measuring gets its font from `.asc-meter`'s own
-    // `font-family: var(--ui-font-stack)` (ui.css) — the setting-driven one. Caught in review by
+    // `.app-shell`/`.layout`, which hardcode the literal "Monaspace Xenon" stack (global.css's
+    // `App.css` section), while the glyph run it is supposed to be measuring gets its font from
+    // `.asc-meter`'s own `font-family: var(--ui-font-stack)` (global.css's `ui/ui.css` section) —
+    // the setting-driven one. Caught in review by
     // swapping --ui-font-stack to Georgia on a live story and finding the probe's measured width
     // BYTE-IDENTICAL: it was measuring the wrong font and it happened not to matter only because
     // every shipped FONT_STACKS entry is a fixed-width Monaspace variant.
@@ -664,8 +665,9 @@ export function FlashcardsView(props: {
                 </Text>
                 {/* Invisible ch-unit probe — see the onMount above for what it measures.
                     `font-family` is set EXPLICITLY, not inherited: `.fcmeter` declares none, so
-                    without this the probe would measure App.css's hardcoded shell font instead of
-                    the settings-driven one `.asc-meter` (ui.css) actually renders with. */}
+                    without this the probe would measure global.css's `App.css` section's hardcoded
+                    shell font instead of the settings-driven one `.asc-meter` (global.css's
+                    `ui/ui.css` section) actually renders with. */}
                 <Text
                     as="span"
                     inherit

@@ -14,14 +14,16 @@
 // inside a pane leaf) and deliberately stays there, per the plan's "what must not be extracted"
 // item 5. This component only owns the `ref` callback prop and the `docked` class.
 //
-// `data-graph-floater="true"` is a NEW attribute this migration added. `palette/switcher.css` dims
-// this element to an opaque `--bg` fill while the Cmd+O switcher is open, via a bare `.graph-floater`
+// `data-graph-floater="true"` is a NEW attribute this migration added. global.css's
+// `palette/switcher.css` section dims this element to an opaque `--bg` fill while the Cmd+O
+// switcher is open, via a bare `.graph-floater`
 // descendant selector — a wholly unrelated component reaching in from outside. That selector would
 // silently match nothing once `.graph-floater` became a CSS-Modules local (`bench/moduleClassCheck.ts
 // --verbose` caught it as a "declared by a global stylesheet too" warning; no story sets
 // `.switcher-active`, so nothing in this plan's own gate would have). The attribute is the same fix
 // Sidebar.tsx's `data-sidebar-toolbar` already established for the identical shape of problem — see
-// its comment there and switcher.css's `.layout.switcher-active [data-graph-floater]` rule.
+// its comment there and global.css's `palette/switcher.css` section's
+// `.layout.switcher-active [data-graph-floater]` rule.
 import type { JSX } from 'solid-js'
 import styles from './GraphFloater.module.css'
 

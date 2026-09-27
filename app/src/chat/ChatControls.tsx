@@ -270,7 +270,8 @@ export type ChatControlsProps = {
  *  control set as the armed row (so the row is the same height and shape at every width — there is
  *  no longer a narrow-width ladder to keep in sync; the model control alone shrinks, see
  *  ChatControls.module.css), wrapped in `.disabled` (the app's standard disabled opacity, matching
- *  `.btn:disabled` in ui/ui.css) plus the DOM's own `inert` attribute on `.row` (ChatControls.tsx)
+ *  `.btn:disabled` in global.css's `ui/ui.css` section) plus the DOM's own `inert` attribute on
+ *  `.row` (ChatControls.tsx)
  *  so nothing in it is actually clickable OR reachable by Tab.
  *
  *  SEEDED FROM THE SAME PERSISTED PREFS the real session will boot from (chatSessionPrefs.ts), not

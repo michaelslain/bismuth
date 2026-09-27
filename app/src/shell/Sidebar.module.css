@@ -10,7 +10,8 @@
 
    `hidden` on the root `<aside>` is a DELIBERATE bare string literal, not an oversight. No
    `.sidebar.hidden` rule exists anywhere in the stylesheet — the sidebar's collapse is done by
-   `.layout.sidebar-hidden` one level up, in App.css (Task 11's AppFrame). Giving `hidden` a module
+   `.layout.sidebar-hidden` one level up, in global.css's `App.css` section (Task 11's AppFrame).
+   Giving `hidden` a module
    lookup here would resolve to `undefined` and land a literal `class="undefined"` on the element,
    so it stays bare. The `Hidden` story exists to document this: it renders `visible: false` and
    looks identical to `Default`, on purpose — so a future `.sidebar.hidden` rule cannot land
@@ -20,10 +21,10 @@
    `grep -rn sidebar-logo --include="*.tsx" --include="*.ts" .` returning nothing) and was deleted
    outright rather than migrated — moving dead CSS into a module is worse than deleting it.
 
-   `.asc-eyebrow` is a bare global in ui.css. The sidebar no longer uses it (the "VAULT" and
-   "GRAPH" section labels were removed 2026-08-28 — the tree and the graph are self-evident, and
-   each label cost a 36px band). Other surfaces still do, so it is a
-   design-system primitive in ui/ui.css, not chrome owned by this component.
+   `.asc-eyebrow` is a bare global in global.css's `ui/ui.css` section. The sidebar no longer uses
+   it (the "VAULT" and "GRAPH" section labels were removed 2026-08-28 — the tree and the graph are
+   self-evident, and each label cost a 36px band). Other surfaces still do, so it is a
+   design-system primitive in that section, not chrome owned by this component.
 
    THE TOOLBAR ROW ITSELF IS GONE (toolbar-iconbar plan, Task 3). `.sidebar-icons` and its two
    `[data-command-icon]` box/font-size overrides moved into `ui/IconBar` — Sidebar.tsx now renders

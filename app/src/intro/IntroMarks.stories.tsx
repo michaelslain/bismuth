@@ -3,7 +3,7 @@
 // logo mark name (app/public/logos/<icon>.svg — settings.appearance.icon, 14 options).
 // `.vi-lockup`/`.vi-wordmark-hero`/`.vi-wordmark-text` are VaultIntro.module.css's (marks.tsx
 // imports it directly as `styles`); `.asc-wordmark` (the sheen flourish) is already global via
-// App.css (loaded by .storybook/preview.ts).
+// global.css's `App.css` section (loaded by .storybook/preview.ts).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import Lockup from './Lockup'
 import WordmarkHero from './WordmarkHero'

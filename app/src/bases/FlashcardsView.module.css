@@ -195,7 +195,8 @@
 /* Card prose: the UI/mono font (--ui-font-stack, a Monaspace variant) by default; the same
    stack for `code`/```fences```. Markdown-rendered. */
 .card-md { font-family: var(--ui-font-stack); font-size: var(--fs-display); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
-/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css).
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, global.css's `styles/tokens.css`
+   section).
    THIS BLOCK IS NEW and it is the whole reason the ramp was centralized. `.card-md` set NO heading
    sizes at all, so a card's h1-h3 fell through to the BROWSER's default h1/h2/h3 multipliers —
    computed against .card-md's own 22px base, that is roughly 44/33/25.7px. A fourth heading scale

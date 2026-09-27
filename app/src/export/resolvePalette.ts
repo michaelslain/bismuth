@@ -53,7 +53,7 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             TOKENS.map(t => [t, lit(`var(--${t})`, fallback.tokens[t])]),
         ) as Record<PaletteToken, string>
         // --ui-font-stack, NOT getComputedStyle(document.body).fontFamily. Nothing sets a
-        // font-family on <body> — App.css puts the app's `font:` shorthand on .app-shell and
+        // font-family on <body> — global.css's `App.css` section puts the app's `font:` shorthand on .app-shell and
         // .layout — so reading the body resolved to the browser default (Times on macOS), and
         // every base/calendar/sheet export has been rendering in Times rather than the app's
         // Monaspace. Verified live off the running app: bodyFontFamily === "Times".
@@ -64,7 +64,8 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             DEFAULT_PALETTE[scheme].font
 
         // The typography the app is CURRENTLY showing. --prose-font is a plain custom property
-        // (styles/tokens.css), so :root's computed value is already the literal stack.
+        // (global.css's `styles/tokens.css` section), so :root's computed value is already the
+        // literal stack.
         const dp = DEFAULT_PALETTE[scheme]
         const proseFont =
             rootCs.getPropertyValue('--prose-font').trim() || dp.proseFont

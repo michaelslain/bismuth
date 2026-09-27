@@ -20,14 +20,16 @@
 //
 // `hasRail` is currently hardcoded `true` by App.tsx's caller (App.tsx:2791 before this
 // extraction) — kept as a REAL prop rather than simplified away, because the `--rail-w` transition
-// and the `.switcher-active` override both hang off `.layout.has-rail` in App.css, and collapsing
+// and the `.switcher-active` override both hang off `.layout.has-rail` in global.css's `App.css`
+// section, and collapsing
 // it to a constant inside this component would change what the cascade can see change.
 //
 // `railPinned` is the same story one step further: the rail's PINNED state used to live only in
 // TabRail's own module (`.tab-rail.rail-pinned` → a 232px absolutely-positioned overlay), so the
 // grid column behind it stayed 46px and 186px of rail covered the note. The frame has to see the
 // state to reserve the width. NOTE the name collision, which is deliberate and safe: the class this
-// component writes is a GLOBAL bare literal read by App.css, while TabRail.module.css's identically
+// component writes is a GLOBAL bare literal read by global.css's `App.css` section, while
+// TabRail.module.css's identically
 // named class is HASHED and lands on a different element. They never meet.
 import type { JSX } from 'solid-js'
 

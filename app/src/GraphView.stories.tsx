@@ -53,7 +53,7 @@ const resetLayers = () => {
 
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // Calendar/MonthView.stories.tsx's own note on this), and `.graph-root` fills its parent's
-// height (App.css `.graph-root { height: 100% }`).
+// height (global.css's `App.css` section `.graph-root { height: 100% }`).
 const STORY_H = '640px'
 
 /** The full-pane 2D field: a self node, 8 wikilink-chained notes, a few tags fanning off them —
@@ -135,7 +135,7 @@ export const FindPanelOpen: Story = {
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
  * buttons and adds the bottom-right LOCAL text toggle; sized to the sidebar's own default height
- * (App.css `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
+ * (global.css's `App.css` section `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
  * lens over the open note's neighbourhood, not a sibling of 2nd/3rd/both — which also makes it
  * the one GraphMode this gallery can show without faking the daemon setting: GraphView's own
  * effect resets 3rd/both back to "2nd" while `settings.daemon.enabled` is off (the

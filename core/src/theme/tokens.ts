@@ -12,7 +12,8 @@
 //   • ColorTokens type + the 4 ASCII-redesign themes' token values + THEME_NAMES/LABELS/DEFAULT.
 //     ("ink" default dark, "paper" light, "cathode" phosphor-terminal, "riso" cream+indigo.)
 //   • CATEGORY_SWATCHES / ACCENT_RAMP — the fixed teal→rose category ramp that was
-//     hand-copied into the drawing toolbar, export theme, gcal, and App.css fallbacks.
+//     hand-copied into the drawing toolbar, export theme, gcal, and global.css's `App.css`
+//     section's fallbacks.
 //   • THEME_ACCENTS — per-theme accent hex (replaces gcal's hand-mirrored copy).
 //   • SEMANTIC_* / SHADOW_* — status colors + the flat elevation shadow color, per light/dark
 //     (projected by settingsCssVars so components read var(--danger)/var(--shadow-hard) not
@@ -96,8 +97,9 @@ export const THEME_LABELS: Record<ThemeName, string> = {
 
 /** The fixed category swatch ramp — the six named `--<token>` hues (teal→rose) a
  *  category color may reference. This is the ONE ramp that was hand-copied (and left to
- *  drift) into the drawing toolbar, the export theme, gcal's color map, and the App.css
- *  :root fallbacks. Every one of those now sources it from here. Values are the `.ink`
+ *  drift) into the drawing toolbar, the export theme, gcal's color map, and global.css's
+ *  `App.css` section's :root fallbacks. Every one of those now sources it from here. Values are
+ *  the `.ink`
  *  scope's category hues (bismuth-design/ascii/design-system/tokens/colors.css). */
 export const CATEGORY_SWATCHES = {
     teal: '#83B4AE',
@@ -354,7 +356,8 @@ export const SEMANTIC_LIGHT: SemanticTokens = {
 // ── Elevation shadow color ─────────────────────────────────────────────────────
 // `--shadow-menu/-popup/-card/-modal` (the four blurred elevation shadows) were DELETED
 // 2026-08-27 (visual-unification audit §9.3, wave 1): no blur survives the redesign, and every
-// former consumer now reads `--lift` (app/src/styles/tokens.css: `2px 2px 0 var(--shadow-hard)`,
+// former consumer now reads `--lift` (app/src/global.css's `styles/tokens.css` section:
+// `2px 2px 0 var(--shadow-hard)`,
 // a zero-blur hard-offset "TUI drop-shadow") instead. `hard` is not itself a box-shadow value —
 // it is the flat shadow COLOR that token composites against. Because it has no blur to soften it,
 // it needs MORE opacity than the old blurred shadows did on light backgrounds to still read as a

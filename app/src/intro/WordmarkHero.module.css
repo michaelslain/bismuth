@@ -1,6 +1,7 @@
 /* app/src/intro/WordmarkHero.module.css — the wordmark hero (welcome / begin slides): the
    logo mark + the system's ONE decorative flourish (.asc-wordmark's gradient sheen,
-   ui.css/App.css), replacing the old bespoke glow/ring/spin crystal treatment. No extra glow
+   global.css's `ui/ui.css`/`App.css` sections), replacing the old bespoke glow/ring/spin
+   crystal treatment. No extra glow
    layered around it — the sheen IS the flourish.
 
    Split out of VaultIntro.module.css (design-system conformance, one-stylesheet-one-importer):

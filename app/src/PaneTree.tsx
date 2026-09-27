@@ -26,7 +26,7 @@ export function PaneTree(props: PaneTreeProps) {
             {split => {
                 let container!: HTMLDivElement
                 // While dragging the divider, sizes must track the cursor exactly — suppress the
-                // flex-basis transition (see .pane-split.resizing in App.css) for the duration.
+                // flex-basis transition (see .pane-split.resizing in global.css's `App.css` section) for the duration.
                 const [resizing, setResizing] = createSignal(false)
                 // Teardown for an in-flight divider drag. Hoisted to the split-branch scope so
                 // onCleanup can detach the window listeners if this node unmounts mid-drag

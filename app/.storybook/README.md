@@ -31,16 +31,16 @@ real app takes **three layers**, all wired in `preview.ts` + `preview-head.html`
    variants — Xenon/Neon/Argon/Krypton/Radon). Without them buttons/chips/select triggers
    fall back to browser mono.
 
-2. **Stylesheets** — import, in this order:
-   - `../src/App.css` — global `:root` first-paint CSS-var *fallbacks*, the semantic tokens
+2. **Stylesheets** — one import, `../src/global.css`, whose sections carry (among others):
+   - the `App.css` section — global `:root` first-paint CSS-var *fallbacks*, the semantic tokens
      the theme map does **not** provide (`--danger`, `--success`, `--shadow-*`), the `body`
      background/color, `* { box-sizing }`, and the `button { font: inherit }` reset.
-   - `../src/ui/ui.css` — the primitives' own chrome (`.btn`, `.ui-input`, `.ui-select-*`,
+   - the `ui/ui.css` section — the primitives' own chrome (`.btn`, `.ui-input`, `.ui-select-*`,
      `.ui-overlay`, `.chip-toggle`).
-   - `../src/ui/popover/popover.css` — the shared floating-list surface that `Select`'s open
+   - the `ui/popover/popover.css` section — the shared floating-list surface that `Select`'s open
      dropdown (`<PopoverList>`) renders into.
 
-3. **Runtime theme tokens (the crucial step)** — App.css only defines the color vars as
+3. **Runtime theme tokens (the crucial step)** — global.css's `App.css` section only defines the color vars as
    dark *fallbacks*. In the real app, `App.tsx` projects the **selected theme's** palette
    onto `:root` at runtime via `settingsToCssVars(settings)`. `preview.ts` replicates that
    with the schema `DEFAULTS`, so the catalog renders in the real default theme

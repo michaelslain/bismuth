@@ -1,7 +1,8 @@
 /* app/src/palette/SwitcherBar.module.css
    SwitcherBar's own chrome, split out of palette/switcher.css (2026-09 CSS-modules migration,
    Wave 2 Task 9). The three cross-boundary rules that reach OTHER components' DOM via
-   `[data-*]` attributes stayed behind in switcher.css — see that file's header for why.
+   `[data-*]` attributes stayed behind in global.css's `palette/switcher.css` section — see that
+   section's header for why.
 
    `.search-empty*`/`.search-kbd` (below, "moved from SearchResultRows.module.css") MOVED IN from
    ../SearchResultRows.module.css (ds-conformance Task 8 follow-up): SwitcherBar.tsx was the only
@@ -41,7 +42,7 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  /* The overlay register's floating-panel fill (.asc-modal, ui/ui.css) — not a Portal
+  /* The overlay register's floating-panel fill (.asc-modal, global.css's `ui/ui.css` section) — not a Portal
      modal itself (this bar is docked to the editor pane, not a centered scrim), so it takes
      the tokens directly rather than the class (which also carries an all-round border/radius
      that would fight this panel's flush left/top/bottom edges). */
@@ -55,7 +56,8 @@
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
 
 /* Small resting "esc" hint on the right edge of the bar — a layout slot only, the Kbd
-   primitive (.asc-kbd/.asc-key, ui/ui.css) supplies the cap's own chip look. */
+   primitive (.asc-kbd/.asc-key, global.css's `ui/ui.css` section) supplies the cap's own chip
+   look. */
 .switcher-esc {
   flex: none;
 }

@@ -45,7 +45,7 @@ import '../src/global.css'
 // ── Runtime theme tokens ──────────────────────────────────────────────────────
 // THE crucial step. The primitives are almost entirely driven by CSS custom
 // properties (--fg, --bg, --accent, --surface-2, --border-soft, --hover-bg, …) that
-// App.css only defines as dark first-paint *fallbacks*. In the real app, App.tsx
+// global.css's `App.css` section only defines as dark first-paint *fallbacks*. In the real app, App.tsx
 // projects the SELECTED theme's palette onto :root at runtime via
 // settingsToCssVars(settings). We replicate that here with the schema DEFAULTS so the
 // catalog renders in the real default theme (ink) — identical to a fresh app.
@@ -66,7 +66,7 @@ const applyTheme = (theme: string) =>
 applyTheme((DEFAULTS as any).appearance.theme)
 
 // ── The app-shell font ────────────────────────────────────────────────────────
-// THIRD crucial step, same spirit as the theme tokens above. App.css declares the interface font
+// THIRD crucial step, same spirit as the theme tokens above. global.css's `App.css` section declares the interface font
 // on `.app-shell` / `.layout` — the two elements that wrap every pane in the real app — NOT on
 // `body`. Storybook mounts a component with neither ancestor, so anything that inherits its font
 // instead of naming one lands on the browser's default proportional SERIF.
@@ -77,7 +77,7 @@ applyTheme((DEFAULTS as any).appearance.theme)
 // that does not exist, or distrust the surface. Components that DO name a family (--ui-font-stack)
 // looked right, so the breakage was partial and easy to misread.
 //
-// Mirrors `.app-shell`'s own declaration in App.css. Global, so no story has to re-solve it — the
+// Mirrors `.app-shell`'s own declaration in global.css's `App.css` section. Global, so no story has to re-solve it — the
 // same reason the theme tokens and the fake transport are installed here rather than per story.
 const appFont = document.createElement('style')
 appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }`
@@ -144,7 +144,7 @@ const preview: Preview = {
         },
     ],
     parameters: {
-        // We paint the page from --bg (via App.css `body`), so disable Storybook's own
+        // We paint the page from --bg (via global.css's `App.css` section `body`), so disable Storybook's own
         // backgrounds toolbar to avoid a competing white/dark swatch behind components.
         backgrounds: { disable: true },
         layout: 'centered',

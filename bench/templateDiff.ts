@@ -1,6 +1,7 @@
 // bench/templateDiff.ts — did this refactor change the emitted MARKUP?
 //
-// WHY THIS EXISTS. Every task of the App.tsx/App.css componentization moves JSX from one file to
+// WHY THIS EXISTS. Every task of the App.tsx / global.css `App.css` section componentization
+// moves JSX from one file to
 // another and then rewrites its class attributes from global string literals to CSS-Module lookups.
 // Both halves claim "the DOM is unchanged", and neither claim is checkable by reading the diff: the
 // markup is reindented, the handlers are rewritten from inline arrows to props, and `class="win-btn"`

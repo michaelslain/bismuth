@@ -1691,8 +1691,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.colors[C_EDGE],
         )
         this.fontStack = read('--ui-font-stack', this.fontStack)
-        // The grid row unit — asciiGraph.css's --cell-h resolves to the app-wide --row-h token (ui.css),
-        // so the field's line box (both the main pane AND the sidebar mini-graph — there is no denser
+        // The grid row unit — global.css's `asciiGraph.css` section's --cell-h resolves to the
+        // app-wide --row-h token (global.css's `ui/ui.css` section), so the field's line box
+        // (both the main pane AND the sidebar mini-graph — there is no denser
         // cell any more) always matches the sidebar tree / tabs / tables rhythm. GRID LAW: line-height
         // == cell height, so this is the ONLY thing that ever changes the row pitch — never the font size.
         const rowH = parseFloat(read('--cell-h', `${CELL_H}px`))

@@ -95,7 +95,8 @@
 }
 .mdField :global(.bismuth-doc-milkdown p) { margin: 0 0 var(--sp-4); }
 .mdField :global(.bismuth-doc-milkdown p:last-child) { margin-bottom: 0; }
-/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css), not the
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, global.css's `styles/tokens.css`
+   section), not the
    1.5em/1.3em/1.14em multipliers this file used to carry. Those were a third independent ramp —
    relative to whatever font-size the field happened to inherit, so the same markdown rendered at a
    different size here than in either editor. h4-h6 were absent entirely and fell through to UA
