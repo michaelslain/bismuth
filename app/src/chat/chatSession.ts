@@ -150,6 +150,10 @@ export type ChatSession = {
     addImageFiles: (files: File[]) => Promise<void>
     addDroppedFiles: (files: File[]) => Promise<void>
     addDroppedPaths: (paths: string[]) => Promise<void>
+    /** A dropped link or run of text (no file behind it) — appended to the draft. */
+    addDroppedText: (text: string) => void
+    /** A vault path dropped from inside the app — a [[wikilink]] in the draft + a chat reference. */
+    addMention: (path: string, noteIds: string[]) => void
     streaming: Accessor<boolean>
     awaitingReply: Accessor<boolean>
     manifest: Accessor<ChatManifest | null>
@@ -1198,6 +1202,26 @@ export function createChatSession(chatId: string): ChatSession {
         emitFocusRequest()
     }
 
+    const addMention = (path: string, noteIds: string[]) => {
+        const ref = wikilinkFor(path, noteIds)
+        setDraftSignal(cur =>
+            cur && !cur.endsWith(' ') && cur.length
+                ? `${cur} ${ref} `
+                : `${cur}${ref} `,
+        )
+        addChatReference(chatId, path)
+        emitFocusRequest()
+    }
+
+    const addDroppedText = (text: string) => {
+        const t = text.trim()
+        if (!t) return
+        setDraftSignal(cur =>
+            cur.length && !/\s$/.test(cur) ? `${cur} ${t} ` : `${cur}${t} `,
+        )
+        emitFocusRequest()
+    }
+
     // Drop-to-mention (Row 74a): App resolves a note dragged onto this chat and dispatches
     // `bismuth-chat-mention`; append a [[wikilink]] and register the file as a chat reference.
     const onMention = (e: Event) => {
@@ -1209,14 +1233,7 @@ export function createChatSession(chatId: string): ChatSession {
             }>
         ).detail
         if (!d || d.chatId !== chatId || !d.path) return
-        const ref = wikilinkFor(d.path, d.noteIds ?? [])
-        setDraftSignal(cur =>
-            cur && !cur.endsWith(' ') && cur.length
-                ? `${cur} ${ref} `
-                : `${cur}${ref} `,
-        )
-        addChatReference(chatId, d.path)
-        emitFocusRequest()
+        addMention(d.path, d.noteIds ?? [])
     }
     window.addEventListener('bismuth-chat-mention', onMention)
 
@@ -1315,6 +1332,8 @@ export function createChatSession(chatId: string): ChatSession {
         addImageFiles,
         addDroppedFiles,
         addDroppedPaths,
+        addDroppedText,
+        addMention,
         streaming,
         awaitingReply,
         manifest,

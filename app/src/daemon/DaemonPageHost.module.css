@@ -1,0 +1,5 @@
+/* DaemonPageHost.module.css — DaemonPageHost.tsx is the ONLY importer. The page root is the daemon
+   chat's drop target; positioned so ui/DropCue lays its ring over the whole page. */
+.host {
+  position: relative;
+}

@@ -7,6 +7,11 @@
 // leaves the retained set.
 import { createRoot, createSignal, untrack } from 'solid-js'
 import { createChatSession, type ChatSession } from './chatSession'
+import { applyChatDrop, type ChatDropAction } from './chatDrop'
+
+// Drops that landed on a chat surface before its session existed (the daemon page's chat is armed by
+// the drop itself, and its session is created a tick later). Spent the moment that session appears.
+const pendingDrops = new Map<string, ChatDropAction[]>()
 
 type Entry = { session: ChatSession; disposeRoot: () => void }
 
@@ -37,6 +42,11 @@ export function retainChatSessions(chatIds: readonly string[]): void {
             }))
             entries.set(id, entry)
             changed = true
+            const queued = pendingDrops.get(id)
+            if (queued) {
+                pendingDrops.delete(id)
+                for (const a of queued) void applyChatDrop(entry.session, a)
+            }
         }
         if (changed)
             setLive(new Map([...entries].map(([id, e]) => [id, e.session])))
@@ -46,4 +56,17 @@ export function retainChatSessions(chatIds: readonly string[]): void {
 /** Reactive lookup; undefined until retained. Takes the bare chat id (no `::chat:` prefix). */
 export function chatSession(chatId: string): ChatSession | undefined {
     return live().get(chatId)
+}
+
+/** Hand a drop to chat `chatId`: applied now when its session is live, else queued until
+ *  `retainChatSessions` creates it. A queued drop for a chat that never comes up is simply held. */
+export function deliverChatDrop(chatId: string, action: ChatDropAction): void {
+    const s = entries.get(chatId)?.session
+    if (s) {
+        void applyChatDrop(s, action)
+        return
+    }
+    const q = pendingDrops.get(chatId) ?? []
+    q.push(action)
+    pendingDrops.set(chatId, q)
 }

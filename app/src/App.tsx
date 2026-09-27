@@ -148,9 +148,13 @@ import { Sidebar } from './shell/Sidebar'
 import { DragGhost } from './shell/DragGhost'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
-import { daemonChatArmed, disarmDaemonChat } from './daemon/daemonChatArm'
+import {
+    daemonChatArmed,
+    disarmDaemonChat,
+    armDaemonChatForDrop,
+} from './daemon/daemonChatArm'
 import { stayArmed } from './daemon/daemonChatArming'
-import { retainChatSessions } from './chat/chatSessions'
+import { retainChatSessions, deliverChatDrop } from './chat/chatSessions'
 import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
@@ -167,6 +171,7 @@ import {
     descriptorNotePath,
     descriptorEmbedPath,
     descriptorChatRefPath,
+    chatIdForContent,
     isMarkdown,
     isEditorReferenceDrop,
     wikilinkFor,
@@ -1947,21 +1952,23 @@ export default function App() {
         if (!at) return false
         const content = leaves(at.root).find(l => l.id === leafId)?.content
         if (!content) return false
-        if (content.startsWith(CHAT_PREFIX)) {
+        const chatId = chatIdForContent(content)
+        if (chatId) {
             const refPath = descriptorChatRefPath(descriptor)
             if (!refPath) return false
-            const chatId = content.slice(CHAT_PREFIX.length)
-            // The chat session's mention listener inserts the [[wikilink]] AND wires the path into the chat
-            // context (chatContext.addChatReference) so its content reaches the model (Row 79a).
-            window.dispatchEvent(
-                new CustomEvent('bismuth-chat-mention', {
-                    detail: {
-                        chatId,
-                        path: refPath,
-                        noteIds: noteCandidates().map(n => n.path),
-                    },
-                }),
-            )
+            // The daemon page's chat exists only once armed; this pointerup-ended drop IS the gesture.
+            // Its session is created a tick later, so the mention waits in deliverChatDrop's queue.
+            if (chatId === DAEMON_CHAT_ID) {
+                if (!settings.daemon.enabled) return false
+                armDaemonChatForDrop()
+            }
+            // The session inserts the [[wikilink]] AND wires the path into the chat context
+            // (chatContext.addChatReference) so its content reaches the model (Row 79a).
+            deliverChatDrop(chatId, {
+                kind: 'mention',
+                path: refPath,
+                noteIds: noteCandidates().map(n => n.path),
+            })
             return true
         }
         if (isEditorReferenceDrop(content, descriptor, zone, hasEditor)) {

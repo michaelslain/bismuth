@@ -177,6 +177,12 @@ export function makeStubChatSession(
         addDroppedPaths: async paths => {
             log('addDroppedPaths')(paths)
         },
+        addDroppedText: text => {
+            log('addDroppedText')(text)
+        },
+        addMention: (path, noteIds) => {
+            log('addMention')(path, noteIds)
+        },
         streaming,
         awaitingReply,
         manifest,
