@@ -88,10 +88,8 @@
      `.viewbar`/`.vb-lead`/`.vb-trail` (ui/ViewBar.module.css) — GraphView.tsx now passes
        `class={styles['graph-viewbar']}` and `parts={{ lead: styles['graph-vb-lead'], trail:
        styles['graph-vb-trail'] }}` to `<ViewBar>` instead of reaching its hashed-now internals
-       from here. `.graph-viewbar { padding: 0 var(--sp-5) }` still needs no `:global()` compound
-       with `.viewbar` to win the specificity tie ui/ui.css's old header described: GraphView.tsx
-       imports ViewBar before this stylesheet runs, so this file's rule always loads after
-       ViewBar.module.css's own and wins any equal-specificity tie by source order.
+       from here. (The mini bar's old `.graph-viewbar` padding override is gone: ViewBar and IconBar
+       share ui/Band's side padding now.)
      `.segmented` (ui/SegmentedToggle.tsx) — SegmentedToggle already accepted a `class` prop;
        GraphView.tsx now passes `class={styles['graph-mode-switcher']}`/
        `class={styles['graph-bottom-toggle']}` to the two instances this file narrows, instead of
@@ -228,11 +226,8 @@
      bottom border, so dropping either made the graph the one section in the sidebar with no divider
      and an off-grid 41px height. The old height:auto/min-height:41px existed to let five TEXT
      segments wrap onto a second row — the mini switcher is icons now (see MODE_ICON), so one row
-     always fits. Padding matches the sidebar IconBar's `var(--sp-5)`. */
-  /* `.graph-viewbar` (this file) overrides ViewBar's own `.viewbar` padding at ONE class each now
-     that `.viewbar` is a hashed local private to ui/ViewBar.module.css — no compound needed to win
-     the tie; see this file's header for why import order settles it regardless. */
-  .graph-viewbar { padding: 0 var(--sp-5); }
+     always fits. Padding needs no override here any more: ViewBar and the sidebar IconBar both
+     render through ui/Band, so they share one side padding by construction. */
   /* THE MINI BAR IS LEFT-ALIGNED, and that is a DELIBERATE REVERSAL of the centring this block
      carried until now — do not "fix" it back. The mode switcher is the sidebar's control strip, and
      it sits directly under the sidebar's `IconBar` toolbar row, whose own icons start hard against

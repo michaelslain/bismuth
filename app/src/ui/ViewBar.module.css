@@ -92,7 +92,12 @@
    no collar, so a collapsed `[▣ word]` and an `[▣]` IconButton are the same width. `button` in the
    selector out-specifies Button.module.css's `.btn--icon.btn--sm` (two classes) whatever the load
    order. The svg is sized by its own inline width, so only the brackets shrink. */
-.viewbar button[data-kind="icon"] { padding: 0; font-size: var(--fs-ui); }
+/* ...EXCEPT an IconBar hosted in a bar slot (icon-brackets): an IconBar's buttons render the same
+   wherever the bar sits, so the mini-graph mode switcher in the `facet` slot matches the sidebar and
+   tab-rail toolbars (same glyph size) instead of being shrunk to this bar's register. IconBar sets
+   `--iconbar-glyph` inline on its root, inherited; outside an IconBar it is unset and the fallback
+   is this rule's own value, so every other bar is unchanged. */
+.viewbar button[data-kind="icon"] { padding: 0; font-size: var(--iconbar-glyph, var(--fs-ui)); }
 /* `column-gap` (one-button fix): space-between only separates the two groups while there is slack.
    A bar filled to its width put the lead's last bracket flush against the trail's first — the
    calendar's `[d][+]` — so the two groups keep the same --sp-4 every sibling pair of bracket
@@ -101,7 +106,10 @@
    old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
    are what the collapse ladder further down queries — see GraphView.module.css's header for why
    the name had to exist there first. */
-.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; column-gap: var(--bar-icon-gap); padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
+/* The band box — --h-band, --sp-5 side padding, the --rule-soft hairline — is ui/Band's: ViewBar
+   renders through it, the same component a `band` IconBar renders through, so a view header and a
+   toolbar stacked in one column share their edges. This rule is layout only. */
+.viewbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; column-gap: var(--bar-icon-gap); container-type: inline-size; container-name: viewbar; }
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
 .vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
 .vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
@@ -126,8 +134,10 @@
    `.viewbar` is the container (declared above) and NO tier's subject is `.viewbar` itself — an
    @container rule styles a container's DESCENDANTS, never the container.
 
-   A QUERY SEES THE CONTENT BOX. `.viewbar` carries `padding: 0 18px`, so `max-width: 800px` fires
-   at an 836px-wide bar. Every number below is a content-box width; add 36 to get the pane.
+   A QUERY SEES THE CONTENT BOX. The bar carries ui/Band's `padding: 0 var(--sp-5)` (12px a side;
+   18px until 2026-09-27), so `max-width: 800px` fires at an 824px-wide bar. Every number below is a
+   content-box width — what the controls need — so the padding change moved no threshold; add 24 to
+   get the pane.
 
    ── MEASURED, 2026-09-01, and do not renumber without re-measuring ────────────────────────────
    The calendar's old numbers (700/540/400/266) cannot be carried over: they were taken against a
