@@ -7,7 +7,7 @@
 // for one — docs/contributing/testing.md "cwd-dependent JSX-resolution trap".
 //
 // Final signature:
-//   useRowEditor(props: { config, view, columns?, onChanged? }): { editable, open }
+//   useRowEditor(props: { config, view, columns?, onChanged?, siblingValues? }): { editable, open }
 import type { BaseConfig, Row, ViewConfig } from '../../../core/src/bases/types'
 import { isStoredPlaceholder } from './taskWrite'
 
@@ -17,6 +17,9 @@ export type RowEditorProps = {
     /** The columns THIS view actually shows (`ViewResult.columns`). */
     columns?: () => string[] | undefined
     onChanged?: () => void
+    /** Other rows' values for an array column (`openRowEditor`'s `siblingValues`), so a tags
+     *  dropdown in the editor is filled from the view's rows. Omitted by a view with none. */
+    siblingValues?: (id: string) => unknown[]
 }
 
 export type RowEditor = {
@@ -39,6 +42,7 @@ export function useRowEditor(props: RowEditorProps): RowEditor {
                 view: props.view(),
                 columns: props.columns?.(),
                 onChanged: props.onChanged,
+                siblingValues: props.siblingValues,
                 focusTarget,
             }
             void import('./openRowEditor').then(m => m.openRowEditor(opts))
