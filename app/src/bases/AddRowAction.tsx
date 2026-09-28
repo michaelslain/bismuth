@@ -11,8 +11,7 @@ import { safeFilename, openRowEditor } from './openRowEditor'
 import { parentOf, joinPath } from '../fileTreeOps'
 import { api } from '../api'
 import { pushToast } from '../Toast'
-import IconTextButton from '../ui/IconTextButton'
-import BarLabel from '../ui/BarLabel'
+import IconButton from '../ui/IconButton'
 
 export type AddRowActionProps = {
     basePath?: string
@@ -109,15 +108,13 @@ const AddRowAction = (props: AddRowActionProps) => (
             !!props.basePath
         }
     >
-        <IconTextButton
+        <IconButton
             icon="Plus"
-            title="New row"
+            label="New row"
             onClick={() =>
                 void (props.ownsRows ? addOwnedRow(props) : addNoteRow(props))
             }
-        >
-            <BarLabel long="row" drop="early" />
-        </IconTextButton>
+        />
     </Show>
 )
 

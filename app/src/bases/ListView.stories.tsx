@@ -68,8 +68,11 @@ export const EditableOwnedRow: Story = {
     },
 }
 
-/** With `basePath` set, a note row keeps opening its note on left-click; right-click opens
- *  the property editor. */
+/** With `basePath` set, a note row now opens the property editor on left-click too (matching
+ *  CardsView/KanbanView) — right-click opens the same editor. A non-editable row (no
+ *  basePath) is the one that still opens the note; that path has no story of its own here
+ *  because `openRow`'s `open()` branch just dispatches `bismuth-open`, exercised end to end
+ *  in BaseView's own stories. */
 export const EditableNoteRow: Story = {
     render: () => (
         <ListView
@@ -82,9 +85,7 @@ export const EditableNoteRow: Story = {
         const row = canvasElement.querySelector('button')
         expect(row).toBeTruthy()
 
-        row!.dispatchEvent(
-            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
-        )
+        row!.click()
         await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
