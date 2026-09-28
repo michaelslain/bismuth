@@ -14,6 +14,12 @@ import { setTransport } from '../api'
 import type { Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { EMPTY_FILE } from '../../../core/src/bases/types'
+import {
+    expectCompletions,
+    pressKey,
+    tagsFieldView,
+    typeInto,
+} from '../ui/_tagsFieldPlay'
 
 const meta = {
     title: 'Bases/TableView',
@@ -371,22 +377,18 @@ export const TagsColumnListsWholeBoard: Story = {
                 'tbody tr:first-child td',
             ),
         ]
-        // Row 0's OWN value is only "alpha" — opening its cell must still offer "beta"/"gamma"
-        // from row 1. The tags editor autofocuses its dropdown open on mount.
+        // Row 0's OWN value is only "alpha" — opening its cell and typing `#` must still offer
+        // "beta"/"gamma" from row 1 (and not "alpha", which the field already holds).
         firstRowCells()[tagsIdx]!.querySelector<HTMLElement>('button')!.click()
-        await new Promise(r => setTimeout(r, 30))
-        const labels = [
-            ...document.querySelectorAll('.bismuth-popover-label'),
-        ].map(el => (el.textContent ?? '').trim())
-        expect(labels).toContain('#alpha')
-        expect(labels).toContain('#beta')
-        expect(labels).toContain('#gamma')
+        const view = await tagsFieldView(canvasElement)
+        expect(view.state.doc.toString()).toBe('#alpha ')
+        typeInto(view, '#')
+        await expectCompletions(['#beta', '#gamma'])
     },
 }
 
-// The tags picker across several toggles, with a row store that RE-RESOLVES after every write
-// the way BaseView does on a version bump — `runView` hands back brand-new row objects, which is
-// what used to unmount the very cell being edited and slam the picker shut after one toggle.
+// The tags field end to end in a table cell, with a row store that RE-RESOLVES after the write
+// the way BaseView does on a version bump — `runView` hands back brand-new row objects.
 const PICK_PATH = 'boards/tags-picker.md'
 const PICK_CONFIG: BaseConfig = {
     declaredProperties: ['tags'],
@@ -409,7 +411,7 @@ const pickSeed = (): Row[] => [
 let pickRows: Row[] = pickSeed()
 let pickResolves = 0
 
-export const TagsPickerStaysOpenAcrossToggles: Story = {
+export const TagsTypeAcceptCommit: Story = {
     render: () => {
         pickRows = pickSeed()
         pickResolves = 0
@@ -459,47 +461,34 @@ export const TagsPickerStaysOpenAcrossToggles: Story = {
             canvasElement.querySelectorAll<HTMLElement>(
                 'tbody tr:first-child td',
             )[tagsIdx]!
-        const labels = () => [
-            ...document.querySelectorAll<HTMLElement>('.bismuth-popover-label'),
-        ]
-        const order = () => labels().map(l => (l.textContent ?? '').trim())
-        const option = (name: string) =>
-            labels().find(l => l.textContent?.trim() === name)!
 
         await userEvent.click(cell().querySelector('button')!)
-        await waitFor(() => expect(order().length).toBe(3))
-        const opened = order()
-        const filter = document.activeElement
-        expect(filter?.tagName).toBe('INPUT')
+        const view = await tagsFieldView(canvasElement)
+        // The field reads like the cell's text, caret at the end, ready for the next tag.
+        expect(view.state.doc.toString()).toBe('#alpha ')
+        expect(view.hasFocus).toBe(true)
 
-        await userEvent.click(option('#beta'))
-        // The write has landed AND the table re-resolved into fresh row objects.
-        await waitFor(() => expect(pickResolves).toBe(1))
-        await userEvent.click(option('#gamma'))
-        await waitFor(() => expect(pickResolves).toBe(2))
-
-        // Still open, rows exactly where they were, the same filter input still focused, and
-        // the picker's own trigger showing both toggles.
-        expect(document.querySelector('.bismuth-popover')).toBeTruthy()
-        expect(order()).toEqual(opened)
-        expect(document.activeElement).toBe(filter)
-        expect(filter?.isConnected).toBe(true)
-        // The trigger now reads exactly like the read-only cell (renderValue.tsx's renderTags:
-        // `#`-prefixed, no separator character — the visual space is a CSS flex gap, not text).
-        expect((cell().textContent ?? '').replace('▾', '').trim()).toBe(
-            '#alpha#beta#gamma',
-        )
-
-        await userEvent.keyboard('{Escape}')
+        typeInto(view, 'b')
+        await expectCompletions(['#beta'])
+        pressKey(view, 'Tab')
+        typeInto(view, 'g')
+        await expectCompletions(['#gamma'])
+        pressKey(view, 'Tab')
         await waitFor(() =>
-            expect(document.querySelector('.bismuth-popover')).toBeNull(),
+            expect(view.state.doc.toString()).toBe('#alpha #beta #gamma '),
         )
+        // Nothing was written while typing — the whole list commits once, on Enter.
+        expect(pickResolves).toBe(0)
+        pressKey(view, 'Enter')
+        await waitFor(() => expect(pickResolves).toBe(1))
+
         // Closed, the cell reads exactly like the read-only tag style — NOT `alpha,beta,gamma`,
         // which is what a tags column that is the table's FIRST (title) column used to show
         // (renderTitle stringified the array). The value itself is still an array.
         await waitFor(() =>
             expect((cell().textContent ?? '').trim()).toBe('#alpha#beta#gamma'),
         )
+        expect(cell().querySelector('[data-tags-field]')).toBeNull()
         expect(pickRows[0]!.note.tags).toEqual(['alpha', 'beta', 'gamma'])
     },
 }

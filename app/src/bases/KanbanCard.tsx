@@ -165,14 +165,8 @@ export function KanbanCard(props: {
         }
     }
     /** Persist a meta value the modal's type-aware editor produced, with an optimistic echo. `null`
-     *  clears the key. When the base declares the property's type, coerce through it first (#100).
-     *  `opts` (multiselect's add/remove keepOpen) is irrelevant now the editor lives in a modal —
-     *  kept in the signature so the modal can pass PropertyValueEditor's onCommit through unchanged. */
-    function commitMeta(
-        id: string,
-        value: unknown,
-        _opts?: { keepOpen?: boolean },
-    ): void {
+     *  clears the key. When the base declares the property's type, coerce through it first (#100). */
+    function commitMeta(id: string, value: unknown): void {
         if (writableKey(id) === null) return
         const bare = id.startsWith('note.') ? id.slice(5) : id
         const current =
@@ -406,7 +400,7 @@ export function KanbanCard(props: {
                         siblingValues={props.siblingValues}
                         hasFileIdentity={props.hasFileIdentity}
                         onRename={commitRename}
-                        onSetMeta={(id, v, opts) => commitMeta(id, v, opts)}
+                        onSetMeta={commitMeta}
                         onDelete={commitDelete}
                         onClose={closeEdit}
                         onOpenNote={

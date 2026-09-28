@@ -81,11 +81,7 @@ export function CardEditModal(props: {
      *  an opt-out for a genuinely non-writable row. */
     hasFileIdentity?: boolean
     onRename: (newTitle: string) => void
-    onSetMeta: (
-        id: string,
-        value: unknown,
-        opts?: { keepOpen?: boolean },
-    ) => void
+    onSetMeta: (id: string, value: unknown) => void
     /** Delete this card's note — the SOLE delete affordance for a kanban card (no separate
      *  right-click context-menu path; see KanbanView/KanbanCard). */
     onDelete: () => void
@@ -365,7 +361,7 @@ export function CardEditModal(props: {
                 kind={k}
                 value={value(id)}
                 autofocus={false}
-                onCommit={(v, opts) => props.onSetMeta(id, v, opts)}
+                onCommit={v => props.onSetMeta(id, v)}
                 onCancel={() => {}}
             />
         )

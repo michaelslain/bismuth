@@ -68,7 +68,7 @@ export function distinctStrings(values: unknown[]): string[] {
     return [...set].sort()
 }
 
-/** The `options` a `tags` editor (MultiSelect, `creatable`) offers: the distinct string values
+/** The `options` a `tags` editor (ui/TagsField) suggests first: the distinct string values
  *  across every OTHER row's value for this property (flattening arrays) unioned with this row's
  *  OWN values, in first-seen order — not alphabetized like `distinctStrings`, since a tags menu
  *  reads better in the order the vault actually introduced each value. */

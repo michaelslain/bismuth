@@ -23,11 +23,10 @@ export type TableCellProps = {
     config: BaseConfig
     /** Every other row's value for this column, for the editor's pick-from-history fallback. */
     siblingValues: () => unknown[]
-    /** Persist the (already type-coerced) value. `opts.keepOpen` marks a multiselect/tags
-     *  toggle, whose write revalidates the base while the editor is still open — `row` then
+    /** Persist the (already type-coerced) value. The write revalidates the base, so `row` then
      *  arrives as a NEW object on this same instance (TableView keys rows by `mountKeys`, so the
      *  cell is never remounted by its own write). */
-    onCommit: (value: unknown, opts?: { keepOpen: boolean }) => void
+    onCommit: (value: unknown) => void
     /** The read-only rendering, shown whenever the cell is not being edited. */
     children: JSX.Element
     class?: string
@@ -56,20 +55,11 @@ const TableCell: Component<TableCellProps> = props => {
         kind: PropertyEditKind
         value: unknown
     } | null>(null)
-    const commit = (v: unknown, opts?: { keepOpen?: boolean }) => {
+    const commit = (v: unknown) => {
         const t = propertyType(props.config, props.col)
         const coerced = (t ? coercePropertyValue(t, v) : v) ?? null
-        props.onCommit(coerced, opts?.keepOpen ? { keepOpen: true } : undefined)
-        // A keepOpen write (a multiselect/tags toggle) must still update the frozen `editing`
-        // state's value — otherwise the picker keeps showing the value from the MOMENT the cell
-        // opened, so every toggle after the first reads as a no-op in the UI even though it did
-        // write. Reusing the same `kind` object (only `value` changes) avoids the remount this
-        // file's own comment above warns about.
-        if (opts?.keepOpen) {
-            setEditing(prev => (prev ? { ...prev, value: coerced } : prev))
-        } else {
-            setEditing(null)
-        }
+        props.onCommit(coerced)
+        setEditing(null)
     }
     const open = () => {
         const kind = kindOf()
