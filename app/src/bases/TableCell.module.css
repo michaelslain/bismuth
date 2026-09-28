@@ -7,7 +7,11 @@
     font: inherit;
     color: inherit;
     text-align: left;
-    cursor: text;
+    /* Every cell rendered through TableCell is a click target — a boolean commits its flip
+       immediately, everything else opens the in-place editor (a real `text`-cursor `<input>`
+       lives in `.editor` below, once open). `text` here (measured 2026-09-27) told the whole
+       table it was a caret you could drop into, not a control you click. */
+    cursor: pointer;
 }
 .cell:hover {
     background: color-mix(in srgb, var(--fg) 5%, transparent);

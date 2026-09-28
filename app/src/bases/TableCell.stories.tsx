@@ -114,6 +114,10 @@ export const BooleanToggle: Story = {
         expect(getComputedStyle(button()).backgroundColor).toBe(
             'rgba(0, 0, 0, 0)',
         )
+        // A boolean cell still commits on click like every other cell, so it carries the same
+        // `pointer` cursor — `cursor: text` here (measured 2026-09-27) told the whole table it
+        // was a caret, not a control.
+        expect(getComputedStyle(button()).cursor).toBe('pointer')
         expect(cellText()).toBe('')
         button().click()
         await new Promise(r => setTimeout(r, 30))
