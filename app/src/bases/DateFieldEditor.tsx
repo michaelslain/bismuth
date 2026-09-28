@@ -23,6 +23,9 @@ export type DateFieldEditorProps = {
     onCommit: (value: unknown) => void
     placeholder?: string
     className?: string
+    /** Fired when the popover closes WITHOUT a pick (Escape or a click away), so a host that
+     *  mounted this as a transient cell editor can end its edit. */
+    onDismiss?: () => void
 }
 
 const DateFieldEditor: Component<DateFieldEditorProps> = props => {
@@ -80,7 +83,10 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
             <AnchoredPopover
                 anchor={() => triggerRef}
                 open={open()}
-                onDismiss={close}
+                onDismiss={() => {
+                    close()
+                    props.onDismiss?.()
+                }}
                 panelAttrs={{ 'data-testid': 'date-field-popover' }}
             >
                 {/* AnchoredPopover resolves its children ONCE at setup, so a bare DatePicker here was

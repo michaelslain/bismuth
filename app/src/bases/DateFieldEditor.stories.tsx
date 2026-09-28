@@ -20,6 +20,7 @@ const Harness = (p: {
     time?: boolean
     placeholder?: string
     className?: string
+    onDismiss?: () => void
 }) => {
     const [value, setValue] = createSignal<unknown>(p.initial)
     return (
@@ -30,6 +31,7 @@ const Harness = (p: {
                 className={p.className}
                 value={value()}
                 onCommit={setValue}
+                onDismiss={p.onDismiss}
             />
             {/* Read by the plays only: the raw committed value, `null` once cleared. */}
             <span hidden data-testid="raw">
@@ -68,6 +70,30 @@ export const DismissesOnEscape: Story = {
         await waitFor(() => body.getByTestId('date-field-popover'))
         await userEvent.keyboard('{Escape}')
         await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
+    },
+}
+
+/** `onDismiss` fires on Escape (no pick) — held in real state, not a noop. */
+export const OnDismissFires: Story = {
+    render: () => {
+        const [dismissed, setDismissed] = createSignal(false)
+        return (
+            <>
+                <Harness initial="" onDismiss={() => setDismissed(true)} />
+                <span hidden data-testid="dismissed">
+                    {String(dismissed())}
+                </span>
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await expect(canvas.getByTestId('dismissed')).toHaveTextContent('false')
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(canvas.getByTestId('dismissed')).toHaveTextContent('true'))
     },
 }
 

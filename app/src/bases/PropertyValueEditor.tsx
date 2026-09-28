@@ -145,6 +145,7 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
                         className={styles.kbMetaDate}
                         value={props.value}
                         onCommit={props.onCommit}
+                        onDismiss={props.onCancel}
                     />
                 )}
             </Match>
