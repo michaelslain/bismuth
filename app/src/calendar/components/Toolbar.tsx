@@ -8,6 +8,7 @@ import {
 import ViewBar, { type ViewBarSlots } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { IconTextButton } from '../../ui/IconTextButton'
+import { IconButton } from '../../ui/IconButton'
 import BarLabel from '../../ui/BarLabel'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
@@ -104,18 +105,15 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                directly — see TasksCalendar's `compose` in CalendarView.tsx — so there is no longer
                a single destination for a bar-level "new task" action to write to. */
             <Show when={!ctx?.isTasks}>
-                <IconTextButton
+                <IconButton
                     icon="Plus"
-                    primary
-                    title="New event"
+                    label="New event"
                     onClick={() =>
                         (showEventModal.value = {
                             date: toDateStr(currentDate.value),
                         })
                     }
-                >
-                    <BarLabel long="event" drop="early" />
-                </IconTextButton>
+                />
             </Show>
         ),
     }

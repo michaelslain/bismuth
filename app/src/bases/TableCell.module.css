@@ -7,11 +7,39 @@
     font: inherit;
     color: inherit;
     text-align: left;
-    cursor: text;
+    /* Every cell rendered through TableCell is a click target — a boolean commits its flip
+       immediately, everything else opens the in-place editor (a real `text`-cursor `<input>`
+       lives in `.editor` below, once open). `text` here (measured 2026-09-27) told the whole
+       table it was a caret you could drop into, not a control you click. */
+    cursor: pointer;
 }
 .cell:hover {
     background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
+/* A boolean cell commits on click immediately — there is no "open editor" state to justify the
+   text-cell hover/active/focus affordance, so it reads exactly like its read-only x/blank at
+   every interaction state. Two classes (higher specificity than `.cell:hover` alone) so this
+   wins regardless of source order. */
+.cell.cellBoolean:hover,
+.cell.cellBoolean:active,
+.cell.cellBoolean:focus,
+.cell.cellBoolean:focus-visible {
+    background: transparent;
+}
 .editor {
     width: 100%;
+    /* Exactly the resting cell's line box (`.cell`'s min-height), with the editor control centred in
+       it: a control is taller than a line of text (--h-control), and letting it size the slot grew
+       the whole row by up to 6px the moment a cell opened. The control overflows the slot evenly
+       instead — into the cell's own padding — so the row never moves. */
+    height: 1.4em;
+    display: flex;
+    align-items: center;
 }
+.editor > * {
+    flex: 1;
+    min-width: 0;
+}
+/* A value no in-cell editor can round-trip (a list of numbers or links) — shown, not clickable. */
+.cell.cellReadonly { cursor: default; }
+.cell.cellReadonly:hover { background: transparent; }

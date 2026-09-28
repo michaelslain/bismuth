@@ -9,10 +9,10 @@ import { declaredDefaults } from '../../../core/src/bases/properties'
 import { newTaskVisible } from './taskScope'
 import { safeFilename, openRowEditor } from './openRowEditor'
 import { parentOf, joinPath } from '../fileTreeOps'
+import { fileBasename } from '../../../core/src/pathUtils'
 import { api } from '../api'
 import { pushToast } from '../Toast'
-import IconTextButton from '../ui/IconTextButton'
-import BarLabel from '../ui/BarLabel'
+import IconButton from '../ui/IconButton'
 
 export type AddRowActionProps = {
     basePath?: string
@@ -27,33 +27,75 @@ export type AddRowActionProps = {
     onAdded: () => void
 }
 
-/** Resolve a path against `taken` by appending " 2", " 3", … before the extension. */
-function dedupe(desired: string, taken: (path: string) => boolean): string {
-    if (!taken(desired)) return desired
-    const stem = desired.replace(/\.md$/, '')
-    for (let n = 2; ; n++) {
-        const cand = `${stem} ${n}.md`
-        if (!taken(cand)) return cand
+/** Where a new NOTE row lands when the caller names no folder: the base's own directory, or —
+ *  for a base file at the vault root — a folder named after it. Same fallback as KanbanView's
+ *  `boardFolder()` for a source with no rows yet. */
+function defaultFolder(basePath: string): string {
+    return parentOf(basePath) || basePath.replace(/\.md$/, '')
+}
+
+/** Write `contents` to the first free `<folder>/<name>[ N].md`. `writeChecked` against an empty
+ *  base text only succeeds when nothing is there yet, so a second `Untitled` never overwrites the
+ *  first (a plain `api.write` did — adding two rows without renaming the first lost it). */
+async function writeFreshNote(
+    folder: string,
+    name: string,
+    contents: string,
+): Promise<string> {
+    for (let n = 1; n < 500; n++) {
+        const path = joinPath(folder, n === 1 ? `${name}.md` : `${name} ${n}.md`)
+        const res = await api.writeChecked(path, contents, '')
+        if (!res.conflict) return path
     }
+    throw new Error(`no free name for ${name} in ${folder || 'the vault root'}`)
+}
+
+export type CreateRowOptions = {
+    basePath: string
+    config: BaseConfig
+    /** True when the base owns its rows (see AddRowActionProps.ownsRows). */
+    ownsRows: boolean
+    /** Extra properties merged over the base's declared defaults — a map pin's lat/lng. */
+    note?: Record<string, unknown>
+    /** Folder a new NOTE row is written into (ignored for owned rows). Defaults to the base's
+     *  own folder; a caller that knows where its rows live (MapView, from an existing row)
+     *  passes that, so the new note lands beside its siblings. */
+    folder?: string
+}
+
+/** Create ONE row — the single create path behind the bar's `[+]` and the map's `Add pin`.
+ *  An owned row is appended to the base file's own table; a note row is a new `Untitled` note.
+ *  Returns the prospective Row (a note row's real path; an owned row's `index` is unknown until
+ *  a refetch, so it is left unset). Throws on failure — the caller owns the toast. */
+export async function createRow(opts: CreateRowOptions): Promise<Row> {
+    const front = { ...declaredDefaults(opts.config), ...(opts.note ?? {}) }
+    if (opts.ownsRows) {
+        await api.rowCreate(opts.basePath, front)
+        return {
+            file: { ...placeholderFile('', opts.basePath) },
+            note: front,
+            formula: {},
+        }
+    }
+    const name = safeFilename('Untitled')
+    const path = await writeFreshNote(
+        opts.folder ?? defaultFolder(opts.basePath),
+        name,
+        `---\n${yamlStringify(front)}---\n`,
+    )
+    return { file: placeholderFile(fileBasename(path), path), note: front, formula: {} }
 }
 
 async function addOwnedRow(props: AddRowActionProps): Promise<void> {
     const basePath = props.basePath
     if (!basePath) return
-    const front = declaredDefaults(props.config)
     // Filter check mirrors BaseView's addTask: report, never prevent — the write happens
     // either way. `index: 0` is a stand-in (passesFilter/toContext read note/file, not the
     // write-back handle), not a claim about where the row will really land.
-    const prospective: Row = {
-        file: { ...placeholderFile('', basePath) },
-        note: front,
-        formula: {},
-        index: 0,
-    }
     try {
-        await api.rowCreate(basePath, front)
+        const row = await createRow({ basePath, config: props.config, ownsRows: true })
         props.onAdded()
-        if (!newTaskVisible(props.config, props.view, prospective))
+        if (!newTaskVisible(props.config, props.view, { ...row, index: 0 }))
             pushToast(
                 `Added to ${basePath} — it does not match this view's filters, so it will not appear here`,
             )
@@ -66,29 +108,15 @@ async function addOwnedRow(props: AddRowActionProps): Promise<void> {
 async function addNoteRow(props: AddRowActionProps): Promise<void> {
     const basePath = props.basePath
     if (!basePath) return
-    const front = declaredDefaults(props.config)
-    const name = safeFilename('Untitled')
-    // Same folder fallback as KanbanView's `boardFolder()` for a source with no rows yet
-    // (no `result` prop here to read an existing row's own folder from): the base's own
-    // directory, or — for a base file at the vault root — a folder named after it.
-    const folder = parentOf(basePath) || basePath.replace(/\.md$/, '')
-    const desired = joinPath(folder, `${name}.md`)
-    const path = dedupe(desired, p => p === basePath)
-    const content = `---\n${yamlStringify(front)}---\n`
-    const prospective: Row = {
-        file: placeholderFile(name, path),
-        note: front,
-        formula: {},
-    }
     try {
-        await api.write(path, content)
+        const row = await createRow({ basePath, config: props.config, ownsRows: false })
         props.onAdded()
-        if (!newTaskVisible(props.config, props.view, prospective))
+        if (!newTaskVisible(props.config, props.view, row))
             pushToast(
-                `Added ${path} — it does not match this view's filters, so it will not appear here`,
+                `Added ${row.file.path} — it does not match this view's filters, so it will not appear here`,
             )
         openRowEditor({
-            row: prospective,
+            row,
             config: props.config,
             view: props.view,
             onChanged: props.onAdded,
@@ -109,15 +137,13 @@ const AddRowAction = (props: AddRowActionProps) => (
             !!props.basePath
         }
     >
-        <IconTextButton
+        <IconButton
             icon="Plus"
-            title="New row"
+            label="New row"
             onClick={() =>
                 void (props.ownsRows ? addOwnedRow(props) : addNoteRow(props))
             }
-        >
-            <BarLabel long="row" drop="early" />
-        </IconTextButton>
+        />
     </Show>
 )
 

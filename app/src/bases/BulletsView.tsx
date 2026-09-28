@@ -3,7 +3,6 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderTitle } from './renderValue'
 import TaskRow from './TaskRow'
 import PlainButton from '../ui/PlainButton'
-import IconButton from '../ui/IconButton'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
 import styles from './BulletsView.module.css'
@@ -68,7 +67,20 @@ export function BulletsView(props: {
                         <ul class={styles.bulletList}>
                             <For each={group().rows}>
                                 {row => (
-                                    <li class={styles.bulletItem}>
+                                    <li
+                                        class={styles.bulletItem}
+                                        onContextMenu={e => {
+                                            if (
+                                                !rowEditable(row) ||
+                                                typeof row.note.line ===
+                                                    'number'
+                                            )
+                                                return
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            openEditor(row)
+                                        }}
+                                    >
                                         <Show
                                             when={isTasks()}
                                             fallback={
@@ -100,26 +112,6 @@ export function BulletsView(props: {
                                                                 row,
                                                             )}
                                                         </PlainButton>
-                                                    </Show>
-                                                    <Show
-                                                        when={
-                                                            rowEditable(row) &&
-                                                            !canWriteStoredRow(
-                                                                row,
-                                                            )
-                                                        }
-                                                    >
-                                                        <IconButton
-                                                            icon="Pencil"
-                                                            label="Edit properties"
-                                                            class={
-                                                                styles.bulletEditBtn
-                                                            }
-                                                            onClick={e => {
-                                                                e.stopPropagation()
-                                                                openEditor(row)
-                                                            }}
-                                                        />
                                                     </Show>
                                                 </div>
                                             }

@@ -1,5 +1,5 @@
 // Visual spec for <KanbanColumnNameInput> — the column-name field shared by KanbanAddColumn
-// (adding a column) and KanbanColumnMenu (renaming one). Presentational: it owns only the
+// (adding a column) and KanbanView's own header rename. Presentational: it owns only the
 // input's value/error state; the caller owns what happens on submit/cancel.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'

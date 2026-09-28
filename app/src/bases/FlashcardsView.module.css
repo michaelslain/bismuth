@@ -6,7 +6,7 @@
 
    OWNS: .flashcards-host, .count/.card-dir/.tally (what the deck contributes to the HOST's view
    bar — see below), .fcmeter/.stage/.grade-row/.cardwrap/.card-actions/.flip-family/
-   .card-appear (+its @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/
+   .card-appear (+its @keyframes)/.qcaption/.fcdiv/.abody/.card-md/
    .done/.good-text/.inline-bolt (review stage — .fcmeter is the restored session-progress
    AsciiMeter, on the deck's own surface, NOT inside the bar). The single-card edit modal (the
    card's own ✎ action) owns no classes here any more — modal-redesign Task 8 rebuilt it as a
@@ -128,10 +128,9 @@
 /* Centered under the (also centered) card now that the grade buttons are plain bracket
    `TextButton`s rather than the old wide grade cards — the row no longer needs its own
    pane-relative width, .cardwrap below still does. */
-.grade-row { flex: 0 0 auto; display: flex; justify-content: center; gap: var(--sp-4); }
-/* The key hint sits OUTSIDE the TextButton (a class passed to a button-family control may only
-   place it, never decorate its insides) — the grade label and its Kbd cap are siblings here. */
-.grade-item { display: flex; align-items: center; gap: var(--sp-2); }
+/* --bar-icon-gap — the one bracket-sibling gap, shared with the sidebar bar and IconBar groups —
+   so [hard] [good] [easy] read at the same rhythm as any other bracket row in the app. */
+.grade-row { flex: 0 0 auto; display: flex; justify-content: center; gap: var(--bar-icon-gap); }
 
 /* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
    Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
@@ -144,16 +143,48 @@
   perspective: 1800px; width: min(680px, 100%);
   flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
   overflow-y: auto;
+  /* Never a horizontal scrollbar: the card is exactly this box's width and wraps its own content
+     (a wide `pre` scrolls itself), so x has nothing legitimate to scroll. Without this, a NEW
+     card's `card-appear` slide-in (translateX(40px)) overflowed x by ~34px for ~7 frames and
+     flashed a horizontal bar on every advance. (overflow-y stays auto for a short pane.) */
+  overflow-x: hidden;
+  /* A size container so the flip's push-back (`card-flip` below) can be exactly half the card's
+     width — `50cqi` — whatever width the pane gives it. */
+  container-type: inline-size;
 }
 /* Per-card actions pinned to each face's top-right — rendered on BOTH faces so they
-   flip with the card. Faint at rest, firm on card hover. */
-.card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; display: flex; gap: var(--sp-1); opacity: 0.4; transition: opacity 0.15s; }
+   flip with the card. Faint at rest, firm on card hover. Position/opacity only — the button
+   spacing itself comes from IconBar (ui/IconBar.tsx), not a local gap rule. */
+.card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; opacity: 0.4; transition: opacity 0.15s; }
 .flip-card:hover .card-actions { opacity: 1; }
 .flip-card { width: 100%; min-height: 420px; perspective: 1200px; cursor: pointer; }
-.flip-inner { position: relative; width: 100%; min-height: 420px; transition: transform 0.5s; transform-style: preserve-3d; }
+.flip-inner { position: relative; width: 100%; min-height: 420px; transform-style: preserve-3d; }
 .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+/* The flip, and why it is an animation rather than a `transform` transition.
+   A plain rotateY about the card's centre swings one vertical edge TOWARD the viewer, and under
+   .flip-card's perspective that edge projects larger than the card — up to ~15px wider and ~70px
+   taller mid-turn at 680px. That projected box is scrollable overflow for .cardwrap (overflow-y:
+   auto, so overflow-x computes to auto too), which flashed a vertical then a horizontal scrollbar
+   on every flip. Measured per frame, .cardwrap was the only element that ever overflowed.
+   The fix is geometric, not a clip: push the card back by translateZ(-half its width) while it
+   turns, so no point of it ever comes nearer than the rest plane (z <= 0 at every frame). Under
+   perspective a point at z <= 0 projects no larger than it sits, so the turning card's projected
+   box always stays inside its resting box and .cardwrap has nothing to scroll.
+   Keyframes are chosen so the push-back always LEADS the swing: in 0-25% the depth goes 0 -> 50cqi
+   while the angle goes 0 -> 45deg, and sin(45deg * f) <= f for every f, whatever the easing (both
+   share one eased progress per segment); 75-100% mirrors it. The first/last segments ease in/out
+   with an end/start slope of 1, matching the linear middle's angular speed so the turn does not
+   hitch at the keyframes. `reverse` plays the same path back for a card that un-flips. */
+.flip-inner[data-flipping] { animation: card-flip 0.5s reverse; }
+.flip-card.flipped .flip-inner[data-flipping] { animation-direction: normal; }
+@keyframes card-flip {
+  0% { transform: translateZ(0) rotateY(0deg); animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.75); }
+  25% { transform: translateZ(-50cqi) rotateY(45deg); animation-timing-function: linear; }
+  75% { transform: translateZ(-50cqi) rotateY(135deg); animation-timing-function: cubic-bezier(0.25, 0.25, 0.5, 1); }
+  100% { transform: translateZ(0) rotateY(180deg); }
+}
 /* Entrance: a NEW card remounts (keyed by row index+dir) and plays a crisp scale+fade in.
-   The flip (rotateY) is a separate transition on the persistent element, so switching cards
+   The flip (rotateY) is a separate animation on the persistent element, so switching cards
    never flips backward — it just appears. */
 .card-appear { animation: card-appear 180ms var(--ease) both; }
 @keyframes card-appear {
@@ -162,7 +193,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .card-appear { animation: none; }
-  .flip-inner { transition: none; }
+  .flip-inner[data-flipping] { animation: none; }
 }
 .flip-face {
   position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
@@ -178,23 +209,27 @@
 .flip-card:hover .flip-face { border-color: var(--accent); }
 .flip-back { transform: rotateY(180deg); justify-content: flex-start; }
 
-/* Flip hint: the shared asc-kbd/asc-key keycap, pinned to the bottom of the front face. */
-.fliphint {
-  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-  font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: 0.22em; text-transform: uppercase;
-  color: var(--faint); display: flex; align-items: center; gap: var(--sp-4);
-}
+/* Flip scrollbars inside the card: `data-flipping` (set for the 0.5s `card-flip` animation, cleared
+   on its animationend/animationcancel — FlashcardsView.tsx) forces both faces and the answer body
+   to `overflow: hidden` for that window, so no scrollbar can appear mid-rotation even on a face
+   whose content overflows at rest. Once settled, their own `overflow-y: auto` takes back over so a
+   long answer still scrolls. (.cardwrap, OUTSIDE the card, is kept clear by the flip's geometry —
+   see `card-flip` above — not by a clip.) */
+.flip-inner[data-flipping] .flip-face,
+.flip-inner[data-flipping] .abody { overflow: hidden; }
 
-/* Answer face: italic prompt echo, hairline divider, then the answer body. */
-.qcaption { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: var(--sp-6); }
+/* Answer face: italic prompt echo, hairline divider, then the answer body. Prose face — the same
+   font the editor uses for note prose, not the UI/mono stack. */
+.qcaption { font-family: var(--prose-font); font-size: var(--prose-font-size); font-style: italic; line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: var(--sp-6); }
 .qcaption p { margin: 0; }
 .qcaption img { max-width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--r-0); }
 .fcdiv { width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent); margin-bottom: 18px; flex: 0 0 auto; }
 .abody { overflow-y: auto; max-height: 100%; padding-right: var(--sp-2); }
 
-/* Card prose: the UI/mono font (--ui-font-stack, a Monaspace variant) by default; the same
-   stack for `code`/```fences```. Markdown-rendered. */
-.card-md { font-family: var(--ui-font-stack); font-size: var(--fs-display); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
+/* Card prose: the same prose font + size the editor uses for note prose (`--prose-font`/
+   `--prose-font-size`, global.css) — inline `code`/```fences``` below stay the UI/mono stack at
+   `--code-font-size`, same as the editor's own size-reset. Markdown-rendered. */
+.card-md { font-family: var(--prose-font); font-size: var(--prose-font-size); line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
 /* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, global.css's `styles/tokens.css`
    section).
    THIS BLOCK IS NEW and it is the whole reason the ramp was centralized. `.card-md` set NO heading
@@ -214,19 +249,21 @@
 .card-md ul, .card-md ol { text-align: left; margin: var(--sp-3) 0; padding-left: 22px; display: flex; flex-direction: column; gap: var(--sp-5); }
 .card-md li { margin: 0; }
 .card-md li::marker { color: var(--faint); }
-.card-md h1, .card-md h2, .card-md h3 { font-family: var(--ui-font-stack); margin: var(--sp-2) 0 var(--sp-4); }
+/* No font-family override here any more: headings are part of the prose face too (they inherit
+   .card-md's --prose-font like every other prose element), only their margin is card-specific. */
+.card-md h1, .card-md h2, .card-md h3 { margin: var(--sp-2) 0 var(--sp-4); }
 .card-md strong { font-weight: 600; color: var(--fg); }
 .card-md em { font-style: italic; }
 .card-md a { color: var(--accent); }
 .card-md img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--r-0); }
-.card-md code { font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 1)); background: color-mix(in srgb, var(--fg) 11%, transparent); padding: 1px var(--sp-2); border-radius: var(--r-0); }
-.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 1)); background: var(--surface-2); padding: var(--sp-5) var(--sp-5); border-radius: var(--r-0); overflow-x: auto; }
+.card-md code { font-family: var(--ui-font-stack); font-size: var(--code-font-size); background: color-mix(in srgb, var(--fg) 11%, transparent); padding: 1px var(--sp-2); border-radius: var(--r-0); }
+.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: var(--code-font-size); background: var(--surface-2); padding: var(--sp-5) var(--sp-5); border-radius: var(--r-0); overflow-x: auto; }
 .card-md pre code { background: none; padding: 0; }
 
 /* Grade row: one-button-family pass (Task 3) replaced the bespoke colored-card `.grade`
-   look with plain bracket `TextButton`s (`[hard] [good] [easy]`, `hard` danger) — the
-   selection colour now comes from Button's own `danger` prop, not a per-grade class here.
-   No rules of this file's own are needed for the buttons themselves any more. */
+   look with plain bracket `TextButton`s (`[hard] [good] [easy]`), all three the same
+   default tone — bases-polish Task 6 dropped `hard`'s `danger` prop, so no per-grade
+   colour survives. No rules of this file's own are needed for the buttons themselves. */
 
 /* Done state (deck/cram complete). Layout wrapper only — the title + message now render through
    <EmptyState> (this task's intentional judgment-finding swap), so `.big`/`.sub` no longer have

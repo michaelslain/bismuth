@@ -16,7 +16,7 @@ import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row } from '../../../core/src/bases/types'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
-import { kanbanViews, openColumnMenu } from '../ui/_kanbanProbes'
+import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
 import { toasts } from '../toastStore'
@@ -550,7 +550,6 @@ export const StoredRowsRenameColumn: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const body = within(canvasElement.ownerDocument.body)
 
         // A placeholder add, still in flight (its `/row/update` write is gated open) when the
         // rename below fires — the rename's batched write must exclude it, not send a
@@ -570,13 +569,14 @@ export const StoredRowsRenameColumn: Story = {
             ).toBe(true),
         )
 
-        await openColumnMenu(canvasElement, 'todo')
-        await userEvent.click(await body.findByText(/^rename$/i))
+        const col = focusColumnHeaderButton(
+            canvasElement,
+            'todo',
+            'Rename column',
+        )
+        await userEvent.keyboard('{Enter}')
         const input = await waitFor(
-            () =>
-                within(
-                    body.getByTestId('kanban-column-menu'),
-                ).getByDisplayValue('todo'),
+            () => within(col).getByDisplayValue('todo'),
             { timeout: 3000 },
         )
         await userEvent.clear(input)

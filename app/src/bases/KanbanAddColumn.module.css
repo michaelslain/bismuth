@@ -1,12 +1,10 @@
 /* ---- KanbanAddColumn ---- */
-/* The trailing ghost column: a bare `+` (Acceptance 11), the far-right sibling of the board's
-   real columns. `.trigger` is a 24px (--h-control) square hit area, same tones as the add-card
-   `+` (KanbanView.module.css) — no box, no label. `margin-left: auto` pushes the ghost into the
-   board's far-right slot regardless of how many real columns precede it, instead of sitting one
-   gap after the last one. On a full board (the common case in a split pane) the columns' own
-   flex-grow takes all the free space first and that auto margin collapses to 0, so
-   `padding-left: var(--sp-7)` is the gutter that remains — wider than the ~25px count-to-dot
-   rhythm between two real columns, so the `+` never reads as the last column's `02 +`.
+/* The trailing ghost column: a bare `+` (Acceptance 11), following immediately after the last
+   real column at the board's normal column gap (Acceptance 8) — not pinned to the board's
+   right edge. `.trigger` is a 24px (--h-control) square hit area, same tones as the add-card `+`
+   (KanbanView.module.css) — no box, no label. `padding-left: var(--sp-7)` is the ghost's own
+   leading gutter — wider than the ~25px count-to-dot rhythm between two real columns, so the `+`
+   never reads as the last column's `02 +`.
    The ghost RESERVES the name field's width at rest (`min-width` below, --kb-add-field-w): the
    field opens at the `+`'s own x and runs --kb-add-field-w to its right, so without the
    reservation a far-right ghost's field overflows `.kanban`'s `overflow-x: auto` and focusing it
@@ -27,7 +25,6 @@
   flex: 0 0 auto;
   align-self: flex-start;
   height: var(--h-control);
-  margin-left: auto;
   padding-left: var(--sp-7);
   box-sizing: border-box;
   min-width: calc(var(--sp-7) + var(--kb-add-field-w));

@@ -5,6 +5,7 @@ import { isLink, type Link } from '../../../core/src/bases/values'
 import { renderInline, hasInlineMarkup } from './markdown'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
+import Tag from '../ui/Tag'
 import styles from './renderValue.module.css'
 import EmptyValue from '../ui/EmptyValue'
 import NoteLink from '../ui/NoteLink'
@@ -59,17 +60,23 @@ export function renderStatus(s: string): JSX.Element {
     return <StatusText status={s} />
 }
 
-/** Plain mono #tag list in teal — no chips. `dense` is KanbanCard's compact meta-row sizing
- *  (tighter gap, chrome type size) — a flag rather than KanbanCard reaching into this
- *  module's `.tagRow` class, which would break under CSS-module hashing (each module's
- *  classes are local to it). */
+/** A tag list as `#alpha, #beta` — each a ui/Tag, comma-separated — which is exactly how the tags
+ *  field (ui/TagsField) reads while you edit it, so a cell looks the same at rest and in edit.
+ *  `dense` is KanbanCard's compact meta-row sizing (chrome type size) — a flag rather than
+ *  KanbanCard reaching into this module's `.tagRow` class, which would break under CSS-module
+ *  hashing (each module's classes are local to it). */
 export function renderTags(v: unknown, dense?: boolean): JSX.Element {
     const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
     if (tags.length === 0) return <EmptyValue />
     return (
         <span class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
             <For each={tags}>
-                {t => <span>{t.startsWith('#') ? t : `#${t}`}</span>}
+                {(t, i) => (
+                    <>
+                        <Show when={i() > 0}>{', '}</Show>
+                        <Tag name={t} />
+                    </>
+                )}
             </For>
         </span>
     )
@@ -106,7 +113,21 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
     // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
     // its own target; otherwise stringify and open this row's note.
-    const label = isLink(v) ? linkLabel(v as Link) : v == null ? '' : String(v)
+    // A list value must not reach `String()`: that joins with a bare `,` (`alpha,beta,gamma`),
+    // which is how a tags column that happened to be the FIRST column read after an edit — the
+    // same value renderCell shows as `#alpha #beta #gamma` one column over. A tag column keeps
+    // renderTags' own look; any other list joins the way renderValue's generic array branch does.
+    const list = !isLink(v) && Array.isArray(v) ? v.map(String) : null
+    const label = isLink(v)
+        ? linkLabel(v as Link)
+        : list
+          ? list.join(', ')
+          : v == null
+            ? ''
+            : String(v)
+    const tagged = !isLink(v) && isTagColumn(id) && label !== ''
+    const content = (): JSX.Element =>
+        tagged ? renderTags(v) : label || row.file.name
     const target = isLink(v) ? (v as Link).path : row.file.path
     const open = () =>
         window.dispatchEvent(
@@ -120,7 +141,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const linkable = isLink(v) || !Number.isInteger(row.index)
     return (
         <span class={styles.cellTitle}>
-            <Show when={linkable} fallback={<>{label || row.file.name}</>}>
+            <Show when={linkable} fallback={<>{content()}</>}>
                 <a
                     href="#"
                     onClick={e => {
@@ -128,7 +149,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
                         open()
                     }}
                 >
-                    {label || row.file.name}
+                    {content()}
                 </a>
             </Show>
         </span>

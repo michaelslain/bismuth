@@ -1,0 +1,26 @@
+/* app/src/ui/TagsField.module.css — the single-line editor host. FormControl supplies the chrome
+   (underline, focus rule, control height, UI font); this only lets the embedded CodeMirror fill it
+   and vertically centre its one line, and gives the field a text cursor across its whole width. */
+.field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  cursor: text;
+}
+/* In place (a table cell): no chrome at all, and the host's own font, size and line height — the
+   value must look exactly as it does at rest, only now with a caret. */
+.bare {
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.field > :global(.cm-editor) {
+  flex: 1;
+  min-width: 0;
+}
+/* A tag inside the field — drawn as ui/Tag draws one: `#name` in teal (the face is already the
+   field's own UI font). */
+.tagToken,
+.tagTokenTypedHash { color: var(--teal); }
+/* The tag's `#`, drawn — ui/Tag's `#name` — so the saved text stays the bare name. */
+.tagToken::before { content: '#'; }

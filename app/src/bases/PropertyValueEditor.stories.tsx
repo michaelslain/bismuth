@@ -1,16 +1,26 @@
 // Visual spec for <PropertyValueEditor> — the type-aware control a kanban meta chip swaps in
 // on click (KanbanCard.tsx): text input, markdown textarea, typed number/date input, a `Select`
-// for an enum, a chip add/remove picker for `multiselect`, and a comma-separated box for a
-// plain (undeclared) tag list. No network, no theme fixture beyond the global tokens — purely a
+// for an enum, and a TagsField (one line of text with the note editor's completion popup) for a
+// plain (undeclared) tag list or a declared `multiselect`. No network, no theme fixture beyond the global tokens — purely a
 // value in, callback out control, so every `PropertyEditKind` variant gets its own story.
 //
 // `boolean` is deliberately absent: the file-level comment on the component says the caller
 // toggles booleans directly via a `Chip` and this component never sees that kind.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, fireEvent, userEvent, within } from 'storybook/test'
-import { PropertyValueEditor } from './PropertyValueEditor'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { PropertyValueEditor, resetVaultTagsCache } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
+import {
+    completionLabels,
+    expectCompletions,
+    pressKey,
+    selectedCompletion,
+    tagsFieldView,
+    typeInto,
+} from '../ui/_tagsFieldPlay'
 
 const meta = {
     title: 'Bases/PropertyValueEditor',
@@ -37,7 +47,7 @@ function Frame(props: { children: unknown }) {
     )
 }
 
-/** A live harness so a story can show what got committed (or cancelled) — the component itself
+/** A live harness that holds what got committed (or cancelled), for the plays to read — the component itself
  *  is uncontrolled-on-commit (calls back once and the caller decides what happens), so this
  *  mirrors what KanbanCard's `commitMeta` does: apply the value and re-render. */
 function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
@@ -56,15 +66,13 @@ function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
                 }}
                 onCancel={() => setStatus('cancelled')}
             />
-            <div
-                style={{
-                    'margin-top': '10px',
-                    'font-size': 'var(--fs-ui)',
-                    color: 'var(--text-muted)',
-                }}
-            >
-                {status()}: {JSON.stringify(value())}
-            </div>
+            {/* Read by the plays only — not shown: the field itself is what a person looks at. */}
+            <span hidden data-testid="status">
+                {status()}
+            </span>
+            <span hidden data-testid="committed">
+                {status() === 'committed' ? JSON.stringify(value()) : ''}
+            </span>
         </Frame>
     )
 }
@@ -149,38 +157,30 @@ export const SelectLegacyValue: Story = {
     ),
 }
 
-/** Undeclared tags — a plain comma-separated box, not the chip picker (that's `multiselect`
- *  only, for a DECLARED options list). */
+/** Undeclared tags — a TagsField reading `frontend, bug, ` with the caret at the end, like a
+ *  frontmatter `tags:` line. Suggestions (propertyEdit.ts's `tagsOptions` + the vault's tags)
+ *  appear only once you type. */
 export const Tags: Story = {
     render: () => (
-        <Harness kind={{ kind: 'tags' }} initial={['frontend', 'bug']} />
+        <Harness
+            kind={{
+                kind: 'tags',
+                options: ['frontend', 'bug', 'backend', 'docs'],
+                tag: true,
+            }}
+            initial={['frontend', 'bug']}
+        />
     ),
 }
 
-/** `multiselect` with two of three declared options already picked — chips + a "+ Add" Select
- *  offering only the remaining option. Static render; see `MultiselectAddRemove` below for the
- *  live add/remove interaction this kind supports (each write commits immediately and keeps
- *  the editor open — no natural "blur" for a set of chip buttons). */
+/** `multiselect` with two of three declared options picked — the same field, comma-separated
+ *  (declared options may contain spaces): `planning, frontend, `. */
 export const MultiselectPartial: Story = {
     render: () => (
         <Harness
             kind={{
                 kind: 'multiselect',
                 options: ['planning', 'frontend', 'docs'],
-            }}
-            initial={['planning', 'frontend']}
-        />
-    ),
-}
-
-/** `multiselect` with every declared option already selected — the "+ Add" Select doesn't
- *  render at all (`available().length > 0` gates it), only removable chips remain. */
-export const MultiselectFull: Story = {
-    render: () => (
-        <Harness
-            kind={{
-                kind: 'multiselect',
-                options: ['planning', 'frontend'],
             }}
             initial={['planning', 'frontend']}
         />
@@ -197,7 +197,7 @@ export const TextEnterCommits: Story = {
         await userEvent.clear(input)
         await userEvent.type(input, 'New title')
         await userEvent.keyboard('{Enter}')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '"New title"',
         )
     },
@@ -220,7 +220,7 @@ export const EscapeReverts: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '"Original"',
         )
     },
@@ -228,8 +228,8 @@ export const EscapeReverts: Story = {
 
 /** Interactive: Escape must reach `window` from a plain field (so the card modal's own
  *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
- *  NOT reach `window` while a multiselect's own "+ Add" suggestion list is open (that Escape
- *  belongs to the list: it closes the list and stops there, same as any other open popover). */
+ *  NOT reach `window` while a list field's completion popup is open (that Escape belongs to the
+ *  popup: it closes it and stops there, as in the note editor). */
 export const EscapeBubbles: Story = {
     render: () => (
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
@@ -248,30 +248,30 @@ export const EscapeBubbles: Story = {
         }
         window.addEventListener('keydown', onWindowKeyDown)
 
+        // The list field: typing opens the completion popup; Escape closes ONLY the popup.
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'fr')
+        await expectCompletions(['frontend'])
+        pressKey(view, 'Escape')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        await expect(windowEscapes).toEqual([])
+
         // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getAllByText(/committed:/)[0]).toHaveTextContent(
+        await expect(canvas.getAllByTestId('committed')[0]).toHaveTextContent(
             '"Original"',
         )
-        await expect(windowEscapes).toEqual(['window'])
-
-        // Multiselect with its "+ Add" suggestion list open: the first Escape closes ONLY
-        // the list and must not reach window.
-        await userEvent.click(canvas.getByText('+ Add'))
-        await within(document.body).findByText('frontend')
-        await userEvent.keyboard('{Escape}')
         await expect(windowEscapes).toEqual(['window'])
 
         window.removeEventListener('keydown', onWindowKeyDown)
     },
 }
 
-/** Interactive: add a chip via the "+ Add" Select, then remove one by clicking it — each
- *  write commits immediately with `keepOpen: true`, so the editor stays mounted across both
- *  changes instead of closing after the first. */
-export const MultiselectAddRemove: Story = {
+/** Interactive (`multiselect`): type the start of an option — the popup offers the matching
+ *  unused options — Tab takes the highlighted one, Enter commits the whole list once. */
+export const MultiselectTypeAndCommit: Story = {
     render: () => (
         <Harness
             kind={{
@@ -283,17 +283,111 @@ export const MultiselectAddRemove: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        // Open the "+ Add" Select and pick "frontend".
-        await userEvent.click(canvas.getByText('+ Add'))
-        const option = await within(document.body).findByText('frontend')
-        await fireEvent.click(option)
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'f')
+        await expectCompletions(['frontend'])
+        pressKey(view, 'Tab')
+        await waitFor(() =>
+            expect(view.state.doc.toString()).toBe('planning, frontend, '),
+        )
+        pressKey(view, 'Enter')
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '["planning","frontend"]',
         )
-        // Remove "planning" by clicking its chip.
-        await userEvent.click(canvas.getByText('planning'))
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
-            '["frontend"]',
+    },
+}
+
+/** Interactive (`tags`): a word that matches no suggestion is kept as a new tag — Enter (no
+ *  popup open) commits it. */
+export const TagsCreatable: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'tags', options: ['frontend', 'bug'], tag: true }}
+            initial={['bug']}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'brand-new')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        pressKey(view, 'Enter')
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
+            '["bug","brand-new"]',
         )
+    },
+}
+
+/** Interactive (`tags`): suggestions include every tag in the VAULT — the graph's tag nodes, the
+ *  same source the note editor's tag completion reads — after the column's own values. Typing
+ *  `ch` pops `#chicken` / `#chores` under the value with the first highlighted; Tab takes it;
+ *  Enter commits. */
+export const TagsSuggestVaultTags: Story = {
+    render: () => {
+        resetVaultTagsCache()
+        setTransport(
+            fakeTransport({
+                graph: {
+                    nodes: ['chicken', 'chores', 'frontend'].map(t => ({
+                        id: `tag:${t}`,
+                        label: `#${t}`,
+                        kind: 'tag',
+                    })),
+                    edges: [],
+                },
+            }),
+        )
+        return (
+            <Harness
+                kind={{ kind: 'tags', options: ['frontend', 'bug'], tag: true }}
+                initial={['bug']}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'ch')
+        await expectCompletions(['#chicken', '#chores'])
+        expect(selectedCompletion()).toBe('#chicken')
+        pressKey(view, 'Tab')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('bug, chicken, '))
+        pressKey(view, 'Enter')
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
+            '["bug","chicken"]',
+        )
+    },
+}
+
+/** A list that is NOT tags — `["Jane Doe"]` — is comma-separated (so the space survives), and
+ *  opening the field and leaving it without typing writes NOTHING: the text is never re-parsed
+ *  back into a (different) list unless the person changed it. */
+export const UntouchedListWritesNothing: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'tags', options: [], tag: false }}
+            initial={['Jane Doe']}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const view = await tagsFieldView(canvasElement)
+        expect(view.state.doc.toString()).toBe('Jane Doe, ')
+        view.contentDOM.blur()
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        expect(canvas.getByTestId('committed')).toHaveTextContent('')
+        expect(view.state.doc.toString()).toBe('Jane Doe')
+    },
+}
+
+/** A list the field could not round-trip (numbers, links, or a comma inside a value) is shown
+ *  read-only — no editor, nothing to commit. */
+export const ReadonlyList: Story = {
+    render: () => <Harness kind={{ kind: 'readonly' }} initial={[1, 2, 3]} />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        expect(canvas.getByText('1, 2, 3')).toBeInTheDocument()
+        expect(canvasElement.querySelector('[data-testid="tags-field"]')).toBeNull()
+        expect(canvasElement.querySelector('input, textarea')).toBeNull()
     },
 }

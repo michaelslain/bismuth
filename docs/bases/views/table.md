@@ -137,19 +137,31 @@ columnWidths:
   note.price: 80
 ```
 
-Widths are in pixels. A partial map (some columns missing) causes the table to use a **fluid 100% layout** (no `table-layout: fixed`) until a drag-resize re-seeds every column width.
+Widths are in pixels. A column with no entry here gets a default, seeded once on first paint
+from its header's own rendered natural width (so an unstyled table's first paint looks exactly
+like the old auto-layout table) — see [Fixed Layout, Always](#fixed-layout-always) below.
 
 ### Via Drag-Resize (Interactive)
 
 Grab the right edge of any header (within `RESIZE_GRAB_PX = 10px` of the cell's right boundary, or the left edge of the next column) and drag horizontally.
 
 Behavior:
-- While resizing, the table switches to `table-layout: fixed` with `width = sum(all column widths)px` — this stops the browser from redistributing space to other columns (spreadsheet semantics: only the grabbed column changes).
+- The table is table-layout:fixed at all times (see below) with `width = sum(all column widths)px` — this stops the browser from redistributing space to other columns (spreadsheet semantics: only the grabbed column changes).
 - Columns before the grabbed column are pinned exactly; columns after shift as a block.
 - The minimum column width is controlled by `settings.ui.tableMinColWidth` (default `60`, range `30–150`, configured in `.settings`).
 - On release, `api.setProperty(basePath, "columnWidths", widths)` writes the full widths map back to the base file.
 
-The `fixed` layout is only active when **every visible column has a known width**. Adding a new column after widths were saved causes fallback to fluid layout until the next resize.
+### Fixed Layout, Always
+
+The table renders `table-layout: fixed` with a `<colgroup>` from the moment it mounts, not only
+once every column has a `columnWidths` entry. A column with no stored width gets a default,
+measured once on first paint from its own header's rendered natural width (identical to what the
+old auto-layout table would have shown), then held fixed forever after. This is what makes
+clicking a cell to edit it — a `<select>` trigger, a text input, a date picker — never widen or
+narrow any column: by the time a cell can be clicked, every column's width is already pinned,
+edited cell or not. Dragging a header still writes the real value to `columnWidths`; an
+unresized column's *effective* width (used for layout) is the same default until a drag sets
+one, but nothing is written to the file until that drag happens.
 
 #### Width Persistence vs. Reload
 
@@ -242,6 +254,7 @@ Supported summary names (case-sensitive):
 The first column (`ci() === 0`) renders as a **title cell** (`renderTitle`):
 - Accent book icon + an `<a>` link that dispatches a custom `bismuth-open` event to open the note.
 - If the value is a `Link` object (e.g. from `file.asLink(...)` or the `link()` function), the link's display text and target path are used; otherwise the row's `file.path` is opened.
+- A list value never reaches `String()` (which would read `alpha,beta,gamma`): a `tags`/`tag` first column renders the same teal `#tag` list as a data cell, any other list joins with `, `.
 
 All other columns render as **data cells** (`renderCell`), with special handling for heuristically detected column names:
 - `status` / `note.status` — colored dot + word via `StatusText`.
@@ -270,9 +283,9 @@ Every row a table can show is reachable from the UI — no action requires hand-
 
 **Requires a saved base file** (`basePath` set) — same gate as reorder/resize above. An embedded `query` block is read-only.
 
-- **Add a row**: the "+ row" button in the view bar (mode `normal` only — `mode: tasks` keeps its own "+ task" button instead). A base that **owns its rows** (no `source:`) appends a new row to the base's own body, seeded from any declared property `default`s. A **notes-sourced** base creates a new note (named "Untitled", deduped) in the base's folder, seeded the same way. Then click its cells to fill it in; if the base's filters would hide the new row from this view, a toast says so and names where it actually landed.
-- **Edit a cell**: click it. The cell turns into a type-aware editor in place (`TableCell.tsx` over `PropertyValueEditor`: text, number, date, select, markdown, … — a declared property type picks the control, otherwise the value's own shape does; a table never guesses a dropdown from the other rows' values). Enter or blur saves, Escape cancels. The write is `openRowEditor.tsx`'s `commitMeta`: a row stored in the base's own body is rewritten by index, a note row's frontmatter key is set (an emptied cell removes the key). `file.*`/`formula.*` columns and a task LINE's fields stay read-only here — a task line edits through the task editor.
-- **Delete a row**: right-click it → "delete row". A row stored in the base's own body is removed by index; a note row is moved to trash — both offer an Undo toast.
+- **Add a row**: the `[+]` button in the view bar (mode `normal` only — `mode: tasks` keeps its own `[+]` "New task" button instead). A base that **owns its rows** (no `source:`) appends a new row to the base's own body, seeded from any declared property `default`s. A **notes-sourced** base creates a new note (named "Untitled", deduped) in the base's folder, seeded the same way. Then click its cells to fill it in; if the base's filters would hide the new row from this view, a toast says so and names where it actually landed.
+- **Edit a cell**: click it. The cell turns into a type-aware editor in place (`TableCell.tsx` over `PropertyValueEditor`: text, number, date, select, markdown, … — a declared property type picks the control, otherwise the value's own shape does; a table never guesses a dropdown from the other rows' TEXT values — only a tags column borrows the other rows' tags, as suggestions), **except a boolean cell**, which never opens an editor at all — a click commits the flip (`!value`) immediately and the cell still reads `x`/blank. For every other kind, Enter or blur saves, Escape cancels. A **tags** cell opens as one comma-separated line of text — `alpha, beta, `, caret at the end, each tag teal — typed like a frontmatter list (`ui/TagsField.tsx`): typing a value pops the note editor's own completion popup under it with the tags that start with it (the column's own values first, then every tag in the vault — the graph's tag nodes, the same source the note editor's tag completion reads), the best one highlighted; the `accept-completion` key (Tab by default) or Enter takes it, Enter with no popup (or leaving the cell) saves the whole list once, a value that matches nothing is kept as a new tag, and opening the cell and leaving it without typing saves nothing. The editor never changes the row's height: it sits in the cell's own line box. The value is stored as a YAML list. The write is `openRowEditor.tsx`'s `commitMeta`: a row stored in the base's own body is rewritten by index, a note row's frontmatter key is set (an emptied cell removes the key). `file.*`/`formula.*` columns and a task LINE's fields stay read-only here — a task line edits through the task editor.
+- **Edit or delete a row**: right-click any editable row to open the row editor modal (`openRowEditor`, the same modal `[✎]` buttons elsewhere in the app open) — it lists every column this view shows and carries its own delete action. A row stored in the base's own body is removed by index; a note row is moved to trash — both offer an Undo toast from inside the modal.
 - A note row's title cell **still opens the note** on a plain click, exactly as before; its other cells edit in place. There is no separate pencil button.
 
 ---
@@ -322,13 +335,14 @@ views:
 ## Gotchas and Edge Cases
 
 - **`order: []` means "show all"**: An empty `order` array (not absent, but present as `[]`) is treated as "no preference" by `query.ts` and falls back to auto-derived columns. Setting `order: []` in the settings modal does NOT produce zero columns; it shows everything. The Settings modal enforces a minimum of one visible column.
-- **Fluid vs fixed layout**: The table uses `table-layout: fixed` with an exact pixel width only when ALL visible columns have a known width in `columnWidths`. A single missing column (e.g. a new column added after widths were saved) falls back to fluid 100% layout until a drag-resize re-seeds all columns.
+- **The table is always `table-layout: fixed`**: a column with no `columnWidths` entry (e.g. a new column added after widths were saved) gets a default seeded from its own header's natural width on first paint, not a fluid 100% layout. Column widths never move once mounted, editing a cell included.
 - **Both sides of a resize boundary are grabbable**: The right 10px of column `i` OR the left 10px of column `i+1` both resize column `i`. This is intentional — the visual separator is centered on the boundary and overhangs into the next cell.
 - **Reorder and resize are mutually exclusive per-interaction**: `pointerdown` checks the resize zone first; only if outside the zone does a reorder drag start.
 - **Reorder writes `order`; resize writes `columnWidths`**: these are separate frontmatter keys. Reordering removes hidden columns (only visible columns are in the reordered array). Resizing always writes all current column widths.
 - **Embedded `query` blocks are read-only**: `onReorder` and `onWidthsChange` are only passed when `data().basePath` is truthy (a saved base file), so drag-reorder and resize are disabled for embedded blocks.
 - **Summaries key normalization**: a `summaries` entry keyed on `"price"` (bare) and one on `"note.price"` both resolve to `note.price` via `canonicalId` — only one summary will appear.
 - **Width persistence across SSE reloads**: `TableView` stays mounted across base refetches. The `createEffect` re-syncs `columnWidths` from props when they change, but skips the update while a resize drag is in progress to avoid flickering.
+- **Boolean cells never mount a text editor**: `propertyEditKind`'s `boolean` kind is checked before a cell opens; a click commits `!value` straight away. `PropertyValueEditor` is never mounted for a boolean column, so there is no `input` to accidentally type into.
 
 ---
 

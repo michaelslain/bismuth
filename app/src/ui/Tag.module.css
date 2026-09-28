@@ -1,0 +1,7 @@
+/* app/src/ui/Tag.module.css — one `#tag`: teal, UI face, no chip. TagsField colours the tag tokens
+   it is editing with the same two values, so a tag keeps its look while being typed. */
+.tag {
+  color: var(--teal);
+  font-family: var(--ui-font-stack);
+  white-space: nowrap;
+}

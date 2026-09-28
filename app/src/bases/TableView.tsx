@@ -2,13 +2,15 @@ import {
     For,
     Index,
     Show,
+    createMemo,
     createSignal,
     createEffect,
+    onMount,
     on,
     type JSX,
 } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { canonicalId } from '../../../core/src/bases/query'
+import { canonicalId, resolveProperty } from '../../../core/src/bases/query'
 import {
     renderCell,
     renderTitle,
@@ -25,12 +27,10 @@ import { settings } from '../settings'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
-import { commitMeta, commitDelete } from './openRowEditor'
+import { commitMeta, openRowEditor } from './openRowEditor'
 import { writableKey } from './kanbanMeta'
 import TableCell from './TableCell'
-import { Portal } from 'solid-js/web'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
-import { openContextMenu } from '../nativeMenu'
+import { mountKeys } from './reconcileRows'
 import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -70,6 +70,25 @@ export function TableView(props: {
     const [resizing, setResizing] = createSignal<number | null>(null)
     let theadRef: HTMLTableSectionElement | undefined
 
+    // Every OTHER row's raw value for `id`, across the table, restricted to ARRAY-valued
+    // rows only — a `tags`/multiselect column needs its siblings so its dropdown lists the
+    // rest of the board's values, but leaking a STRING sibling here would turn every short
+    // text column (two titles, two authors) into a select you cannot type into. A declared
+    // select/date/number type still gets its own dedicated editor regardless.
+    const allRows = createMemo(() => props.result.groups.flatMap(g => g.rows))
+    const arraySiblingsFor = (id: string): unknown[] =>
+        allRows()
+            .map(r => resolveProperty(id, r))
+            .filter(Array.isArray)
+    // Stored rows per base file — a TableCell drops an open edit when its file's count changes
+    // (a stored row's identity is its index in that file, so an earlier row's delete shifts it).
+    const storedCounts = createMemo(() => {
+        const m = new Map<string, number>()
+        for (const r of allRows())
+            if (typeof r.index === 'number')
+                m.set(r.file.path, (m.get(r.file.path) ?? 0) + 1)
+        return m
+    })
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
     // A cell is edited in place when its row can be written and its column is a real property
@@ -79,48 +98,55 @@ export function TableView(props: {
         rowEditable(row) &&
         writableKey(c) !== null &&
         (canWriteStoredRow(row) || typeof row.note.line !== 'number')
-    const cellBody = (c: string, ci: number, row: Row): JSX.Element => {
-        const display = ci === 0 ? renderTitle(c, row) : renderCell(c, row)
+    // `row` is an accessor, not a Row: the body <For> keys rows by `mountKeys`, so an edited row
+    // hands this same cell a NEW row object in place rather than remounting it. Everything here
+    // therefore reads `row()` inside a getter — only `editable`'s boolean decides whether the
+    // TableCell exists, so a value change repaints the display and never tears down an open
+    // editor (a tags toggle's own write revalidates the base while the picker is still open).
+    const cellBody = (c: string, ci: number, row: () => Row): JSX.Element => {
+        const display = () =>
+            ci === 0 ? renderTitle(c, row()) : renderCell(c, row())
         // A NOTE row's title opens the note, as it always has; its other cells edit in place.
-        if (ci === 0 && !canWriteStoredRow(row)) return display
-        if (!canEditCell(row, c)) return display
+        const editable = createMemo(
+            () =>
+                !(ci === 0 && !canWriteStoredRow(row())) &&
+                canEditCell(row(), c),
+        )
         return (
-            <TableCell
-                {...{ row }}
-                col={c}
-                config={props.config}
-                // No sibling values: guessing a dropdown from the other rows' values
-                // turns every short text column (two titles, two authors) into a select
-                // you cannot type into. A declared select/date/number type still gets its editor.
-                siblingValues={() => []}
-                onCommit={v => void commitMeta(row, c, v, props.onChange)}
-            >
-                {display}
-            </TableCell>
+            <Show when={editable()} fallback={display()}>
+                <TableCell
+                    row={row()}
+                    col={c}
+                    config={props.config}
+                    // Array-only siblings (see arraySiblingsFor above) — a tags column's dropdown
+                    // fills in from the rest of the table; a text column never sees another row's
+                    // string value, so it never turns into a select you cannot type into.
+                    siblingValues={() => arraySiblingsFor(c)}
+                    storedCount={
+                        typeof row().index === 'number'
+                            ? () => storedCounts().get(row().file.path) ?? 0
+                            : undefined
+                    }
+                    onCommit={v => void commitMeta(row(), c, v, props.onChange)}
+                >
+                    {display()}
+                </TableCell>
+            </Show>
         )
     }
 
-    const [menu, setMenu] = createSignal<{
-        x: number
-        y: number
-        items: MenuItem[]
-    } | null>(null)
     function onRowContextMenu(e: MouseEvent, row: Row): void {
         if (!rowEditable(row) || typeof row.note.line === 'number') return
         e.preventDefault()
         e.stopPropagation()
-        openContextMenu(
-            e.clientX,
-            e.clientY,
-            [
-                {
-                    label: 'delete row',
-                    icon: 'Trash2',
-                    onSelect: () => void commitDelete(row, props.onChange),
-                },
-            ],
-            setMenu,
-        )
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+            columns: cols(),
+            siblingValues: arraySiblingsFor,
+        })
     }
 
     // Re-apply persisted widths whenever they change (e.g. on reload / refetch).
@@ -236,21 +262,36 @@ export function TableView(props: {
         window.addEventListener('pointerup', onUp)
     }
 
-    // We can pin the table to a rigid, spreadsheet-style layout only when EVERY visible
-    // column has a known width. The pinned table width is the exact SUM of those widths,
-    // so resizing one column never redistributes space to the others: the grabbed column
-    // changes, columns after it shift as a block, and columns before it stay exactly put.
-    // A partial map (e.g. a column added after widths were saved) falls back to the fluid
-    // 100% layout until a resize re-seeds every column.
+    // Columns with no STORED width (never resized, or a column added after widths were
+    // saved) get a default seeded once, on first paint, from the header's own rendered
+    // natural width — before this signal fills in, the table renders auto-layout (identical
+    // to today's pre-fixed appearance), and it fills in synchronously on mount, before the
+    // browser paints, so the default and the natural width are the same pixels. After that
+    // the table is fixed forever: opening a cell's editor mounts inside a `<td>` whose column
+    // width is already pinned, so it can never widen the column.
+    const [defaultW, setDefaultW] = createSignal<Record<string, number>>({})
+    const [mounted, setMounted] = createSignal(false)
+    onMount(() => {
+        const ths = headerEls()
+        const seed: Record<string, number> = {}
+        cols().forEach((c, i) => {
+            if (w()[c] == null && ths[i]) seed[c] = ths[i].offsetWidth
+        })
+        setDefaultW(seed)
+        setMounted(true)
+    })
+    const colWidth = (c: string): number | undefined => w()[c] ?? defaultW()[c]
+
+    // Once mounted, EVERY visible column has a width (stored, or the natural-width default
+    // above) — the table is table-layout:fixed and carries a <colgroup> from then on. The
+    // pinned table width is the exact SUM of those widths, so resizing one column never
+    // redistributes space to the others: the grabbed column changes, columns after it shift
+    // as a block, and columns before it stay exactly put.
     const totalWidth = (): number | null => {
-        const map = w()
-        if (cols().length === 0) return null
+        if (!mounted() || cols().length === 0) return null
         let sum = 0
-        for (const c of cols()) {
-            const cw = map[c]
-            if (!cw) return null
-            sum += cw
-        }
+        for (const c of cols())
+            sum += colWidth(c) ?? settings.ui.tableMinColWidth
         return sum
     }
     const fixed = () => totalWidth() !== null
@@ -271,68 +312,80 @@ export function TableView(props: {
     }
 
     return (
-        <>
-            <table class={styles.table} style={tableStyle()}>
-                <Show when={fixed()}>
-                    <colgroup>
-                        <For each={cols()}>
-                            {c => (
-                                <col
-                                    style={
-                                        w()[c]
-                                            ? { width: `${w()[c]}px` }
-                                            : undefined
-                                    }
-                                />
-                            )}
-                        </For>
-                    </colgroup>
-                </Show>
-                <thead ref={theadRef}>
-                    <tr>
-                        <For each={cols()}>
-                            {(c, i) => (
-                                <th
-                                    classList={{
-                                        [styles.thDrag]: !!props.onReorder,
-                                        [styles.thOver]: overIdx() === i(),
-                                        [styles.thResizable]:
-                                            !!props.onWidthsChange,
-                                        [styles.thAtEdge]: edgeIdx() === i(),
-                                    }}
-                                    onPointerDown={e =>
-                                        onHeaderPointerDown(i(), e)
-                                    }
-                                    onPointerMove={e =>
-                                        setEdgeIdx(
-                                            resizeTarget(i(), e) !== null
-                                                ? i()
-                                                : null,
-                                        )
-                                    }
-                                    onPointerLeave={() => setEdgeIdx(null)}
-                                >
-                                    <Label inline class={styles.thLabel}>
-                                        {columnLabel(c, props.config)}
-                                    </Label>
-                                    <Show when={props.onWidthsChange}>
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles.thResize}
-                                        />
-                                    </Show>
-                                </th>
-                            )}
-                        </For>
-                    </tr>
-                </thead>
-                <tbody>
-                    {/* Index-keyed groups (see ListView): keeps each group's rows mounted across a
+        <table class={styles.table} style={tableStyle()}>
+            <Show when={fixed()}>
+                <colgroup>
+                    <For each={cols()}>
+                        {c => (
+                            <col
+                                style={
+                                    colWidth(c)
+                                        ? { width: `${colWidth(c)}px` }
+                                        : undefined
+                                }
+                            />
+                        )}
+                    </For>
+                </colgroup>
+            </Show>
+            <thead ref={theadRef}>
+                <tr>
+                    <For each={cols()}>
+                        {(c, i) => (
+                            <th
+                                classList={{
+                                    [styles.thDrag]: !!props.onReorder,
+                                    [styles.thOver]: overIdx() === i(),
+                                    [styles.thResizable]:
+                                        !!props.onWidthsChange,
+                                    [styles.thAtEdge]: edgeIdx() === i(),
+                                }}
+                                onPointerDown={e => onHeaderPointerDown(i(), e)}
+                                onPointerMove={e =>
+                                    setEdgeIdx(
+                                        resizeTarget(i(), e) !== null
+                                            ? i()
+                                            : null,
+                                    )
+                                }
+                                onPointerLeave={() => setEdgeIdx(null)}
+                            >
+                                <Label inline class={styles.thLabel}>
+                                    {columnLabel(c, props.config)}
+                                </Label>
+                                <Show when={props.onWidthsChange}>
+                                    <Text
+                                        as="span"
+                                        inherit
+                                        class={styles.thResize}
+                                    />
+                                </Show>
+                            </th>
+                        )}
+                    </For>
+                </tr>
+            </thead>
+            <tbody>
+                {/* Index-keyed groups (see ListView): keeps each group's rows mounted across a
             re-resolve so only the inner reference-keyed row <For> diffs — no whole-table
             remount flash on a task toggle. */}
-                    <Index each={props.result.groups}>
-                        {group => (
+                <Index each={props.result.groups}>
+                    {group => {
+                        // Rows keyed by `mountKeys`, NOT by object identity: reconcileRows
+                        // hands an edited row a fresh object (so identity-keyed views
+                        // repaint it), which under an identity-keyed <For> would unmount the
+                        // very cell being edited. See `cellBody`.
+                        const keyed = createMemo(() => {
+                            const rows = group().rows
+                            const keys = mountKeys(rows)
+                            return {
+                                keys,
+                                byKey: new Map(
+                                    keys.map((k, i) => [k, rows[i]!]),
+                                ),
+                            }
+                        })
+                        return (
                             <>
                                 <Show when={group().key !== ''}>
                                     <tr class={styles.groupRow}>
@@ -341,107 +394,105 @@ export function TableView(props: {
                                         </td>
                                     </tr>
                                 </Show>
-                                <For each={group().rows}>
-                                    {row => (
-                                        <tr
-                                            onContextMenu={e =>
-                                                onRowContextMenu(e, row)
-                                            }
-                                        >
-                                            <For each={cols()}>
-                                                {(c, ci) => {
-                                                    const check = () =>
-                                                        isTasks() &&
-                                                        isStatusColumn(c)
-                                                    const muted =
-                                                        !isTagColumn(c) &&
-                                                        !isRatingColumn(c) &&
-                                                        ci() !== 0
-                                                    return (
-                                                        <td
-                                                            classList={{
-                                                                [styles.cellMuted]:
-                                                                    muted &&
-                                                                    !check(),
-                                                                [styles.cellOverdue]:
-                                                                    isTasks() &&
-                                                                    isDueColumn(
-                                                                        c,
-                                                                    ) &&
-                                                                    isOverdue(
-                                                                        row.note,
-                                                                        todayISO(),
-                                                                    ),
-                                                            }}
-                                                        >
-                                                            <Show
-                                                                when={check()}
-                                                                fallback={cellBody(
-                                                                    c,
-                                                                    ci(),
-                                                                    row,
-                                                                )}
+                                <For each={keyed().keys}>
+                                    {key => {
+                                        // Keeps the last row while <For> disposes a removed key,
+                                        // so a getter re-running mid-teardown never sees undefined.
+                                        let last: Row = keyed().byKey.get(key)!
+                                        const row = () =>
+                                            (last =
+                                                keyed().byKey.get(key) ?? last)
+                                        return (
+                                            <tr
+                                                onContextMenu={e =>
+                                                    onRowContextMenu(e, row())
+                                                }
+                                            >
+                                                <For each={cols()}>
+                                                    {(c, ci) => {
+                                                        const check = () =>
+                                                            isTasks() &&
+                                                            isStatusColumn(c)
+                                                        const muted =
+                                                            !isTagColumn(c) &&
+                                                            !isRatingColumn(
+                                                                c,
+                                                            ) &&
+                                                            ci() !== 0
+                                                        return (
+                                                            <td
+                                                                classList={{
+                                                                    [styles.cellMuted]:
+                                                                        muted &&
+                                                                        !check(),
+                                                                    [styles.cellOverdue]:
+                                                                        isTasks() &&
+                                                                        isDueColumn(
+                                                                            c,
+                                                                        ) &&
+                                                                        isOverdue(
+                                                                            row()
+                                                                                .note,
+                                                                            todayISO(),
+                                                                        ),
+                                                                }}
                                                             >
-                                                                <TaskCheck
-                                                                    variant="cell"
-                                                                    status={checkStatus(
-                                                                        row.note
-                                                                            .status,
+                                                                <Show
+                                                                    when={check()}
+                                                                    fallback={cellBody(
+                                                                        c,
+                                                                        ci(),
+                                                                        row,
                                                                     )}
-                                                                    onToggle={e =>
-                                                                        props.onToggle?.(
-                                                                            row,
-                                                                            e,
-                                                                        )
-                                                                    }
-                                                                    onSetStatus={e =>
-                                                                        props.onSetStatus?.(
-                                                                            row,
-                                                                            e,
-                                                                        )
-                                                                    }
-                                                                />
-                                                            </Show>
-                                                        </td>
-                                                    )
-                                                }}
-                                            </For>
-                                        </tr>
-                                    )}
+                                                                >
+                                                                    <TaskCheck
+                                                                        variant="cell"
+                                                                        status={checkStatus(
+                                                                            row()
+                                                                                .note
+                                                                                .status,
+                                                                        )}
+                                                                        onToggle={e =>
+                                                                            props.onToggle?.(
+                                                                                row(),
+                                                                                e,
+                                                                            )
+                                                                        }
+                                                                        onSetStatus={e =>
+                                                                            props.onSetStatus?.(
+                                                                                row(),
+                                                                                e,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </Show>
+                                                            </td>
+                                                        )
+                                                    }}
+                                                </For>
+                                            </tr>
+                                        )
+                                    }}
                                 </For>
                             </>
-                        )}
-                    </Index>
-                </tbody>
-                <Show when={Object.keys(props.result.summaries).length > 0}>
-                    <tfoot>
-                        <tr>
-                            <For each={cols()}>
-                                {c => (
-                                    <td class={styles.summary}>
-                                        {props.result.summaries[
-                                            canonicalId(c)
-                                        ] ?? ''}
-                                    </td>
-                                )}
-                            </For>
-                        </tr>
-                    </tfoot>
-                </Show>
-            </table>
-            {/* The row menu renders at <body>: a menu element cannot live inside <table>. */}
-            <Portal>
-                <Show when={menu()}>
-                    {m => (
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            onClose={() => setMenu(null)}
-                        />
-                    )}
-                </Show>
-            </Portal>
-        </>
+                        )
+                    }}
+                </Index>
+            </tbody>
+            <Show when={Object.keys(props.result.summaries).length > 0}>
+                <tfoot>
+                    <tr>
+                        <For each={cols()}>
+                            {c => (
+                                <td class={styles.summary}>
+                                    {props.result.summaries[canonicalId(c)] ??
+                                        ''}
+                                </td>
+                            )}
+                        </For>
+                    </tr>
+                </tfoot>
+            </Show>
+        </table>
     )
 }

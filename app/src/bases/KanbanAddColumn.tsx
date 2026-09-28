@@ -1,5 +1,5 @@
 // The trailing "+" ghost column at the end of a kanban board's column row. Click overlays
-// a text input on the ghost header (KanbanColumnNameInput, shared with KanbanColumnMenu's
+// a text input on the ghost header (KanbanColumnNameInput, shared with a header's own inline
 // rename field); Enter adds (refusing a duplicate name inline, matching `appendColumnKey`'s own
 // refusal so the two never disagree), Escape or a blur while empty cancels back to the ghost. The
 // trigger stays mounted (hidden) under the input so the swap never moves text or reflows the board,

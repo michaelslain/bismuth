@@ -6,7 +6,7 @@
 // Four controls, in this order: TODAY, prev, the date, next. TODAY is the explicit one-shot jump;
 // the date stays clickable too, as a secondary jump back (see its own comment below).
 import { currentView, currentDate, settings } from '../state'
-import { IconTextButton } from '../../ui/IconTextButton'
+import { TextButton } from '../../ui/TextButton'
 import { IconButton } from '../../ui/IconButton'
 import { PlainButton } from '../../ui/PlainButton'
 import BarLabel from '../../ui/BarLabel'
@@ -36,21 +36,20 @@ export function DateNav(props: DateNavProps) {
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
-            {/* NOT selected. Today is a one-shot jump, not a toggle. It never collapses to a bare
-                `[▣]`: a calendar glyph inside a calendar is the least self-descriptive mark in the
+            {/* NOT selected. Today is a one-shot jump, not a toggle. A bracket text button, not an
+                icon: a calendar glyph inside a calendar is the least self-descriptive mark in the
                 app, so the word stays until the whole control goes. It goes WHOLE at the bar's
                 DROP 3 tier (`data-bar-drop="3"`, 570px — ui/ViewBar.module.css), because once every
                 control is bracketed the bar cannot hold it, Categories, the crumb and the date at
                 the narrow tiers — and the date below is itself a jump to today, so the bar loses a
                 shortcut rather than a function. */}
-            <IconTextButton
+            <TextButton
                 data-bar-drop="3"
-                icon="Calendar"
                 title="Today"
                 onClick={jumpToToday}
             >
-                <BarLabel long="today" />
-            </IconTextButton>
+                today
+            </TextButton>
             <IconButton
                 icon="ChevronLeft"
                 label="Previous"

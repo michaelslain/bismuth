@@ -50,3 +50,17 @@ export const AsButton: Story = {
         </div>
     ),
 }
+
+/** The chrome as a `<div>` host — what TagsField mounts its single-line editor into. The same
+ *  underline; focus inside it firms the rule via `:focus-within`. */
+export const AsDiv: Story = {
+    render: () => (
+        <div style={{ width: '260px' }}>
+            <FormControl as="div">
+                <span contentEditable style={{ outline: 'none' }}>
+                    #planning #chores
+                </span>
+            </FormControl>
+        </div>
+    ),
+}

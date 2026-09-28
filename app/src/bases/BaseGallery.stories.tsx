@@ -14,9 +14,10 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
-import { fakeTransport } from '../ui/_fakeTransport'
+import { disarmFakeServerVersion, fakeServerVersionArmed, fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { Label } from '../ui/_storyKit'
+import { addPinByMouse, editPinByMouse, placeUnplacedByMouse } from './_mapPinPlay'
 import { settings, setSettings } from '../settings'
 import { whenMathReady } from '../editor/katexLoader'
 import type { Row, SourceSpec, ViewType } from '../../../core/src/bases/types'
@@ -58,12 +59,17 @@ function row(folder: string, name: string, note: Record<string, unknown>): Row {
     }
 }
 
+// Two rows deliberately carry no lat/lng — the map's right-click `place <title> here` items need
+// at least one, and MapPinsLand's play() places one of them, which asserting one `place …` item
+// still offered needs a second unplaced row left over.
 const PLACE_ROWS: Row[] = [
     row('places', 'Tokyo', { lat: 35.6762, lng: 139.6503 }),
     row('places', 'Nairobi', { lat: -1.2921, lng: 36.8219 }),
     row('places', 'Reykjavik', { lat: 64.1466, lng: -21.9426 }),
     row('places', 'Buenos Aires', { lat: -34.6037, lng: -58.3816 }),
     row('places', 'Vancouver', { lat: 49.2827, lng: -123.1207 }),
+    row('places', 'Cairo', {}),
+    row('places', 'Lima', {}),
 ]
 
 const VOCAB_ROWS: Row[] = [
@@ -81,11 +87,21 @@ const VOCAB_ROWS: Row[] = [
     }),
 ]
 
-function rowsFor(spec: SourceSpec): Row[] {
-    const from = spec.kind === 'base' ? undefined : spec.from
-    if (from === '[[Places]]') return PLACE_ROWS
-    if (from === '[[Vocab]]') return VOCAB_ROWS
-    return PROJECT_ROWS
+/** A fresh, deep copy of every dataset — the gallery's mutable row store for ONE mount. The
+ *  fake transport writes edits into these objects, so copying per mount keeps a pin placed (or a
+ *  box ticked) in one story from leaking into the next: Storybook's preview iframe keeps module
+ *  state across story switches, and `MapPinsLand` asserts the starting two `place …` items. */
+function freshRows(): (spec: SourceSpec) => Row[] {
+    const copy = (rows: Row[]) => JSON.parse(JSON.stringify(rows)) as Row[]
+    const places = copy(PLACE_ROWS)
+    const vocab = copy(VOCAB_ROWS)
+    const projects = copy(PROJECT_ROWS)
+    return spec => {
+        const from = spec.kind === 'base' ? undefined : spec.from
+        if (from === '[[Places]]') return places
+        if (from === '[[Vocab]]') return vocab
+        return projects
+    }
 }
 
 /** The calendar's events register reads the base file's own event table, not `/rows`. */
@@ -164,11 +180,26 @@ function bodyOf(t: Tile): string {
     ].join('\n')
 }
 
+/** Tags that exist in the vault but on none of the table's rows. */
+const VAULT_TAGS = ['chicken', 'chores', 'recipes']
+
 function seed(): void {
     setTransport(
         fakeTransport({
-            rows: rowsFor,
+            rows: freshRows(),
+            // Every write bumps the server version the way the real server does, so a view's
+            // `onChange` refetch leaves BaseView's version-gated row cache and shows the edit.
+            versioned: true,
             files: Object.fromEntries(TILES.map(t => [pathOf(t), bodyOf(t)])),
+            // The vault's tag nodes — what a tags picker suggests beyond its own column (the
+            // note editor's tag completion reads the same graph). A few live only elsewhere in
+            // the "vault", so typing `ch` in the table's tags cell finds `#chicken`.
+            graph: {
+                nodes: [...VAULT_TAGS, ...SAMPLE_ROWS.flatMap(r => (r.note.tags as string[]) ?? [])]
+                    .filter((t, i, all) => all.indexOf(t) === i)
+                    .map(t => ({ id: `tag:${t}`, label: `#${t}`, kind: 'tag' })),
+                edges: [],
+            },
         }),
     )
 }
@@ -222,6 +253,10 @@ function Gallery(): JSX.Element {
     const prevView = settings.calendar.defaultView
     setSettings('calendar', 'defaultView', 'month')
     onCleanup(() => setSettings('calendar', 'defaultView', prevView))
+    // seed() armed the fake server version for every versioned tile above — release it on
+    // unmount so the next story's own `startServerVersion` call is not a silent no-op against
+    // an owner this gallery never let go of (see `disarmFakeServerVersion`'s doc comment).
+    onCleanup(disarmFakeServerVersion)
     return (
         <div
             data-gallery
@@ -275,4 +310,69 @@ async function allTilesResolved({ canvasElement }: { canvasElement: HTMLElement 
 export const AllKinds: Story = {
     render: () => <Gallery />,
     play: allTilesResolved,
+}
+
+/** Proves the gallery's fake transport holds REAL state, not a canned ack, AND that the map works
+ *  for a real mouse, every press the full pointerdown → mousedown → (1–3px jitter) → pointerup →
+ *  mouseup → click sequence (see `_mapPinPlay.ts`; an earlier version dispatched a lone synthetic
+ *  `click` and passed while the user's real clicks did nothing):
+ *  - `Add pin` → press the map → a NEW note is created in `places/` (the gallery's rows gain it
+ *    through the fake's create path) and its row editor opens → typing a name shows on the pin;
+ *  - a left-click on an existing pin opens ITS editor, and a rename there relabels the pin;
+ *  - the map's right-click `place <title> here` places an existing row with no coordinates.
+ *  Each write goes through BaseView's `onChange={refetchAll}`, which only reaches the transport
+ *  because the write also bumps the server version (`versioned: true`) — otherwise BaseView's
+ *  version-gated row cache answers with the pre-write rows. The zoom and centre the user chose
+ *  survive every step. */
+async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
+    // The bump rides a poll callback captured from `serverVersion.start()`. Uncaptured, every
+    // bump is a silent no-op and this story would fail for the wrong reason — or, against a
+    // cache that happened to be cold, pass without proving anything.
+    expect(fakeServerVersionArmed()).toBe(true)
+    const pane = within(canvasElement).getByTestId('gallery-map')
+    pane.scrollIntoView({ block: 'center' })
+    await addPinByMouse(pane, 'Harbor Lookout')
+    await editPinByMouse(pane, 'Tokyo', 'Tokyo Office')
+    await placeUnplacedByMouse(pane, 'Cairo', 2, false)
+}
+
+/** Same gallery, isolated to prove the map's writes stick — see `mapPinLands`. */
+export const MapPinsLand: Story = {
+    render: () => <Gallery />,
+    play: mapPinLands,
+}
+
+/** A table tile has no optimistic state — a cell only changes once a refetch re-resolves the
+ *  store — so ticking `done` and seeing the cell flip to `x` proves the write stuck.
+ *
+ *  A kanban drag is deliberately NOT a step here, though it was checked the same way: the drop
+ *  batches `status` plus an `order` key onto every card in the column (`setProperties`), and the
+ *  table tile's auto columns then gain an `order` column that widens it past the viewport inside
+ *  its own scrolling pane — which the invariant sweep, blind to that clipping, reports as
+ *  `overflows-viewport-x` on every run. */
+async function editsStick({ canvasElement }: { canvasElement: HTMLElement }) {
+    expect(fakeServerVersionArmed()).toBe(true)
+    const table = within(canvasElement).getByTestId('gallery-table')
+    await waitFor(() =>
+        expect(within(table).getByText('Draft the roadmap')).toBeInTheDocument(),
+    )
+    const doneIdx = [...table.querySelectorAll('thead th')].findIndex(
+        th => (th.textContent ?? '').trim().toLowerCase() === 'done',
+    )
+    expect(doneIdx).toBeGreaterThanOrEqual(0)
+    const doneCell = () => {
+        const tr = [...table.querySelectorAll('tbody tr')].find(r =>
+            (r.textContent ?? '').includes('Investigate flaky test'),
+        )!
+        return tr.querySelectorAll<HTMLElement>('td')[doneIdx]!
+    }
+    expect((doneCell().textContent ?? '').trim()).toBe('')
+    doneCell().querySelector<HTMLElement>('button')!.click()
+    await waitFor(() => expect((doneCell().textContent ?? '').trim()).toBe('x'))
+}
+
+/** Same gallery, proving a table boolean toggle sticks — see `editsStick`. */
+export const EditsStick: Story = {
+    render: () => <Gallery />,
+    play: editsStick,
 }

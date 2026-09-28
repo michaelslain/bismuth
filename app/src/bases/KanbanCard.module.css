@@ -2,7 +2,7 @@
    the title + meta with the card's own title-to-meta gap, so display spacing is unchanged. */
 .kbCardFace { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .kbFaceEditable { cursor: pointer; }
-.kbFaceEditable:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+.kbFaceEditable:focus-visible { outline: none; }
 
 /* Card face: read-only title — DESIGN.md's register rule: what a person WROTE is prose
    (--prose-font, Lora via Text's `register="prose"` prop in KanbanCard.tsx). Only the

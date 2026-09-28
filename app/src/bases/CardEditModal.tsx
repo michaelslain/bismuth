@@ -81,15 +81,16 @@ export function CardEditModal(props: {
      *  an opt-out for a genuinely non-writable row. */
     hasFileIdentity?: boolean
     onRename: (newTitle: string) => void
-    onSetMeta: (
-        id: string,
-        value: unknown,
-        opts?: { keepOpen?: boolean },
-    ) => void
+    onSetMeta: (id: string, value: unknown) => void
     /** Delete this card's note — the SOLE delete affordance for a kanban card (no separate
      *  right-click context-menu path; see KanbanView/KanbanCard). */
     onDelete: () => void
     onClose: () => void
+    /** Opens the underlying note (dispatches `bismuth-open`) — supplied only for a NOTE-backed
+     *  row (see mount sites: openRowEditor.tsx / KanbanCard.tsx). Absent for a stored row with
+     *  no note file behind it (`canWriteStoredRow`). When given, the footer's trailing group
+     *  gains a plain `[open note]` before `[done]`. */
+    onOpenNote?: () => void
 }) {
     let titleRef: HTMLInputElement | undefined
     const fieldRefs = new Map<string, HTMLElement>()
@@ -360,7 +361,7 @@ export function CardEditModal(props: {
                 kind={k}
                 value={value(id)}
                 autofocus={false}
-                onCommit={(v, opts) => props.onSetMeta(id, v, opts)}
+                onCommit={v => props.onSetMeta(id, v)}
                 onCancel={() => {}}
             />
         )
@@ -429,6 +430,18 @@ export function CardEditModal(props: {
                     </Show>
                 }
             >
+                <Show when={props.onOpenNote}>
+                    {onOpenNote => (
+                        <TextButton
+                            onClick={() => {
+                                close()
+                                onOpenNote()()
+                            }}
+                        >
+                            open note
+                        </TextButton>
+                    )}
+                </Show>
                 <TextButton primary onClick={close}>
                     done
                 </TextButton>
