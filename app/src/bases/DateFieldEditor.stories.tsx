@@ -15,17 +15,31 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const Harness = (p: { initial: string; time?: boolean }) => {
+const Harness = (p: {
+    initial: string
+    time?: boolean
+    placeholder?: string
+    className?: string
+}) => {
     const [value, setValue] = createSignal<unknown>(p.initial)
     return (
         <div style={{ width: '360px' }}>
-            <DateFieldEditor time={p.time} value={value()} onCommit={setValue} />
+            <DateFieldEditor
+                time={p.time}
+                placeholder={p.placeholder}
+                className={p.className}
+                value={value()}
+                onCommit={setValue}
+            />
+            {/* Read by the plays only: the raw committed value, `null` once cleared. */}
+            <span hidden data-testid="raw">
+                {JSON.stringify(value())}
+            </span>
         </div>
     )
 }
 
 export const Empty: Story = {
-    args: { value: '', onCommit: () => {} },
     render: () => <Harness initial="" />,
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -45,7 +59,6 @@ export const Empty: Story = {
 /** Escape dismisses the open popover, via AnchoredPopover's `isDismissKey` handling — the
  *  round trip is: open, press Escape, wait for the popover to actually unmount. */
 export const DismissesOnEscape: Story = {
-    args: { value: '', onCommit: () => {} },
     render: () => <Harness initial="" />,
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -59,11 +72,55 @@ export const DismissesOnEscape: Story = {
 }
 
 export const WithValue: Story = {
-    args: { value: '2026-09-14', onCommit: () => {} },
     render: () => <Harness initial="2026-09-14" />,
 }
 
 export const DateTime: Story = {
-    args: { value: '2026-09-14T09:30', time: true, onCommit: () => {} },
     render: () => <Harness initial="2026-09-14T09:30" time />,
+}
+
+/** A caller's `placeholder` replaces the default empty label, and `className` reaches the trigger. */
+export const PlaceholderAndClassName: Story = {
+    render: () => <Harness initial="" placeholder="Pick a due date" className="caller-class" />,
+    play: async ({ canvasElement }) => {
+        const trigger = within(canvasElement).getByTestId('date-field-trigger')
+        await expect(trigger).toHaveTextContent('Pick a due date')
+        await expect(trigger.classList.contains('caller-class')).toBe(true)
+    },
+}
+
+/** A `datetime` field with a date already set: changing only the time commits `date + new time`
+ *  and closes the popover. */
+export const TimeOnlyCommit: Story = {
+    render: () => <Harness initial="2026-09-14T09:30" time />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        const popover = await waitFor(() => body.getByTestId('date-field-popover'))
+        const time = popover.querySelector<HTMLInputElement>('input[type="time"]')!
+        await waitFor(() => expect(time.value).toBe('09:30'))
+        time.value = '10:15'
+        time.dispatchEvent(new Event('change', { bubbles: true }))
+        await waitFor(() => expect(canvas.getByTestId('raw')).toHaveTextContent('"2026-09-14T10:15"'))
+        await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
+    },
+}
+
+/** Emptying the date input clears the field: the value commits null and the placeholder returns. */
+export const ClearCommitsNull: Story = {
+    render: () => <Harness initial="2026-09-14" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const trigger = canvas.getByTestId('date-field-trigger')
+        await userEvent.click(trigger)
+        const popover = await waitFor(() => body.getByTestId('date-field-popover'))
+        const date = popover.querySelector<HTMLInputElement>('input[type="date"]')!
+        await waitFor(() => expect(date.value).toBe('2026-09-14'))
+        date.value = ''
+        date.dispatchEvent(new Event('change', { bubbles: true }))
+        await waitFor(() => expect(canvas.getByTestId('raw')).toHaveTextContent('null'))
+        await expect(trigger).toHaveTextContent('Set date…')
+    },
 }

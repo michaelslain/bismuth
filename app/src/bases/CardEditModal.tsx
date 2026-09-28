@@ -5,8 +5,9 @@
 // finally editable (the report this fixes). Each property gets a type-aware control:
 //   • markdown  → a TRUE-WYSIWYG Milkdown surface (the SAME rich editor notes use, via
 //                 MilkdownField) — NOT a plain textarea;
-//   • boolean   → an instant Yes/No Chip toggle;
+//   • boolean   → an instant Yes/No ChipToggle;
 //   • else      → the shared PropertyValueEditor (text/number/date/select/multiselect).
+// PropertyControl owns that dispatch; this file owns the markdown surface (drafts, image drop).
 // Commits route back through the SAME `onRename`/`onSetMeta` (KanbanCard's optimistic
 // commitTitle/commitMeta) the inline editors used, so nothing about persistence changes — only
 // where you edit.
@@ -23,10 +24,8 @@ import {
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
-import BracketToggle from '../ui/BracketToggle'
-import PlainButton from '../ui/PlainButton'
 import { TextButton } from '../ui/TextButton'
-import Text from '../ui/Text'
+import { IconTextButton } from '../ui/IconTextButton'
 import EmptyState from '../ui/EmptyState'
 import { TextInput } from '../ui/TextInput'
 import FormModal from '../ui/FormModal'
@@ -36,8 +35,7 @@ import ModalFooter from '../ui/ModalFooter'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
 import MilkdownField from '../ui/MilkdownField'
-import DateFieldEditor from './DateFieldEditor'
-import { PropertyValueEditor } from './PropertyValueEditor'
+import PropertyControl from './PropertyControl'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { columnLabel } from './columnLabel'
@@ -89,7 +87,7 @@ export function CardEditModal(props: {
     /** Opens the underlying note (dispatches `bismuth-open`) — supplied only for a NOTE-backed
      *  row (see mount sites: openRowEditor.tsx / KanbanCard.tsx). Absent for a stored row with
      *  no note file behind it (`canWriteStoredRow`). When given, the footer's trailing group
-     *  gains a plain `[open note]` before `[done]`. */
+     *  gains `[open note]` before `[done]`. */
     onOpenNote?: () => void
 }) {
     let titleRef: HTMLInputElement | undefined
@@ -289,19 +287,8 @@ export function CardEditModal(props: {
     // the editor, losing the Milkdown surface / caret) every time an optimistic commit changes the
     // row. Reactive VALUE reads stay inside the returned controls (prop getters that update in place).
     function renderControl(id: string): JSX.Element {
-        if (!writable(id)) {
-            const display = () => {
-                const v = value(id)
-                return v == null || v === '' ? '—' : String(v)
-            }
-            return (
-                <Text as="span" inherit class={styles.readonly}>
-                    {display()}
-                </Text>
-            )
-        }
         const k = untrack(() => kindOf(id))
-        if (k.kind === 'markdown') {
+        const markdown = (): JSX.Element => {
             const initial = untrack(() => String(value(id) ?? ''))
             // Wrap the rich surface in its own drop zone: dragging an image onto the description drops
             // the picture INTO the text (see the "Image drop onto the description" section).
@@ -331,44 +318,15 @@ export function CardEditModal(props: {
                 </div>
             )
         }
-        if (k.kind === 'boolean') {
-            // The product's boolean register: `[x]`/`[ ]` (ui/BracketToggle), same as every
-            // other on/off control in the app — not a filled Chip. Shrink-to-fit (see
-            // .boolToggle below): `.field` is a column flex container with no align-items, so a
-            // bare inline-flex button would otherwise blockify and stretch across the row.
-            return (
-                <PlainButton
-                    class={styles.boolToggle}
-                    aria-pressed={value(id) === true}
-                    onClick={() => props.onSetMeta(id, !(value(id) === true))}
-                >
-                    <BracketToggle checked={value(id) === true} />
-                    {value(id) === true ? 'yes' : 'no'}
-                </PlainButton>
-            )
-        }
-        if (k.kind === 'date') {
-            // The app's own DatePicker (editor/DatePicker.tsx), opened from a single
-            // input-height trigger (DateFieldEditor below) instead of a bare native
-            // `<input type="date">` or DatePicker's own floating-popover frame sitting inline
-            // — so DUE reads as one row like every sibling field. DatePicker itself is
-            // untouched.
-            return (
-                <DateFieldEditor
-                    time={k.time}
-                    className={styles.dueTrigger}
-                    value={value(id)}
-                    onCommit={v => props.onSetMeta(id, v)}
-                />
-            )
-        }
         return (
-            <PropertyValueEditor
+            <PropertyControl
                 kind={k}
+                writable={writable(id)}
+                emptyText="—"
+                // Reactive reads: a prop getter, so a read-only field and a toggle update in place.
                 value={value(id)}
-                autofocus={false}
+                markdown={markdown}
                 onCommit={v => props.onSetMeta(id, v)}
-                onCancel={() => {}}
             />
         )
     }
@@ -438,14 +396,15 @@ export function CardEditModal(props: {
             >
                 <Show when={props.onOpenNote}>
                     {onOpenNote => (
-                        <TextButton
+                        <IconTextButton
+                            icon="ExternalLink"
                             onClick={() => {
                                 close()
                                 onOpenNote()()
                             }}
                         >
                             open note
-                        </TextButton>
+                        </IconTextButton>
                     )}
                 </Show>
                 <TextButton primary onClick={close}>

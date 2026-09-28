@@ -1,0 +1,61 @@
+// app/src/bases/PropertyControl.tsx
+// The control for ONE property row in CardEditModal (and any form that lists a row's
+// properties), dispatched by what the property is:
+//   • not writable → ReadonlyValue (a muted line; `file.folder`, formulas);
+//   • boolean      → a Yes/No ChipToggle, the same one the card face shows, flipping on click;
+//   • markdown     → the host's own rich surface (`markdown`), since the drafts, drop zone and
+//                    flush-on-close belong to the modal; falls back to the plain textarea;
+//   • else         → the shared PropertyValueEditor (text/number/date/select/multiselect).
+// The kind is read once by the caller, so a commit's optimistic row change never rebuilds this.
+import { Match, Switch, type Component, type JSX } from 'solid-js'
+import ChipToggle from '../ui/ChipToggle'
+import { PropertyValueEditor } from './PropertyValueEditor'
+import ReadonlyValue from './ReadonlyValue'
+import type { PropertyEditKind } from './propertyEdit'
+import styles from './PropertyControl.module.css'
+
+export type PropertyControlProps = {
+    kind: PropertyEditKind
+    value: unknown
+    writable: boolean
+    onCommit: (value: unknown) => void
+    /** The host's rich editor for a `markdown` kind, built once. Absent → a plain textarea. */
+    markdown?: () => JSX.Element
+    /** Shown in place of an empty read-only value. */
+    emptyText?: string
+}
+
+const PropertyControl: Component<PropertyControlProps> = props => {
+    const flipped = () => !(props.value === true)
+    return (
+        <Switch
+            fallback={
+                <PropertyValueEditor
+                    kind={props.kind}
+                    value={props.value}
+                    autofocus={false}
+                    onCommit={props.onCommit}
+                    onCancel={() => {}}
+                />
+            }
+        >
+            <Match when={!props.writable}>
+                <ReadonlyValue value={props.value} placeholder={props.emptyText} />
+            </Match>
+            <Match when={props.kind.kind === 'boolean'}>
+                <ChipToggle
+                    class={styles.bool}
+                    selected={props.value === true}
+                    onToggle={() => props.onCommit(flipped())}
+                >
+                    {props.value === true ? 'Yes' : 'No'}
+                </ChipToggle>
+            </Match>
+            <Match when={props.kind.kind === 'markdown' && props.markdown}>
+                {render => render()()}
+            </Match>
+        </Switch>
+    )
+}
+
+export default PropertyControl

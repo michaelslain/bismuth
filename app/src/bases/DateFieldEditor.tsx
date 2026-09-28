@@ -6,7 +6,7 @@
 // Why not ui/Popover: Popover is only the floating SURFACE (border + --lift), with no anchoring,
 // and DatePicker already paints that surface itself (`.bismuth-popover`) — wrapping it would
 // draw two frames. So this owns only the anchor + dismiss layer, same as ui/Select.tsx.
-import { createSignal, type Component } from 'solid-js'
+import { Show, createSignal, type Component } from 'solid-js'
 import AnchoredPopover from '../ui/AnchoredPopover'
 import DatePicker, { type DatePickerKind } from '../editor/DatePicker'
 import { parseDateValue, composeDateValue } from '../editor/datePickerCore'
@@ -83,26 +83,33 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                 onDismiss={close}
                 panelAttrs={{ 'data-testid': 'date-field-popover' }}
             >
-                <div style={{ 'min-width': `${triggerWidth()}px` }}>
-                    <DatePicker
-                        kind={kind()}
-                        initialDate={lastDate}
-                        initialTime={lastTime}
-                        {...{ options }}
-                        onDateChange={(v, closeAfter) => {
-                            lastDate = v
-                            commit(v, lastTime, closeAfter)
-                        }}
-                        onTimeChange={v => {
-                            lastTime = v
-                            commit(lastDate, v, true)
-                        }}
-                        onPick={i => {
-                            lastDate = options[i].date
-                            commit(lastDate, lastTime, true)
-                        }}
-                    />
-                </div>
+                {/* AnchoredPopover resolves its children ONCE at setup, so a bare DatePicker here was
+                    built at mount with the initial (empty) date and never saw the value again — an
+                    open picker over a filled field showed a blank date. `<Show>` builds it on each
+                    open, from the value openPicker() just read. */}
+                <Show when={open()}>
+                    <div style={{ 'min-width': `${triggerWidth()}px` }}>
+                        <DatePicker
+                            kind={kind()}
+                            initialDate={lastDate}
+                            initialTime={lastTime}
+                            {...{ options }}
+                            onDateChange={(v, closeAfter) => {
+                                lastDate = v
+                                commit(v, lastTime, closeAfter)
+                            }}
+                            onTimeChange={v => {
+                                lastTime = v
+                                commit(lastDate, v, true)
+                            }}
+                            onPick={i => {
+                                lastDate = options[i].date
+                                commit(lastDate, lastTime, true)
+                            }}
+                        />
+                    </div>
+
+                </Show>
             </AnchoredPopover>
         </>
     )
