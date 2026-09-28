@@ -1,4 +1,44 @@
 /* ---------- bar chart (bases-bar.card.html) ----------
-   A row of typed `#` per record — the system draws no SVG. Wraps <AsciiChart>'s own
-   layout (label column + bar + trailing value), just adding the chart's outer padding. */
-.barChart { font-size: var(--fs-ui); line-height: 17px; }
+   One meter row per bucket, typed at the app's mono cell size — `layoutBars` (barRows.ts)
+   already sized the label/fill/track/value columns to the measured character grid, so this
+   file only lays the four spans out on one line and colours them. */
+.barChart {
+    font-size: var(--fs-ui);
+    line-height: var(--cell-h);
+    display: flex;
+    flex-direction: column;
+    white-space: pre;
+}
+
+.header {
+    white-space: pre;
+}
+
+.row {
+    display: flex;
+    cursor: pointer;
+}
+
+.label {
+    flex-shrink: 0;
+}
+
+.fill {
+    color: var(--accent);
+}
+
+.track {
+    flex-shrink: 0;
+}
+
+.value {
+    flex-shrink: 0;
+}
+
+.fill.dim {
+    color: var(--text-muted);
+}
+
+.fill.active {
+    color: var(--fg);
+}

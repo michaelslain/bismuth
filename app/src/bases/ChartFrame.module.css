@@ -1,2 +1,4 @@
-.chart { padding: 18px var(--sp-7); height: 100%; overflow: auto; }
+.chart { display: flex; flex-direction: column; gap: var(--sp-2); height: 100%; padding: var(--sp-5) var(--sp-7); }
+.body { position: relative; flex: 1; min-height: 0; padding: 0; overflow: auto; }
 .empty { color: var(--text-muted); font-size: var(--fs-body); padding: var(--sp-7); text-align: center; }
+.probe { position: absolute; visibility: hidden; white-space: pre; pointer-events: none; }

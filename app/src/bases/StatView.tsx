@@ -1,63 +1,63 @@
 import { createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { buildChartData } from '../../../core/src/bases/chart'
+import type { Row } from '../../../core/src/bases/types'
+import type { MetricResult } from '../../../core/src/bases/metrics'
+import { metricResults } from '../../../core/src/bases/metrics'
+import { metricToLatex } from '../../../core/src/bases/chartLatex'
+import { parseExpr } from '../../../core/src/bases/parser'
+import { formatValue } from '../../../core/src/bases/chartText'
+import { todayISO } from '../../../core/src/dates'
 import ChartFrame from './ChartFrame'
 import StatTiles, { type StatTile } from './StatTiles'
+import type { ChartViewProps } from './chartViewProps'
 
-/** A single aggregate per tile — plain numbers, no chart (bases-stat.card.html:
- *  the largest type in the system, and the one view with no ASCII chart at all). */
-export function StatView(props: { result: ViewResult; config: BaseConfig }) {
+// `3 this week // 1 last week` — day bins read as `today`/`yesterday` instead of the generic
+// `this day`/`last day` phrasing (bases-stat.card.html).
+function periodLine(m: MetricResult): string | undefined {
+    if (!m.hasTime || m.current === null || m.previous === null) return undefined
+    const curWord = m.bin === 'day' ? 'today' : `this ${m.bin}`
+    const prevWord = m.bin === 'day' ? 'yesterday' : `last ${m.bin}`
+    return `${formatValue(m.current)} ${curWord} // ${formatValue(m.previous)} ${prevWord}`
+}
+
+// A metric that failed to parse/evaluate already carries `error`; re-deriving its LaTeX would
+// just throw the same failure again, so skip it and let the tile show the error line instead.
+function metricTex(m: MetricResult): string | undefined {
+    if (m.error) return undefined
+    try {
+        return metricToLatex(parseExpr(m.source))
+    } catch {
+        return undefined
+    }
+}
+
+/** One tile per declared (or synthesized) stat metric — value, label, period split, sparkline,
+ *  KaTeX (bases-stat.card.html: the largest type in the system, and the one view with no ASCII
+ *  chart at all). */
+export function StatView(props: ChartViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )
-    const data = createMemo(() => buildChartData(rows(), props.result.view))
-
-    const total = createMemo(() =>
-        data().points.reduce((a, p) => a + p.value, 0),
-    )
-    const avg = createMemo(() =>
-        data().points.length ? total() / data().points.length : 0,
+    const metrics = createMemo(() =>
+        metricResults(rows(), props.result.view, todayISO()),
     )
 
-    const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
-
-    // When several buckets/series exist, surface the summary as a grid of up-to-4
-    // stat tiles (label + big value + a faint delta). A single bucket keeps one tile.
-    const tiles = createMemo<StatTile[]>(() => {
-        const d = data()
-        if (d.points.length === 0) return []
-        if (d.points.length === 1) {
-            return [{ label: d.valueLabel, value: fmt(total()) }]
-        }
-        const last = d.points[d.points.length - 1]?.value ?? 0
-        const prev =
-            d.points.length >= 2
-                ? (d.points[d.points.length - 2]?.value ?? 0)
-                : 0
-        const change = last - prev
-        return [
-            {
-                label: `total ${d.valueLabel}`,
-                value: fmt(total()),
-                delta:
-                    change !== 0
-                        ? `${change > 0 ? '+' : ''}${fmt(change)} latest`
-                        : undefined,
-                tone: 'accent',
-            },
-            { label: 'average / bucket', value: avg().toFixed(1) },
-            { label: 'buckets', value: String(d.points.length) },
-            {
-                label: `peak ${d.valueLabel}`,
-                value: fmt(d.max),
-                tone: d.max === 0 ? 'faint' : undefined,
-            },
-        ]
-    })
+    const tiles = createMemo<StatTile[]>(() =>
+        metrics().map((m, i) => ({
+            label: m.label,
+            value: m.value === null ? '—' : formatValue(m.value),
+            tone: i === 0 ? 'accent' : undefined,
+            period: periodLine(m),
+            spark: m.hasTime
+                ? { values: m.series, keys: m.seriesKeys, labels: m.seriesLabels, bin: m.bin }
+                : undefined,
+            tex: metricTex(m),
+            error: m.error,
+        })),
+    )
 
     return (
         <ChartFrame
-            empty={tiles().length === 0}
+            empty={rows().length === 0}
             emptyMessage="No data to chart."
         >
             <StatTiles tiles={tiles()} />

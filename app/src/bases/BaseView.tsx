@@ -33,6 +33,7 @@ import type {
 } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
 import { normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
+import { buildChartData } from '../../../core/src/bases/chart'
 import { statusFromChar } from '../../../core/src/taskReorder'
 import { todayISO } from '../../../core/src/dates'
 import {
@@ -56,9 +57,17 @@ import { BulletsView } from './BulletsView'
 import { KanbanView } from './KanbanView'
 import { MapView } from './MapView'
 import { HeatmapView } from './HeatmapView'
+import {
+    planSetValue,
+    planToggle,
+    type HeatmapOrigin,
+    type HeatmapWriteSeam,
+    type WriteRow,
+} from './heatmapWrites'
 import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
+import ChartConfigBar from './ChartConfigBar'
 import { CalendarView } from './CalendarView'
 import { calendarSlots } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
@@ -207,6 +216,9 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         </div>
     )
 }
+
+/** The four view kinds ChartConfigBar's pickers apply to. */
+const CHART_VIEW_TYPES = new Set(['bar', 'line', 'stat', 'heatmap'])
 
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
@@ -665,6 +677,57 @@ export function BaseView(props: {
     const [flashcardsSlots, setFlashcardsSlots] = createSignal<
         ViewBarSlots | undefined
     >()
+
+    /** A chart kind's ViewBar contribution is just the `config` region — its x/y/aggregate/bin
+     *  pickers, writing straight to the base file. Only shown when there's a file to write
+     *  (`basePath` — Review Focus #5: an inline ```query block gets no pickers at all). Columns
+     *  offered are the result's resolved columns plus the view's own current x/y, so a picker
+     *  never drops the value it currently shows even when that property isn't in the row set. */
+    const chartConfigSlot = createMemo<ViewBarSlots | undefined>(() => {
+        if (!CHART_VIEW_TYPES.has(activeType())) return undefined
+        const basePath = data()?.basePath
+        const view = activeViewConfig()
+        const res = result()
+        if (!basePath || !view || !res) return undefined
+        const columns = new Set(res.columns)
+        if (view.x) columns.add(view.x)
+        if (view.y) columns.add(view.y)
+        const resolved = buildChartData(
+            res.groups.flatMap(g => g.rows),
+            view.type === 'heatmap' ? { ...view, bin: 'day' } : view,
+        )
+        const onSet = (
+            changes: Partial<Record<'x' | 'y' | 'aggregate' | 'bin', string | undefined>>,
+        ) => {
+            const path = data()?.basePath
+            if (!path) return
+            void (async () => {
+                for (const [key, value] of Object.entries(changes)) {
+                    if (value === undefined)
+                        await api.deleteViewProperty(path, activeViewIdx(), key)
+                    else
+                        await api.setViewProperty(path, activeViewIdx(), key, value)
+                }
+                await refetchAll()
+            })().catch(writeFailed('update the chart axes'))
+        }
+        return {
+            config: (
+                <ChartConfigBar
+                    view={view}
+                    columns={[...columns]}
+                    resolved={{
+                        x: resolved.x,
+                        y: resolved.y,
+                        aggregate: resolved.aggregate,
+                        bin: resolved.bin,
+                    }}
+                    onSet={onSet}
+                />
+            ),
+        }
+    })
+
     const viewSlots = createMemo<ViewBarSlots | undefined>(() => {
         if (activeType() === 'calendar') {
             // The tasks register's bar contributes no `actions` control any more — task
@@ -672,7 +735,8 @@ export function BaseView(props: {
             // so `calendarSlots()` only needs to know which register is showing.
             return calendarSlots({ isTasks: activeMode() === 'tasks' })
         }
-        return activeType() === 'flashcards' ? flashcardsSlots() : undefined
+        if (activeType() === 'flashcards') return flashcardsSlots()
+        return chartConfigSlot()
     })
 
     // ── The task write seam ───────────────────────────────────────────────────────────────
@@ -842,6 +906,92 @@ export function BaseView(props: {
         if (wroteBaseFile) await refetchAll()
         else await refetchRows()
     }
+
+    // ── The heatmap write seam ────────────────────────────────────────────────
+    /**
+     * HeatmapView never calls `api` directly — it is handed a `HeatmapWriteSeam` (heatmapWrites.
+     * ts) built here from the SAME resolved x/y/aggregate `buildChartData` produces for the
+     * chart-axis pickers above, plus whichever origin `ownsRows()` says this view has. `undefined`
+     * (no `basePath`, no resolved date x, or the view isn't a heatmap) means the view is
+     * read-only — an inline ```query block with no base file has nowhere to write, same as the
+     * chart config bar's own `basePath` gate above.
+     *
+     * `chart.points[].rows` are indices into THIS memo's own `rowsAll` flat array (buildChartData
+     * bucketed exactly those rows), so resolving "what's on this day" never needs a second lookup
+     * against `resolveProperty` — the bucketing HeatmapView itself does for rendering already
+     * answered it.
+     */
+    const heatmapWrites = createMemo<HeatmapWriteSeam | undefined>(() => {
+        if (activeType() !== 'heatmap') return undefined
+        const path = data()?.basePath
+        const view = activeViewConfig()
+        const res = result()
+        if (!path || !view || !res) return undefined
+        const rowsAll = res.groups.flatMap(g => g.rows)
+        const chart = buildChartData(rowsAll, { ...view, bin: 'day' })
+        if (!chart.isDate || !chart.x) return undefined
+        const xKey = chart.x
+        const yKey = chart.y
+        const isCount = chart.aggregate === 'count' || !yKey
+        const origin: HeatmapOrigin = ownsRows() ? 'base' : 'query'
+
+        const rowsFor = (date: string): WriteRow[] => {
+            const pt = chart.points.find(p => p.date === date)
+            if (!pt) return []
+            return pt.rows.map(i => {
+                const r = rowsAll[i]
+                return { index: r.index, path: r.file.path, note: r.note }
+            })
+        }
+
+        const onSetDay = async (date: string, entered: number | undefined) => {
+            if (!yKey) return
+            const row = rowsFor(date)[0]
+            const intent = planSetValue({ origin, xKey, yKey, date, row, entered })
+            try {
+                switch (intent.kind) {
+                    case 'none':
+                        return
+                    case 'create':
+                        await api.rowCreate(path, intent.note)
+                        break
+                    case 'update':
+                        await api.rowUpdate(path, intent.index, intent.note)
+                        break
+                    case 'delete':
+                        await api.rowDelete(path, intent.index)
+                        break
+                    case 'set-property':
+                        await api.setProperty(intent.path, intent.key, intent.value)
+                        break
+                }
+                await refetchAll()
+            } catch (err) {
+                writeFailed('log the day')(err)
+            }
+        }
+
+        const onToggleDay = async (date: string) => {
+            const intent = planToggle({ xKey, date, rows: rowsFor(date) })
+            try {
+                switch (intent.kind) {
+                    case 'none':
+                        return
+                    case 'create':
+                        await api.rowCreate(path, intent.note)
+                        break
+                    case 'delete-many':
+                        for (const index of intent.indices) await api.rowDelete(path, index)
+                        break
+                }
+                await refetchAll()
+            } catch (err) {
+                writeFailed('toggle the day')(err)
+            }
+        }
+
+        return { origin, isCount, onSetDay, onToggleDay }
+    })
 
     /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
      *  has no bar-level create action at all any more: a click on a day cell opens an inline
@@ -1222,6 +1372,8 @@ export function BaseView(props: {
                                                     <HeatmapView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
+                                                        writes={heatmapWrites()}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1233,6 +1385,7 @@ export function BaseView(props: {
                                                     <BarView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1244,6 +1397,7 @@ export function BaseView(props: {
                                                     <LineView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1255,6 +1409,7 @@ export function BaseView(props: {
                                                     <StatView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                             </Switch>
