@@ -55,23 +55,26 @@ export function LineView(props: ChartViewProps) {
         fitTrend(data().points, { isDate: data().isDate, bin: data().bin }),
     )
 
-    const trendValueAt = (i: number): number => {
+    // With `xs` supplied below, buildLinePlot already hands back a `t` in the trend fit's own
+    // units (day/week/month diff from the first point) — no index-to-t interpolation needed here.
+    const trendValueAt = (t: number): number => {
         const f = fit()
-        const pts = data().points
-        if (!f || pts.length === 0) return 0
-        const lo = Math.max(0, Math.min(pts.length - 1, Math.floor(i)))
-        const hi = Math.max(0, Math.min(pts.length - 1, Math.ceil(i)))
-        const origin = pts[0].key
-        const tLo = tFor(origin, pts[lo].key, data().bin)
-        if (hi === lo) return trendAt(f, tLo)
-        const tHi = tFor(origin, pts[hi].key, data().bin)
-        const frac = i - lo
-        return trendAt(f, tLo + (tHi - tLo) * frac)
+        if (!f) return 0
+        return trendAt(f, t)
     }
+
+    const xs = createMemo<number[] | undefined>(() => {
+        if (!data().isDate) return undefined
+        const pts = data().points
+        if (pts.length === 0) return undefined
+        const origin = pts[0].key
+        return pts.map(p => tFor(origin, p.key, data().bin))
+    })
 
     const plot = createMemo(() =>
         buildLinePlot(data().points, {
             columns: grid().columns,
+            xs: xs(),
             trend: fit() ? trendValueAt : undefined,
         }),
     )

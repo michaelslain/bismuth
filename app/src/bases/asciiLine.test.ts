@@ -87,8 +87,23 @@ describe('buildLinePlot', () => {
         expect(slotWidth).toBeGreaterThanOrEqual(2)
         const expectedAvail = columns - plot.gutter - 1
         expect(visibleCount).toBe(Math.max(1, Math.floor(expectedAvail / 2)))
-        // The LAST point's marker is present (kept), the first is not.
-        expect(flatten(plot.rows)).toBeTruthy()
+        // The first point's label is dropped, and the LAST point's marker is present (kept).
+        expect(plot.axisLabels).not.toContain(points[0].label)
+        const lastLocalCol = plot.colOf(visibleCount - 1) - plot.gutter
+        let foundLastMarker = false
+        for (const row of plot.rows) {
+            let col = 0
+            for (const seg of row.segments) {
+                if (
+                    seg.kind === 'point' &&
+                    lastLocalCol >= col &&
+                    lastLocalCol < col + seg.text.length
+                )
+                    foundLastMarker = true
+                col += seg.text.length
+            }
+        }
+        expect(foundLastMarker).toBe(true)
     })
 
     test('ticks max/mid/0 right-aligned in a gutter as wide as the widest tick + 1', () => {
@@ -167,27 +182,32 @@ describe('buildLinePlot', () => {
             { label: 'b', value: 5 },
             { label: 'c', value: 10 },
         ]
+        const opts = { height: 9, columns: 40 }
         // A flat trend at the same value as every point's row would land squarely on the data
-        // line/points — it must never overwrite them.
-        const plot = buildLinePlot(points, {
-            height: 9,
-            columns: 40,
-            trend: () => 5,
-        })
-        for (const row of plot.rows) {
-            let col = 0
-            for (const seg of row.segments) {
-                if (seg.kind === 'trend')
-                    expect(['line', 'point']).not.toContain('trend') // sanity: kind is distinct
-                col += seg.text.length
+        // line/points — it must never overwrite them, and adding it must not disturb any cell
+        // that was already drawn by the data line/points themselves.
+        const withoutTrend = buildLinePlot(points, opts)
+        const withTrend = buildLinePlot(points, { ...opts, trend: () => 5 })
+
+        const toGrid = (rows: { segments: { text: string; kind: string }[] }[]) =>
+            rows.map(row => {
+                const cells: { ch: string; kind: string }[] = []
+                for (const seg of row.segments)
+                    for (const ch of seg.text) cells.push({ ch, kind: seg.kind })
+                return cells
+            })
+        const gridA = toGrid(withoutTrend.rows)
+        const gridB = toGrid(withTrend.rows)
+        for (let r = 0; r < gridA.length; r++) {
+            for (let c = 0; c < gridA[r].length; c++) {
+                if (gridA[r][c].kind === 'blank' && gridB[r][c].kind === 'trend') continue
+                expect(gridB[r][c]).toEqual(gridA[r][c])
             }
         }
-        const flat = flatten(plot.rows)
+
+        const flat = flatten(withTrend.rows)
         expect(flat).toContain('.')
-        // No cell is ever double-tagged: verify no row/col holds both a point/line char AND '.'
-        // by checking segment kinds are mutually exclusive per cell (guaranteed by construction:
-        // setCell only writes '.' when kind was 'blank').
-        expect(plot.rows.some(r => r.segments.some(s => s.kind === 'trend'))).toBe(true)
+        expect(withTrend.rows.some(r => r.segments.some(s => s.kind === 'trend'))).toBe(true)
     })
 
     test('top-row tick shows the max value, bottom-row tick shows 0 (non-negative data)', () => {
@@ -197,5 +217,125 @@ describe('buildLinePlot', () => {
         })
         expect(plot.rows[0].tick.trim()).toBe('42')
         expect(plot.rows[plot.rows.length - 1].tick.trim()).toBe('0')
+    })
+
+    test('a steep single-column drop is still 8-connected (no hole)', () => {
+        const points: LinePoint[] = []
+        for (let i = 0; i < 84; i++)
+            points.push({ label: `p${i}`, value: i % 2 === 0 ? 1 : 7 })
+        const plot = buildLinePlot(points, { height: 12, columns: 180 })
+        const inked = inkedByColumn(plot.rows)
+        const width = Math.max(
+            ...plot.rows.map(r => r.segments.reduce((n, s) => n + s.text.length, 0)),
+        )
+        for (let c = 0; c < width - 1; c++) {
+            const a = rowsInkedAtColumn(plot.rows, c)
+            const b = rowsInkedAtColumn(plot.rows, c + 1)
+            if (a.length === 0 || b.length === 0) continue
+            const touches = a.some(ra => b.some(rb => Math.abs(ra - rb) <= 1))
+            expect(touches).toBe(true)
+        }
+        expect(inked.some(s => s.size > 0)).toBe(true)
+    })
+
+    test('0/100/0 at a tight 10 columns stays 8-connected', () => {
+        const points: LinePoint[] = [
+            { label: 'a', value: 0 },
+            { label: 'b', value: 100 },
+            { label: 'c', value: 0 },
+        ]
+        const plot = buildLinePlot(points, { height: 12, columns: 10 })
+        const width = Math.max(
+            ...plot.rows.map(r => r.segments.reduce((n, s) => n + s.text.length, 0)),
+        )
+        for (let c = 0; c < width - 1; c++) {
+            const a = rowsInkedAtColumn(plot.rows, c)
+            const b = rowsInkedAtColumn(plot.rows, c + 1)
+            if (a.length === 0 || b.length === 0) continue
+            const touches = a.some(ra => b.some(rb => Math.abs(ra - rb) <= 1))
+            expect(touches).toBe(true)
+        }
+    })
+
+    test('y-scale: all-positive data near 0 gets a zero floor, ticks max/mid/min', () => {
+        const points: LinePoint[] = [
+            { label: 'a', value: 1 },
+            { label: 'b', value: 3 },
+            { label: 'c', value: 2 },
+        ]
+        const plot = buildLinePlot(points, { height: 9, columns: 40 })
+        expect(plot.rows[plot.rows.length - 1].tick.trim()).toBe('0')
+        expect(plot.rows[0].tick.trim()).toBe('3')
+    })
+
+    test('y-scale: all-positive data far from 0 gets a fitted floor, not squeezed to the top', () => {
+        const points: LinePoint[] = [
+            { label: 'a', value: 5 },
+            { label: 'b', value: 6 },
+            { label: 'c', value: 5.5 },
+        ]
+        const plot = buildLinePlot(points, { height: 12, columns: 40 })
+        // The min tick is NOT 0 — the floor is fitted just under the data's own minimum.
+        const bottomTick = plot.rows[plot.rows.length - 1].tick.trim()
+        expect(bottomTick).not.toBe('0')
+        expect(Number(bottomTick)).toBeLessThan(5)
+        // Ink spans more than just the top row or two.
+        const inked = inkedByColumn(plot.rows)
+        const inkedRows = inked.map((s, r) => (s.size > 0 ? r : -1)).filter(r => r >= 0)
+        expect(Math.max(...inkedRows) - Math.min(...inkedRows)).toBeGreaterThan(2)
+    })
+
+    test('y-scale: mixed negative/positive keeps a labelled min tick at the bottom', () => {
+        const points: LinePoint[] = [
+            { label: 'a', value: -8 },
+            { label: 'b', value: 4 },
+            { label: 'c', value: -2 },
+        ]
+        const plot = buildLinePlot(points, { height: 9, columns: 40 })
+        expect(plot.rows[plot.rows.length - 1].tick.trim()).toBe('-8')
+        expect(plot.rows[0].tick.trim()).toBe('4')
+    })
+
+    test('xs spacing places points by real time distance, not even index spacing', () => {
+        const points: LinePoint[] = [
+            { label: 'd0', value: 1 },
+            { label: 'd2', value: 2 },
+            { label: 'd21', value: 3 },
+        ]
+        // Day offsets from the first point: gaps of 2 days then 19 days.
+        const xs = [0, 2, 21]
+        const plot = buildLinePlot(points, { columns: 60, xs })
+        const gapSmall = plot.colOf(1) - plot.colOf(0)
+        const gapBig = plot.colOf(2) - plot.colOf(1)
+        expect(gapBig).toBeGreaterThan(gapSmall * 5)
+    })
+
+    test('trend cells never land left of the first point or right of the last', () => {
+        const points: LinePoint[] = [
+            { label: 'd0', value: 1 },
+            { label: 'd2', value: 2 },
+            { label: 'd21', value: 3 },
+            { label: 'd25', value: 2.5 },
+        ]
+        const xs = [0, 2, 21, 25]
+        const plot = buildLinePlot(points, {
+            columns: 60,
+            xs,
+            trend: t => 1 + t * 0.1,
+        })
+        const firstCol = plot.colOf(0) - plot.gutter
+        const lastCol = plot.colOf(points.length - 1) - plot.gutter
+        for (const row of plot.rows) {
+            let col = 0
+            for (const seg of row.segments) {
+                if (seg.kind === 'trend')
+                    for (let k = 0; k < seg.text.length; k++) {
+                        const c = col + k
+                        expect(c).toBeGreaterThanOrEqual(firstCol)
+                        expect(c).toBeLessThanOrEqual(lastCol)
+                    }
+                col += seg.text.length
+            }
+        }
     })
 })
