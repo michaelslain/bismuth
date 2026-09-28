@@ -183,3 +183,28 @@ export const OwnerIgnoresCommit: Story = {
         await waitFor(() => expect(view.state.doc.toString()).toBe('planning, zzz'))
     },
 }
+
+/** Suggestions are always on offer while the field is focused — not only after a typed letter:
+ *  on focus, after deleting back into a value, after Escape closed the list and typing resumed,
+ *  and right after a comma. */
+export const SuggestionsAlwaysOnOffer: Story = {
+    render: () => <Harness tags initial={['planning']} />,
+    play: async ({ canvasElement }) => {
+        const view = await tagsFieldView(canvasElement)
+        // Focused: every unused tag.
+        await expectCompletions(['#chicken', '#chores', '#frontend', '#docs', '#launch'])
+        typeInto(view, 'chx')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        // Deleting back into a value that matches brings the list back.
+        pressKey(view, 'Backspace')
+        await expectCompletions(['#chicken', '#chores'])
+        // Escape closes it; typing on reopens it.
+        pressKey(view, 'Escape')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        typeInto(view, 'i')
+        await expectCompletions(['#chicken'])
+        // Right after a comma: every unused tag again.
+        typeInto(view, 'cken, ')
+        await expectCompletions(['#chores', '#frontend', '#docs', '#launch'])
+    },
+}

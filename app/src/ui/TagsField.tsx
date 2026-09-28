@@ -146,6 +146,8 @@ const TagsField: Component<TagsFieldProps> = props => {
     // that focus would leave the caret before it (typing then glues onto the last tag). So only a
     // keyboard/programmatic focus gets the ready-to-type separator.
     let pointerFocus = false
+    // Set by a click-focus, consumed on that click's mouseup (see the mouseup handler).
+    let pointerFocusedAt = false
     // Whether the completion popup was open when the current keydown arrived — read after
     // CodeMirror handled it, to tell "Escape closed the popup" from "Escape cancels the edit".
     let popupWasOpen = false
@@ -174,11 +176,12 @@ const TagsField: Component<TagsFieldProps> = props => {
     }
 
     // The completion source: the value under the caret, completed against `suggestions` minus
-    // what the field already holds. It opens as soon as a value is being typed.
+    // what the field already holds.
     function source(ctx: CompletionContext): CompletionResult | null {
         const before = ctx.state.sliceDoc(0, ctx.pos)
+        // An empty value (the field just focused, or right after a comma) offers every unused
+        // suggestion — the list never goes blank between one value and the next.
         const tok = tokenAtCaret(before)
-        if (!ctx.explicit && tok.query === '') return null
         const others = textToTags(
             before.slice(0, tok.from) + ctx.state.sliceDoc(ctx.pos),
             tags(),
@@ -293,12 +296,31 @@ const TagsField: Component<TagsFieldProps> = props => {
                     // the popup the moment one is typed (the note editor does the same for `[[`).
                     // Only a person's own edits (typing, deleting, pasting, taking a suggestion)
                     // make the edit dirty — the focus-time separator and value syncs do not.
-                    // After a suggestion is taken, offer the next one straight away.
+                    // Suggestions are ALWAYS on offer while the field is focused: after focusing,
+                    // typing, deleting, pasting, taking a suggestion, or clicking to move the caret,
+                    // if no list is open, ask for one again. (CodeMirror by itself only opens the
+                    // list on a typed letter — a deletion, a click or a closed-then-resumed edit left
+                    // it shut.) The source returns nothing when nothing matches, so this never shows
+                    // an empty list.
                     EditorView.updateListener.of(u => {
-                        if (u.transactions.some(t => t.isUserEvent('input.complete')))
-                            queueMicrotask(() => {
-                                if (!destroyed && u.view.hasFocus) startCompletion(u.view)
-                            })
+                        if (!u.view.hasFocus) return
+                        const byPerson =
+                            u.focusChanged ||
+                            u.transactions.some(
+                                t =>
+                                    t.isUserEvent('input') ||
+                                    t.isUserEvent('delete') ||
+                                    t.isUserEvent('select.pointer'),
+                            )
+                        if (!byPerson || completionStatus(u.state) !== null) return
+                        queueMicrotask(() => {
+                            if (
+                                !destroyed &&
+                                u.view.hasFocus &&
+                                completionStatus(u.view.state) === null
+                            )
+                                startCompletion(u.view)
+                        })
                     }),
                     EditorView.updateListener.of(u => {
                         if (
@@ -321,8 +343,10 @@ const TagsField: Component<TagsFieldProps> = props => {
                             return false
                         },
                         focus: (_e, v) => {
-                            if (pointerFocus) pointerFocus = false
-                            else {
+                            if (pointerFocus) {
+                                pointerFocus = false
+                                pointerFocusedAt = true
+                            } else {
                                 const doc = v.state.doc.toString()
                                 const next = withTrailingSeparator(doc)
                                 if (next !== doc)
@@ -334,10 +358,25 @@ const TagsField: Component<TagsFieldProps> = props => {
                                         selection: { anchor: next.length },
                                     })
                             }
-                            // The suggestions show as soon as the field is focused — no need to
-                            // type a letter to find out what can go here.
+                            return false
+                        },
+                        // A click that focused the field with the caret at the very end is the
+                        // same "add another" intent as a keyboard focus: give it the separator too
+                        // (after the mouse has placed the caret, or the caret lands before it).
+                        mouseup: (_e, v) => {
+                            if (!pointerFocusedAt) return false
+                            pointerFocusedAt = false
                             queueMicrotask(() => {
-                                if (!destroyed && v.hasFocus) startCompletion(v)
+                                const doc = v.state.doc.toString()
+                                const head = v.state.selection.main.head
+                                if (head !== doc.length) return
+                                const next = withTrailingSeparator(doc)
+                                if (next === doc) return
+                                v.dispatch({
+                                    changes: { from: doc.length, insert: next.slice(doc.length) },
+                                    selection: { anchor: next.length },
+                                })
+                                if (completionStatus(v.state) === null) startCompletion(v)
                             })
                             return false
                         },
