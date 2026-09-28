@@ -8,53 +8,29 @@ import {
     onCleanup,
     onMount,
 } from 'solid-js'
-import { stringify as yamlStringify } from 'yaml'
 import type {
     ViewResult,
     BaseConfig,
     Row,
     ResultGroup,
 } from '../../../core/src/bases/types'
-import {
-    placeholderFile,
-    syntheticBaseFile,
-} from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
-import { api } from '../api'
-import { KanbanCard } from './KanbanCard'
-import TaskRow from './TaskRow'
-import CardFrame from './CardFrame'
+import { propertyType } from '../../../core/src/bases/properties'
 import { rowId } from './rowIdentity'
-import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
+import { storedNote } from './taskWrite'
 import { storedTitleColumn, matchedStoredRowId } from './kanbanMeta'
-import { PALETTE_NAMES } from './kanbanPalette'
-import { parentOf } from '../fileTreeOps'
-import {
-    groupUpdatesByPath,
-    rollbackPending,
-    rollbackRemoved,
-} from './kanbanRollback'
-import {
-    flushEditorsAtOrUnder,
-    flushSidecarsAtOrUnder,
-} from '../editorRegistry'
-import { appendOrder, padCount } from './kanbanOrder'
-import {
-    appendColumnKey,
-    removeColumnKey,
-    renameColumnKey,
-    renamePropertyOption,
-    reorderColumnKeys,
-    withPropertyOption,
-} from './kanbanColumnOrder'
-import KanbanAddColumn from './KanbanAddColumn'
-import { createKanbanDrag, type KanbanCardDrop } from './kanbanDrag'
-import KanbanColumnNameInput from './KanbanColumnNameInput'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
+import { createKanbanDrag } from './kanbanDrag'
 import {
-    markdownDropTarget,
-    isImagePath,
-} from './kanbanImageDrop'
+    createKanbanActions,
+    deleteSnapshot,
+    ORDER_KEY,
+    type PendingAdd,
+    type PendingMove,
+} from './kanbanActions'
+import KanbanAddColumn from './KanbanAddColumn'
+import KanbanColumn from './KanbanColumn'
+import { markdownDropTarget, isImagePath } from './kanbanImageDrop'
 import {
     isFileDrag,
     nativeDropPoint,
@@ -64,35 +40,15 @@ import {
 } from './cardImageDrop'
 import { embedUploadsIntoValue } from './imageEmbedWrite'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
-import { propertyType } from '../../../core/src/bases/properties'
 import { propertyRegistry } from '../propertyRegistry'
-import {
-    markDeleted,
-    unmarkDeleted,
-    pruneDeleted,
-    isRowHidden,
-    type DeletedMap,
-} from './kanbanDelete'
+import { isRowHidden, pruneDeleted, type DeletedMap } from './kanbanDelete'
 import { type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
-import { declaredDefaults } from '../../../core/src/bases/properties'
 import { STATUS_COLOR } from '../ui/StatusDot'
 import { pushToast } from '../Toast'
-import { suppressCardContextMenu } from './kanbanCardMenu'
-import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
-import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
-import IconButton from '../ui/IconButton'
-import IconBar from '../ui/IconBar'
-import TextInput from '../ui/TextInput'
-import Swatch from '../ui/Swatch'
-import AnchoredPopover from '../ui/AnchoredPopover'
 import Callout from '../ui/Callout'
 import InlineCode from '../ui/InlineCode'
 import styles from './KanbanView.module.css'
-
-// Frontmatter key used to persist manual within-column ordering.
-const ORDER_KEY = 'order'
 
 // The active theme's graph-node ramp (`accentPalette` → --graph-0..4), a designed set of
 // distinguishable-yet-cohesive colors. Used as the per-column fallback so columns vary out of
@@ -105,27 +61,6 @@ const PALETTE = [
     'var(--graph-3)',
     'var(--graph-4)',
 ]
-
-// Human names for the PALETTE swatches above, parallel by index — every theme's --graph-0..4
-// ramp is rose/violet/blue/teal/green in that order. Used as each Swatch's accessible name +
-// title (a color, not a token name, reads better to a keyboard/screen-reader user).
-// (PALETTE_NAMES itself lives in ./kanbanPalette, shared with the stories.)
-
-// An optimistic move: the column key + order a just-dropped card should render at, before the
-// backend write + refetch land. Keyed by rowId (see rowIdentity.ts).
-/** `keyOnly`: clear once the card reaches `key`, whatever its stored order (a column rename
- *  moves cards without writing an order, so an order match would never come). */
-type PendingMove = { key: string; order: number; keyOnly?: boolean }
-
-/** Make a title safe as a filename: strip path/YAML-hostile chars, collapse whitespace. */
-function safeFilename(title: string): string {
-    const s = title
-        .replace(/[\\/:*?"<>|#[\]]/g, '-')
-        .replace(/\s+/g, ' ')
-        .replace(/^\.+/, '')
-        .trim()
-    return s.slice(0, 120) || 'Untitled'
-}
 
 export function KanbanView(props: {
     result: ViewResult
@@ -229,8 +164,6 @@ export function KanbanView(props: {
     const [hoverCol, setHoverCol] = createSignal<string | null>(null)
     const [composerCol, setComposerCol] = createSignal<string | null>(null)
     const [draft, setDraft] = createSignal('')
-    // Paths minted this session, so two quick adds don't collide before a refetch lands.
-    const created = new Set<string>()
 
     // Optimistic moves: on drop we place cards immediately from this overlay so a dragged card
     // never snaps back to its origin while the async setProperty writes + refetch are in flight
@@ -239,27 +172,7 @@ export function KanbanView(props: {
     // Just-created cards, shown INSTANTLY in their column before the file write's (debounced) refetch
     // brings the real row — so adding a card doesn't blink/hide-then-reappear. Each clears once the
     // server data contains its path.
-    const [pendingAdds, setPendingAdds] = createSignal<
-        Array<{
-            row: Row
-            col: string
-            /** Set only for a `props.ownsRows` (stored-row) add — see the resolve effect
-             *  below. A file-based add still clears by path match (the file write's own
-             *  refetch brings a row at that exact path), so it needs none of this.
-             *  `priorSnapshots` is CONTENT-keyed (`JSON.stringify(storedNote(r))`), not
-             *  id-keyed — an id can be reassigned to a different row by an unrelated delete
-             *  landing between the add and this resolve (`matchedStoredRowId`'s own doc). */
-            stored?: {
-                priorSnapshots: Set<string>
-                matchKey: string
-                matchValue: unknown
-            }
-        }>
-    >([])
-    // Monotonic sentinel for a stored-row optimistic placeholder's `Row.index` — always
-    // negative, so its rowId (`${path}#${index}`) can never collide with a real appended
-    // row's (always >= 0). The real index is unknowable client-side (see matchedStoredRowId).
-    let nextStoredPendingIndex = -1
+    const [pendingAdds, setPendingAdds] = createSignal<PendingAdd[]>([])
     // Optimistic column order after a header drag — so the columns settle instantly instead of
     // snapping back while the `columns` write + refetch land. Cleared once the server order matches.
     const [pendingColOrder, setPendingColOrder] = createSignal<string[] | null>(
@@ -273,17 +186,6 @@ export function KanbanView(props: {
     const [pendingRemovedCols, setPendingRemovedCols] = createSignal<
         Set<string>
     >(new Set())
-
-    /** Roll `pendingColOrder` back to `prevOrder`, but only-if-still-mine: another column action
-     * (reorder/rename/delete) may have written a newer order during this call's await, and an
-     * unconditional restore would clobber that action's own in-flight state. Used by
-     * addColumn/renameColumn/deleteColumn's catch blocks. */
-    function rollbackColOrder(
-        keys: string[],
-        prevOrder: string[] | null,
-    ): void {
-        setPendingColOrder(cur => (cur === keys ? prevOrder : cur))
-    }
 
     /** Effective within-column sort order: the pending (optimistic) order if this card has one for
      * this column, else its explicit `order`, else its stable engine position. */
@@ -472,14 +374,52 @@ export function KanbanView(props: {
     const groupByKey = (key: string): ResultGroup =>
         displayGroups().find(g => g.key === key) ?? { key, rows: [] }
 
+    // Ids deleted this session but not yet confirmed gone by a refetch — hidden from every column
+    // at once; a stored row's entry carries a content snapshot (see kanbanDelete.ts).
+    const [deletedIds, setDeletedIds] = createSignal<DeletedMap>(new Map())
+
+    const actions = createKanbanActions({
+        basePath: () => props.basePath,
+        viewIndex: () => props.viewIndex ?? 0,
+        config: () => props.config,
+        result: () => props.result,
+        ownsRows: () => !!props.ownsRows,
+        onChange: () => props.onChange(),
+        groupBy,
+        groupColors,
+        titleCol,
+        editable,
+        autoColor,
+        columnKeys,
+        groupByKey,
+        effOrder,
+        sortedRows,
+        overlay: {
+            pending,
+            setPending,
+            pendingAdds,
+            setPendingAdds,
+            pendingColOrder,
+            setPendingColOrder,
+            pendingRemovedCols,
+            setPendingRemovedCols,
+            setDeletedIds,
+        },
+        // Lazy: `drag` is built just below from this module's own dropCard/reorderColumns.
+        drag: () => drag,
+        closeColorPicker: () => setPickerCol(null),
+        draft,
+        setDraft,
+    })
+
     // The pointer-drag + FLIP engine (kanbanDrag.ts). Created here, after `columnKeys`, since its
     // drop-gap memo reads that on creation; the writes a drop implies stay in this view.
     const drag = createKanbanDrag({
         root: () => rootEl,
         editable,
         columnKeys,
-        dropCard,
-        reorderColumns,
+        dropCard: actions.dropCard,
+        reorderColumns: actions.reorderColumns,
     })
 
     // Clear the optimistic column order once the server's column order matches it.
@@ -511,687 +451,6 @@ export function KanbanView(props: {
         })
     })
 
-    // Commit a card drop (called by the drag engine on pointerup, with the drag state it read).
-    async function dropCard(drop: KanbanCardDrop): Promise<void> {
-        const id = drop.id
-        const insertAt = drop.insertAt
-        const targetKey = drop.targetKey
-        const from = drop.from
-        if (!id || targetKey === null) return
-        const gb = groupBy()
-        if (!gb) return
-        const statusKey = writableKey(gb.property)
-        const group = groupByKey(targetKey)
-        const dragged =
-            props.result.groups
-                .flatMap(g => g.rows)
-                .find(r => rowId(r) === id) ??
-            pendingAdds().find(a => rowId(a.row) === id)?.row
-        if (!dragged) return
-        // A placeholder card is inert until its add resolves — dragging it writes nothing.
-        // Checked FIRST, before any optimistic state: the row's write-back handle (a negative
-        // index) does not name a real server slot yet, so ordering it now would be racing the
-        // add's own eventual index.
-        if (isStoredPlaceholder(dragged)) return
-
-        // Target column's new integer ordering — explicit orders for every card keep the sort stable
-        // (a fractional-only scheme drifts). Applied OPTIMISTICALLY (see the clear-effect above).
-        const others = sortedRows(group).filter(r => rowId(r) !== id)
-        const i = Math.max(0, Math.min(insertAt, others.length))
-        const newList = [...others.slice(0, i), dragged, ...others.slice(i)]
-        drag.snapshotRects()
-        setPending(prev => {
-            const next = { ...prev }
-            newList.forEach((r, k) => {
-                next[rowId(r)] = { key: targetKey, order: k }
-            })
-            return next
-        })
-        requestAnimationFrame(drag.playFlip)
-
-        // Two boards, two write APIs. A NOTE board writes frontmatter keys on N different
-        // files, which is what `setProperties` batches. An OWN-ROWS board writes N rows of
-        // ONE file, which is what `rowUpdateMany` batches — and `setProperty(row.file.path,
-        // …)` there would write the key onto the BASE's frontmatter instead of onto the row,
-        // silently corrupting the board's own config. The discriminator is the row's write-back
-        // handle, exactly as it is for a task tick: `canWriteStoredRow`, never "this looks like
-        // an own-rows base".
-        //
-        // `storedNote(r)` and not `r.note`: the view is holding NORMALIZED rows, and
-        // `serializeRows` does not strip. Writing `r.note` back would bake all seven
-        // computed task columns into the user's file as stale stored data.
-        if (canWriteStoredRow(dragged)) {
-            // The row's OWN file, not props.basePath: a `source:` base's rows carry
-            // `syntheticBaseFile(<that base's path>)`, so props.basePath would silently write
-            // this board's own file instead of the board it actually sources from.
-            // Placeholder SIBLINGS (another pending add sharing this column, dragged around
-            // only in the optimistic `pending` overlay above) are left out here — they have no
-            // real server index yet, so writing one into a batch by its negative `r.index!`
-            // would either 400 or, worse, collide with whatever real index the add eventually
-            // resolves to. Their order stays whatever the `pending` overlay says until their
-            // own add lands; only rows the server already knows about get written.
-            const items = newList
-                .filter(r => !isStoredPlaceholder(r))
-                .map((r, k) => ({
-                    path: r.file.path,
-                    index: r.index!,
-                    note: {
-                        ...storedNote(r),
-                        ...(statusKey !== null &&
-                        r === dragged &&
-                        from !== targetKey
-                            ? { [statusKey]: targetKey }
-                            : {}),
-                        [ORDER_KEY]: k,
-                    },
-                }))
-            for (const [path, group] of groupUpdatesByPath(items))
-                await api.rowUpdateMany(
-                    path,
-                    group.map(g => ({ index: g.index, note: g.note })),
-                )
-            return
-        }
-
-        // ONE batched request → ONE invalidation → ONE refetch (separate writes stormed the view). The
-        // status change + the dragged card's order + the reindex of shifted siblings are all folded in.
-        const writes: Array<{ path: string; key: string; value: unknown }> = []
-        if (statusKey !== null && from !== targetKey)
-            writes.push({
-                path: dragged.file.path,
-                key: statusKey,
-                value: targetKey,
-            })
-        writes.push({ path: dragged.file.path, key: ORDER_KEY, value: i })
-        for (let k = 0; k < newList.length; k++) {
-            const row = newList[k]
-            if (rowId(row) === id) continue
-            if ((row.note as Record<string, unknown>)[ORDER_KEY] !== k)
-                writes.push({ path: row.file.path, key: ORDER_KEY, value: k })
-        }
-        await api.setProperties(writes)
-    }
-
-    // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──
-    async function reorderColumns(
-        from: string,
-        over: string,
-        after: boolean,
-    ): Promise<void> {
-        if (!props.basePath || from === over) return
-        const keys = reorderColumnKeys(columnKeys(), from, over, after)
-        // Optimistic: reorder instantly (FLIP the columns) so they don't snap back during the write's
-        // refetch. The single `columns` write's SSE drives one refetch; the clear-effect then drops the
-        // overlay (no props.onChange — a second refetch is unnecessary).
-        drag.snapshotColRects()
-        setPendingColOrder(keys)
-        requestAnimationFrame(drag.playColFlip)
-        await api.setViewProperty(
-            props.basePath,
-            props.viewIndex ?? 0,
-            'columns',
-            keys,
-        )
-    }
-
-    // The exact declared name (as it appears in `properties:`) that `propertyType` matched for
-    // `property` — mirrors ITS OWN [name, bare, note.<bare>] lookup order (properties.ts) so
-    // `withPropertyOption` edits the SAME entry `propertyType` just read the type off of.
-    function declaredPropertyName(property: string): string | null {
-        const declared = props.config.properties
-        if (!declared) return null
-        const bare = property.startsWith('note.') ? property.slice(5) : property
-        for (const candidate of [property, bare, `note.${bare}`])
-            if (declared[candidate]) return candidate
-        return null
-    }
-
-    // The base's declared `properties:` reconstructed in the FLAT list-YAML shape
-    // (`{name, type, options?, ...}`) `normalizeProperties` reads back — the shape
-    // `withPropertyOption` edits and `api.setProperty(basePath, 'properties', ...)` writes.
-    // `props.config.properties` already carries every field the flat form has (parsed by
-    // `normalizePropertyDef`), so this round-trips losslessly at the level the engine models —
-    // the same reconstruction `basePropertiesForm.ts`'s save path performs from its rows.
-    function declaredPropertiesRaw(): unknown[] {
-        const names = props.config.declaredProperties
-        const defs = props.config.properties
-        if (!names || !defs) return []
-        return names.map(name => {
-            const def = defs[name]
-            const out: Record<string, unknown> = { name }
-            if (def?.displayName !== undefined)
-                out.displayName = def.displayName
-            if (def?.hidden) out.hidden = true
-            if (def?.type) {
-                out.type = def.type.kind
-                if (def.type.options) out.options = def.type.options
-                if (def.type.number) out.number = def.type.number
-                if (def.type.unit) out.unit = def.type.unit
-                if (def.type.expr) out.expr = def.type.expr
-            }
-            if (def?.default !== undefined) out.default = def.default
-            return out
-        })
-    }
-
-    // ── Add column — pin a new, empty column at the end of `columns`. ──
-    // Only rendered when `canAdd()` (editable + a writable groupBy) — see the trailing
-    // <KanbanAddColumn> below. If the groupBy property is declared select/multiselect, the new
-    // column's value is ALSO appended to that declaration's `options` so a future card dropped
-    // into it (or picked from a select editor) matches the same vocabulary the column shows.
-    async function addColumn(name: string): Promise<void> {
-        if (!props.basePath) return
-        const keys = appendColumnKey(columnKeys(), name)
-        if (keys === null) return
-        const basePath = props.basePath
-        // Optimistic, like reorderColumns: the column appears instantly (empty), settling once
-        // the `columns` write's SSE-driven refetch lands. Rolled back on a failed write below —
-        // otherwise columnKeys() keeps rendering a phantom column with no server group forever.
-        const trimmedName = name.trim()
-        const prevOrder = pendingColOrder()
-        // Captured BEFORE the rollback below clears it — this is the only place that still
-        // knows the re-add was covering a pending removal, and the catch needs it to restore
-        // that removal if the `columns` write never lands (mirrors renameColumn's catch).
-        const targetWasRemoved = pendingRemovedCols().has(trimmedName)
-        // Whether the `columns` write below has landed — a failure before it lands means the
-        // add never happened server-side, so a removal it was covering must come back.
-        let columnsLanded = false
-        setPendingColOrder(keys)
-        // A column removed then re-added inside the refetch window is still in
-        // pendingRemovedCols (its own removal write's refetch hasn't landed yet), and
-        // columnKeys() filters every removed key out — without deleting it here the re-added
-        // column would stay invisible until the OLD removal's refetch happens to clear it.
-        setPendingRemovedCols(prev => rollbackRemoved(prev, trimmedName))
-        try {
-            await api.setViewProperty(
-                basePath,
-                props.viewIndex ?? 0,
-                'columns',
-                keys,
-            )
-            columnsLanded = true
-            const gb = groupBy()
-            if (!gb) return
-            const t = propertyType(props.config, gb.property)
-            if (t?.kind !== 'select' && t?.kind !== 'multiselect') return
-            const declName = declaredPropertyName(gb.property)
-            if (!declName) return
-            const updated = withPropertyOption(
-                declaredPropertiesRaw(),
-                declName,
-                name.trim(),
-            )
-            if (updated) await api.setProperty(basePath, 'properties', updated)
-        } catch (e) {
-            // Only-if-still-mine: another column action (reorder/rename/delete) may have
-            // written a newer `pendingColOrder` during this await — restoring `prevOrder`
-            // unconditionally would clobber that action's own in-flight state.
-            rollbackColOrder(keys, prevOrder)
-            // Mirrors renameColumn's catch: this call cleared `trimmedName` out of
-            // pendingRemovedCols optimistically (to un-hide the re-added column). If the
-            // `columns` write never landed, the add never happened server-side — the removal
-            // it was covering is still real, so put it back, or the column that was just
-            // deleted reappears (hidden nowhere) until a stale refetch happens to reconcile it.
-            // Once `columnsLanded`, the column genuinely exists again and must stay un-hidden.
-            setPendingRemovedCols(prev =>
-                targetWasRemoved && !columnsLanded
-                    ? new Set(prev).add(trimmedName)
-                    : prev,
-            )
-            pushToast(`Add column failed: ${(e as Error).message}`)
-        }
-    }
-
-    // ── Column rename — rewrites `columns`, moves any `groupColors` override, renames a
-    // declared select/multiselect option, and moves every card in the column in one batched
-    // write. ──
-    async function renameColumn(from: string, to: string): Promise<void> {
-        if (!props.basePath) return
-        const keys = renameColumnKey(columnKeys(), from, to)
-        if (keys === null) return
-        const trimmed = to.trim()
-        const basePath = props.basePath
-        const idx = props.viewIndex ?? 0
-
-        // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
-        // The header's `[✎]` rename action is gated on `canAdd()` (editable + writable groupBy),
-        // but keep this belt-and-braces: without it, the `columns` write below would still
-        // rename the pinned column while every card's status write is skipped (statusKey
-        // null), leaving an empty new column pinned alongside the untouched old one on reload.
-        const gb = groupBy()
-        const statusKey = gb ? writableKey(gb.property) : null
-        if (statusKey === null) return
-
-        // A view `limit` caps every group's rows (`query.ts`'s `applyLimit`), so
-        // `groupByKey(from).rows` can be a TRUNCATED set — renaming would move only the
-        // visible cards and strand the hidden ones under the old key forever. Refuse before
-        // any optimistic state.
-        if (typeof props.result.view.limit === 'number') {
-            pushToast('rename unavailable // this view has a limit')
-            return
-        }
-
-        // The cards to move, captured BEFORE the optimistic overlay below empties `from` — and
-        // excluding stored-row PLACEHOLDERS (a negative `index`, an optimistic add not yet
-        // resolved to a real row): sending one to the server as a rename target 400s, and the
-        // rollback would then fire after `columns` already landed.
-        const movedRows = groupByKey(from).rows.filter(
-            r => !isStoredPlaceholder(r),
-        )
-
-        // Optimistic, like reorderColumns/addColumn: the renamed column shows instantly, the old
-        // key is hidden (columnKeys() would otherwise re-append it while the server still reports
-        // it) and its cards render under the new key through the card overlay. All rolled back on
-        // any failed write below — a partial rename otherwise leaves the column showing its new
-        // name while the server still has the old one, permanently out of sync.
-        // Whether `from` was ALREADY hidden before this call — if so, this call didn't add it
-        // and must not remove it on rollback (some other in-flight action owns that removal).
-        const alreadyRemoved = pendingRemovedCols().has(from)
-        const targetWasRemoved = pendingRemovedCols().has(trimmed)
-        const prevOrder = pendingColOrder()
-        // The exact entries THIS call is about to write into `pending`, so a rollback can undo
-        // only these (by `===` identity) rather than clobbering an overlay entry another
-        // action wrote during this call's await.
-        const writtenPending: Record<string, PendingMove> = {}
-        movedRows.forEach((r, k) => {
-            const o = (r.note as Record<string, unknown>)[ORDER_KEY]
-            writtenPending[rowId(r)] = {
-                key: trimmed,
-                order: typeof o === 'number' ? o : k,
-                keyOnly: true,
-            }
-        })
-        // Whether the `columns` write below has landed — once it has, the column itself is
-        // already renamed server-side, so a failure afterward is a PARTIAL failure: the overlays
-        // still roll back, but the toast says `partially applied`, `props.onChange()` refetches
-        // the server's already-renamed state, and `trimmed`'s prior removal is not restored.
-        let columnsLanded = false
-        setPendingColOrder(keys)
-        setPendingRemovedCols(prev => rollbackRemoved(prev, trimmed).add(from))
-        setPending(prev => ({ ...prev, ...writtenPending }))
-        try {
-            await api.setViewProperty(basePath, idx, 'columns', keys)
-            columnsLanded = true
-
-            // Move a color override from the old key to the new one, if it had one. When there
-            // was none, a rename-carried color counts as an override ONLY when it has to: the
-            // auto color hashes the KEY, so leaving `groupColors` untouched would silently
-            // recolor the column via a hash-of-`trimmed` slot instead of keeping `from`'s — but
-            // when the new key happens to auto-color the same as the old one, writing an
-            // override would show a plain rename as a custom color the user never chose. Skip
-            // the write entirely when `groupColors` would come out unchanged either way.
-            const colors = groupColors()
-            const next = { ...colors }
-            let colorsChanged = false
-            if (colors[from] !== undefined) {
-                next[trimmed] = next[from]!
-                delete next[from]
-                colorsChanged = true
-            } else if (autoColor(trimmed) !== autoColor(from)) {
-                next[trimmed] = autoColor(from)
-                colorsChanged = true
-            }
-            if (colorsChanged)
-                await api.setViewProperty(basePath, idx, 'groupColors', next)
-
-            // Declared select/multiselect option rename — mirrors addColumn's append.
-            const t = gb ? propertyType(props.config, gb.property) : null
-            if (gb && (t?.kind === 'select' || t?.kind === 'multiselect')) {
-                const declName = declaredPropertyName(gb.property)
-                if (declName) {
-                    const updated = renamePropertyOption(
-                        declaredPropertiesRaw(),
-                        declName,
-                        from,
-                        trimmed,
-                    )
-                    if (updated)
-                        await api.setProperty(basePath, 'properties', updated)
-                }
-            }
-
-            // Move every card currently in the renamed column — ONE batched write per write
-            // TARGET (a file path), same two-target split as dropCard/setMetaProperty
-            // (`canWriteStoredRow`). statusKey is non-null here — guarded at the top of the
-            // function. A stored row's write target is ITS OWN `file.path` (a `source:` base's
-            // rows carry `syntheticBaseFile(<that base's path>)` — never `props.basePath`
-            // blindly, which would land on the wrong base for a `source:` board), so the
-            // updates are grouped by path and issued one `rowUpdateMany` call per path — one
-            // call total for an own-rows board, where every row shares the same path.
-            const rows = movedRows
-            const storedRows = rows.filter(canWriteStoredRow)
-            const noteRows = rows.filter(r => !canWriteStoredRow(r))
-            if (storedRows.length > 0) {
-                const items = storedRows.map(r => ({
-                    path: r.file.path,
-                    index: r.index!,
-                    note: { ...storedNote(r), [statusKey]: trimmed },
-                }))
-                for (const [path, group] of groupUpdatesByPath(items)) {
-                    await api.rowUpdateMany(
-                        path,
-                        group.map(g => ({ index: g.index, note: g.note })),
-                    )
-                }
-            }
-            if (noteRows.length > 0) {
-                const writes = noteRows.map(r => ({
-                    path: r.file.path,
-                    key: statusKey,
-                    value: trimmed,
-                }))
-                await api.setProperties(writes)
-            }
-            props.onChange()
-        } catch (e) {
-            rollbackColOrder(keys, prevOrder)
-            setPendingRemovedCols(prev => {
-                const s = rollbackRemoved(prev, alreadyRemoved ? null : from)
-                return targetWasRemoved && !columnsLanded
-                    ? new Set(s).add(trimmed)
-                    : s
-            })
-            setPending(prev => rollbackPending(prev, writtenPending))
-            if (columnsLanded) {
-                props.onChange()
-                pushToast(
-                    `Rename column partially applied: ${(e as Error).message}`,
-                )
-            } else {
-                pushToast(`Rename column failed: ${(e as Error).message}`)
-            }
-        }
-    }
-
-    // ── Column delete — the header's `[🗑]` now shows on EVERY column, not only an empty one.
-    // An empty column deletes exactly as before: drop the key from `columns` (+ any
-    // `groupColors` override). A non-empty column ALSO clears the grouping value off every one
-    // of its cards first — same batched-write shape as renameColumn's card move, just targeting
-    // '' (the no-value/"(empty)" lane) instead of a new name — so the cards survive, landing
-    // wherever a card with no value already renders, and offers an Undo that re-adds the column
-    // and puts each card's value back. ──
-    async function deleteColumn(key: string): Promise<void> {
-        if (!props.basePath) return
-        const basePath = props.basePath
-        const idx = props.viewIndex ?? 0
-        // Cards to clear, captured BEFORE the optimistic overlay below hides `key` — excluding
-        // stored-row PLACEHOLDERS (an optimistic add not yet resolved to a real row), same
-        // exclusion renameColumn applies to `movedRows`.
-        const cardRows = groupByKey(key).rows.filter(
-            r => !isStoredPlaceholder(r),
-        )
-        let statusKey: string | null = null
-        if (cardRows.length > 0) {
-            const gb = groupBy()
-            statusKey = gb ? writableKey(gb.property) : null
-            // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
-            // The header's `[🗑]` is gated on `canAdd()` (editable + writable groupBy), but keep
-            // this belt-and-braces, mirroring renameColumn.
-            if (statusKey === null) return
-            // A view `limit` truncates `groupByKey(key).rows` — clearing would move only the
-            // visible cards and strand the rest under a column that no longer exists.
-            if (typeof props.result.view.limit === 'number') {
-                pushToast('delete unavailable // this view has a limit')
-                return
-            }
-        }
-        // Captured for Undo: where the column sat and its colour override, both removed below.
-        const prevIndex = columnKeys().indexOf(key)
-        const prevColor = groupColors()[key]
-        const keys = removeColumnKey(columnKeys(), key)
-        const alreadyRemoved = pendingRemovedCols().has(key)
-        const prevOrder = pendingColOrder()
-        const writtenPending: Record<string, PendingMove> = {}
-        cardRows.forEach((r, k) => {
-            writtenPending[rowId(r)] = { key: '', order: k, keyOnly: true }
-        })
-        let columnsLanded = false
-        // Optimistic, like add/rename: the column disappears instantly (its cards' overlay moves
-        // them into the '' lane in the same tick). Both rolled back on a failed write — otherwise
-        // the column vanishes from the UI for good even though the server still has it, or worse,
-        // columnKeys() keeps hiding a key the server never lost.
-        setPendingColOrder(keys)
-        setPendingRemovedCols(prev => new Set(prev).add(key))
-        if (cardRows.length > 0)
-            setPending(prev => ({ ...prev, ...writtenPending }))
-        try {
-            await api.setViewProperty(basePath, idx, 'columns', keys)
-            columnsLanded = true
-            const colors = groupColors()
-            if (colors[key] !== undefined) {
-                const next = { ...colors }
-                delete next[key]
-                if (Object.keys(next).length === 0)
-                    await api.deleteViewProperty(basePath, idx, 'groupColors')
-                else
-                    await api.setViewProperty(
-                        basePath,
-                        idx,
-                        'groupColors',
-                        next,
-                    )
-            }
-            if (cardRows.length > 0 && statusKey !== null) {
-                const storedRows = cardRows.filter(canWriteStoredRow)
-                const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
-                // The cards lose the grouping key entirely (they fall into the no-value lane) —
-                // never an empty string, which a declared `select` would read as invalid.
-                if (storedRows.length > 0) {
-                    const items = storedRows.map(r => {
-                        const note = { ...storedNote(r) }
-                        delete note[statusKey!]
-                        return { path: r.file.path, index: r.index!, note }
-                    })
-                    for (const [path, group] of groupUpdatesByPath(items)) {
-                        await api.rowUpdateMany(
-                            path,
-                            group.map(g => ({ index: g.index, note: g.note })),
-                        )
-                    }
-                }
-                for (const r of noteRows)
-                    await api.deleteProperty(r.file.path, statusKey!)
-            }
-            props.onChange()
-            if (cardRows.length > 0 && statusKey !== null) {
-                const movedStatusKey = statusKey
-                pushToast(
-                    `Deleted column "${key === '' ? '(empty)' : key}"`,
-                    {
-                        label: 'Undo',
-                        onClick: () =>
-                            void undoDeleteColumn(
-                                key,
-                                movedStatusKey,
-                                cardRows,
-                                prevIndex,
-                                prevColor,
-                            ),
-                    },
-                )
-            }
-        } catch (e) {
-            rollbackColOrder(keys, prevOrder)
-            setPendingRemovedCols(prev =>
-                rollbackRemoved(prev, alreadyRemoved ? null : key),
-            )
-            if (cardRows.length > 0)
-                setPending(prev => rollbackPending(prev, writtenPending))
-            if (columnsLanded) {
-                props.onChange()
-                pushToast(
-                    `Delete column partially applied: ${(e as Error).message}`,
-                )
-                return
-            }
-            pushToast(`Delete column failed: ${(e as Error).message}`)
-        }
-    }
-
-    /** Undo for a non-empty column's delete: put the column back WHERE it was (with its colour
-     *  override), and give each cleared card its grouping value back — re-reading every card as
-     *  it is NOW, so an edit made between the delete and the Undo survives. A card that has since
-     *  been given some other value, or has gone, is left alone. */
-    async function undoDeleteColumn(
-        key: string,
-        statusKey: string,
-        cardRows: Row[],
-        prevIndex: number,
-        prevColor: string | undefined,
-    ): Promise<void> {
-        if (!props.basePath) return
-        const basePath = props.basePath
-        const idx = props.viewIndex ?? 0
-        // The delete's own optimistic hide must not outlive the Undo (if the Undo lands before
-        // the delete's refetch, the column would otherwise stay hidden until a remount).
-        setPendingRemovedCols(prev => {
-            const next = new Set(prev)
-            next.delete(key)
-            return next
-        })
-        const current = new Map(
-            props.result.groups.flatMap(g => g.rows).map(r => [rowId(r), r]),
-        )
-        const stillCleared = (r: Row | undefined): r is Row =>
-            !!r && ((r.note as Record<string, unknown>)[statusKey] ?? '') === ''
-        try {
-            const cols = columnKeys().filter(k => k !== key)
-            const at = prevIndex < 0 ? cols.length : Math.min(prevIndex, cols.length)
-            await api.setViewProperty(basePath, idx, 'columns', [
-                ...cols.slice(0, at),
-                key,
-                ...cols.slice(at),
-            ])
-            if (prevColor !== undefined)
-                await api.setViewProperty(basePath, idx, 'groupColors', {
-                    ...groupColors(),
-                    [key]: prevColor,
-                })
-            const live = cardRows
-                .map(r => current.get(rowId(r)))
-                .filter(stillCleared)
-            const storedRows = live.filter(canWriteStoredRow)
-            const noteRows = live.filter(r => !canWriteStoredRow(r))
-            if (storedRows.length > 0) {
-                const items = storedRows.map(r => ({
-                    path: r.file.path,
-                    index: r.index!,
-                    note: { ...storedNote(r), [statusKey]: key },
-                }))
-                for (const [path, group] of groupUpdatesByPath(items)) {
-                    await api.rowUpdateMany(
-                        path,
-                        group.map(g => ({ index: g.index, note: g.note })),
-                    )
-                }
-            }
-            if (noteRows.length > 0) {
-                const writes = noteRows.map(r => ({
-                    path: r.file.path,
-                    key: statusKey,
-                    value: key,
-                }))
-                await api.setProperties(writes)
-            }
-            props.onChange()
-            pushToast(`Restored column "${key === '' ? '(empty)' : key}"`)
-        } catch (e) {
-            pushToast(`Restore failed: ${(e as Error).message}`)
-        }
-    }
-
-    // ── Column color — persist/clear an override in `groupColors`. ──
-    async function setColColor(
-        key: string,
-        color: string | null,
-    ): Promise<void> {
-        if (!props.basePath) return
-        setPickerCol(null)
-        const next = { ...groupColors() }
-        if (color === null) delete next[key]
-        else next[key] = color
-        const idx = props.viewIndex ?? 0
-        if (Object.keys(next).length === 0)
-            await api.deleteViewProperty(props.basePath, idx, 'groupColors')
-        else await api.setViewProperty(props.basePath, idx, 'groupColors', next)
-        props.onChange()
-    }
-
-    // ── Card rename ──
-    // A stored row has no file to rename — `row.file.path` there is the BASE's own path, so
-    // an `api.move` on it would rename the base out from under every OTHER row it holds.
-    // Instead it writes the new title under `titleCol()`'s key (`storedTitleColumn`'s pick)
-    // via `api.rowUpdate`, addressed by `row.index` like every other stored-row write
-    // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
-    // Returns the row's note path AFTER a successful rename (or the unchanged path when
-    // nothing moved) — so `KanbanCard`'s `[open note]` can wait on the real destination
-    // instead of a stale pre-rename path when the two race.
-    async function renameCard(
-        row: Row,
-        newTitle: string,
-    ): Promise<string | undefined> {
-        // A placeholder is not yet a row the server knows about — `canWriteStoredRow` is
-        // `false` for it (negative index), which without this check would fall through to the
-        // note-file branch below and `api.move` the BASE's own file (a placeholder's `file` is
-        // `syntheticBaseFile`, the base's own path, not a note). Bail before either branch.
-        if (isStoredPlaceholder(row)) return row.file.path
-        if (canWriteStoredRow(row)) {
-            const key = writableKey(titleCol())
-            if (key === null) return row.file.path
-            const note = { ...storedNote(row), [key]: newTitle }
-            // The row's OWN file (see `dropCard`'s comment) — never `props.basePath`, which is
-            // the wrong target for a `source:` board's row.
-            await api.rowUpdate(row.file.path, row.index!, note)
-            return row.file.path
-        }
-        // A rename changes the note's path, so the refetch below re-keys the row and remounts the
-        // card (its identity genuinely changed). Editing is single-mode, so there's no open
-        // description edit to lose in the normal flow; only a description typed into the SAME
-        // card during the brief in-flight window of a just-committed rename would be dropped — a
-        // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
-        const dir = parentOf(row.file.path)
-        const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
-        if (desired === row.file.path) return row.file.path
-        const target = dedupe(desired, takenPaths())
-        await api.move(row.file.path, target)
-        props.onChange()
-        return target
-    }
-
-    // ── Card meta property (any `order:` property besides title — including `description`,
-    // #103 dropped its own dedicated write path in favor of this one) ──
-    // Persists a value the card's type-aware chip editor produced. `null` clears the key
-    // entirely (rather than writing a literal null into frontmatter) — file./formula./this.
-    // ids have no writable key and are silently ignored (KanbanCard already gates the click).
-    //
-    // Two boards, two write targets — same split as `dropCard`. A stored row's `row.file.path`
-    // is the BASE's own path, so `setProperty`/`deleteProperty` there would land on the base's
-    // frontmatter instead of the row. `storedNote(row)`, not `row.note`, for the same reason as
-    // `dropCard`: the view holds normalized rows, and a write must not bake computed columns in.
-    async function setMetaProperty(
-        row: Row,
-        id: string,
-        value: unknown,
-    ): Promise<void> {
-        const key = writableKey(id)
-        if (key === null) return
-        // See `renameCard`'s comment — a placeholder falling through to the note-file branch
-        // below would `setProperty`/`deleteProperty` the BASE's own file, not the row.
-        if (isStoredPlaceholder(row)) return
-        if (canWriteStoredRow(row)) {
-            const note = { ...storedNote(row) }
-            if (value === null || value === undefined || value === '')
-                delete note[key]
-            else note[key] = value
-            // The row's OWN file — see `dropCard`'s comment on why never `props.basePath`.
-            await api.rowUpdate(row.file.path, row.index!, note)
-            return
-        }
-        if (value === null || value === undefined || value === '')
-            await api.deleteProperty(row.file.path, key)
-        else await api.setProperty(row.file.path, key, value)
-    }
-
     // Every OTHER row's raw value for `id`, across the whole board — feeds the meta chip
     // editor's "select from known values" fallback (propertyEdit.ts). Computed on demand (a
     // click, not every render) so it's cheap even though it's an O(rows) scan.
@@ -1199,159 +458,6 @@ export function KanbanView(props: {
         return props.result.groups
             .flatMap(g => g.rows)
             .map(r => resolveProperty(id, r))
-    }
-
-    // ── Add card — create a note in the board's folder with the column's status set. ──
-    function boardFolder(): string {
-        const first = props.result.groups.flatMap(g => g.rows)[0]
-        if (first) return parentOf(first.file.path)
-        return props.basePath ? props.basePath.replace(/\.md$/, '') : ''
-    }
-    // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
-    // on) — copied onto new cards so they keep matching the base's source/filter. Compared by value
-    // (JSON) so array/object fields count as equal across notes, and carried through as-is (the YAML
-    // serializer handles arrays/objects). Excludes only the status/order keys — `description` is no
-    // longer special-cased (#103), so a fresh card only "inherits" one when every existing card
-    // happens to share the identical text (the normal constProps rule for any property).
-    function constProps(exclude: Set<string>): Record<string, unknown> {
-        const rows = props.result.groups.flatMap(g => g.rows)
-        if (rows.length === 0) return {}
-        const out: Record<string, unknown> = {}
-        for (const [k, v] of Object.entries(rows[0].note)) {
-            if (exclude.has(k) || v == null) continue
-            const s = JSON.stringify(v)
-            if (
-                rows.every(
-                    r =>
-                        JSON.stringify(
-                            (r.note as Record<string, unknown>)[k],
-                        ) === s,
-                )
-            )
-                out[k] = v
-        }
-        return out
-    }
-    // ── Delete (trash + undo toast, mirrors FileTree) ──
-    // Lives ONLY inside the card's edit modal (CardEditModal) — no separate right-click menu, so
-    // there's exactly one delete affordance per card. A stored row has no file to trash, so it
-    // deletes by index (`api.rowDelete`) instead; Undo re-creates the row (`api.rowCreate`) rather
-    // than restoring it to its exact prior index/position, which `api.rowDelete` doesn't hand back.
-    //
-    // Ids deleted this session but not yet confirmed gone by a refetch — hidden from every
-    // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
-    // on the round-trip. Reverted on failure; a successful Undo also drops its entry.
-    //
-    // A STORED row's id (`${basePath}#${index}`) is not stable across a delete — deleting ANY
-    // stored row splices the base's raw row array (`rowOps.ts`), shifting every LATER row's
-    // index/id down by one. Hiding by bare id would then hide the card that shifted INTO the
-    // deleted card's old id, permanently (`kanbanDelete.ts` has the full account). So the map
-    // also carries a snapshot for a stored-row entry — `undefined` for a note row, whose id
-    // (its file path) IS stable — and `isRowHidden`/`pruneDeleted` only keep hiding while the
-    // row currently at that id still matches the snapshot of the row that was actually deleted.
-    const [deletedIds, setDeletedIds] = createSignal<DeletedMap>(new Map())
-    // The value `deletedIds`/`pruneDeleted` compare against for a given row: the stored row's
-    // own content for a writable-by-index row, `undefined` (id-only match) for a note row.
-    const deleteSnapshot = (row: Row): string | undefined =>
-        canWriteStoredRow(row) ? JSON.stringify(storedNote(row)) : undefined
-
-    async function deleteCard(row: Row): Promise<void> {
-        if (!editable()) return
-        // A placeholder is inert until its add resolves — no delete affordance either. Bailing
-        // here (before the optimistic hide) matters doubly: `canWriteStoredRow` is `false` for
-        // it, so without this check it would fall to the note-file branch below and `api.del`
-        // the BASE's own file (a placeholder's `file` is `syntheticBaseFile`, the base's own
-        // path), trashing the whole board out from under every other card.
-        if (isStoredPlaceholder(row)) return
-        const id = rowId(row)
-        // Hide the card INSTANTLY (optimistic overlay), FLIP the survivors so they slide up smoothly
-        // instead of snapping. No props.onChange(): both delete routes are mutating → they bump the
-        // server version, and BaseView's SSE-driven revalidation refetches the board in a
-        // useTransition (stale-while-revalidate) — the SMOOTH path. The deletedIds hide covers the
-        // gap until that refetch lands and the prune-effect clears it.
-        drag.snapshotRects()
-        setDeletedIds(prev => markDeleted(prev, id, deleteSnapshot(row)))
-        requestAnimationFrame(drag.playFlip)
-
-        if (canWriteStoredRow(row)) {
-            // The row's OWN file — see `dropCard`'s comment on why never `props.basePath`.
-            const path = row.file.path
-            const note = { ...storedNote(row) }
-            const titleKey = writableKey(titleCol())
-            const name = String(
-                (titleKey ? note[titleKey] : undefined) ?? 'card',
-            )
-            try {
-                await api.rowDelete(path, row.index!)
-                pushToast(`Deleted "${name}"`, {
-                    label: 'Undo',
-                    onClick: () => void restoreStoredCard(path, note, id, name),
-                })
-            } catch (e) {
-                setDeletedIds(prev => unmarkDeleted(prev, id))
-                pushToast(`Delete failed: ${(e as Error).message}`)
-            }
-            return
-        }
-
-        const path = row.file.path
-        const name = row.file.name
-        try {
-            // Flush a pending autosave for this note BEFORE trashing it — a delete landing
-            // inside the autosave debounce would otherwise discard the just-typed edit, and
-            // Undo would restore the note without it (mirrors FileTree.doDelete). ALSO flush
-            // non-CodeMirror sidecar writers registered under this path (a Kanban row CAN be a
-            // companion note, indexed like any other note) — same hazard (chunk-1 re-review).
-            await Promise.all([
-                flushEditorsAtOrUnder(path),
-                flushSidecarsAtOrUnder(path),
-            ])
-            const { trashPath } = await api.del(path)
-            pushToast(`Deleted "${name}"`, {
-                label: 'Undo',
-                onClick: () => void restoreCard(trashPath, path, id),
-            })
-        } catch (e) {
-            setDeletedIds(prev => unmarkDeleted(prev, id)) // revert the optimistic hide
-            pushToast(`Delete failed: ${(e as Error).message}`)
-        }
-    }
-
-    /** Undo for a stored-row delete: re-create the row via `api.rowCreate` (appends — see
-     *  `deleteCard`'s comment on why an exact position isn't restored). The optimistic hide
-     *  drops right away; the prune-effect above clears the `deletedIds` entry for good once
-     *  the SSE refetch confirms the row is really back. */
-    async function restoreStoredCard(
-        path: string,
-        note: Record<string, unknown>,
-        id: string,
-        name: string,
-    ): Promise<void> {
-        try {
-            await api.rowCreate(path, note)
-            setDeletedIds(prev => unmarkDeleted(prev, id))
-            pushToast(`Restored "${name}"`)
-        } catch (e) {
-            pushToast(`Restore failed: ${(e as Error).message}`)
-        }
-    }
-
-    async function restoreCard(
-        trashPath: string,
-        to: string,
-        id: string,
-    ): Promise<void> {
-        try {
-            await api.restore(trashPath, to)
-            // Drop the optimistic hide; POST /restore is mutating, so its SSE revalidation brings the note
-            // back through the same smooth transition (no direct props.onChange() refetch).
-            setDeletedIds(prev => unmarkDeleted(prev, id))
-            pushToast(
-                `Restored "${to.split('/').pop()?.replace(/\.md$/, '') ?? to}"`,
-            )
-        } catch (e) {
-            pushToast(`Restore failed: ${(e as Error).message}`)
-        }
     }
 
     // Prune a hidden id once the server data no longer BACKS it (the delete's refetch has
@@ -1371,149 +477,6 @@ export function KanbanView(props: {
             setDeletedIds(prev => pruneDeleted(prev, present))
         })
     })
-
-    const takenPaths = (): Set<string> =>
-        new Set([
-            ...props.result.groups.flatMap(g => g.rows).map(r => r.file.path),
-            ...created,
-        ])
-    // Resolve a non-colliding path against the board's own notes + this session's fresh adds. (A
-    // same-named note the board's FILTER hides isn't covered — but for the common folder-scoped
-    // board every note is a visible row, and there's no reliable client-side disk-existence probe:
-    // /file and /meta both 200 for missing paths.)
-    function dedupe(desired: string, taken: Set<string>): string {
-        if (!taken.has(desired)) return desired
-        const stem = desired.replace(/\.md$/, '')
-        for (let n = 2; ; n++) {
-            const cand = `${stem} ${n}.md`
-            if (!taken.has(cand)) return cand
-        }
-    }
-    async function addCard(colKey: string): Promise<void> {
-        const title = draft().trim()
-        const gb = groupBy()
-        const statusKey = gb ? writableKey(gb.property) : null
-        if (!title || !statusKey) return
-
-        // Use an existing card's actual (typed) status value for this column when there is one, so a
-        // numeric/boolean groupBy writes the same type as its siblings (a stringified key would fail
-        // a numeric filter / type-aware sort). Fall back to the string key for an empty column.
-        const sibling = props.result.groups.find(g => g.key === colKey)?.rows[0]
-        const statusValue = sibling
-            ? (sibling.note as Record<string, unknown>)[statusKey]
-            : colKey
-
-        // Pin the new card to the BOTTOM of its column with an explicit `order` strictly after every
-        // current sort key (#93). Without it the card rendered at the bottom optimistically, then
-        // teleported into the middle once the refetch landed: the real row's indexOf fallback
-        // interleaved with the siblings' explicit drag-written orders. Computed over the DISPLAYED
-        // group (effOrder), so back-to-back adds stack in insertion order — each sees the previous
-        // optimistic card's order. (appendOrder is pure + unit-tested in kanbanOrder.test.ts.)
-        const grp = groupByKey(colKey)
-        const orderVal = appendOrder(grp.rows.map(r => effOrder(r, grp)))
-
-        // The title column's writable key. On a normal (file-backed) board `titleCol()` is
-        // `'file.name'`, a computed pseudo-property with no writable key, so this stays a
-        // no-op there. On a `props.ownsRows` (stored-row) board `titleCol()` is
-        // `storedTitleColumn`'s pick — always writable — so the composer's typed title lands
-        // under that key below, same as every other property here.
-        const titleKey = writableKey(titleCol())
-        const exclude = new Set([statusKey, ORDER_KEY])
-        if (titleKey) exclude.add(titleKey)
-
-        // Declared property defaults (list-form `properties:`) seed first; frontmatter shared by
-        // every existing card overrides them (a new card must keep matching the base's filter),
-        // the clicked column's status value wins, and the appended `order` pins it to the bottom.
-        const front: Record<string, unknown> = {
-            ...declaredDefaults(props.config, exclude),
-            ...constProps(exclude),
-            [statusKey]: statusValue ?? colKey,
-            [ORDER_KEY]: orderVal,
-            ...(titleKey ? { [titleKey]: title } : {}),
-        }
-
-        // The board owns its rows (no `source:`): a new card is a ROW in the base file's own
-        // body, not a note file — same split as `dropCard`/`setMetaProperty` (`canWriteStoredRow`,
-        // never "this looks like an own-rows base"). The optimistic placeholder must NOT claim a
-        // file path (there is no note being created): it shares the base's own synthetic file,
-        // same as every other stored row (`rowIdentity.ts`), so `rowId` addresses it consistently.
-        //
-        // Its `index` is a negative sentinel, NOT a guess at the row's real position — the
-        // server appends to the base file's raw row array (rowOps.ts), which this view's
-        // filtered/grouped `props.result` cannot predict (a `filters:` block, or any row this
-        // view drops, throws a positional guess off). `matchedStoredRowId` (the resolve effect
-        // above) finds the real row once it lands, by "new since this add + carries the
-        // written value" instead of by index.
-        if (props.ownsRows) {
-            if (!props.basePath) return
-            const basePath = props.basePath
-            // Content-keyed, not id-keyed — see `matchedStoredRowId`'s doc for why an id set
-            // breaks under a delete landing between this add and its resolve.
-            const priorSnapshots = new Set(
-                props.result.groups
-                    .flatMap(g => g.rows)
-                    .map(r => JSON.stringify(storedNote(r))),
-            )
-            const optimistic: Row = {
-                file: syntheticBaseFile(basePath),
-                note: { ...front },
-                formula: {},
-                index: nextStoredPendingIndex--,
-            }
-            setDraft('')
-            setPendingAdds(prev => [
-                ...prev,
-                {
-                    row: optimistic,
-                    col: colKey,
-                    stored: {
-                        priorSnapshots,
-                        matchKey: statusKey,
-                        matchValue: statusValue ?? colKey,
-                    },
-                },
-            ])
-            try {
-                await api.rowCreate(basePath, front)
-            } catch (e) {
-                // Drop exactly this call's placeholder (matched by its own optimistic index —
-                // never "the last pendingAdds entry", which could belong to a different add
-                // that raced in during this await) so a failed add never leaves a permanent
-                // ghost card.
-                setPendingAdds(prev =>
-                    prev.filter(a => a.row.index !== optimistic.index),
-                )
-                pushToast(`Add card failed: ${(e as Error).message}`)
-            }
-            return
-        }
-
-        const folder = boardFolder()
-        const content = `---\n${yamlStringify(front)}---\n`
-        const path = dedupe(
-            `${folder ? folder + '/' : ''}${safeFilename(title)}.md`,
-            takenPaths(),
-        )
-        const name = safeFilename(title)
-
-        // Show the card OPTIMISTICALLY so it appears the instant you hit Enter — then just write the
-        // file. No props.onChange(): a PUT /file doesn't bump the version, so an eager refetch would
-        // read stale rows; the file-watcher's debounced SSE refetch brings the real row and the
-        // clear-effect drops the optimistic one (path-keyed → the card never blinks). Not gated on the
-        // write being in flight: draft is cleared synchronously (a double-Enter no-ops on the empty
-        // title) and `created` de-collides paths, so rapid successive adds each land instead of the
-        // next Enter being silently dropped while the previous PUT round-trips (#93). No await-return
-        // that would bounce the active tab — the file-watcher SSE, not a tab switch, brings the row in.
-        const optimistic: Row = {
-            file: placeholderFile(name, path),
-            note: { ...front },
-            formula: {},
-        }
-        created.add(path)
-        setDraft('')
-        setPendingAdds(prev => [...prev, { row: optimistic, col: colKey }])
-        await api.write(path, content)
-    }
 
     // ── Image drop onto a card ───────────────────────────────────────────────────────────────────
     // Dragging an image FILE (from Finder/desktop, or any OS file drag) onto a card copies it into the
@@ -1589,7 +552,7 @@ export function KanbanView(props: {
                 value: () => String(resolveProperty(id, row) ?? ''),
             })
             if (landed === 0) return // nothing landed (uploadImageEmbeds already toasted why)
-            await setMetaProperty(row, id, next)
+            await actions.setMetaProperty(row, id, next)
             const label =
                 row.file.path.split('/').pop()?.replace(/\.md$/, '') ??
                 row.file.path
@@ -1677,8 +640,8 @@ export function KanbanView(props: {
             fallback={
                 <Callout class={styles.kanbanHint}>
                     This kanban view needs a "group by" property. Open{' '}
-                    <InlineCode>Settings</InlineCode> (the gear in the view
-                    bar) and set group by.
+                    <InlineCode>Settings</InlineCode> (the gear in the view bar)
+                    and set group by.
                 </Callout>
             }
         >
@@ -1688,471 +651,119 @@ export function KanbanView(props: {
                 style={{ '--kb-drag-h': `${drag.dragH()}px` }}
             >
                 {/* Columns are keyed by their group KEY (a stable string), so a header reorder MOVES the
-            column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's content,
-            and a card status-toggle refetch (same keys) reuses columns. `group()` is looked up
-            reactively; the inner card <For> is path-keyed. `columnKeys()` folds in the optimistic
-            reorder so columns settle instantly instead of snapping back during the write round-trip. */}
+                    column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's
+                    content, and a card status-toggle refetch (same keys) reuses columns. `columnKeys()`
+                    folds in the optimistic reorder so columns settle instantly instead of snapping back
+                    during the write round-trip. */}
                 <For each={columnKeys()}>
                     {(key, colIndex) => {
                         const group = () => groupByKey(key)
-                        const color = () => colColor(key)
-                        const isLastCol = () =>
-                            colIndex() === columnKeys().length - 1
-                        // Exactly one control is ever marked: a swatch when an override is set
-                        // (and it matches the current color), else Auto — never both at once.
-                        const hasOverride = () => !!groupColors()[key]
-                        let colorAnchorRef: HTMLDivElement | undefined
                         return (
                             <>
                                 {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
-                  (the horizontal analogue of the card placeholder). Rendered BEFORE this column when
-                  it's the drop target's neighbour; a trailing one after the <For> handles last-slot. */}
+                                    (the horizontal analogue of the card placeholder). Rendered BEFORE this column when
+                                    it's the drop target's neighbour; a trailing one after the <For> handles last-slot. */}
                                 <Show when={drag.colGap().before === key}>
                                     <div class={styles.kanbanColPlaceholder} />
                                 </Show>
-                                <div
-                                    class={styles.kanbanColumn}
-                                    data-kbcol={key}
-                                    classList={{
-                                        [styles.kanbanColumnOver]:
-                                            drag.overCol() === key &&
-                                            drag.colDrag() === null,
-                                        [styles.kanbanColReorder]:
-                                            drag.colOver() === key &&
-                                            drag.colDrag() !== null &&
-                                            drag.colDrag() !== key,
-                                        [styles.kanbanColDragging]:
-                                            drag.colDrag() === key,
-                                        [styles.kanbanColumnLast]:
-                                            isLastCol(),
+                                <KanbanColumn
+                                    columnKey={key}
+                                    color={colColor(key)}
+                                    hasOverride={!!groupColors()[key]}
+                                    palette={PALETTE}
+                                    count={group().rows.length}
+                                    editable={editable()}
+                                    actions={canAdd()}
+                                    renaming={renamingCol() === key}
+                                    existing={columnKeys().filter(
+                                        k => k !== key,
+                                    )}
+                                    pickerOpen={pickerCol() === key}
+                                    onTogglePicker={() =>
+                                        setPickerCol(
+                                            pickerCol() === key ? null : key,
+                                        )
+                                    }
+                                    onPickColor={c =>
+                                        void actions.setColColor(key, c)
+                                    }
+                                    onStartRename={() => setRenamingCol(key)}
+                                    onRename={to => {
+                                        void actions.renameColumn(key, to)
+                                        setRenamingCol(null)
                                     }}
-                                    style={{ '--kb-col-color': color() }}
-                                    data-hover={
-                                        hoverCol() === key ? '' : undefined
+                                    onCancelRename={() => setRenamingCol(null)}
+                                    onDelete={() =>
+                                        void actions.deleteColumn(key)
                                     }
-                                    onPointerEnter={() => setHoverCol(key)}
-                                    onPointerLeave={() =>
-                                        setHoverCol(c => (c === key ? null : c))
+                                    onPointerDown={e =>
+                                        drag.startColDrag(e, key)
                                     }
-                                >
-                                    <div
-                                        class={styles.kbColorAnchor}
-                                        ref={el => (colorAnchorRef = el)}
-                                    >
-                                        <div
-                                            class={styles.kanbanColHeader}
-                                            onPointerDown={e =>
-                                                drag.startColDrag(e, key)
-                                            }
-                                        >
-                                            <PlainButton
-                                                class={styles.kbDotBtn}
-                                                title={
-                                                    editable()
-                                                        ? 'Column color'
-                                                        : undefined
-                                                }
-                                                disabled={!editable()}
-                                                onClick={() =>
-                                                    setPickerCol(
-                                                        pickerCol() ===
-                                                            group().key
-                                                            ? null
-                                                            : group().key,
-                                                    )
-                                                }
-                                            >
-                                                <Text
-                                                    as="span"
-                                                    inherit
-                                                    class={styles.dot}
-                                                />
-                                            </PlainButton>
-                                            <Show
-                                                when={
-                                                    renamingCol() ===
-                                                    group().key
-                                                }
-                                                fallback={
-                                                    <Text
-                                                        as="span"
-                                                        inherit
-                                                        class={
-                                                            styles.kanbanColTitle
-                                                        }
-                                                    >
-                                                        {group().key === ''
-                                                            ? '(empty)'
-                                                            : group().key}
-                                                    </Text>
-                                                }
-                                            >
-                                                <KanbanColumnNameInput
-                                                    initial={group().key}
-                                                    existing={columnKeys().filter(
-                                                        k => k !== group().key,
-                                                    )}
-                                                    selectOnMount
-                                                    onSubmit={to => {
-                                                        void renameColumn(
-                                                            group().key,
-                                                            to,
-                                                        )
-                                                        setRenamingCol(null)
-                                                    }}
-                                                    onCancel={() =>
-                                                        setRenamingCol(null)
-                                                    }
-                                                />
-                                            </Show>
-                                            {/* Count flush right; the actions bar hangs off its left edge
-                                                (absolute), so revealing it moves nothing. */}
-                                            <div class={styles.kbHeaderTrail}>
-                                                <Show
-                                                    when={
-                                                        canAdd() &&
-                                                        renamingCol() !==
-                                                            group().key
-                                                    }
-                                                >
-                                                    <IconBar
-                                                        label="Column actions"
-                                                        class={
-                                                            styles.kbHeaderActions
-                                                        }
-                                                    >
-                                                        <IconButton
-                                                            icon="Pencil"
-                                                            label="Rename column"
-                                                            onClick={() =>
-                                                                setRenamingCol(
-                                                                    group().key,
-                                                                )
-                                                            }
-                                                        />
-                                                        {/* The "(empty)" lane is where cards with
-                                                            no value live — it is not a column
-                                                            that can be deleted. */}
-                                                        <Show when={group().key !== ''}>
-                                                            <IconButton
-                                                                icon="Trash2"
-                                                                label="Delete column"
-                                                                onClick={() =>
-                                                                    void deleteColumn(
-                                                                        group().key,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </Show>
-                                                    </IconBar>
-                                                </Show>
-                                                <Text
-                                                    as="span"
-                                                    inherit
-                                                    class={styles.kanbanCount}
-                                                >
-                                                    {padCount(
-                                                        group().rows.length,
-                                                    )}
-                                                </Text>
-                                            </div>
-                                        </div>
-
-                                        {/* Color picker popover */}
-                                        <AnchoredPopover
-                                            anchor={() => colorAnchorRef}
-                                            open={pickerCol() === group().key}
-                                            onDismiss={() => setPickerCol(null)}
-                                            class={styles.kbColorPanel}
-                                            panelAttrs={{
-                                                'data-testid':
-                                                    'kanban-color-picker',
-                                            }}
-                                        >
-                                            <For each={PALETTE}>
-                                                {(c, i) => (
-                                                    <Swatch
-                                                        size="sm"
-                                                        color={c}
-                                                        selected={
-                                                            hasOverride() &&
-                                                            color() === c
-                                                        }
-                                                        label={
-                                                            PALETTE_NAMES[i()]!
-                                                        }
-                                                        onClick={() =>
-                                                            void setColColor(
-                                                                group().key,
-                                                                c,
-                                                            )
-                                                        }
-                                                    />
-                                                )}
-                                            </For>
-                                            <PlainButton
-                                                class={styles.kbSwatchAuto}
-                                                classList={{
-                                                    [styles.kbSwatchAutoActive]:
-                                                        !hasOverride(),
-                                                }}
-                                                title="Auto"
-                                                aria-label="Auto"
-                                                aria-pressed={
-                                                    hasOverride()
-                                                        ? undefined
-                                                        : 'true'
-                                                }
-                                                onClick={() =>
-                                                    void setColColor(
-                                                        group().key,
-                                                        null,
-                                                    )
-                                                }
-                                            >
-                                                Auto
-                                            </PlainButton>
-                                        </AnchoredPopover>
-                                    </div>
-
-                                    <div class={styles.kanbanCards}>
-                                        <For each={visibleIds(group())}>
-                                            {(id, i) => {
-                                                const [editing, setEditing] =
-                                                    createSignal(false)
-                                                const row = () =>
-                                                    rowById().get(id)
-                                                return (
-                                                    <>
-                                                        <div
-                                                            class={`${styles.kanbanPlaceholder} ${
-                                                                drag.overCol() ===
-                                                                    group()
-                                                                        .key &&
-                                                                drag.overIndex() ===
-                                                                    i()
-                                                                    ? styles.kanbanPlaceholderActive
-                                                                    : ''
-                                                            }`}
-                                                        />
-                                                        <Show when={row()}>
-                                                            {r => (
-                                                                <CardFrame
-                                                                    kind={
-                                                                        isTasks()
-                                                                            ? 'task'
-                                                                            : 'note'
-                                                                    }
-                                                                    class={
-                                                                        isTasks()
-                                                                            ? undefined
-                                                                            : styles.kanbanCardPad
-                                                                    }
-                                                                    draggable
-                                                                    dropTarget={
-                                                                        dropCardId() ===
-                                                                        id
-                                                                    }
-                                                                    data-kbcard=""
-                                                                    data-path={
-                                                                        id
-                                                                    }
-                                                                    data-testid="kanban-card"
-                                                                    onPointerDown={e => {
-                                                                        if (
-                                                                            !editing()
-                                                                        )
-                                                                            drag.startCardDrag(
-                                                                                e,
-                                                                                id,
-                                                                                group()
-                                                                                    .key,
-                                                                            )
-                                                                    }}
-                                                                    onContextMenu={
-                                                                        suppressCardContextMenu
-                                                                    }
-                                                                    onDragEnter={e =>
-                                                                        onCardFileDragOver(
-                                                                            e,
-                                                                            id,
-                                                                        )
-                                                                    }
-                                                                    onDragOver={e =>
-                                                                        onCardFileDragOver(
-                                                                            e,
-                                                                            id,
-                                                                        )
-                                                                    }
-                                                                    onDragLeave={e =>
-                                                                        onCardFileDragLeave(
-                                                                            e,
-                                                                            id,
-                                                                        )
-                                                                    }
-                                                                    onDrop={e =>
-                                                                        void onCardFileDrop(
-                                                                            e,
-                                                                            r(),
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    <Show
-                                                                        when={isTasks()}
-                                                                        fallback={
-                                                                            <KanbanCard
-                                                                                row={r()}
-                                                                                titleCol={titleCol()}
-                                                                                metaCols={metaCols()}
-                                                                                config={
-                                                                                    props.config
-                                                                                }
-                                                                                editable={
-                                                                                    editable() &&
-                                                                                    !isStoredPlaceholder(
-                                                                                        r(),
-                                                                                    )
-                                                                                }
-                                                                                hideLabels={hideLabels()}
-                                                                                onEditingChange={
-                                                                                    setEditing
-                                                                                }
-                                                                                onRename={t =>
-                                                                                    renameCard(
-                                                                                        r(),
-                                                                                        t,
-                                                                                    )
-                                                                                }
-                                                                                onSetMeta={(
-                                                                                    id,
-                                                                                    v,
-                                                                                ) =>
-                                                                                    void setMetaProperty(
-                                                                                        r(),
-                                                                                        id,
-                                                                                        v,
-                                                                                    )
-                                                                                }
-                                                                                onDelete={() =>
-                                                                                    void deleteCard(
-                                                                                        r(),
-                                                                                    )
-                                                                                }
-                                                                                siblingValues={
-                                                                                    siblingValuesFor
-                                                                                }
-                                                                            />
-                                                                        }
-                                                                    >
-                                                                        <TaskRow
-                                                                            row={r()}
-                                                                            variant="card"
-                                                                            onToggle={(
-                                                                                row,
-                                                                                e,
-                                                                            ) =>
-                                                                                props.onToggle?.(
-                                                                                    row,
-                                                                                    e,
-                                                                                )
-                                                                            }
-                                                                            onSetStatus={(
-                                                                                row,
-                                                                                e,
-                                                                            ) =>
-                                                                                props.onSetStatus?.(
-                                                                                    row,
-                                                                                    e,
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </Show>
-                                                                </CardFrame>
-                                                            )}
-                                                        </Show>
-                                                    </>
-                                                )
-                                            }}
-                                        </For>
-                                        <div
-                                            class={`${styles.kanbanPlaceholder} ${
-                                                drag.overCol() ===
-                                                    group().key &&
-                                                drag.overIndex() ===
-                                                    visibleRows(group()).length
-                                                    ? styles.kanbanPlaceholderActive
-                                                    : ''
-                                            }`}
-                                        />
-
-                                        {/* Add-card composer (Trello-style) — only when the column value is writable. */}
-                                        <Show when={canAdd()}>
-                                            <Show
-                                                when={
-                                                    composerCol() ===
-                                                    group().key
-                                                }
-                                                fallback={
-                                                    <IconButton
-                                                        icon="Plus"
-                                                        label="Add a card"
-                                                        class={styles.kbAddBtn}
-                                                        onClick={() => {
-                                                            setComposerCol(
-                                                                group().key,
-                                                            )
-                                                            setDraft('')
-                                                        }}
-                                                    />
-                                                }
-                                            >
-                                                <TextInput
-                                                    multiline
-                                                    plain
-                                                    class={styles.kbComposer}
-                                                    value={draft()}
-                                                    placeholder="Card title…  (⏎ to add, Esc to close)"
-                                                    ref={el =>
-                                                        queueMicrotask(() =>
-                                                            el.focus(),
-                                                        )
-                                                    }
-                                                    onInput={value =>
-                                                        setDraft(value)
-                                                    }
-                                                    onKeyDown={e => {
-                                                        if (isConfirmKey(e)) {
-                                                            e.preventDefault()
-                                                            // Capture the element NOW — after the await, `e.currentTarget` is null
-                                                            // (it only points at the handler's node during dispatch), so the old
-                                                            // `.then(() => e.currentTarget.focus())` threw instead of restoring
-                                                            // focus. Composer focus must survive every add for rapid entry (#93).
-                                                            const el =
-                                                                e.currentTarget
-                                                            void addCard(
-                                                                group().key,
-                                                            ).then(() =>
-                                                                el.focus(),
-                                                            )
-                                                        } else if (
-                                                            isDismissKey(e)
-                                                        ) {
-                                                            setComposerCol(null)
-                                                            setDraft('')
-                                                        }
-                                                    }}
-                                                    onBlur={() => {
-                                                        if (
-                                                            draft().trim() ===
-                                                            ''
-                                                        )
-                                                            setComposerCol(null)
-                                                    }}
-                                                />
-                                            </Show>
-                                        </Show>
-                                    </div>
-                                </div>
+                                    hovered={hoverCol() === key}
+                                    onHover={h =>
+                                        setHoverCol(c =>
+                                            h ? key : c === key ? null : c,
+                                        )
+                                    }
+                                    over={
+                                        drag.overCol() === key &&
+                                        drag.colDrag() === null
+                                    }
+                                    reorderTarget={
+                                        drag.colOver() === key &&
+                                        drag.colDrag() !== null &&
+                                        drag.colDrag() !== key
+                                    }
+                                    dragging={drag.colDrag() === key}
+                                    last={
+                                        colIndex() === columnKeys().length - 1
+                                    }
+                                    ids={visibleIds(group())}
+                                    rowById={id => rowById().get(id)}
+                                    overIndex={
+                                        drag.overCol() === key
+                                            ? drag.overIndex()
+                                            : null
+                                    }
+                                    tasks={isTasks()}
+                                    config={props.config}
+                                    titleCol={titleCol()}
+                                    metaCols={metaCols()}
+                                    hideLabels={hideLabels()}
+                                    cardsEditable={editable()}
+                                    dropCardId={dropCardId()}
+                                    onCardPointerDown={(e, id) =>
+                                        drag.startCardDrag(e, id, key)
+                                    }
+                                    onFileDragOver={onCardFileDragOver}
+                                    onFileDragLeave={onCardFileDragLeave}
+                                    onFileDrop={(e, row) =>
+                                        void onCardFileDrop(e, row)
+                                    }
+                                    onRenameCard={actions.renameCard}
+                                    onSetMeta={(row, id, v) =>
+                                        void actions.setMetaProperty(row, id, v)
+                                    }
+                                    onDeleteCard={row =>
+                                        void actions.deleteCard(row)
+                                    }
+                                    siblingValues={siblingValuesFor}
+                                    onToggle={props.onToggle}
+                                    onSetStatus={props.onSetStatus}
+                                    canAdd={canAdd()}
+                                    composing={composerCol() === key}
+                                    draft={draft()}
+                                    onDraft={setDraft}
+                                    onOpenComposer={() => {
+                                        setComposerCol(key)
+                                        setDraft('')
+                                    }}
+                                    onCloseComposer={() => {
+                                        setComposerCol(null)
+                                        setDraft('')
+                                    }}
+                                    onAddCard={() => actions.addCard(key)}
+                                />
                             </>
                         )
                     }}
@@ -2167,7 +778,7 @@ export function KanbanView(props: {
                 <Show when={canAdd()}>
                     <KanbanAddColumn
                         existing={columnKeys()}
-                        onAdd={name => void addColumn(name)}
+                        onAdd={name => void actions.addColumn(name)}
                     />
                 </Show>
             </div>
