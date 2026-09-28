@@ -1,14 +1,10 @@
-import { createSignal, createMemo, onCleanup, For, Show } from 'solid-js'
+import { createSignal, createMemo, onCleanup, Show } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
-import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
-import { renderMarkdown } from './markdown'
 import Badge from '../ui/Badge'
 import Text from '../ui/Text'
-import EmptyState from '../ui/EmptyState'
 import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
 import ModalBody from '../ui/ModalBody'
@@ -16,113 +12,31 @@ import ModalFooter from '../ui/ModalFooter'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
-import cardCellPlaceholder from './cardCellPlaceholder'
+import { pushToast } from '../toastStore'
+import CardsListEditor from './CardsListEditor'
+import BulkCardsEditor from './BulkCardsEditor'
+import { resetKeys, stripSchedule } from './flashcardsActions'
+import {
+    deletedLabel,
+    insertAt,
+    moveItem,
+    parseBulk,
+    removeAt,
+    validCards,
+} from './cardsEdit'
 
 type Note = Record<string, unknown>
 type Mode = 'list' | 'bulk'
-
-// Bulk-add separator presets. "auto" sniffs each line for the first that matches.
-const SEPARATORS: { id: string; label: string; sep: string }[] = [
-    { id: 'tab', label: 'tab', sep: '\t' },
-    { id: 'tripcolon', label: ':::', sep: ':::' },
-    { id: 'dblcolon', label: '::', sep: '::' },
-    { id: 'colon', label: ':', sep: ':' },
-    { id: 'pipe', label: '|', sep: '|' },
-    { id: 'comma', label: ',', sep: ',' },
-    { id: 'dash', label: '–', sep: '–' },
-]
-// Auto-detect probes separators most-specific first so "::" beats ":".
-const AUTO_ORDER = [
-    'tab',
-    'tripcolon',
-    'dblcolon',
-    'pipe',
-    'dash',
-    'colon',
-    'comma',
-]
-
-function splitOn(line: string, sep: string): [string, string] {
-    const i = line.indexOf(sep)
-    if (i < 0) return [line.trim(), '']
-    return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()]
-}
-
-/** Parse pasted text into {front, back} cards using the chosen separator (or auto). */
-export function parseBulk(
-    text: string,
-    delim: string,
-): { front: string; back: string }[] {
-    const sepOf = (id: string) => SEPARATORS.find(s => s.id === id)!.sep
-    return text
-        .split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(Boolean)
-        .map(line => {
-            if (delim === 'auto') {
-                for (const id of AUTO_ORDER)
-                    if (line.includes(sepOf(id)))
-                        return splitOn(line, sepOf(id))
-                return [line.trim(), ''] as [string, string]
-            }
-            return splitOn(line, sepOf(delim))
-        })
-        .map(([front, back]) => ({ front, back }))
-}
-
-/** One Front/Back cell: the rendered-markdown overlay sits in normal flow and DRIVES
- *  the cell height (so there's no fragile JS auto-grow / font-load race); a transparent
- *  textarea is layered over it and reveals the raw text on focus (CSS :focus-within).
- *  Commits on blur. */
-function CardCell(props: {
-    value: string
-    field: 'front' | 'back'
-    placeholder: string
-    onCommit: (v: string) => void
-}) {
-    const [val, setVal] = createSignal(props.value)
-    // `cell-front` is a BARE LITERAL, not `styles['cell-front']` — no rule anywhere in
-    // EditCardsModal.module.css styles it (only `.cell-back` overrides the shared `.cell-md`), the
-    // same "no rule = undefined" trap that module's header already documents for `.flip-front`.
-    // EditCardsModal.stories.tsx's play function also queries `.cell-front textarea` directly, so
-    // it must stay a real, matchable literal in the DOM.
-    const fieldClass =
-        props.field === 'back' ? styles['cell-back'] : 'cell-front'
-    return (
-        <div class={`${styles.cell} ${fieldClass}`}>
-            <div
-                class={styles['cell-md']}
-                innerHTML={
-                    // trim: renderMarkdown ends every block with "\n", which `.cell-md`'s
-                    // pre-wrap would paint as an extra blank line under the card text.
-                    renderMarkdown(val()).trim() ||
-                    cardCellPlaceholder(
-                        styles['cell-ph'],
-                        props.placeholder,
-                    )
-                }
-            />
-            <TextInput
-                multiline
-                plain
-                value={val()}
-                placeholder={props.placeholder}
-                onInput={setVal}
-                onBlur={() => val() !== props.value && props.onCommit(val())}
-            />
-        </div>
-    )
-}
 
 /**
  * Deck-wide card manager (the review view's "Cards" button). Two modes:
  *  • Cards — a reorderable list of Front/Back rows with live markdown, inline add, delete.
  *  • Bulk add — paste many cards at once (Tab / :: / : / | / , / – or auto-detect) with a preview.
  *
- * Built from standardized primitives (Modal, SegmentedToggle, Button family). A local
- * `cards` array (full note objects) mirrors the base 1:1 — array position IS the backend
+ * A local `cards` array (full note objects) mirrors the base 1:1 — array position IS the backend
  * row index — so edits/adds/deletes/reorders stay in lockstep with the row API without a
- * jarring refetch per keystroke. `onChanged` fires on close to refresh the review queue.
+ * jarring refetch per keystroke. `onChanged` fires on close to refresh the review queue. The two
+ * modes are CardsListEditor and BulkCardsEditor; this component owns the state and the writes.
  */
 export function EditCardsModal(props: {
     rows: Row[]
@@ -141,22 +55,17 @@ export function EditCardsModal(props: {
     onClose: () => void
     onChanged: () => void
 }) {
-    const ff = props.frontField
-    const bf = props.backField
-    const dueF = () => props.dueField ?? 'due'
-    const easeF = () => props.easeField ?? 'ease'
-    const intervalF = () => props.intervalField ?? 'interval'
-    // The full set of columns a "reset progress" strips from a card's note — the forward
-    // due/ease/interval triple, plus its `*Back` companions on a bidirectional deck.
-    const resetKeys = () => {
-        const base = [dueF(), easeF(), intervalF()]
-        return props.bidirectional ? [...base, ...base.map(k => `${k}Back`)] : base
-    }
-    const stripSchedule = (n: Note): Note => {
-        const next = { ...n }
-        for (const k of resetKeys()) delete next[k]
-        return next
-    }
+    const ff = () => props.frontField
+    const bf = () => props.backField
+    const resetColumns = () =>
+        resetKeys(
+            {
+                due: props.dueField ?? 'due',
+                ease: props.easeField ?? 'ease',
+                interval: props.intervalField ?? 'interval',
+            },
+            !!props.bidirectional,
+        )
 
     const [cards, setCards] = createSignal<Note[]>(
         props.rows.map(r => ({ ...r.note })),
@@ -170,73 +79,76 @@ export function EditCardsModal(props: {
         props.onClose()
     }
 
-    const text = (n: Note, field: string) => String(n[field] ?? '')
-
-    // ── List-mode mutations (array position === backend row index) ────────
-    const commitCell = async (index: number, field: string, value: string) => {
-        if (busy()) return
+    /** Runs one write behind the busy lock; `dirty` marks that the queue needs a refresh. */
+    const locked = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+        if (busy()) return undefined
         setBusy(true)
         try {
+            const out = await fn()
+            dirty = true
+            return out
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    // ── List-mode mutations (array position === backend row index) ────────
+    const commitCell = (index: number, field: string, value: string) =>
+        locked(async () => {
             const next = cards().map((n, i) =>
                 i === index ? { ...n, [field]: value } : n,
             )
             setCards(next)
             await api.rowUpdate(props.basePath, index, next[index])
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
-    }
+        })
 
-    const removeCard = async (index: number) => {
-        if (busy()) return
-        setBusy(true)
-        try {
+    // Deletes are immediate; the toast's `undo` re-appends the card and moves it back into place.
+    const removeCard = (index: number) =>
+        locked(async () => {
+            const gone = cards()[index]
             await api.rowDelete(props.basePath, index)
-            setCards(cards().filter((_, i) => i !== index))
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
-    }
+            setCards(removeAt(cards(), index))
+            pushToast(`deleted ${deletedLabel(gone, ff())}`, {
+                label: 'undo',
+                onClick: () => void restoreCard(index, gone),
+            })
+        })
 
-    // ── Reset progress: drops a card's (or every card's) due/ease/interval columns
-    // so it reviews as new again, without touching front/back or any other field. ──
-    const resetCard = async (index: number) => {
-        if (busy()) return
-        setBusy(true)
-        try {
-            const stripped = stripSchedule(cards()[index])
+    const restoreCard = (index: number, note: Note) =>
+        locked(async () => {
+            await api.rowCreate(props.basePath, note)
+            const last = cards().length
+            if (index < last)
+                await api.rowReorder(props.basePath, last, index)
+            setCards(insertAt(cards(), index, note))
+        })
+
+    // Reset progress: drops a card's (or every card's) due/ease/interval columns so it reviews as
+    // new again, without touching front/back or any other field.
+    const resetCard = (index: number) =>
+        locked(async () => {
+            const stripped = stripSchedule(cards()[index], resetColumns())
             setCards(cards().map((n, i) => (i === index ? stripped : n)))
             await api.rowUpdate(props.basePath, index, stripped)
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
-    }
+        })
 
     // "Reset all" is inline two-step: the first click just arms it (label flips to a
     // confirmation, auto-disarming after a few seconds); only the second click, while armed,
-    // actually writes. No `confirm()` — see base-actions-constraints.md.
+    // actually writes. No `confirm()`.
     const [confirmResetAll, setConfirmResetAll] = createSignal(false)
     let resetAllTimer: ReturnType<typeof setTimeout> | undefined
     onCleanup(() => clearTimeout(resetAllTimer))
-    const resetAll = async () => {
-        if (busy()) return
+    const resetAll = () => {
         clearTimeout(resetAllTimer)
         setConfirmResetAll(false)
-        setBusy(true)
-        try {
-            const stripped = cards().map(stripSchedule)
+        return locked(async () => {
+            const stripped = cards().map(n => stripSchedule(n, resetColumns()))
             setCards(stripped)
             await api.rowUpdateMany(
                 props.basePath,
                 stripped.map((note, index) => ({ index, note })),
             )
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
+        })
     }
     const onResetAllClick = () => {
         if (confirmResetAll()) {
@@ -248,71 +160,44 @@ export function EditCardsModal(props: {
         resetAllTimer = setTimeout(() => setConfirmResetAll(false), 4000)
     }
 
-    // ── Inline add (draft row) ────────────────────────────────────────────
-    const [draftFront, setDraftFront] = createSignal('')
-    const [draftBack, setDraftBack] = createSignal('')
-    let draftBackRef: HTMLTextAreaElement | undefined
-    const addDraft = async () => {
-        const front = draftFront().trim()
-        const back = draftBack().trim()
-        if ((!front && !back) || busy()) return
-        setBusy(true)
-        try {
-            const note: Note = { [ff]: front, [bf]: back }
+    const addCard = async (front: string, back: string): Promise<boolean> => {
+        if (!front && !back) return false
+        const ok = await locked(async () => {
+            const note: Note = { [ff()]: front, [bf()]: back }
             await api.rowCreate(props.basePath, note)
             setCards([...cards(), note])
-            setDraftFront('')
-            setDraftBack('')
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
+            return true
+        })
+        return !!ok
     }
 
-    // ── Drag reorder via the row-number handle ────────────────────────────
-    const [dragFrom, setDragFrom] = createSignal<number | null>(null)
-    const [dropTo, setDropTo] = createSignal<number | null>(null)
-    const doDrop = async (to: number) => {
-        const from = dragFrom()
-        setDragFrom(null)
-        setDropTo(null)
-        if (from === null || from === to || busy()) return
-        setBusy(true)
-        try {
-            const arr = [...cards()]
-            const [moved] = arr.splice(from, 1)
-            arr.splice(to, 0, moved)
-            setCards(arr)
-            await api.rowReorder(props.basePath, from, to)
-            dirty = true
-        } finally {
-            setBusy(false)
-        }
+    // The list updates synchronously (so focus can follow the card); the write settles behind it.
+    const moveCard = (from: number, to: number): boolean => {
+        if (busy() || from === to) return false
+        setCards(moveItem(cards(), from, to))
+        void locked(() => api.rowReorder(props.basePath, from, to))
+        return true
     }
 
     // ── Bulk mode ─────────────────────────────────────────────────────────
     const [bulkText, setBulkText] = createSignal('')
     const [delim, setDelim] = createSignal('auto')
     const parsed = createMemo(() => parseBulk(bulkText(), delim()))
-    const validCount = () => parsed().filter(c => c.front).length
-    const addBulk = async () => {
-        const valid = parsed().filter(c => c.front)
-        if (!valid.length || busy()) return
-        setBusy(true)
-        try {
+    const validCount = () => validCards(parsed()).length
+    const addBulk = () => {
+        const valid = validCards(parsed())
+        if (!valid.length) return
+        return locked(async () => {
             const added: Note[] = []
             for (const c of valid) {
-                const note: Note = { [ff]: c.front, [bf]: c.back }
+                const note: Note = { [ff()]: c.front, [bf()]: c.back }
                 await api.rowCreate(props.basePath, note)
                 added.push(note)
             }
             setCards([...cards(), ...added])
             setBulkText('')
-            dirty = true
             setMode('list')
-        } finally {
-            setBusy(false)
-        }
+        })
     }
 
     return (
@@ -324,358 +209,74 @@ export function EditCardsModal(props: {
             />
 
             <ModalBody>
-            <div class={styles['cards-modebar']}>
-                <SegmentedToggle
-                    value={mode()}
-                    onChange={setMode}
-                    size="sm"
-                    options={[
-                        {
-                            id: 'list',
-                            label: (
-                                <>
-                                    <Icon value="List" /> cards
-                                </>
-                            ),
-                        },
-                        {
-                            id: 'bulk',
-                            label: (
-                                <>
-                                    <Icon value="LayoutGrid" /> bulk
-                                    add
-                                </>
-                            ),
-                        },
-                    ]}
-                />
-                <div class={styles['sp']} />
+                <div class={styles['cards-modebar']}>
+                    <SegmentedToggle
+                        value={mode()}
+                        onChange={setMode}
+                        size="sm"
+                        options={[
+                            {
+                                id: 'list',
+                                label: (
+                                    <>
+                                        <Icon value="List" /> cards
+                                    </>
+                                ),
+                            },
+                            {
+                                id: 'bulk',
+                                label: (
+                                    <>
+                                        <Icon value="LayoutGrid" /> bulk add
+                                    </>
+                                ),
+                            },
+                        ]}
+                    />
+                    <div class={styles.sp} />
+                    <Show when={mode() === 'list'}>
+                        <Text as="span" size="ui" tone="faint" class={styles.hint}>
+                            drag # to reorder
+                        </Text>
+                    </Show>
+                </div>
+
                 <Show when={mode() === 'list'}>
-                    <Text
-                        as="span"
-                        inherit
-                        class={styles['cards-hint']}
-                    >
-                        drag # to reorder
-                    </Text>
+                    <CardsListEditor
+                        cards={cards()}
+                        frontField={ff()}
+                        backField={bf()}
+                        busy={busy()}
+                        onCommit={(i, field, v) => void commitCell(i, field, v)}
+                        onRemove={i => void removeCard(i)}
+                        onReset={i => void resetCard(i)}
+                        onMove={moveCard}
+                        onAdd={addCard}
+                    />
                 </Show>
-            </div>
-
-            {/* ── Cards (list) ── */}
-            <Show when={mode() === 'list'}>
-                <div class={styles['cards-listwrap']}>
-                    <div class={styles['cards-collbl']}>
-                        <Text as="span" inherit>
-                            #
-                        </Text>
-                        <Text as="span" inherit>
-                            front
-                        </Text>
-                        <Text as="span" inherit>
-                            back
-                        </Text>
-                        <div />
-                    </div>
-                    <For each={cards()}>
-                        {(n, i) => (
-                            <div
-                                class={`${styles['cards-row']} ${dropTo() === i() ? styles['dropbefore'] : ''} ${dragFrom() === i() ? styles['dragging'] : ''}`}
-                                onDragOver={e => {
-                                    e.preventDefault()
-                                    setDropTo(i())
-                                }}
-                                onDrop={e => {
-                                    e.preventDefault()
-                                    void doDrop(i())
-                                }}
-                            >
-                                <div
-                                    class={styles['cards-num']}
-                                    title="Drag to reorder"
-                                    draggable={true}
-                                    onDragStart={() => setDragFrom(i())}
-                                    onDragEnd={() => {
-                                        setDragFrom(null)
-                                        setDropTo(null)
-                                    }}
-                                >
-                                    <Text
-                                        as="span"
-                                        inherit
-                                    >
-                                        {i() + 1}
-                                    </Text>
-                                </div>
-                                <CardCell
-                                    value={text(n, ff)}
-                                    field="front"
-                                    placeholder="front…"
-                                    onCommit={v => commitCell(i(), ff, v)}
-                                />
-                                <CardCell
-                                    value={text(n, bf)}
-                                    field="back"
-                                    placeholder="back…"
-                                    onCommit={v => commitCell(i(), bf, v)}
-                                />
-                                <div class={styles['cards-del']}>
-                                    <IconButton
-                                        icon="RotateCcw"
-                                        label="Reset this card's progress"
-                                        size="sm"
-                                        disabled={busy()}
-                                        onClick={() => resetCard(i())}
-                                    />
-                                    <TextButton
-                                        aria-label="Delete card"
-                                        title="Delete card"
-                                        danger
-                                        disabled={busy()}
-                                        onClick={() => removeCard(i())}
-                                        class={styles['cards-del-btn']}
-                                    >
-                                        x
-                                    </TextButton>
-                                </div>
-                            </div>
-                        )}
-                    </For>
-
-                    {/* draft add row — `cards-draft`/`cell-front` are BARE LITERALS by design; see
-                    CardCell's `fieldClass` comment above and EditCardsModal.module.css's header
-                    ("`.cards-draft` and `.cards-row` are now BOTH local...") for `cards-draft`
-                    specifically: it needs `styles['cards-draft']` since it DOES have a rule, unlike
-                    `cell-front`. */}
-                    <div
-                        class={`${styles['cards-row']} ${styles['cards-draft']}`}
-                    >
-                        <div
-                            class={`${styles['cards-num']} ${styles['cards-num-add']}`}
-                        >
-                            +
-                        </div>
-                        <div class={`${styles.cell} cell-front`}>
-                            <TextInput
-                                multiline
-                                plain
-                                value={draftFront()}
-                                placeholder="front of new card…"
-                                onInput={setDraftFront}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault()
-                                        draftBackRef?.focus()
-                                    }
-                                }}
-                            />
-                        </div>
-                        <div class={`${styles.cell} ${styles['cell-back']}`}>
-                            <TextInput
-                                multiline
-                                plain
-                                ref={el => {
-                                    draftBackRef = el
-                                }}
-                                value={draftBack()}
-                                placeholder="back…"
-                                onInput={setDraftBack}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault()
-                                        void addDraft()
-                                    }
-                                }}
-                            />
-                        </div>
-                        <div class={styles['cards-del']} />
-                    </div>
-                    <div class={styles['cards-addrow']}>
-                        <IconTextButton
-                            icon="Plus"
-                            variant="unselected"
-                            disabled={busy()}
-                            onClick={addDraft}
-                        >
-                            add card
-                        </IconTextButton>
-                    </div>
-                </div>
-            </Show>
-
-            {/* ── Bulk add ── */}
-            <Show when={mode() === 'bulk'}>
-                <div class={styles['cards-bulkwrap']}>
-                    <div class={styles['cards-bulk-toolbar']}>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['cards-lab']}
-                        >
-                            separator
-                        </Text>
-                        <div class={styles['cards-chiprow']}>
-                            <TextButton
-                                variant={
-                                    delim() === 'auto'
-                                        ? 'selected'
-                                        : 'unselected'
-                                }
-                                onClick={() => setDelim('auto')}
-                            >
-                                auto
-                            </TextButton>
-                            <For each={SEPARATORS}>
-                                {s => (
-                                    <TextButton
-                                        variant={
-                                            delim() === s.id
-                                                ? 'selected'
-                                                : 'unselected'
-                                        }
-                                        onClick={() => setDelim(s.id)}
-                                    >
-                                        {s.label}
-                                    </TextButton>
-                                )}
-                            </For>
-                        </div>
-                        <div class={styles['sp']} />
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['cards-hint']}
-                        >
-                            One card per line // front ‹sep› back
-                        </Text>
-                    </div>
-                    <div class={styles['cards-bulk-grid']}>
-                        <div class={styles['cards-bulk-input']}>
-                            <Text
-                                as="span"
-                                size="micro"
-                                tone="faint"
-                                class={styles['cards-bulk-lab']}
-                            >
-                                paste your cards
-                            </Text>
-                            <TextInput
-                                multiline
-                                class={styles['cards-bulk-textarea']}
-                                spellcheck={false}
-                                value={bulkText()}
-                                onInput={setBulkText}
-                                placeholder={
-                                    'What is the Spanish word for "house"?    casa\ncasa :: house\nhola : hello\n\nPaste from a spreadsheet, Anki, or an Obsidian (:: / :) deck.'
-                                }
-                            />
-                        </div>
-                        <div class={styles['cards-bulk-preview']}>
-                            <div class={styles['cards-pvhead']}>
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['cards-lab']}
-                                >
-                                    preview
-                                </Text>
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['cards-cnt']}
-                                >
-                                    {parsed().length}{' '}
-                                    {parsed().length === 1 ? 'card' : 'cards'}
-                                </Text>
-                            </div>
-                            <div class={styles['cards-pvlist']}>
-                                <Show
-                                    when={parsed().length > 0}
-                                    fallback={
-                                        <EmptyState
-                                            blockClass={
-                                                styles['cards-pvempty']
-                                            }
-                                        >
-                                            parsed cards appear here as you
-                                            paste.
-                                        </EmptyState>
-                                    }
-                                >
-                                    <For each={parsed()}>
-                                        {(c, i) => (
-                                            <div
-                                                class={`${styles['cards-pvcard']} ${c.back ? '' : styles['bad']}`}
-                                            >
-                                                <Text
-                                                    as="div"
-                                                    inherit
-                                                    class={
-                                                        styles['cards-pi']
-                                                    }
-                                                >
-                                                    {i() + 1}
-                                                </Text>
-                                                <div>
-                                                    <div
-                                                        class={
-                                                            styles['cards-pf']
-                                                        }
-                                                        innerHTML={
-                                                            c.front
-                                                                ? renderMarkdown(
-                                                                      c.front,
-                                                                  )
-                                                                : /* Authored by this component, not vault content, so the hashed
-                                                                  local can be interpolated safely — see EditCardsModal.module.css's
-                                                                  header ("RUNTIME STRING"). */
-                                                                  `<em class="${styles['cards-warn-em']}">empty</em>`
-                                                        }
-                                                    />
-                                                    <Show
-                                                        when={c.back}
-                                                        fallback={
-                                                            <div
-                                                                class={
-                                                                    styles[
-                                                                        'cards-warn'
-                                                                    ]
-                                                                }
-                                                            >
-                                                                no back —
-                                                                separator not
-                                                                found on this
-                                                                line
-                                                            </div>
-                                                        }
-                                                    >
-                                                        <div
-                                                            class={
-                                                                styles[
-                                                                    'cards-pb'
-                                                                ]
-                                                            }
-                                                            innerHTML={renderMarkdown(
-                                                                c.back,
-                                                            )}
-                                                        />
-                                                    </Show>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </For>
-                                </Show>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </Show>
+                <Show when={mode() === 'bulk'}>
+                    <BulkCardsEditor
+                        text={bulkText()}
+                        onText={setBulkText}
+                        delim={delim()}
+                        onDelim={setDelim}
+                        parsed={parsed()}
+                    />
+                </Show>
             </ModalBody>
 
             <ModalFooter
                 leading={
                     <>
                         <Badge tone="muted" class={styles['cards-count']}>
-                            <b>{cards().length}</b>{' '}
+                            <Text
+                                as="span"
+                                inherit
+                                weight="bold"
+                                tone="default"
+                            >
+                                {cards().length}
+                            </Text>{' '}
                             {cards().length === 1 ? 'card' : 'cards'} in deck
                         </Badge>
                         <Show when={cards().length > 0}>
@@ -707,7 +308,7 @@ export function EditCardsModal(props: {
                     <TextButton
                         primary
                         disabled={busy() || validCount() === 0}
-                        onClick={addBulk}
+                        onClick={() => void addBulk()}
                     >
                         add {validCount()} cards
                     </TextButton>
