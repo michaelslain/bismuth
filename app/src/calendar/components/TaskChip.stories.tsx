@@ -790,3 +790,49 @@ export const FocusFollowsRemount: Story = {
         expect(document.activeElement).toBe(newChip)
     },
 }
+
+/** A `[[Note]]` link inside a chip belongs to the link: a click opens the note (a
+ *  `bismuth-open` event) and must NOT also open the task editor; Enter on the focused link
+ *  likewise never reaches the chip's key handling. */
+export const NoteLinkInsideChip: Story = {
+    render: () => {
+        let host: HTMLDivElement | undefined
+        return (
+            <div ref={host} data-testid="host">
+                <TaskChip
+                    task={task('read [[Some Note]] today', '2026-09-05', 0, {
+                        line: 2,
+                        field: 'due',
+                    })}
+                    onToggle={() => host?.setAttribute('data-toggled', 'true')}
+                    onOpen={() => host?.setAttribute('data-opened', 'true')}
+                    onSetStatus={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const host = canvasElement.querySelector<HTMLElement>('[data-testid="host"]')!
+        const link = canvasElement.querySelector<HTMLAnchorElement>('a')!
+        let opened: string | undefined
+        const onOpen = (e: Event) => {
+            opened = (e as CustomEvent).detail
+        }
+        window.addEventListener('bismuth-open', onOpen)
+        try {
+            await userEvent.click(link)
+            expect(opened).toBe('Some Note.md')
+            expect(host.getAttribute('data-opened')).toBeNull()
+
+            opened = undefined
+            link.focus()
+            await userEvent.keyboard('{Enter}')
+            expect(host.getAttribute('data-opened')).toBeNull()
+            expect(host.getAttribute('data-toggled')).toBeNull()
+            await userEvent.keyboard(' ')
+            expect(host.getAttribute('data-toggled')).toBeNull()
+        } finally {
+            window.removeEventListener('bismuth-open', onOpen)
+        }
+    },
+}
