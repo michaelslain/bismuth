@@ -18,15 +18,21 @@ export type SuggestInputProps = {
 
 /**
  * A text field with a suggestion popup — replaces the native `<datalist>`. Options are filtered by
- * prefix on the label (or value), the first is highlighted, ArrowUp/Down move, the confirm key or
- * Tab accepts, the dismiss key closes the popup (a second dismiss bubbles to the host). A typed
- * value that matches no option is kept: the field is creatable. The popup is the shared
+ * prefix on the label (or value), the first is highlighted (visually), ArrowUp/Down move. The
+ * confirm key and Tab accept the highlighted option ONLY once an arrow key has moved the highlight
+ * since the last keystroke or popup close; until then they are not consumed — confirm bubbles to
+ * the host (a form's Enter-to-save still works), Tab moves focus, and the typed text stands, as
+ * with a native datalist. The dismiss key closes the popup (a second dismiss bubbles to the host).
+ * A typed value that matches no option is kept: the field is creatable. The popup is the shared
  * PopoverList surface, as Select's is; OptionRow is a two-line icon+chevron choice row and has no
  * highlighted state, so it does not fit a suggestion row.
  */
 const SuggestInput: Component<SuggestInputProps> = props => {
     let rootRef: HTMLDivElement | undefined
     const [open, setOpen] = createSignal(false)
+    // True once an arrow key has moved the highlight: only then may confirm/Tab accept it.
+    const [touched, setTouched] = createSignal(false)
+    const [width, setWidth] = createSignal(0)
 
     const text = (o: SuggestOption) => o.label ?? o.value
     const filtered = createMemo(() => {
@@ -49,6 +55,11 @@ const SuggestInput: Component<SuggestInputProps> = props => {
     createEffect(() => {
         props.value
         nav.setActive(0)
+        setTouched(false)
+    })
+    createEffect(() => {
+        if (showing()) setWidth(rootRef?.getBoundingClientRect().width ?? 0)
+        else setTouched(false)
     })
 
     return (
@@ -72,15 +83,20 @@ const SuggestInput: Component<SuggestInputProps> = props => {
                         e.stopPropagation()
                         setOpen(false)
                     } else if (isConfirmKey(e)) {
+                        // Untouched highlight: typed text stands and the key bubbles to the host.
+                        if (!touched()) return
                         e.preventDefault()
                         e.stopPropagation()
                         accept(nav.active())
                     } else if (isTabKey(e)) {
-                        accept(nav.active())
+                        if (touched()) accept(nav.active())
                     } else {
                         nav.onKeyDown(e)
                         // Only the arrows are consumed; typing keeps bubbling to the host.
-                        if (e.defaultPrevented) e.stopPropagation()
+                        if (e.defaultPrevented) {
+                            e.stopPropagation()
+                            setTouched(true)
+                        }
                     }
                 }}
             />
@@ -95,7 +111,7 @@ const SuggestInput: Component<SuggestInputProps> = props => {
                     active={nav.active()}
                     onActivate={accept}
                     onHover={nav.setActive}
-                    style={{ 'min-width': `${rootRef?.getBoundingClientRect().width ?? 0}px` }}
+                    style={{ 'min-width': `${width()}px` }}
                 />
             </AnchoredPopover>
         </div>
