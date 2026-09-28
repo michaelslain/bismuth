@@ -21,7 +21,16 @@ import {
     onMount,
     type Component,
 } from 'solid-js'
-import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
+import {
+    Decoration,
+    EditorView,
+    MatchDecorator,
+    ViewPlugin,
+    keymap,
+    placeholder as cmPlaceholder,
+    type DecorationSet,
+    type ViewUpdate,
+} from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
@@ -85,6 +94,25 @@ const fieldTheme = EditorView.theme({
     '.cm-placeholder': { color: 'var(--faint)' },
 })
 
+// Every `#tag` token in the field drawn like ui/Tag draws a tag (teal, UI face) — so a tag keeps
+// its look while being typed, instead of turning into plain text the moment the cell opens.
+const tagTokens = new MatchDecorator({
+    regexp: /#[^\s,#]+/g,
+    decoration: Decoration.mark({ class: styles.tagToken }),
+})
+const tagTokenHighlight = ViewPlugin.fromClass(
+    class {
+        decorations: DecorationSet
+        constructor(view: EditorView) {
+            this.decorations = tagTokens.createDeco(view)
+        }
+        update(u: ViewUpdate) {
+            this.decorations = tagTokens.updateDeco(u, this.decorations)
+        }
+    },
+    { decorations: v => v.decorations },
+)
+
 const TagsField: Component<TagsFieldProps> = props => {
     const hash = () => props.hash !== false
     let host!: HTMLDivElement
@@ -94,6 +122,10 @@ const TagsField: Component<TagsFieldProps> = props => {
     // field), so a later edit in the same field goes through the same door again.
     let cancelling = false
     let destroyed = false
+    // A click focuses the field AND places the caret where it landed — appending the separator on
+    // that focus would leave the caret before it (typing then glues onto the last tag). So only a
+    // keyboard/programmatic focus gets the ready-to-type separator.
+    let pointerFocus = false
     // Whether the completion popup was open when the current keydown arrived — read after
     // CodeMirror handled it, to tell "Escape closed the popup" from "Escape cancels the edit".
     let popupWasOpen = false
@@ -207,7 +239,15 @@ const TagsField: Component<TagsFieldProps> = props => {
                             queueMicrotask(() => view && startCompletion(view))
                     }),
                     EditorView.domEventHandlers({
+                        mousedown: () => {
+                            pointerFocus = true
+                            return false
+                        },
                         focus: (_e, v) => {
+                            if (pointerFocus) {
+                                pointerFocus = false
+                                return false
+                            }
                             const doc = v.state.doc.toString()
                             const next = withTrailingSeparator(doc, hash())
                             if (next !== doc)
@@ -223,6 +263,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                         },
                     }),
                     fieldTheme,
+                    ...(hash() ? [tagTokenHighlight] : []),
                     ...(props.placeholder ? [cmPlaceholder(props.placeholder)] : []),
                 ],
             }),

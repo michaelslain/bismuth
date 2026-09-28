@@ -1,11 +1,11 @@
 // Visual spec for <TagsField> — the single-line field a tags / multiselect property is typed in,
 // like a note's frontmatter `tags:` line, with the note editor's own completion popup under the
-// word being typed. Every story holds real state: what the field commits shows under it.
+// word being typed. Every story holds real state: a commit becomes the field's value, which is what
+// Escape reverts to next time.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import TagsField from './TagsField'
-import Text from './Text'
 import {
     completionLabels,
     expectCompletions,
@@ -26,23 +26,18 @@ type Story = StoryObj<typeof meta>
 
 const VAULT_TAGS = ['planning', 'chicken', 'chores', 'frontend', 'docs', 'launch']
 
-/** A field plus a readout of what it last committed — the state a person would see change. */
+/** The field holding its own value: a commit replaces it, a cancel reverts to it. */
 function Harness(props: { initial: string[]; hash?: boolean; options?: string[] }) {
     const [value, setValue] = createSignal(props.initial)
-    const [status, setStatus] = createSignal('editing')
     return (
-        <div style={{ width: '280px', display: 'grid', gap: '12px' }}>
+        <div style={{ width: '280px' }}>
             <TagsField
                 value={value()}
                 suggestions={() => props.options ?? VAULT_TAGS}
                 hash={props.hash}
-                onCommit={next => {
-                    setValue(next)
-                    setStatus(`committed: ${JSON.stringify(next)}`)
-                }}
-                onCancel={() => setStatus('cancelled')}
+                onCommit={setValue}
+                onCancel={() => {}}
             />
-            <Text tone="muted">{status()}</Text>
         </div>
     )
 }
@@ -69,7 +64,6 @@ export const TypingShowsSuggestions: Story = {
 export const AcceptAndCommit: Story = {
     render: () => <Harness initial={['planning']} />,
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'ch')
         await expectCompletions(['#chicken', '#chores'])
@@ -78,10 +72,10 @@ export const AcceptAndCommit: Story = {
         pressKey(view, 'Tab')
         await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #chores '))
         expect(completionLabels()).toEqual([])
+        // Enter commits and leaves the field — which then reads finished, no trailing separator.
         pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
-            '["planning","chores"]',
-        )
+        await waitFor(() => expect(view.hasFocus).toBe(false))
+        expect(view.state.doc.toString()).toBe('#planning #chores')
     },
 }
 
@@ -89,15 +83,17 @@ export const AcceptAndCommit: Story = {
 export const EscapeClosesPopupThenCancels: Story = {
     render: () => <Harness initial={['planning']} />,
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'fr')
         await expectCompletions(['#frontend'])
         pressKey(view, 'Escape')
         await waitFor(() => expect(completionLabels()).toEqual([]))
-        expect(canvas.getByText('editing')).toBeInTheDocument()
+        // Still editing: the popup closed, the typed word is still there.
+        expect(view.hasFocus).toBe(true)
+        expect(view.state.doc.toString()).toBe('#planning fr')
         pressKey(view, 'Escape')
-        await expect(canvas.getByText('cancelled')).toBeInTheDocument()
+        await waitFor(() => expect(view.hasFocus).toBe(false))
+        expect(view.state.doc.toString()).toBe('#planning')
     },
 }
 
@@ -120,26 +116,45 @@ export const Multiselect: Story = {
 }
 
 /** The field can stay mounted after an edit ends (the card modal keeps every field), so a second
- *  edit in the same field must commit too: add a tag, Enter; add another, Enter. */
+ *  edit in the same field must work too — and a cancel reverts to the value the FIRST edit
+ *  committed, proving that commit reached the field's owner. */
 export const EditsTwice: Story = {
     render: () => <Harness initial={['planning']} />,
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'docs')
         pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
-            '["planning","docs"]',
-        )
-        // Left finished: no dangling separator once the field has lost focus.
-        expect(view.state.doc.toString()).toBe('#planning #docs')
-        typeInto(view, 'launch')
-        await waitFor(() =>
-            expect(view.state.doc.toString()).toBe('#planning #docs launch'),
-        )
-        pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
-            '["planning","docs","launch"]',
-        )
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs'))
+        // A word with no suggestions, so no popup is open and Escape cancels straight away.
+        typeInto(view, 'zzz')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs zzz'))
+        expect(completionLabels()).toEqual([])
+        await new Promise(r => setTimeout(r, 150)) // a person's pause, not a synthetic burst
+        pressKey(view, 'Escape')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs'))
+    },
+}
+
+/** Tags keep their tag look while being typed: every `#tag` token is drawn teal like ui/Tag. */
+export const TagTokensKeepTheirLook: Story = {
+    render: () => <Harness initial={['planning', 'docs']} />,
+    play: async ({ canvasElement }) => {
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, '#launch')
+        await waitFor(() => {
+            const tokens = [...view.contentDOM.querySelectorAll('span')].filter(el =>
+                /^#\S+$/.test(el.textContent ?? ''),
+            )
+            expect(tokens.map(t => t.textContent)).toEqual(['#planning', '#docs', '#launch'])
+            const teal = getComputedStyle(document.documentElement)
+                .getPropertyValue('--teal')
+                .trim()
+            expect(teal).not.toBe('')
+            for (const t of tokens)
+                expect(getComputedStyle(t).color).toBe(getComputedStyle(tokens[0]!).color)
+            expect(getComputedStyle(tokens[0]!).color).not.toBe(
+                getComputedStyle(view.contentDOM).color,
+            )
+        })
     },
 }

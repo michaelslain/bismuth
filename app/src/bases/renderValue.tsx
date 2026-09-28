@@ -5,6 +5,7 @@ import { isLink, type Link } from '../../../core/src/bases/values'
 import { renderInline, hasInlineMarkup } from './markdown'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
+import Tag from '../ui/Tag'
 import styles from './renderValue.module.css'
 import EmptyValue from '../ui/EmptyValue'
 import NoteLink from '../ui/NoteLink'
@@ -68,9 +69,7 @@ export function renderTags(v: unknown, dense?: boolean): JSX.Element {
     if (tags.length === 0) return <EmptyValue />
     return (
         <span class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
-            <For each={tags}>
-                {t => <span>{t.startsWith('#') ? t : `#${t}`}</span>}
-            </For>
+            <For each={tags}>{t => <Tag name={t} />}</For>
         </span>
     )
 }

@@ -11,3 +11,6 @@
   flex: 1;
   min-width: 0;
 }
+/* A `#tag` token inside the field — the same teal ui/Tag draws a tag in (the face is already the
+   field's own UI font). */
+.tagToken { color: var(--teal); }

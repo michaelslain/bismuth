@@ -7,10 +7,10 @@
 // interactive stories below seed `setTransport(fakeTransport(...))` — a real write against a
 // live backend has nothing to hit in Storybook, and the fake gives every mutation a 200 ack.
 // A pin mid-drag is pointer-position state, not storyable; these instead cover the two states
-// the brief calls out: Add pin's menu with an unplaced row armed, and a pin's own menu.
+// the brief calls out: the map's right-click menu offering the unplaced rows, and a pin's own menu.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createMemo, createSignal } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
@@ -18,8 +18,11 @@ import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import {
     addPinByMouse,
+    clearSpot,
     editPinByMouse,
     placeUnplacedByMouse,
+    rightClickAt,
+    sizedMap,
 } from './_mapPinPlay'
 
 const meta = {
@@ -106,10 +109,9 @@ export const CustomFieldsFixedFraming: Story = {
     },
 }
 
-/** Some rows have no valid `lat`/`lng` — instead of silently vanishing they are offered by
- *  `Add pin`: its menu reads `new place`, then `place <title>` per unplaced row. `play()` opens
- *  it and picks one, arming placement: the map now shows a "placing … — esc to cancel" hint
- *  that follows the cursor, and the next click on the map would write that row's coordinates. */
+/** Some rows have no valid `lat`/`lng` — instead of silently vanishing, they are offered by the
+ *  map's right-click menu: `new pin here`, then `place <title> here` per row with no location.
+ *  `play()` right-clicks the empty map and shows that menu. */
 export const UnplacedRowsArmed: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -131,17 +133,13 @@ export const UnplacedRowsArmed: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-
         expect(canvas.queryByTestId('map-unplaced-button')).toBeNull()
-        await userEvent.click(await canvas.findByTestId('map-add-pin'))
-
-        await body.findByText('new place')
-        expect(body.getByText('place Bad Coords')).toBeInTheDocument()
-        const option = await body.findByText('place Unmapped Cafe')
-        await userEvent.click(option)
-
-        const hint = await canvas.findByText(/placing Unmapped Cafe/)
-        expect(hint).toBeVisible()
+        const mapEl = await sizedMap(canvasElement)
+        const spot = clearSpot(mapEl)
+        rightClickAt(canvasElement.ownerDocument, spot.x, spot.y)
+        await body.findByText('new pin here')
+        expect(body.getByText('place Unmapped Cafe here')).toBeInTheDocument()
+        expect(body.getByText('place Bad Coords here')).toBeInTheDocument()
     },
 }
 
@@ -232,8 +230,7 @@ export const EditPin: Story = {
     },
 }
 
-/** `Add pin`'s `place <title>` still places EXISTING rows that have no coordinates: pick one,
- *  press the map. */
+/** The map's right-click `place <title> here` places EXISTING rows that have no coordinates. */
 export const PlaceUnplaced: Story = {
     render: () => <LiveMap rows={WITH_UNPLACED} />,
     play: async ({ canvasElement }) => {
