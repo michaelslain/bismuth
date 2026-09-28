@@ -47,35 +47,6 @@
   transition: background 120ms ease, color 120ms ease;
 }
 .kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
-/* A declared `markdown` property (#100): rendered block-markdown display + a multiline
-   editor, both sized to the meta row's smaller type than the card-level description. Prose
-   register (acceptance 9) — font-family + size/tone come from Text's `register="prose"` +
-   `size="body"` + `tone="muted"` props (KanbanCard.tsx); line-height 1.45 is spec'd narrower
-   than Text's own --lh-prose (1.6), so it's pinned here with an element+class selector to
-   out-specificity Text.module.css's `.text--body` regardless of CSS import order. */
-.kbMetaMarkdown { display: block; width: 100%; cursor: text; }
-div.kbMetaMarkdown { line-height: 1.45; }
-.kbMetaMarkdown :global(p) { margin: 0 0 var(--sp-2); }
-.kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
-.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: var(--sp-1) 0; padding-left: var(--sp-6); }
-/* An image embedded in a card's description (drag an image onto the card / its description) —
-   renderMarkdown emits a real <img>. Fit it to the card: full width, aspect preserved, capped so
-   a tall photo can't turn one card into a whole column. */
-.kbMetaMarkdown :global(.bismuth-embed-img) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  max-height: 180px;
-  object-fit: contain;
-  border-radius: var(--r-0);
-  margin: var(--sp-2) 0;
-}
 /* A boolean meta property is always a ChipToggle (display AND editor in one) — ChipToggle
    composes ui/Button and owns its own size/padding/chrome now (one-button), so this file no
    longer overrides any of it. */
-
-/* A declared `multiselect` property (#101), READ-ONLY display: a chip per selected value.
-   The editable version (add/remove + "+ Add") is PropertyValueEditor's own `.kbMetaMultiselect`
-   — each ChipToggle renders at its own default size now, so there is nothing left for either
-   file to own beyond its own layout wrapper. */
-.kbMetaMultiselectDisplay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
