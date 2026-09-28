@@ -83,7 +83,7 @@ export function exprToLatex(e: Expr): string {
         case 'num':
             return String(e.value)
         case 'str':
-            return `\\text{"${escapeTex(e.value)}"}`
+            return `\\text{\`\`${escapeTex(e.value)}''}`
         case 'bool':
             return `\\text{${e.value ? 'true' : 'false'}}`
         case 'null':
@@ -136,6 +136,86 @@ export function exprToLatex(e: Expr): string {
         case 'regex':
             return `\\texttt{/${e.source}/${e.flags}}`
     }
+}
+
+const AGGREGATES = new Set(['sum', 'avg', 'min', 'max', 'count'])
+
+// A stat metric's per-note term: every property reference reads `n.<name>`, the same row
+// variable the line view's definition uses (`\sum_{n \in B_t} n.\text{priority}`).
+function rowTerm(e: Expr): string {
+    if (e.type === 'ident') return `n.${texText(e.name)}`
+    if (
+        e.type === 'member' &&
+        e.object.type === 'ident' &&
+        NAMESPACE_ROOTS.has(e.object.name)
+    )
+        return `n.${texText(e.name)}`
+    if (e.type === 'binary') {
+        if (e.op === '/') return `\\frac{${rowTerm(e.left)}}{${rowTerm(e.right)}}`
+        const prec = PRECEDENCE[e.op] ?? 0
+        const side = (c: Expr) =>
+            c.type === 'binary' && c.op !== '/' && (PRECEDENCE[c.op] ?? 0) < prec
+                ? `\\left( ${rowTerm(c)} \\right)`
+                : rowTerm(c)
+        if (e.op === '*') return `${side(e.left)} \\cdot ${side(e.right)}`
+        if (e.op === '%') return `${side(e.left)} \\bmod ${side(e.right)}`
+        return `${side(e.left)}${COMPARE_OPS[e.op] ?? ` ${e.op} `}${side(e.right)}`
+    }
+    if (e.type === 'unary') {
+        const inner = e.operand.type === 'binary' ? `\\left( ${rowTerm(e.operand)} \\right)` : rowTerm(e.operand)
+        return e.op === '!' ? `\\lnot ${inner}` : `-${inner}`
+    }
+    return exprToLatex(e)
+}
+
+// Wraps a summand that is itself a sum/difference so `\sum_n a + b` cannot read as `(\sum_n a) + b`.
+function summand(e: Expr): string {
+    const t = rowTerm(e)
+    return e.type === 'binary' && (e.op === '+' || e.op === '-') ? `\\left( ${t} \\right)` : t
+}
+
+/**
+ * A stat metric expression (`stats[].value`, evaluated by metrics.ts) as math notation rather than
+ * function calls — the aggregates read the way the line view's definition does:
+ * `sum(price)` → `\sum_{n} n.\text{price}`, `avg(priority)` → `\overline{n.\text{priority}}`,
+ * `min`/`max` → `\min_{n}`/`\max_{n}`, `count()` → `\#\,\text{notes}`,
+ * `count(status == "done")` → `\#\{\, n : n.\text{status} = \text{``done''} \,\}`.
+ * Arithmetic between aggregates (`sum(price) / sum(units)`) keeps exprToLatex's operators.
+ */
+export function metricToLatex(e: Expr): string {
+    if (e.type === 'call' && e.callee.type === 'ident' && AGGREGATES.has(e.callee.name)) {
+        const arg = e.args[0]
+        switch (e.callee.name) {
+            case 'count':
+                return arg
+                    ? `\\#\\{\\, n : ${rowTerm(arg)} \\,\\}`
+                    : `\\#\\,\\text{notes}`
+            case 'sum':
+                return arg ? `\\sum_{n} ${summand(arg)}` : '0'
+            case 'avg':
+                return arg ? `\\overline{${rowTerm(arg)}}` : `\\text{—}`
+            case 'min':
+                return arg ? `\\min_{n} ${summand(arg)}` : `\\text{—}`
+            case 'max':
+                return arg ? `\\max_{n} ${summand(arg)}` : `\\text{—}`
+        }
+    }
+    if (e.type === 'binary') {
+        if (e.op === '/') return `\\frac{${metricToLatex(e.left)}}{${metricToLatex(e.right)}}`
+        const prec = PRECEDENCE[e.op] ?? 0
+        const side = (c: Expr) =>
+            c.type === 'binary' && c.op !== '/' && (PRECEDENCE[c.op] ?? 0) < prec
+                ? `\\left( ${metricToLatex(c)} \\right)`
+                : metricToLatex(c)
+        if (e.op === '*') return `${side(e.left)} \\cdot ${side(e.right)}`
+        if (e.op === '%') return `${side(e.left)} \\bmod ${side(e.right)}`
+        return `${side(e.left)}${COMPARE_OPS[e.op] ?? ` ${e.op} `}${side(e.right)}`
+    }
+    if (e.type === 'unary' && e.op === '-') {
+        const inner = e.operand.type === 'binary' ? `\\left( ${metricToLatex(e.operand)} \\right)` : metricToLatex(e.operand)
+        return `-${inner}`
+    }
+    return exprToLatex(e)
 }
 
 function membership(spec: ChartSpec): string {

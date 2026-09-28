@@ -456,6 +456,7 @@ A least-squares fit of value against `t` = bins-since-the-first-point (day diffe
 export function chartDefinitionLatex(spec: ChartSpec, formulas?: Record<string, string>): string
 export function trendLatex(fit: TrendFit): string
 export function exprToLatex(e: Expr): string   // renders a parsed Bases expression as LaTeX
+export function metricToLatex(e: Expr): string // a stat metric expression as math notation
 export function texText(s: string): string     // \text{…} with \ { } $ & # ^ _ % ~ escaped
 ```
 
@@ -467,7 +468,9 @@ export function texText(s: string): string     // \text{…} with \ { } $ & # ^ 
 
 `trendLatex` renders the fit as `\hat{y} = -0.40\,t + 3.10 \qquad R^2 = 0.82 \qquad t = \text{weeks since Jun 29}` — 2 decimal places, the intercept's sign folded into a single `+`/`-` (never `+ -0.40`), and the unit word (`days`/`weeks`/`months`) matching the fit's bin.
 
-`exprToLatex` is the general Bases-expression-to-LaTeX renderer that both `chartDefinitionLatex` (for a formula `y`) and the stat view (for a declared metric's expression) use — a property name is escaped via `texText` (so a hostile name like `a_b`, `{x}`, or `50%` renders as literal text, e.g. `\text{a\_b \{x\} 50\%}`, never a KaTeX parse error), `/` becomes `\frac{}{}`, `*` becomes `\cdot`, comparisons become `= \ne < \le > \ge`, `&&`/`||` become `\land`/`\lor`, and so on.
+`exprToLatex` is the general Bases-expression-to-LaTeX renderer `chartDefinitionLatex` uses for a formula `y` — a property name is escaped via `texText` (so a hostile name like `a_b`, `{x}`, or `50%` renders as literal text, e.g. `\text{a\_b \{x\} 50\%}`, never a KaTeX parse error), `/` becomes `\frac{}{}`, `*` becomes `\cdot`, comparisons become `= \ne < \le > \ge`, `&&`/`||` become `\land`/`\lor`, and so on. String literals take TeX quotes (`\text{``done''}`).
+
+A stat tile renders its metric with `metricToLatex`, which writes the aggregates as math instead of function calls, with `n.<name>` for each note's property (the same row variable as the line definition): `sum(price)` → `\sum_{n} n.\text{price}`, `avg(priority)` → `\overline{n.\text{priority}}`, `min`/`max` → `\min_{n}`/`\max_{n}`, `count()` → `\#\,\text{notes}`, `count(status == "done")` → `\#\{\, n : n.\text{status} = \text{``done''} \,\}`, and `sum(price) / sum(units)` → a fraction of the two sums. Arithmetic between aggregates keeps `exprToLatex`'s operators; a summand that is itself a sum or difference is parenthesised.
 
 ---
 

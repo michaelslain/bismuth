@@ -3,6 +3,7 @@ import { parseExpr } from '../../src/bases/parser'
 import {
     chartDefinitionLatex,
     exprToLatex,
+    metricToLatex,
     texText,
     trendLatex,
     type ChartSpec,
@@ -20,7 +21,7 @@ describe('exprToLatex', () => {
     })
 
     test('string literal', () => {
-        expect(exprToLatex(parseExpr('"hi"'))).toBe('\\text{"hi"}')
+        expect(exprToLatex(parseExpr('"hi"'))).toBe("\\text{``hi''}")
     })
 
     test('bool and null literals', () => {
@@ -278,5 +279,38 @@ describe('trendLatex', () => {
         expect(trendLatex(fit)).toBe(
             '\\hat{y} = 0.40\\,t - 3.10 \\qquad R^2 = 0.50 \\qquad t = \\text{days since Jun 1}',
         )
+    })
+})
+
+describe('metricToLatex — stat metrics as math notation', () => {
+    const m = (src: string) => metricToLatex(parseExpr(src))
+    test('sum over notes', () => {
+        expect(m('sum(price)')).toBe('\\sum_{n} n.\\text{price}')
+    })
+    test('mean as an overline', () => {
+        expect(m('avg(priority)')).toBe('\\overline{n.\\text{priority}}')
+    })
+    test('min and max over notes', () => {
+        expect(m('max(priority) - min(priority)')).toBe(
+            '\\max_{n} n.\\text{priority} - \\min_{n} n.\\text{priority}',
+        )
+    })
+    test('count of all notes and of a condition', () => {
+        expect(m('count()')).toBe('\\#\\,\\text{notes}')
+        expect(m('count(status == "done")')).toBe(
+            "\\#\\{\\, n : n.\\text{status} = \\text{``done''} \\,\\}",
+        )
+    })
+    test('ratio of aggregates is a fraction of sums', () => {
+        expect(m('sum(price) / sum(units)')).toBe(
+            '\\frac{\\sum_{n} n.\\text{price}}{\\sum_{n} n.\\text{units}}',
+        )
+    })
+    test('a sum of a sum is parenthesised, a product is not', () => {
+        expect(m('sum(a + b)')).toBe('\\sum_{n} \\left( n.\\text{a} + n.\\text{b} \\right)')
+        expect(m('sum(price * units)')).toBe('\\sum_{n} n.\\text{price} \\cdot n.\\text{units}')
+    })
+    test('note./formula. prefixes read as n.<name>', () => {
+        expect(m('sum(note.price)')).toBe('\\sum_{n} n.\\text{price}')
     })
 })

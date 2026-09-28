@@ -2,7 +2,7 @@ import { createMemo } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import type { MetricResult } from '../../../core/src/bases/metrics'
 import { metricResults } from '../../../core/src/bases/metrics'
-import { exprToLatex } from '../../../core/src/bases/chartLatex'
+import { metricToLatex } from '../../../core/src/bases/chartLatex'
 import { parseExpr } from '../../../core/src/bases/parser'
 import { formatValue } from '../../../core/src/bases/chartText'
 import { todayISO } from '../../../core/src/dates'
@@ -24,7 +24,7 @@ function periodLine(m: MetricResult): string | undefined {
 function metricTex(m: MetricResult): string | undefined {
     if (m.error) return undefined
     try {
-        return exprToLatex(parseExpr(m.source))
+        return metricToLatex(parseExpr(m.source))
     } catch {
         return undefined
     }
