@@ -13,7 +13,9 @@ import { PALETTE_TOKENS, resolvePaletteColor } from './palette'
 import styles from './ColorChip.module.css'
 
 export type ColorChipProps = {
-    /** The current value: a palette token name or any CSS colour. */
+    /** The current value: a palette token name or any CSS colour. Empty paints `var(--accent)`.
+     *  A caller with an `auto` entry should pass its EFFECTIVE colour (the computed one), not
+     *  the stored null, or the chip shows the accent instead of the colour actually in use. */
     color: string
     /** Whether this chip's palette popover is open. The caller owns which one is. */
     open: boolean
@@ -46,7 +48,7 @@ const ColorChip: Component<ColorChipProps> = props => {
         >
             <Swatch
                 size="sm"
-                color={resolvePaletteColor(props.color) || 'transparent'}
+                color={resolvePaletteColor(props.color) || 'var(--accent)'}
                 label="Choose colour"
                 selected={props.open}
                 onClick={props.onToggle}

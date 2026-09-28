@@ -183,3 +183,20 @@ export const Interactive: Story = {
         )
     },
 }
+
+/** No stored colour (`''`, as TaskCalendarSettings passes for an uncoloured category): the chip
+ *  falls back to `--accent` rather than painting a hollow square. */
+export const EmptyColor: Story = {
+    args: {
+        color: '',
+        open: false,
+        onToggle: () => {},
+        onPick: () => {},
+    },
+    play: async ({ canvasElement }) => {
+        const chip = within(canvasElement).getByLabelText('Choose colour')
+        const bg = getComputedStyle(chip).backgroundColor
+        expect(bg).not.toBe('rgba(0, 0, 0, 0)')
+        expect(bg).not.toBe('transparent')
+    },
+}
