@@ -3,7 +3,7 @@
 // open/editing state and the inline duplicate-name refusal; persisting the new column is
 // entirely the caller's `onAdd`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import KanbanAddColumn from './KanbanAddColumn'
 import {
     boardWidths,
@@ -100,5 +100,80 @@ export const DuplicateRefused: Story = {
         expect(addedNames).toEqual([])
         // input is still open and still holds what was typed
         expect(canvas.getByPlaceholderText('name')).toHaveValue('Doing')
+    },
+}
+
+/** Escape closes the input without adding: back to the ghost trigger, `onAdd` never fires. */
+export const CancelEscape: Story = {
+    render: () => {
+        addedNames = []
+        return (
+            <KanbanAddColumn
+                existing={['Todo', 'Doing', 'Done']}
+                onAdd={name => addedNames.push(name)}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByLabelText('Add a column'))
+        const input = await canvas.findByPlaceholderText('name')
+        await userEvent.type(input, 'Blocked')
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() =>
+            expect(canvas.queryByPlaceholderText('name')).toBeNull(),
+        )
+        expect(canvas.getByLabelText('Add a column')).toBeVisible()
+        expect(addedNames).toEqual([])
+    },
+}
+
+/** Leaving the input while it is empty closes it: nothing was typed, nothing is added. */
+export const CancelBlurEmpty: Story = {
+    render: () => {
+        addedNames = []
+        return (
+            <div>
+                <KanbanAddColumn
+                    existing={['Todo', 'Doing', 'Done']}
+                    onAdd={name => addedNames.push(name)}
+                />
+                <button type="button">elsewhere</button>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByLabelText('Add a column'))
+        await canvas.findByPlaceholderText('name')
+        await userEvent.click(canvas.getByText('elsewhere'))
+        await waitFor(() =>
+            expect(canvas.queryByPlaceholderText('name')).toBeNull(),
+        )
+        expect(addedNames).toEqual([])
+    },
+}
+
+/** Enter on an empty (or whitespace-only) field is a cancel, not an add of a blank column. */
+export const CancelEnterEmpty: Story = {
+    render: () => {
+        addedNames = []
+        return (
+            <KanbanAddColumn
+                existing={['Todo', 'Doing', 'Done']}
+                onAdd={name => addedNames.push(name)}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByLabelText('Add a column'))
+        const input = await canvas.findByPlaceholderText('name')
+        await userEvent.type(input, '   ')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(canvas.queryByPlaceholderText('name')).toBeNull(),
+        )
+        expect(addedNames).toEqual([])
     },
 }

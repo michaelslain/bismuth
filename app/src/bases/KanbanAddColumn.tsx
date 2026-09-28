@@ -10,7 +10,11 @@
 import { createSignal, Show, type Component } from 'solid-js'
 import IconButton from '../ui/IconButton'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
-import { overlayOrigin, type OverlayOrigin } from './kanbanAddColumnOverlay'
+import {
+    inputInset,
+    overlayOrigin,
+    type OverlayOrigin,
+} from './kanbanAddColumnOverlay'
 import styles from './KanbanAddColumn.module.css'
 
 export type KanbanAddColumnProps = {
@@ -32,20 +36,14 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
         const glyph = ghost?.querySelector('button svg')
         const input = overlay?.querySelector('input')
         if (!ghost || !glyph || !input) return
-        const cs = getComputedStyle(input)
-        const px = (v: string) => parseFloat(v) || 0
-        const top = px(cs.paddingTop) + px(cs.borderTopWidth)
-        const bottom = px(cs.paddingBottom) + px(cs.borderBottomWidth)
         setOrigin(
             overlayOrigin(
                 ghost.getBoundingClientRect(),
                 glyph.getBoundingClientRect(),
-                {
-                    left: px(cs.paddingLeft) + px(cs.borderLeftWidth),
-                    top,
-                    contentHeight:
-                        input.getBoundingClientRect().height - top - bottom,
-                },
+                inputInset(
+                    getComputedStyle(input),
+                    input.getBoundingClientRect().height,
+                ),
             ),
         )
     }

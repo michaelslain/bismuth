@@ -19,7 +19,6 @@ import { setTransport } from '../api'
 import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
 import { kanbanViews } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
-import { PALETTE_NAMES } from './kanbanPalette'
 
 const meta = {
     title: 'Bases/KanbanView',
@@ -29,6 +28,9 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+// The ColorChip labels each palette entry by its token (`var(--graph-1)` reads `graph-1`).
+const PALETTE_NAMES = [0, 1, 2, 3, 4].map(n => `graph-${n}`)
 
 const noop = () => {}
 
@@ -144,7 +146,7 @@ export const HeaderActionsOnHover: Story = {
         })
         // Measure after the UI font lands — a late font swap re-measures the count's digits.
         await document.fonts.ready
-        const header = col.firstElementChild!.firstElementChild as HTMLElement
+        const header = col.firstElementChild as HTMLElement
         const bar = within(col).getByRole('toolbar', { name: 'Column actions' })
         const count = within(header).getByText('00')
         const rect = (el: Element) => el.getBoundingClientRect()
@@ -182,16 +184,10 @@ export const HeaderActionsOnHover: Story = {
         const todoBar = within(todo).getByRole('toolbar', {
             name: 'Column actions',
         })
-        await waitFor(() =>
-            expect(getComputedStyle(todoBar).opacity).toBe('1'),
-        )
-        expect(
-            within(todoBar).queryByLabelText('Delete column'),
-        ).not.toBeNull()
+        await waitFor(() => expect(getComputedStyle(todoBar).opacity).toBe('1'))
+        expect(within(todoBar).queryByLabelText('Delete column')).not.toBeNull()
         await userEvent.unhover(todo)
-        await waitFor(() =>
-            expect(getComputedStyle(todoBar).opacity).toBe('0'),
-        )
+        await waitFor(() => expect(getComputedStyle(todoBar).opacity).toBe('0'))
         await expectNoPhantomScroll(canvasElement)
     },
 }
@@ -225,19 +221,15 @@ export const NoGroupBy: Story = {
 // Captured by ColorPickerPickAndDismiss's render() and read back in its play().
 let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
 
-/** The column colour picker — Task 6: composes `ui/AnchoredPopover` (the same primitive the
- *  header's color dot uses), so its content is PORTALED, not a descendant of
- *  `canvasElement` — queries for it go through `body`, not `canvas`, same pattern
- *  KanbanColumns.stories.tsx uses for the rename/delete `IconBar`. Clicking a column's colour dot reveals the palette
- *  `Swatch`es (each aria-labelled by its colour name, e.g. "rose") plus the "Auto" option that
- *  clears an override. Needs `basePath` (`editable()`) for the dot button to be enabled at all.
+/** The column colour picker — `ui/ColorChip`: a swatch laid over the header's StatusDot opens a
+ *  palette popover that is PORTALED (not a descendant of `canvasElement`), so queries for it go
+ *  through `body`, not `canvas`. It lists an `auto` entry plus the five graph colours, each
+ *  labelled by its token (`graph-1`). Needs `basePath` (`editable()`) for the trigger to exist.
  *  The first column ("Doing" — the data's own first-seen status value, no `groupOrder` pins it)
- *  has no override set, so no swatch shows the `selected` ring — only Auto reads pressed, exactly
- *  one control marked at a time.
+ *  has no override set, so no swatch shows the `selected` ring — only `auto` reads pressed.
  *
- *  play() proves: the panel opens anchored BELOW its trigger (not the old fixed backdrop popup),
- *  and stays open — this story's baseline shot IS the open panel. The picking/dismissing
- *  behaviour is proved by ColorPickerPickAndDismiss below, which leaves the panel closed. */
+ *  play() proves: the panel opens anchored BELOW its trigger and stays open — this story's
+ *  baseline shot IS the open panel. Picking and dismissing is ColorPickerPickAndDismiss below. */
 export const ColorPickerOpen: Story = {
     render: () => {
         const views = kanbanViews()
@@ -254,10 +246,10 @@ export const ColorPickerOpen: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const dot = canvas.getAllByTitle('Column color')[0]!
+        const dot = canvas.getAllByLabelText('Choose colour')[0]!
 
         await userEvent.click(dot)
-        const panel = await body.findByTestId('kanban-color-picker')
+        const panel = await body.findByTestId('category-palette')
         expect(panel).toBeVisible()
         // Anchored BELOW the trigger: the panel's top sits at/after the trigger's own bottom
         // edge — never overlapping or above it.
@@ -265,7 +257,7 @@ export const ColorPickerOpen: Story = {
         const panelRect = panel.getBoundingClientRect()
         expect(panelRect.top).toBeGreaterThanOrEqual(dotRect.bottom)
 
-        const auto = await body.findByRole('button', { name: 'Auto' })
+        const auto = await body.findByRole('button', { name: 'auto' })
         expect(auto).toBeVisible()
         expect(auto).toHaveAttribute('aria-pressed', 'true')
         const swatches = PALETTE_NAMES.map(name => {
@@ -301,11 +293,11 @@ export const ColorPickerPickAndDismiss: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const dot = canvas.getAllByTitle('Column color')[0]!
+        const dot = canvas.getAllByLabelText('Choose colour')[0]!
 
         await userEvent.click(dot)
-        await body.findByTestId('kanban-color-picker')
-        const violet = body.getByRole('button', { name: 'violet' })
+        await body.findByTestId('category-palette')
+        const violet = body.getByRole('button', { name: 'graph-1' })
 
         // Picking a swatch calls the real setter and closes the popover. The first column here
         // (no explicit `groupOrder`) is "Doing" — the data's own first-seen status value, not
@@ -322,15 +314,15 @@ export const ColorPickerPickAndDismiss: Story = {
             },
         })
         await waitFor(() =>
-            expect(body.queryByTestId('kanban-color-picker')).toBeNull(),
+            expect(body.queryByTestId('category-palette')).toBeNull(),
         )
 
         // Escape dismisses it too (AnchoredPopover's own window keydown listener).
         await userEvent.click(dot)
-        await body.findByTestId('kanban-color-picker')
+        await body.findByTestId('category-palette')
         await userEvent.keyboard('{Escape}')
         await waitFor(() =>
-            expect(body.queryByTestId('kanban-color-picker')).toBeNull(),
+            expect(body.queryByTestId('category-palette')).toBeNull(),
         )
     },
 }
@@ -354,10 +346,10 @@ export const ColorPickerOpenThirdColumn: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-        const dots = canvas.getAllByTitle('Column color')
+        const dots = canvas.getAllByLabelText('Choose colour')
         expect(dots.length).toBeGreaterThanOrEqual(3)
         await userEvent.click(dots[2]!)
-        const auto = await body.findByRole('button', { name: 'Auto' })
+        const auto = await body.findByRole('button', { name: 'auto' })
         expect(auto).toBeVisible()
     },
 }
@@ -404,8 +396,8 @@ export const ManyCardsInOneColumn: Story = {
             '[class*="kanbanCards"]',
         )!
         expect(cardsEl.scrollHeight).toBeGreaterThan(cardsEl.clientHeight)
-        expect(
-            canvas.getAllByTestId('kanban-card').length,
-        ).toBe(MANY_CARDS_ROWS.length)
+        expect(canvas.getAllByTestId('kanban-card').length).toBe(
+            MANY_CARDS_ROWS.length,
+        )
     },
 }

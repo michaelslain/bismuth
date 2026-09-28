@@ -2,7 +2,7 @@
 // (adding a column) and KanbanView's own header rename. Presentational: it owns only the
 // input's value/error state; the caller owns what happens on submit/cancel.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
 
 const meta = {
@@ -71,5 +71,58 @@ export const Duplicate: Story = {
         const errorStyle = getComputedStyle(error)
         const errorTextX = errorRect.left + parseFloat(errorStyle.paddingLeft)
         expect(Math.abs(errorTextX - inputTextX)).toBeLessThanOrEqual(1)
+    },
+}
+
+/** Escape cancels: `onCancel` fires once, `onSubmit` never, whatever was typed. */
+export const CancelEscape: Story = {
+    args: {
+        placeholder: 'column name',
+        existing: ['Todo', 'Doing', 'Done'],
+        onSubmit: fn(),
+        onCancel: fn(),
+    },
+    play: async ({ canvasElement, args }) => {
+        const input =
+            await within(canvasElement).findByPlaceholderText('column name')
+        await userEvent.type(input, 'Blocked')
+        await userEvent.keyboard('{Escape}')
+        expect(args.onCancel).toHaveBeenCalledTimes(1)
+        expect(args.onSubmit).not.toHaveBeenCalled()
+    },
+}
+
+/** Leaving the field while it is empty cancels; nothing was typed so nothing is submitted. */
+export const CancelBlurEmpty: Story = {
+    args: {
+        placeholder: 'column name',
+        existing: ['Todo', 'Doing', 'Done'],
+        onSubmit: fn(),
+        onCancel: fn(),
+    },
+    play: async ({ canvasElement, args }) => {
+        const input =
+            await within(canvasElement).findByPlaceholderText('column name')
+        await userEvent.click(input)
+        await userEvent.tab()
+        expect(args.onCancel).toHaveBeenCalledTimes(1)
+        expect(args.onSubmit).not.toHaveBeenCalled()
+    },
+}
+
+/** A rename left unchanged (Enter on the prefilled name) is the rename no-op: it cancels. */
+export const CancelUnchanged: Story = {
+    args: {
+        initial: 'Todo',
+        existing: ['Doing', 'Done'],
+        selectOnMount: true,
+        onSubmit: fn(),
+        onCancel: fn(),
+    },
+    play: async ({ canvasElement, args }) => {
+        await within(canvasElement).findByDisplayValue('Todo')
+        await userEvent.keyboard('{Enter}')
+        expect(args.onCancel).toHaveBeenCalledTimes(1)
+        expect(args.onSubmit).not.toHaveBeenCalled()
     },
 }

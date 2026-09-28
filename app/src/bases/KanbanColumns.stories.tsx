@@ -7,9 +7,15 @@
 // real KanbanView component. `onChange` is a required prop (fired after a write); a no-op here
 // since nothing in these stories persists.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { onCleanup } from 'solid-js'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { KanbanView } from './KanbanView'
-import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
+import { BaseView } from './BaseView'
+import {
+    SAMPLE_ROWS,
+    sampleBaseConfig,
+    sampleViewResult,
+} from '../ui/_baseFixtures'
 import { setTransport } from '../api'
 import {
     boardWidths,
@@ -18,7 +24,7 @@ import {
     inputTextOrigin,
     restTextOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
-import { fakeTransport } from '../ui/_fakeTransport'
+import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
 import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
@@ -560,9 +566,7 @@ export const RenameColumnKeepsAuto: Story = {
             'Rename column',
         )
         await userEvent.keyboard('{Enter}')
-        const input = await waitFor(() =>
-            within(col).getByDisplayValue('Todo'),
-        )
+        const input = await waitFor(() => within(col).getByDisplayValue('Todo'))
         await userEvent.clear(input)
         // A same-auto-color key that isn't just casing/whitespace of the original, so this
         // exercises the hash fallback comparison rather than the (trivially equal) identity case.
@@ -625,9 +629,9 @@ export const DeleteColumnWithCards: Story = {
                 (c.body as { key?: string }).key === 'columns',
         )
         expect(columnsWrite).toBeDefined()
-        expect(
-            (columnsWrite!.body as { value: string[] }).value,
-        ).not.toContain('Todo')
+        expect((columnsWrite!.body as { value: string[] }).value).not.toContain(
+            'Todo',
+        )
 
         await waitFor(() =>
             expect(
@@ -642,5 +646,163 @@ export const DeleteColumnWithCards: Story = {
         await waitFor(() => expect(toasts().length).toBe(before + 1))
         expect(toasts()[before].message).toContain('Deleted column "Todo"')
         expect(toasts()[before].action?.label).toBe('Undo')
+    },
+}
+
+// ── Real state ──────────────────────────────────────────────────────────────────────────────────
+// The stories above pin the WRITES a static board sends. These hold real state instead: a
+// BaseView over `fakeTransport({ versioned: true })` (as BaseGallery.stories.tsx does), so every
+// write mutates the store, bumps the server version and refetches the board — what sticks is
+// what the board shows AFTER the round trip.
+const REAL_PATH = 'stories/kanban-real.md'
+const REAL_BODY = [
+    '---',
+    'type: base',
+    'views:',
+    '  - type: kanban',
+    '    name: Kanban',
+    '    groupBy: status',
+    '    order: [priority, tags]',
+    '    columns: [Todo, Doing, Done]',
+    '---',
+    '',
+].join('\n')
+
+function RealBoard() {
+    setTransport(
+        fakeTransport({
+            rows: JSON.parse(JSON.stringify(SAMPLE_ROWS)),
+            versioned: true,
+            files: { [REAL_PATH]: REAL_BODY },
+        }),
+    )
+    onCleanup(disarmFakeServerVersion)
+    return (
+        <div
+            style={{
+                height: '520px',
+                display: 'flex',
+                'flex-direction': 'column',
+            }}
+        >
+            <BaseView path={REAL_PATH} body={REAL_BODY} />
+        </div>
+    )
+}
+
+const column = (root: HTMLElement, key: string) =>
+    root.querySelector<HTMLElement>(`[data-kbcol="${key}"]`)
+
+/** A card dragged from Todo onto Done stays in Done after the write's refetch: the pointer drag
+ *  (down, past the 5px threshold, over the target lane, up) writes `status` and `order`. */
+export const RealDropSticks: Story = {
+    render: () => <RealBoard />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(column(canvasElement, 'Todo')).not.toBeNull(),
+        )
+        const card = column(canvasElement, 'Todo')!.querySelector<HTMLElement>(
+            '[data-kbcard]',
+        )!
+        const id = card.getAttribute('data-path')!
+        const r = card.getBoundingClientRect()
+        const from = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        const d = column(canvasElement, 'Done')!.getBoundingClientRect()
+        const to = { x: d.left + d.width / 2, y: d.top + d.height / 2 }
+        fireEvent.pointerDown(card, {
+            button: 0,
+            clientX: from.x,
+            clientY: from.y,
+        })
+        fireEvent.pointerMove(window, {
+            clientX: from.x + 10,
+            clientY: from.y + 10,
+        })
+        fireEvent.pointerMove(window, { clientX: to.x, clientY: to.y })
+        fireEvent.pointerUp(window, { clientX: to.x, clientY: to.y })
+        await waitFor(() =>
+            expect(
+                column(canvasElement, 'Done')!.querySelector(
+                    `[data-path="${id}"]`,
+                ),
+            ).not.toBeNull(),
+        )
+        // Settled: still there once the refetch has landed, and gone from where it started.
+        await new Promise(res => setTimeout(res, 400))
+        expect(
+            column(canvasElement, 'Done')!.querySelector(`[data-path="${id}"]`),
+        ).not.toBeNull()
+        expect(
+            column(canvasElement, 'Todo')?.querySelector(
+                `[data-path="${id}"]`,
+            ) ?? null,
+        ).toBeNull()
+    },
+}
+
+/** Renaming Todo to Backlog sticks: after the refetch the lane is Backlog, holds both cards,
+ *  and no Todo lane comes back. */
+export const RealRenameSticks: Story = {
+    render: () => <RealBoard />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(column(canvasElement, 'Todo')).not.toBeNull(),
+        )
+        const cards = column(canvasElement, 'Todo')!.querySelectorAll(
+            '[data-kbcard]',
+        ).length
+        const col = focusColumnHeaderButton(
+            canvasElement,
+            'Todo',
+            'Rename column',
+        )
+        await userEvent.keyboard('{Enter}')
+        const input = await within(col).findByDisplayValue('Todo')
+        await userEvent.clear(input)
+        await userEvent.type(input, 'Backlog')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(column(canvasElement, 'Backlog')).not.toBeNull(),
+        )
+        await new Promise(res => setTimeout(res, 400))
+        expect(column(canvasElement, 'Todo')).toBeNull()
+        expect(
+            column(canvasElement, 'Backlog')!.querySelectorAll('[data-kbcard]')
+                .length,
+        ).toBe(cards)
+    },
+}
+
+/** Deleting a lane sticks (it is gone after the refetch), and the toast's Undo brings it back
+ *  with its cards. */
+export const RealDeleteUndoRestores: Story = {
+    render: () => <RealBoard />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(column(canvasElement, 'Todo')).not.toBeNull(),
+        )
+        const cards = column(canvasElement, 'Todo')!.querySelectorAll(
+            '[data-kbcard]',
+        ).length
+        expect(cards).toBeGreaterThan(0)
+        const before = toasts().length
+        focusColumnHeaderButton(canvasElement, 'Todo', 'Delete column')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(column(canvasElement, 'Todo')).toBeNull())
+        await new Promise(res => setTimeout(res, 400))
+        expect(column(canvasElement, 'Todo')).toBeNull()
+        await waitFor(() => expect(toasts().length).toBeGreaterThan(before))
+        const undo = toasts()[toasts().length - 1]!.action!
+        expect(undo.label).toBe('Undo')
+        undo.onClick()
+        await waitFor(() =>
+            expect(column(canvasElement, 'Todo')).not.toBeNull(),
+        )
+        await waitFor(() =>
+            expect(
+                column(canvasElement, 'Todo')!.querySelectorAll('[data-kbcard]')
+                    .length,
+            ).toBe(cards),
+        )
     },
 }

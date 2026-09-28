@@ -1,0 +1,105 @@
+/* ---- KanbanColumn ---- */
+/* No box: no background fill, no border, no radius on a column (Acceptance 1). Adjacent
+   columns are divided by one hairline vertical rule instead — `.kanbanColumnLast` (the last
+   REAL column, set from the `<For>` index in KanbanView.tsx, not a CSS :last-child — the
+   add-column ghost and the trailing drop-gap placeholder are later DOM siblings so a
+   structural selector would land on the wrong element) drops it. */
+.kanbanColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--kanban-col-min, 248px);
+  max-width: var(--kanban-col-max, 288px);
+  max-height: 100%;
+  flex: 1;
+  padding: 0;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border-soft);
+  border-radius: var(--r-0);
+  overflow: hidden;
+  transition: background 160ms ease;
+}
+.kanbanColumnLast { border-right: none; }
+/* "Card is over this column" cue — a subtle wash on the lane, no border (Task 1 ruling). */
+.kanbanColumnOver {
+  background: var(--surface-2);
+}
+/* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
+   cards when the column is taller than the board — the header above stays put (it's a separate,
+   non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
+.kanbanCards { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-5) var(--sp-5); gap: var(--sp-3); flex: 1; min-height: 0; overflow-y: auto; }
+/* Kanban's own card padding (Acceptance 5), passed to <CardFrame class=…> in KanbanView.tsx
+   instead of CardBodyInner's — CardBodyInner's own sp-5/sp-5 padding is CardsView's register,
+   not kanban's, and stacking both would double it. KanbanCard's own root (`.kbCardFace`) already
+   owns its internal title-to-meta rhythm, so nothing here duplicates CardBodyInner's `gap`. */
+.kanbanCardPad { padding: var(--sp-3) var(--sp-5); }
+/* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
+   `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
+   this they compress to fit the now height-capped column instead of overflowing it, which both
+   clips every card's text AND means `scrollHeight === clientHeight`, so the column never grows a
+   scrollbar at all. Measured before this rule: a card rendered 79px tall in a short column was
+   crushed to 14px (content clipped) in a 28-card one, with no way to scroll to the rest. */
+.kanbanCards > * { flex: none; }
+/* The drag/drop/hover look of a card itself is CardFrame's own (`draggable`/`dropTarget`
+   props) — this file no longer reaches into a `.card`/`.taskCard` class it doesn't own. */
+
+/* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
+   when a card hovers this column. Spacing comes purely from the column's flex `gap` (plus the
+   column's top padding), so the placeholder sits with the same margins as a real card in any
+   slot — including the very top. A negative margin-TOP cancels the gap while collapsed so an
+   inactive placeholder adds no space between cards. It is the top margin, not the bottom, on
+   purpose: a column always ends in a collapsed placeholder (the trailing drop slot), and on a
+   read-only board (no add-card button after it) that placeholder is the LAST child. A negative
+   margin-bottom there shrank the list's layout height below the placeholder's own border box, so
+   `.kanbanCards` measured scrollHeight 200 vs clientHeight 193 on a two-card board and painted a
+   scrollbar with nothing to scroll (round-2 item 8). A negative margin-top pulls the box up into
+   the space already laid out, so it never pokes past the end — and overflow toward the top is
+   never scrollable. Spacing between cards is identical either way.
+   Acceptance: "Kanban card enter/leave does not animate height/margin-bottom" — those two flip
+   instantly (a card's own layout, not this component's), only opacity/border/background ease. */
+.kanbanPlaceholder {
+  height: 0;
+  opacity: 0;
+  /* Exactly the list's flex gap plus this box's own 2px of border, so a collapsed placeholder
+     nets ZERO height: it sits flush on the card above instead of overlapping it by 1px (the old
+     -9px), which on a read-only board left the last card 1px past the list's end — a 1px
+     phantom scroll. */
+  margin-top: calc(-1 * (var(--sp-3) + 2px));
+  border: 1px solid transparent;
+  border-radius: var(--r-0);
+  background: transparent;
+  pointer-events: none;
+  transition: opacity 170ms ease, border-color 170ms ease;
+}
+/* A 1px solid outline, no fill (Acceptance 12) — was a dashed border + a tinted fill. */
+.kanbanPlaceholderActive {
+  height: var(--kb-drag-h, 46px);
+  opacity: 1;
+  margin-top: 0;
+  border-color: var(--bismuth-accent-border);
+  background: transparent;
+}
+
+/* Column reorder feedback */
+.kanbanColDragging { opacity: 0.5; }
+.kanbanColReorder { box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset; }
+/* Add-card affordance — an IconButton (bare "+"); this file only places it. It sits in normal flow
+   right after the cards (the trailing placeholder above it, both plain `.kanbanCards` flex
+   children), so its spacing off the last card is the same `--sp-3` flex `gap` every card uses —
+   never pinned to the column's bottom edge. The look (colour/hover) is Button's own. */
+.kbAddBtn { align-self: flex-start; }
+/* The composer gets a text caret + real text selection back (a dragged card sets
+   user-select:none via CardFrame's `draggable` variant). Both declaration blocks target the
+   same `.kbComposer` element — kept as one merged rule (the source file had them as two
+   selector blocks under this same class name, which CSS just cascades together). Square,
+   hairline `--border`, mono `--fs-ui` text (Acceptance 10) — accent only on focus. */
+.kbComposer {
+  cursor: text; user-select: text; -webkit-user-select: text;
+  width: 100%; box-sizing: border-box; padding: var(--sp-4) var(--sp-5);
+  border: var(--rule); border-radius: var(--r-0);
+  background: var(--surface-1, var(--panel)); color: var(--fg);
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1.35; resize: none; outline: none;
+  transition: border-color 120ms ease;
+}
+.kbComposer:focus { border-color: var(--accent); }
+
