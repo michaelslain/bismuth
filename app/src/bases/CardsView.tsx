@@ -65,6 +65,7 @@ export function CardsView(props: {
             config: props.config,
             view: props.result.view,
             onChanged: props.onChange,
+            columns: props.result.columns,
         })
     }
 
@@ -146,9 +147,14 @@ export function CardsView(props: {
                                                         interactive
                                                         role="button"
                                                         tabindex={0}
-                                                        onClick={() => cardClick(row)}
+                                                        onClick={() =>
+                                                            cardClick(row)
+                                                        }
                                                         onKeyDown={e => {
-                                                            if (e.key === 'Enter')
+                                                            if (
+                                                                e.key ===
+                                                                'Enter'
+                                                            )
                                                                 cardClick(row)
                                                         }}
                                                     >
@@ -168,7 +174,9 @@ export function CardsView(props: {
                                                                 class={
                                                                     styles.cardEditBtn
                                                                 }
-                                                                onClick={(e: MouseEvent) => {
+                                                                onClick={(
+                                                                    e: MouseEvent,
+                                                                ) => {
                                                                     e.stopPropagation()
                                                                     openEditor(
                                                                         row,
@@ -190,7 +198,9 @@ export function CardsView(props: {
                                                                     <Label
                                                                         as="div"
                                                                         tone="default"
-                                                                        lines={2}
+                                                                        lines={
+                                                                            2
+                                                                        }
                                                                         class={
                                                                             styles.coverTitle
                                                                         }
@@ -257,9 +267,13 @@ export function CardsView(props: {
                                                             <CardBody
                                                                 cols={cols()}
                                                                 row={row}
-                                                                config={props.config}
+                                                                config={
+                                                                    props.config
+                                                                }
                                                                 titleAsField={
-                                                                    !coverUrl(row)
+                                                                    !coverUrl(
+                                                                        row,
+                                                                    )
                                                                 }
                                                                 plainTitle
                                                             />

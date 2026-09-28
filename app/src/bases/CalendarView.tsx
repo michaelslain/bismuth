@@ -33,7 +33,10 @@ import { CalendarSettings } from '../calendar/components/CalendarSettings'
 import TaskCalendarSettings from '../calendar/components/TaskCalendarSettings'
 import { placeRows } from '../calendar/taskPlacement'
 import type { PlacedTask } from '../calendar/taskPlacement'
-import type { TaskComposeProps, TaskComposeTarget } from '../calendar/taskCompose'
+import type {
+    TaskComposeProps,
+    TaskComposeTarget,
+} from '../calendar/taskCompose'
 import type { TaskRowRef } from '../calendar/taskDrag'
 import {
     taskCategoryName,
@@ -267,7 +270,9 @@ function TasksCalendar(props: {
     viewIndex: number
     onChange?: () => void
 }) {
-    const rows = createMemo(() => props.result?.groups.flatMap(g => g.rows) ?? [])
+    const rows = createMemo(
+        () => props.result?.groups.flatMap(g => g.rows) ?? [],
+    )
     // The active view's own config, already resolved server-side into `result.view` — the
     // same object `placed` below already reads `.dateField` off, so `dateField`/
     // `categoryField`/`taskFile`/`defaultCategory` all come from here rather than indexing
@@ -314,14 +319,21 @@ function TasksCalendar(props: {
             const declared = (props.config?.categories ?? []).map(c => c.name)
             const seen = new Set<string>()
             const names: string[] = []
-            for (const name of [...taskCategoryNames(rows(), categoryField()), ...declared]) {
+            for (const name of [
+                ...taskCategoryNames(rows(), categoryField()),
+                ...declared,
+            ]) {
                 if (seen.has(name)) continue
                 seen.add(name)
                 names.push(name)
             }
             return [
                 { id: '', label: 'no category' },
-                ...names.map(name => ({ id: name, label: name, color: colorMap.get(name) })),
+                ...names.map(name => ({
+                    id: name,
+                    label: name,
+                    color: colorMap.get(name),
+                })),
             ]
         }
         const byPath = new Map<string, TaskComposeTarget>()
@@ -334,16 +346,27 @@ function TasksCalendar(props: {
                 color: colorMap.get(row.file.name),
             })
         }
-        const taskFile = view()?.taskFile
-        if (taskFile) {
-            const path = refToPath(taskFile)
-            if (path && !byPath.has(path)) {
-                const label = fileBasename(path)
-                byPath.set(path, { id: path, label, color: colorMap.get(label) })
-            }
+        const path = taskFileTargetId([...byPath.keys()])
+        if (path && !byPath.has(path)) {
+            const label = fileBasename(path)
+            byPath.set(path, { id: path, label, color: colorMap.get(label) })
         }
         return [...byPath.values()]
     })
+
+    // The view's `taskFile` as a target id. A `[[General Tasks]]` ref names a note by BASENAME,
+    // the way a wikilink does, so match it against the source notes already on the grid first —
+    // `refToPath` alone turns it into a ROOT path (`General Tasks.md`) that never equals the real
+    // `tasks/General Tasks.md`, which listed the same note twice in the picker and preselected
+    // the phantom one.
+    function taskFileTargetId(rowPaths: string[]): string {
+        const taskFile = view()?.taskFile
+        if (!taskFile) return ''
+        const path = refToPath(taskFile)
+        if (!path || rowPaths.includes(path)) return path
+        const base = fileBasename(path)
+        return rowPaths.find(p => fileBasename(p) === base) ?? path
+    }
 
     // The last-picked target for the session, so switching days keeps the same destination
     // instead of resetting to the default every time the composer reopens. Seeded lazily below,
@@ -352,15 +375,15 @@ function TasksCalendar(props: {
 
     const defaultTarget = () => {
         if (props.ownsRows) return view()?.defaultCategory ?? ''
-        const taskFile = view()?.taskFile
-        const path = taskFile ? refToPath(taskFile) : ''
+        const path = taskFileTargetId(targets().map(t => t.id))
         if (path && targets().some(t => t.id === path)) return path
         return targets()[0]?.id ?? ''
     }
 
     const target = () => {
         const picked = pickedTarget()
-        if (picked !== null && targets().some(t => t.id === picked)) return picked
+        if (picked !== null && targets().some(t => t.id === picked))
+            return picked
         return defaultTarget()
     }
 
@@ -392,7 +415,11 @@ function TasksCalendar(props: {
                 return
             }
             if (props.config && vc) {
-                const prospective = prospectiveStoredTaskRow(props.basePath, note, 0)
+                const prospective = prospectiveStoredTaskRow(
+                    props.basePath,
+                    note,
+                    0,
+                )
                 if (!newTaskVisible(props.config, vc, prospective))
                     pushToast(
                         `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
@@ -480,7 +507,13 @@ function TasksCalendar(props: {
         // frontmatter, and an empty categoryField would name a column with no name.
         if (value === '')
             void api.deleteViewProperty(props.basePath, props.viewIndex, key)
-        else void api.setViewProperty(props.basePath, props.viewIndex, key, value)
+        else
+            void api.setViewProperty(
+                props.basePath,
+                props.viewIndex,
+                key,
+                value,
+            )
     }
     // Rewrites the base's WHOLE `categories:` array — preserving every category already
     // declared and adding the picked one only when it is not there yet.
@@ -490,7 +523,9 @@ function TasksCalendar(props: {
         const idx = declared.findIndex(c => c.name === name)
         const next =
             idx >= 0
-                ? declared.map((c, i) => (i === idx ? { name, color: token } : c))
+                ? declared.map((c, i) =>
+                      i === idx ? { name, color: token } : c,
+                  )
                 : [...declared, { name, color: token }]
         void api.setProperty(props.basePath, 'categories', next)
     }
@@ -501,7 +536,9 @@ function TasksCalendar(props: {
     const writeStored = (path: string, index: number, write: StoredTaskWrite) =>
         void api
             .rowUpdate(path, index, write.note)
-            .then(() => (write.next ? api.rowCreate(path, write.next) : undefined))
+            .then(() =>
+                write.next ? api.rowCreate(path, write.next) : undefined,
+            )
             .catch(err =>
                 pushToast(
                     `Could not save the task: ${err instanceof Error ? err.message : String(err)}`,
@@ -517,7 +554,9 @@ function TasksCalendar(props: {
     const toggleTaskRow = (row: Row) => {
         const line = row.note.line
         if (typeof line === 'number') {
-            void api.toggleTask(row.file.path, line).finally(() => props.onChange?.())
+            void api
+                .toggleTask(row.file.path, line)
+                .finally(() => props.onChange?.())
             return
         }
         if (!canWriteStoredRow(row) || row.index === undefined) return
@@ -545,7 +584,9 @@ function TasksCalendar(props: {
     const setTaskStatus = (row: Row, char: string) => {
         const line = row.note.line
         if (typeof line === 'number') {
-            void api.toggleTask(row.file.path, line, char).finally(() => props.onChange?.())
+            void api
+                .toggleTask(row.file.path, line, char)
+                .finally(() => props.onChange?.())
             return
         }
         if (!canWriteStoredRow(row) || row.index === undefined) return
@@ -574,9 +615,13 @@ function TasksCalendar(props: {
             return
         }
         if (ref.index === undefined) return
-        const row = rows().find(r => r.file.path === ref.path && r.index === ref.index)
+        const row = rows().find(
+            r => r.file.path === ref.path && r.index === ref.index,
+        )
         if (!row || !canWriteStoredRow(row)) return
-        writeStored(ref.path, ref.index, { note: { ...storedNote(row), [ref.field]: date } })
+        writeStored(ref.path, ref.index, {
+            note: { ...storedNote(row), [ref.field]: date },
+        })
     }
 
     // No real EventStore is ever read in this register (every view component below only

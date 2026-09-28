@@ -1,4 +1,12 @@
-import { For, Index, Show, createSignal, createEffect, on } from 'solid-js'
+import {
+    For,
+    Index,
+    Show,
+    createSignal,
+    createEffect,
+    on,
+    type JSX,
+} from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { canonicalId } from '../../../core/src/bases/query'
 import {
@@ -16,10 +24,13 @@ import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
-import IconButton from '../ui/IconButton'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
-import { openRowEditor } from './openRowEditor'
+import { commitMeta, commitDelete } from './openRowEditor'
+import { writableKey } from './kanbanMeta'
+import TableCell from './TableCell'
+import { Portal } from 'solid-js/web'
+import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { openContextMenu } from '../nativeMenu'
 import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -61,15 +72,55 @@ export function TableView(props: {
 
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
-    function openEditor(row: Row, focusTarget?: string): void {
-        if (!rowEditable(row)) return
-        openRowEditor({
-            row,
-            config: props.config,
-            view: props.result.view,
-            onChanged: props.onChange,
-            focusTarget,
-        })
+    // A cell is edited in place when its row can be written and its column is a real property
+    // (not file.* / formula.*). A task LINE's fields are not frontmatter — those rows edit through
+    // the task editor instead, so their cells stay read-only here.
+    const canEditCell = (row: Row, c: string) =>
+        rowEditable(row) &&
+        writableKey(c) !== null &&
+        (canWriteStoredRow(row) || typeof row.note.line !== 'number')
+    const cellBody = (c: string, ci: number, row: Row): JSX.Element => {
+        const display = ci === 0 ? renderTitle(c, row) : renderCell(c, row)
+        // A NOTE row's title opens the note, as it always has; its other cells edit in place.
+        if (ci === 0 && !canWriteStoredRow(row)) return display
+        if (!canEditCell(row, c)) return display
+        return (
+            <TableCell
+                {...{ row }}
+                col={c}
+                config={props.config}
+                // No sibling values: guessing a dropdown from the other rows' values
+                // turns every short text column (two titles, two authors) into a select
+                // you cannot type into. A declared select/date/number type still gets its editor.
+                siblingValues={() => []}
+                onCommit={v => void commitMeta(row, c, v, props.onChange)}
+            >
+                {display}
+            </TableCell>
+        )
+    }
+
+    const [menu, setMenu] = createSignal<{
+        x: number
+        y: number
+        items: MenuItem[]
+    } | null>(null)
+    function onRowContextMenu(e: MouseEvent, row: Row): void {
+        if (!rowEditable(row) || typeof row.note.line === 'number') return
+        e.preventDefault()
+        e.stopPropagation()
+        openContextMenu(
+            e.clientX,
+            e.clientY,
+            [
+                {
+                    label: 'delete row',
+                    icon: 'Trash2',
+                    onSelect: () => void commitDelete(row, props.onChange),
+                },
+            ],
+            setMenu,
+        )
     }
 
     // Re-apply persisted widths whenever they change (e.g. on reload / refetch).
@@ -220,221 +271,177 @@ export function TableView(props: {
     }
 
     return (
-        <table class={styles.table} style={tableStyle()}>
-            <Show when={fixed()}>
-                <colgroup>
-                    <For each={cols()}>
-                        {c => (
-                            <col
-                                style={
-                                    w()[c]
-                                        ? { width: `${w()[c]}px` }
-                                        : undefined
-                                }
-                            />
-                        )}
-                    </For>
-                </colgroup>
-            </Show>
-            <thead ref={theadRef}>
-                <tr>
-                    <For each={cols()}>
-                        {(c, i) => (
-                            <th
-                                classList={{
-                                    [styles.thDrag]: !!props.onReorder,
-                                    [styles.thOver]: overIdx() === i(),
-                                    [styles.thResizable]:
-                                        !!props.onWidthsChange,
-                                    [styles.thAtEdge]: edgeIdx() === i(),
-                                }}
-                                onPointerDown={e => onHeaderPointerDown(i(), e)}
-                                onPointerMove={e =>
-                                    setEdgeIdx(
-                                        resizeTarget(i(), e) !== null
-                                            ? i()
-                                            : null,
-                                    )
-                                }
-                                onPointerLeave={() => setEdgeIdx(null)}
-                            >
-                                <Label inline class={styles.thLabel}>
-                                    {columnLabel(c, props.config)}
-                                </Label>
-                                <Show when={props.onWidthsChange}>
-                                    <Text
-                                        as="span"
-                                        inherit
-                                        class={styles.thResize}
-                                    />
-                                </Show>
-                            </th>
-                        )}
-                    </For>
-                </tr>
-            </thead>
-            <tbody>
-                {/* Index-keyed groups (see ListView): keeps each group's rows mounted across a
-            re-resolve so only the inner reference-keyed row <For> diffs — no whole-table
-            remount flash on a task toggle. */}
-                <Index each={props.result.groups}>
-                    {group => (
-                        <>
-                            <Show when={group().key !== ''}>
-                                <tr class={styles.groupRow}>
-                                    <td colspan={cols().length}>
-                                        {group().key}
-                                    </td>
-                                </tr>
-                            </Show>
-                            <For each={group().rows}>
-                                {row => (
-                                    <tr>
-                                        <For each={cols()}>
-                                            {(c, ci) => {
-                                                const check = () =>
-                                                    isTasks() &&
-                                                    isStatusColumn(c)
-                                                const muted =
-                                                    !isTagColumn(c) &&
-                                                    !isRatingColumn(c) &&
-                                                    ci() !== 0
-                                                return (
-                                                    <td
-                                                        classList={{
-                                                            [styles.cellMuted]:
-                                                                muted &&
-                                                                !check(),
-                                                            [styles.cellOverdue]:
-                                                                isTasks() &&
-                                                                isDueColumn(
-                                                                    c,
-                                                                ) &&
-                                                                isOverdue(
-                                                                    row.note,
-                                                                    todayISO(),
-                                                                ),
-                                                        }}
-                                                        onDblClick={() =>
-                                                            openEditor(row, c)
-                                                        }
-                                                    >
-                                                        <Show
-                                                            when={check()}
-                                                            fallback={
-                                                                ci() === 0 ? (
-                                                                    <Show
-                                                                        when={
-                                                                            rowEditable(
-                                                                                row,
-                                                                            ) &&
-                                                                            canWriteStoredRow(
-                                                                                row,
-                                                                            )
-                                                                        }
-                                                                        fallback={
-                                                                            <div
-                                                                                class={
-                                                                                    styles.titleCellWrap
-                                                                                }
-                                                                            >
-                                                                                {renderTitle(
-                                                                                    c,
-                                                                                    row,
-                                                                                )}
-                                                                                <Show
-                                                                                    when={rowEditable(
-                                                                                        row,
-                                                                                    )}
-                                                                                >
-                                                                                    <IconButton
-                                                                                        icon="Pencil"
-                                                                                        label="Edit properties"
-                                                                                        class={
-                                                                                            styles.editBtn
-                                                                                        }
-                                                                                        onClick={(
-                                                                                            e: MouseEvent,
-                                                                                        ) => {
-                                                                                            e.stopPropagation()
-                                                                                            openEditor(
-                                                                                                row,
-                                                                                            )
-                                                                                        }}
-                                                                                    />
-                                                                                </Show>
-                                                                            </div>
-                                                                        }
-                                                                    >
-                                                                        <PlainButton
-                                                                            class={
-                                                                                styles.titleBtn
-                                                                            }
-                                                                            onClick={() =>
-                                                                                openEditor(
-                                                                                    row,
-                                                                                )
-                                                                            }
-                                                                        >
-                                                                            {renderTitle(
-                                                                                c,
-                                                                                row,
-                                                                            )}
-                                                                        </PlainButton>
-                                                                    </Show>
-                                                                ) : (
-                                                                    renderCell(
-                                                                        c,
-                                                                        row,
-                                                                    )
-                                                                )
-                                                            }
-                                                        >
-                                                            <TaskCheck
-                                                                variant="cell"
-                                                                status={checkStatus(
-                                                                    row.note
-                                                                        .status,
-                                                                )}
-                                                                onToggle={e =>
-                                                                    props.onToggle?.(
-                                                                        row,
-                                                                        e,
-                                                                    )
-                                                                }
-                                                                onSetStatus={e =>
-                                                                    props.onSetStatus?.(
-                                                                        row,
-                                                                        e,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </Show>
-                                                    </td>
-                                                )
-                                            }}
-                                        </For>
-                                    </tr>
-                                )}
-                            </For>
-                        </>
-                    )}
-                </Index>
-            </tbody>
-            <Show when={Object.keys(props.result.summaries).length > 0}>
-                <tfoot>
-                    <tr>
+        <>
+            <table class={styles.table} style={tableStyle()}>
+                <Show when={fixed()}>
+                    <colgroup>
                         <For each={cols()}>
                             {c => (
-                                <td class={styles.summary}>
-                                    {props.result.summaries[canonicalId(c)] ??
-                                        ''}
-                                </td>
+                                <col
+                                    style={
+                                        w()[c]
+                                            ? { width: `${w()[c]}px` }
+                                            : undefined
+                                    }
+                                />
+                            )}
+                        </For>
+                    </colgroup>
+                </Show>
+                <thead ref={theadRef}>
+                    <tr>
+                        <For each={cols()}>
+                            {(c, i) => (
+                                <th
+                                    classList={{
+                                        [styles.thDrag]: !!props.onReorder,
+                                        [styles.thOver]: overIdx() === i(),
+                                        [styles.thResizable]:
+                                            !!props.onWidthsChange,
+                                        [styles.thAtEdge]: edgeIdx() === i(),
+                                    }}
+                                    onPointerDown={e =>
+                                        onHeaderPointerDown(i(), e)
+                                    }
+                                    onPointerMove={e =>
+                                        setEdgeIdx(
+                                            resizeTarget(i(), e) !== null
+                                                ? i()
+                                                : null,
+                                        )
+                                    }
+                                    onPointerLeave={() => setEdgeIdx(null)}
+                                >
+                                    <Label inline class={styles.thLabel}>
+                                        {columnLabel(c, props.config)}
+                                    </Label>
+                                    <Show when={props.onWidthsChange}>
+                                        <Text
+                                            as="span"
+                                            inherit
+                                            class={styles.thResize}
+                                        />
+                                    </Show>
+                                </th>
                             )}
                         </For>
                     </tr>
-                </tfoot>
-            </Show>
-        </table>
+                </thead>
+                <tbody>
+                    {/* Index-keyed groups (see ListView): keeps each group's rows mounted across a
+            re-resolve so only the inner reference-keyed row <For> diffs — no whole-table
+            remount flash on a task toggle. */}
+                    <Index each={props.result.groups}>
+                        {group => (
+                            <>
+                                <Show when={group().key !== ''}>
+                                    <tr class={styles.groupRow}>
+                                        <td colspan={cols().length}>
+                                            {group().key}
+                                        </td>
+                                    </tr>
+                                </Show>
+                                <For each={group().rows}>
+                                    {row => (
+                                        <tr
+                                            onContextMenu={e =>
+                                                onRowContextMenu(e, row)
+                                            }
+                                        >
+                                            <For each={cols()}>
+                                                {(c, ci) => {
+                                                    const check = () =>
+                                                        isTasks() &&
+                                                        isStatusColumn(c)
+                                                    const muted =
+                                                        !isTagColumn(c) &&
+                                                        !isRatingColumn(c) &&
+                                                        ci() !== 0
+                                                    return (
+                                                        <td
+                                                            classList={{
+                                                                [styles.cellMuted]:
+                                                                    muted &&
+                                                                    !check(),
+                                                                [styles.cellOverdue]:
+                                                                    isTasks() &&
+                                                                    isDueColumn(
+                                                                        c,
+                                                                    ) &&
+                                                                    isOverdue(
+                                                                        row.note,
+                                                                        todayISO(),
+                                                                    ),
+                                                            }}
+                                                        >
+                                                            <Show
+                                                                when={check()}
+                                                                fallback={cellBody(
+                                                                    c,
+                                                                    ci(),
+                                                                    row,
+                                                                )}
+                                                            >
+                                                                <TaskCheck
+                                                                    variant="cell"
+                                                                    status={checkStatus(
+                                                                        row.note
+                                                                            .status,
+                                                                    )}
+                                                                    onToggle={e =>
+                                                                        props.onToggle?.(
+                                                                            row,
+                                                                            e,
+                                                                        )
+                                                                    }
+                                                                    onSetStatus={e =>
+                                                                        props.onSetStatus?.(
+                                                                            row,
+                                                                            e,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            </Show>
+                                                        </td>
+                                                    )
+                                                }}
+                                            </For>
+                                        </tr>
+                                    )}
+                                </For>
+                            </>
+                        )}
+                    </Index>
+                </tbody>
+                <Show when={Object.keys(props.result.summaries).length > 0}>
+                    <tfoot>
+                        <tr>
+                            <For each={cols()}>
+                                {c => (
+                                    <td class={styles.summary}>
+                                        {props.result.summaries[
+                                            canonicalId(c)
+                                        ] ?? ''}
+                                    </td>
+                                )}
+                            </For>
+                        </tr>
+                    </tfoot>
+                </Show>
+            </table>
+            {/* The row menu renders at <body>: a menu element cannot live inside <table>. */}
+            <Portal>
+                <Show when={menu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={m().items}
+                            onClose={() => setMenu(null)}
+                        />
+                    )}
+                </Show>
+            </Portal>
+        </>
     )
 }

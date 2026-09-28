@@ -2,6 +2,7 @@ import {
     createSignal,
     createMemo,
     createEffect,
+    untrack,
     For,
     Show,
     onMount,
@@ -251,9 +252,23 @@ export function MapView(props: {
 
     const [center, setCenter] = createSignal(initialView().center)
     const [zoom, setZoom] = createSignal(initialView().zoom)
-    // Re-frame when the result changes (e.g. switching views).
+    // Re-frame when the VIEW changes (switching views, or its configured center/zoom), and once
+    // when the first markers arrive — never merely because a marker moved. Placing or dragging a
+    // pin writes its note, the rows refetch, and re-fitting on that jerked the whole map out from
+    // under the pin the user had just put down.
+    const frameKey = () => {
+        const v = props.result.view
+        return `${v.name}|${v.type}|${v.center?.lat},${v.center?.lng}|${v.zoom}`
+    }
+    let framedKey: string | null = null
+    let framedWithMarkers = false
     createEffect(() => {
-        const iv = initialView()
+        const key = frameKey()
+        const hasMarkers = markers().length > 0
+        if (key === framedKey && (framedWithMarkers || !hasMarkers)) return
+        framedKey = key
+        framedWithMarkers = hasMarkers
+        const iv = untrack(initialView)
         setCenter(iv.center)
         setZoom(iv.zoom)
     })
@@ -266,9 +281,10 @@ export function MapView(props: {
     // pin's own "move…" menu item. The next click on the map (not on a pin) writes that
     // row's coordinates and disarms. Escape disarms too.
     const [armed, setArmed] = createSignal<Row | null>(null)
-    const [hoverPos, setHoverPos] = createSignal<{ x: number; y: number } | null>(
-        null,
-    )
+    const [hoverPos, setHoverPos] = createSignal<{
+        x: number
+        y: number
+    } | null>(null)
     // A pin mid-drag: its live pointer offset from its projected position, plus whether the
     // pointer has moved past the click/drag threshold yet.
     const [dragState, setDragState] = createSignal<{
@@ -726,6 +742,13 @@ export function MapView(props: {
                                     }}
                                     title="Click to open — drag to move, right-click to move or remove"
                                     onClick={e => onPinClick(e, m)}
+                                    // A pin claims its mousedown too, not just its pointerdown:
+                                    // the map pans on MOUSEdown, and stopping only the pointer
+                                    // event let a pin drag also pan the map under it, so the
+                                    // dropped pin landed twice as far as it was dragged.
+                                    onMouseDown={e => {
+                                        if (writable()) e.stopPropagation()
+                                    }}
                                     onPointerDown={e => onPinPointerDown(e, m)}
                                     onPointerMove={e => onPinPointerMove(e, m)}
                                     onPointerUp={e => onPinPointerUp(e, m)}
@@ -869,8 +892,8 @@ export function MapView(props: {
 
                 <Show when={markers().length === 0}>
                     <div class={styles.mapEmpty}>
-                        No notes have valid <InlineCode>{latKey()}</InlineCode> /{' '}
-                        <InlineCode>{lngKey()}</InlineCode> properties.
+                        No notes have valid <InlineCode>{latKey()}</InlineCode>{' '}
+                        / <InlineCode>{lngKey()}</InlineCode> properties.
                     </div>
                 </Show>
             </div>

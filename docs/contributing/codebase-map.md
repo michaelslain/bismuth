@@ -976,6 +976,9 @@ Edit / delete / move ONE task from any task surface (`TaskRow`'s pencil, a calen
 #### `bases/openRowEditor.tsx` + `bases/AddRowAction.tsx`
 Row CRUD for the table/list/bullets/cards views: `openRowEditor` mounts `CardEditModal` for any row (stored row → `/row/*`, note row → frontmatter writes, delete → trash); `AddRowAction` is the bar's `+ row` (a new stored row, or a new note matching a notes source).
 
+#### `bases/TableCell.tsx`
+One in-place editable table cell: the resting value is a full-cell button, a click swaps in `PropertyValueEditor` with its kind and starting value frozen at open (a refetch mid-edit must not re-create the input), and the cell focuses its own control (the editor's `autofocus` attribute is honoured once per page). The write is the caller's — TableView passes `openRowEditor.tsx`'s `commitMeta`.
+
 #### `bases/mapCoords.ts`
 Pure map projection helpers behind placing, dragging and clearing pins in `MapView` — `screenToLatLng`, `round6`, `pastDragThreshold`, `writableFieldKey`.
 

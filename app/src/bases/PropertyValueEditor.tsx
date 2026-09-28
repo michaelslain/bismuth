@@ -155,6 +155,13 @@ export function PropertyValueEditor(props: {
                                     }
                                     value={draft()}
                                     autofocus={autofocus()}
+                                    // The attribute alone is honoured once per page: every
+                                    // editor opened after the first mounted unfocused.
+                                    ref={el =>
+                                        queueMicrotask(() => {
+                                            if (autofocus()) el.focus()
+                                        })
+                                    }
                                     onInput={setDraft}
                                     onBlur={commit}
                                     onKeyDown={e => {

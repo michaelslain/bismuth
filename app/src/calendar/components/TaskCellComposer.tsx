@@ -46,6 +46,17 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
     // empty Enter) just discarded.
     let done = false
     let root: HTMLDivElement | undefined
+    let input: HTMLInputElement | undefined
+    // Set on mousedown anywhere in the destination row, which fires BEFORE the input's blur.
+    // `relatedTarget` alone cannot tell "reaching for the picker" from "leaving": WebKit (the
+    // Tauri window) does not focus a button on click, so relatedTarget is null and the blur
+    // looked like leaving — closing the composer (empty draft) or committing to the OLD target
+    // (typed draft) before the picker ever opened.
+    let picking = false
+    const backToInput = () => {
+        picking = false
+        queueMicrotask(() => input?.focus())
+    }
     const targets = () => props.targets ?? []
     const markerColor = () =>
         targets().length > 0
@@ -55,7 +66,9 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
     return (
         <div
             ref={root}
-            class={[styles.composer, props.class ?? ''].filter(Boolean).join(' ')}
+            class={[styles.composer, props.class ?? '']
+                .filter(Boolean)
+                .join(' ')}
             // Stop all four so the day cell this sits inside (which wires its own click to open
             // the "create event" modal, and mousedown to start a drag — see TaskChip.tsx's own
             // comment on the same trap) cannot re-open itself or start a drag out from under the
@@ -84,11 +97,12 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     data-testid="task-cell-composer-input"
                     // The pattern CategoryPanel.tsx's rename field already uses: focus has to be
                     // deferred a tick past mount, or the element isn't attached yet to focus.
-                    ref={el =>
+                    ref={el => {
+                        input = el
                         queueMicrotask(() => {
                             el.focus()
                         })
-                    }
+                    }}
                     onKeyDown={e => {
                         if (isDismissKey(e)) {
                             e.preventDefault()
@@ -114,7 +128,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         else done = true
                     }}
                     onBlur={e => {
-                        if (done) return
+                        if (done || picking) return
                         // Tab/click moving focus to the target picker below is not "leaving the
                         // composer" — it must not cancel a not-yet-typed draft nor commit an
                         // empty one out from under the user reaching for the picker.
@@ -131,7 +145,13 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     }}
                 />
             </div>
-            <div class={styles.destination} data-testid="task-cell-composer-destination">
+            <div
+                class={styles.destination}
+                data-testid="task-cell-composer-destination"
+                onMouseDown={() => {
+                    if (targets().length > 1) picking = true
+                }}
+            >
                 <Show
                     when={targets().length > 1}
                     fallback={
@@ -152,8 +172,15 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     </Text>
                     <Select
                         value={props.target ?? ''}
-                        options={targets().map(t => ({ value: t.id, label: t.label }))}
-                        onChange={id => props.onTargetChange?.(id)}
+                        options={targets().map(t => ({
+                            value: t.id,
+                            label: t.label,
+                        }))}
+                        onChange={id => {
+                            props.onTargetChange?.(id)
+                            backToInput()
+                        }}
+                        onDismiss={backToInput}
                         class={styles.targetSelect}
                         triggerClass={styles.targetTrigger}
                         caretClass={styles.targetCaret}

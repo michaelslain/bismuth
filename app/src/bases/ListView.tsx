@@ -51,6 +51,7 @@ export function ListView(props: {
             config: props.config,
             view: props.result.view,
             onChanged: props.onChange,
+            columns: props.result.columns,
         })
     }
     /** Owned rows have nowhere else to open (no note) — the row itself opens the editor;

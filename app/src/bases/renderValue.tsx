@@ -101,7 +101,7 @@ export function plainLabel(id: string, row: Row): string {
     return String(v)
 }
 
-/** First-column title cell: a typed accent title glyph (✎ — no SVG icon) + label. */
+/** First-column title cell: the label, linked to its note when it has one. */
 export function renderTitle(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
     // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
@@ -120,13 +120,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const linkable = isLink(v) || !Number.isInteger(row.index)
     return (
         <span class={styles.cellTitle}>
-            <span class={styles.titleGlyph} aria-hidden="true">
-                ✎
-            </span>
-            <Show
-                when={linkable}
-                fallback={<>{label || row.file.name}</>}
-            >
+            <Show when={linkable} fallback={<>{label || row.file.name}</>}>
                 <a
                     href="#"
                     onClick={e => {
@@ -155,8 +149,7 @@ export function renderCell(id: string, row: Row, dense?: boolean): JSX.Element {
 
 export function renderValue(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
-    if (v === null || v === undefined)
-        return <EmptyValue />
+    if (v === null || v === undefined) return <EmptyValue />
 
     // A Link value (from file.asLink(...), the link() function, or a link-typed column)
     // renders as a clickable note link, not "[object Object]".

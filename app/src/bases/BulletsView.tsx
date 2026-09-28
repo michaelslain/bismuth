@@ -50,6 +50,7 @@ export function BulletsView(props: {
             config: props.config,
             view: props.result.view,
             onChanged: props.onChange,
+            columns: props.result.columns,
         })
     }
     return (
@@ -72,15 +73,11 @@ export function BulletsView(props: {
                                             when={isTasks()}
                                             fallback={
                                                 <div
-                                                    class={
-                                                        styles.bulletRowWrap
-                                                    }
+                                                    class={styles.bulletRowWrap}
                                                 >
                                                     <Show
                                                         when={
-                                                            rowEditable(
-                                                                row,
-                                                            ) &&
+                                                            rowEditable(row) &&
                                                             canWriteStoredRow(
                                                                 row,
                                                             )
@@ -95,9 +92,7 @@ export function BulletsView(props: {
                                                                 styles.bulletBtn
                                                             }
                                                             onClick={() =>
-                                                                openEditor(
-                                                                    row,
-                                                                )
+                                                                openEditor(row)
                                                             }
                                                         >
                                                             {renderTitle(
@@ -108,9 +103,7 @@ export function BulletsView(props: {
                                                     </Show>
                                                     <Show
                                                         when={
-                                                            rowEditable(
-                                                                row,
-                                                            ) &&
+                                                            rowEditable(row) &&
                                                             !canWriteStoredRow(
                                                                 row,
                                                             )
@@ -124,9 +117,7 @@ export function BulletsView(props: {
                                                             }
                                                             onClick={e => {
                                                                 e.stopPropagation()
-                                                                openEditor(
-                                                                    row,
-                                                                )
+                                                                openEditor(row)
                                                             }}
                                                         />
                                                     </Show>

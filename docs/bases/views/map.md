@@ -57,7 +57,7 @@ The view chooses an initial center and zoom according to the following priority:
 3. **Exactly one marker** — centers on that marker at zoom 10.
 4. **Multiple markers** — computes the bounding box of all marker coordinates, picks the highest zoom from 14 down to 1 at which the bounding box fits within an 800×600 reference viewport at 80% padding. Falls back to `graph.mapDefaultZoom` if nothing fits (i.e., all zoom levels have too-large a bbox).
 
-The view re-runs this framing logic reactively whenever `result` changes (e.g., when switching views), resetting center and zoom to the new initial values.
+The view re-runs this framing only when the VIEW changes (switching views, or its configured `center`/`zoom`) and once when the first markers arrive — never merely because a marker moved. Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down. The **locate** button still re-fits on demand.
 
 ## Interaction
 

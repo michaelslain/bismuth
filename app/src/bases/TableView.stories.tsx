@@ -110,9 +110,7 @@ export const StoredRows: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        const titleCell = canvasElement.querySelector(
-            'tbody tr:first-child td',
-        )
+        const titleCell = canvasElement.querySelector('tbody tr:first-child td')
         expect(titleCell).toBeTruthy()
         expect(titleCell!.querySelector('a')).toBeNull()
         expect((titleCell!.textContent ?? '').trim()).toContain(
@@ -121,8 +119,10 @@ export const StoredRows: Story = {
     },
 }
 
-/** With `basePath` set (openRowEditor.tsx is wired), an owned row's title becomes a real
- *  button — clicking it opens the row editor rather than doing nothing. */
+/** With `basePath` set, every cell of an owned row edits IN PLACE: a click turns the cell into
+ *  a focused input (the write itself goes through openRowEditor's commitMeta — Storybook's fake
+ *  transport only acks it, so this proves the editing surface; the round trip is proven against
+ *  the real backend). */
 export const EditableOwnedRow: Story = {
     render: () => (
         <TableView
@@ -132,17 +132,25 @@ export const EditableOwnedRow: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        const titleCell = canvasElement.querySelector(
+        const titleCell = canvasElement.querySelector<HTMLElement>(
             'tbody tr:first-child td',
+        )!
+        expect((titleCell.textContent ?? '').trim()).toContain(
+            'ship the parser',
         )
-        const btn = titleCell!.querySelector('button')
-        expect(btn).toBeTruthy()
-        expect((btn!.textContent ?? '').trim()).toContain('ship the parser')
+        titleCell.querySelector<HTMLElement>('button')!.click()
+        await new Promise(r => setTimeout(r, 30))
+        // `description` is a markdown column, so its editor is a textarea, not an input.
+        const field =
+            titleCell.querySelector<HTMLInputElement>('input, textarea')
+        expect(field).toBeTruthy()
+        expect(document.activeElement).toBe(field)
+        expect(field!.value).toBe('ship the parser')
     },
 }
 
-/** With `basePath` set, a note row keeps opening its note on a title click and gains an
- *  edit-properties icon button (hover/focus reveal — present in the DOM either way). */
+/** A note row keeps its title as a link to the note, and its other cells edit in place — no
+ *  separate edit button. */
 export const EditableNoteRow: Story = {
     render: () => (
         <TableView
@@ -152,13 +160,23 @@ export const EditableNoteRow: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        const editBtn = canvasElement.querySelector(
-            'button[aria-label="Edit properties"]',
-        )
-        expect(editBtn).toBeTruthy()
+        expect(
+            canvasElement.querySelector('button[aria-label="Edit properties"]'),
+        ).toBeNull()
         const titleLink = canvasElement.querySelector(
             'tbody tr:first-child td a',
         )
         expect(titleLink).toBeTruthy()
+        const second = canvasElement.querySelectorAll<HTMLElement>(
+            'tbody tr:first-child td',
+        )[1]
+        const btn = second.querySelector<HTMLElement>(
+            'button[title="Click to edit"]',
+        )
+        if (btn) {
+            btn.click()
+            await new Promise(r => setTimeout(r, 30))
+            expect(second.querySelector('input, textarea, button')).toBeTruthy()
+        }
     },
 }

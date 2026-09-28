@@ -76,7 +76,16 @@ async function commitRename(
     }
 }
 
-async function commitMeta(
+/** Commit a single property's value for `row` — the ONE write helper shared by every row
+ *  view's inline/modal editors (TableView's per-cell editor, ListView/BulletsView/CardsView's
+ *  openRowEditor modal, KanbanCard's meta chips). Owned rows write by index (the whole stored
+ *  note, minus derived keys); note rows write/clear the frontmatter key directly.
+ *
+ *  Skips the write entirely when the normalized next value already matches what is stored —
+ *  same no-op guard KanbanCard's own `commitMeta` applies — so an Escape that reverts a draft
+ *  back to its original value (PropertyValueEditor's dismiss path still blurs, which still
+ *  commits) does not round-trip an identical write to the server. */
+export async function commitMeta(
     row: Row,
     id: string,
     value: unknown,
@@ -84,17 +93,20 @@ async function commitMeta(
 ): Promise<void> {
     const key = writableKey(id)
     if (key === null) return
+    const current = (row.note as Record<string, unknown>)[key] ?? null
+    const next =
+        value === null || value === undefined || value === '' ? null : value
+    if (JSON.stringify(next) === JSON.stringify(current)) return // unchanged — no write
     try {
         if (canWriteStoredRow(row)) {
             const note = { ...storedNote(row) }
-            if (value === null || value === undefined || value === '')
-                delete note[key]
-            else note[key] = value
+            if (next === null) delete note[key]
+            else note[key] = next
             await api.rowUpdate(row.file.path, row.index!, note)
-        } else if (value === null || value === undefined || value === '') {
+        } else if (next === null) {
             await api.deleteProperty(row.file.path, key)
         } else {
-            await api.setProperty(row.file.path, key, value)
+            await api.setProperty(row.file.path, key, next)
         }
         onChanged?.()
     } catch (e) {
@@ -105,7 +117,10 @@ async function commitMeta(
 /** Delete this row — a stored row by index (undo re-creates it, same as KanbanView's
  *  restoreStoredCard), a note row via trash + undo (mirrors FileTree.doDelete /
  *  KanbanView.deleteCard, including flushing any pending editor/sidecar write first). */
-async function commitDelete(row: Row, onChanged?: () => void): Promise<void> {
+export async function commitDelete(
+    row: Row,
+    onChanged?: () => void,
+): Promise<void> {
     if (canWriteStoredRow(row)) {
         const path = row.file.path
         const index = row.index!
@@ -168,12 +183,20 @@ export function openRowEditor(opts: {
     view: ViewConfig
     onChanged?: () => void
     focusTarget?: string
+    /** The columns THIS view actually shows (`ViewResult.columns`) — when given, these are
+     *  what the modal lists instead of re-deriving `fallbackOrder`, so the editor never shows
+     *  fewer (or different) properties than the row view it was opened from. Falls back to
+     *  `fallbackOrder` when omitted, matching the pre-existing behaviour. */
+    columns?: string[]
 }): void {
-    const { row, config, view, onChanged, focusTarget } = opts
+    const { row, config, view, onChanged, focusTarget, columns } = opts
     if (isStoredPlaceholder(row)) return
     const owned = canWriteStoredRow(row)
     const titleCol = owned ? storedTitleColumn(view.order ?? []) : 'file.name'
-    const metaCols = metaColumns(fallbackOrder(config, view), titleCol)
+    const metaCols = metaColumns(
+        columns && columns.length ? columns : fallbackOrder(config, view),
+        titleCol,
+    )
 
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -195,6 +218,8 @@ export function openRowEditor(opts: {
                 // fallback KanbanCard's `siblingValues` feeds.
                 siblingValues: () => [],
                 hasFileIdentity: true,
+                heading: 'edit row',
+                emptyHint: 'this row has no editable properties.',
                 onRename: t => void commitRename(row, view, t, onChanged),
                 onSetMeta: (id, v) => void commitMeta(row, id, v, onChanged),
                 onDelete: () => {
