@@ -396,11 +396,13 @@ the accent. An outline appears only when it means something.
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
   is `normal`.
-- **Focus:** a 2px accent outline (`--focus-ring`) around the glyphs, on `:focus-visible` only.
+- **Focus:** no outline or ring on any button or clickable card/chip, on any focus — mouse or
+  keyboard. Decided 2026-09-27: keyboard users lose the cue; focus is not drawn anywhere in this
+  system.
 - **Icon button:** a separate register, no box — `[▣]`, the pixel icon set between generated
   `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
   accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
-  `--accent` on hover/`:focus-visible`; `selected` paints accent brackets and icon together. The
+  `--accent` on hover; `selected` paints accent brackets and icon together. The
   brackets are the edge, as on a text button: no collar and no width floor. **One bracket size:**
   the brackets draw at the icon size (`--icon`, the `appearance.iconSize` setting), standalone or
   in a toolbar, so `[`, glyph and `]` share one scale. 24px tall outside a
