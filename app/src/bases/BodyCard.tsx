@@ -1,5 +1,5 @@
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { renderValue } from './renderValue'
+import { renderValue } from './valueRenderers'
 import { titleOf } from './kanbanMeta'
 import { CardEditor } from './CardEditor'
 import CardTitle from './CardTitle'

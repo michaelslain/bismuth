@@ -1,5 +1,5 @@
 import { type Component } from 'solid-js'
-import { chipKeyAction } from '../calendar/taskChipKeys'
+import { chipKeyAction } from '../ui/chipKeys'
 import Text from '../ui/Text'
 import styles from './TaskCheck.module.css'
 
@@ -60,7 +60,7 @@ const MARK: Record<TaskCheckStatus, string> = {
  * this: it opens from inside <KanbanCard>, which tasks mode does not render.)
  *
  * KEYBOARD. `role="checkbox"` promises a keyboard path, so the mark is in the tab order and the
- * key mapping is `calendar/taskChipKeys.ts`'s pure `chipKeyAction` — the calendar chip's own
+ * key mapping is `ui/chipKeys.ts`'s pure `chipKeyAction` — the calendar chip's own
  * vocabulary: Space toggles, Shift+F10 / ContextMenu opens the status menu, Ctrl/Meta combos
  * pass through. The chip's `open` (Enter) has nothing to open here, so Enter toggles too, as a
  * native checkbox-in-a-form user would expect; the chip's Alt+arrow reschedule is ignored.

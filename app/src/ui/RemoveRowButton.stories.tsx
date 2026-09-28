@@ -20,10 +20,10 @@ export const RemovesARow: Story = {
     render: () => {
         const [rows, setRows] = createSignal(['alpha', 'beta', 'gamma'])
         return (
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: 'var(--sp-3)' }}>
                 <For each={rows()}>
                     {row => (
-                        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
+                        <div style={{ display: 'flex', gap: 'var(--sp-4)', 'align-items': 'center' }}>
                             <Text as="span">{row}</Text>
                             <RemoveRowButton
                                 label={`remove ${row}`}

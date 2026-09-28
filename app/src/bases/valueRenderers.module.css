@@ -1,0 +1,12 @@
+/* Dates render mono at the chrome type size (not the inherited prose size). */
+.dateCell { font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+/* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
+.boolCell { font-family: var(--ui-font-stack); color: var(--fg); }
+/* A comma-separated row of ui/Tag — `#alpha, #beta`, the tags field's own spelling. The tags own
+   their teal; the commas are plain text in the same UI face. */
+.tagRow { font-family: var(--ui-font-stack); color: var(--fg); }
+/* Kanban meta chip's compact tag row (KanbanCard's `.kbMeta` context): tighter gap, chrome
+   type size. A `dense` flag on renderTags/renderCell rather than KanbanCard reaching into
+   this module's `.tagRow` — the descendant selector `.kbMeta .tagRow` that used to do this
+   depended on a class KanbanCard doesn't own, which breaks under CSS-module hashing. */
+.tagRowDense { font-size: var(--fs-ui); }

@@ -1,55 +1,15 @@
-import { For, Show, type JSX } from 'solid-js'
+import { Show, type JSX } from 'solid-js'
 import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row } from '../../../core/src/bases/types'
 import { isLink, type Link } from '../../../core/src/bases/values'
 import type { BaseConfig } from '../../../core/src/bases/types'
-import { renderInline, hasInlineMarkup } from './markdown'
 import { isTagColumn } from './columnKinds'
 import { linkLabel } from './kanbanMeta'
 import PropertyDisplay from './PropertyDisplay'
-import Stars from '../ui/Stars'
-import { StatusText } from '../ui/StatusDot'
-import Tag from '../ui/Tag'
+import { renderTags } from './valueRenderers'
 import Text from '../ui/Text'
 import styles from './renderValue.module.css'
-import EmptyValue from '../ui/EmptyValue'
 import NoteLink from '../ui/NoteLink'
-
-/** Colored-dot + word status text (no pill). Delegates to the shared ui component. */
-export function renderStatus(s: string): JSX.Element {
-    return <StatusText status={s} />
-}
-
-/** A tag list as `#alpha, #beta` — each a ui/Tag, comma-separated — which is exactly how the tags
- *  field (ui/TagsField) reads while you edit it, so a cell looks the same at rest and in edit.
- *  `dense` is KanbanCard's compact meta-row sizing (chrome type size) — a flag rather than
- *  KanbanCard reaching into this module's `.tagRow` class, which would break under CSS-module
- *  hashing (each module's classes are local to it). */
-export function renderTags(v: unknown, dense?: boolean): JSX.Element {
-    const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
-    if (tags.length === 0) return <EmptyValue />
-    return (
-        <Text
-            as="span"
-            inherit
-            class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}
-        >
-            <For each={tags}>
-                {(t, i) => (
-                    <>
-                        <Show when={i() > 0}>{', '}</Show>
-                        <Tag name={t} />
-                    </>
-                )}
-            </For>
-        </Text>
-    )
-}
-
-/** Five lucide stars: filled gold up to `n`, faint outline for the rest. */
-export function renderStars(n: number): JSX.Element {
-    return <Stars value={n} />
-}
 
 /** First-column title cell: the label, linked to its note when it has one. */
 export function renderTitle(id: string, row: Row): JSX.Element {
@@ -98,68 +58,4 @@ export function renderCell(
     inline?: boolean,
 ): JSX.Element {
     return <PropertyDisplay {...{ id, row, config, dense, inline }} />
-}
-
-/** The undeclared-value renderer: status dots, tags, stars, links, dates and plain values. */
-export function renderValue(id: string, row: Row): JSX.Element {
-    const v = resolveProperty(id, row)
-    if (v === null || v === undefined) return <EmptyValue />
-
-    // A Link value (from file.asLink(...), the link() function, or a link-typed column)
-    // renders as a clickable note link, not "[object Object]".
-    if (isLink(v)) {
-        const link = v as Link
-        const label = linkLabel(link)
-        return <NoteLink path={link.path}>{label}</NoteLink>
-    }
-
-    if (id === 'file.name') {
-        return <NoteLink path={row.file.path}>{String(v)}</NoteLink>
-    }
-
-    if (Array.isArray(v)) {
-        return (
-            <Text as="span" inherit>
-                {v.map(x => String(x)).join(', ')}
-            </Text>
-        )
-    }
-
-    // Typed glyph, not an SVG check — "x" when true, blank when false (per the ASCII
-    // system's renderValue rule: booleans render as text, never an icon asset).
-    if (typeof v === 'boolean') {
-        return (
-            <Text as="span" inherit class={styles.boolCell}>
-                {v ? 'x' : ''}
-            </Text>
-        )
-    }
-
-    if (v instanceof Date) {
-        return (
-            <Text as="span" inherit class={styles.dateCell}>
-                {v.toISOString().slice(0, 10)}
-            </Text>
-        )
-    }
-
-    // Plain string/number cell. If it carries inline markup (emphasis, code, a wikilink, a
-    // #tag, or `$math$`), render it through the shared inline markdown renderer so a cell
-    // shows the same formatting + math as the rest of the app; otherwise keep it literal
-    // (cheap, and avoids surprises on plain values).
-    const s = String(v)
-    if (hasInlineMarkup(s))
-        return (
-            <Text
-                as="span"
-                inherit
-                class="bismuth-cell-md"
-                innerHTML={renderInline(s)}
-            />
-        )
-    return (
-        <Text as="span" inherit>
-            {s}
-        </Text>
-    )
 }

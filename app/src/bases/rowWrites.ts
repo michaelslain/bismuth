@@ -24,6 +24,7 @@ import { parentOf, joinPath } from '../fileTreeOps'
 import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from '../editorRegistry'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
+import { pushUndoToast } from '../undoToast'
 
 export type RowWriteCtx = {
     config: BaseConfig
@@ -164,13 +165,7 @@ export async function commitDelete(
         message = `Deleted "${name}"`
     }
     onChanged?.()
-    pushToast(message, {
-        label: 'Undo',
-        onClick: () =>
-            void undo().catch((e: unknown) =>
-                pushToast(`Restore failed: ${(e as Error).message}`),
-            ),
-    })
+    pushUndoToast(message, undo)
     return undo
 }
 
@@ -218,6 +213,7 @@ export async function createRow(opts: CreateRowOptions): Promise<Row> {
     const front = { ...declaredDefaults(opts.config), ...(opts.note ?? {}) }
     if (opts.ownsRows) {
         await api.rowCreate(opts.basePath, front)
+        opts.onChanged?.()
         return {
             file: { ...placeholderFile('', opts.basePath) },
             note: front,
@@ -230,5 +226,6 @@ export async function createRow(opts: CreateRowOptions): Promise<Row> {
         name,
         `---\n${yamlStringify(front)}---\n`,
     )
+    opts.onChanged?.()
     return { file: placeholderFile(fileBasename(path), path), note: front, formula: {} }
 }

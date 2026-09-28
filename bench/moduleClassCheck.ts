@@ -155,17 +155,6 @@ const SKIP_MODULES = new Set<string>([
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
     'chat/ChatSessionProbe.module.css',
-    // bases-ds-fix task 3: TaskText.tsx has no app importer YET (only its own .stories.tsx) —
-    // task 13 swaps it into TaskRow, and task 21 into TaskChip. REMOVE this entry once TaskRow
-    // imports TaskText, so the check guards it again.
-    'bases/TaskText.module.css',
-    // bases-ds-fix Task 1: GroupHeader / ValueChip / SuggestInput are new ui primitives whose call
-    // sites land in wave 2 (List/Table/Cards/Bullets group headers, multiselect display, the task
-    // editor's datalist replacement). Until then only their own .stories.tsx import them, so a
-    // `vite build` of the app cannot contain them. REMOVE these three entries once wave 2 has merged.
-    'ui/GroupHeader.module.css',
-    'ui/ValueChip.module.css',
-    'ui/SuggestInput.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

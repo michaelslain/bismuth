@@ -67,7 +67,7 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'Enter routing (planSwitcherEnter) commits the highlighted row or runs ask-ai — part of the switcher list\'s own createMenuNav-style contract, not an independently rebindable command',
     },
     {
-        file: 'calendar/taskChipKeys.ts',
+        file: 'ui/chipKeys.ts',
         reason: "a task chip's own interaction grammar (ContextMenu/Shift+F10 opens the OS-standard context-menu gesture, Enter opens, Space toggles, Alt+Arrow reschedules by day) — a per-row micro-widget contract, the same shape as the cell grid's",
     },
     {

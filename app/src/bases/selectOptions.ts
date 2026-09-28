@@ -24,7 +24,8 @@ export const VIEW_KIND_OPTIONS: SelectOption[] = VIEW_TYPES.map(v => ({
 }))
 
 /** Destination notes as options: value is the vault path (a caller storing a `[[link]]`
- *  converts it), label is the explicit label else the basename, detail is the folder. */
+ *  converts it), label is the explicit label else the basename, detail is the folder.
+ *  `color` on a note is reserved and ignored — no option carries a swatch yet. */
 export function destinationOptions(
     notes: { path: string; label?: string; color?: string }[],
 ): SelectOption[] {

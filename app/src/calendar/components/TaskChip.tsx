@@ -5,7 +5,7 @@
 // `late === 0` — it is NOT carried — and reads as ordinary text, same as any chip not yet due.
 //
 // Keyboard access: the root is a focusable `role="button"` whose keydown is entirely decided by
-// `taskChipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
+// `ui/chipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
 // that module for the key map. A reschedule or toggle rewrites the row, which re-renders this
 // chip as a NEW element (often in another cell), so `state.ts`'s `focusTaskKey`/`requestTaskFocus`
 // carry focus across that remount instead of it falling back to <body>.
@@ -15,7 +15,8 @@ import type { PlacedTask } from '../taskPlacement'
 import { isWritableTask, taskRowRef } from '../taskPlacement'
 import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
-import { chipKeyAction, taskKey } from '../taskChipKeys'
+import { taskKey } from '../taskChipKeys'
+import { chipKeyAction } from '../../ui/chipKeys'
 import { focusTaskKey, requestTaskFocus } from '../state'
 import Text from '../../ui/Text'
 import TaskCheck from '../../bases/TaskCheck'

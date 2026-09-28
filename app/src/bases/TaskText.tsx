@@ -75,8 +75,7 @@ const Segment: Component<{ seg: TaskInlineSegment }> = props => (
         </Match>
         <Match when={props.seg.kind === 'italic' && props.seg}>
             {s => (
-                // Task 1 adds `Text italic`; swap this local class for it then.
-                <Text as="span" inherit class={styles.italic}>
+                <Text as="span" inherit italic>
                     {s().text}
                 </Text>
             )}

@@ -639,7 +639,7 @@ export const MarkerInteractiveForStoredRow: Story = {
     },
 }
 
-/** Keyboard access — the whole reason `taskChipKeys.ts` exists: without a mouse, a chip
+/** Keyboard access — the whole reason `ui/chipKeys.ts` exists: without a mouse, a chip
  *  must still open (Enter), toggle (Space), and reschedule (Alt+arrows), and a read-only
  *  (self-owned) row must keep opening while refusing the write actions, exactly like its click
  *  handlers already do. Two chips side by side — one writable/carried, one read-only — so the

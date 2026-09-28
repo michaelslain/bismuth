@@ -1,12 +1,8 @@
 /* PropertyDisplay.tsx is the sole reader of these classes. */
 
-/* A declared multiselect: a row of bracket chips, the ChipToggle-selected look ([label] in the
-   accent) without a button underneath, since a read-only value is not a control. */
+/* A declared multiselect: a row of ui/ValueChip brackets, laid out inline. Read-only, so no button
+   underneath. */
 .chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.chip { color: var(--accent); font-weight: 600; white-space: nowrap; }
-.chip::before { content: '['; }
-.chip::after { content: ']'; }
-
 /* A declared markdown value as a block (List, Cards, Kanban). Ported from KanbanCard's
    .kbMetaMarkdown so the block reads the same everywhere. */
 .markdown { display: block; width: 100%; line-height: 1.45; }

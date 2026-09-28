@@ -1,6 +1,7 @@
 // Visual spec for <ValueChip> — the non-interactive `[value]` chip that displays a multiselect
 // value; identical look to a selected ChipToggle.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import ChipToggle from './ChipToggle'
 import ValueChip from './ValueChip'
 import { Row } from './_storyKit'
@@ -15,7 +16,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Plain: Story = {}
+export const Plain: Story = {
+    // Catches: the bracket glyphs missing (the chip reading as bare text).
+    play: async ({ canvasElement }) => {
+        const chip = within(canvasElement).getByText('research')
+        expect(getComputedStyle(chip, '::before').content.startsWith('"["')).toBe(true)
+        expect(getComputedStyle(chip, '::after').content.startsWith('"]"')).toBe(true)
+    },
+}
 
 export const Coloured: Story = { args: { color: 'var(--rose)' } }
 
