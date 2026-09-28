@@ -1,7 +1,7 @@
 // One editable table cell: shows its value, and a click swaps in the SAME type-aware editor a
 // kanban card's property chip uses (PropertyValueEditor), right in the cell — the way a
 // spreadsheet edits. Enter or blur commits, Escape cancels. The write itself is the caller's
-// (TableView hands it openRowEditor's `commitMeta`, the one row write helper), so this component
+// (TableView hands it rowWrites' `commitMeta`, the one row write helper), so this component
 // owns nothing but "is this cell open".
 import {
     Show,

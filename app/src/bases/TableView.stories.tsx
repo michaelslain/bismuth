@@ -83,6 +83,14 @@ export const Grouped: Story = {
             />
         )
     },
+    play: async ({ canvasElement }) => {
+        // Each group is a band holding `● LABEL // N`, spanning every column.
+        const bands = [
+            ...canvasElement.querySelectorAll<HTMLElement>('tbody td[colspan]'),
+        ]
+        expect(bands.length).toBeGreaterThan(1)
+        for (const b of bands) expect(b.textContent).toMatch(/\S+\s*\/\/\s*\d+/)
+    },
 }
 
 // Two rows STORED in a base's own body — `syntheticBaseFile` + an integer `index`, the shape
@@ -131,7 +139,7 @@ export const StoredRows: Story = {
 }
 
 /** With `basePath` set, every cell of an owned row edits IN PLACE: a click turns the cell into
- *  a focused input (the write itself goes through openRowEditor's commitMeta — Storybook's fake
+ *  a focused input (the write itself goes through rowWrites' commitMeta — Storybook's fake
  *  transport only acks it, so this proves the editing surface; the round trip is proven against
  *  the real backend). */
 export const EditableOwnedRow: Story = {
@@ -150,13 +158,11 @@ export const EditableOwnedRow: Story = {
             'ship the parser',
         )
         titleCell.querySelector<HTMLElement>('button')!.click()
-        await new Promise(r => setTimeout(r, 30))
         // `description` is a markdown column, so its editor is a textarea, not an input.
-        const field =
+        const field = () =>
             titleCell.querySelector<HTMLInputElement>('input, textarea')
-        expect(field).toBeTruthy()
-        expect(document.activeElement).toBe(field)
-        expect(field!.value).toBe('ship the parser')
+        await waitFor(() => expect(document.activeElement).toBe(field()))
+        expect(field()!.value).toBe('ship the parser')
     },
 }
 
@@ -184,11 +190,13 @@ export const EditableNoteRow: Story = {
         const btn = second.querySelector<HTMLElement>(
             'button[title="Click to edit"]',
         )
-        if (btn) {
-            btn.click()
-            await new Promise(r => setTimeout(r, 30))
-            expect(second.querySelector('input, textarea, button')).toBeTruthy()
-        }
+        expect(btn).toBeTruthy()
+        btn!.click()
+        await waitFor(() =>
+            expect(document.activeElement).toBe(
+                second.querySelector('input, textarea, button'),
+            ),
+        )
     },
 }
 
@@ -288,11 +296,11 @@ export const EditableBooleanAndSelect: Story = {
         firstRowCells()
             [statusIdx]!.querySelector<HTMLElement>('button')!
             .click()
-        await new Promise(r => setTimeout(r, 30))
-        const editorTrigger =
-            firstRowCells()[statusIdx]!.querySelector<HTMLElement>('button')
-        expect(editorTrigger).toBeTruthy()
-        expect(document.activeElement).toBe(editorTrigger)
+        await waitFor(() =>
+            expect(document.activeElement).toBe(
+                firstRowCells()[statusIdx]!.querySelector<HTMLElement>('button'),
+            ),
+        )
         expect(widths()).toEqual(before)
 
         // The boolean cell: one click flips it, immediately, with no `input` ever appearing —
@@ -505,11 +513,195 @@ export const TaskLineRowContextMenu: Story = {
         const titleCell = canvasElement.querySelector<HTMLElement>(
             'tbody tr:first-child td',
         )!
-        titleCell.dispatchEvent(
+        // `dispatchEvent` returns false when a handler called preventDefault — i.e. when the
+        // row claimed the right-click and opened the editor. A task line must NOT claim it, and
+        // that is decided synchronously, so there is nothing to wait for.
+        const notClaimed = titleCell.dispatchEvent(
             new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
         )
-        await new Promise(r => setTimeout(r, 30))
-        expect(canvasElement.querySelector('[role="dialog"]')).toBeNull()
+        expect(notClaimed).toBe(true)
         expect(document.querySelector('[role="dialog"]')).toBeNull()
+    },
+}
+
+/** Right-click on an owned row opens the row editor (the user's decision — it replaced the
+ *  per-row edit button). The editor mounts lazily, so the play waits for the dialog itself. */
+export const RightClickOpensRowEditor: Story = {
+    render: () => (
+        <TableView
+            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            config={STORED_CONFIG}
+            basePath="boards/stored-table.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const cell = canvasElement.querySelector<HTMLElement>(
+            'tbody tr:first-child td',
+        )!
+        const claimed = !cell.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        expect(claimed).toBe(true)
+        await waitFor(() =>
+            expect(document.querySelector('[role="dialog"]')).toBeTruthy(),
+        )
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() =>
+            expect(document.querySelector('[role="dialog"]')).toBeNull(),
+        )
+    },
+}
+
+/** A zero-row base is never a blank pane: the header stays and the `no rows` empty state sits
+ *  under it. */
+export const Empty: Story = {
+    render: () => (
+        <TableView
+            result={runView(STORED_CONFIG, [], 0)}
+            config={STORED_CONFIG}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const empty = canvasElement.querySelector(
+            '[data-testid="ui-empty-block"]',
+        )!
+        expect(empty.textContent).toContain('no rows')
+        expect(empty.textContent).toContain('nothing in this view matches its filters')
+        expect(canvasElement.querySelectorAll('tbody tr').length).toBe(0)
+    },
+}
+
+// A tasks-mode table over REAL state: the toggle and status handlers write into a signal and the
+// result is re-resolved from it, the way BaseView re-resolves after a task write.
+const TASKS_CONFIG: BaseConfig = {
+    declaredProperties: ['description', 'status', 'due'],
+    views: [{ type: 'table', name: 'Table' }],
+}
+const taskRow = (line: number, description: string, status: string, due: string): Row => ({
+    file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+    note: { description, line, status, due, raw: description },
+    formula: {},
+})
+
+/** Tasks mode: the `status` column is a live checkbox (click toggles, right-click sets a
+ *  status) and a past-due `due` cell paints in the danger colour. */
+export const TasksMode: Story = {
+    render: () => {
+        const [rows, setRows] = createSignal<Row[]>([
+            taskRow(1, 'ship the parser', 'todo', '2020-01-01'),
+            taskRow(2, 'fix the flake', 'todo', '2999-01-01'),
+        ])
+        const setStatus = (row: Row, status: string) =>
+            setRows(rs =>
+                rs.map(r =>
+                    r.note.line === row.note.line
+                        ? { ...r, note: { ...r.note, status } }
+                        : r,
+                ),
+            )
+        return (
+            <TableView
+                mode="tasks"
+                result={runView(TASKS_CONFIG, rows(), 0)}
+                config={TASKS_CONFIG}
+                onToggle={row =>
+                    setStatus(row, row.note.status === 'done' ? 'todo' : 'done')
+                }
+                onSetStatus={row => setStatus(row, 'in-progress')}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const boxes = () =>
+            [...canvasElement.querySelectorAll<HTMLElement>('[role="checkbox"]')]
+        expect(boxes().length).toBe(2)
+        // The overdue `due` (2020) is danger-coloured; the future one is not. Checked before the
+        // toggle below, because a done task is no longer overdue.
+        const dueIdx = [...canvasElement.querySelectorAll('thead th')].findIndex(
+            th => (th.textContent ?? '').trim().toLowerCase() === 'due',
+        )
+        const dueCells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                `tbody td:nth-child(${dueIdx + 1})`,
+            ),
+        ]
+        expect(getComputedStyle(dueCells[0]).color).not.toBe(
+            getComputedStyle(dueCells[1]).color,
+        )
+        expect(boxes()[0].getAttribute('aria-checked')).toBe('false')
+        await userEvent.click(boxes()[0])
+        await waitFor(() =>
+            expect(boxes()[0].getAttribute('aria-checked')).toBe('true'),
+        )
+        expect(boxes()[1].getAttribute('aria-checked')).toBe('false')
+        boxes()[1].dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await waitFor(() =>
+            expect(boxes()[1].getAttribute('aria-checked')).toBe('mixed'),
+        )
+    },
+}
+
+/** Column resize and reorder against REAL width and order state: dragging a header's right edge
+ *  widens that column (and reports the new widths), dragging a header body onto another moves it. */
+export const ResizeAndReorder: Story = {
+    render: () => {
+        const [order, setOrder] = createSignal<string[] | null>(null)
+        const [widths, setWidths] = createSignal<Record<string, number>>({})
+        const base = sampleViewResult()
+        return (
+            // Scrolls sideways rather than widening the page: a resize legitimately makes the
+            // table wider than its frame.
+            <div style={{ 'overflow-x': 'auto' }}>
+                <TableView
+                    result={{ ...base, columns: order() ?? base.columns }}
+                    config={sampleBaseConfig()}
+                    widths={widths()}
+                    onWidthsChange={setWidths}
+                    onReorder={setOrder}
+                />
+                <p data-testid="widths-log">{JSON.stringify(widths())}</p>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const ths = () =>
+            [...canvasElement.querySelectorAll<HTMLElement>('thead th')]
+        const label = (th: HTMLElement) => (th.textContent ?? '').trim()
+        const ptr = (type: string, x: number, target: EventTarget) =>
+            target.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId: 1,
+                    button: 0,
+                    clientX: x,
+                    clientY: 5,
+                }),
+            )
+        // Resize: press inside the second header's right-edge zone, drag 40px left (narrower, so the
+        // finished table still fits the frame).
+        const r1 = ths()[1].getBoundingClientRect()
+        const before = r1.width
+        ptr('pointerdown', r1.right - 3, ths()[1])
+        ptr('pointermove', r1.right - 43, window)
+        ptr('pointerup', r1.right - 43, window)
+        await waitFor(() =>
+            expect(ths()[1].getBoundingClientRect().width).toBeCloseTo(before - 40, -1),
+        )
+        expect(
+            canvasElement.querySelector('[data-testid="widths-log"]')!.textContent,
+        ).not.toBe('{}')
+
+        // Reorder: press the third header's body, release over the first.
+        const labels = ths().map(label)
+        const r0 = ths()[0].getBoundingClientRect()
+        const r2 = ths()[2].getBoundingClientRect()
+        ptr('pointerdown', (r2.left + r2.right) / 2, ths()[2])
+        ptr('pointermove', (r0.left + r0.right) / 2, window)
+        ptr('pointerup', (r0.left + r0.right) / 2, window)
+        await waitFor(() => expect(label(ths()[0])).toBe(labels[2]))
+        expect(ths().map(label).slice(1, 3)).toEqual([labels[0], labels[1]])
     },
 }
