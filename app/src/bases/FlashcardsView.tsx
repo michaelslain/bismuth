@@ -2,6 +2,7 @@ import {
     createSignal,
     createMemo,
     createEffect,
+    on,
     untrack,
     onMount,
     onCleanup,
@@ -56,6 +57,13 @@ import {
     type QueueItem,
     type CardDir,
 } from './flashcardsQueue'
+
+// The flip's `card-flip` animation is `none` under reduced motion (FlashcardsView.module.css), so
+// no `animationend` would ever clear `data-flipping` — the card must not set it at all there.
+const prefersReducedMotion = (): boolean =>
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
 export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir }
 
 /** Grade → keybinding id, matched via `matchesKeybinding` and shown on the key badge
@@ -267,12 +275,6 @@ export function FlashcardsView(props: {
 
     const [pos, setPos] = createSignal(restored.pos)
     const [revealed, setRevealed] = createSignal(false)
-    // True from the moment `revealed` toggles until the 0.5s CSS rotateY transition on
-    // `.flip-inner` finishes (its `transitionend`) — exposed as `data-flipping` so both faces can
-    // switch to `overflow: hidden` for exactly that window. A face with `overflow-y: auto` mid-flip
-    // shows a scrollbar mid-rotation even when its content doesn't overflow at rest, because the
-    // 3D transform briefly changes the face's rendered box.
-    const [flipping, setFlipping] = createSignal(false)
     // In-flight lock: true while a grade's async row-write / refetch is settling, so a
     // second press can't advance a second card (see canGrade / the double-skip fix).
     const [grading, setGrading] = createSignal(false)
@@ -573,10 +575,7 @@ export function FlashcardsView(props: {
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
-            if (!revealed()) {
-                setFlipping(true)
-                setRevealed(true)
-            }
+            if (!revealed()) setRevealed(true)
             return
         }
         if (revealed()) {
@@ -845,76 +844,95 @@ export function FlashcardsView(props: {
                 disposed and a fresh one is created (instant reset to front + entrance anim). Keying on
                 direction too means a bidirectional row's forward→reverse hand-off remounts cleanly
                 instead of flipping backward. When only the row data refreshes (same index+dir) the
-                value is unchanged, so it does NOT remount. The flip is a transform transition on the
+                value is unchanged, so it does NOT remount. The flip is a keyframe animation on the
                 persistent element, so it only animates when toggling `revealed` on the SAME card.
               */}
                             <For
                                 each={[`${current()!.index}:${current()!.dir}`]}
                             >
-                                {() => (
-                                    <div
-                                        class={`${styles['flip-card']} ${styles['card-appear']} ${revealed() ? styles['flipped'] : ''}`}
-                                        onClick={() => {
-                                            if (!revealed()) {
-                                                setFlipping(true)
-                                                setRevealed(true)
-                                            }
-                                        }}
-                                    >
+                                {() => {
+                                    // True for exactly the flip animation on THIS card (either
+                                    // direction), exposed as `data-flipping` on `.flip-inner`: it
+                                    // runs the `card-flip` keyframes and turns the faces'
+                                    // `overflow` off for that window. Owned by the keyed child, so
+                                    // a card graded mid-flip (Space then `1`) takes its flag with
+                                    // it and the next card always mounts at rest. Driven by an
+                                    // effect on `revealed` (deferred: a fresh card is not a flip)
+                                    // rather than by each reveal call site; skipped under reduced
+                                    // motion, where no animation runs and no `animationend` would
+                                    // ever clear it.
+                                    const [flipping, setFlipping] = createSignal(false)
+                                    createEffect(
+                                        on(
+                                            revealed,
+                                            () => {
+                                                if (!prefersReducedMotion())
+                                                    setFlipping(true)
+                                            },
+                                            { defer: true },
+                                        ),
+                                    )
+                                    onCleanup(() => setFlipping(false))
+                                    const settle = (e: AnimationEvent) => {
+                                        if (e.target === e.currentTarget)
+                                            setFlipping(false)
+                                    }
+                                    return (
                                         <div
-                                            class={styles['flip-inner']}
-                                            data-flipping={
-                                                flipping() || undefined
-                                            }
-                                            onTransitionEnd={e => {
-                                                if (
-                                                    e.propertyName ===
-                                                        'transform' &&
-                                                    e.target === e.currentTarget
-                                                )
-                                                    setFlipping(false)
+                                            class={`${styles['flip-card']} ${styles['card-appear']} ${revealed() ? styles['flipped'] : ''}`}
+                                            onClick={() => {
+                                                if (!revealed()) setRevealed(true)
                                             }}
                                         >
-                                            {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
-                                            shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
                                             <div
-                                                class={`${styles['flip-face']} flip-front`}
-                                                inert={revealed() || undefined}
+                                                class={styles['flip-inner']}
+                                                data-flipping={
+                                                    flipping() || undefined
+                                                }
+                                                onAnimationEnd={settle}
+                                                onAnimationCancel={settle}
                                             >
-                                                <Show when={props.basePath}>
-                                                    {cardActions(() => revealed())}
-                                                </Show>
+                                                {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
+                                                shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
                                                 <div
-                                                    class={styles['card-md']}
-                                                    innerHTML={promptHtml(
-                                                        current()!,
-                                                    )}
-                                                />
-                                            </div>
-                                            <div
-                                                class={`${styles['flip-face']} ${styles['flip-back']}`}
-                                                inert={!revealed() || undefined}
-                                            >
-                                                <Show when={props.basePath}>
-                                                    {cardActions(() => !revealed())}
-                                                </Show>
+                                                    class={`${styles['flip-face']} flip-front`}
+                                                    inert={revealed() || undefined}
+                                                >
+                                                    <Show when={props.basePath}>
+                                                        {cardActions(() => revealed())}
+                                                    </Show>
+                                                    <div
+                                                        class={styles['card-md']}
+                                                        innerHTML={promptHtml(
+                                                            current()!,
+                                                        )}
+                                                    />
+                                                </div>
                                                 <div
-                                                    class={styles['qcaption']}
-                                                    innerHTML={promptHtml(
-                                                        current()!,
-                                                    )}
-                                                />
-                                                <div class={styles['fcdiv']} />
-                                                <div
-                                                    class={`${styles['card-md']} ${styles['abody']}`}
-                                                    innerHTML={answerHtml(
-                                                        current()!,
-                                                    )}
-                                                />
+                                                    class={`${styles['flip-face']} ${styles['flip-back']}`}
+                                                    inert={!revealed() || undefined}
+                                                >
+                                                    <Show when={props.basePath}>
+                                                        {cardActions(() => !revealed())}
+                                                    </Show>
+                                                    <div
+                                                        class={styles['qcaption']}
+                                                        innerHTML={promptHtml(
+                                                            current()!,
+                                                        )}
+                                                    />
+                                                    <div class={styles['fcdiv']} />
+                                                    <div
+                                                        class={`${styles['card-md']} ${styles['abody']}`}
+                                                        innerHTML={answerHtml(
+                                                            current()!,
+                                                        )}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )
+                                }}
                             </For>
                         </div>
 
