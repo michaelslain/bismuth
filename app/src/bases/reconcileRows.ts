@@ -39,6 +39,26 @@ export function rowKey(row: Row): string {
     return row.file.path
 }
 
+/** One MOUNT key per row, for a view that keys its DOM by row rather than by object identity
+ *  (TableView). `rowKey` alone is not enough: every row stored in one base body shares that
+ *  file's path, and two tasks can share a description. So a stored row adds its `Row.index`
+ *  (its own position in the base body — stable across a sort, unlike its position in `rows`),
+ *  and any key still repeated gets an occurrence suffix, so the result never holds a duplicate.
+ *
+ *  Unlike reconcileRows' object reuse, an EDITED row keeps its mount key — which is the point:
+ *  the view re-renders that row's cells in place instead of unmounting them, so an editor open
+ *  in one of them (the tags picker, mid-toggle) survives the revalidation its own write caused. */
+export function mountKeys(rows: Row[]): string[] {
+    const seen = new Map<string, number>()
+    return rows.map(r => {
+        const base =
+            typeof r.index === 'number' ? `${rowKey(r)}@${r.index}` : rowKey(r)
+        const n = seen.get(base) ?? 0
+        seen.set(base, n + 1)
+        return n === 0 ? base : `${base}#${n}`
+    })
+}
+
 /** The file fields a view actually renders — name/path/folder/ext + tags/links. The volatile
  *  stat fields (mtime/ctime/size) are deliberately EXCLUDED: a body-only edit (e.g. ticking a
  *  task inside a card) bumps mtime but changes nothing a view displays except the note body,

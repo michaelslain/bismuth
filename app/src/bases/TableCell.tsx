@@ -23,14 +23,31 @@ export type TableCellProps = {
     config: BaseConfig
     /** Every other row's value for this column, for the editor's pick-from-history fallback. */
     siblingValues: () => unknown[]
-    /** Persist the (already type-coerced) value. */
-    onCommit: (value: unknown) => void
+    /** Persist the (already type-coerced) value. `opts.keepOpen` marks a multiselect/tags
+     *  toggle, whose write revalidates the base while the editor is still open — `row` then
+     *  arrives as a NEW object on this same instance (TableView keys rows by `mountKeys`, so the
+     *  cell is never remounted by its own write). */
+    onCommit: (value: unknown, opts?: { keepOpen: boolean }) => void
     /** The read-only rendering, shown whenever the cell is not being edited. */
     children: JSX.Element
     class?: string
 }
 
 const TableCell: Component<TableCellProps> = props => {
+    const value = () => resolveProperty(props.col, props.row)
+    // A boolean never becomes an `editing` state and never mounts PropertyValueEditor — a click
+    // commits the flip immediately. Checking the kind here (rather than gating on it inside the
+    // editor) is what keeps `editing()` boolean-free, so the Show below never has to special-case
+    // it once open.
+    const kindOf = () =>
+        propertyEditKind(
+            props.col,
+            value(),
+            propertyRegistry(),
+            props.siblingValues(),
+            propertyType(props.config, props.col),
+        )
+    const isBoolean = () => kindOf().kind === 'boolean'
     // What the open editor edits, frozen at the moment the cell opens. The row refetches while
     // an editor is open (the previous cell's save lands a moment later), and recomputing the
     // editor kind hands PropertyValueEditor a NEW kind object, which re-creates its input and
@@ -39,24 +56,23 @@ const TableCell: Component<TableCellProps> = props => {
         kind: PropertyEditKind
         value: unknown
     } | null>(null)
-    const value = () => resolveProperty(props.col, props.row)
     const commit = (v: unknown, opts?: { keepOpen?: boolean }) => {
         const t = propertyType(props.config, props.col)
-        props.onCommit((t ? coercePropertyValue(t, v) : v) ?? null)
-        if (!opts?.keepOpen) setEditing(null)
+        const coerced = (t ? coercePropertyValue(t, v) : v) ?? null
+        props.onCommit(coerced, opts?.keepOpen ? { keepOpen: true } : undefined)
+        // A keepOpen write (a multiselect/tags toggle) must still update the frozen `editing`
+        // state's value — otherwise the picker keeps showing the value from the MOMENT the cell
+        // opened, so every toggle after the first reads as a no-op in the UI even though it did
+        // write. Reusing the same `kind` object (only `value` changes) avoids the remount this
+        // file's own comment above warns about.
+        if (opts?.keepOpen) {
+            setEditing(prev => (prev ? { ...prev, value: coerced } : prev))
+        } else {
+            setEditing(null)
+        }
     }
-    // A boolean never becomes an `editing` state and never mounts PropertyValueEditor — a click
-    // commits the flip immediately. Checking the kind here (rather than gating on it inside the
-    // editor) is what keeps `editing()` boolean-free, so the Show below never has to special-case
-    // it once open.
     const open = () => {
-        const kind = propertyEditKind(
-            props.col,
-            value(),
-            propertyRegistry(),
-            props.siblingValues(),
-            propertyType(props.config, props.col),
-        )
+        const kind = kindOf()
         if (kind.kind === 'boolean') {
             commit(!(value() === true))
             return
@@ -69,7 +85,11 @@ const TableCell: Component<TableCellProps> = props => {
             when={editing()}
             fallback={
                 <PlainButton
-                    class={[styles.cell, props.class ?? '']
+                    class={[
+                        styles.cell,
+                        isBoolean() ? styles.cellBoolean : '',
+                        props.class ?? '',
+                    ]
                         .filter(Boolean)
                         .join(' ')}
                     title="Click to edit"

@@ -7,8 +7,9 @@
 .value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
 .placeholder { color: var(--faint); }
 .caret { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); }
-.trigger:focus-visible { color: var(--fg); font-weight: var(--fw-bold); }
-.trigger:focus-visible .caret { color: var(--fg); }
+/* No focus ring or focus styling of any kind, per the user's standing rule — a bold+full-fg
+   focus-visible state here used to read as a font-weight/color glitch ("bold white, loses the
+   trailing #"), not as a focus indicator. */
 
 /* The open panel: a filter input above the shared .bismuth-popover list surface — both live
    inside AnchoredPopover's portaled panel. The panel itself now carries the popover surface
