@@ -94,3 +94,23 @@ export function writableFieldKey(id: string): string | null {
         return null
     return id
 }
+
+/**
+ * Whether the map should snap back to its computed framing. Only two things earn a re-frame:
+ * the VIEW changed (a different view, or its configured center/zoom), or the first markers
+ * just arrived on a map the user has not touched yet. Once the user has panned, zoomed, or
+ * armed a placement, the framing is theirs — placing the FIRST pin on an all-unplaced map
+ * used to count as "markers arrived" and snapped to zoom 10 on the new pin, which read as the
+ * add-pin flow resetting the zoom.
+ */
+export function shouldReframe(s: {
+    key: string
+    framedKey: string | null
+    hasMarkers: boolean
+    framedWithMarkers: boolean
+    userMoved: boolean
+}): boolean {
+    if (s.key !== s.framedKey) return true
+    if (s.userMoved) return false
+    return s.hasMarkers && !s.framedWithMarkers
+}

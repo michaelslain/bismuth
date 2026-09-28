@@ -30,6 +30,7 @@ import {
     screenToLatLng,
     pastDragThreshold,
     writableFieldKey,
+    shouldReframe,
 } from './mapCoords'
 import styles from './MapView.module.css'
 import { isDismissKey } from '../ui/widgetKeys'
@@ -256,19 +257,32 @@ export function MapView(props: {
     const [center, setCenter] = createSignal(initialView().center)
     const [zoom, setZoom] = createSignal(initialView().zoom)
     // Re-frame when the VIEW changes (switching views, or its configured center/zoom), and once
-    // when the first markers arrive — never merely because a marker moved. Placing or dragging a
-    // pin writes its note, the rows refetch, and re-fitting on that jerked the whole map out from
-    // under the pin the user had just put down.
+    // when the first markers arrive on a map the user has not touched — never merely because a
+    // marker moved (see `shouldReframe`). Placing or dragging a pin writes its note, the rows
+    // refetch, and re-fitting on that jerked the whole map out from under the pin the user had
+    // just put down. `userMoved` flips on any pan, zoom or arming, so placing the FIRST pin on
+    // an all-unplaced map keeps the zoom the user chose instead of snapping to that pin.
     const frameKey = () => {
         const v = props.result.view
         return `${v.name}|${v.type}|${v.center?.lat},${v.center?.lng}|${v.zoom}`
     }
     let framedKey: string | null = null
     let framedWithMarkers = false
+    let userMoved = false
     createEffect(() => {
         const key = frameKey()
         const hasMarkers = markers().length > 0
-        if (key === framedKey && (framedWithMarkers || !hasMarkers)) return
+        if (
+            !shouldReframe({
+                key,
+                framedKey,
+                hasMarkers,
+                framedWithMarkers,
+                userMoved,
+            })
+        )
+            return
+        if (key !== framedKey) userMoved = false
         framedKey = key
         framedWithMarkers = hasMarkers
         const iv = untrack(initialView)
@@ -468,6 +482,7 @@ export function MapView(props: {
 
     // Arm a row for placement — from the unplaced menu, or a pin's own "move…" item.
     function arm(row: Row) {
+        userMoved = true
         setArmed(row)
         setPinMenu(null)
         setUnplacedMenu(null)
@@ -499,6 +514,7 @@ export function MapView(props: {
         dragLastX = e.clientX
         dragLastY = e.clientY
         const c = centerWorld()
+        userMoved = true
         setCenter(unproject(c.x - dx, c.y - dy, zoom()))
     }
 
@@ -531,6 +547,7 @@ export function MapView(props: {
         const z0 = zoom()
         const z1 = Math.max(1, Math.min(18, z0 + delta))
         if (z1 === z0) return
+        userMoved = true
         const { w, h } = size()
         const ax = anchor ? anchor.x : w / 2
         const ay = anchor ? anchor.y : h / 2
@@ -560,6 +577,32 @@ export function MapView(props: {
     function resetView(): void {
         setCenter({ lat: 20, lng: 0 })
         setZoom(settings.graph.mapDefaultZoom)
+    }
+
+    // Add pin: the map's own "place a pin" entry point. It arms placement and nothing else —
+    // it never touches center/zoom, so the next click lands where the user is looking. One
+    // unplaced row arms straight away; several open the same picker the `unplaced (N)` readout
+    // does, anchored under this button. Pressed again while armed, it cancels (like Escape).
+    function onAddPin(e: MouseEvent): void {
+        if (armed()) {
+            setArmed(null)
+            setHoverPos(null)
+            return
+        }
+        const rows = unplacedRows()
+        if (rows.length === 1) {
+            arm(rows[0])
+            return
+        }
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        setUnplacedMenu({ x: r.left, y: r.bottom })
+    }
+
+    // The floating chrome (controls, unplaced readout) sits INSIDE the map element, so its
+    // mousedown would start a pan and — worse — its click would bubble into `onMapClick` and,
+    // while armed, drop the pin under the button that was pressed. The chrome claims both.
+    function claimPointer(e: MouseEvent): void {
+        e.stopPropagation()
     }
 
     // Locate: recenter (and fit) on the markers we have.
@@ -786,7 +829,11 @@ export function MapView(props: {
                 </div>
 
                 {/* Floating controls, top-right — bracket IconButtons. */}
-                <div class={styles.mapControls}>
+                <div
+                    class={styles.mapControls}
+                    onMouseDown={claimPointer}
+                    onClick={claimPointer}
+                >
                     <div class={styles.mapZoomStack}>
                         <IconButton
                             icon="ZoomIn"
@@ -805,28 +852,50 @@ export function MapView(props: {
                         onClick={resetView}
                     />
                     <IconButton
-                        icon="Pin"
-                        label="Locate notes"
+                        icon="Map"
+                        label="Fit to pins"
                         onClick={locate}
                     />
                 </div>
 
-                {/* Unplaced rows — no valid lat/lng yet. Picking one arms placement; the
-                    next click on the map writes its coordinates. Hidden entirely on a
-                    read-only (formula/file-derived) map, since there's nowhere to write. */}
-                <Show when={writable() && unplacedRows().length > 0}>
-                    <div class={styles.mapUnplaced}>
-                        <TextButton
-                            data-testid="map-unplaced-button"
-                            onClick={e => {
-                                const r = (
-                                    e.currentTarget as HTMLElement
-                                ).getBoundingClientRect()
-                                setUnplacedMenu({ x: r.left, y: r.bottom })
-                            }}
-                        >
-                            unplaced ({unplacedRows().length})
-                        </TextButton>
+                {/* Placement, top-left: `Add pin` + the unplaced rows (no valid lat/lng yet).
+                    Picking one arms placement; the next click on the map writes its
+                    coordinates. Hidden entirely on a read-only (formula/file-derived) map,
+                    since there's nowhere to write. Kept at the LEFT so the picker menu, which
+                    opens rightward from its anchor, never runs off the viewport edge. */}
+                <Show when={writable()}>
+                    <div
+                        class={styles.mapUnplaced}
+                        onMouseDown={claimPointer}
+                        onClick={claimPointer}
+                    >
+                        <IconButton
+                            icon="Pin"
+                            label={armed() ? 'Cancel placing pin' : 'Add pin'}
+                            variant={armed() ? 'selected' : 'normal'}
+                            aria-pressed={!!armed()}
+                            disabled={!armed() && unplacedRows().length === 0}
+                            title={
+                                !armed() && unplacedRows().length === 0
+                                    ? 'Every row already has a pin'
+                                    : undefined
+                            }
+                            data-testid="map-add-pin"
+                            onClick={onAddPin}
+                        />
+                        <Show when={unplacedRows().length > 0}>
+                            <TextButton
+                                data-testid="map-unplaced-button"
+                                onClick={e => {
+                                    const r = (
+                                        e.currentTarget as HTMLElement
+                                    ).getBoundingClientRect()
+                                    setUnplacedMenu({ x: r.left, y: r.bottom })
+                                }}
+                            >
+                                unplaced ({unplacedRows().length})
+                            </TextButton>
+                        </Show>
                     </div>
                 </Show>
 

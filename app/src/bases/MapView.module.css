@@ -128,6 +128,9 @@
   position: absolute;
   left: 16px;
   top: 16px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
   pointer-events: auto;
 }
 /* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
