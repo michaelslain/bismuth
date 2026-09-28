@@ -106,7 +106,7 @@ export const CustomFieldsFixedFraming: Story = {
     },
 }
 
-/** Some rows have no valid `lat`/`lng` — they show up in the "unplaced (N)" control instead
+/** Some rows have no valid `lat`/`lng` — they show up in the "[N unplaced]" control instead
  *  of silently vanishing. `play()` opens that menu and picks one, arming placement: the map
  *  now shows a "placing … — esc to cancel" hint that follows the cursor, and the next click
  *  on the map would write that row's coordinates. */
@@ -133,7 +133,7 @@ export const UnplacedRowsArmed: Story = {
         const body = within(canvasElement.ownerDocument.body)
 
         const unplacedButton = await canvas.findByTestId('map-unplaced-button')
-        expect(unplacedButton).toHaveTextContent('unplaced (2)')
+        expect(unplacedButton).toHaveTextContent('2 unplaced')
         await userEvent.click(unplacedButton)
 
         const option = await body.findByText('Unmapped Cafe')
@@ -231,7 +231,7 @@ export const EditPin: Story = {
     },
 }
 
-/** `unplaced (N)` still places EXISTING rows that have no coordinates: pick one, press the map. */
+/** `[N unplaced]` still places EXISTING rows that have no coordinates: pick one, press the map. */
 export const PlaceUnplaced: Story = {
     render: () => <LiveMap rows={WITH_UNPLACED} />,
     play: async ({ canvasElement }) => {

@@ -1012,16 +1012,21 @@ export function MapView(props: {
                         onClick={onAddPin}
                     />
                     <Show when={writable() && unplacedRows().length > 0}>
-                            <TextButton
-                                data-testid="map-unplaced-button"
-                                onClick={e => {
-                                    const r = (
-                                        e.currentTarget as HTMLElement
-                                    ).getBoundingClientRect()
-                                    setUnplacedMenu({ x: r.left, y: r.bottom })
-                                }}
-                            >
-                            unplaced ({unplacedRows().length})
+                        <TextButton
+                            data-testid="map-unplaced-button"
+                            title={
+                                unplacedRows().length === 1
+                                    ? '1 row has no location — pick one to place it'
+                                    : `${unplacedRows().length} rows have no location — pick one to place it`
+                            }
+                            onClick={e => {
+                                const r = (
+                                    e.currentTarget as HTMLElement
+                                ).getBoundingClientRect()
+                                setUnplacedMenu({ x: r.left, y: r.bottom })
+                            }}
+                        >
+                            {unplacedRows().length} unplaced
                         </TextButton>
                     </Show>
                 </div>
