@@ -12,6 +12,9 @@ export type ChipToggleProps = {
     /** Tints the SELECTED state's brackets + label to a category color instead of the default
      *  accent. Unset = accent. Passed through as Button's `accent` prop (a `var(--…)` token). */
     tone?: ChipToggleTone
+    /** Any CSS colour for the SELECTED state's brackets + label — a per-value colour (an event
+     *  category, a tag). When set it overrides `tone`. */
+    color?: string
     /** Icon name from the registry, rendered before the label (Chip's old `icon`). */
     icon?: string
     iconSize?: number
@@ -41,6 +44,7 @@ const ChipToggle: Component<ChipToggleProps> = props => {
         'selected',
         'onToggle',
         'tone',
+        'color',
         'icon',
         'iconSize',
         'class',
@@ -50,7 +54,7 @@ const ChipToggle: Component<ChipToggleProps> = props => {
         <Button
             {...rest}
             state={local.selected ? 'selected' : 'unselected'}
-            accent={local.tone ? `var(--${local.tone})` : undefined}
+            accent={local.color ?? (local.tone ? `var(--${local.tone})` : undefined)}
             class={[styles['chip-toggle'], local.class ?? ''].filter(Boolean).join(' ')}
             aria-pressed={!!local.selected}
             data-tone={local.tone}

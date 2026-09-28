@@ -1,0 +1,12 @@
+/* app/src/ui/ValueChip.module.css — ValueChip.tsx is the sole importer. Copies the SELECTED rules
+   of `.btn--text` (ui/Button.module.css): bracket glyphs, accent ink, bold, --fs-ui. */
+.value-chip {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  font-weight: var(--fw-bold);
+  color: var(--chip-color, var(--accent));
+}
+.value-chip::before { content: '[' / ''; margin-left: -0.175em; }
+.value-chip::after { content: ']' / ''; margin-right: -0.175em; }

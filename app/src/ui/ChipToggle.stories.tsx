@@ -88,3 +88,19 @@ export const LongLabel: Story = {
         </div>
     ),
 }
+
+/** `color` — any CSS colour for the SELECTED state (a per-value colour such as an event category),
+ *  overriding `tone`. Unselected stays muted. */
+export const CustomColor: Story = {
+    render: () => (
+        <Row label="color" gap="10px">
+            <ChipToggle selected color="var(--rose)">
+                rose
+            </ChipToggle>
+            <ChipToggle selected color="#c08a2e">
+                custom hex
+            </ChipToggle>
+            <ChipToggle color="var(--rose)">unselected</ChipToggle>
+        </Row>
+    ),
+}
