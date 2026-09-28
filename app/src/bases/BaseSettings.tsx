@@ -1,50 +1,46 @@
 import {
     createSignal,
     createMemo,
-    createEffect,
     createResource,
-    For,
-    Index,
     Show,
     untrack,
 } from 'solid-js'
-import { parse as parseYaml } from 'yaml'
 import { api } from '../api'
 import type {
     BaseConfig,
-    BasePropertyKind,
-    NumberFormat,
     Row,
     SortSpec,
     ViewType,
 } from '../../../core/src/bases/types'
-import {
-    BASE_PROPERTY_KINDS,
-    NUMBER_FORMATS,
-    viewMode,
-} from '../../../core/src/bases/types'
-import { FRONTMATTER_RE } from '../../../core/src/bases/parse'
+import { viewMode } from '../../../core/src/bases/types'
 import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import { capitalize } from './columnKinds'
 import { columnLabel } from './columnLabel'
+import { columnsOf } from './propertyColumns'
 import { declaredPropertyKeys } from '../../../core/src/bases/properties'
 import {
-    blankPropertyRow,
     buildPropertiesYaml,
     duplicatePropertyNames,
-    moveRow,
     seedPropertyRows,
     type PropertyFormRow,
 } from './basePropertiesForm'
 import {
+    ALL_FIELDS,
     centerOrUndefined,
     diffPatch,
+    fieldsFor,
+    isChartKind,
+    isRecordKind,
     limitOrUndefined,
     numberOrUndefined,
     orUndefined,
     planSettingsWrites,
-    type WriteOp,
+    readFrontmatter,
+    runOp,
+    showsColumns,
+    showsMode,
+    viewKeysFor,
 } from './baseSettingsPlan'
 import { filterToForm, formToFilter } from './filterForm'
 import { formToSource, sourceToForm, toWikilink } from './sourceForm'
@@ -61,14 +57,10 @@ import {
     seedColumns,
     toggleColumn,
 } from './columnsForm'
-import { Icon } from '../icons/Icon'
 import Select, { type SelectOption } from '../ui/Select'
-import Text from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
-import PlainButton from '../ui/PlainButton'
 import InlineCode from '../ui/InlineCode'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
@@ -78,7 +70,6 @@ import SettingsSection from '../ui/SettingsSection'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
 import SettingsHint from '../ui/SettingsHint'
-import ToggleList from '../ui/ToggleList'
 import ToggleRow from '../ui/ToggleRow'
 import ViewIdentityFields from './ViewIdentityFields'
 import SourceFields from './SourceFields'
@@ -88,183 +79,23 @@ import SummariesFields from './SummariesFields'
 import FormulasEditor from './FormulasEditor'
 import MapFramingFields, { type MapFraming } from './MapFramingFields'
 import CardsFields, { type CardsLook } from './CardsFields'
+import ColumnMappingFields from './ColumnMappingFields'
+import ChartFields from './ChartFields'
+import ColumnsFields from './ColumnsFields'
+import PropertiesFields from './PropertiesFields'
 // Composes the same FormModal/ModalBody/ModalHeader/ModalFooter chrome + Settings*/Toggle*
 // primitives the calendar's CalendarSettings uses, so every base type still shares one polished
 // design. Each larger section is its own component (ViewIdentityFields, SourceFields,
-// FiltersEditor, SortFields, SummariesFields, FormulasEditor, MapFramingFields, CardsFields);
-// BaseSettings.module.css holds only what has no primitive yet — the Properties editor's
-// `.propset-*` rows — plus `.spaced` / `.error` helpers.
+// FiltersEditor, SortFields, SummariesFields, FormulasEditor, MapFramingFields, CardsFields,
+// ColumnMappingFields, ChartFields, ColumnsFields, PropertiesFields); the pure decisions (which
+// kind shows what, what SAVE writes) live in baseSettingsPlan.ts. BaseSettings.module.css holds
+// only the `.spaced` / `.error` helpers.
 import styles from './BaseSettings.module.css'
 
-interface FieldDef {
-    key: string
-    /** Short role label shown next to the column dropdown. */
-    role: string
-    def: string
-    /** Optional fields offer a "none" choice, labelled `noneLabel`. */
-    optional?: boolean
-    noneLabel?: string
-    hint: string
-}
-
-// Chart views (heatmap/bar/line/stat) all bind the same axis columns.
-const CHART_FIELDS: FieldDef[] = [
-    {
-        key: 'x',
-        role: 'X axis',
-        def: 'date',
-        hint: 'column plotted along the x axis — a date or a category.',
-    },
-    {
-        key: 'y',
-        role: 'Value',
-        def: '',
-        optional: true,
-        noneLabel: 'count rows',
-        hint: 'numeric column to aggregate. leave unset to count rows.',
-    },
-]
-
-// Field-binding settings (which column means what), per view kind.
-const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
-    flashcards: [
-        {
-            key: 'frontField',
-            role: 'Front',
-            def: 'front',
-            hint: 'column shown as the card front (the prompt).',
-        },
-        {
-            key: 'backField',
-            role: 'Back',
-            def: 'back',
-            hint: 'column revealed as the answer.',
-        },
-        {
-            key: 'dueField',
-            role: 'Due',
-            def: 'due',
-            hint: "column holding each card's next-review date.",
-        },
-        {
-            key: 'easeField',
-            role: 'Ease',
-            def: 'ease',
-            hint: "column holding each card's SM-2 ease factor.",
-        },
-        {
-            key: 'intervalField',
-            role: 'Interval',
-            def: 'interval',
-            hint: "column holding each card's review interval, in days.",
-        },
-    ],
-    map: [
-        {
-            key: 'lat',
-            role: 'Latitude',
-            def: 'lat',
-            hint: 'column holding each place’s latitude, in decimal degrees.',
-        },
-        {
-            key: 'lng',
-            role: 'Longitude',
-            def: 'lng',
-            hint: 'column holding each place’s longitude, in decimal degrees.',
-        },
-    ],
-    cards: [
-        {
-            key: 'image',
-            role: 'Image',
-            def: '',
-            optional: true,
-            noneLabel: 'text cover',
-            hint: 'column holding a cover image — a url or a vault image path.',
-        },
-    ],
-    heatmap: CHART_FIELDS,
-    bar: CHART_FIELDS,
-    line: CHART_FIELDS,
-    stat: CHART_FIELDS,
-}
-
-/** Every field binding across every kind, once each (x/y are shared by the charts). */
-const ALL_FIELDS: FieldDef[] = [
-    ...new Map(
-        Object.values(FIELDS_BY_TYPE)
-            .flat()
-            .map(f => [f!.key, f!]),
-    ).values(),
-]
-
-// Record view types get column-visibility + sort + group-by config.
-const RECORD_TYPES: ViewType[] = [
-    'table',
-    'cards',
-    'list',
-    'bullets',
-    'kanban',
-    'map',
-]
-
-// Chart view types get aggregate + date-bucket config.
-const CHART_TYPES: ViewType[] = ['heatmap', 'bar', 'line', 'stat']
-
-function columnsOf(rows: Row[]): string[] {
-    const set = new Set<string>()
-    let hasName = false
-    for (const r of rows) {
-        Object.keys(r.note).forEach(k => set.add(k))
-        if (r.file?.name) hasName = true
-    }
-    const cols = [...set]
-    return hasName ? ['file.name', ...cols] : cols
-}
-
-const AGG_OPTS = [
-    { value: 'sum', label: 'Sum' },
-    { value: 'avg', label: 'Average' },
-    { value: 'count', label: 'Count' },
-    { value: 'min', label: 'Min' },
-    { value: 'max', label: 'Max' },
-]
-const BIN_OPTS = [
-    { value: 'day', label: 'Day' },
-    { value: 'week', label: 'Week' },
-    { value: 'month', label: 'Month' },
-]
 const DIR_OPTS = [
     { value: 'ASC', label: 'Ascending' },
     { value: 'DESC', label: 'Descending' },
 ]
-
-// Properties section (#104): kind + number-format pickers.
-const KIND_OPTS = BASE_PROPERTY_KINDS.map(k => ({
-    value: k,
-    label: capitalize(k),
-}))
-const NUMBER_FORMAT_OPTS = NUMBER_FORMATS.map(f => ({
-    value: f,
-    label: capitalize(f),
-}))
-
-async function runOp(path: string, o: WriteOp): Promise<void> {
-    if (o.op === 'set') await api.setProperty(path, o.key, o.value)
-    else if (o.op === 'delete') await api.deleteProperty(path, o.key)
-    else if (o.op === 'setView')
-        await api.setViewProperty(path, o.index, o.key, o.value)
-    else await api.deleteViewProperty(path, o.index, o.key)
-}
-
-/** The base file's frontmatter as it is on disk right now. */
-async function readFrontmatter(path: string): Promise<Record<string, unknown>> {
-    const text = await api.read(path)
-    const m = text.match(FRONTMATTER_RE)
-    if (!m) return {}
-    const data = parseYaml(m[2])
-    return data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
-}
 
 /**
  * Per-view settings as a modal overlay — same FormModal chrome as the calendar's
@@ -302,13 +133,13 @@ export function BaseSettings(props: {
         view() ? viewMode(view()!) : 'normal',
     )
 
-    const isRecord = () => RECORD_TYPES.includes(kind())
+    const isRecord = () => isRecordKind(kind())
     // Kanban gets column-visibility/reorder from the Properties section (declared
     // fields + their eye toggle + reorder), so the Columns section is suppressed for it.
-    const showColumns = () => isRecord() && kind() !== 'kanban'
-    const isChart = () => CHART_TYPES.includes(kind())
-    const showMode = () => isRecord() || kind() === 'calendar'
-    const fields = () => FIELDS_BY_TYPE[kind()] ?? []
+    const showColumns = () => showsColumns(kind())
+    const isChart = () => isChartKind(kind())
+    const showMode = () => showsMode(kind())
+    const fields = () => fieldsFor(kind())
 
     // ---- formulas (base-level) — their columns join the columns list live ----
     const [formulaRows, setFormulaRows] = createSignal(
@@ -327,18 +158,6 @@ export function BaseSettings(props: {
             ...formulaColumns(formulaRows()),
         ]),
     ])
-
-    // Options for a column-binding dropdown: the available columns, always unioned
-    // with the field's current value + default so an off-screen binding still shows.
-    const colOptions = (f: FieldDef, current: string) => {
-        const seen = new Set(allCols())
-        const extra = [current, f.def].filter(c => c && !seen.has(c))
-        return [
-            ...(f.optional ? [{ value: '', label: f.noneLabel ?? 'none' }] : []),
-            ...allCols().map(c => ({ value: c, label: c })),
-            ...extra.map(c => ({ value: c, label: c })),
-        ]
-    }
 
     // ---- field bindings (flashcards / map / cards / chart axes) ----
     const seedFields = (): Record<string, string> => {
@@ -379,7 +198,6 @@ export function BaseSettings(props: {
     const cols = createMemo(() =>
         mergeColumns(colState(), [...(view()?.order ?? []), ...allCols()]),
     )
-    const visibleCount = () => cols().filter(c => c.visible).length
     const toggle = (col: string) => {
         setColState(toggleColumn(cols(), col))
         setColsTouched(true)
@@ -451,37 +269,11 @@ export function BaseSettings(props: {
     const [propRows, setPropRows] = createSignal<PropertyFormRow[]>(
         seedPropertyRows(props.config),
     )
-    const updateRow = (i: number, patch: Partial<PropertyFormRow>) =>
-        setPropRows(
-            propRows().map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
-        )
-    // Progressive disclosure: at most one row's full editor is open at a time. `null` = every
-    // row collapsed to its quiet name/type/visibility line (see the render below).
+    // Which row's full editor is open (null = all collapsed) — owned here so RESET collapses it.
     const [editingProp, setEditingProp] = createSignal<number | null>(null)
     // Row indexes whose name duplicates an earlier row's — buildPropertiesYaml silently drops
-    // the later one on save, so warn on the row and block SAVE instead.
+    // the later one on save, so PropertiesFields warns on the row and SAVE blocks here.
     const duplicateNames = createMemo(() => duplicatePropertyNames(propRows()))
-    const addPropRow = () => {
-        const next = [
-            ...propRows(),
-            blankPropertyRow(propRows().map(r => r.name)),
-        ]
-        setPropRows(next)
-        setEditingProp(next.length - 1) // expand the new row for immediate editing
-    }
-    const removePropRow = (i: number) => {
-        setPropRows(propRows().filter((_, idx) => idx !== i))
-        setEditingProp(cur =>
-            cur === null ? null : cur === i ? null : cur > i ? cur - 1 : cur,
-        )
-    }
-    // Reorder keeps whichever row (if any) was open following its content, not its old index.
-    const moveRowAt = (i: number, dir: -1 | 1) => {
-        const j = i + dir
-        if (j < 0 || j >= propRows().length) return
-        setPropRows(moveRow(propRows(), i, dir))
-        setEditingProp(cur => (cur === i ? j : cur === j ? i : cur))
-    }
 
     // ---- what SAVE would write: the full desired value of every managed key ----
     const desiredView = (): Record<string, unknown> => {
@@ -528,25 +320,7 @@ export function BaseSettings(props: {
             ? { source: formToSource(sourceForm()) }
             : {}),
     })
-    // The keys the CURRENT kind manages — switching kind never deletes another kind's settings.
-    const viewKeys = (): string[] => {
-        const k = kind()
-        const keys = ['name', 'type', 'filters']
-        if (sourceScope === 'view') keys.push('source')
-        if (showMode()) keys.push('mode')
-        if (isRecord() || isChart()) keys.push('limit')
-        if (isRecord()) keys.push('sort', 'groupBy')
-        if (showColumns()) keys.push('order')
-        if (k === 'kanban') keys.push('hideLabels')
-        if (k === 'table') keys.push('summaries')
-        keys.push(...fields().map(f => f.key))
-        if (k === 'flashcards') keys.push('bidirectional')
-        if (isChart()) keys.push('aggregate')
-        if (isChart() && k !== 'heatmap') keys.push('bin')
-        if (k === 'map') keys.push('zoom', 'center')
-        if (k === 'cards') keys.push('cardContent', 'imageFit', 'imageAspectRatio')
-        return keys
-    }
+    const viewKeys = (): string[] => viewKeysFor(kind(), sourceScope)
     const BASE_KEYS = ['source', 'filters', 'formulas', 'properties']
     // Captured once, from the seeded form — diffed against at SAVE.
     const initialView = untrack(desiredView)
@@ -624,8 +398,7 @@ export function BaseSettings(props: {
         <FormModal
             onClose={props.onClose}
             label={`${kind()} settings`}
-            class={styles.panel}
-        >
+                    >
             <ModalHeader
                 title={`${kind()} settings`}
                 subtitle={props.basePath ? noteLabel(props.basePath) : undefined}
@@ -681,52 +454,18 @@ export function BaseSettings(props: {
                 {/* Field bindings: flashcards / map / cards / chart axes */}
                 <Show when={fields().length > 0}>
                     <SettingsSection>column mapping</SettingsSection>
-                    <SettingsGrid>
-                        <For each={fields()}>
-                            {f => (
-                                <SettingsField
-                                    label={`${f.role.toLowerCase()} column`}
-                                    badge={f.optional ? 'optional' : 'required'}
-                                    hint={f.hint}
-                                >
-                                    <Select
-                                        value={form()[f.key] ?? ''}
-                                        options={colOptions(
-                                            f,
-                                            form()[f.key] ?? '',
-                                        )}
-                                        placeholder={f.noneLabel ?? 'Not set'}
-                                        onChange={c =>
-                                            setForm({ ...form(), [f.key]: c })
-                                        }
-                                    />
-                                </SettingsField>
-                            )}
-                        </For>
-                    </SettingsGrid>
-                    <Show when={kind() === 'flashcards'}>
-                        <ToggleRow
-                            class={styles.spaced}
-                            wrap
-                            label="bidirectional — review each card both ways (front ↔ back)"
-                            checked={bidi()}
-                            onToggle={() => setBidi(!bidi())}
-                        />
-                        <SettingsHint>
-                            scheduling uses the standard SM-2 algorithm (fixed,
-                            not configurable). use <strong>cram</strong> in the
-                            deck to review everything without affecting
-                            scheduling.
-                            <Show when={bidi()}>
-                                {' '}
-                                each direction is scheduled independently
-                                (reverse state lives in <InlineCode>
-                                    dueBack
-                                </InlineCode> / <InlineCode>easeBack</InlineCode> /{' '}
-                                <InlineCode>intervalBack</InlineCode>).
-                            </Show>
-                        </SettingsHint>
-                    </Show>
+                    <ColumnMappingFields
+                        fields={fields()}
+                        value={form()}
+                        columns={allCols()}
+                        onChange={(key, column) =>
+                            setForm({ ...form(), [key]: column })
+                        }
+                        bidirectional={bidi()}
+                        onBidirectional={
+                            kind() === 'flashcards' ? setBidi : undefined
+                        }
+                    />
                 </Show>
 
                 <Show when={kind() === 'map'}>
@@ -746,89 +485,26 @@ export function BaseSettings(props: {
                 {/* Chart types: aggregate + (non-heatmap) date bucket */}
                 <Show when={isChart()}>
                     <SettingsSection>aggregation</SettingsSection>
-                    <SettingsGrid>
-                        <SettingsField
-                            label="aggregate"
-                            hint="how values are combined per x-axis bucket."
-                        >
-                            <Select
-                                value={aggregate()}
-                                options={AGG_OPTS}
-                                onChange={v =>
-                                    setAggregate(
-                                        v as
-                                            | 'sum'
-                                            | 'avg'
-                                            | 'count'
-                                            | 'min'
-                                            | 'max',
-                                    )
-                                }
-                            />
-                        </SettingsField>
-                        <Show when={kind() !== 'heatmap'}>
-                            <SettingsField
-                                label="date bucket"
-                                hint="group date values by day, week, or month."
-                            >
-                                <Select
-                                    value={bin()}
-                                    options={BIN_OPTS}
-                                    onChange={v =>
-                                        setBin(v as 'day' | 'week' | 'month')
-                                    }
-                                />
-                            </SettingsField>
-                        </Show>
-                        <SettingsField
-                            label="row limit"
-                            badge="optional"
-                            hint="only the first N rows are charted."
-                        >
-                            <TextInput
-                                type="number"
-                                min="1"
-                                value={limitText()}
-                                placeholder="no limit"
-                                onInput={setLimitText}
-                            />
-                        </SettingsField>
-                    </SettingsGrid>
+                    <ChartFields
+                        kind={kind()}
+                        aggregate={aggregate()}
+                        bin={bin()}
+                        limitText={limitText()}
+                        onAggregate={setAggregate}
+                        onBin={setBin}
+                        onLimit={setLimitText}
+                    />
                 </Show>
 
                 {/* Record types: columns + sort + group + limit */}
                 <Show when={isRecord()}>
                     <Show when={showColumns()}>
                         <SettingsSection>columns</SettingsSection>
-                        <SettingsHint>
-                            toggle to show or hide. drag the column headers in
-                            the table to reorder.
-                        </SettingsHint>
-                        <ToggleList>
-                            <Index each={cols()}>
-                                {item => {
-                                    const locked = () =>
-                                        item().visible && visibleCount() <= 1
-                                    return (
-                                        <ToggleRow
-                                            label={columnLabel(
-                                                item().col,
-                                                props.config,
-                                            )}
-                                            checked={item().visible}
-                                            onToggle={() => toggle(item().col)}
-                                            muted={!item().visible}
-                                            locked={locked()}
-                                            title={
-                                                locked()
-                                                    ? 'at least one column must stay visible'
-                                                    : undefined
-                                            }
-                                        />
-                                    )
-                                }}
-                            </Index>
-                        </ToggleList>
+                        <ColumnsFields
+                            columns={cols()}
+                            config={props.config}
+                            onToggle={toggle}
+                        />
                     </Show>
 
                     <SettingsSection>sort &amp; group</SettingsSection>
@@ -908,304 +584,19 @@ export function BaseSettings(props: {
                 <FormulasEditor rows={formulaRows()} onChange={setFormulaRows} />
 
                 {/* Properties: the base's OWN declared property set — base-level, shown for every
-            view type (#104). Progressive disclosure: every row collapses to a single quiet
-            name/type/visibility line; clicking a row expands ONE full editor at a time
-            (name/type/type-specific extras/reorder/delete), collapsing whichever else was
-            open. Keeps a base with a dozen+ properties readable as a scannable list instead
-            of a wall of controls. */}
+                    view type (#104). */}
                 <SettingsSection>properties</SettingsSection>
                 <SettingsHint>
                     declare this base's own fields — name, type, and whether it
                     shows on cards/table. order here drives card/table field
                     order. click a row to edit it.
                 </SettingsHint>
-                <Show when={propRows().length > 0}>
-                    <div class={styles['propset-list']}>
-                        <Index each={propRows()}>
-                            {(row, i) => {
-                                const open = () => editingProp() === i
-                                const dupe = () =>
-                                    duplicateNames().has(i)
-                                let rowEl: HTMLDivElement | undefined
-                                // The list scrolls inside <ModalBody>, but nothing scrolled a
-                                // newly-expanded row into that visible window — so expanding a
-                                // row near the top left its freshly-grown body (name/type/extras/
-                                // DELETE) sitting past the scroll container's own bottom, painted
-                                // under the modal's pinned footer. Scroll the row itself into view
-                                // whenever it opens, so its full body — including DELETE — lands
-                                // above the footer instead of behind it.
-                                createEffect(() => {
-                                    if (!open()) return
-                                    // Deferred a frame: this effect fires as soon as `open()`
-                                    // flips, which is BEFORE the sibling <Show> below has
-                                    // inserted/laid out the expanded body — scrolling now would
-                                    // only reveal the still-collapsed head. Waiting a frame lets
-                                    // that insertion (and its layout) land first.
-                                    requestAnimationFrame(() => {
-                                        if (open())
-                                            rowEl?.scrollIntoView({
-                                                block: 'nearest',
-                                            })
-                                    })
-                                })
-                                return (
-                                    <div
-                                        ref={rowEl}
-                                        class={styles['propset-row']}
-                                        classList={{ [styles['open']]: open() }}
-                                    >
-                                        <PlainButton
-                                            class={styles['propset-head']}
-                                            aria-expanded={open()}
-                                            onClick={() =>
-                                                setEditingProp(
-                                                    open() ? null : i,
-                                                )
-                                            }
-                                        >
-                                            <Icon
-                                                value="chevron-right"
-                                                class={styles['propset-chev']}
-                                                strokeWidth={2}
-                                            />
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles['propset-name-txt']}
-                                                classList={{ [styles['empty']]: !row().name }}
-                                            >
-                                                {row().name ||
-                                                    'untitled property'}
-                                            </Text>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles['propset-kind']}
-                                            >
-                                                {row().kind}
-                                            </Text>
-                                            <IconButton
-                                                icon={
-                                                    row().hidden
-                                                        ? 'eye-off'
-                                                        : 'eye'
-                                                }
-                                                label={
-                                                    row().hidden
-                                                        ? `Show ${row().name || 'property'} on cards/table`
-                                                        : `Hide ${row().name || 'property'} from cards/table`
-                                                }
-                                                title={
-                                                    row().hidden
-                                                        ? 'Hidden from cards/table — click to show'
-                                                        : 'Visible on cards/table — click to hide'
-                                                }
-                                                class={styles['propset-eye']}
-                                                onClick={e => {
-                                                    e.stopPropagation()
-                                                    updateRow(i, {
-                                                        hidden: !row().hidden,
-                                                    })
-                                                }}
-                                            />
-                                        </PlainButton>
-
-                                        <Show when={open()}>
-                                            <div class={styles['propset-body']}>
-                                                <div class={styles['propset-fields']}>
-                                                    <SettingsField
-                                                        label="name"
-                                                        class={styles['propset-field']}
-                                                    >
-                                                        <TextInput
-                                                            value={row().name}
-                                                            placeholder="Property name"
-                                                            onInput={v =>
-                                                                updateRow(i, {
-                                                                    name: v,
-                                                                })
-                                                            }
-                                                        />
-                                                        <Show when={dupe()}>
-                                                            <SettingsHint class={styles['propset-dupe']}>
-                                                                duplicate name // only the first is saved
-                                                            </SettingsHint>
-                                                        </Show>
-                                                    </SettingsField>
-                                                    <SettingsField
-                                                        label="kind"
-                                                        class={styles['propset-kind-select']}
-                                                    >
-                                                        <Select
-                                                            value={row().kind}
-                                                            options={KIND_OPTS}
-                                                            onChange={v =>
-                                                                updateRow(i, {
-                                                                    kind: v as BasePropertyKind,
-                                                                })
-                                                            }
-                                                        />
-                                                    </SettingsField>
-                                                </div>
-
-                                                <Show
-                                                    when={
-                                                        row().kind === 'select' ||
-                                                        row().kind ===
-                                                            'multiselect'
-                                                    }
-                                                >
-                                                    <TextInput
-                                                        class={`${styles['propset-extra']} ${styles['propset-options']}`}
-                                                        multiline
-                                                        value={row().optionsText}
-                                                        placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
-                                                        onInput={v =>
-                                                            updateRow(i, {
-                                                                optionsText: v,
-                                                            })
-                                                        }
-                                                    />
-                                                </Show>
-
-                                                <Show
-                                                    when={row().kind === 'number'}
-                                                >
-                                                    <div class={`${styles['propset-extra']} ${styles['propset-numrow']}`}>
-                                                        <SettingsField
-                                                            label="format"
-                                                            class={styles['propset-numrow-unit']}
-                                                        >
-                                                            <Select
-                                                                value={row().number}
-                                                                options={
-                                                                    NUMBER_FORMAT_OPTS
-                                                                }
-                                                                onChange={v =>
-                                                                    updateRow(
-                                                                        i,
-                                                                        {
-                                                                            number: v as NumberFormat,
-                                                                        },
-                                                                    )
-                                                                }
-                                                            />
-                                                        </SettingsField>
-                                                        <Show
-                                                            when={
-                                                                row().number ===
-                                                                    'unit' ||
-                                                                row().number ===
-                                                                    'currency'
-                                                            }
-                                                        >
-                                                            <TextInput
-                                                                value={row().unit}
-                                                                placeholder={
-                                                                    row().number ===
-                                                                    'currency'
-                                                                        ? 'Currency code (e.g. USD)'
-                                                                        : 'Unit label (e.g. kg)'
-                                                                }
-                                                                onInput={v =>
-                                                                    updateRow(
-                                                                        i,
-                                                                        {
-                                                                            unit: v,
-                                                                        },
-                                                                    )
-                                                                }
-                                                                class={
-                                                                    styles[
-                                                                        'propset-numrow-unit'
-                                                                    ]
-                                                                }
-                                                            />
-                                                        </Show>
-                                                    </div>
-                                                </Show>
-
-                                                <Show
-                                                    when={
-                                                        row().kind === 'formula'
-                                                    }
-                                                >
-                                                    <TextInput
-                                                        class={styles['propset-extra']}
-                                                        value={row().expr}
-                                                        placeholder="Expression, e.g. note.qty * note.price"
-                                                        onInput={v =>
-                                                            updateRow(i, {
-                                                                expr: v,
-                                                            })
-                                                        }
-                                                    />
-                                                </Show>
-
-                                                <Show
-                                                    when={
-                                                        row().kind !== 'formula'
-                                                    }
-                                                >
-                                                    <TextInput
-                                                        class={styles['propset-extra']}
-                                                        value={row().defaultText}
-                                                        placeholder="Default value (optional)"
-                                                        onInput={v =>
-                                                            updateRow(i, {
-                                                                defaultText: v,
-                                                            })
-                                                        }
-                                                    />
-                                                </Show>
-
-                                                <div class={styles['propset-foot']}>
-                                                    <IconButton
-                                                        icon="ArrowUp"
-                                                        label="Move up"
-                                                        class={styles['propset-btn']}
-                                                        disabled={i === 0}
-                                                        onClick={() =>
-                                                            moveRowAt(i, -1)
-                                                        }
-                                                    />
-                                                    <IconButton
-                                                        icon="ArrowDown"
-                                                        label="Move down"
-                                                        class={styles['propset-btn']}
-                                                        disabled={
-                                                            i ===
-                                                            propRows().length -
-                                                                1
-                                                        }
-                                                        onClick={() =>
-                                                            moveRowAt(i, 1)
-                                                        }
-                                                    />
-                                                    <div class={styles['sp']} />
-                                                    <IconTextButton
-                                                        icon="Trash2"
-                                                        danger
-                                                        onClick={() =>
-                                                            removePropRow(i)
-                                                        }
-                                                    >
-                                                        delete
-                                                    </IconTextButton>
-                                                </div>
-                                            </div>
-                                        </Show>
-                                    </div>
-                                )
-                            }}
-                        </Index>
-                    </div>
-                </Show>
-                <div class={styles['propset-add']}>
-                    <IconTextButton icon="Plus" onClick={addPropRow}>
-                        add property
-                    </IconTextButton>
-                </div>
+                <PropertiesFields
+                    rows={propRows()}
+                    onChange={setPropRows}
+                    editing={editingProp()}
+                    onEditing={setEditingProp}
+                />
                 <Show when={error()}>
                     <SettingsHint class={styles.error}>{error()}</SettingsHint>
                 </Show>

@@ -17,7 +17,15 @@
 //      (its flat keys keep folding onto that entry), then written like any other.
 //   3. A views-less base changes kind through the `view: <kind>` shorthand, never `type:`.
 //
-// Framework-free so every rule is unit-tested (baseSettingsPlan.test.ts).
+// Also holds the panel's other pure decisions — which kinds show which sections, the per-kind
+// column bindings, the keys a kind manages — and the two I/O helpers SAVE runs (`readFrontmatter`,
+// `runOp`). Framework-free so every rule is unit-tested (baseSettingsPlan.test.ts).
+
+import { parse as parseYaml } from 'yaml'
+import { api } from '../api'
+import type { ViewType } from '../../../core/src/bases/types'
+import { FRONTMATTER_RE } from '../../../core/src/bases/parse'
+import type { SelectOption } from '../ui/Select'
 
 export type WriteOp =
     | { op: 'set'; key: string; value: unknown }
@@ -225,4 +233,223 @@ export function centerOrUndefined(
 /** '' → undefined, anything else as-is — for pickers whose "default" choice means "no key". */
 export function orUndefined(v: string): string | undefined {
     return v === '' ? undefined : v
+}
+
+// ---------------------------------------------------------------------------------------
+// Which kinds show which sections
+// ---------------------------------------------------------------------------------------
+
+/** Record view types get column-visibility + sort + group-by config. */
+const RECORD_KINDS: readonly ViewType[] = [
+    'table',
+    'cards',
+    'list',
+    'bullets',
+    'kanban',
+    'map',
+]
+
+/** Chart view types get aggregate + date-bucket config. */
+const CHART_KINDS: readonly ViewType[] = ['heatmap', 'bar', 'line', 'stat']
+
+export const isRecordKind = (k: ViewType): boolean => RECORD_KINDS.includes(k)
+export const isChartKind = (k: ViewType): boolean => CHART_KINDS.includes(k)
+/** Kanban gets column visibility/order from the Properties section instead. */
+export const showsColumns = (k: ViewType): boolean =>
+    isRecordKind(k) && k !== 'kanban'
+export const showsMode = (k: ViewType): boolean =>
+    isRecordKind(k) || k === 'calendar'
+
+// ---------------------------------------------------------------------------------------
+// Column bindings (which column means what), per kind
+// ---------------------------------------------------------------------------------------
+
+export interface FieldDef {
+    key: string
+    /** Short role label shown next to the column dropdown. */
+    role: string
+    def: string
+    /** Optional fields offer a "none" choice, labelled `noneLabel`. */
+    optional?: boolean
+    noneLabel?: string
+    hint: string
+}
+
+// Chart views (heatmap/bar/line/stat) all bind the same axis columns.
+const CHART_FIELDS: FieldDef[] = [
+    {
+        key: 'x',
+        role: 'X axis',
+        def: 'date',
+        hint: 'column plotted along the x axis — a date or a category.',
+    },
+    {
+        key: 'y',
+        role: 'Value',
+        def: '',
+        optional: true,
+        noneLabel: 'count rows',
+        hint: 'numeric column to aggregate. leave unset to count rows.',
+    },
+]
+
+const FIELDS_BY_KIND: Partial<Record<ViewType, FieldDef[]>> = {
+    flashcards: [
+        {
+            key: 'frontField',
+            role: 'Front',
+            def: 'front',
+            hint: 'column shown as the card front (the prompt).',
+        },
+        {
+            key: 'backField',
+            role: 'Back',
+            def: 'back',
+            hint: 'column revealed as the answer.',
+        },
+        {
+            key: 'dueField',
+            role: 'Due',
+            def: 'due',
+            hint: "column holding each card's next-review date.",
+        },
+        {
+            key: 'easeField',
+            role: 'Ease',
+            def: 'ease',
+            hint: "column holding each card's SM-2 ease factor.",
+        },
+        {
+            key: 'intervalField',
+            role: 'Interval',
+            def: 'interval',
+            hint: "column holding each card's review interval, in days.",
+        },
+    ],
+    map: [
+        {
+            key: 'lat',
+            role: 'Latitude',
+            def: 'lat',
+            hint: 'column holding each place’s latitude, in decimal degrees.',
+        },
+        {
+            key: 'lng',
+            role: 'Longitude',
+            def: 'lng',
+            hint: 'column holding each place’s longitude, in decimal degrees.',
+        },
+    ],
+    cards: [
+        {
+            key: 'image',
+            role: 'Image',
+            def: '',
+            optional: true,
+            noneLabel: 'text cover',
+            hint: 'column holding a cover image — a url or a vault image path.',
+        },
+    ],
+    heatmap: CHART_FIELDS,
+    bar: CHART_FIELDS,
+    line: CHART_FIELDS,
+    stat: CHART_FIELDS,
+}
+
+const NO_FIELDS: FieldDef[] = []
+
+/** The column bindings a kind offers (none for most). */
+export const fieldsFor = (k: ViewType): FieldDef[] =>
+    FIELDS_BY_KIND[k] ?? NO_FIELDS
+
+/** Every field binding across every kind, once each (x/y are shared by the charts). */
+export const ALL_FIELDS: FieldDef[] = [
+    ...new Map(
+        Object.values(FIELDS_BY_KIND)
+            .flat()
+            .map(f => [f!.key, f!]),
+    ).values(),
+]
+
+/** Options for a column-binding dropdown: the available columns, always unioned with the
+ *  field's current value + default so an off-screen binding still shows. */
+export function columnBindingOptions(
+    f: FieldDef,
+    current: string,
+    columns: string[],
+): SelectOption[] {
+    const seen = new Set(columns)
+    const extra = [current, f.def].filter(c => c && !seen.has(c))
+    return [
+        ...(f.optional ? [{ value: '', label: f.noneLabel ?? 'none' }] : []),
+        ...columns.map(c => ({ value: c, label: c })),
+        ...extra.map(c => ({ value: c, label: c })),
+    ]
+}
+
+/** The view keys the CURRENT kind manages — switching kind never deletes another kind's settings. */
+export function viewKeysFor(k: ViewType, sourceScope: 'base' | 'view'): string[] {
+    const keys = ['name', 'type', 'filters']
+    if (sourceScope === 'view') keys.push('source')
+    if (showsMode(k)) keys.push('mode')
+    if (isRecordKind(k) || isChartKind(k)) keys.push('limit')
+    if (isRecordKind(k)) keys.push('sort', 'groupBy')
+    if (showsColumns(k)) keys.push('order')
+    if (k === 'kanban') keys.push('hideLabels')
+    if (k === 'table') keys.push('summaries')
+    keys.push(...fieldsFor(k).map(f => f.key))
+    if (k === 'flashcards') keys.push('bidirectional')
+    if (isChartKind(k)) keys.push('aggregate')
+    if (isChartKind(k) && k !== 'heatmap') keys.push('bin')
+    if (k === 'map') keys.push('zoom', 'center')
+    if (k === 'cards') keys.push('cardContent', 'imageFit', 'imageAspectRatio')
+    return keys
+}
+
+// ---------------------------------------------------------------------------------------
+// The open property row
+// ---------------------------------------------------------------------------------------
+
+/** Which row stays open after row `removed` is deleted (null = none open). */
+export function indexAfterRemove(
+    open: number | null,
+    removed: number,
+): number | null {
+    if (open === null || open === removed) return null
+    return open > removed ? open - 1 : open
+}
+
+/** Which row stays open after rows `a` and `b` swap places — it follows its content. */
+export function indexAfterMove(
+    open: number | null,
+    a: number,
+    b: number,
+): number | null {
+    return open === a ? b : open === b ? a : open
+}
+
+// ---------------------------------------------------------------------------------------
+// SAVE's I/O
+// ---------------------------------------------------------------------------------------
+
+/** Run one planned write against the base file. */
+export async function runOp(path: string, o: WriteOp): Promise<void> {
+    if (o.op === 'set') await api.setProperty(path, o.key, o.value)
+    else if (o.op === 'delete') await api.deleteProperty(path, o.key)
+    else if (o.op === 'setView')
+        await api.setViewProperty(path, o.index, o.key, o.value)
+    else await api.deleteViewProperty(path, o.index, o.key)
+}
+
+/** The base file's frontmatter as it is on disk right now. */
+export async function readFrontmatter(
+    path: string,
+): Promise<Record<string, unknown>> {
+    const text = await api.read(path)
+    const m = text.match(FRONTMATTER_RE)
+    if (!m) return {}
+    const data = parseYaml(m[2])
+    return data && typeof data === 'object'
+        ? (data as Record<string, unknown>)
+        : {}
 }

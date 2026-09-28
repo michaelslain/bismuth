@@ -321,7 +321,7 @@ export const DuplicatePropertyName: Story = {
     },
 }
 
-/** Rect assertion instead of `toBeInTheDocument()`: DELETE is meant to be a genuinely visible
+/** Rect assertion instead of `toBeInTheDocument()`: the Remove property button is meant to be a genuinely visible
  *  part of the expanded row, not merely present in the DOM (which a clipped, zero-height or
  *  scrolled-out-of-view element would also satisfy). Proves DELETE's own bounding rect lies
  *  fully inside the modal body's scroll container's rect — top edge at or below the
@@ -347,7 +347,7 @@ export const ExpandPropertyRow: Story = {
             name: /^status/i,
         })
         await userEvent.click(statusRow)
-        const deleteButton = canvas.getByText('delete').closest('button')!
+        const deleteButton = canvas.getByLabelText('Remove property')
         deleteButton.scrollIntoView()
         const modalBody = document.body.querySelector(
             '[data-testid="modal-body"]',
@@ -515,4 +515,107 @@ export const Cards: Story = {
             onSaved={noop}
         />
     ),
+}
+
+const kindStory = (
+    type: 'list' | 'bullets' | 'line' | 'stat' | 'calendar',
+    extra: Record<string, unknown> = {},
+): Story => ({
+    render: () => (
+        <BaseSettings
+            type={type}
+            config={sampleBaseConfig({
+                views: [{ type, name: type, ...extra }],
+            })}
+            viewIndex={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+})
+
+/** List: a record kind with Columns, sort and group, and the tasks/normal mode toggle. */
+export const List: Story = kindStory('list')
+
+/** Bullets: a record kind, same sections as List. */
+export const Bullets: Story = kindStory('bullets')
+
+/** Line chart: chart-axis mapping plus the aggregation with a date bucket. */
+export const Line: Story = kindStory('line', { x: 'due', y: 'priority' })
+
+/** Stat: a chart kind bound to one value. */
+export const Stat: Story = kindStory('stat', { x: 'due', y: 'priority' })
+
+/** Calendar: no column mapping or record sections — identity (with the mode toggle), source,
+ *  filters, formulas and properties only. */
+export const Calendar: Story = kindStory('calendar')
+
+/** A base whose source is `tasks` — every row is a checkbox line from the vault's notes. */
+export const TasksSource: Story = {
+    render: () => (
+        <BaseSettings
+            type="list"
+            config={sampleBaseConfig({
+                source: { kind: 'tasks' },
+                views: [{ type: 'list', name: 'Open tasks', mode: 'tasks' }],
+            })}
+            viewIndex={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+}
+
+/** SAVE end to end through a spied fake transport: a rename writes exactly one set-property on
+ *  the view, then `onSaved` fires. */
+export const SaveCallsOnSaved: Story = {
+    render: () => {
+        const spy = spiedTransport({ files: { [MULTI_PATH]: MULTI_VIEW_BASE } })
+        setTransport(spy.transport)
+        const g = globalThis as {
+            __baseSettingsCalls?: unknown
+            __baseSettingsSaved?: number
+        }
+        g.__baseSettingsCalls = spy.calls
+        g.__baseSettingsSaved = 0
+        return (
+            <BaseSettings
+                type="table"
+                config={multiConfig()}
+                viewIndex={0}
+                basePath={MULTI_PATH}
+                rows={SAMPLE_ROWS}
+                onClose={noop}
+                onSaved={() => {
+                    g.__baseSettingsSaved = (g.__baseSettingsSaved ?? 0) + 1
+                }}
+            />
+        )
+    },
+    play: async () => {
+        const canvas = within(document.body)
+        const name = (await canvas.findByDisplayValue('All')) as HTMLInputElement
+        await userEvent.clear(name)
+        await userEvent.type(name, 'Everything')
+        await userEvent.click(canvas.getByText('save'))
+        await new Promise(r => setTimeout(r, 100))
+        const g = globalThis as {
+            __baseSettingsCalls?: { path: string; body: unknown }[]
+            __baseSettingsSaved?: number
+        }
+        await expect(g.__baseSettingsCalls).toContainEqual({
+            path: '/set-property',
+            body: {
+                path: MULTI_PATH,
+                viewIndex: 0,
+                key: 'name',
+                value: 'Everything',
+            },
+        })
+        await expect(g.__baseSettingsSaved).toBe(1)
+    },
 }
