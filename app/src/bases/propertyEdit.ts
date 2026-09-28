@@ -44,7 +44,7 @@ export type PropertyEditKind =
     | { kind: 'date'; time?: boolean }
     | { kind: 'select'; options: string[] }
     | { kind: 'multiselect'; options: string[] }
-    | { kind: 'tags' }
+    | { kind: 'tags'; options: string[] }
 
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -66,6 +66,30 @@ export function distinctStrings(values: unknown[]): string[] {
         set.add(String(v))
     }
     return [...set].sort()
+}
+
+/** The `options` a `tags` editor (MultiSelect, `creatable`) offers: the distinct string values
+ *  across every OTHER row's value for this property (flattening arrays) unioned with this row's
+ *  OWN values, in first-seen order — not alphabetized like `distinctStrings`, since a tags menu
+ *  reads better in the order the vault actually introduced each value. */
+export function tagsOptions(value: unknown, siblingValues: unknown[]): string[] {
+    const seen = new Set<string>()
+    const out: string[] = []
+    const add = (v: unknown): void => {
+        if (Array.isArray(v)) {
+            for (const x of v) add(x)
+            return
+        }
+        if (v == null || v === '' || typeof v === 'object') return
+        const s = String(v)
+        if (!seen.has(s)) {
+            seen.add(s)
+            out.push(s)
+        }
+    }
+    for (const sv of siblingValues) add(sv)
+    add(value)
+    return out
 }
 
 /**
@@ -122,7 +146,8 @@ export function propertyEditKind(
         if (t === 'datetime') return { kind: 'date', time: true }
         if (typeof t === 'object' && t.kind === 'enum')
             return { kind: 'select', options: t.values }
-        if (typeof t === 'object' && t.kind === 'list') return { kind: 'tags' }
+        if (typeof t === 'object' && t.kind === 'list')
+            return { kind: 'tags', options: tagsOptions(value, siblingValues) }
     }
     // #103 migration default: a property NAMED `description` with no declared type (in
     // the base's own `properties:` nor the vault-wide registry) defaults to markdown —
@@ -132,7 +157,8 @@ export function propertyEditKind(
     if (bareName(id) === 'description' && !entry) return { kind: 'markdown' }
     if (typeof value === 'boolean') return { kind: 'boolean' }
     if (typeof value === 'number') return { kind: 'number' }
-    if (Array.isArray(value)) return { kind: 'tags' }
+    if (Array.isArray(value))
+        return { kind: 'tags', options: tagsOptions(value, siblingValues) }
     if (typeof value === 'string') {
         if (ISO_DATETIME_RE.test(value)) return { kind: 'date', time: true }
         if (ISO_DATE_RE.test(value)) return { kind: 'date' }
@@ -155,16 +181,6 @@ export function multiselectValues(value: unknown): string[] {
     if (Array.isArray(value)) return value.map(String)
     if (value == null || value === '') return []
     return [String(value)]
-}
-
-/** The declared options NOT already selected — what a multiselect's "+ Add" menu offers.
- *  A selected value outside `options` (legacy/hand-edited — #101 tolerance) simply has
- *  nowhere to go here; it stays selectable-for-removal via its own chip, not re-offered. */
-export function multiselectAvailable(
-    options: string[],
-    selected: string[],
-): string[] {
-    return options.filter(o => !selected.includes(o))
 }
 
 /** What to COMMIT for a multiselect's next selected set: the array itself, or `null` when

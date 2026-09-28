@@ -1,0 +1,16 @@
+/* app/src/ui/MultiSelect.module.css — MultiSelect's own hashed locals. The trigger mirrors
+   Select's chrome exactly (same FormControl `.ui-input` base + a flex row + trailing caret) so
+   the two read as siblings, but it is a SEPARATE stylesheet — Select.module.css keeps its own
+   one importer (Select.tsx), never reached from here (one-module-one-importer). */
+
+.trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); }
+.value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
+.placeholder { color: var(--faint); }
+.caret { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); }
+.trigger:focus-visible { color: var(--fg); font-weight: var(--fw-bold); }
+.trigger:focus-visible .caret { color: var(--fg); }
+
+/* The open panel: a filter input above the shared .bismuth-popover list surface — both live
+   inside AnchoredPopover's portaled panel, so this wrapper only stacks them vertically. */
+.panel { display: flex; flex-direction: column; gap: var(--sp-1); }
+.filter { padding: var(--sp-2) var(--sp-3); }

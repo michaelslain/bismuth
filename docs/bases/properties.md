@@ -125,7 +125,7 @@ properties:
     options: [urgent, blocked, needs-review]
 ```
 
-On a kanban card, a `select` chip opens a dropdown (`Select`) offering `options`; a `multiselect` chip opens a chip-based editor — click "+ Add" to pick another option, click a selected chip to remove it. A stored value **outside** the declared `options` (hand-edited YAML, or an option removed after the fact) is preserved rather than dropped: for `select` it still shows as the current selection; for `multiselect` it still renders as a removable chip. Neither editor rewrites a legacy value out from under you — it just doesn't re-offer it in the "add" menu.
+On a kanban card, a `select` chip opens a dropdown (`Select`) offering `options`; a `multiselect` chip opens a `MultiSelect` dropdown (`app/src/ui/MultiSelect.tsx`) — a filter input above a list of every declared option, each row prefixed `[x]`/`[ ]`, click (or arrow keys + Enter) toggles it and the list stays open. An undeclared plain `tags` list uses the same `MultiSelect`, `creatable`: typing a value that matches nothing and pressing Enter adds it as a new selected value; its options are every distinct value already used for that property elsewhere on the board, plus the row's own. A stored value **outside** the declared `options` (hand-edited YAML, or an option removed after the fact) is preserved rather than dropped: for `select` it still shows as the current selection; for `multiselect` it still renders as a selected row. Neither editor rewrites a legacy value out from under you.
 
 ### Type kinds
 
