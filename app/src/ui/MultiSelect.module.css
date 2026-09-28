@@ -11,6 +11,20 @@
 .trigger:focus-visible .caret { color: var(--fg); }
 
 /* The open panel: a filter input above the shared .bismuth-popover list surface — both live
-   inside AnchoredPopover's portaled panel, so this wrapper only stacks them vertically. */
-.panel { display: flex; flex-direction: column; gap: var(--sp-1); }
+   inside AnchoredPopover's portaled panel. The panel itself now carries the popover surface
+   (background/border/radius/shadow, the same tokens .bismuth-popover uses in global.css) so the
+   filter input and the list share ONE opaque box instead of the filter sitting on nothing and
+   printing over whatever is behind the popover. `.list` then strips the inner PopoverList's own
+   border/shadow/padding in this context so there is one frame, not two nested ones. */
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    background: var(--bg);
+    border: var(--rule);
+    border-radius: var(--popover-radius);
+    padding: var(--popover-pad);
+    box-shadow: var(--popover-shadow);
+}
 .filter { padding: var(--sp-2) var(--sp-3); }
+.list { border: none; box-shadow: none; background: transparent; padding: 0; border-radius: 0; }

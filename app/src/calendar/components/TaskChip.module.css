@@ -84,9 +84,7 @@
 /* Ruling 1: no colour override here. The marker's colour means the category, full stop —
    lateness is already carried by the wash, the hairline above, and the `Nd late` label. */
 
-/* Keyboard focus. Inset (negative offset) because .chip still clips overflow (kept so the
-   focus ring and danger wash don't bleed past the chip's own box now that the title wraps). */
+/* No outline or ring on any focus, mouse or keyboard (2026-09-27). */
 .chip:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
+    outline: none;
 }

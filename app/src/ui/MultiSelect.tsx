@@ -168,6 +168,7 @@ function MultiSelect(props: MultiSelectProps) {
                             if (v) toggle(v)
                         }}
                         onHover={nav.setActive}
+                        class={styles.list}
                     />
                 </div>
             </AnchoredPopover>
