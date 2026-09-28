@@ -132,6 +132,21 @@ export const DateOnly: Story = {
     render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
 }
 
+/** Escape on the open date popover cancels the whole edit — a cell editor must not stay stuck open. */
+export const DateEscapeCancels: Story = {
+    render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+    },
+}
+
 /** Date + time — the same trigger, showing `date time`. */
 export const DateTime: Story = {
     render: () => (
