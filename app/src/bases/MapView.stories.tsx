@@ -112,7 +112,7 @@ export const CustomFieldsFixedFraming: Story = {
 /** Some rows have no valid `lat`/`lng` — instead of silently vanishing, they are offered by the
  *  map's right-click menu: `new pin here`, then `place <title> here` per row with no location.
  *  `play()` right-clicks the empty map and shows that menu. */
-export const UnplacedRowsArmed: Story = {
+export const MapRightClickMenu: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         const views = [{ type: 'map' as const, name: 'Atlas' }]
@@ -145,7 +145,8 @@ export const UnplacedRowsArmed: Story = {
 
 /** Right-clicking a placed pin (or Shift+F10 while it's focused) opens its own menu:
  *  edit (the row editor a left-click also opens), move pin (re-arms placement for that row),
- *  or remove pin (clears its coordinates — the row itself stays). */
+ *  or remove pin (clears its coordinates — the row itself stays). A map with no base file behind
+ *  it is read-only: its `edit` becomes `open note`. */
 export const PinMenuOpen: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -155,6 +156,7 @@ export const PinMenuOpen: Story = {
                 <MapView
                     result={sampleViewResult(PLACES, { views })}
                     config={sampleBaseConfig({ views })}
+                    basePath="stories/places.md"
                 />
             </div>
         )

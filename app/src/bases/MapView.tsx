@@ -23,6 +23,7 @@ import IconButton from '../ui/IconButton'
 import InlineCode from '../ui/InlineCode'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { createRow } from './AddRowAction'
+import { newTaskVisible } from './taskScope'
 import { openRowEditor } from './openRowEditor'
 import {
     project,
@@ -315,8 +316,8 @@ export function MapView(props: {
     const [size, setSize] = createSignal({ w: 800, h: 600 })
 
     // ── Placement / move / remove state ─────────────────────────────────────────────────
-    // The row currently "armed" for placement — picked from Add pin's menu, or from a
-    // pin's own "move…" menu item. The next click on the map (not on a pin) writes that
+    // What is "armed" for placement: a NEW pin (Add pin), or an existing row (a pin's own
+    // `move pin` item). The next click on the map (not on a pin) creates the pin / writes that
     // row's coordinates and disarms. Escape disarms too.
     const [armed, setArmed] = createSignal<Armed | null>(null)
     // A background pan in progress — drives the `grabbing` cursor (a class, not an inline style).
@@ -510,6 +511,16 @@ export function MapView(props: {
             return `Pins can't be added: ${latKey()} / ${lngKey()} are computed, not note properties`
         if (!props.basePath)
             return "Pins can't be added: this map is not backed by a base file"
+        // Rows stored in ANOTHER base file (a `from:` source): a new pin would be written as a
+        // note this source never selects — an orphan the map would never show.
+        if (!props.ownsRows) {
+            const rows = props.result.groups.flatMap(g => g.rows)
+            const foreign = rows.find(
+                r => r.index !== undefined && r.file.path !== props.basePath,
+            )
+            if (rows.length > 0 && foreign && rows.every(r => r.index !== undefined))
+                return `Pins can't be added here: these rows live in ${foreign.file.path} — add them there`
+        }
         return null
     }
 
@@ -533,7 +544,8 @@ export function MapView(props: {
         lng: number,
         before: Set<string>,
     ): Promise<Row | undefined> {
-        for (let i = 0; i < 20; i++) {
+        // Up to ~5s: the real server learns of the write over SSE a moment after it lands.
+        for (let i = 0; i < 100; i++) {
             const hit = markers().find(m =>
                 props.ownsRows
                     ? !before.has(markerKey(m.row)) &&
@@ -564,12 +576,26 @@ export function MapView(props: {
                 folder: siblingFolder(),
             })
             await props.onChange?.()
+            // Same filter check as the bar's `[+]` (AddRowAction): report, never prevent.
+            const visible = newTaskVisible(
+                props.config,
+                props.result.view,
+                props.ownsRows ? { ...created, index: 0 } : created,
+            )
+            if (!visible) {
+                pushToast(
+                    props.ownsRows
+                        ? `Pin added to ${basePath} — it does not match this view's filters, so it is not on this map`
+                        : `Added ${created.file.path} — it does not match this view's filters, so it is not on this map`,
+                )
+                // A note row can still be named and filled in; a stored row has no write handle
+                // until it is seen with its index.
+                if (!props.ownsRows) editRow(created)
+                return
+            }
             const row = await findCreated(created, lat, lng, before)
             if (!row && props.ownsRows) {
-                // A stored row has no write handle until it is seen with its index.
-                pushToast(
-                    `Pin added to ${basePath} — it does not match this view's filters, so it is not on this map`,
-                )
+                pushToast('Pin added — it will show once the map refreshes')
                 return
             }
             editRow(row ?? created)
@@ -741,7 +767,7 @@ export function MapView(props: {
         setZoom(iv.zoom)
     }
 
-    // ── Pin pointer handlers (drag to move; a plain click still opens the note) ─────────
+    // ── Pin pointer handlers (drag to move; a plain click opens the pin — see openPin) ──────
     function onPinPointerDown(e: PointerEvent, m: Marker): void {
         if (!writable() || e.button !== 0) return
         e.stopPropagation()
@@ -774,7 +800,7 @@ export function MapView(props: {
         if (!ds || ds.row !== m.row) return
         ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
         setDragState(null)
-        if (!ds.moved) return // a plain click — let the native click event open the note
+        if (!ds.moved) return // a plain click — let the native click event open the pin
         suppressNextPinClick = true
         const orig = geoToScreen(m.lat, m.lng)
         const { lat, lng } = screenToLatLng(
@@ -793,7 +819,18 @@ export function MapView(props: {
             suppressNextPinClick = false
             return
         }
-        editRow(m.row)
+        openPin(m.row)
+    }
+
+    // A pin opens its row editor — unless the map is read-only (an embed with no base file) or
+    // the row is a task LINE (its fields are not frontmatter): then it opens the note, as the
+    // other views do.
+    function openPin(row: Row): void {
+        if (!props.basePath || typeof row.note.line === 'number')
+            window.dispatchEvent(
+                new CustomEvent('bismuth-open', { detail: { path: row.file.path } }),
+            )
+        else editRow(row)
     }
 
     function onPinContextMenu(e: MouseEvent, m: Marker): void {
@@ -819,7 +856,11 @@ export function MapView(props: {
 
     const pinMenuItems = (row: Row): MenuItem[] => {
         const items: MenuItem[] = [
-            { label: 'edit', icon: 'Pencil', onSelect: () => editRow(row) },
+            {
+                label: props.basePath && typeof row.note.line !== 'number' ? 'edit' : 'open note',
+                icon: 'Pencil',
+                onSelect: () => openPin(row),
+            },
         ]
         if (writable()) {
             items.push(
@@ -1020,7 +1061,7 @@ export function MapView(props: {
                     (A row that exists but has no location is placed from the map's right-click
                     menu instead: `place <title> here`.) */}
                 <div
-                    class={styles.mapUnplaced}
+                    class={styles.mapPlacement}
                     onMouseDown={claimPointer}
                     onClick={claimPointer}
                     onContextMenu={claimPointer}

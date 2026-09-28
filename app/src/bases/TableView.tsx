@@ -75,11 +75,20 @@ export function TableView(props: {
     // rest of the board's values, but leaking a STRING sibling here would turn every short
     // text column (two titles, two authors) into a select you cannot type into. A declared
     // select/date/number type still gets its own dedicated editor regardless.
+    const allRows = createMemo(() => props.result.groups.flatMap(g => g.rows))
     const arraySiblingsFor = (id: string): unknown[] =>
-        props.result.groups
-            .flatMap(g => g.rows)
+        allRows()
             .map(r => resolveProperty(id, r))
             .filter(Array.isArray)
+    // Stored rows per base file — a TableCell drops an open edit when its file's count changes
+    // (a stored row's identity is its index in that file, so an earlier row's delete shifts it).
+    const storedCounts = createMemo(() => {
+        const m = new Map<string, number>()
+        for (const r of allRows())
+            if (typeof r.index === 'number')
+                m.set(r.file.path, (m.get(r.file.path) ?? 0) + 1)
+        return m
+    })
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
     // A cell is edited in place when its row can be written and its column is a real property
@@ -113,6 +122,11 @@ export function TableView(props: {
                     // fills in from the rest of the table; a text column never sees another row's
                     // string value, so it never turns into a select you cannot type into.
                     siblingValues={() => arraySiblingsFor(c)}
+                    storedCount={
+                        typeof row().index === 'number'
+                            ? () => storedCounts().get(row().file.path) ?? 0
+                            : undefined
+                    }
                     onCommit={v => void commitMeta(row(), c, v, props.onChange)}
                 >
                     {display()}

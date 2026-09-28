@@ -217,20 +217,24 @@ export function openRowEditor(opts: {
         dispose()
         host.remove()
     }
-    // `[open note]` must not race a pending rename: the row's title editor calls `onRename`
-    // then closes immediately, and a stale `notePath` would dispatch the OLD path while the
-    // move is still in flight. Track the path as a promise chain so `onOpenNote` always waits
-    // on the latest rename's real destination.
-    let notePath: Promise<string> = Promise.resolve(row.file.path)
-    let lastTitle: string | undefined
-    const liveRow = (): Promise<Row> =>
+    // Every write this modal makes goes through ONE queue, against the row AS THIS MODAL HAS
+    // WRITTEN IT (`current`) — never the row it was opened with. Otherwise a second rename moves
+    // a path that no longer exists (A→B, then B→C ran `move(A, C)`), a rename back to the original
+    // name is skipped while the file sits elsewhere, and a stored row's second property edit
+    // rewrites the whole stored note from the opening snapshot, undoing the first. `[open note]`
+    // and delete wait on the queue, so they always see the latest path.
+    let current: Row = row
+    let queue: Promise<unknown> = Promise.resolve()
+    const enqueue = (step: (r: Row) => Promise<Row>): Promise<Row> => {
+        const next = queue.then(() => step(current)).then(r => (current = r))
+        queue = next.catch(() => {})
+        return next
+    }
+    const titleKey = owned ? writableKey(titleCol) : null
+    const titleOf = (r: Row): string =>
         owned
-            ? Promise.resolve(row)
-            : notePath.then(path =>
-                  path === row.file.path
-                      ? row
-                      : { ...row, file: { ...row.file, path } },
-              )
+            ? String((titleKey && (r.note as Record<string, unknown>)[titleKey]) ?? '')
+            : r.file.name
     dispose = render(
         () =>
             CardEditModal({
@@ -245,36 +249,52 @@ export function openRowEditor(opts: {
                 hasFileIdentity: true,
                 heading: 'edit row',
                 emptyHint: 'this row has no editable properties.',
-                onRename: t => {
-                    // The modal commits its title on Enter (blur) AND again on close, both
-                    // against this same original `row` — a second rename to the same title
-                    // re-moved a path that no longer existed ("Rename failed" after naming a
-                    // new map pin). Only a title that differs from the last one committed moves.
-                    if (t.trim() === lastTitle) return
-                    lastTitle = t.trim()
-                    notePath = commitRename(row, view, t, onChanged).then(
-                        p => p ?? row.file.path,
-                    )
-                },
-                // After a rename a NOTE row lives at a new path — writes wait for it and go
-                // there, not to the path the modal was opened with (which no longer exists).
+                // The modal commits its title on Enter (blur) AND again on close; against the
+                // live row the second is a no-op, so a title that did not change never moves.
+                onRename: t =>
+                    void enqueue(async r => {
+                        const title = t.trim()
+                        if (!title || title === titleOf(r)) return r
+                        const path = await commitRename(r, view, title, onChanged)
+                        if (path === undefined) return r // failed — toasted; nothing moved
+                        if (owned)
+                            return titleKey
+                                ? { ...r, note: { ...r.note, [titleKey]: title } }
+                                : r
+                        if (path === r.file.path) return r
+                        const name =
+                            path.split('/').pop()?.replace(/\.md$/, '') ?? r.file.name
+                        return { ...r, file: { ...r.file, path, name, basename: name } }
+                    }),
                 onSetMeta: (id, v) =>
-                    void liveRow().then(r => commitMeta(r, id, v, onChanged)),
+                    void enqueue(async r => {
+                        await commitMeta(r, id, v, onChanged)
+                        const key = writableKey(id)
+                        if (key === null) return r
+                        const note = { ...(r.note as Record<string, unknown>) }
+                        if (v === null || v === undefined || v === '') delete note[key]
+                        else note[key] = v
+                        return { ...r, note: note as Row['note'] }
+                    }),
                 onDelete: () => {
                     close()
-                    void liveRow().then(r => commitDelete(r, onChanged))
+                    void enqueue(async r => {
+                        await commitDelete(r, onChanged)
+                        return r
+                    })
                 },
                 onClose: close,
                 onOpenNote: owned
                     ? undefined
                     : () =>
-                          void notePath.then(path =>
+                          void enqueue(async r => {
                               window.dispatchEvent(
                                   new CustomEvent('bismuth-open', {
-                                      detail: { path },
+                                      detail: { path: r.file.path },
                                   }),
-                              ),
-                          ),
+                              )
+                              return r
+                          }),
             }),
         host,
     )

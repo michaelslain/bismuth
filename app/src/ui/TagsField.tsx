@@ -122,6 +122,14 @@ const TagsField: Component<TagsFieldProps> = props => {
     // field), so a later edit in the same field goes through the same door again.
     let cancelling = false
     let destroyed = false
+    // Whether the person actually changed the text this edit. An edit left untouched ends as a
+    // cancel — the text is NEVER re-parsed and written back, so merely opening and leaving the
+    // field cannot rewrite the stored value.
+    let dirty = false
+    // The last list this field committed (or was handed). Escape reverts to THIS, not to
+    // `props.value` — an owner may not feed a commit back in (the row editor keeps its row
+    // static), and reverting past a commit would silently undo it on the next save.
+    let committed = props.value
     // A click focuses the field AND places the caret where it landed — appending the separator on
     // that focus would leave the caret before it (typing then glues onto the last tag). So only a
     // keyboard/programmatic focus gets the ready-to-type separator.
@@ -138,13 +146,16 @@ const TagsField: Component<TagsFieldProps> = props => {
 
     function onLeave(v: EditorView): void {
         if (destroyed) return
-        if (cancelling) {
+        if (cancelling || !dirty) {
             cancelling = false
-            setText(v, tagsToText(props.value, hash(), false))
+            dirty = false
+            setText(v, tagsToText(committed, hash(), false))
             props.onCancel()
             return
         }
+        dirty = false
         const next = textToTags(v.state.doc.toString(), hash())
+        committed = next
         // Tidy BEFORE reporting — the caller may unmount the field in onCommit.
         setText(v, tagsToText(next, hash(), false))
         props.onCommit(next)
@@ -231,6 +242,21 @@ const TagsField: Component<TagsFieldProps> = props => {
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     // `#` is not a word character, so CodeMirror's typing trigger misses it — open
                     // the popup the moment one is typed (the note editor does the same for `[[`).
+                    // Only a person's own edits (typing, deleting, pasting, taking a suggestion)
+                    // make the edit dirty — the focus-time separator and value syncs do not.
+                    EditorView.updateListener.of(u => {
+                        if (
+                            u.docChanged &&
+                            u.transactions.some(
+                                t =>
+                                    t.isUserEvent('input') ||
+                                    t.isUserEvent('delete') ||
+                                    t.isUserEvent('undo') ||
+                                    t.isUserEvent('redo'),
+                            )
+                        )
+                            dirty = true
+                    }),
                     EditorView.updateListener.of(u => {
                         if (!u.docChanged || !hash()) return
                         if (!u.transactions.some(t => t.isUserEvent('input.type'))) return
@@ -239,8 +265,10 @@ const TagsField: Component<TagsFieldProps> = props => {
                             queueMicrotask(() => view && startCompletion(view))
                     }),
                     EditorView.domEventHandlers({
-                        mousedown: () => {
-                            pointerFocus = true
+                        mousedown: (_e, v) => {
+                            // Only a click that FOCUSES the field — a click inside an already
+                            // focused field would otherwise leave this set for the next focus.
+                            if (!v.hasFocus) pointerFocus = true
                             return false
                         },
                         focus: (_e, v) => {
@@ -258,6 +286,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                             return false
                         },
                         blur: (_e, v) => {
+                            pointerFocus = false
                             onLeave(v)
                             return false
                         },
@@ -289,6 +318,7 @@ const TagsField: Component<TagsFieldProps> = props => {
     // A value swapped in from outside while the field is idle (a refetch) replaces the text; the
     // user's own typing never round-trips through `value`, so it is never clobbered.
     createEffect(() => {
+        committed = props.value
         const next = tagsToText(props.value, hash(), false)
         if (!view || view.hasFocus || next === view.state.doc.toString()) return
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } })
@@ -304,7 +334,7 @@ const TagsField: Component<TagsFieldProps> = props => {
             as="div"
             ref={host}
             class={`${styles.field} ${props.class ?? ''}`}
-            data-tags-field=""
+            data-testid="tags-field"
         />
     )
 }

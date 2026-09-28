@@ -84,8 +84,8 @@ export const EditableWithPinnedColumns: Story = {
     },
 }
 
-/** Hovering a column reveals its header's `[✎]` rename (and `[🗑]` delete, only on an EMPTY
- *  column — "Blocked" here) without moving the title or the count: the bar is hung off the
+/** Hovering a column reveals its header's `[✎]` rename and `[🗑]` delete (every column except
+ *  the no-value "(empty)" lane) without moving the title or the count: the bar is hung off the
  *  count's left edge, so at rest the count sits flush against the header's right edge. The hover
  *  is the whole column, not just the header strip. `userEvent.hover` is synthetic (CSS `:hover`
  *  never sees it), so this exercises the `data-hover` half of the reveal; the `:hover` half was

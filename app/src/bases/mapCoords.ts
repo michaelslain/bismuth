@@ -74,7 +74,7 @@ export function screenToLatLng(
 
 /**
  * Total on-screen movement below which a pointer-down/up pair on a pin counts as a CLICK
- * (open the note) rather than a DRAG (move the pin) — a few px of tremor shouldn't relocate
+ * (open the pin) rather than a DRAG (move the pin) — a few px of tremor shouldn't relocate
  * a marker the user only meant to open.
  */
 export const DRAG_THRESHOLD_PX = 4

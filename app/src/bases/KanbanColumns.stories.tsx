@@ -584,14 +584,12 @@ export const RenameColumnKeepsAuto: Story = {
     },
 }
 
-/** The `[🗑]` now shows on every column, not only an empty one (round-3 item 3 — before this fix
- *  a non-empty column had no delete affordance at all). Deleting "Todo" (2 note-row cards in the
- *  sample data) both drops it from `columns` AND clears `status` on those 2 cards via ONE batched
- *  `/set-properties` write — same write shape as `renameColumn`'s card move, just to `''` instead
- *  of a new name — and offers an Undo toast. This is a static-result story (no live re-query), so
- *  it can't show the cards actually landing in the "(empty)" column — that's the CDP probe's job
- *  against the running app/gallery — but it proves the write, the toast and the instant column
- *  removal. */
+/** The `[🗑]` shows on every column except the no-value "(empty)" lane. Deleting "Todo" (2
+ *  note-row cards in the sample data) drops it from `columns` AND removes `status` from those 2
+ *  cards — one `/delete-property` each, never a `status: ''` (an empty string a declared `select`
+ *  would read as invalid) — and offers an Undo toast. This is a static-result story (no live
+ *  re-query), so it can't show the cards landing in the "(empty)" lane — the gallery does — but it
+ *  proves the writes, the toast and the instant column removal. */
 export const DeleteColumnWithCards: Story = {
     render: () => {
         const { transport, calls } = spiedTransport()
@@ -631,20 +629,15 @@ export const DeleteColumnWithCards: Story = {
             (columnsWrite!.body as { value: string[] }).value,
         ).not.toContain('Todo')
 
-        const clearWrite = kanbanCalls.find(
-            c => c.path === '/set-properties',
+        await waitFor(() =>
+            expect(
+                kanbanCalls.filter(c => c.path === '/delete-property'),
+            ).toHaveLength(2),
         )
-        expect(clearWrite).toBeDefined()
-        const writes = (
-            clearWrite!.body as {
-                writes: Array<{ path: string; key: string; value: unknown }>
-            }
-        ).writes
-        expect(writes.length).toBe(2)
-        for (const w of writes) {
-            expect(w.key).toBe('status')
-            expect(w.value).toBe('')
-        }
+        for (const c of kanbanCalls.filter(c => c.path === '/delete-property'))
+            expect((c.body as { key: string }).key).toBe('status')
+        // Never the old empty-string write.
+        expect(kanbanCalls.some(c => c.path === '/set-properties')).toBe(false)
 
         await waitFor(() => expect(toasts().length).toBe(before + 1))
         expect(toasts()[before].message).toContain('Deleted column "Todo"')
