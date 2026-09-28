@@ -158,3 +158,29 @@ export const TagTokensKeepTheirLook: Story = {
         })
     },
 }
+
+/** An owner that does NOT feed a commit back in (the row editor keeps its row static): Escape on
+ *  a later edit must revert to what the field last committed, never to the value it was first
+ *  handed — reverting past a commit would silently drop it on the next save. */
+export const OwnerIgnoresCommit: Story = {
+    render: () => (
+        <div style={{ width: '280px' }}>
+            <TagsField
+                value={['planning']}
+                suggestions={() => VAULT_TAGS}
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'zzz')
+        pressKey(view, 'Enter')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #zzz'))
+        typeInto(view, 'yyy')
+        await new Promise(r => setTimeout(r, 150))
+        pressKey(view, 'Escape')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #zzz'))
+    },
+}

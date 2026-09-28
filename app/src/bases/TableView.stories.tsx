@@ -488,7 +488,7 @@ export const TagsTypeAcceptCommit: Story = {
         await waitFor(() =>
             expect((cell().textContent ?? '').trim()).toBe('#alpha#beta#gamma'),
         )
-        expect(cell().querySelector('[data-tags-field]')).toBeNull()
+        expect(cell().querySelector('[data-testid="tags-field"]')).toBeNull()
         expect(pickRows[0]!.note.tags).toEqual(['alpha', 'beta', 'gamma'])
     },
 }

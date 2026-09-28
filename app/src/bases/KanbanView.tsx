@@ -140,8 +140,8 @@ export function KanbanView(props: {
     mode?: 'normal' | 'tasks'
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
-    /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
-     *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
+    /** Open the card's note in a tab. Unused by KanbanView itself today (no host currently
+     *  wires it in) — kept for prop-shape parity with the other views. */
     onOpen?: (path: string) => void
     /** The board owns its rows (no `source:`): a new card is a row in the base file's body,
      *  not a note file. Computed by BaseView (`ownsRows`), the same flag CalendarView gets. */
@@ -936,6 +936,9 @@ export function KanbanView(props: {
                 return
             }
         }
+        // Captured for Undo: where the column sat and its colour override, both removed below.
+        const prevIndex = columnKeys().indexOf(key)
+        const prevColor = groupColors()[key]
         const keys = removeColumnKey(columnKeys(), key)
         const alreadyRemoved = pendingRemovedCols().has(key)
         const prevOrder = pendingColOrder()
@@ -972,12 +975,14 @@ export function KanbanView(props: {
             if (cardRows.length > 0 && statusKey !== null) {
                 const storedRows = cardRows.filter(canWriteStoredRow)
                 const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
+                // The cards lose the grouping key entirely (they fall into the no-value lane) —
+                // never an empty string, which a declared `select` would read as invalid.
                 if (storedRows.length > 0) {
-                    const items = storedRows.map(r => ({
-                        path: r.file.path,
-                        index: r.index!,
-                        note: { ...storedNote(r), [statusKey!]: '' },
-                    }))
+                    const items = storedRows.map(r => {
+                        const note = { ...storedNote(r) }
+                        delete note[statusKey!]
+                        return { path: r.file.path, index: r.index!, note }
+                    })
                     for (const [path, group] of groupUpdatesByPath(items)) {
                         await api.rowUpdateMany(
                             path,
@@ -985,14 +990,8 @@ export function KanbanView(props: {
                         )
                     }
                 }
-                if (noteRows.length > 0) {
-                    const writes = noteRows.map(r => ({
-                        path: r.file.path,
-                        key: statusKey!,
-                        value: '',
-                    }))
-                    await api.setProperties(writes)
-                }
+                for (const r of noteRows)
+                    await api.deleteProperty(r.file.path, statusKey!)
             }
             props.onChange()
             if (cardRows.length > 0 && statusKey !== null) {
@@ -1006,6 +1005,8 @@ export function KanbanView(props: {
                                 key,
                                 movedStatusKey,
                                 cardRows,
+                                prevIndex,
+                                prevColor,
                             ),
                     },
                 )
@@ -1028,24 +1029,50 @@ export function KanbanView(props: {
         }
     }
 
-    /** Undo for a non-empty column's delete: re-add `key` to `columns` and put every cleared
-     *  card's grouping value back. Best-effort like `restoreStoredCard`/`restoreCard` above — it
-     *  writes the SAME `cardRows` snapshot captured at delete time, not a fresh re-read. */
+    /** Undo for a non-empty column's delete: put the column back WHERE it was (with its colour
+     *  override), and give each cleared card its grouping value back — re-reading every card as
+     *  it is NOW, so an edit made between the delete and the Undo survives. A card that has since
+     *  been given some other value, or has gone, is left alone. */
     async function undoDeleteColumn(
         key: string,
         statusKey: string,
         cardRows: Row[],
+        prevIndex: number,
+        prevColor: string | undefined,
     ): Promise<void> {
         if (!props.basePath) return
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
+        // The delete's own optimistic hide must not outlive the Undo (if the Undo lands before
+        // the delete's refetch, the column would otherwise stay hidden until a remount).
+        setPendingRemovedCols(prev => {
+            const next = new Set(prev)
+            next.delete(key)
+            return next
+        })
+        const current = new Map(
+            props.result.groups.flatMap(g => g.rows).map(r => [rowId(r), r]),
+        )
+        const stillCleared = (r: Row | undefined): r is Row =>
+            !!r && ((r.note as Record<string, unknown>)[statusKey] ?? '') === ''
         try {
+            const cols = columnKeys().filter(k => k !== key)
+            const at = prevIndex < 0 ? cols.length : Math.min(prevIndex, cols.length)
             await api.setViewProperty(basePath, idx, 'columns', [
-                ...columnKeys(),
+                ...cols.slice(0, at),
                 key,
+                ...cols.slice(at),
             ])
-            const storedRows = cardRows.filter(canWriteStoredRow)
-            const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
+            if (prevColor !== undefined)
+                await api.setViewProperty(basePath, idx, 'groupColors', {
+                    ...groupColors(),
+                    [key]: prevColor,
+                })
+            const live = cardRows
+                .map(r => current.get(rowId(r)))
+                .filter(stillCleared)
+            const storedRows = live.filter(canWriteStoredRow)
+            const noteRows = live.filter(r => !canWriteStoredRow(r))
             if (storedRows.length > 0) {
                 const items = storedRows.map(r => ({
                     path: r.file.path,
@@ -1805,15 +1832,20 @@ export function KanbanView(props: {
                                                                 )
                                                             }
                                                         />
-                                                        <IconButton
-                                                            icon="Trash2"
-                                                            label="Delete column"
-                                                            onClick={() =>
-                                                                void deleteColumn(
-                                                                    group().key,
-                                                                )
-                                                            }
-                                                        />
+                                                        {/* The "(empty)" lane is where cards with
+                                                            no value live — it is not a column
+                                                            that can be deleted. */}
+                                                        <Show when={group().key !== ''}>
+                                                            <IconButton
+                                                                icon="Trash2"
+                                                                label="Delete column"
+                                                                onClick={() =>
+                                                                    void deleteColumn(
+                                                                        group().key,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </Show>
                                                     </IconBar>
                                                 </Show>
                                                 <Text

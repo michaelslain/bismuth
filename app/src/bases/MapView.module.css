@@ -131,9 +131,9 @@
   pointer-events: none;
   font-size: var(--fs-body);
 }
-/* `Add pin`, top-left (mirrors .mapControls at top-right). It arms placement — of a new row, or
-   of an existing row picked from its menu; the next click on the map writes the coordinates. */
-.mapUnplaced {
+/* `Add pin`, top-left (mirrors .mapControls at top-right). It arms a new pin; the next click on
+   the map creates it there. */
+.mapPlacement {
   position: absolute;
   left: 16px;
   top: 16px;
@@ -144,7 +144,7 @@
   cursor: default;
 }
 /* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
-.mapUnplaced button:disabled { cursor: not-allowed; }
+.mapPlacement button:disabled { cursor: not-allowed; }
 /* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
    cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
 .mapArmed {

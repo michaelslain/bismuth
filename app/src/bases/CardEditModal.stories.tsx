@@ -14,6 +14,7 @@ import { expect, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { metaColumns } from './kanbanMeta'
+import { tagsFieldView } from '../ui/_tagsFieldPlay'
 import type { Row } from '../../../core/src/bases/types'
 
 const meta = {
@@ -153,7 +154,8 @@ export const OrderListsTitle: Story = {
         // SAMPLE_ROWS[1] via HAS_TITLE_ROW) — that control is correct and must NOT be
         // asserted away. The bug was a second row keyed `title`, never `tags`'s own
         // control; `titleLabels.length` above is what proves the second row is gone.
-        expect(document.body.textContent).toMatch(/frontend/)
+        const tagsField = await tagsFieldView(document.body)
+        expect(tagsField.state.doc.toString()).toContain('frontend')
     },
 }
 

@@ -44,7 +44,13 @@ export type PropertyEditKind =
     | { kind: 'date'; time?: boolean }
     | { kind: 'select'; options: string[] }
     | { kind: 'multiselect'; options: string[] }
-    | { kind: 'tags'; options: string[] }
+    /** An undeclared (or registry `list`) list of strings, edited as one line of text.
+     *  `hash`: the `#tag` spelling (whitespace-separated) — only for a TAG column whose every
+     *  value is a single word; any other list uses commas, so a value may hold spaces. */
+    | { kind: 'tags'; options: string[]; hash: boolean }
+    /** A value no editor here can round-trip — a list holding numbers or links, or a comma
+     *  inside a comma-separated value. Shown, never edited, so opening it cannot rewrite it. */
+    | { kind: 'readonly' }
 
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -130,10 +136,10 @@ export function propertyEditKind(
             case 'select':
                 return { kind: 'select', options: declaredType.options ?? [] }
             case 'multiselect':
-                return {
-                    kind: 'multiselect',
-                    options: declaredType.options ?? [],
-                }
+                // A stored value holding a comma cannot survive the comma-separated field.
+                return multiselectValues(value).some(v => v.includes(','))
+                    ? { kind: 'readonly' }
+                    : { kind: 'multiselect', options: declaredType.options ?? [] }
             // list/link/formula: no dedicated editor yet — fall through.
         }
     }
@@ -147,7 +153,7 @@ export function propertyEditKind(
         if (typeof t === 'object' && t.kind === 'enum')
             return { kind: 'select', options: t.values }
         if (typeof t === 'object' && t.kind === 'list')
-            return { kind: 'tags', options: tagsOptions(value, siblingValues) }
+            return listEditKind(id, value, siblingValues)
     }
     // #103 migration default: a property NAMED `description` with no declared type (in
     // the base's own `properties:` nor the vault-wide registry) defaults to markdown —
@@ -157,8 +163,7 @@ export function propertyEditKind(
     if (bareName(id) === 'description' && !entry) return { kind: 'markdown' }
     if (typeof value === 'boolean') return { kind: 'boolean' }
     if (typeof value === 'number') return { kind: 'number' }
-    if (Array.isArray(value))
-        return { kind: 'tags', options: tagsOptions(value, siblingValues) }
+    if (Array.isArray(value)) return listEditKind(id, value, siblingValues)
     if (typeof value === 'string') {
         if (ISO_DATETIME_RE.test(value)) return { kind: 'date', time: true }
         if (ISO_DATE_RE.test(value)) return { kind: 'date' }
@@ -167,6 +172,26 @@ export function propertyEditKind(
     if (known.length >= MIN_SELECT_VALUES && known.length <= MAX_SELECT_VALUES)
         return { kind: 'select', options: known }
     return { kind: 'text' }
+}
+
+/** A single `#tag` word: no whitespace, comma or inner `#`. */
+const TAG_WORD_RE = /^#?[^\s,#]+$/
+
+/** How a list value is edited — see the `tags` / `readonly` kinds. Only a list of plain strings
+ *  is editable; `#tag` spelling only for a tag column whose values are all single words; a comma
+ *  inside a value makes the comma-separated spelling lossy, so that list is shown read-only. */
+function listEditKind(
+    id: string,
+    value: unknown,
+    siblingValues: unknown[],
+): PropertyEditKind {
+    const list = Array.isArray(value) ? value : value == null ? [] : [value]
+    if (list.some(v => typeof v !== 'string')) return { kind: 'readonly' }
+    const strings = list as string[]
+    const tagColumn = bareName(id) === 'tags' || bareName(id) === 'tag'
+    const hash = tagColumn && strings.every(v => TAG_WORD_RE.test(v))
+    if (!hash && strings.some(v => v.includes(','))) return { kind: 'readonly' }
+    return { kind: 'tags', options: tagsOptions(value, siblingValues), hash }
 }
 
 // ── #101: select/multiselect editor helpers ───────────────────────────────────────────

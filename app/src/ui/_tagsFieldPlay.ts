@@ -13,7 +13,7 @@ import { expect, waitFor } from 'storybook/test'
 /** The TagsField editor inside `root` (the first one, or the one matching `index`). */
 export async function tagsFieldView(root: ParentNode, index = 0): Promise<EditorView> {
     return waitFor(() => {
-        const host = root.querySelectorAll<HTMLElement>('[data-tags-field] .cm-editor')[index]
+        const host = root.querySelectorAll<HTMLElement>('[data-testid="tags-field"] .cm-editor')[index]
         const view = host && EditorView.findFromDOM(host)
         if (!view) throw new Error('no TagsField editor mounted')
         return view

@@ -3,7 +3,14 @@
 // spreadsheet edits. Enter or blur commits, Escape cancels. The write itself is the caller's
 // (TableView hands it openRowEditor's `commitMeta`, the one row write helper), so this component
 // owns nothing but "is this cell open".
-import { Show, createSignal, type Component, type JSX } from 'solid-js'
+import {
+    Show,
+    createEffect,
+    createMemo,
+    createSignal,
+    type Component,
+    type JSX,
+} from 'solid-js'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import {
@@ -14,6 +21,7 @@ import { propertyRegistry } from '../propertyRegistry'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import PlainButton from '../ui/PlainButton'
+import { pushToast } from '../toastStore'
 import styles from './TableCell.module.css'
 
 export type TableCellProps = {
@@ -21,8 +29,15 @@ export type TableCellProps = {
     /** The column id (`author`, `note.author`, …). */
     col: string
     config: BaseConfig
-    /** Every other row's value for this column, for the editor's pick-from-history fallback. */
+    /** Every other row's value for this column, for the editor's pick-from-history fallback.
+     *  Read only when the cell OPENS — never on render, so a table does not rescan every row
+     *  for every cell on each refetch. */
     siblingValues: () => unknown[]
+    /** How many rows are stored in this row's own base file (0 for a note row). A stored row's
+     *  identity is its position in that file, so if this count changes while the cell is open
+     *  (a row above it was deleted or added) the edit could land in a different row — it is
+     *  dropped instead. */
+    storedCount?: () => number
     /** Persist the (already type-coerced) value. The write revalidates the base, so `row` then
      *  arrives as a NEW object on this same instance (TableView keys rows by `mountKeys`, so the
      *  cell is never remounted by its own write). */
@@ -38,15 +53,19 @@ const TableCell: Component<TableCellProps> = props => {
     // commits the flip immediately. Checking the kind here (rather than gating on it inside the
     // editor) is what keeps `editing()` boolean-free, so the Show below never has to special-case
     // it once open.
-    const kindOf = () =>
+    const kindOf = (siblings: unknown[]) =>
         propertyEditKind(
             props.col,
             value(),
             propertyRegistry(),
-            props.siblingValues(),
+            siblings,
             propertyType(props.config, props.col),
         )
-    const isBoolean = () => kindOf().kind === 'boolean'
+    // The resting cell's kind, WITHOUT siblings — enough to tell a boolean (toggles in place)
+    // and a read-only value (never opens) apart; only an open editor needs the siblings.
+    const restingKind = createMemo(() => kindOf([]).kind)
+    const isBoolean = () => restingKind() === 'boolean'
+    const isReadonly = () => restingKind() === 'readonly'
     // What the open editor edits, frozen at the moment the cell opens. The row refetches while
     // an editor is open (the previous cell's save lands a moment later), and recomputing the
     // editor kind hands PropertyValueEditor a NEW kind object, which re-creates its input and
@@ -54,7 +73,18 @@ const TableCell: Component<TableCellProps> = props => {
     const [editing, setEditing] = createSignal<{
         kind: PropertyEditKind
         value: unknown
+        storedCount: number
     } | null>(null)
+    // A stored row shifted under the open editor (see `storedCount`): drop the edit rather than
+    // write it into whichever row now holds this position.
+    createEffect(() => {
+        const e = editing()
+        if (!e || !props.storedCount) return
+        if (props.storedCount() !== e.storedCount) {
+            setEditing(null)
+            pushToast('The rows changed while you were editing — that edit was not saved.')
+        }
+    })
     const commit = (v: unknown) => {
         const t = propertyType(props.config, props.col)
         const coerced = (t ? coercePropertyValue(t, v) : v) ?? null
@@ -62,12 +92,13 @@ const TableCell: Component<TableCellProps> = props => {
         setEditing(null)
     }
     const open = () => {
-        const kind = kindOf()
+        const kind = kindOf(props.siblingValues())
+        if (kind.kind === 'readonly') return
         if (kind.kind === 'boolean') {
             commit(!(value() === true))
             return
         }
-        setEditing({ kind, value: value() })
+        setEditing({ kind, value: value(), storedCount: props.storedCount?.() ?? 0 })
     }
 
     return (
@@ -78,11 +109,18 @@ const TableCell: Component<TableCellProps> = props => {
                     class={[
                         styles.cell,
                         isBoolean() ? styles.cellBoolean : '',
+                        isReadonly() ? styles.cellReadonly : '',
                         props.class ?? '',
                     ]
                         .filter(Boolean)
                         .join(' ')}
-                    title="Click to edit"
+                    title={
+                        isReadonly()
+                            ? 'Not editable here — edit this property in the note'
+                            : isBoolean()
+                              ? 'Click to toggle'
+                              : 'Click to edit'
+                    }
                     onClick={e => {
                         e.stopPropagation()
                         open()

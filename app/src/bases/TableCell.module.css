@@ -29,3 +29,6 @@
 .editor {
     width: 100%;
 }
+/* A value no in-cell editor can round-trip (a list of numbers or links) — shown, not clickable. */
+.cell.cellReadonly { cursor: default; }
+.cell.cellReadonly:hover { background: transparent; }

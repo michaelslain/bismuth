@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
-import { PropertyValueEditor } from './PropertyValueEditor'
+import { PropertyValueEditor, resetVaultTagsCache } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
@@ -168,6 +168,7 @@ export const Tags: Story = {
             kind={{
                 kind: 'tags',
                 options: ['frontend', 'bug', 'backend', 'docs'],
+                hash: true,
             }}
             initial={['frontend', 'bug']}
         />
@@ -303,7 +304,7 @@ export const MultiselectTypeAndCommit: Story = {
 export const TagsCreatable: Story = {
     render: () => (
         <Harness
-            kind={{ kind: 'tags', options: ['frontend', 'bug'] }}
+            kind={{ kind: 'tags', options: ['frontend', 'bug'], hash: true }}
             initial={['bug']}
         />
     ),
@@ -325,6 +326,7 @@ export const TagsCreatable: Story = {
  *  Enter commits. */
 export const TagsSuggestVaultTags: Story = {
     render: () => {
+        resetVaultTagsCache()
         setTransport(
             fakeTransport({
                 graph: {
@@ -339,7 +341,7 @@ export const TagsSuggestVaultTags: Story = {
         )
         return (
             <Harness
-                kind={{ kind: 'tags', options: ['frontend', 'bug'] }}
+                kind={{ kind: 'tags', options: ['frontend', 'bug'], hash: true }}
                 initial={['bug']}
             />
         )
@@ -359,5 +361,38 @@ export const TagsSuggestVaultTags: Story = {
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["bug","chicken"]',
         )
+    },
+}
+
+/** A list that is NOT tags — `["Jane Doe"]` — is comma-separated (so the space survives), and
+ *  opening the field and leaving it without typing writes NOTHING: the text is never re-parsed
+ *  back into a (different) list unless the person changed it. */
+export const UntouchedListWritesNothing: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'tags', options: [], hash: false }}
+            initial={['Jane Doe']}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const view = await tagsFieldView(canvasElement)
+        expect(view.state.doc.toString()).toBe('Jane Doe, ')
+        view.contentDOM.blur()
+        await waitFor(() => expect(canvas.getByText(/cancelled/)).toBeInTheDocument())
+        expect(canvas.queryByText(/committed:/)).toBeNull()
+        expect(view.state.doc.toString()).toBe('Jane Doe')
+    },
+}
+
+/** A list the field could not round-trip (numbers, links, or a comma inside a value) is shown
+ *  read-only — no editor, nothing to commit. */
+export const ReadonlyList: Story = {
+    render: () => <Harness kind={{ kind: 'readonly' }} initial={[1, 2, 3]} />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        expect(canvas.getByText('1, 2, 3')).toBeInTheDocument()
+        expect(canvasElement.querySelector('[data-testid="tags-field"]')).toBeNull()
+        expect(canvasElement.querySelector('input, textarea')).toBeNull()
     },
 }

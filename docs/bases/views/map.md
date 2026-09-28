@@ -71,7 +71,7 @@ The view re-runs this framing only when the VIEW changes (switching views, or it
 
 ## Placing, Moving and Removing Pins
 
-Rows are no longer only readable off hand-written frontmatter — a pin can be placed, dragged to a new spot, or removed straight from the map, as long as the view's `lat`/`lng` fields resolve to a real frontmatter key (a bare name or an explicit `note.*` id). A `formula.*`, `file.*` or `this.*` coordinate has nothing to write back to, so on a view configured that way the map is **read-only**: the "unplaced" control is hidden, **Add pin** is disabled (its title says why), and a pin's context menu offers only "edit".
+Rows are no longer only readable off hand-written frontmatter — a pin can be placed, dragged to a new spot, or removed straight from the map, as long as the view's `lat`/`lng` fields resolve to a real frontmatter key (a bare name or an explicit `note.*` id). A `formula.*`, `file.*` or `this.*` coordinate has nothing to write back to, so on a view configured that way the map is **read-only**: the map's right-click menu does not open, **Add pin** is disabled (its title says why), and a pin's context menu offers only "edit".
 
 ### Adding a pin
 
@@ -121,7 +121,7 @@ The map renders several overlaid elements:
 - **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator. Draggable, right-clickable and (when focused) `Shift+F10`-able when the view's coordinates are writable — see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins).
 - **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Map` fit to pins).
 - **Placement group** (top-left) — the `Pin` **Add pin** `IconButton`: it arms creating a new pin, and the next click on the map creates it there. Rows that exist but have no location are placed from the map's right-click menu (`place <title> here`), not from this button.
-- **Placing hint** — a small floating label reading "placing `<title>` — esc to cancel", shown while a row is armed for placement.
+- **Placing hint** — a small floating label, shown while placement is armed: "click to add a pin — esc to cancel" after **Add pin**, or "placing `<title>` — esc to cancel" after a pin's `move pin`.
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.
 

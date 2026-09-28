@@ -29,6 +29,7 @@ import {
 import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import TextInput from '../ui/TextInput'
+import Text from '../ui/Text'
 import { api } from '../api'
 import { mergeTagOptions, vaultTagNames } from './tagSuggestions'
 import styles from './PropertyValueEditor.module.css'
@@ -40,6 +41,22 @@ import styles from './PropertyValueEditor.module.css'
 // last-known set at once, then the refreshed set once its own fetch lands (suggestions are read
 // per keystroke).
 let lastVaultTags: string[] = []
+// One graph fetch shared by every tags field for 30s — opening cell after cell must not
+// re-download the whole vault graph each time just to read its tag names.
+let vaultTagsFetch: { at: number; tags: Promise<string[]> } | null = null
+function fetchVaultTags(): Promise<string[]> {
+    if (!vaultTagsFetch || Date.now() - vaultTagsFetch.at > 30_000)
+        vaultTagsFetch = {
+            at: Date.now(),
+            tags: api.graph().then(vaultTagNames),
+        }
+    return vaultTagsFetch.tags
+}
+/** Forget the cached vault tags — for a story that swaps in its own fake graph. */
+export function resetVaultTagsCache(): void {
+    vaultTagsFetch = null
+    lastVaultTags = []
+}
 
 function autoGrow(el: HTMLTextAreaElement): void {
     el.style.height = 'auto'
@@ -80,13 +97,14 @@ export function PropertyValueEditor(props: {
     // `tagCandidates`) — after this column's and this row's own values (`kind.options`).
     const [vaultTags, setVaultTags] = createSignal(lastVaultTags)
     onMount(() => {
-        if (props.kind.kind !== 'tags') return
-        api.graph()
-            .then(g => {
-                lastVaultTags = vaultTagNames(g)
-                setVaultTags(lastVaultTags)
+        if (props.kind.kind !== 'tags' || !props.kind.hash) return
+        fetchVaultTags()
+            .then(tags => {
+                lastVaultTags = tags
+                setVaultTags(tags)
             })
             .catch(() => {
+                vaultTagsFetch = null
                 // offline / no graph yet — the column's own values still stand
             })
     })
@@ -123,7 +141,10 @@ export function PropertyValueEditor(props: {
         const k = props.kind
         if (k.kind === 'multiselect') return { options: k.options, hash: false }
         if (k.kind === 'tags')
-            return { options: mergeTagOptions(k.options, vaultTags()), hash: true }
+            return {
+                options: mergeTagOptions(k.options, k.hash ? vaultTags() : []),
+                hash: k.hash,
+            }
         return null
     }
 
@@ -142,108 +163,136 @@ export function PropertyValueEditor(props: {
         ]
     }
 
+    // A `readonly` value (a list of numbers/links, or a comma inside a comma-separated value) has
+    // no editor that can round-trip it — shown as-is, never committed, so opening it is harmless.
+    const readonlyText = (): string => {
+        const show = (v: unknown): string =>
+            v && typeof v === 'object'
+                ? String(
+                      (v as { display?: unknown; path?: unknown }).display ??
+                          (v as { path?: unknown }).path ??
+                          JSON.stringify(v),
+                  )
+                : String(v)
+        const v = props.value
+        return v == null ? '' : Array.isArray(v) ? v.map(show).join(', ') : show(v)
+    }
+
     return (
         <Show
-            when={listKind()}
+            when={props.kind.kind !== 'readonly'}
             fallback={
-                <Show
-                    when={selectKind()}
-                    fallback={
-                        <Show
-                            when={props.kind.kind === 'markdown'}
-                            fallback={
+                <Text
+                    as="span"
+                    tone="muted"
+                    title="Not editable here — edit this property in the note"
+                >
+                    {readonlyText()}
+                </Text>
+            }
+        >
+            <Show
+                when={listKind()}
+                fallback={
+                    <Show
+                        when={selectKind()}
+                        fallback={
+                            <Show
+                                when={props.kind.kind === 'markdown'}
+                                fallback={
+                                    <TextInput
+                                        class={styles.kbMetaInput}
+                                        type={
+                                            props.kind.kind === 'number'
+                                                ? 'number'
+                                                : props.kind.kind === 'date'
+                                                  ? props.kind.time
+                                                      ? 'datetime-local'
+                                                      : 'date'
+                                                  : 'text'
+                                        }
+                                        value={draft()}
+                                        autofocus={autofocus()}
+                                        // The attribute alone is honoured once per page: every
+                                        // editor opened after the first mounted unfocused.
+                                        ref={el =>
+                                            queueMicrotask(() => {
+                                                if (autofocus()) el.focus()
+                                            })
+                                        }
+                                        onInput={setDraft}
+                                        onBlur={commit}
+                                        onKeyDown={e => {
+                                            if (isConfirmKey(e)) {
+                                                e.preventDefault()
+                                                e.currentTarget.blur()
+                                            } else if (isDismissKey(e)) {
+                                                // No dropdown of our own — revert and let the
+                                                // keydown BUBBLE, so the modal's own Escape
+                                                // listener (ui/Modal.tsx) sees it too and closes
+                                                // the whole card, not just this field.
+                                                setDraft(toDraft())
+                                                e.currentTarget.blur()
+                                            }
+                                        }}
+                                    />
+                                }
+                            >
                                 <TextInput
-                                    class={styles.kbMetaInput}
-                                    type={
-                                        props.kind.kind === 'number'
-                                            ? 'number'
-                                            : props.kind.kind === 'date'
-                                              ? props.kind.time
-                                                  ? 'datetime-local'
-                                                  : 'date'
-                                              : 'text'
-                                    }
+                                    multiline
+                                    class={styles.kbMetaMarkdownArea}
                                     value={draft()}
                                     autofocus={autofocus()}
-                                    // The attribute alone is honoured once per page: every
-                                    // editor opened after the first mounted unfocused.
-                                    ref={el =>
+                                    ref={el => {
+                                        markdownAreaEl = el
                                         queueMicrotask(() => {
                                             if (autofocus()) el.focus()
+                                            autoGrow(el)
                                         })
-                                    }
-                                    onInput={setDraft}
+                                    }}
+                                    onInput={v => {
+                                        setDraft(v)
+                                        if (markdownAreaEl) autoGrow(markdownAreaEl)
+                                    }}
                                     onBlur={commit}
                                     onKeyDown={e => {
-                                        if (isConfirmKey(e)) {
-                                            e.preventDefault()
-                                            e.currentTarget.blur()
-                                        } else if (isDismissKey(e)) {
-                                            // No dropdown of our own — revert and let the
-                                            // keydown BUBBLE, so the modal's own Escape
-                                            // listener (ui/Modal.tsx) sees it too and closes
-                                            // the whole card, not just this field.
+                                        // Enter inserts a newline (multiline body) — only Escape/blur leave the editor.
+                                        // No dropdown of our own — revert and let it bubble (see
+                                        // the sibling text-input branch above).
+                                        if (isDismissKey(e)) {
                                             setDraft(toDraft())
                                             e.currentTarget.blur()
                                         }
                                     }}
                                 />
-                            }
-                        >
-                            <TextInput
-                                multiline
-                                class={styles.kbMetaMarkdownArea}
-                                value={draft()}
-                                autofocus={autofocus()}
-                                ref={el => {
-                                    markdownAreaEl = el
-                                    queueMicrotask(() => {
-                                        if (autofocus()) el.focus()
-                                        autoGrow(el)
-                                    })
-                                }}
-                                onInput={v => {
-                                    setDraft(v)
-                                    if (markdownAreaEl) autoGrow(markdownAreaEl)
-                                }}
-                                onBlur={commit}
-                                onKeyDown={e => {
-                                    // Enter inserts a newline (multiline body) — only Escape/blur leave the editor.
-                                    // No dropdown of our own — revert and let it bubble (see
-                                    // the sibling text-input branch above).
-                                    if (isDismissKey(e)) {
-                                        setDraft(toDraft())
-                                        e.currentTarget.blur()
-                                    }
-                                }}
+                            </Show>
+                        }
+                    >
+                        <div class={styles.kbMetaSelect}>
+                            <Select
+                                value={
+                                    props.value == null ? '' : String(props.value)
+                                }
+                                options={selectOptions()}
+                                onChange={v => props.onCommit(v === '' ? null : v)}
+                                onDismiss={props.onCancel}
+                                class={styles.kbMetaSelectTrigger}
                             />
-                        </Show>
-                    }
-                >
-                    <div class={styles.kbMetaSelect}>
-                        <Select
-                            value={
-                                props.value == null ? '' : String(props.value)
-                            }
-                            options={selectOptions()}
-                            onChange={v => props.onCommit(v === '' ? null : v)}
-                            onDismiss={props.onCancel}
-                            class={styles.kbMetaSelectTrigger}
-                        />
-                    </div>
-                </Show>
-            }
-        >
-            {lk => (
-                <TagsField
-                    value={multiselectValues(props.value)}
-                    suggestions={() => lk().options}
-                    hash={lk().hash}
-                    autofocus={autofocus()}
-                    onCommit={next => props.onCommit(multiselectCommitValue(next))}
-                    onCancel={props.onCancel}
-                />
-            )}
+                        </div>
+                    </Show>
+                }
+            >
+                {lk => (
+                    <TagsField
+                        value={multiselectValues(props.value)}
+                        suggestions={() => lk().options}
+                        hash={lk().hash}
+                        autofocus={autofocus()}
+                        onCommit={next => props.onCommit(multiselectCommitValue(next))}
+                        onCancel={props.onCancel}
+                    />
+                )}
+            </Show>
         </Show>
     )
 }
