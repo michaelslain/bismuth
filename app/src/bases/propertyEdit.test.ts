@@ -134,6 +134,30 @@ describe('propertyEditKind', () => {
             kind: 'text',
         })
     })
+
+    test('undeclared array value with array siblings -> tags, options union the board', () => {
+        // A table/kanban column across several rows: each row's raw value is itself an
+        // array. propertyEditKind must flatten every sibling array (not treat each array
+        // as one opaque option) so the picker lists every tag the column actually holds.
+        expect(
+            propertyEditKind('tags', ['a'], noSchema, [
+                ['a', 'b'],
+                ['c'],
+            ]),
+        ).toEqual({ kind: 'tags', options: ['a', 'b', 'c'] })
+    })
+
+    test('a string cell with only-array siblings never becomes a select', () => {
+        // Regression for the tags-dropdown fix: a caller may now pass a column's raw
+        // sibling values unfiltered by row shape. Array siblings must never leak into the
+        // "select from known values" text-column heuristic — only scalar strings should.
+        expect(
+            propertyEditKind('title', 'Hello', noSchema, [
+                ['a', 'b'],
+                ['c', 'd'],
+            ]),
+        ).toEqual({ kind: 'text' })
+    })
 })
 
 describe('propertyEditKind — declared type (#100)', () => {

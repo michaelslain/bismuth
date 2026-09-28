@@ -9,7 +9,7 @@ import {
     type JSX,
 } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { canonicalId } from '../../../core/src/bases/query'
+import { canonicalId, resolveProperty } from '../../../core/src/bases/query'
 import {
     renderCell,
     renderTitle,
@@ -68,6 +68,16 @@ export function TableView(props: {
     const [resizing, setResizing] = createSignal<number | null>(null)
     let theadRef: HTMLTableSectionElement | undefined
 
+    // Every OTHER row's raw value for `id`, across the table, restricted to ARRAY-valued
+    // rows only — a `tags`/multiselect column needs its siblings so its dropdown lists the
+    // rest of the board's values, but leaking a STRING sibling here would turn every short
+    // text column (two titles, two authors) into a select you cannot type into. A declared
+    // select/date/number type still gets its own dedicated editor regardless.
+    const arraySiblingsFor = (id: string): unknown[] =>
+        props.result.groups
+            .flatMap(g => g.rows)
+            .map(r => resolveProperty(id, r))
+            .filter(Array.isArray)
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
     // A cell is edited in place when its row can be written and its column is a real property
@@ -87,10 +97,10 @@ export function TableView(props: {
                 {...{ row }}
                 col={c}
                 config={props.config}
-                // No sibling values: guessing a dropdown from the other rows' values
-                // turns every short text column (two titles, two authors) into a select
-                // you cannot type into. A declared select/date/number type still gets its editor.
-                siblingValues={() => []}
+                // Array-only siblings (see arraySiblingsFor above) — a tags column's dropdown
+                // fills in from the rest of the table; a text column never sees another row's
+                // string value, so it never turns into a select you cannot type into.
+                siblingValues={() => arraySiblingsFor(c)}
                 onCommit={v => void commitMeta(row, c, v, props.onChange)}
             >
                 {display}
@@ -108,6 +118,7 @@ export function TableView(props: {
             view: props.result.view,
             onChanged: props.onChange,
             columns: cols(),
+            siblingValues: arraySiblingsFor,
         })
     }
 

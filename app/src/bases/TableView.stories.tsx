@@ -317,6 +317,66 @@ const TASK_LINE_ROWS: Row[] = [
     },
 ]
 
+// A `tags` column across several rows — each row's own value only lists ONE or TWO of the
+// board's tags, but the picker must offer every distinct tag the COLUMN holds (arraySiblingsFor
+// in TableView.tsx). Regression for the tags-dropdown fix: `siblingValues={() => []}` (the
+// previous behaviour) would show row 1's picker with only "alpha" to choose from.
+const TAGS_PATH = 'boards/tags-table.md'
+const TAGS_CONFIG: BaseConfig = {
+    declaredProperties: ['tags'],
+    views: [{ type: 'table', name: 'Table' }],
+}
+const TAGS_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile(TAGS_PATH),
+        note: { tags: ['alpha'] },
+        formula: {},
+        index: 0,
+    },
+    {
+        file: syntheticBaseFile(TAGS_PATH),
+        note: { tags: ['beta', 'gamma'] },
+        formula: {},
+        index: 1,
+    },
+]
+
+export const TagsColumnListsWholeBoard: Story = {
+    render: () => (
+        <TableView
+            result={runView(TAGS_CONFIG, TAGS_ROWS, 0)}
+            config={TAGS_CONFIG}
+            basePath={TAGS_PATH}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const ths = () =>
+            [...canvasElement.querySelectorAll('thead th')] as HTMLElement[]
+        const colIndex = (label: string) =>
+            ths().findIndex(
+                th => (th.textContent ?? '').trim().toLowerCase() === label,
+            )
+        const tagsIdx = colIndex('tags')
+        expect(tagsIdx).toBeGreaterThanOrEqual(0)
+        const firstRowCells = () =>
+            [
+                ...canvasElement.querySelectorAll<HTMLElement>(
+                    'tbody tr:first-child td',
+                ),
+            ]
+        // Row 0's OWN value is only "alpha" — opening its cell must still offer "beta"/"gamma"
+        // from row 1. The tags editor autofocuses its dropdown open on mount.
+        firstRowCells()[tagsIdx]!.querySelector<HTMLElement>('button')!.click()
+        await new Promise(r => setTimeout(r, 30))
+        const labels = [
+            ...document.querySelectorAll('.bismuth-popover-label'),
+        ].map(el => (el.textContent ?? '').trim())
+        expect(labels).toContain('alpha')
+        expect(labels).toContain('beta')
+        expect(labels).toContain('gamma')
+    },
+}
+
 export const TaskLineRowContextMenu: Story = {
     render: () => (
         <TableView

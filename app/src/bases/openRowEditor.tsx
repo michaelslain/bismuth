@@ -194,8 +194,14 @@ export function openRowEditor(opts: {
      *  fewer (or different) properties than the row view it was opened from. Falls back to
      *  `fallbackOrder` when omitted, matching the pre-existing behaviour. */
     columns?: string[]
+    /** Every OTHER row's raw value for a property id, restricted by the caller to ARRAY-valued
+     *  ones (a tags column's dropdown; see TableView's `arraySiblingsFor`) — feeds the same
+     *  fallback KanbanCard's `siblingValues` does. Omitted by a caller with no board of rows
+     *  to scan (AddRowAction's freshly-created row, ListView/BulletsView/CardsView today),
+     *  which keeps their type-aware editors working, just without that dropdown fill-in. */
+    siblingValues?: (id: string) => unknown[]
 }): void {
-    const { row, config, view, onChanged, focusTarget, columns } = opts
+    const { row, config, view, onChanged, focusTarget, columns, siblingValues } = opts
     if (isStoredPlaceholder(row) || typeof row.note.line === 'number') return
     const owned = canWriteStoredRow(row)
     const titleCol = owned ? storedTitleColumn(view.order ?? []) : 'file.name'
@@ -224,10 +230,9 @@ export function openRowEditor(opts: {
                 metaCols,
                 config,
                 focusTarget,
-                // A bare row has no board of siblings to scan for "known values" — the
-                // type-aware editors still work, just without the select-from-history
-                // fallback KanbanCard's `siblingValues` feeds.
-                siblingValues: () => [],
+                // See `siblingValues` above — a caller with no board to scan (no rows param)
+                // falls back to `[]`, same as before this option existed.
+                siblingValues: siblingValues ?? (() => []),
                 hasFileIdentity: true,
                 heading: 'edit row',
                 emptyHint: 'this row has no editable properties.',
