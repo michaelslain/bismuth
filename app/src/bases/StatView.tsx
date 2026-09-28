@@ -1,12 +1,13 @@
 import { createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
+import type { Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
 import ChartFrame from './ChartFrame'
 import StatTiles, { type StatTile } from './StatTiles'
+import type { ChartViewProps } from './chartViewProps'
 
 /** A single aggregate per tile — plain numbers, no chart (bases-stat.card.html:
  *  the largest type in the system, and the one view with no ASCII chart at all). */
-export function StatView(props: { result: ViewResult; config: BaseConfig }) {
+export function StatView(props: ChartViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )

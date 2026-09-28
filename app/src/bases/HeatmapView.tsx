@@ -1,5 +1,5 @@
 import { For, createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
+import type { Row } from '../../../core/src/bases/types'
 import {
     buildChartData,
     buildHeatmapWeeks,
@@ -9,6 +9,7 @@ import { todayISO, addDaysISO } from '../../../core/src/dates'
 import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
 import StatTiles, { type StatTile } from './StatTiles'
+import type { ChartViewProps } from './chartViewProps'
 import styles from './HeatmapView.module.css'
 
 const MONTH_NAMES = [
@@ -41,7 +42,7 @@ function glyphOf(level: number): string {
     return level === 0 ? '.' : GLYPHS[Math.min(GLYPHS.length - 1, level - 1)]
 }
 
-export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
+export function HeatmapView(props: ChartViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )
