@@ -14,6 +14,7 @@ import {
 } from '../../../core/src/bases/taskRow'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Task } from '../../../core/src/tasks'
+import { removeTaskItem } from '../../../core/src/taskEdit'
 
 const meta = {
     title: 'Bases/TaskEditModal',
@@ -40,7 +41,11 @@ let calls: Call[] = []
  *  `fail` rejects writes; `gate` holds them until it resolves (to observe the busy state). */
 function recording(
     seed: Parameters<typeof fakeTransport>[0],
-    opts: { fail?: boolean; gate?: Promise<void> } = {},
+    opts: {
+        fail?: boolean
+        gate?: Promise<void>
+        live?: Record<string, string>
+    } = {},
 ): Transport {
     const base = fakeTransport(seed)
     const write = async (path: string, body: unknown) => {
@@ -52,8 +57,27 @@ function recording(
         ...base,
         post: async (path, body) => {
             await write(path, body)
+            if (opts.live && path === '/tasks/delete') {
+                const b = body as { path: string; line: number }
+                opts.live[b.path] = removeTaskItem(
+                    opts.live[b.path],
+                    b.line,
+                ).content
+            }
             return base.post(path, body)
         },
+        ...(opts.live
+            ? {
+                  getText: async (path: string) =>
+                      opts.live![decodeURIComponent(path.split('path=')[1])],
+                  put: async (_path: string, body: unknown) => {
+                      const b = body as { path: string; contents: string }
+                      calls.push({ path: '/file', body })
+                      opts.live![b.path] = b.contents
+                      return new Response('ok')
+                  },
+              }
+            : {}),
         postJson: async <T,>(path: string, body: unknown) => {
             await write(path, body)
             if (path === '/tasks/move')
@@ -122,12 +146,17 @@ function storedTask(): ReturnType<typeof normalizeStoredTaskRow> {
 // Seeds the vault the "note" destination picker reads via api.tree() — with this, the current
 // note (Projects/Website Relaunch.md) appears in the list and comes preselected, rather than
 // the picker falling back to "not set" the way an unseeded fakeTransport would render it.
+// The task sits at line 3 with a sub-task under it: undo must put back the exact block there.
+const TASK_NOTE = 'Projects/Website Relaunch.md'
+const TASK_NOTE_TEXT =
+    '# Website Relaunch\n\n- [ ] intro\n- [/] finish the hero section [high] [due 2026-10-01]\n    - [ ] pick a font\n- [ ] outro\n'
+let live: Record<string, string> = {}
+
 const VAULT_FILES = {
     'Projects/Website Relaunch.md': '# Website Relaunch\n',
     'Areas/Health.md': '# Health\n',
     'Inbox.md': '# Inbox\n',
 }
-
 
 const body = () => within(document.body)
 
@@ -191,7 +220,10 @@ export const Destinations: Story = {
             <TaskEditModal
                 row={lineTask()}
                 destinations={[
-                    { label: 'Website Relaunch', path: 'Projects/Website Relaunch.md' },
+                    {
+                        label: 'Website Relaunch',
+                        path: 'Projects/Website Relaunch.md',
+                    },
                     { label: 'Health', path: 'Areas/Health.md' },
                 ]}
                 onClose={onClose}
@@ -331,7 +363,8 @@ export const StoredStatusRecurrence: Story = {
 export const DeleteThenUndo: Story = {
     render: () => {
         reset()
-        setTransport(recording({ files: VAULT_FILES }))
+        live = { ...VAULT_FILES, [TASK_NOTE]: TASK_NOTE_TEXT }
+        setTransport(recording({ files: VAULT_FILES }, { live }))
         return (
             <TaskEditModal
                 row={lineTask()}
@@ -350,16 +383,9 @@ export const DeleteThenUndo: Story = {
             t => t.message === 'deleted finish the hero section',
         )
         expect(toast?.action?.label).toBe('undo')
+        expect(live[TASK_NOTE]).not.toContain('finish the hero section')
         toast!.action!.onClick()
-        await waitFor(() =>
-            expect(calls.map(c => c.path)).toEqual([
-                '/tasks/delete',
-                '/tasks/create',
-            ]),
-        )
-        expect(calls[1].body).toEqual({
-            file: 'Projects/Website Relaunch.md',
-            body: 'finish the hero section [high] [due 2026-10-01]',
-        })
+        await waitFor(() => expect(live[TASK_NOTE]).toBe(TASK_NOTE_TEXT))
+        expect(calls.map(c => c.path)).toEqual(['/tasks/delete', '/file'])
     },
 }
