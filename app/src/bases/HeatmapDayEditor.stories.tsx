@@ -57,3 +57,56 @@ export const ExistingValue: Story = {
     args: { dateLabel: 'Tue Jul 8', value: 30, onSave: () => {}, onCancel: () => {} },
     render: () => <Harness initial={30} />,
 }
+
+/** Escape cancels: the typed text is discarded and the saved line reads `cancelled`, never the
+ *  half-typed number. */
+export const EscapeCancels: Story = {
+    args: { dateLabel: 'Tue Jul 8', value: 30, onSave: () => {}, onCancel: () => {} },
+    render: () => <Harness initial={30} />,
+    play: async ({ canvasElement }) => {
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector('input')
+            if (!el) throw new Error('field not mounted')
+            return el
+        })
+        await userEvent.click(input)
+        await userEvent.clear(input)
+        await userEvent.type(input, '99{Escape}')
+        await waitFor(() => expect(canvasElement.textContent).toContain('saved: cancelled'))
+    },
+}
+
+/** Text that is not a number commits as a clear (`cleared`), never as NaN. */
+export const NonNumericInput: Story = {
+    args: { dateLabel: 'Tue Jul 8', value: 30, onSave: () => {}, onCancel: () => {} },
+    render: () => <Harness initial={30} />,
+    play: async ({ canvasElement }) => {
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector('input')
+            if (!el) throw new Error('field not mounted')
+            return el
+        })
+        await userEvent.click(input)
+        await userEvent.clear(input)
+        await userEvent.type(input, 'abc{enter}')
+        await waitFor(() => expect(canvasElement.textContent).toContain('saved: cleared'))
+    },
+}
+
+/** Emptying a prefilled field and confirming clears the day. */
+export const ClearValue: Story = {
+    args: { dateLabel: 'Tue Jul 8', value: 30, onSave: () => {}, onCancel: () => {} },
+    render: () => <Harness initial={30} />,
+    play: async ({ canvasElement }) => {
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector('input')
+            if (!el) throw new Error('field not mounted')
+            return el
+        })
+        expect(input.value).toBe('30')
+        await userEvent.click(input)
+        await userEvent.clear(input)
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(canvasElement.textContent).toContain('saved: cleared'))
+    },
+}

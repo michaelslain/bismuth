@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { buildLinePlot } from './asciiLine'
+import {
+    arrowDirection,
+    buildLinePlot,
+    columnAt,
+    nearestIndex,
+    stepIndex,
+    timeOffsets,
+} from './asciiLine'
 import type { LinePoint } from './asciiLine'
 
 function flatten(rows: { segments: { text: string }[] }[]): string {
@@ -337,5 +344,72 @@ describe('buildLinePlot', () => {
                 col += seg.text.length
             }
         }
+    })
+})
+
+describe('timeOffsets', () => {
+    test('day bins are whole-day diffs from the first key', () => {
+        expect(timeOffsets(['2026-08-01', '2026-08-03', '2026-08-22'], 'day')).toEqual([0, 2, 21])
+    })
+    test('week bins are day diffs over seven', () => {
+        expect(timeOffsets(['2026-08-03', '2026-08-10', '2026-08-24'], 'week')).toEqual([0, 1, 3])
+    })
+    test('month bins are calendar-month diffs across a year boundary', () => {
+        expect(timeOffsets(['2025-11-01', '2026-01-01', '2026-03-01'], 'month')).toEqual([0, 2, 4])
+    })
+    test('no keys, no offsets', () => {
+        expect(timeOffsets([], 'day')).toEqual([])
+    })
+})
+
+describe('columnAt', () => {
+    test('rounds the pointer offset to a character column', () => {
+        expect(columnAt(130, 100, 10)).toBe(3)
+        expect(columnAt(126, 100, 10)).toBe(3)
+        expect(columnAt(124, 100, 10)).toBe(2)
+    })
+    test('an unmeasured grid has no column', () => {
+        expect(columnAt(130, 100, 0)).toBeNull()
+    })
+})
+
+describe('nearestIndex', () => {
+    const colOf = (i: number) => 3 + i * 4
+    test('picks the closest point column', () => {
+        expect(nearestIndex(colOf, 4, 0)).toBe(0)
+        expect(nearestIndex(colOf, 4, 8)).toBe(1)
+        expect(nearestIndex(colOf, 4, 99)).toBe(3)
+    })
+    test('an empty plot has none', () => {
+        expect(nearestIndex(colOf, 0, 5)).toBeNull()
+    })
+})
+
+describe('arrowDirection', () => {
+    test('maps the four navigation keys and ignores the rest', () => {
+        expect(arrowDirection({ key: 'ArrowLeft' })).toBe('prev')
+        expect(arrowDirection({ key: 'ArrowRight' })).toBe('next')
+        expect(arrowDirection({ key: 'Home' })).toBe('first')
+        expect(arrowDirection({ key: 'End' })).toBe('last')
+        expect(arrowDirection({ key: 'a' })).toBeNull()
+    })
+})
+
+describe('stepIndex', () => {
+    test('from nothing, next lands on the first point and prev on the last', () => {
+        expect(stepIndex(null, 'next', 5)).toBe(0)
+        expect(stepIndex(null, 'prev', 5)).toBe(4)
+    })
+    test('steps clamp at both ends', () => {
+        expect(stepIndex(2, 'next', 5)).toBe(3)
+        expect(stepIndex(4, 'next', 5)).toBe(4)
+        expect(stepIndex(0, 'prev', 5)).toBe(0)
+    })
+    test('home and end jump', () => {
+        expect(stepIndex(2, 'first', 5)).toBe(0)
+        expect(stepIndex(2, 'last', 5)).toBe(4)
+    })
+    test('nothing to step over', () => {
+        expect(stepIndex(null, 'next', 0)).toBeNull()
     })
 })

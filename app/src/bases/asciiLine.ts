@@ -4,6 +4,7 @@
 // it's unit-testable headlessly, matching the AsciiMeter/asciiMeterMath split.
 
 import { formatValue } from '../../../core/src/bases/chartText'
+import type { Bin } from '../../../core/src/dates'
 
 export interface LinePoint {
     label: string
@@ -252,4 +253,77 @@ export function buildLinePlot(
     const axisLabels = labelChars.join('').replace(/\s+$/, '')
 
     return { rows, axisRule, axisLabels, colOf, gutter, firstIndex }
+}
+
+// ---- LineView's date maths + hit-testing, kept pure so they are testable headlessly ----
+
+function dayDiff(a: string, b: string): number {
+    const da = new Date(a.slice(0, 10) + 'T00:00:00')
+    const db = new Date(b.slice(0, 10) + 'T00:00:00')
+    return Math.round((db.getTime() - da.getTime()) / 86400000)
+}
+
+function monthDiff(a: string, b: string): number {
+    const da = new Date(a.slice(0, 10) + 'T00:00:00')
+    const db = new Date(b.slice(0, 10) + 'T00:00:00')
+    return (db.getFullYear() - da.getFullYear()) * 12 + (db.getMonth() - da.getMonth())
+}
+
+/** One time-value per bucket key, in the units core's `fitTrend` uses (days, weeks or months
+ *  from the first key) — the `xs` option of `buildLinePlot`. Duplicated from core/src/bases/
+ *  trend.ts's private helpers, which are not exported. */
+export function timeOffsets(keys: string[], bin: Bin): number[] {
+    if (keys.length === 0) return []
+    const origin = keys[0]
+    return keys.map(key => {
+        if (bin === 'month') return monthDiff(origin, key)
+        if (bin === 'week') return dayDiff(origin, key) / 7
+        return dayDiff(origin, key)
+    })
+}
+
+/** The character column under a pointer, `null` before the grid has been measured. */
+export function columnAt(clientX: number, left: number, cellWidth: number): number | null {
+    if (!cellWidth) return null
+    return Math.round((clientX - left) / cellWidth)
+}
+
+/** Index (0..n-1) of the visible point whose column is closest to `col`; `null` for no points. */
+export function nearestIndex(colOf: (i: number) => number, n: number, col: number): number | null {
+    if (n === 0) return null
+    let best = 0
+    let bestDist = Infinity
+    for (let i = 0; i < n; i++) {
+        const d = Math.abs(colOf(i) - col)
+        if (d < bestDist) {
+            bestDist = d
+            best = i
+        }
+    }
+    return best
+}
+
+export type ArrowDirection = 'prev' | 'next' | 'first' | 'last'
+
+/** The plot's own keyboard vocabulary: the arrows step, Home/End jump. Local to the line chart,
+ *  since ui/widgetKeys has no arrow helper; `null` for any other key. */
+export function arrowDirection(e: { key: string }): ArrowDirection | null {
+    return ARROW_KEYS[e.key] ?? null
+}
+
+const ARROW_KEYS: Record<string, ArrowDirection> = {
+    ArrowLeft: 'prev',
+    ArrowRight: 'next',
+    Home: 'first',
+    End: 'last',
+}
+
+/** Where the hover column goes after a key: from no hover, `next` starts at the first point and
+ *  `prev` at the last; otherwise one step, clamped at both ends. */
+export function stepIndex(current: number | null, dir: ArrowDirection, n: number): number | null {
+    if (n === 0) return null
+    if (dir === 'first') return 0
+    if (dir === 'last') return n - 1
+    if (current === null) return dir === 'next' ? 0 : n - 1
+    return Math.max(0, Math.min(n - 1, current + (dir === 'next' ? 1 : -1)))
 }

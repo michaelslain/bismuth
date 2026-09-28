@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { Index, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { buildChartData, type ChartPoint } from '../../../core/src/bases/chart'
 import {
@@ -14,6 +14,7 @@ import ChartFrame from './ChartFrame'
 import ChartReadout from './ChartReadout'
 import ChartDrill from './ChartDrill'
 import type { ChartViewProps } from './chartViewProps'
+import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import styles from './BarView.module.css'
 
@@ -108,7 +109,6 @@ export function BarView(props: ChartViewProps) {
     return (
         <ChartFrame
             empty={data().points.length === 0}
-            emptyMessage="No data to chart."
             onGrid={setGrid}
             readout={<ChartReadout parts={readoutParts()} active={activePoint() !== undefined} />}
             drill={
@@ -128,23 +128,28 @@ export function BarView(props: ChartViewProps) {
                         {header()}
                     </Text>
                 </Show>
-                <For each={bars()}>
+                {/* Index, not For: a relayout (a scrollbar appearing when the drill opens) hands back fresh
+                    row objects, and a keyed For would rebuild every row — dropping the focused one. */}
+                <Index each={bars()}>
                     {bar => (
-                        <div
+                        <PlainButton
                             class={styles.row}
-                            data-bucket={bar.key}
-                            onPointerEnter={() => setHoverKey(bar.key)}
+                            data-bucket={bar().key}
+                            aria-pressed={selectedKey() === bar().key}
+                            onPointerEnter={() => setHoverKey(bar().key)}
                             onPointerLeave={() => setHoverKey(undefined)}
-                            onClick={() => toggle(bar.key)}
+                            onFocus={() => setHoverKey(bar().key)}
+                            onBlur={() => setHoverKey(k => (k === bar().key ? undefined : k))}
+                            onClick={() => toggle(bar().key)}
                         >
                             <Text
                                 as="span"
                                 inherit
-                                tone={selectedKey() === bar.key ? 'default' : 'muted'}
+                                tone={selectedKey() === bar().key ? 'default' : 'muted'}
                                 class={styles.label}
                             >
                                 {/* layoutBars budgets two 2-space gutters; they are typed here. */}
-                                {(selectedKey() === bar.key ? markedLabel(bar.label) : bar.label) +
+                                {(selectedKey() === bar().key ? markedLabel(bar().label) : bar().label) +
                                     '  '}
                             </Text>
                             <Text
@@ -153,21 +158,21 @@ export function BarView(props: ChartViewProps) {
                                 class={styles.fill}
                                 classList={{
                                     [styles.dim]:
-                                        selectedKey() !== undefined && selectedKey() !== bar.key,
-                                    [styles.active]: activeKey() === bar.key,
+                                        selectedKey() !== undefined && selectedKey() !== bar().key,
+                                    [styles.active]: activeKey() === bar().key,
                                 }}
                             >
-                                {'#'.repeat(bar.fill)}
+                                {'#'.repeat(bar().fill)}
                             </Text>
                             <Text as="span" inherit tone="faint" class={styles.track}>
-                                {'.'.repeat(bar.track)}
+                                {'.'.repeat(bar().track)}
                             </Text>
                             <Text as="span" inherit class={styles.value}>
-                                {'  ' + bar.value}
+                                {'  ' + bar().value}
                             </Text>
-                        </div>
+                        </PlainButton>
                     )}
-                </For>
+                </Index>
             </div>
         </ChartFrame>
     )

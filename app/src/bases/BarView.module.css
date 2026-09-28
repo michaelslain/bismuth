@@ -16,7 +16,10 @@
 
 .row {
     display: flex;
-    cursor: pointer;
+    width: 100%;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
 }
 
 .label {

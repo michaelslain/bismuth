@@ -1,6 +1,7 @@
 // Visual spec for <StatTiles> — the plain number/label/delta grid shared by StatView's
 // aggregate summary and HeatmapView's streak stats. See StatTiles.tsx for why it's extracted.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import StatTiles from './StatTiles'
 
 const meta = {
@@ -45,7 +46,7 @@ export const StreakCards: Story = {
 
 // A 12-week series ending "this week" (index 11), for the sparkline's caption + endpoint
 // labels + hover-mapped period line.
-const WEEK_KEYS = Array.from({ length: 12 }, (_, i) => `2026-0${i < 4 ? 6 : 7}-${(i % 4) * 7 + 1}`)
+const WEEK_KEYS = ['2026-07-06', '2026-07-13', '2026-07-20', '2026-07-27', '2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21']
 const WEEK_LABELS = ['Jul 6', 'Jul 13', 'Jul 20', 'Jul 27', 'Aug 3', 'Aug 10', 'Aug 17', 'Aug 24', 'Aug 31', 'Sep 7', 'Sep 14', 'Sep 21']
 
 /** StatView's full declared-metric tile: value, label, period split, sparkline (caption +
@@ -100,5 +101,65 @@ export const WithError: Story = {
                 error: 'priority must be inside sum, avg, min, max or count',
             },
         ],
+    },
+}
+
+/** `tone: 'faint'` — a near-empty metric's value drops to `--faint`, beside a plain and an
+ *  accent one so the three value colours read together. */
+export const ToneFaint: Story = {
+    args: {
+        tiles: [
+            { label: 'total', value: '18', tone: 'accent' },
+            { label: 'average', value: '3.0' },
+            { label: 'overdue', value: '0', tone: 'faint' },
+        ],
+    },
+}
+
+/** A plain glyph string as `spark` — no per-bin keys/labels to hand over, so it renders
+ *  non-interactively with no caption and no hover. */
+export const StringSpark: Story = {
+    args: {
+        tiles: [{ label: 'trend', value: '9', period: '9 this week // 7 last week', spark: '▁▂▃▅▆█' }],
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('▁▂▃▅▆█'))
+        expect(canvasElement.querySelector('[data-bucket]')).toBeNull()
+    },
+}
+
+/** Hovering a sparkline glyph swaps the tile's period line for that bin's own value
+ *  (`week of Jul 6 // 2`), and leaving it restores the default line. */
+export const HoverPeriod: Story = {
+    args: {
+        tiles: [
+            {
+                label: 'total price',
+                value: '42',
+                tone: 'accent',
+                period: '12 this week // 9 last week',
+                spark: {
+                    values: [2, 3, 5, 4, 6, 5, 7, 6, 8, 7, 9, 12],
+                    keys: WEEK_KEYS,
+                    labels: WEEK_LABELS,
+                    bin: 'week',
+                },
+            },
+        ],
+    },
+    play: async ({ canvasElement }) => {
+        const glyphs = await waitFor(() => {
+            const spans = canvasElement.querySelectorAll<HTMLElement>('[data-bucket]')
+            if (spans.length !== 12) throw new Error('sparkline not mounted yet')
+            return Array.from(spans)
+        })
+        expect(canvasElement.textContent).toContain('12 this week // 9 last week')
+        await userEvent.hover(glyphs[0])
+        await waitFor(() => {
+            expect(canvasElement.textContent).toContain('week of Jul 6 // 2')
+            expect(canvasElement.textContent).not.toContain('12 this week')
+        })
+        await userEvent.unhover(glyphs[0])
+        await waitFor(() => expect(canvasElement.textContent).toContain('12 this week // 9 last week'))
     },
 }
