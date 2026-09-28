@@ -378,9 +378,9 @@ export const TagsColumnListsWholeBoard: Story = {
         const labels = [
             ...document.querySelectorAll('.bismuth-popover-label'),
         ].map(el => (el.textContent ?? '').trim())
-        expect(labels).toContain('alpha')
-        expect(labels).toContain('beta')
-        expect(labels).toContain('gamma')
+        expect(labels).toContain('#alpha')
+        expect(labels).toContain('#beta')
+        expect(labels).toContain('#gamma')
     },
 }
 
