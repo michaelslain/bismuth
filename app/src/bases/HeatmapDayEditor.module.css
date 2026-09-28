@@ -1,0 +1,16 @@
+/* app/src/bases/HeatmapDayEditor.module.css — HeatmapDayEditor.tsx ONLY. Anchored absolutely by
+   its caller (HeatmapView) over the clicked square; this file owns only its own chrome. */
+.editor {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding: var(--sp-2);
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-control);
+    box-shadow: var(--lift);
+}
+.label { white-space: nowrap; }
+.input { width: 8ch; }

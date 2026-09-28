@@ -1,41 +1,173 @@
-import { createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { buildChartData } from '../../../core/src/bases/chart'
-import { AsciiChart } from '../ui/ascii/AsciiMeter'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import type { Row } from '../../../core/src/bases/types'
+import { buildChartData, type ChartPoint } from '../../../core/src/bases/chart'
+import {
+    chartCaption,
+    bucketReadout,
+    formatValue,
+    axisName,
+    valueAxisName,
+} from '../../../core/src/bases/chartText'
+import { barHeader, layoutBars } from './barRows'
+import type { ChartGrid } from './chartColumns'
 import ChartFrame from './ChartFrame'
+import ChartReadout from './ChartReadout'
+import ChartDrill from './ChartDrill'
+import type { ChartViewProps } from './chartViewProps'
+import Text from '../ui/Text'
 import styles from './BarView.module.css'
 
-// Per-bar palette cycles through the graph color ramp (--graph-0..--graph-4),
-// sourced from the theme tokens so bars re-tint when the user switches themes.
-const BAR_PALETTE = [
-    'var(--graph-0, var(--teal))',
-    'var(--graph-1, var(--blue))',
-    'var(--graph-2, var(--violet))',
-    'var(--graph-3, var(--green))',
-    'var(--graph-4, var(--gold))',
-]
-
-export function BarView(props: { result: ViewResult; config: BaseConfig }) {
-    const rows = createMemo<Row[]>(() =>
-        props.result.groups.flatMap(g => g.rows),
+/** A row of typed `#` per bucket, sized to fill the pane — no SVG (bases-bar.card.html). */
+export function BarView(props: ChartViewProps) {
+    // ChartFrame reports a fresh object on every resize callback; an identical measure must not
+    // re-run layoutBars, or `<For>` (keyed by reference) rebuilds every row under the pointer.
+    const [grid, setGrid] = createSignal<ChartGrid>(
+        { columns: 20, cellWidth: 0 },
+        { equals: (a, b) => a.columns === b.columns && a.cellWidth === b.cellWidth },
     )
+    const [hoverKey, setHoverKey] = createSignal<string | undefined>(undefined)
+    const [selectedKey, setSelectedKey] = createSignal<string | undefined>(undefined)
+
+    const rows = createMemo<Row[]>(() => props.result.groups.flatMap(g => g.rows))
     const data = createMemo(() => buildChartData(rows(), props.result.view))
+    const headerNames = createMemo(() => ({
+        label: axisName(data().x, data().isDate, data().bin),
+        value: valueAxisName(data().aggregate, data().y),
+    }))
+    const bars = createMemo(() => layoutBars(data().points, grid().columns, headerNames()))
 
-    const series = createMemo(() =>
-        data().points.map((p, i) => ({
-            label: p.label,
-            value: p.value,
-            color: BAR_PALETTE[i % BAR_PALETTE.length],
-        })),
+    // A data change can drop the bucket a row was selected/hovered on — clear rather than
+    // point at a bucket that no longer exists.
+    createEffect(() => {
+        const keys = new Set(data().points.map(p => p.key))
+        if (selectedKey() !== undefined && !keys.has(selectedKey()!)) setSelectedKey(undefined)
+        if (hoverKey() !== undefined && !keys.has(hoverKey()!)) setHoverKey(undefined)
+    })
+
+    const activeKey = createMemo(() => hoverKey() ?? selectedKey())
+    const activePoint = createMemo(() =>
+        data().points.find(p => p.key === activeKey()),
     )
+    const maxPoint = createMemo(() =>
+        data().points.reduce<ChartPoint | undefined>(
+            (best, p) => (best === undefined || p.value > best.value ? p : best),
+            undefined,
+        ),
+    )
+
+    const readoutParts = createMemo(() => {
+        const point = activePoint()
+        if (point)
+            return bucketReadout(point.label, point.value, point.rows.length, data().aggregate)
+        const best = maxPoint()
+        const caption = chartCaption(data())
+        if (!best) return [caption]
+        return [caption, `peak ${formatValue(best.value)} (${best.label})`]
+    })
+
+    // One header row above the bars: the x property's name over the label column, the value's
+    // name (aggregate + y, or `notes` for a count chart) over the value column — same total
+    // width as a body row so it can never overflow on its own (Review Focus #1/#2).
+    const header = createMemo(() => {
+        const rowsData = bars()
+        if (rowsData.length === 0) return undefined
+        const names = headerNames()
+        const barWidth = rowsData[0].fill + rowsData[0].track
+        return barHeader(names.label, names.value, rowsData[0].label.length, rowsData[0].value.length, barWidth)
+    })
+
+    // The selected row's label, with a `>` marker swapped into its leading characters — kept to
+    // the SAME total width as `bar.label` (no reserved column, no overflow risk) by trimming the
+    // real text just enough to fit the marker, ellipsis-truncating if that text was already
+    // filling the column.
+    const markedLabel = (label: string) => {
+        const marker = '> '
+        const text = label.trimEnd()
+        const maxText = label.length - marker.length
+        if (maxText <= 0) return marker.slice(0, label.length)
+        const shown =
+            text.length > maxText
+                ? maxText <= 1
+                    ? text.slice(0, maxText)
+                    : text.slice(0, maxText - 1) + '…'
+                : text
+        return (marker + shown).padEnd(label.length)
+    }
+
+    const drillPoint = createMemo(() => data().points.find(p => p.key === selectedKey()))
+    const drillRows = createMemo(() => {
+        const point = drillPoint()
+        if (!point) return []
+        const all = rows()
+        return point.rows.map(i => all[i]).filter((r): r is Row => r !== undefined)
+    })
+
+    const toggle = (key: string) =>
+        setSelectedKey(k => (k === key ? undefined : key))
 
     return (
         <ChartFrame
             empty={data().points.length === 0}
             emptyMessage="No data to chart."
+            onGrid={setGrid}
+            readout={<ChartReadout parts={readoutParts()} active={activePoint() !== undefined} />}
+            drill={
+                drillPoint() && (
+                    <ChartDrill
+                        title={drillPoint()!.label}
+                        rows={drillRows()}
+                        onOpen={props.onOpen}
+                        onClear={() => setSelectedKey(undefined)}
+                    />
+                )
+            }
         >
             <div class={styles.barChart}>
-                <AsciiChart series={series()} width={32} />
+                <Show when={header()}>
+                    <Text as="div" inherit tone="muted" class={styles.header}>
+                        {header()}
+                    </Text>
+                </Show>
+                <For each={bars()}>
+                    {bar => (
+                        <div
+                            class={styles.row}
+                            data-bucket={bar.key}
+                            onPointerEnter={() => setHoverKey(bar.key)}
+                            onPointerLeave={() => setHoverKey(undefined)}
+                            onClick={() => toggle(bar.key)}
+                        >
+                            <Text
+                                as="span"
+                                inherit
+                                tone={selectedKey() === bar.key ? 'default' : 'muted'}
+                                class={styles.label}
+                            >
+                                {/* layoutBars budgets two 2-space gutters; they are typed here. */}
+                                {(selectedKey() === bar.key ? markedLabel(bar.label) : bar.label) +
+                                    '  '}
+                            </Text>
+                            <Text
+                                as="span"
+                                inherit
+                                class={styles.fill}
+                                classList={{
+                                    [styles.dim]:
+                                        selectedKey() !== undefined && selectedKey() !== bar.key,
+                                    [styles.active]: activeKey() === bar.key,
+                                }}
+                            >
+                                {'#'.repeat(bar.fill)}
+                            </Text>
+                            <Text as="span" inherit tone="faint" class={styles.track}>
+                                {'.'.repeat(bar.track)}
+                            </Text>
+                            <Text as="span" inherit class={styles.value}>
+                                {'  ' + bar.value}
+                            </Text>
+                        </div>
+                    )}
+                </For>
             </div>
         </ChartFrame>
     )

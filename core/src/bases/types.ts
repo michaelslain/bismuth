@@ -142,6 +142,17 @@ export interface ViewConfig {
     y?: string // property id for the y-axis value
     aggregate?: 'sum' | 'avg' | 'count' | 'min' | 'max'
     bin?: 'day' | 'week' | 'month'
+    // Stat view: declared metrics, each a metric expression (e.g. "sum(priority)") with its
+    // own label. Absent/empty falls back to one synthesized metric (see metrics.ts's
+    // defaultMetric) derived from the view's own x/y/aggregate.
+    stats?: StatMetric[]
+}
+
+/** One declared stat-view metric: `value` is the metric expression text
+ *  (e.g. "sum(priority)", "count(status == \"done\")"); `label` defaults to `value`. */
+export interface StatMetric {
+    label: string
+    value: string
 }
 
 /** A view's mode, with the legacy `calendarContent` spelling folded in. Every consumer calls

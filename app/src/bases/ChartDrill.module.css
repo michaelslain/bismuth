@@ -1,0 +1,30 @@
+.drill {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+}
+
+.head {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: var(--sp-3);
+}
+
+.rows {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(var(--cell-h) * 12);
+    overflow-y: auto;
+}
+
+.row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-1);
+}
+
+.prefix {
+    white-space: pre;
+    flex-shrink: 0;
+}

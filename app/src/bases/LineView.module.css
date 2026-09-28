@@ -8,5 +8,15 @@
   font-size: var(--fs-ui);
   line-height: 15px;
   color: var(--faint);
+  cursor: crosshair;
 }
-.linePlot .glyph { color: var(--accent); }
+.linePlot .accent { color: var(--accent); }
+.linePlot .hover { color: var(--fg); }
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-ui);
+}
+.muted { color: var(--text-muted); }

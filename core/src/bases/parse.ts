@@ -188,6 +188,29 @@ function normalizeProperties(
     return {}
 }
 
+// Normalize the `stats:` key of a stat view. Each entry is either a bare string
+// (label = value = the string) or `{label?, value}` with a string `value` (label
+// defaults to `value`). Anything else — a non-array, a non-string `value`, a
+// missing `value` — is dropped rather than surfacing a broken tile.
+function normalizeStats(raw: unknown): ViewConfig['stats'] {
+    if (!Array.isArray(raw)) return undefined
+    const out: { label: string; value: string }[] = []
+    for (const item of raw) {
+        if (typeof item === 'string') {
+            out.push({ label: item, value: item })
+        } else if (item && typeof item === 'object') {
+            const o = item as Record<string, unknown>
+            if (typeof o.value === 'string') {
+                out.push({
+                    label: typeof o.label === 'string' ? o.label : o.value,
+                    value: o.value,
+                })
+            }
+        }
+    }
+    return out.length ? out : undefined
+}
+
 function normalizeView(raw: unknown): ViewConfig {
     const o = (raw && typeof raw === 'object' ? raw : {}) as Record<
         string,
@@ -304,6 +327,7 @@ function normalizeView(raw: unknown): ViewConfig {
         bin: BIN_VALUES.includes(o.bin as string)
             ? (o.bin as ViewConfig['bin'])
             : undefined,
+        stats: normalizeStats(o.stats),
     }
 }
 

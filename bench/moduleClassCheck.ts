@@ -271,12 +271,14 @@ log(
     `${cssFiles.length} css + ${jsFiles.length} js chunks in ${relative(ROOT, ASSETS)}`,
 )
 
-/** The shape Vite emits for a CSS-Modules local: `_<local>_<hash5>_<n>`. DERIVED FROM THE REAL BUILD,
+/** The shape Vite emits for a CSS-Modules local: `_<local>_<hash>_<n>`, the hash 5 lowercase base36 chars — or 4
+ *  when base36 drops a leading zero (`_drill_1mf4` in chart-views, 2026-09-27, which a `{5}` pattern
+ *  reported as a module that emitted NOTHING). DERIVED FROM THE REAL BUILD,
  *  not guessed — every `._…` token in this repo's emitted CSS matches it, across all five modules.
  *  The local name may itself contain `_` and `-`, so the tail is anchored and the head lazy.
  *  The hash is LOWERCASE base36 (163am 1meru 1ojhu 1tsjj 1vop5): allowing uppercase made
  *  `_LIST_QUICK_1` inside univer's bundled JS parse as a sixth CSS module. */
-const HASHED = /_([A-Za-z0-9_-]+?)_([a-z0-9]{5})_(\d+)(?![A-Za-z0-9_-])/
+const HASHED = /_([A-Za-z0-9_-]+?)_([a-z0-9]{4,5})_(\d+)(?![A-Za-z0-9_-])/
 const HASHED_IN_CSS = new RegExp('\\.(' + HASHED.source + ')', 'g')
 
 /** hashId -> local names seen. Both sides feed this: a class with a rule but no export (a `composes`

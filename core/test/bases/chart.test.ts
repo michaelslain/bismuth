@@ -33,6 +33,34 @@ describe('buildChartData', () => {
         expect(d.max).toBe(5)
     })
 
+    test('every point carries the input row indices of its bucket', () => {
+        const rows = [
+            row({ date: '2026-05-01', glasses: 3 }), // 0
+            row({ date: '2026-05-01', glasses: 2 }), // 1
+            row({ date: '2026-05-02', glasses: 4 }), // 2
+        ]
+        const d = buildChartData(
+            rows,
+            view({ x: 'date', y: 'glasses', aggregate: 'sum' }),
+        )
+        const byKey = Object.fromEntries(d.points.map(p => [p.key, p.rows]))
+        expect(byKey['2026-05-01']).toEqual([0, 1])
+        expect(byKey['2026-05-02']).toEqual([2])
+    })
+
+    test('rows with an unparseable date appear in no bucket', () => {
+        const rows = [
+            row({ date: '2026-05-01', glasses: 3 }), // 0
+            row({ date: 'not-a-date', glasses: 9 }), // 1
+        ]
+        const d = buildChartData(
+            rows,
+            view({ x: 'date', y: 'glasses', aggregate: 'sum' }),
+        )
+        expect(d.points).toHaveLength(1)
+        expect(d.points[0].rows).toEqual([0])
+    })
+
     test('count mode (no y) counts rows per bucket', () => {
         const rows = [
             row({ done: '2026-05-01' }),
@@ -91,6 +119,26 @@ describe('buildChartData', () => {
         const d = buildChartData(rows, view({}))
         expect(d.isDate).toBe(true)
         expect(d.points.map(p => p.value)).toEqual([4, 6])
+    })
+
+    test('resolves x/y and aggregate/bin defaults onto the returned data', () => {
+        const rows = [
+            row({ date: '2026-05-01', glasses: 4 }),
+            row({ date: '2026-05-02', glasses: 6 }),
+        ]
+        const d = buildChartData(rows, view({}))
+        expect(d.x).toBe('date')
+        expect(d.y).toBe('glasses')
+        expect(d.aggregate).toBe('sum')
+        expect(d.bin).toBe('day')
+    })
+
+    test('resolved aggregate defaults to count when no y resolves', () => {
+        const rows = [row({ cat: 'a' }), row({ cat: 'b' })]
+        const d = buildChartData(rows, view({}))
+        expect(d.y).toBeUndefined()
+        expect(d.aggregate).toBe('count')
+        expect(d.bin).toBe('day')
     })
 
     test('empty rows yield no points and zero min/max', () => {
@@ -166,8 +214,8 @@ describe('buildHeatmapWeeks', () => {
     test('lays out day points into Monday-started week columns', () => {
         // 2026-05-25 (Mon) .. 2026-05-27 (Wed)
         const points = [
-            { key: '2026-05-25', label: '', value: 1, date: '2026-05-25' },
-            { key: '2026-05-27', label: '', value: 4, date: '2026-05-27' },
+            { key: '2026-05-25', label: '', value: 1, date: '2026-05-25', rows: [] },
+            { key: '2026-05-27', label: '', value: 4, date: '2026-05-27', rows: [] },
         ]
         const { weeks } = buildHeatmapWeeks(points)
         expect(weeks.length).toBe(1)
@@ -184,8 +232,8 @@ describe('buildHeatmapWeeks', () => {
 
     test('spans multiple weeks with a non-Monday start and pads the tail', () => {
         const points = [
-            { key: '2026-05-28', label: '', value: 3, date: '2026-05-28' }, // Thursday
-            { key: '2026-06-02', label: '', value: 5, date: '2026-06-02' }, // following Tuesday
+            { key: '2026-05-28', label: '', value: 3, date: '2026-05-28', rows: [] }, // Thursday
+            { key: '2026-06-02', label: '', value: 5, date: '2026-06-02', rows: [] }, // following Tuesday
         ]
         const { weeks } = buildHeatmapWeeks(points)
         expect(weeks.length).toBe(2)
@@ -195,5 +243,32 @@ describe('buildHeatmapWeeks', () => {
         expect(weeks[0][3]).toEqual({ date: '2026-05-28', value: 3 })
         expect(weeks[1][1]).toEqual({ date: '2026-06-02', value: 5 })
         expect(weeks[1][6].value).toBe(null) // padded tail (Sunday 2026-06-07)
+    })
+
+    test('an explicit range spans the Monday on/before start .. Sunday on/after end', () => {
+        const points = [
+            { key: '2026-05-28', label: '', value: 3, date: '2026-05-28', rows: [] },
+        ]
+        const { weeks } = buildHeatmapWeeks(points, {
+            start: '2026-05-28',
+            end: '2026-06-02',
+        })
+        expect(weeks.length).toBe(2)
+        expect(weeks[0][0].date).toBe('2026-05-25')
+        expect(weeks[1][6].date).toBe('2026-06-07')
+    })
+
+    test('a range wider than the data yields null-valued cells outside it', () => {
+        const points = [
+            { key: '2026-05-28', label: '', value: 3, date: '2026-05-28', rows: [] },
+        ]
+        const { weeks } = buildHeatmapWeeks(points, {
+            start: '2026-05-25',
+            end: '2026-06-07',
+        })
+        const flat = weeks.flat()
+        expect(flat.find(c => c.date === '2026-05-28')?.value).toBe(3)
+        expect(flat.find(c => c.date === '2026-05-25')?.value).toBe(null)
+        expect(flat.find(c => c.date === '2026-06-07')?.value).toBe(null)
     })
 })
