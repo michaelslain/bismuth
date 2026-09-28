@@ -1,6 +1,5 @@
 import {
     createSignal,
-    createEffect,
     onCleanup,
     onMount,
     For,
@@ -90,17 +89,6 @@ export function CategoryPanel(props: { store: EventStore }) {
         }
         window.addEventListener('keydown', onKey)
         onCleanup(() => window.removeEventListener('keydown', onKey))
-    })
-
-    // Close an open colour popover when clicking anywhere outside a chip/popover.
-    // ColorChip's wrapper stops `mousedown` from ever bubbling out of its own subtree
-    // (see its comment), so any mousedown that reaches this window listener at all is,
-    // by construction, outside every chip/popover — no DOM interrogation needed here.
-    createEffect(() => {
-        if (picker() === null) return
-        const onDown = () => setPicker(null)
-        window.addEventListener('mousedown', onDown)
-        onCleanup(() => window.removeEventListener('mousedown', onDown))
     })
 
     return (
@@ -206,7 +194,6 @@ export function CategoryPanel(props: { store: EventStore }) {
                             <ColorChip
                                 color={newColor()}
                                 open={picker() === 'new'}
-                                up
                                 onToggle={() =>
                                     setPicker(p => (p === 'new' ? null : 'new'))
                                 }

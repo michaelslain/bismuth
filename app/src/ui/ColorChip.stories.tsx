@@ -1,5 +1,5 @@
-// Visual spec for <ColorChip> — a colour swatch chip that opens a palette popover of the six
-// theme swatches. Extracted from CategoryPanel's private ColorChip/Palette pair (see that file
+// Visual spec for <ColorChip> — a colour swatch chip that opens a palette popover (default: the
+// seven theme tokens; or a caller palette plus an `auto` entry). Extracted from CategoryPanel's private ColorChip/Palette pair (see that file
 // and ColorChip.tsx's header comment) so both CategoryPanel and TaskCalendarSettings compose the
 // same component instead of two copies that could drift.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
@@ -57,16 +57,67 @@ export const Open: Story = {
     },
 }
 
-/** `up` — the popover opens above the chip instead of below, for a chip near the bottom of its
- *  container (CategoryPanel's "new category" row). Rendered near the bottom of a tall box so the
- *  upward direction is visible without clipping. */
-export const Up: Story = {
+/** Kanban's shape: five raw `var(--graph-N)` values plus an `auto` entry, holding real state.
+ *  Picks graph-3, then auto, and asserts what the caller stored each time. */
+export const GraphPaletteWithAuto: Story = {
+    render: () => {
+        const graph = [1, 2, 3, 4, 5].map(n => `var(--graph-${n})`)
+        const [color, setColor] = createSignal<string | null>(null)
+        const [open, setOpen] = createSignal(true)
+        return (
+            <div>
+                <ColorChip
+                    color={color() ?? ''}
+                    open={open()}
+                    palette={graph}
+                    auto={{
+                        label: 'auto',
+                        selected: color() === null,
+                        onPick: () => {
+                            setColor(null)
+                            setOpen(false)
+                        },
+                    }}
+                    onToggle={() => setOpen(v => !v)}
+                    onPick={v => {
+                        setColor(v)
+                        setOpen(false)
+                    }}
+                />
+                <output data-testid="stored">{color() ?? 'auto'}</output>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const stored = () =>
+            canvasElement.querySelector('[data-testid="stored"]')?.textContent
+        const panel = () =>
+            document.querySelector('[data-testid="category-palette"]')
+        await waitFor(() => expect(panel()).not.toBeNull())
+        expect(panel()!.querySelectorAll('button[aria-label^="graph-"]').length).toBe(5)
+        await userEvent.click(
+            panel()!.querySelector('button[aria-label="graph-3"]') as HTMLElement,
+        )
+        await waitFor(() => expect(stored()).toBe('var(--graph-3)'))
+        await userEvent.click(within(canvasElement).getByLabelText('Choose colour'))
+        await waitFor(() => expect(panel()).not.toBeNull())
+        expect(
+            panel()!.querySelector('button[aria-label="graph-3"]'),
+        ).toHaveAttribute('aria-pressed', 'true')
+        await userEvent.click(within(panel() as HTMLElement).getByText('auto'))
+        await waitFor(() => expect(stored()).toBe('auto'))
+    },
+}
+
+/** A chip at the bottom edge of the viewport: AnchoredPopover flips the palette above it. */
+export const NearBottomEdge: Story = {
+    parameters: { layout: 'fullscreen' },
     render: () => {
         const [open, setOpen] = createSignal(true)
         return (
             <div
                 style={{
-                    height: '160px',
+                    height: '100vh',
                     display: 'flex',
                     'align-items': 'flex-end',
                 }}
@@ -74,7 +125,6 @@ export const Up: Story = {
                 <ColorChip
                     color="gold"
                     open={open()}
-                    up
                     onToggle={() => setOpen(v => !v)}
                     onPick={() => {}}
                 />
@@ -82,20 +132,21 @@ export const Up: Story = {
         )
     },
     play: async () => {
-        const wrapper = document.querySelector(
-            '[data-testid="category-chip"]',
+        const wrapper = document.querySelector('[data-testid="category-chip"]')
+        await waitFor(() =>
+            expect(
+                document.querySelector('[data-testid="category-palette"]'),
+            ).not.toBeNull(),
         )
         const popover = document.querySelector(
             '[data-testid="category-palette"]',
-        )
-        if (!(wrapper instanceof HTMLElement))
-            throw new Error('chip wrapper not found')
-        if (!(popover instanceof HTMLElement))
-            throw new Error('popover did not open')
-        // `up` opens the popover ABOVE the chip rather than below it — its bottom edge sits
-        // above the chip's top edge, not the other way around.
-        expect(popover.getBoundingClientRect().bottom).toBeLessThan(
-            wrapper.getBoundingClientRect().top,
+        ) as HTMLElement
+        if (!(wrapper instanceof HTMLElement)) throw new Error('chip not found')
+        // No room below, so it flips: the palette's bottom edge sits above the chip's top edge.
+        await waitFor(() =>
+            expect(popover.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+                wrapper.getBoundingClientRect().top,
+            ),
         )
     },
 }
@@ -122,7 +173,8 @@ export const Interactive: Story = {
         const canvas = within(canvasElement)
         const chip = canvas.getByLabelText('Choose colour')
         await userEvent.click(chip)
-        const violet = canvas.getByLabelText('violet')
+        // The palette is portaled to <body>, outside the canvas element.
+        const violet = within(document.body).getByLabelText('violet')
         await userEvent.click(violet)
         await waitFor(() =>
             expect(

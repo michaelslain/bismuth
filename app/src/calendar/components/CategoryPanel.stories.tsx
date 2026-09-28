@@ -3,20 +3,11 @@
 // category LIST and the panel's open/closed state are read from module-level signals in
 // calendar/state.ts, so stories seed those directly (same pattern as Toolbar.stories.tsx).
 //
-// WHAT THE PLAY PROVES: each row's colour chip opens a small swatch popover, and clicking
-// anywhere outside that popover closes it — previously decided by a window `mousedown`
-// listener matching `e.target.closest('.cat-chipwrap')`. That string survived a CSS-module
-// hash as text but stopped matching anything once `.cat-chipwrap` becomes a hashed local
-// (exactly the trap ui/Modal.tsx's own `panelRef` doc comment warns about), which would make
-// EVERY mousedown look "outside" and close the popover before a swatch pick could land. The
-// fix has the chip's own wrapper stop the `mousedown` from ever reaching the window listener,
-// so the guard no longer depends on any class string. `.cat-chipwrap`/`.cat-pop` ARE now
-// genuinely hashed (CategoryPanel.module.css) — this play queries them by `data-testid`
-// (`category-chip`/`category-palette`) instead of importing the module, then ALSO renames the
-// wrapper's class to a value that isn't even the real hash, to prove the guard depends on
-// neither: a press on the popover's own background still doesn't close it, then a genuinely
-// outside press still does — so the assertion isn't vacuously passing because nothing can ever
-// close.
+// WHAT THE PLAY PROVES: each row's colour chip opens a swatch popover (an AnchoredPopover,
+// portaled and dismissed by its own outside-`pointerdown` listener). A press on the popover's own
+// background must not close it; a genuinely outside press still does, so the first assertion is
+// not vacuous. Elements are found by `data-testid` (`category-chip`/`category-palette`), never a
+// class name.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CategoryPanel } from './CategoryPanel'
@@ -81,7 +72,7 @@ export const PopoverIgnoresInsideClicks: Story = {
 
         // A press on the popover's own background (not a swatch, so nothing explicitly
         // closes it) must not be treated as "outside".
-        fireEvent.mouseDown(popover)
+        fireEvent.pointerDown(popover)
         fireEvent.click(popover)
         await waitFor(() =>
             expect(
@@ -93,7 +84,7 @@ export const PopoverIgnoresInsideClicks: Story = {
         // it — proves the assertion above is testing something real, not a guard that
         // never closes at all.
         const title = canvas.getByText('categories')
-        fireEvent.mouseDown(title)
+        fireEvent.pointerDown(title)
         await waitFor(() =>
             expect(
                 document.querySelector('[data-testid="category-palette"]'),
