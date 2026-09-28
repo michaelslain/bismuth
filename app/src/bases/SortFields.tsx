@@ -1,6 +1,7 @@
 import { Index, Show, type Component } from 'solid-js'
 import type { SortSpec } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
+import { withCurrent } from './selectOptions'
 import SettingsField from '../ui/SettingsField'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -19,12 +20,6 @@ const DIR_OPTS: SelectOption[] = [
     { value: 'ASC', label: 'ascending' },
     { value: 'DESC', label: 'descending' },
 ]
-
-/** Options with the key's current property kept even when the list lacks it. */
-function withCurrent(options: SelectOption[], current: string): SelectOption[] {
-    if (!current || options.some(o => o.value === current)) return options
-    return [...options, { value: current, label: current }]
-}
 
 /**
  * A view's `sort:` as an ordered list — "sort by" then any number of "then by" keys, each with
