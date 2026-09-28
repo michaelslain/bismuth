@@ -165,9 +165,16 @@ export function CardsView(props: {
                                                                     ? 0
                                                                     : undefined
                                                             }
-                                                            onClick={() =>
-                                                                editor.open(row)
-                                                            }
+                                                            onClick={() => {
+                                                                if (
+                                                                    rowEditable(
+                                                                        row,
+                                                                    )
+                                                                )
+                                                                    editor.open(
+                                                                        row,
+                                                                    )
+                                                            }}
                                                             onContextMenu={e =>
                                                                 cardContextMenu(
                                                                     row,
@@ -175,6 +182,11 @@ export function CardsView(props: {
                                                                 )
                                                             }
                                                             onKeyDown={e => {
+                                                                if (
+                                                                    e.target !==
+                                                                    e.currentTarget
+                                                                )
+                                                                    return
                                                                 if (
                                                                     rowEditable(
                                                                         row,

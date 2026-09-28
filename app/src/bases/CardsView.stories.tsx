@@ -2,7 +2,7 @@
 // default). Exercises `sampleViewResult` end to end: real rows, run through the real query
 // engine (core/src/bases/query.ts `runView`), rendered by the real CardsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
@@ -265,5 +265,70 @@ export const ReadOnlyCardOpensNote: Story = {
     play: async ({ canvasElement }) => {
         expect(canvasElement.querySelector('[role="button"]')).toBeNull()
         expect(canvasElement.querySelector('a')).toBeTruthy()
+    },
+}
+
+/** Without a basePath a card click must not open the row editor (it could rename or trash the note). */
+export const ReadOnlyClickOpensNothing: Story = {
+    render: () => (
+        <CardsView result={sampleViewResult()} config={sampleBaseConfig()} />
+    ),
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector<HTMLElement>('[class*="cardSlot"]')
+        expect(card).toBeTruthy()
+        await userEvent.click(card!)
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
+    },
+}
+
+/** Enter on a focused link inside an editable card opens the note, not the row editor. */
+export const LinkEnterInEditableCard: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'cards' as const,
+                name: 'Linked',
+                order: ['file.name', 'note.author', 'note.related'],
+            },
+        ]
+        const rows: Partial<Row>[] = [
+            {
+                ...bookRow('Piranesi', {
+                    author: 'Susanna Clarke',
+                    related: {
+                        __link: true,
+                        path: 'reading/Jonathan Strange.md',
+                        display: 'Jonathan Strange',
+                    },
+                }),
+                index: 0,
+            },
+        ]
+        return (
+            <CardsView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="projects/tasks.md"
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        let opened = 0
+        const onOpen = () => {
+            opened++
+        }
+        window.addEventListener('bismuth-open', onOpen)
+        try {
+            const link = canvasElement.querySelector<HTMLElement>(
+                '[role="button"] a',
+            )
+            expect(link).toBeTruthy()
+            link!.focus()
+            await userEvent.keyboard('{Enter}')
+            await waitFor(() => expect(opened).toBeGreaterThan(0))
+            expect(document.querySelector('[role="dialog"]')).toBeNull()
+        } finally {
+            window.removeEventListener('bismuth-open', onOpen)
+        }
     },
 }

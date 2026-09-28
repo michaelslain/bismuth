@@ -15,6 +15,7 @@
   cursor: pointer;
 }
 .lrow:hover { background: var(--hover-bg); }
+.lrow:not(button) { cursor: default; }
 /* flex/min-width/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label fill>`); nothing
    bespoke remained, so the rule and the `class` merge onto the element are both gone. */
 /* Faint author suffix after a list row's title. */
@@ -23,4 +24,4 @@
 
 /* Row-editing affordance (openRowEditor.tsx): right-click on `.lrow` opens the property/row
    editor for any editable row — a note row keeps left-click opening the note, an owned row
-   opens the editor on left-click too (see ListView.tsx's `openRow`). No hover-reveal icon. */
+   opens the editor on left-click too (an editable row renders as a button). No hover-reveal icon. */

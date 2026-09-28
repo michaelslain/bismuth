@@ -14,7 +14,7 @@
 
 /* Row-editing affordance (openRowEditor.tsx): a click anywhere on an editable card's `.cardSlot`
    opens the row/property editor (note rows too, not only owned rows); right-click does the same
-   — no hover-reveal icon. A non-editable card keeps opening its note on click. */
+   — no hover-reveal icon. A non-editable card is inert: only its title NoteLink opens the note. */
 
 /* Tasks-mode cards: the TaskChip register, not the book-cover card frame — one task per card,
    no cover, no click-to-open (TaskRow's own wikilinks are what navigate), so no hover wash
