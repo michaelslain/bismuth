@@ -10,7 +10,7 @@
 // the brief calls out: the map's right-click menu offering the unplaced rows, and a pin's own menu.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createMemo, createSignal } from 'solid-js'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
@@ -259,6 +259,14 @@ export const ReadOnly: Story = {
         expect(canvas.getByTestId('map-add-pin')).toBeDisabled()
         expect(canvas.getByRole('link', { name: 'Tokyo' })).toBeInTheDocument()
         expect(canvas.queryAllByRole('button', { name: /Tokyo/ })).toHaveLength(0)
+        // A link pin must actually open its note (pointer capture must not swallow the click).
+        let detail: unknown
+        const on = (e: Event) => (detail = (e as CustomEvent).detail)
+        window.addEventListener('bismuth-open', on)
+        await userEvent.click(canvas.getByRole('link', { name: 'Tokyo' }))
+        window.removeEventListener('bismuth-open', on)
+        expect(typeof detail).toBe('string')
+        expect(String(detail)).toMatch(/Tokyo/)
     },
 }
 
