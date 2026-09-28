@@ -51,6 +51,7 @@ import {
     buildChartData,
     buildHeatmapWeeks,
 } from '../../../core/src/bases/chart'
+import { metricResults } from '../../../core/src/bases/metrics'
 import { parseExpr } from '../../../core/src/bases/parser'
 import {
     validatePropertyValue,
@@ -616,6 +617,21 @@ export const commands: CommandMap = {
             config.views.forEach((v, i) =>
                 collectExprErrors(v.filters, `views[${i}].filters`, errors),
             )
+            // Stat view metrics (`stats[].value`) are metric expressions, not filter
+            // expressions, but the same "does it even parse" check applies before anything
+            // tries to evaluate them (metricResults nulls a bad metric at render time rather
+            // than throwing, so validate is the only place this surfaces as an error).
+            config.views.forEach((v, i) =>
+                (v.stats ?? []).forEach((stat, j) => {
+                    try {
+                        parseExpr(stat.value)
+                    } catch (e) {
+                        errors.push(
+                            `views[${i}].stats[${j}].value: "${stat.value}" failed to parse — ${e instanceof Error ? e.message : String(e)}`,
+                        )
+                    }
+                }),
+            )
             const formulas = { ...declaredFormulas(config), ...config.formulas }
             for (const [formulaName, src] of Object.entries(formulas)) {
                 try {
@@ -682,6 +698,12 @@ export const commands: CommandMap = {
                 }
                 if (result.view.type === 'heatmap')
                     payload.heatmapWeeks = buildHeatmapWeeks(chart.points).weeks
+                if (result.view.type === 'stat')
+                    payload.metrics = metricResults(
+                        flatRows,
+                        result.view,
+                        today(),
+                    )
                 out(payload, args)
                 return
             }
