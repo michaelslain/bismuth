@@ -52,18 +52,17 @@ import { createKanbanDrag, type KanbanCardDrop } from './kanbanDrag'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
-    appendEmbedToValue,
     markdownDropTarget,
     isImagePath,
 } from './kanbanImageDrop'
 import {
     isFileDrag,
     nativeDropPoint,
-    uploadImageEmbeds,
     uploadsFromFiles,
     uploadsFromNativePaths,
     type ImageUpload,
 } from './cardImageDrop'
+import { embedUploadsIntoValue } from './imageEmbedWrite'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyType } from '../../../core/src/bases/properties'
 import { propertyRegistry } from '../propertyRegistry'
@@ -1583,20 +1582,21 @@ export function KanbanView(props: {
             )
             return
         }
-        const embeds = await uploadImageEmbeds(uploads, row.file.path)
-        if (embeds.length === 0) return
         try {
             const current = resolveProperty(id, row)
-            const next = appendEmbedToValue(
-                current == null ? '' : String(current),
-                embeds.join('\n'),
-            )
+            const before = current == null ? '' : String(current)
+            const next = await embedUploadsIntoValue({
+                uploads,
+                notePath: row.file.path,
+                value: before,
+            })
+            if (next === before) return // nothing landed (uploadImageEmbeds already toasted why)
             await setMetaProperty(row, id, next)
             const label =
                 row.file.path.split('/').pop()?.replace(/\.md$/, '') ??
                 row.file.path
             pushToast(
-                `Added ${embeds.length === 1 ? 'image' : `${embeds.length} images`} to "${label}"`,
+                `Added ${uploads.length === 1 ? 'image' : `${uploads.length} images`} to "${label}"`,
             )
         } catch (e) {
             pushToast(`Couldn't add image: ${(e as Error).message}`)
