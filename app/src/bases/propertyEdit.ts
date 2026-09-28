@@ -43,7 +43,8 @@ export type PropertyEditKind =
     | { kind: 'boolean' }
     | { kind: 'date'; time?: boolean }
     | { kind: 'select'; options: string[] }
-    | { kind: 'multiselect'; options: string[] }
+    /** `tag`: the property is a tag column (`tags`/`tag`) — drawn in the tag look. */
+    | { kind: 'multiselect'; options: string[]; tag?: boolean }
     /** An undeclared (or registry `list`) list of strings, edited as one comma-separated line.
      *  `tag`: a tag column (`tags`/`tag`) — drawn in the tag look and suggested vault tags. */
     | { kind: 'tags'; options: string[]; tag: boolean }
@@ -138,7 +139,11 @@ export function propertyEditKind(
                 // A stored value holding a comma cannot survive the comma-separated field.
                 return multiselectValues(value).some(v => v.includes(','))
                     ? { kind: 'readonly' }
-                    : { kind: 'multiselect', options: declaredType.options ?? [] }
+                    : {
+                          kind: 'multiselect',
+                          options: declaredType.options ?? [],
+                          ...(isTagName(id) ? { tag: true } : {}),
+                      }
             // list/link/formula: no dedicated editor yet — fall through.
         }
     }
@@ -173,6 +178,12 @@ export function propertyEditKind(
     return { kind: 'text' }
 }
 
+/** A tag column: a property named `tags` or `tag`, however it is declared. */
+function isTagName(id: string): boolean {
+    const n = bareName(id)
+    return n === 'tags' || n === 'tag'
+}
+
 /** How a list value is edited — see the `tags` / `readonly` kinds. Only a list of plain strings
  *  is editable, and a comma inside a value would make the comma-separated field split it, so
  *  that list is shown read-only too. */
@@ -184,7 +195,7 @@ function listEditKind(
     const list = Array.isArray(value) ? value : value == null ? [] : [value]
     if (list.some(v => typeof v !== 'string')) return { kind: 'readonly' }
     if ((list as string[]).some(v => v.includes(','))) return { kind: 'readonly' }
-    const tag = bareName(id) === 'tags' || bareName(id) === 'tag'
+    const tag = isTagName(id)
     return { kind: 'tags', options: tagsOptions(value, siblingValues), tag }
 }
 

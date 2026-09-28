@@ -139,7 +139,7 @@ export function PropertyValueEditor(props: {
     // suggests only its options — a typed value outside them is still kept (legacy tolerance).
     const listKind = () => {
         const k = props.kind
-        if (k.kind === 'multiselect') return { options: k.options, tag: false }
+        if (k.kind === 'multiselect') return { options: k.options, tag: k.tag === true }
         if (k.kind === 'tags')
             return {
                 options: mergeTagOptions(k.options, k.tag ? vaultTags() : []),
