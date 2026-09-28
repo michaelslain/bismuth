@@ -10,10 +10,11 @@ import {
     renderStatus,
     renderTags,
     renderValue,
-} from './renderValue'
+} from './valueRenderers'
 import { isRatingColumn, isStatusColumn, isTagColumn } from './columnKinds'
 import EmptyValue from '../ui/EmptyValue'
 import Text from '../ui/Text'
+import ValueChip from '../ui/ValueChip'
 import styles from './PropertyDisplay.module.css'
 
 export type PropertyDisplayProps = {
@@ -59,12 +60,7 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
             return (
                 <Text as="span" inherit class={styles.chips}>
                     <For each={vals}>
-                        {t => (
-                            // TODO: ui/ValueChip (task 1) replaces this local chip in task 23.
-                            <Text as="span" inherit class={styles.chip}>
-                                {t}
-                            </Text>
-                        )}
+                        {t => <ValueChip>{t}</ValueChip>}
                     </For>
                 </Text>
             )

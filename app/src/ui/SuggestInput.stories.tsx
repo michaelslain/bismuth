@@ -25,7 +25,7 @@ type Story = StoryObj<typeof meta>
 function Host(props: { initial?: string; options?: SuggestOption[] }) {
     const [value, setValue] = createSignal(props.initial ?? '')
     return (
-        <div style={{ width: '240px', display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+        <div style={{ width: '240px', display: 'flex', 'flex-direction': 'column', gap: 'var(--sp-4)' }}>
             <SuggestInput
                 value={value()}
                 options={props.options ?? OPTIONS}
@@ -79,7 +79,7 @@ export const AcceptAndDismiss: Story = {
         const el = input(canvasElement)
         await userEvent.type(el, 'c')
         await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).not.toBeNull())
-        await userEvent.keyboard('{ArrowDown}{Enter}')
+        await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
         expect(el.value).toBe('car')
         await userEvent.clear(el)
         await userEvent.type(el, 'd')
@@ -106,7 +106,7 @@ export const EnterKeepsTypedPrefix: Story = {
     },
 }
 
-/** ArrowDown touches the highlight, so Enter accepts the option under it. */
+/** ArrowDown touches the highlight (without moving it), so Enter accepts the option under it. */
 export const ArrowThenEnterAccepts: Story = {
     render: () => <Host options={WORKOUT} />,
     play: async ({ canvasElement }) => {
@@ -114,7 +114,7 @@ export const ArrowThenEnterAccepts: Story = {
         await userEvent.type(el, 'Work')
         await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).not.toBeNull())
         await userEvent.keyboard('{ArrowDown}{Enter}')
-        expect(el.value).toBe('Worklog')
-        expect(within(canvasElement).getByTestId('suggest-value').textContent).toBe('Worklog')
+        expect(el.value).toBe('Workout')
+        expect(within(canvasElement).getByTestId('suggest-value').textContent).toBe('Workout')
     },
 }

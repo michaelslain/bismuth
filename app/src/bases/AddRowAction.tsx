@@ -22,9 +22,6 @@ export type AddRowActionProps = {
     onAdded: () => void
 }
 
-// MapView still imports `createRow` from here; its wave-2 owner repoints it at ./rowWrites.
-export { createRow } from './rowWrites'
-
 async function addOwnedRow(props: AddRowActionProps): Promise<void> {
     const basePath = props.basePath
     if (!basePath) return

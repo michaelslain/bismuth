@@ -1,5 +1,6 @@
 // Visual spec for <GroupHeader> — the `● LABEL // N` header List, Table, Cards and Bullets share.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import GroupHeader from './GroupHeader'
 import { Row } from './_storyKit'
 
@@ -15,7 +16,16 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {}
 
-export const WithCount: Story = { args: { label: 'to read', count: 12 } }
+export const WithCount: Story = {
+    args: { label: 'to read', count: 12 },
+    // Catches: the label not uppercased, or the dot and label painting different colours.
+    play: async ({ canvasElement }) => {
+        const label = within(canvasElement).getByText('to read')
+        expect(getComputedStyle(label).textTransform).toBe('uppercase')
+        const dot = label.parentElement!.querySelector('span')!
+        expect(getComputedStyle(dot).backgroundColor).toBe(getComputedStyle(label).color)
+    },
+}
 
 export const CustomColor: Story = {
     args: { label: 'ideas', count: 3, color: 'var(--violet)' },

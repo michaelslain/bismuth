@@ -167,6 +167,7 @@ export function tagValues(rows: Row[]): string[] {
 /** Which value editor an operator calls for. */
 export type ValueEditorKind = 'none' | 'tag' | 'folder' | 'date' | 'text'
 
+/** `type` is reserved and ignored: today the operator alone decides the editor. */
 export function editorKind(op: NotesOp, _type: PropType): ValueEditorKind {
     if (VALUELESS.has(op)) return 'none'
     if (op === 'has_tag' || op === 'not_tag') return 'tag'

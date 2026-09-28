@@ -10,6 +10,7 @@
 //   useRowEditor(props: { config, view, columns?, onChanged?, siblingValues? }): { editable, open }
 import type { BaseConfig, Row, ViewConfig } from '../../../core/src/bases/types'
 import { isStoredPlaceholder } from './taskWrite'
+import { pushToast } from '../toastStore'
 
 export type RowEditorProps = {
     config: () => BaseConfig
@@ -45,7 +46,11 @@ export function useRowEditor(props: RowEditorProps): RowEditor {
                 siblingValues: props.siblingValues,
                 focusTarget,
             }
-            void import('./openRowEditor').then(m => m.openRowEditor(opts))
+            void import('./openRowEditor')
+                .then(m => m.openRowEditor(opts))
+                .catch(e =>
+                    pushToast(`Couldn't open editor: ${(e as Error).message}`),
+                )
         },
     }
 }

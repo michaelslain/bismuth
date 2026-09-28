@@ -6,6 +6,10 @@ import TextInput from './TextInput'
 import { isConfirmKey, isDismissKey, isTabKey } from './widgetKeys'
 import styles from './SuggestInput.module.css'
 
+// The listbox's own spatial key (the same one createMenuNav moves on), named so the first-press
+// rule below reads as a rule; not a rebindable command.
+const ARROW_DOWN = 'ArrowDown'
+
 export type SuggestOption = { value: string; label?: string; detail?: string }
 
 export type SuggestInputProps = {
@@ -18,7 +22,8 @@ export type SuggestInputProps = {
 
 /**
  * A text field with a suggestion popup — replaces the native `<datalist>`. Options are filtered by
- * prefix on the label (or value), the first is highlighted (visually), ArrowUp/Down move. The
+ * prefix on the label (or value), the first is highlighted (visually), ArrowUp/Down move (the first ArrowDown only activates the
+ * highlighted first option). The
  * confirm key and Tab accept the highlighted option ONLY once an arrow key has moved the highlight
  * since the last keystroke or popup close; until then they are not consumed — confirm bubbles to
  * the host (a form's Enter-to-save still works), Tab moves focus, and the typed text stands, as
@@ -90,6 +95,13 @@ const SuggestInput: Component<SuggestInputProps> = props => {
                         accept(nav.active())
                     } else if (isTabKey(e)) {
                         if (touched()) accept(nav.active())
+                    } else if (e.key === ARROW_DOWN && !touched()) {
+                        // First ArrowDown from the untouched state activates the option that is
+                        // already highlighted (marks touched, does not move), so ArrowDown+Enter
+                        // accepts what the eye sees.
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setTouched(true)
                     } else {
                         nav.onKeyDown(e)
                         // Only the arrows are consumed; typing keeps bubbling to the host.
