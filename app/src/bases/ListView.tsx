@@ -7,7 +7,7 @@ import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
-import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
 import styles from './ListView.module.css'
 
@@ -53,10 +53,12 @@ export function ListView(props: {
             columns: props.result.columns,
         })
     }
-    /** Owned rows have nowhere else to open (no note) — the row itself opens the editor;
-     *  a note row keeps opening the note, with a separate edit icon for properties. */
+    /** A left-click opens the row editor for any editable row — owned rows have nowhere
+     *  else to open (no note) and note rows now match CardsView/KanbanView's left-click
+     *  behaviour too. A non-editable row (no basePath, or a placeholder) keeps opening its
+     *  note; task-line rows never reach here (branched to TaskRow above). */
     function openRow(row: Row): void {
-        if (rowEditable(row) && canWriteStoredRow(row)) openEditor(row)
+        if (rowEditable(row)) openEditor(row)
         else open(row)
     }
 

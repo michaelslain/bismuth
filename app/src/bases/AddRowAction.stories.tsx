@@ -1,4 +1,4 @@
-// Visual spec for <AddRowAction> — the bar "+ row" button for table/list/bullets/cards views
+// Visual spec for <AddRowAction> — the bar `[+]` button for table/list/bullets/cards views
 // in normal mode (mirrors BaseView's own AddTaskAction, which covers `mode: tasks`).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
@@ -42,7 +42,7 @@ export const Default: Story = {
 export const NoBasePath: Story = {
     render: () => (
         <div>
-            <p>no basePath — no "+ row" button renders below:</p>
+            <p>no basePath — no `[+]` button renders below:</p>
             <AddRowAction
                 config={sampleBaseConfig()}
                 view={VIEW}
@@ -63,7 +63,7 @@ export const TasksModeHidden: Story = {
     render: () => (
         <div>
             <p>
-                mode: tasks — no "+ row" button renders below (AddTaskAction
+                mode: tasks — no `[+]` button renders below (AddTaskAction
                 covers it):
             </p>
             <AddRowAction
