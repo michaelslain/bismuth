@@ -57,6 +57,9 @@ export function CardsView(props: {
 
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    // A task-line row's `file` is the containing NOTE, not the task — the shared row editor
+    // would title itself with the note, rename the whole file, and let `delete` trash it.
+    const taskLine = (row: Row) => typeof row.note.line === 'number'
     function openEditor(row: Row): void {
         if (!rowEditable(row)) return
         openRowEditor({
@@ -110,11 +113,11 @@ export function CardsView(props: {
      *  rows); a non-editable row keeps opening its note. Right-click always opens the editor
      *  when the row is editable (see `onContextMenu` below). */
     const cardClick = (row: Row) => {
-        if (rowEditable(row)) openEditor(row)
+        if (rowEditable(row) && !taskLine(row)) openEditor(row)
         else openCard(row)
     }
     const cardContextMenu = (row: Row, e: MouseEvent) => {
-        if (!rowEditable(row)) return
+        if (!rowEditable(row) || taskLine(row)) return
         e.preventDefault()
         e.stopPropagation()
         openEditor(row)

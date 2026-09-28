@@ -70,7 +70,12 @@ export function BulletsView(props: {
                                     <li
                                         class={styles.bulletItem}
                                         onContextMenu={e => {
-                                            if (!rowEditable(row)) return
+                                            if (
+                                                !rowEditable(row) ||
+                                                typeof row.note.line ===
+                                                    'number'
+                                            )
+                                                return
                                             e.preventDefault()
                                             e.stopPropagation()
                                             openEditor(row)

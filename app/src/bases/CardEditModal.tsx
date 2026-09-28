@@ -92,8 +92,8 @@ export function CardEditModal(props: {
     onClose: () => void
     /** Opens the underlying note (dispatches `bismuth-open`) — supplied only for a NOTE-backed
      *  row (see mount sites: openRowEditor.tsx / KanbanCard.tsx). Absent for a stored row with
-     *  no note file behind it, or a row being freshly created (AddRowAction). When given, the
-     *  footer's trailing group gains a plain `[open note]` before `[done]`. */
+     *  no note file behind it (`canWriteStoredRow`). When given, the footer's trailing group
+     *  gains a plain `[open note]` before `[done]`. */
     onOpenNote?: () => void
 }) {
     let titleRef: HTMLInputElement | undefined

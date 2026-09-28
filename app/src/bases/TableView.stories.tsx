@@ -13,6 +13,7 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { setTransport } from '../api'
 import type { Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import { EMPTY_FILE } from '../../../core/src/bases/types'
 
 const meta = {
     title: 'Bases/TableView',
@@ -296,5 +297,43 @@ export const EditableBooleanAndSelect: Story = {
         )
         expect(canvasElement.querySelector('input')).toBeNull()
         expect(widths()).toEqual(before)
+    },
+}
+
+// A `source: tasks` row's `file` is the containing NOTE, not the task — the table is the one
+// row view that keeps rendering every row (including task-line rows) even under `mode:
+// "tasks"` (see the component's own comment), so it must never route a task-line row into the
+// shared note/row editor: that editor would title itself with the note, rename the whole file
+// on a title edit, and let `delete` trash it instead of the one task line.
+const TASK_LINE_CONFIG: BaseConfig = {
+    declaredProperties: ['description', 'status'],
+    views: [{ type: 'table', name: 'Table' }],
+}
+const TASK_LINE_ROWS: Row[] = [
+    {
+        file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+        note: { description: 'ship the parser', line: 5, status: 'todo' },
+        formula: {},
+    },
+]
+
+export const TaskLineRowContextMenu: Story = {
+    render: () => (
+        <TableView
+            result={runView(TASK_LINE_CONFIG, TASK_LINE_ROWS, 0)}
+            config={TASK_LINE_CONFIG}
+            basePath="boards/tasks.md"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const titleCell = canvasElement.querySelector<HTMLElement>(
+            'tbody tr:first-child td',
+        )!
+        titleCell.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await new Promise(r => setTimeout(r, 30))
+        expect(canvasElement.querySelector('[role="dialog"]')).toBeNull()
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
     },
 }
