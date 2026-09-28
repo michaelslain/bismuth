@@ -198,6 +198,10 @@ export const ClickTodayJumpsToToday: Story = {
         const today = canvasElement.querySelector<HTMLButtonElement>(
             '[title="Today"]',
         )!
+        // TODAY is text-only — no icon — and reads exactly "today" once the bracket glyphs
+        // (CSS ::before/::after content, never in textContent) are set aside.
+        expect(today.querySelector('svg')).toBeNull()
+        expect(today.textContent?.trim()).toBe('today')
         today.click()
         await new Promise(r => setTimeout(r, 0))
         const now = new Date()

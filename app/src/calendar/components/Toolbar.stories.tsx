@@ -105,6 +105,16 @@ export const Default: Story = {
             todayWord: 'today',
             categoriesShown: true,
         })
+        // The bar's one action is a bracket ICON button, titled "New event" — not the retired
+        // "[ + event ]" text control. `aria-label`/`title` both come from IconButton's `label`
+        // prop (see IconButton.tsx), and its only visible content is the icon SVG: the bracket
+        // glyphs are ::before/::after CSS content, so a stray "event" text label would show up
+        // in textContent even though it never appears in the accessible name.
+        const addEvent = canvasElement.querySelector<HTMLButtonElement>(
+            '[aria-label="New event"]',
+        )!
+        expect(addEvent.title).toBe('New event')
+        expect(addEvent.textContent?.trim()).toBe('')
     },
 }
 
