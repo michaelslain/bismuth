@@ -7,6 +7,13 @@
   min-width: 0;
   cursor: text;
 }
+/* In place (a table cell): no chrome at all, and the host's own font, size and line height — the
+   value must look exactly as it does at rest, only now with a caret. */
+.bare {
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+}
 .field > :global(.cm-editor) {
   flex: 1;
   min-width: 0;
