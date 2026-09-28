@@ -8092,8 +8092,21 @@ describe('render loop resilience', () => {
             throw new Error('canvas fault')
         }
         priv.dirty = true
-        frame(32)
+        // The renderer reports the fault once via console.error. Capture it here so the logged Error
+        // cannot surface in whichever unrelated test runs next.
+        const realConsoleError = console.error
+        const reported: unknown[][] = []
+        console.error = (...args: unknown[]) => {
+            reported.push(args)
+        }
+        try {
+            frame(32)
+        } finally {
+            console.error = realConsoleError
+        }
         expect(thrown).toBeGreaterThan(0)
+        expect(reported).toHaveLength(1)
+        expect((reported[0][1] as Error).message).toBe('canvas fault')
 
         ;(ctx as unknown as { fillText: unknown }).fillText = realFillText
         ctx.fills.length = 0
