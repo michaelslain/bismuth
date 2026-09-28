@@ -191,8 +191,9 @@ export function CardEditModal(props: {
      *  The new value comes from the same `embedUploadsIntoValue` the board's card-face drop uses,
      *  so an image dropped here and one dropped on the card produce byte-identical markdown (an
      *  earlier cut inserted at the drop point via ProseMirror and glued the embed onto the end of
-     *  the preceding sentence — `description: text.![[img.png]]`). Reading the CURRENT markdown off
-     *  the live surface (not the row) keeps un-blurred typing in the same commit; a surface that
+     *  the preceding sentence — `description: text.![[img.png]]`). The CURRENT markdown is read off
+     *  the live surface AFTER the upload resolves (a reader closure, not a snapshot), so text typed
+     *  while the upload ran is kept and un-blurred typing lands in the same commit; a surface that
      *  hasn't mounted yet (the Milkdown chunk is code-split) falls back to the draft/row value, so a
      *  fast drop is never lost. */
     async function insertImages(
@@ -200,18 +201,20 @@ export function CardEditModal(props: {
         uploads: ImageUpload[],
     ): Promise<void> {
         if (uploads.length === 0) return
-        const handle = fields.get(id)?.handle
-        const current = handle
-            ? handle.getMarkdown()
-            : (mdDrafts[id] ?? String(untrack(() => value(id)) ?? ''))
-        const next = await embedUploadsIntoValue({
+        const read = (): string => {
+            const handle = fields.get(id)?.handle
+            return handle
+                ? handle.getMarkdown()
+                : (mdDrafts[id] ?? String(untrack(() => value(id)) ?? ''))
+        }
+        const { value: next, landed } = await embedUploadsIntoValue({
             uploads,
             notePath: props.row.file.path,
-            value: current,
+            value: read,
         })
-        if (next === current) return
+        if (landed === 0) return
         mdDrafts[id] = next
-        handle?.setMarkdown(next) // programmatic set → no onChange, hence the explicit draft write above
+        fields.get(id)?.handle?.setMarkdown(next) // programmatic set → no onChange, hence the explicit draft write above
         commitMarkdown(id)
     }
 
