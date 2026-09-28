@@ -11,13 +11,21 @@
 // `indexRow`), so a table toggle, kanban move, multiselect edit or map pin sticks across a
 // refetch — real, mutable state, not a canned ack. Every OTHER mutation (move/delete/toggle
 // file-level ones, not row ones) gets a generic 200 ack rather than a per-route implementation —
-// a story exercising those usually isn't asserting on the response. An unmapped GET throws
+// a story exercising those usually isn't asserting on the response. Opt into `versioned` to
+// also have every mutation bump the server version the way `mutatingHandler` does (see
+// `bumpFakeServerVersion`) — without it a refetch never leaves BaseView's version-gated cache.
+// An unmapped GET throws
 // instead of guessing a shape, since a silently-wrong response is worse than a loud "add a case
 // here" error.
 import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
+import {
+    start as startServerVersion,
+    serverVersion,
+    type StartDeps,
+} from '../serverVersion'
 import {
     sampleDaemonSnapshot,
     sampleActivity,
@@ -49,6 +57,65 @@ export interface FakeTransportSeed {
      *  return something else. Omitting it keeps the previous behaviour (throws), so every
      *  existing caller is unaffected. */
     onUpload?: (targetPath: string, bytes: ArrayBuffer) => string | void
+    /** Behave like the real server's `mutatingHandler`: every mutating POST bumps the server
+     *  version (driving `serverVersion` through its `StartDeps` seam, see
+     *  `armFakeServerVersion`) AFTER the write lands, and `/rows` hands back a fresh copy of the
+     *  rows (as JSON over the wire would) instead of the seed's own objects. Without the bump,
+     *  BaseView's `rowCache.isFresh(key, serverVersion())` stays true forever in Storybook, so a
+     *  view's `onChange` refetch resolves from cache and a write never shows. Off by default —
+     *  every existing caller keeps its fixed version and shared Row references. */
+    versioned?: boolean
+}
+
+// ---- a shared, bumpable server version for `versioned` transports ----------------------
+//
+// ONE module-level version + captured poll callback, shared by every versioned transport.
+// `serverVersion.start()` is idempotent per page (`if (started) return dispose`) and Storybook's
+// preview iframe keeps module state across story switches, so a start made while another story
+// still owns it is a silent no-op — `setIntervalFn` never runs, the poll is never captured, and
+// every bump does nothing. `armFakeServerVersion` detects that and takes the stream over
+// (dispose the current owner, start again with these deps), so the capture is guaranteed.
+
+let fakeVersion = 1
+let fakePoll: (() => unknown) | undefined
+
+const fakeVersionDeps: Partial<StartDeps> = {
+    eventSourceFactory: () => {
+        throw new Error('no SSE in storybook')
+    },
+    fetchVersion: async () => ({ version: fakeVersion }),
+    setIntervalFn: fn => {
+        fakePoll = fn
+        return 0 as unknown as ReturnType<typeof setInterval>
+    },
+    clearIntervalFn: () => {},
+    setTimeoutFn: (fn, ms) =>
+        setTimeout(fn, ms) as unknown as ReturnType<typeof setTimeout>,
+    clearTimeoutFn: h => clearTimeout(h as unknown as number),
+}
+
+/** (Re)start `serverVersion` on the fake poll. Called by every `versioned` transport. */
+function armFakeServerVersion(): void {
+    fakePoll = undefined
+    const dispose = startServerVersion(fakeVersionDeps)
+    if (fakePoll) return
+    // Someone else already started it — take it over.
+    dispose()
+    startServerVersion(fakeVersionDeps)
+}
+
+/** True once a `versioned` transport has captured the poll — a story's play() asserts this so
+ *  it cannot pass vacuously against a bump that silently went nowhere. */
+export function fakeServerVersionArmed(): boolean {
+    return fakePoll !== undefined
+}
+
+/** What `mutatingHandler` does after a write: advance the version and deliver it. Always past
+ *  the current `serverVersion()` — the poll only fires a change for a HIGHER version, and
+ *  another story may have left it anywhere. */
+async function bumpFakeServerVersion(): Promise<void> {
+    fakeVersion = Math.max(fakeVersion, serverVersion()) + 1
+    await fakePoll?.()
 }
 
 /** Mirrors core/src/taskCreate.ts's resolveTaskFilePath (the server-side resolution a real
@@ -112,14 +179,79 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const resolveRows = (spec: SourceSpec): Row[] => {
         const rows = rowsSource(spec)
         for (const row of rows) indexRow(rowIndex, row)
-        return rows
+        // A versioned transport answers like the wire: a fresh copy, so a refetch after a write
+        // is a NEW array Solid sees change, while the index above keeps the seed objects the
+        // writes mutate.
+        return seed.versioned ? (JSON.parse(JSON.stringify(rows)) as Row[]) : rows
+    }
+    if (seed.versioned) armFakeServerVersion()
+    const bump = async (pathname: string) => {
+        if (seed.versioned && pathname !== '/rows') await bumpFakeServerVersion()
     }
 
-    return {
+    /** Every plain-`post` route; `post` below runs this, then bumps the version for a
+     *  versioned transport — AFTER the write, so the refetch the bump triggers reads it. */
+    const handlePost = async (
+        pathname: string,
+        body: unknown,
+    ): Promise<Response> => {
+        if (pathname === '/rows') {
+            const { spec } = body as { spec: SourceSpec }
+            return new Response(JSON.stringify(resolveRows(spec)), {
+                headers: { 'Content-Type': 'application/json' },
+            })
+        }
+        // Own-rows write-back (kanban drag, task status, a map pin on an inline row): the
+        // real server addresses the row by `index` within `file`; here that's the same
+        // `path::index` key `indexRow` registered the last time `/rows` resolved it.
+        if (pathname === '/row/update') {
+            const { file, index, note } = body as {
+                file: string
+                index: number | null
+                note: Record<string, unknown>
+            }
+            const row =
+                index === null ? undefined : rowIndex.get(`${file}::${index}`)
+            if (row) row.note = note
+            return new Response('ok')
+        }
+        // Batch property writes (kanban multi-card reorder, a map pin's lat+lng in one
+        // request): each write targets a NOTE row by its file path.
+        if (pathname === '/set-properties') {
+            const { writes } = body as {
+                writes: Array<{ path: string; key: string; value: unknown }>
+            }
+            for (const w of writes) {
+                const row = rowIndex.get(w.path)
+                if (row) row.note[w.key] = w.value
+            }
+            return new Response('ok')
+        }
+        if (pathname === '/set-property') {
+            const { path: p, key, value } = body as {
+                path: string
+                key: string
+                value: unknown
+            }
+            const row = rowIndex.get(p)
+            if (row) row.note[key] = value
+            return new Response('ok')
+        }
+        if (pathname === '/delete-property') {
+            const { path: p, key } = body as { path: string; key: string }
+            const row = rowIndex.get(p)
+            if (row) delete row.note[key]
+            return new Response('ok')
+        }
+        return new Response('ok')
+    }
+
+    const transport: Transport = {
         getJson: async <T>(path: string): Promise<T> => {
             const { pathname, params } = splitPath(path)
             if (pathname === '/tree') return tree as unknown as T
-            if (pathname === '/version') return { version: 1 } as unknown as T
+            if (pathname === '/version')
+                return { version: seed.versioned ? fakeVersion : 1 } as unknown as T
             // Read-only status/graph routes that components hit on mount. Without these a story renders
             // its error state instead of the component — InboxPageView did exactly that, failing on
             // `unhandled GET /daemon/status`. `seed` overrides win so a story can pose a specific state
@@ -174,55 +306,10 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         },
         post: async (path: string, body: unknown): Promise<Response> => {
             const { pathname } = splitPath(path)
-            if (pathname === '/rows') {
-                const { spec } = body as { spec: SourceSpec }
-                return new Response(JSON.stringify(resolveRows(spec)), {
-                    headers: { 'Content-Type': 'application/json' },
-                })
-            }
-            // Own-rows write-back (kanban drag, task status, a map pin on an inline row): the
-            // real server addresses the row by `index` within `file`; here that's the same
-            // `path::index` key `indexRow` registered the last time `/rows` resolved it.
-            if (pathname === '/row/update') {
-                const { file, index, note } = body as {
-                    file: string
-                    index: number | null
-                    note: Record<string, unknown>
-                }
-                const row =
-                    index === null ? undefined : rowIndex.get(`${file}::${index}`)
-                if (row) row.note = note
-                return new Response('ok')
-            }
-            // Batch property writes (kanban multi-card reorder, a map pin's lat+lng in one
-            // request): each write targets a NOTE row by its file path.
-            if (pathname === '/set-properties') {
-                const { writes } = body as {
-                    writes: Array<{ path: string; key: string; value: unknown }>
-                }
-                for (const w of writes) {
-                    const row = rowIndex.get(w.path)
-                    if (row) row.note[w.key] = w.value
-                }
-                return new Response('ok')
-            }
-            if (pathname === '/set-property') {
-                const { path: p, key, value } = body as {
-                    path: string
-                    key: string
-                    value: unknown
-                }
-                const row = rowIndex.get(p)
-                if (row) row.note[key] = value
-                return new Response('ok')
-            }
-            if (pathname === '/delete-property') {
-                const { path: p, key } = body as { path: string; key: string }
-                const row = rowIndex.get(p)
-                if (row) delete row.note[key]
-                return new Response('ok')
-            }
-            return new Response('ok')
+            if (!seed.versioned) return handlePost(pathname, body)
+            const res = await handlePost(pathname, body)
+            await bump(pathname)
+            return res
         },
         put: async (path: string, body: unknown): Promise<Response> => {
             const { pathname } = splitPath(path)
@@ -254,6 +341,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const text = files.get(path) ?? ''
                 const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
                 files.set(path, `${text}${sep}- [ ] ${taskBody}\n`)
+                await bump(pathname)
                 return { path } as unknown as T
             }
             // api.del posts JSON (unlike move/create/restore, which use the plain `post` verb
@@ -262,6 +350,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             // drive a real FileTree delete + Cmd+Z undo round trip.
             if (pathname === '/delete') {
                 const { path: p } = body as { path: string }
+                await bump(pathname)
                 return { trashPath: `.trash/${p}` } as unknown as T
             }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
@@ -299,4 +388,5 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         eventsUrl: () => '',
         base: () => 'fake://storybook',
     }
+    return transport
 }
