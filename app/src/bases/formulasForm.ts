@@ -68,3 +68,22 @@ export function formulaError(expr: string): string | null {
 export function formulaColumns(rows: FormulaRow[]): string[] {
     return Object.keys(buildFormulas(rows) ?? {}).map(n => `formula.${n}`)
 }
+
+/** Rows with row `i` patched — the editor's rename / edit-expression step. */
+export function updateFormula(
+    rows: FormulaRow[],
+    i: number,
+    patch: Partial<FormulaRow>,
+): FormulaRow[] {
+    return rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+}
+
+/** Rows without row `i`. */
+export function removeFormula(rows: FormulaRow[], i: number): FormulaRow[] {
+    return rows.filter((_, idx) => idx !== i)
+}
+
+/** Rows plus a new empty one under a unique default name. */
+export function addFormula(rows: FormulaRow[]): FormulaRow[] {
+    return [...rows, { name: nextFormulaName(rows), expr: '' }]
+}
