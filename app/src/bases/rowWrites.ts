@@ -18,6 +18,7 @@ import type { BaseConfig, ViewConfig, Row } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { declaredDefaults } from '../../../core/src/bases/properties'
 import { fileBasename } from '../../../core/src/pathUtils'
+import { parseBaseFile } from '../../../core/src/bases/parse'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { storedTitleColumn, writableKey } from './kanbanMeta'
 import { parentOf, joinPath } from '../fileTreeOps'
@@ -142,7 +143,10 @@ export async function commitDelete(
             return fail(e)
         }
         undo = async () => {
+            const meta = { name: fileBasename(path), path }
+            const count = parseBaseFile(await api.read(path), meta).rows.length
             await api.rowCreate(path, note)
+            if (index < count) await api.rowReorder(path, count, index)
             onChanged?.()
         }
         message = title === undefined ? 'Deleted row' : `Deleted "${title}"`
