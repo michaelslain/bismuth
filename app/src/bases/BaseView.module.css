@@ -24,30 +24,6 @@
 }
 .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-/* Raw source editor (Source toggle). */
-.source { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* textarea + line-number gutter, sharing the same mono metrics so rows line up. */
-.sourceEditor { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--bg); }
-/* SIZE RULE for query/base views: BODY text tracks the NOTE prose size (--editor-font-size), because a
-   ```query block is rendered inside a note and has to read as part of it — a fixed literal here meant a
-   query's rows sat at a different size from the prose above them the moment the note size changed.
-   Titles derive from the same var with a small step up. META text (authors, group headers, counts) stays
-   on the --fs-micro/--fs-ui chrome tokens: it is scanned, not read. */
-.sourceGutter {
-  flex: none; overflow: hidden; box-sizing: border-box;
-  padding: var(--sp-5) var(--sp-4) var(--sp-5) var(--sp-5); text-align: right; user-select: none;
-  color: color-mix(in srgb, var(--fg) 35%, transparent);
-  font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
-  font-variant-numeric: tabular-nums;
-}
-.sourceArea {
-  flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
-  padding: var(--sp-5) var(--sp-6) var(--sp-5) var(--sp-3); border: none; outline: none;
-  background: var(--bg); color: var(--fg);
-  font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
-}
-.sourceBar { display: flex; gap: var(--sp-4); padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border); }
-
 /* Table-family container (table/cards/list/kanban/map). */
 .base {
   flex: 1;

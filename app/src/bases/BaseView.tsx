@@ -4,13 +4,11 @@ import {
     createMemo,
     createEffect,
     onCleanup,
-    onMount,
     on,
     useTransition,
     Show,
     Switch,
     Match,
-    Index,
 } from 'solid-js'
 import { api } from '../api'
 import { serverVersion, lastChange } from '../serverVersion'
@@ -34,29 +32,11 @@ import type {
 import { viewMode } from '../../../core/src/bases/types'
 import { normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
 import { buildChartData } from '../../../core/src/bases/chart'
-import { statusFromChar } from '../../../core/src/taskReorder'
 import { todayISO } from '../../../core/src/dates'
-import {
-    canWriteStoredRow,
-    setStoredTaskStatus,
-    toggleStoredTask,
-    type StoredTaskWrite,
-} from './taskWrite'
 import { appendTaskLine } from './taskCreate'
-import {
-    newTaskVisible,
-    prospectiveLineTaskRow,
-    prospectiveStoredTaskRow,
-} from './taskScope'
+import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../toastStore'
-import { TableView } from './TableView'
-import { CardsView } from './CardsView'
-import { ListView } from './ListView'
-import { BulletsView } from './BulletsView'
-import { KanbanView } from './KanbanView'
-import { MapView } from './MapView'
-import { HeatmapView } from './HeatmapView'
 import {
     planSetValue,
     planToggle,
@@ -64,9 +44,6 @@ import {
     type HeatmapWriteSeam,
     type WriteRow,
 } from './heatmapWrites'
-import { BarView } from './BarView'
-import { LineView } from './LineView'
-import { StatView } from './StatView'
 import ChartConfigBar from './ChartConfigBar'
 import { CalendarView } from './CalendarView'
 import { calendarSlots } from '../calendar/components/Toolbar'
@@ -74,8 +51,6 @@ import { showCalendarSettings } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
 import { capitalize } from './columnKinds'
-import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
 import ViewTabs from './ViewTabs'
 import {
     readViews,
@@ -89,11 +64,12 @@ import {
     type RawView,
 } from './viewsEdit'
 import AddRowAction from './AddRowAction'
+import BaseSourceEditor from './BaseSourceEditor'
+import BaseViewActions from './BaseViewActions'
+import ViewRenderer from './ViewRenderer'
 import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
 import Badge from '../ui/Badge'
-import { Loading } from '../ui/EmptyState'
-import Text from '../ui/Text'
-import TextInput from '../ui/TextInput'
+import EmptyState from '../ui/EmptyState'
 import styles from './BaseView.module.css'
 
 /** A minimal FileMeta for the host note, exposed to an embedded base as `this.file`
@@ -154,66 +130,6 @@ const docCache = new RowCache<Doc>()
  *  the last resolution while it revalidates. Invalidated by the SSE server version — see
  *  `rowCache.ts`. */
 const rowCache = new RowCache<LoadedRows>()
-
-/** Raw source editor for a base file — a textarea + Save, used by the per-view Source
- *  toggle. (Embedded ```query blocks edit their fence inline in the editor instead.) */
-function SourceEditor(props: { path: string; onClose: () => void }) {
-    const [text, setText] = createSignal<string | null>(null)
-    let gutter: HTMLDivElement | undefined
-    onMount(async () => setText(await api.read(props.path)))
-    // 1-based line numbers for the gutter. A <textarea> can't carry per-line ::before,
-    // so we render a parallel gutter column and keep its scroll synced to the textarea.
-    const lines = createMemo(() =>
-        Array.from(
-            { length: (text() ?? '').split('\n').length },
-            (_, i) => i + 1,
-        ),
-    )
-    const save = async () => {
-        if (text() != null) await api.write(props.path, text()!)
-        props.onClose()
-    }
-    return (
-        <div class={styles.source}>
-            <Show when={text() != null} fallback={<Loading />}>
-                <div class={styles.sourceEditor}>
-                    <div
-                        class={styles.sourceGutter}
-                        ref={gutter}
-                        aria-hidden="true"
-                    >
-                        <Index each={lines()}>
-                            {n => (
-                                <Text
-                                    as="div"
-                                    inherit
-                                >
-                                    {n()}
-                                </Text>
-                            )}
-                        </Index>
-                    </div>
-                    <TextInput
-                        multiline
-                        plain
-                        class={styles.sourceArea}
-                        value={text()!}
-                        spellcheck={false}
-                        onInput={setText}
-                        onScroll={e => {
-                            if (gutter)
-                                gutter.scrollTop = e.currentTarget.scrollTop
-                        }}
-                    />
-                </div>
-            </Show>
-            <div class={styles.sourceBar}>
-                <TextButton primary onClick={save}>save</TextButton>
-                <TextButton onClick={props.onClose}>cancel</TextButton>
-            </div>
-        </div>
-    )
-}
 
 /** The four view kinds ChartConfigBar's pickers apply to. */
 const CHART_VIEW_TYPES = new Set(['bar', 'line', 'stat', 'heatmap'])
@@ -348,7 +264,9 @@ export function BaseView(props: {
     // for this view (stale-while-revalidate) so a reopen/split paints instantly instead of
     // blanking while the file is re-read.
     const doc = createMemo<Doc | undefined>(
-        () => fetchedDoc() ?? docCache.peek(sig()),
+        () =>
+            (fetchedDoc.state === 'errored' ? undefined : fetchedDoc()) ??
+            docCache.peek(sig()),
     )
 
     // The active view's own config object — read once here so activeType, fullPane and
@@ -508,7 +426,17 @@ export function BaseView(props: {
     // from cache instead of blanking to a spinner while /rows runs.
     const data = createMemo<LoadedRows | undefined>(() => {
         const key = rowsKey()
-        return fetchedRows() ?? (key ? rowCache.peek(key) : undefined)
+        const fresh = fetchedRows.state === 'errored' ? undefined : fetchedRows()
+        return fresh ?? (key ? rowCache.peek(key) : undefined)
+    })
+
+    // A failed read/resolve with nothing cached to paint: say so instead of leaving the
+    // skeleton up forever (a rejected resource read would otherwise throw out of the render).
+    const loadError = createMemo<string | undefined>(() => {
+        if (data()) return undefined
+        const err = fetchedDoc.error ?? fetchedRows.error
+        if (!err) return undefined
+        return err instanceof Error ? err.message : String(err)
     })
 
     const [sourceMode, setSourceMode] = createSignal(false)
@@ -738,172 +666,23 @@ export function BaseView(props: {
     })
 
     // ── The task write seam ───────────────────────────────────────────────────────────────
-    /**
-     * A task row reaches a view from one of two ORIGINS and each writes back differently. A
-     * row SCANNED out of a note carries `note.line`, so `POST /tasks/toggle` rewrites that
-     * source line. A row STORED in the base file's own table carries `row.index` instead, so
-     * `POST /row/update` rewrites that row. Deciding by which handle the row HAS — rather than
-     * by the view's source spec — is what lets ONE pair of handlers serve a base whose rows
-     * come from either place, and it is why the pair lives here and is passed down rather than
-     * being re-derived inside each of the five row views.
-     *
-     * BOTH HANDLES COME FROM THE ROW, and that is not a stylistic preference — the index and
-     * the file it indexes into are one pair. `Row.index` has exactly two producers repo-wide
-     * (`parseRows` and `parseMarkdownTable`) and each mints it in the same object literal as
-     * `file: syntheticBaseFile(<that base's path>)`; `resolveBaseRows` returns them verbatim and
-     * `POST /rows` only path-filters. So a `source: {kind: base, ref: …}` view is holding rows
-     * whose index belongs to the REFERENCED base, not to the open one. Pairing `row.index` with
-     * `editPath()` there posts `{file: <open base>, index: 1}`, `upsertRow` takes its in-range
-     * branch, and the reader's OWN second row is overwritten by a task while the file they
-     * actually ticked is never written.
-     *
-     * There is deliberately NO `?? editPath()` fallback. It could not fire — the two producers
-     * above are the only way to get an index, and both stamp a path — and reading as though the
-     * open base is sometimes the right destination is the exact belief this pairing removes.
-     *
-     * Per ROW, never per base — the same rule, applied to the other handle. "This is an
-     * own-rows base, so every row is writable" is exactly the assumption that made the write
-     * path corrupt data: `JSON.stringify` drops an `undefined` value, so a row with no index
-     * sent a body with no `index` key, which the update route turned into an APPEND (a
-     * duplicate) and the delete route into `splice(0,1)` (the wrong row). A row that fails
-     * `canWriteStoredRow` gets no write at all — read-only is correct and safe. Hence no
-     * `row.index!` anywhere below.
-     */
-    const storedTarget = (row: Row): { path: string; index: number } | null => {
-        const path = row.file.path
-        const index = row.index
-        if (!path || index === undefined || !canWriteStoredRow(row)) return null
-        return { path, index }
-    }
-
-    /**
-     * A rejected write must be LEGIBLE. `httpTransport`'s `request` throws
-     * `new Error(await r.text())` on `!res.ok`, so every write below rejects rather than
-     * returning a bad Response — and an unhandled rejection is invisible: the checkbox flicks,
-     * the refetch puts it back, and the user is left with a flicker they cannot explain. That
-     * is exactly the outcome the index guards were added to REPLACE, so all four write paths
-     * here route their failure through this, not just the stored one.
-     */
-    const writeFailed = (what: string) => (err: unknown) =>
-        pushToast(
-            `Could not ${what}: ${err instanceof Error ? err.message : String(err)}`,
-        )
-
-    /** Persist a stored-row write: rewrite the row, then APPEND a spawned recurrence if the
-     *  write produced one. Appended rather than inserted above the completed task, because a
-     *  base's rows carry their own `sort:`/`groupOrder:` — position in the file is not the
-     *  reading order the way it is in a note — and `rowCreate` has no insert-at-index anyway. */
-    const writeStored = (
-        target: { path: string; index: number },
-        write: StoredTaskWrite,
-    ) => {
-        void api
-            .rowUpdate(target.path, target.index, write.note)
-            .then(() =>
-                write.next ? api.rowCreate(target.path, write.next) : undefined,
-            )
-            .catch(writeFailed('save the task'))
-            .finally(() => void refetchAll())
-    }
-
-    /** Left-click a checkbox: flip done ⇄ todo. Isolated from the row's own click so ticking a
-     *  task never navigates. Refetches either way, so the view reflects disk truth even when
-     *  the write failed. */
-    const toggleTaskRow = (row: Row, e: Event) => {
-        e.stopPropagation()
-        const line = row.note.line
-        if (typeof line === 'number') {
-            // A task LINE lives in ANOTHER note, so the base file is untouched and its
-            // parse is still good — rows alone. (The stored-row branch below writes the
-            // base file itself and must keep the document refetch: an own-rows view reads
-            // its rows OUT of the document.)
-            void api
-                .toggleTask(row.file.path, line)
-                .catch(writeFailed('save the task'))
-                .finally(() => void refetchRows())
-            return
-        }
-        const target = storedTarget(row)
-        if (!target) return
-        writeStored(target, toggleStoredTask(row, todayISO()))
-    }
-
-    /** Right-click a checkbox → the shared status menu (To do / In progress / Done /
-     *  Cancelled, current omitted), same menu the editor and the cards view use. Unlike the
-     *  left-click toggle, every status round-trips.
-     *
-     *  The menu hands back a BOX CHAR; `setStoredTaskStatus` takes a `TaskStatus` NAME, so the
-     *  two are bridged by `statusFromChar` — imported from core/src/taskReorder, NOT from
-     *  core/src/tasks, which would drag `node:fs` into the WebView bundle. */
-    const setTaskRowStatus = (row: Row, e: MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation() // don't also open the pane's context menu underneath
-        const cur = String(row.note.statusChar ?? ' ') || ' '
-        const line = row.note.line
-        if (typeof line === 'number') {
-            // A task LINE lives in ANOTHER note, so the base file is untouched and its
-            // parse is still good — rows alone. (The stored-row branch below writes the
-            // base file itself and must keep the document refetch: an own-rows view reads
-            // its rows OUT of the document.)
-            openTaskStatusMenu(e.clientX, e.clientY, cur, char => {
-                void api
-                    .toggleTask(row.file.path, line, char)
-                    .catch(writeFailed('set the status'))
-                    .finally(() => void refetchRows())
-            })
-            return
-        }
-        const target = storedTarget(row)
-        if (!target) return
-        openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
-            writeStored(
-                target,
-                setStoredTaskStatus(row, statusFromChar(char), todayISO()),
-            ),
-        )
-    }
-
-    /** "+ task" writes to whichever destination the view's ORIGIN names: a self-owned base
-     *  gets a new ROW, a sourced one gets a checkbox LINE appended to its declared `taskFile`.
-     *  A sourced view naming no `taskFile` has nowhere to write, so it offers no button at all
-     *  rather than guessing a file — the same rule the calendar's own "+ task" follows. */
-    const addTask = async () => {
-        const path = editPath()
-        const cfg = data()?.config
-        const view = activeViewConfig()
-        let prospective: Row | null = null
-        let dest = ''
-        let wroteBaseFile = false
-        if (ownsRows()) {
-            if (!path) return
-            const note = { description: 'New task', status: 'todo' }
-            dest = path
-            prospective = prospectiveStoredTaskRow(
-                path,
-                note,
-                data()?.rows.length ?? 0,
-            )
-            await api.rowCreate(path, note)
-            wroteBaseFile = true
-        } else {
-            const file = view?.taskFile
-            if (!file) return
-            dest = await appendTaskLine(file, 'New task')
-            prospective = prospectiveLineTaskRow(dest, 'New task')
-        }
-        // The write happened; this only tells the truth about where it went. A task that
-        // cannot match this view's filters is invisible HERE, not lost — so name the file it
-        // did land in, which is the one piece of information the user needs to go find it.
-        if (cfg && view && prospective && !newTaskVisible(cfg, view, prospective))
-            pushToast(
-                `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
-            )
-        // Own-rows: the new row landed IN the base file, so the document itself changed and
-        // an own-rows view reads its rows OUT of that document — full refetch. Sourced: the
-        // line landed in `taskFile`, another note, so the base file is untouched — rows alone.
-        if (wroteBaseFile) await refetchAll()
-        else await refetchRows()
-    }
+    // Toggle / status-menu / "+ task" writes live in baseTaskWrites.ts (pure, dependencies
+    // injected); this only wires them to the resolved data and the refetches.
+    const { toggleTaskRow, setTaskRowStatus, addTask, writeFailed } =
+        createTaskWrites({
+            api,
+            appendTaskLine,
+            openStatusMenu: openTaskStatusMenu,
+            toast: pushToast,
+            refetchAll,
+            refetchRows,
+            today: todayISO,
+            editPath,
+            config: () => data()?.config,
+            view: activeViewConfig,
+            ownsRows,
+            rowCount: () => data()?.rows.length ?? 0,
+        })
 
     // ── The heatmap write seam ────────────────────────────────────────────────
     /**
@@ -991,93 +770,6 @@ export function BaseView(props: {
         return { origin, isCount, onSetDay, onToggleDay }
     })
 
-    /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
-     *  has no bar-level create action at all any more: a click on a day cell opens an inline
-     *  composer that dates the task on that day (CalendarView.tsx's TasksCalendar) — and
-     *  flashcards, which is not a tasks surface. */
-    const AddTaskAction = () => (
-        <Show
-            when={
-                activeMode() === 'tasks' &&
-                activeType() !== 'calendar' &&
-                activeType() !== 'flashcards' &&
-                (ownsRows() ? !!editPath() : !!activeViewConfig()?.taskFile)
-            }
-        >
-            <IconButton
-                icon="Plus"
-                label="New task"
-                onClick={() =>
-                    void addTask().catch(writeFailed('create the task'))
-                }
-            />
-        </Show>
-    )
-
-    /** SETTINGS gear sits next to SOURCE for every base type, including the calendar — which routes
-     *  to its own settings modal (showCalendarSettings) instead of the generic BaseSettings
-     *  overlay. Extracted verbatim from the old bar body so the `actions` slot stays readable. */
-    const BaseSettingsAction = () => (
-        <Show when={editPath()}>
-            <IconButton
-                icon="Settings"
-                label="Settings"
-                variant={
-                    (
-                        activeType() === 'calendar'
-                            ? showCalendarSettings.value
-                            : settingsMode()
-                    )
-                        ? 'selected'
-                        : 'unselected'
-                }
-                onClick={() => {
-                    if (activeType() === 'calendar')
-                        showCalendarSettings.value =
-                            !showCalendarSettings.value
-                    else {
-                        setSettingsMode(true)
-                        setSourceMode(false)
-                    }
-                }}
-            />
-        </Show>
-    )
-
-    /** EDIT QUERY pencil for an embedded ```query block the no-code builder can safely round-trip
-     *  (the `isBuilderRepresentable` gate lives in queryBlock.ts, which only sets `onEditQuery`
-     *  when it holds — so this component just renders when the caller gave it one). Sits before
-     *  SOURCE in the same actions region, same IconButton primitive as SOURCE below. */
-    const EditQueryAction = () => (
-        <Show when={props.embeddedSource?.onEditQuery}>
-            <IconButton
-                icon="Pencil"
-                label="Edit query"
-                onClick={() => props.embeddedSource?.onEditQuery?.()}
-            />
-        </Show>
-    )
-
-    /** SOURCE also shows for an embedded query (edits the fence body). Extracted verbatim. */
-    const BaseSourceAction = () => (
-        <Show when={editPath() || props.embeddedSource}>
-            <IconButton
-                icon={editPath() && sourceMode() ? 'X' : 'Code'}
-                label="Source"
-                variant={editPath() && sourceMode() ? 'selected' : 'normal'}
-                onClick={() => {
-                    // Embedded query: reveal the fence inline in the editor. Base file: toggle
-                    // the textarea source panel.
-                    if (props.embeddedSource) props.embeddedSource.onReveal()
-                    else {
-                        setSourceMode(!sourceMode())
-                        setSettingsMode(false)
-                    }
-                }}
-            />
-        </Show>
-    )
-
     return (
         <div class={styles.host}>
             <Show
@@ -1143,7 +835,22 @@ export function BaseView(props: {
                     actions={
                         <>
                             {viewSlots()?.actions}
-                            <AddTaskAction />
+                            <BaseViewActions
+                                action="add-task"
+                                when={
+                                    activeMode() === 'tasks' &&
+                                    activeType() !== 'calendar' &&
+                                    activeType() !== 'flashcards' &&
+                                    (ownsRows()
+                                        ? !!editPath()
+                                        : !!activeViewConfig()?.taskFile)
+                                }
+                                onAct={() =>
+                                    void addTask().catch(
+                                        writeFailed('create the task'),
+                                    )
+                                }
+                            />
                             <Show when={data()}>
                                 {d => (
                                     <AddRowAction
@@ -1157,9 +864,45 @@ export function BaseView(props: {
                                     />
                                 )}
                             </Show>
-                            <BaseSettingsAction />
-                            <EditQueryAction />
-                            <BaseSourceAction />
+                            <BaseViewActions
+                                action="settings"
+                                when={!!editPath()}
+                                active={
+                                    activeType() === 'calendar'
+                                        ? showCalendarSettings.value
+                                        : settingsMode()
+                                }
+                                onAct={() => {
+                                    // A calendar routes to its own settings modal.
+                                    if (activeType() === 'calendar')
+                                        showCalendarSettings.value =
+                                            !showCalendarSettings.value
+                                    else {
+                                        setSettingsMode(true)
+                                        setSourceMode(false)
+                                    }
+                                }}
+                            />
+                            <BaseViewActions
+                                action="edit-query"
+                                when={!!props.embeddedSource?.onEditQuery}
+                                onAct={() => props.embeddedSource?.onEditQuery?.()}
+                            />
+                            <BaseViewActions
+                                action="source"
+                                when={!!(editPath() || props.embeddedSource)}
+                                active={!!editPath() && sourceMode()}
+                                onAct={() => {
+                                    // Embedded query: reveal the fence inline in the editor.
+                                    // Base file: toggle the textarea source panel.
+                                    if (props.embeddedSource)
+                                        props.embeddedSource.onReveal()
+                                    else {
+                                        setSourceMode(!sourceMode())
+                                        setSettingsMode(false)
+                                    }
+                                }}
+                            />
                         </>
                     }
                 />
@@ -1167,7 +910,7 @@ export function BaseView(props: {
 
             <div class={styles.body}>
                 <Show when={sourceMode() && editPath()}>
-                    <SourceEditor
+                    <BaseSourceEditor
                         path={editPath()!}
                         onClose={() => {
                             setSourceMode(false)
@@ -1181,7 +924,18 @@ export function BaseView(props: {
               structure immediately instead of a bare spinner. */}
                     <Show
                         when={data()}
-                        fallback={<BaseSkeleton type="table" />}
+                        fallback={
+                            <Show
+                                when={loadError()}
+                                fallback={<BaseSkeleton type="table" />}
+                            >
+                                {message => (
+                                    <EmptyState title="couldn't load this base">
+                                        {message()}
+                                    </EmptyState>
+                                )}
+                            </Show>
+                        }
                     >
                         <Switch
                             fallback={
@@ -1199,218 +953,45 @@ export function BaseView(props: {
                                         }
                                     >
                                         {res => (
-                                            <Switch
-                                                fallback={
-                                                    <TableView
-                                                        result={res()}
-                                                        mode={activeMode()}
-                                                        onToggle={
-                                                            toggleTaskRow
-                                                        }
-                                                        onSetStatus={
-                                                            setTaskRowStatus
-                                                        }
-                                                        basePath={data()!.basePath}
-                                                        onChange={refetchAll}
-                                                        config={data()!.config}
-                                                        onReorder={
-                                                            data()!.basePath
-                                                                ? c => {
-                                                                      void api
-                                                                          .setViewProperty(
-                                                                              data()!
-                                                                                  .basePath!,
-                                                                              activeViewIdx(),
-                                                                              'order',
-                                                                              c,
-                                                                          )
-                                                                          .then(
-                                                                              refetchAll,
-                                                                          )
-                                                                  }
-                                                                : undefined
-                                                        }
-                                                        widths={
-                                                            res().view
-                                                                .columnWidths
-                                                        }
-                                                        onWidthsChange={
-                                                            data()!.basePath
-                                                                ? cw => {
-                                                                      void api.setViewProperty(
-                                                                          data()!
-                                                                              .basePath!,
-                                                                          activeViewIdx(),
-                                                                          'columnWidths',
-                                                                          cw,
-                                                                      )
-                                                                  }
-                                                                : undefined
-                                                        }
-                                                    />
+                                            <ViewRenderer
+                                                result={res()}
+                                                config={data()!.config}
+                                                basePath={data()!.basePath}
+                                                mode={activeMode()}
+                                                ownsRows={ownsRows()}
+                                                viewIndex={activeViewIdx()}
+                                                onChange={refetchAll}
+                                                onToggle={toggleTaskRow}
+                                                onSetStatus={setTaskRowStatus}
+                                                onOpen={props.onOpen}
+                                                heatmapWrites={heatmapWrites()}
+                                                onReorder={
+                                                    data()!.basePath
+                                                        ? c => {
+                                                              void api
+                                                                  .setViewProperty(
+                                                                      data()!.basePath!,
+                                                                      activeViewIdx(),
+                                                                      'order',
+                                                                      c,
+                                                                  )
+                                                                  .then(refetchAll)
+                                                          }
+                                                        : undefined
                                                 }
-                                            >
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'kanban'
-                                                    }
-                                                >
-                                                    <KanbanView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        basePath={
-                                                            data()!.basePath
-                                                        }
-                                                        viewIndex={Math.min(
-                                                            activeView(),
-                                                            Math.max(
-                                                                0,
-                                                                data()!.config
-                                                                    .views
-                                                                    .length - 1,
-                                                            ),
-                                                        )}
-                                                        // Deliberately the combined refetch: this callback fires for
-                                                        // writes that land on the base file (a stored row's column/
-                                                        // order) AND for writes that land on another note (a card
-                                                        // rename), and the callback does not say which. Narrowing it
-                                                        // means threading that discriminator up from the child.
-                                                        onChange={refetchAll}
-                                                        mode={activeMode()}
-                                                        ownsRows={ownsRows()}
-                                                        onToggle={
-                                                            toggleTaskRow
-                                                        }
-                                                        onSetStatus={
-                                                            setTaskRowStatus
-                                                        }
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'cards'
-                                                    }
-                                                >
-                                                    <CardsView
-                                                        result={res()}
-                                                        basePath={data()!.basePath}
-                                                        onChange={refetchAll}
-                                                        config={data()!.config}
-                                                        mode={activeMode()}
-                                                        onToggle={
-                                                            toggleTaskRow
-                                                        }
-                                                        onSetStatus={
-                                                            setTaskRowStatus
-                                                        }
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'list'
-                                                    }
-                                                >
-                                                    <ListView
-                                                        result={res()}
-                                                        basePath={data()!.basePath}
-                                                        onChange={refetchAll}
-                                                        config={data()!.config}
-                                                        mode={activeMode()}
-                                                        onToggle={
-                                                            toggleTaskRow
-                                                        }
-                                                        onSetStatus={
-                                                            setTaskRowStatus
-                                                        }
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'bullets'
-                                                    }
-                                                >
-                                                    <BulletsView
-                                                        result={res()}
-                                                        basePath={data()!.basePath}
-                                                        onChange={refetchAll}
-                                                        config={data()!.config}
-                                                        mode={activeMode()}
-                                                        onToggle={
-                                                            toggleTaskRow
-                                                        }
-                                                        onSetStatus={
-                                                            setTaskRowStatus
-                                                        }
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'map'
-                                                    }
-                                                >
-                                                    <MapView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        basePath={data()!.basePath}
-                                                        ownsRows={ownsRows()}
-                                                        onChange={refetchAll}
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'heatmap'
-                                                    }
-                                                >
-                                                    <HeatmapView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        onOpen={props.onOpen}
-                                                        writes={heatmapWrites()}
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'bar'
-                                                    }
-                                                >
-                                                    <BarView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        onOpen={props.onOpen}
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'line'
-                                                    }
-                                                >
-                                                    <LineView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        onOpen={props.onOpen}
-                                                    />
-                                                </Match>
-                                                <Match
-                                                    when={
-                                                        res().view.type ===
-                                                        'stat'
-                                                    }
-                                                >
-                                                    <StatView
-                                                        result={res()}
-                                                        config={data()!.config}
-                                                        onOpen={props.onOpen}
-                                                    />
-                                                </Match>
-                                            </Switch>
+                                                onWidthsChange={
+                                                    data()!.basePath
+                                                        ? cw => {
+                                                              void api.setViewProperty(
+                                                                  data()!.basePath!,
+                                                                  activeViewIdx(),
+                                                                  'columnWidths',
+                                                                  cw,
+                                                              )
+                                                          }
+                                                        : undefined
+                                                }
+                                            />
                                         )}
                                     </Show>
                                 </div>
