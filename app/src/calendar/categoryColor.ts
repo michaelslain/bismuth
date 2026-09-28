@@ -3,7 +3,12 @@
 // resolved hex — means a category recolours itself automatically when the theme
 // changes, because it renders through `var(--token)`.
 
-import { PALETTE_TOKENS, type PaletteTokenName } from '../ui/palette'
+import {
+    PALETTE_TOKENS,
+    isPaletteToken,
+    resolvePaletteColor,
+    type PaletteTokenName,
+} from '../ui/palette'
 
 /** Palette tokens a category colour may reference. Each maps to a `--<token>` CSS var. */
 export const THEME_SWATCHES = PALETTE_TOKENS
@@ -18,7 +23,7 @@ export type ThemeSwatch = PaletteTokenName
 export const AUTO_CATEGORY_TOKENS = PALETTE_TOKENS.filter(t => t !== 'accent')
 
 export function isThemeToken(color: string | undefined): color is ThemeSwatch {
-    return !!color && (THEME_SWATCHES as readonly string[]).includes(color)
+    return isPaletteToken(color)
 }
 
 /**
@@ -27,8 +32,7 @@ export function isThemeToken(color: string | undefined): color is ThemeSwatch {
  * else (hex, rgb(), named) passes through unchanged. Undefined falls back to accent.
  */
 export function resolveCategoryColor(color: string | undefined): string {
-    if (!color) return 'var(--accent)'
-    return isThemeToken(color) ? `var(--${color})` : color
+    return color ? resolvePaletteColor(color) : 'var(--accent)'
 }
 
 // ── Multi-category support ────────────────────────────────────────────────────
