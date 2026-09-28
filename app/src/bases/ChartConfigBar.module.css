@@ -12,6 +12,14 @@
     gap: var(--sp-1);
 }
 
+/* x/y/agg/bin are one short word each and must never ellipsize — Label's shared min-width: 0
+   makes it shrinkable by default (for the common "primary value" case), which is wrong here:
+   under space pressure the select's own min-width holds firm and the whole squeeze lands on
+   this label instead, clipping "agg"/"bin" to "a…"/"b…". Pin it to its content width. */
+.label {
+    flex-shrink: 0;
+}
+
 .select {
     min-width: 84px;
 }
