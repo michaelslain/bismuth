@@ -147,6 +147,21 @@ export const DateEscapeCancels: Story = {
     },
 }
 
+/** A cell editor mounts on a CLOSED-looking trigger: with autofocus the popover must open itself, so a
+ *  click away dismisses (cancels) the edit instead of leaving the cell stuck in edit mode. */
+export const DateOpensOnMountClickAwayCancels: Story = {
+    render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+        await userEvent.click(canvasElement.ownerDocument.body)
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+    },
+}
+
 /** Date + time — the same trigger, showing `date time`. */
 export const DateTime: Story = {
     render: () => (

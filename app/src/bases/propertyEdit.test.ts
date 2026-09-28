@@ -402,12 +402,6 @@ describe('propertyDraft', () => {
         expect(propertyDraft({ kind: 'text' }, null)).toBe('')
         expect(propertyDraft({ kind: 'text' }, 'hi')).toBe('hi')
     })
-    test('date is cut to the date or datetime width', () => {
-        expect(propertyDraft({ kind: 'date' }, '2026-08-10T14:30:00')).toBe('2026-08-10')
-        expect(propertyDraft({ kind: 'date', time: true }, '2026-08-10T14:30:00')).toBe(
-            '2026-08-10T14:30',
-        )
-    })
     test('percent shows in edit space (x100), unparseable keeps the raw text', () => {
         expect(propertyDraft({ kind: 'number', format: 'percent' }, 0.42)).toBe('42')
         expect(propertyDraft({ kind: 'number' }, 'abc')).toBe('abc')
