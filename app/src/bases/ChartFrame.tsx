@@ -1,6 +1,7 @@
 import type { Component, JSX } from 'solid-js'
 import { Show, onCleanup, onMount } from 'solid-js'
 import type { ChartGrid } from './chartColumns'
+import { columnsFor } from './chartColumns'
 import Text from '../ui/Text'
 import styles from './ChartFrame.module.css'
 
@@ -36,7 +37,9 @@ const ChartFrame: Component<ChartFrameProps> = props => {
     const measure = () => {
         if (!props.onGrid || !bodyRef || !probeRef) return
         const cellWidth = probeRef.getBoundingClientRect().width / 10
-        const columns = cellWidth > 0 ? Math.max(20, Math.floor(bodyRef.clientWidth / cellWidth)) : 20
+        const cs = getComputedStyle(bodyRef)
+        const inner = bodyRef.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+        const columns = columnsFor(inner, cellWidth)
         props.onGrid({ columns, cellWidth })
     }
 
