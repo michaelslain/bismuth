@@ -6,6 +6,7 @@
 // structurally identical.
 import { children, type JSX, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
+import Band from './Band'
 import styles from './ViewBar.module.css'
 
 /** Appends an optional extra class to a base (hashed) one — used throughout for the `class`/
@@ -97,7 +98,7 @@ function ViewBar(props: ViewBarProps) {
     // local no longer starts with the literal "vb-"). `styles.vbRegion` is never referenced from
     // outside this file.
     return (
-        <div class={cx(styles.viewbar, props.class)} data-viewbar>
+        <Band class={cx(styles.viewbar, props.class)} data-viewbar>
             <div
                 class={cx(styles['vb-lead'], props.parts?.lead)}
                 data-testid="vb-lead"
@@ -156,7 +157,7 @@ function ViewBar(props: ViewBarProps) {
                     </div>
                 </Show>
             </div>
-        </div>
+        </Band>
     )
 }
 

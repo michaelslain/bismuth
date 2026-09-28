@@ -17,12 +17,8 @@
     --iconbar-unselected-opacity: 1;
 }
 
-.band {
-    min-height: var(--h-band);
-    padding: 0 var(--sp-5);
-    border-bottom: 1px solid var(--border-soft);
-    box-sizing: border-box;
-}
+/* The band box (height, side padding, hairline) is ui/Band's, not declared here: `band` renders
+   through that component, the same one ViewBar renders through, so the two bands cannot drift. */
 
 .wrap {
     flex-flow: row wrap;

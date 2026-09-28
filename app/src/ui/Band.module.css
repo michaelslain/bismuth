@@ -1,0 +1,20 @@
+/* app/src/ui/Band.module.css — Band.tsx's own local stylesheet.
+
+   THE chrome band: one row of controls with a bottom hairline, the shape every header strip in the
+   app shares. Before this existed the same band was declared twice with different numbers —
+   ViewBar's `.viewbar` (height --h-band, `padding: 0 18px`, --rule-soft) and IconBar's `.band`
+   (min-height --h-band, `0 var(--sp-5)`, --rule-soft) — so an IconBar sitting in a ViewBar slot
+   (the sidebar mini-graph switcher) started 6px further in than the IconBar band right above it,
+   and GraphView patched that with a local padding override. Both primitives render through this
+   component now, so the height, the side padding and the hairline exist exactly once. The side
+   padding is --sp-5 (12px) everywhere, decided 2026-09-27 (the old 18px was off the spacing scale).
+
+   `min-height`, not `height`: a wrapping IconBar (the collapsed tab rail's stacked icons) grows
+   past one row; a one-row bar is --h-band tall either way. `box-sizing` keeps the hairline inside
+   that height. Layout (flex, gaps, alignment) is NOT here — each composer owns its own. */
+.band {
+  min-height: var(--h-band);
+  padding: 0 var(--sp-5);
+  border-bottom: var(--rule-soft);
+  box-sizing: border-box;
+}
