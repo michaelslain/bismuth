@@ -60,16 +60,24 @@ export function renderStatus(s: string): JSX.Element {
     return <StatusText status={s} />
 }
 
-/** Plain mono #tag list in teal — no chips. `dense` is KanbanCard's compact meta-row sizing
- *  (tighter gap, chrome type size) — a flag rather than KanbanCard reaching into this
- *  module's `.tagRow` class, which would break under CSS-module hashing (each module's
- *  classes are local to it). */
+/** A tag list as `#alpha, #beta` — each a ui/Tag, comma-separated — which is exactly how the tags
+ *  field (ui/TagsField) reads while you edit it, so a cell looks the same at rest and in edit.
+ *  `dense` is KanbanCard's compact meta-row sizing (chrome type size) — a flag rather than
+ *  KanbanCard reaching into this module's `.tagRow` class, which would break under CSS-module
+ *  hashing (each module's classes are local to it). */
 export function renderTags(v: unknown, dense?: boolean): JSX.Element {
     const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
     if (tags.length === 0) return <EmptyValue />
     return (
         <span class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
-            <For each={tags}>{t => <Tag name={t} />}</For>
+            <For each={tags}>
+                {(t, i) => (
+                    <>
+                        <Show when={i() > 0}>{', '}</Show>
+                        <Tag name={t} />
+                    </>
+                )}
+            </For>
         </span>
     )
 }

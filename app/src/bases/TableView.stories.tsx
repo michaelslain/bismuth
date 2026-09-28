@@ -486,7 +486,7 @@ export const TagsTypeAcceptCommit: Story = {
         // which is what a tags column that is the table's FIRST (title) column used to show
         // (renderTitle stringified the array). The value itself is still an array.
         await waitFor(() =>
-            expect((cell().textContent ?? '').trim()).toBe('#alpha#beta#gamma'),
+            expect((cell().textContent ?? '').trim()).toBe('#alpha, #beta, #gamma'),
         )
         expect(cell().querySelector('[data-testid="tags-field"]')).toBeNull()
         expect(pickRows[0]!.note.tags).toEqual(['alpha', 'beta', 'gamma'])

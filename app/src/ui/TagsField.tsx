@@ -16,6 +16,7 @@
 // popup open, cancels (the keydown then bubbles, so a host modal closes too, like TextInput's
 // Escape). Enter with no popup commits; so does leaving the field.
 import {
+    Show,
     createEffect,
     onCleanup,
     onMount,
@@ -31,12 +32,14 @@ import {
     type DecorationSet,
     type ViewUpdate,
 } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Prec } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
     acceptCompletion,
     autocompletion,
     completionStatus,
+    startCompletion,
+    closeCompletion,
     type CompletionContext,
     type CompletionResult,
 } from '@codemirror/autocomplete'
@@ -46,6 +49,8 @@ import {
     completionTheme,
 } from '../editor/completionDisplay'
 import { buildSettingsKeymap } from '../editor/settingsKeymap'
+import { toCmKeys } from '../keybindings'
+import { settings } from '../settings'
 import FormControl from './FormControl'
 import { isDismissKey } from './widgetKeys'
 import {
@@ -73,6 +78,10 @@ export type TagsFieldProps = {
     /** Focus the field (caret at the end) on mount. Default true. */
     autofocus?: boolean
     placeholder?: string
+    /** No field chrome (no underline, no control height) and the host's own font and line height —
+     *  for editing in place where the value is shown, e.g. a table cell, so the value looks exactly
+     *  the same being edited as it does at rest. */
+    bare?: boolean
     class?: string
 }
 
@@ -222,6 +231,55 @@ const TagsField: Component<TagsFieldProps> = props => {
                         defaultKeymap: false, // completionNavKeymap below — see its doc comment
                         override: [source],
                     }),
+                    // Enter, BEFORE completionNavKeymap at the same precedence (so it is asked first):
+                    // with a value half-typed and suggestions open, Enter takes the highlighted one,
+                    // like the note editor; with nothing typed (the list that opens on focus, or
+                    // after taking one), Enter saves — otherwise it could never save while
+                    // suggestions are showing.
+                    Prec.highest(
+                        keymap.of(
+                            toCmKeys(settings.keybindings['ui-confirm']).map(key => ({
+                                key,
+                                run: (v: EditorView) => {
+                                    const before = v.state.sliceDoc(
+                                        0,
+                                        v.state.selection.main.head,
+                                    )
+                                    if (
+                                        completionStatus(v.state) === 'active' &&
+                                        tokenAtCaret(before).query !== ''
+                                    )
+                                        return acceptCompletion(v)
+                                    v.contentDOM.blur()
+                                    return true
+                                },
+                            })),
+                        ),
+                    ),
+                    // Escape, the same way: a half-typed value's suggestions close first; with
+                    // nothing typed, Escape cancels at once (no second press for a list that only
+                    // opened because the field was focused).
+                    Prec.highest(
+                        keymap.of(
+                            toCmKeys(settings.keybindings['ui-dismiss']).map(key => ({
+                                key,
+                                run: (v: EditorView) => {
+                                    const before = v.state.sliceDoc(
+                                        0,
+                                        v.state.selection.main.head,
+                                    )
+                                    if (
+                                        completionStatus(v.state) === 'active' &&
+                                        tokenAtCaret(before).query !== ''
+                                    )
+                                        return closeCompletion(v)
+                                    cancelling = true
+                                    v.contentDOM.blur()
+                                    return true
+                                },
+                            })),
+                        ),
+                    ),
                     completionNavKeymap,
                     completionTheme,
                     // Tab (rebindable) takes the highlighted suggestion; Enter/Escape end the edit
@@ -229,24 +287,19 @@ const TagsField: Component<TagsFieldProps> = props => {
                     // while one is).
                     buildSettingsKeymap([
                         { id: 'accept-completion', run: acceptCompletion },
-                        {
-                            id: 'ui-confirm',
-                            run: v => (v.contentDOM.blur(), true),
-                        },
-                        {
-                            id: 'ui-dismiss',
-                            run: v => {
-                                cancelling = true
-                                v.contentDOM.blur()
-                                return true
-                            },
-                        },
                     ]),
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     // `#` is not a word character, so CodeMirror's typing trigger misses it — open
                     // the popup the moment one is typed (the note editor does the same for `[[`).
                     // Only a person's own edits (typing, deleting, pasting, taking a suggestion)
                     // make the edit dirty — the focus-time separator and value syncs do not.
+                    // After a suggestion is taken, offer the next one straight away.
+                    EditorView.updateListener.of(u => {
+                        if (u.transactions.some(t => t.isUserEvent('input.complete')))
+                            queueMicrotask(() => {
+                                if (!destroyed && u.view.hasFocus) startCompletion(u.view)
+                            })
+                    }),
                     EditorView.updateListener.of(u => {
                         if (
                             u.docChanged &&
@@ -268,17 +321,24 @@ const TagsField: Component<TagsFieldProps> = props => {
                             return false
                         },
                         focus: (_e, v) => {
-                            if (pointerFocus) {
-                                pointerFocus = false
-                                return false
+                            if (pointerFocus) pointerFocus = false
+                            else {
+                                const doc = v.state.doc.toString()
+                                const next = withTrailingSeparator(doc)
+                                if (next !== doc)
+                                    v.dispatch({
+                                        changes: {
+                                            from: doc.length,
+                                            insert: next.slice(doc.length),
+                                        },
+                                        selection: { anchor: next.length },
+                                    })
                             }
-                            const doc = v.state.doc.toString()
-                            const next = withTrailingSeparator(doc)
-                            if (next !== doc)
-                                v.dispatch({
-                                    changes: { from: doc.length, insert: next.slice(doc.length) },
-                                    selection: { anchor: next.length },
-                                })
+                            // The suggestions show as soon as the field is focused — no need to
+                            // type a letter to find out what can go here.
+                            queueMicrotask(() => {
+                                if (!destroyed && v.hasFocus) startCompletion(v)
+                            })
                             return false
                         },
                         blur: (_e, v) => {
@@ -298,7 +358,12 @@ const TagsField: Component<TagsFieldProps> = props => {
         // Escape that only closed the popup must not also close a host modal (ui/Modal listens
         // for a bubbling Escape on window). A cancelling Escape still bubbles, like TextInput's.
         const capture = () => {
-            popupWasOpen = !!view && completionStatus(view.state) !== null
+            popupWasOpen =
+                !!view &&
+                completionStatus(view.state) !== null &&
+                tokenAtCaret(
+                    view.state.sliceDoc(0, view.state.selection.main.head),
+                ).query !== ''
         }
         const bubble = (e: KeyboardEvent) => {
             if (isDismissKey(e) && popupWasOpen) e.stopPropagation()
@@ -326,12 +391,23 @@ const TagsField: Component<TagsFieldProps> = props => {
     })
 
     return (
-        <FormControl
-            as="div"
-            ref={host}
-            class={`${styles.field} ${props.class ?? ''}`}
-            data-testid="tags-field"
-        />
+        <Show
+            when={!props.bare}
+            fallback={
+                <div
+                    ref={host}
+                    class={`${styles.field} ${styles.bare} ${props.class ?? ''}`}
+                    data-testid="tags-field"
+                />
+            }
+        >
+            <FormControl
+                as="div"
+                ref={host}
+                class={`${styles.field} ${props.class ?? ''}`}
+                data-testid="tags-field"
+            />
+        </Show>
     )
 }
 

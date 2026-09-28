@@ -149,6 +149,7 @@ const TableCell: Component<TableCellProps> = props => {
                     }
                 >
                     <PropertyValueEditor
+                        inline
                         kind={e().kind}
                         value={e().value}
                         onCommit={commit}

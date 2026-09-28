@@ -73,6 +73,9 @@ export function PropertyValueEditor(props: {
     // editor in already-focused). A multi-field form (CardEditModal) sets false and manages
     // focus itself, so several editors mounting at once don't all fight to steal focus.
     autofocus?: boolean
+    /** Editing in place where the value is shown (a table cell): a tags field drops its chrome
+     *  and takes the host's font, so the value looks the same being edited as at rest. */
+    inline?: boolean
 }) {
     const autofocus = () => props.autofocus !== false
     const toDraft = (): string => {
@@ -288,6 +291,7 @@ export function PropertyValueEditor(props: {
                         suggestions={() => lk().options}
                         tags={lk().tag}
                         autofocus={autofocus()}
+                        bare={props.inline}
                         onCommit={next => props.onCommit(multiselectCommitValue(next))}
                         onCancel={props.onCancel}
                     />
