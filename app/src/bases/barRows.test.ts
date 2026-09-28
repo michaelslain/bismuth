@@ -60,4 +60,33 @@ describe('layoutBars', () => {
     test('empty points list produces no rows', () => {
         expect(layoutBars([], 40)).toEqual([])
     })
+
+    test('long label at narrow columns never crashes and never goes negative', () => {
+        const points = [
+            { key: 'a', label: 'Waiting on review from le', value: 120 },
+            { key: 'b', label: 'Short', value: 3 },
+        ]
+        const columns = 20
+        const rows = layoutBars(points, columns)
+        for (const row of rows) {
+            expect(row.fill).toBeGreaterThanOrEqual(0)
+            expect(row.track).toBeGreaterThanOrEqual(0)
+            expect(row.label.length + row.value.length + row.fill + row.track + 4).toBeLessThanOrEqual(columns)
+        }
+    })
+
+    test('very long label is truncated with an ellipsis', () => {
+        const points = [
+            { key: 'a', label: 'a'.repeat(40), value: 5 },
+            { key: 'b', label: 'b', value: 500 },
+        ]
+        const columns = 40
+        const rows = layoutBars(points, columns)
+        expect(rows[0].label.trim().endsWith('…')).toBe(true)
+        expect(rows[0].label.length).toBeLessThan(40)
+        for (const row of rows) {
+            expect(row.fill).toBeGreaterThanOrEqual(0)
+            expect(row.track).toBeGreaterThanOrEqual(0)
+        }
+    })
 })

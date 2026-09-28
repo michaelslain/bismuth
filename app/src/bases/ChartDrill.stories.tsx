@@ -58,6 +58,16 @@ export const WithoutOpener: Story = {
     },
 }
 
+/** A single row — the header reads `1 note`, singular. */
+export const OneRow: Story = {
+    args: {
+        title: 'Jul 20',
+        rows: [fileRow('Morning pages')],
+        onOpen: (path: string) => window.alert(`open ${path}`),
+        onClear: () => {},
+    },
+}
+
 /** 30 rows — scrolls past the 12-row max-height. */
 export const ManyRows: Story = {
     args: {

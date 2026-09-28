@@ -22,18 +22,24 @@ export function layoutBars(
 ): BarRow[] {
     if (points.length === 0) return []
 
-    const labelWidth = points.reduce((w, p) => Math.max(w, p.label.length), 0)
     const formatted = points.map(p => formatValue(p.value))
     const valueWidth = formatted.reduce((w, v) => Math.max(w, v.length), 0)
-    const barWidth = columns - labelWidth - valueWidth - 4
+    const maxLabelLen = Math.max(1, columns - valueWidth - 6)
+    const labels = points.map(p =>
+        p.label.length > maxLabelLen
+            ? p.label.slice(0, Math.max(1, maxLabelLen - 1)) + '…'
+            : p.label
+    )
+    const labelWidth = labels.reduce((w, l) => Math.max(w, l.length), 0)
+    const barWidth = Math.max(0, columns - labelWidth - valueWidth - 4)
     const max = points.reduce((m, p) => Math.max(m, p.value), 0)
 
     return points.map((p, i) => {
-        const fill = max > 0 ? Math.round((Math.max(0, p.value) / max) * barWidth) : 0
+        const fill = max > 0 ? Math.min(barWidth, Math.round((Math.max(0, p.value) / max) * barWidth)) : 0
         const track = barWidth - fill
         return {
             key: p.key,
-            label: p.label.padEnd(labelWidth),
+            label: labels[i].padEnd(labelWidth),
             fill,
             track,
             value: formatted[i].padStart(valueWidth),
