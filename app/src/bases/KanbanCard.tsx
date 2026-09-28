@@ -59,7 +59,9 @@ export function KanbanCard(props: {
      *  value, no label caption above it. Tag rows already skip the label regardless. */
     hideLabels?: boolean
     onEditingChange: (editing: boolean) => void
-    onRename: (newTitle: string) => void
+    /** Resolves to the row's note path AFTER the rename lands (or the unchanged path when
+     *  nothing moved) — `[open note]` waits on this instead of racing a stale pre-rename path. */
+    onRename: (newTitle: string) => Promise<string | undefined>
     onSetMeta: (id: string, value: unknown) => void
     /** Delete this card's note (trash + undo toast) — the SOLE delete affordance for a kanban card,
      *  offered as a control inside the edit modal (no separate right-click menu). */
@@ -74,6 +76,9 @@ export function KanbanCard(props: {
     // server round-trips.
     const [title, setTitle] = createSignal(titleOf(props.row, props.titleCol))
     const [edit, setEdit] = createSignal<{ target?: string } | null>(null)
+    // `[open note]` must not race a pending rename (see `commitRename`) — tracked as a promise
+    // chain, same idiom as `openRowEditor.tsx`'s `notePath`.
+    let notePath: Promise<string> = Promise.resolve(props.row.file.path)
     createEffect(() => {
         const t = titleOf(props.row, props.titleCol)
         if (untrack(edit) === null) setTitle(t)
@@ -130,8 +135,13 @@ export function KanbanCard(props: {
         )
 
     // ── Edit modal ────────────────────────────────────────────────────────────────────────
+    // A task-line row's `file` is the containing NOTE, not the task (a `source: tasks` board
+    // can reach `KanbanCard` without declaring `mode: tasks`) — opening the shared row editor
+    // for one would title itself with the note, rename the whole file, and let `delete` trash
+    // it. See TableView/BulletsView/CardsView's same guard.
+    const taskLine = () => typeof props.row.note.line === 'number'
     function openEdit(target?: string): void {
-        if (!props.editable) return
+        if (!props.editable || taskLine()) return
         setEdit({ target })
         props.onEditingChange(true)
     }
@@ -144,12 +154,14 @@ export function KanbanCard(props: {
         closeEdit()
         props.onDelete()
     }
-    /** Rename from the modal's title field — optimistic mirror + persist (KanbanView.renameCard). */
+    /** Rename from the modal's title field — optimistic mirror + persist (KanbanView.renameCard).
+     *  Tracks the resolved note path in `notePath` so a `[open note]` click racing this rename
+     *  waits on the real destination instead of dispatching a stale pre-rename path. */
     function commitRename(next: string): void {
         const t = next.trim()
         if (t && t !== titleOf(props.row, props.titleCol)) {
             setTitle(t)
-            props.onRename(t)
+            notePath = props.onRename(t).then(p => p ?? props.row.file.path)
         }
     }
     /** Persist a meta value the modal's type-aware editor produced, with an optimistic echo. `null`
@@ -401,12 +413,12 @@ export function KanbanCard(props: {
                             canWriteStoredRow(props.row)
                                 ? undefined
                                 : () =>
-                                      window.dispatchEvent(
-                                          new CustomEvent('bismuth-open', {
-                                              detail: {
-                                                  path: props.row.file.path,
-                                              },
-                                          }),
+                                      void notePath.then(path =>
+                                          window.dispatchEvent(
+                                              new CustomEvent('bismuth-open', {
+                                                  detail: { path },
+                                              }),
+                                          ),
                                       )
                         }
                     />

@@ -44,35 +44,41 @@ function fallbackOrder(config: BaseConfig, view: ViewConfig): string[] {
     return []
 }
 
+/** Returns the row's note path AFTER a successful rename (or the unchanged path when nothing
+ *  moved), or `undefined` on failure — so a caller racing `[open note]` against a pending
+ *  rename can wait on the real destination instead of dispatching the stale old path. */
 async function commitRename(
     row: Row,
     view: ViewConfig,
     newTitle: string,
     onChanged?: () => void,
-): Promise<void> {
+): Promise<string | undefined> {
     const t = newTitle.trim()
-    if (!t) return
+    if (!t) return row.file.path
     if (canWriteStoredRow(row)) {
         const key = writableKey(storedTitleColumn(view.order ?? []))
-        if (key === null) return
+        if (key === null) return row.file.path
         const note = { ...storedNote(row), [key]: t }
         try {
             await api.rowUpdate(row.file.path, row.index!, note)
             onChanged?.()
+            return row.file.path
         } catch (e) {
             pushToast(`Rename failed: ${(e as Error).message}`)
+            return undefined
         }
-        return
     }
-    if (t === row.file.name) return
+    if (t === row.file.name) return row.file.path
     const dir = parentOf(row.file.path)
     const desired = `${dir ? dir + '/' : ''}${safeFilename(t)}.md`
-    if (desired === row.file.path) return
+    if (desired === row.file.path) return row.file.path
     try {
         await api.move(row.file.path, desired)
         onChanged?.()
+        return desired
     } catch (e) {
         pushToast(`Rename failed: ${(e as Error).message}`)
+        return undefined
     }
 }
 
@@ -190,7 +196,7 @@ export function openRowEditor(opts: {
     columns?: string[]
 }): void {
     const { row, config, view, onChanged, focusTarget, columns } = opts
-    if (isStoredPlaceholder(row)) return
+    if (isStoredPlaceholder(row) || typeof row.note.line === 'number') return
     const owned = canWriteStoredRow(row)
     const titleCol = owned ? storedTitleColumn(view.order ?? []) : 'file.name'
     const metaCols = metaColumns(
@@ -205,6 +211,11 @@ export function openRowEditor(opts: {
         dispose()
         host.remove()
     }
+    // `[open note]` must not race a pending rename: the row's title editor calls `onRename`
+    // then closes immediately, and a stale `notePath` would dispatch the OLD path while the
+    // move is still in flight. Track the path as a promise chain so `onOpenNote` always waits
+    // on the latest rename's real destination.
+    let notePath: Promise<string> = Promise.resolve(row.file.path)
     dispose = render(
         () =>
             CardEditModal({
@@ -220,7 +231,11 @@ export function openRowEditor(opts: {
                 hasFileIdentity: true,
                 heading: 'edit row',
                 emptyHint: 'this row has no editable properties.',
-                onRename: t => void commitRename(row, view, t, onChanged),
+                onRename: t => {
+                    notePath = commitRename(row, view, t, onChanged).then(
+                        p => p ?? row.file.path,
+                    )
+                },
                 onSetMeta: (id, v) => void commitMeta(row, id, v, onChanged),
                 onDelete: () => {
                     close()
@@ -230,10 +245,12 @@ export function openRowEditor(opts: {
                 onOpenNote: owned
                     ? undefined
                     : () =>
-                          window.dispatchEvent(
-                              new CustomEvent('bismuth-open', {
-                                  detail: { path: row.file.path },
-                              }),
+                          void notePath.then(path =>
+                              window.dispatchEvent(
+                                  new CustomEvent('bismuth-open', {
+                                      detail: { path },
+                                  }),
+                              ),
                           ),
             }),
         host,

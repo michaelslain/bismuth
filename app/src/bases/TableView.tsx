@@ -99,7 +99,7 @@ export function TableView(props: {
     }
 
     function onRowContextMenu(e: MouseEvent, row: Row): void {
-        if (!rowEditable(row)) return
+        if (!rowEditable(row) || typeof row.note.line === 'number') return
         e.preventDefault()
         e.stopPropagation()
         openRowEditor({

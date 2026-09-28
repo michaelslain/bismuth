@@ -975,20 +975,26 @@ export function KanbanView(props: {
     // Instead it writes the new title under `titleCol()`'s key (`storedTitleColumn`'s pick)
     // via `api.rowUpdate`, addressed by `row.index` like every other stored-row write
     // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
-    async function renameCard(row: Row, newTitle: string): Promise<void> {
+    // Returns the row's note path AFTER a successful rename (or the unchanged path when
+    // nothing moved) — so `KanbanCard`'s `[open note]` can wait on the real destination
+    // instead of a stale pre-rename path when the two race.
+    async function renameCard(
+        row: Row,
+        newTitle: string,
+    ): Promise<string | undefined> {
         // A placeholder is not yet a row the server knows about — `canWriteStoredRow` is
         // `false` for it (negative index), which without this check would fall through to the
         // note-file branch below and `api.move` the BASE's own file (a placeholder's `file` is
         // `syntheticBaseFile`, the base's own path, not a note). Bail before either branch.
-        if (isStoredPlaceholder(row)) return
+        if (isStoredPlaceholder(row)) return row.file.path
         if (canWriteStoredRow(row)) {
             const key = writableKey(titleCol())
-            if (key === null) return
+            if (key === null) return row.file.path
             const note = { ...storedNote(row), [key]: newTitle }
             // The row's OWN file (see `dropCard`'s comment) — never `props.basePath`, which is
             // the wrong target for a `source:` board's row.
             await api.rowUpdate(row.file.path, row.index!, note)
-            return
+            return row.file.path
         }
         // A rename changes the note's path, so the refetch below re-keys the row and remounts the
         // card (its identity genuinely changed). Editing is single-mode, so there's no open
@@ -997,10 +1003,11 @@ export function KanbanView(props: {
         // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
         const dir = parentOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
-        if (desired === row.file.path) return
+        if (desired === row.file.path) return row.file.path
         const target = dedupe(desired, takenPaths())
         await api.move(row.file.path, target)
         props.onChange()
+        return target
     }
 
     // ── Card meta property (any `order:` property besides title — including `description`,
@@ -1849,7 +1856,7 @@ export function KanbanView(props: {
                                                                                     setEditing
                                                                                 }
                                                                                 onRename={t =>
-                                                                                    void renameCard(
+                                                                                    renameCard(
                                                                                         r(),
                                                                                         t,
                                                                                     )
