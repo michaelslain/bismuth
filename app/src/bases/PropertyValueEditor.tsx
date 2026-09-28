@@ -97,7 +97,7 @@ export function PropertyValueEditor(props: {
     // `tagCandidates`) — after this column's and this row's own values (`kind.options`).
     const [vaultTags, setVaultTags] = createSignal(lastVaultTags)
     onMount(() => {
-        if (props.kind.kind !== 'tags' || !props.kind.hash) return
+        if (props.kind.kind !== 'tags' || !props.kind.tag) return
         fetchVaultTags()
             .then(tags => {
                 lastVaultTags = tags
@@ -133,17 +133,17 @@ export function PropertyValueEditor(props: {
     // `props.kind` re-derefs on every read, which would otherwise lose the discriminated-
     // union narrowing inside JSX.
     const selectKind = () => (props.kind.kind === 'select' ? props.kind : null)
-    // `multiselect` and `tags` share one editor (ui/TagsField) and commit shape. A `tags` field
-    // uses the `#tag` spelling and suggests the column's values then the vault's; a declared
-    // `multiselect` uses comma separation (its options may contain spaces) and suggests only its
-    // options — a typed value outside them is still kept (legacy tolerance, like select).
+    // `multiselect` and `tags` share one editor (ui/TagsField) and commit shape: a comma-separated
+    // line. A tag column's field is drawn in the tag look and suggests the column's values then
+    // the vault's; any other list suggests its own column's values; a declared `multiselect`
+    // suggests only its options — a typed value outside them is still kept (legacy tolerance).
     const listKind = () => {
         const k = props.kind
-        if (k.kind === 'multiselect') return { options: k.options, hash: false }
+        if (k.kind === 'multiselect') return { options: k.options, tag: false }
         if (k.kind === 'tags')
             return {
-                options: mergeTagOptions(k.options, k.hash ? vaultTags() : []),
-                hash: k.hash,
+                options: mergeTagOptions(k.options, k.tag ? vaultTags() : []),
+                tag: k.tag,
             }
         return null
     }
@@ -286,7 +286,7 @@ export function PropertyValueEditor(props: {
                     <TagsField
                         value={multiselectValues(props.value)}
                         suggestions={() => lk().options}
-                        hash={lk().hash}
+                        tags={lk().tag}
                         autofocus={autofocus()}
                         onCommit={next => props.onCommit(multiselectCommitValue(next))}
                         onCancel={props.onCancel}

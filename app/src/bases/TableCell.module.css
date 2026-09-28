@@ -28,6 +28,17 @@
 }
 .editor {
     width: 100%;
+    /* Exactly the resting cell's line box (`.cell`'s min-height), with the editor control centred in
+       it: a control is taller than a line of text (--h-control), and letting it size the slot grew
+       the whole row by up to 6px the moment a cell opened. The control overflows the slot evenly
+       instead — into the cell's own padding — so the row never moves. */
+    height: 1.4em;
+    display: flex;
+    align-items: center;
+}
+.editor > * {
+    flex: 1;
+    min-width: 0;
 }
 /* A value no in-cell editor can round-trip (a list of numbers or links) — shown, not clickable. */
 .cell.cellReadonly { cursor: default; }

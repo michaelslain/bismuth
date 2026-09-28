@@ -6,11 +6,17 @@
 // Board rendering + column colour/palette only — column add/rename/delete/reorder lives in
 // KanbanColumns.stories.tsx, own-rows/row-write behaviour in KanbanStoredRows.stories.tsx.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { onCleanup } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { KanbanView } from './KanbanView'
-import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
+import {
+    SAMPLE_ROWS,
+    sampleBaseConfig,
+    sampleViewResult,
+} from '../ui/_baseFixtures'
+import { BaseView } from './BaseView'
 import { setTransport } from '../api'
-import { fakeTransport } from '../ui/_fakeTransport'
+import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
 import { kanbanViews } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import { PALETTE_NAMES } from './kanbanPalette'
@@ -90,18 +96,42 @@ export const EditableWithPinnedColumns: Story = {
  *  is the whole column, not just the header strip. `userEvent.hover` is synthetic (CSS `:hover`
  *  never sees it), so this exercises the `data-hover` half of the reveal; the `:hover` half was
  *  proven with real CDP pointer moves (round-2 item 9). */
+const TRY_PATH = 'stories/kanban-try.md'
+const TRY_BODY = [
+    '---',
+    'type: base',
+    'views:',
+    '  - type: kanban',
+    '    name: Kanban',
+    '    groupBy: status',
+    '    order: [priority, tags]',
+    '    columns: [Todo, Doing, Blocked, Done]',
+    '---',
+    '',
+].join('\n')
+
 export const HeaderActionsOnHover: Story = {
+    // A real BaseView over a stateful fake store (the gallery's): rename, delete and Undo all
+    // write, the version bumps, the board refetches — so trying the buttons by hand works.
     render: () => {
-        const views = kanbanViews({
-            groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
-        })
+        setTransport(
+            fakeTransport({
+                rows: JSON.parse(JSON.stringify(SAMPLE_ROWS)),
+                versioned: true,
+                files: { [TRY_PATH]: TRY_BODY },
+            }),
+        )
+        onCleanup(disarmFakeServerVersion)
         return (
-            <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
-                basePath="stories/kanban-demo.md"
-                onChange={noop}
-            />
+            <div
+                style={{
+                    height: '520px',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                }}
+            >
+                <BaseView path={TRY_PATH} body={TRY_BODY} />
+            </div>
         )
     },
     play: async ({ canvasElement }) => {

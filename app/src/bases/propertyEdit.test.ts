@@ -72,7 +72,7 @@ describe('propertyEditKind', () => {
             labels: { type: { kind: 'list', item: 'string' } },
         }
         expect(propertyEditKind('labels', ['a'], schema, [])).toEqual({
-            hash: false,
+            tag: false,
             kind: 'tags',
             options: ['a'],
         })
@@ -93,7 +93,7 @@ describe('propertyEditKind', () => {
             kind: 'number',
         })
         expect(propertyEditKind('tags', ['a', 'b'], noSchema, [])).toEqual({
-            hash: true,
+            tag: true,
             kind: 'tags',
             options: ['a', 'b'],
         })
@@ -146,7 +146,7 @@ describe('propertyEditKind', () => {
                 ['a', 'b'],
                 ['c'],
             ]),
-        ).toEqual({ kind: 'tags', options: ['a', 'b', 'c'], hash: true })
+        ).toEqual({ kind: 'tags', options: ['a', 'b', 'c'], tag: true })
     })
 
     test('a string cell with only-array siblings never becomes a select', () => {
@@ -255,7 +255,7 @@ describe('propertyEditKind — declared type (#100)', () => {
     test('declared list/link/formula have no dedicated editor yet — fall through to the heuristic', () => {
         expect(
             propertyEditKind('items', ['a'], noSchema, [], { kind: 'list' }),
-        ).toEqual({ kind: 'tags', options: ['a'], hash: false })
+        ).toEqual({ kind: 'tags', options: ['a'], tag: false })
         expect(
             propertyEditKind('ref', 'x', noSchema, [], { kind: 'link' }),
         ).toEqual({ kind: 'text' })
@@ -370,17 +370,14 @@ describe('selectOptionsWithCurrent (#101)', () => {
 describe('list properties — only what the field can round-trip is editable', () => {
     const kind = (id: string, value: unknown) =>
         propertyEditKind(id, value, {}, [])
-    test('a tag column of single words uses the #tag spelling', () => {
-        expect(kind('tags', ['alpha', 'beta'])).toMatchObject({ kind: 'tags', hash: true })
-        expect(kind('note.tag', ['#alpha'])).toMatchObject({ kind: 'tags', hash: true })
-    })
-    test('any other list — or a tag with a space — is comma-separated, so values keep spaces', () => {
-        expect(kind('authors', ['Jane Doe'])).toMatchObject({ kind: 'tags', hash: false })
-        expect(kind('aliases', ['one'])).toMatchObject({ kind: 'tags', hash: false })
-        expect(kind('tags', ['two words'])).toMatchObject({ kind: 'tags', hash: false })
+    test('a list of strings is one comma-separated field; a tag column gets the tag look', () => {
+        expect(kind('tags', ['alpha', 'two words'])).toMatchObject({ kind: 'tags', tag: true })
+        expect(kind('note.tag', ['alpha'])).toMatchObject({ kind: 'tags', tag: true })
+        expect(kind('authors', ['Jane Doe'])).toMatchObject({ kind: 'tags', tag: false })
     })
     test('a list the comma field would split, or one holding numbers or links, is read-only', () => {
         expect(kind('authors', ['Smith, John'])).toEqual({ kind: 'readonly' })
+        expect(kind('tags', ['a,b'])).toEqual({ kind: 'readonly' })
         expect(kind('scores', [1, 2])).toEqual({ kind: 'readonly' })
         expect(kind('related', [{ path: 'Some Note.md', display: 'Some Note' }])).toEqual({
             kind: 'readonly',
