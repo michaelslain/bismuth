@@ -143,6 +143,14 @@
   perspective: 1800px; width: min(680px, 100%);
   flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
   overflow-y: auto;
+  /* Never a horizontal scrollbar: the card is exactly this box's width and wraps its own content
+     (a wide `pre` scrolls itself), so x has nothing legitimate to scroll. Without this, a NEW
+     card's `card-appear` slide-in (translateX(40px)) overflowed x by ~34px for ~7 frames and
+     flashed a horizontal bar on every advance. (overflow-y stays auto for a short pane.) */
+  overflow-x: hidden;
+  /* A size container so the flip's push-back (`card-flip` below) can be exactly half the card's
+     width — `50cqi` — whatever width the pane gives it. */
+  container-type: inline-size;
 }
 /* Per-card actions pinned to each face's top-right — rendered on BOTH faces so they
    flip with the card. Faint at rest, firm on card hover. Position/opacity only — the button
@@ -150,10 +158,33 @@
 .card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; opacity: 0.4; transition: opacity 0.15s; }
 .flip-card:hover .card-actions { opacity: 1; }
 .flip-card { width: 100%; min-height: 420px; perspective: 1200px; cursor: pointer; }
-.flip-inner { position: relative; width: 100%; min-height: 420px; transition: transform 0.5s; transform-style: preserve-3d; }
+.flip-inner { position: relative; width: 100%; min-height: 420px; transform-style: preserve-3d; }
 .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+/* The flip, and why it is an animation rather than a `transform` transition.
+   A plain rotateY about the card's centre swings one vertical edge TOWARD the viewer, and under
+   .flip-card's perspective that edge projects larger than the card — up to ~15px wider and ~70px
+   taller mid-turn at 680px. That projected box is scrollable overflow for .cardwrap (overflow-y:
+   auto, so overflow-x computes to auto too), which flashed a vertical then a horizontal scrollbar
+   on every flip. Measured per frame, .cardwrap was the only element that ever overflowed.
+   The fix is geometric, not a clip: push the card back by translateZ(-half its width) while it
+   turns, so no point of it ever comes nearer than the rest plane (z <= 0 at every frame). Under
+   perspective a point at z <= 0 projects no larger than it sits, so the turning card's projected
+   box always stays inside its resting box and .cardwrap has nothing to scroll.
+   Keyframes are chosen so the push-back always LEADS the swing: in 0-25% the depth goes 0 -> 50cqi
+   while the angle goes 0 -> 45deg, and sin(45deg * f) <= f for every f, whatever the easing (both
+   share one eased progress per segment); 75-100% mirrors it. The first/last segments ease in/out
+   with an end/start slope of 1, matching the linear middle's angular speed so the turn does not
+   hitch at the keyframes. `reverse` plays the same path back for a card that un-flips. */
+.flip-inner[data-flipping] { animation: card-flip 0.5s reverse; }
+.flip-card.flipped .flip-inner[data-flipping] { animation-direction: normal; }
+@keyframes card-flip {
+  0% { transform: translateZ(0) rotateY(0deg); animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.75); }
+  25% { transform: translateZ(-50cqi) rotateY(45deg); animation-timing-function: linear; }
+  75% { transform: translateZ(-50cqi) rotateY(135deg); animation-timing-function: cubic-bezier(0.25, 0.25, 0.5, 1); }
+  100% { transform: translateZ(0) rotateY(180deg); }
+}
 /* Entrance: a NEW card remounts (keyed by row index+dir) and plays a crisp scale+fade in.
-   The flip (rotateY) is a separate transition on the persistent element, so switching cards
+   The flip (rotateY) is a separate animation on the persistent element, so switching cards
    never flips backward — it just appears. */
 .card-appear { animation: card-appear 180ms var(--ease) both; }
 @keyframes card-appear {
@@ -162,7 +193,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .card-appear { animation: none; }
-  .flip-inner { transition: none; }
+  .flip-inner[data-flipping] { animation: none; }
 }
 .flip-face {
   position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
@@ -178,12 +209,14 @@
 .flip-card:hover .flip-face { border-color: var(--accent); }
 .flip-back { transform: rotateY(180deg); justify-content: flex-start; }
 
-/* Flip scrollbars: `data-flipping` (set for the 0.5s rotateY transition, cleared on its
-   transitionend — FlashcardsView.tsx) forces both faces to `overflow: hidden` for that window, so
-   no scrollbar can appear mid-rotation even on a face whose content overflows at rest. Once
-   settled, `.flip-face`'s own `overflow-y: auto` above takes back over so a long answer still
-   scrolls. */
-.flip-inner[data-flipping] .flip-face { overflow: hidden; }
+/* Flip scrollbars inside the card: `data-flipping` (set for the 0.5s `card-flip` animation, cleared
+   on its animationend/animationcancel — FlashcardsView.tsx) forces both faces and the answer body
+   to `overflow: hidden` for that window, so no scrollbar can appear mid-rotation even on a face
+   whose content overflows at rest. Once settled, their own `overflow-y: auto` takes back over so a
+   long answer still scrolls. (.cardwrap, OUTSIDE the card, is kept clear by the flip's geometry —
+   see `card-flip` above — not by a clip.) */
+.flip-inner[data-flipping] .flip-face,
+.flip-inner[data-flipping] .abody { overflow: hidden; }
 
 /* Answer face: italic prompt echo, hairline divider, then the answer body. Prose face — the same
    font the editor uses for note prose, not the UI/mono stack. */

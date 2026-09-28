@@ -275,6 +275,72 @@ export const MeterShrinksNarrow: Story = {
     },
 }
 
+/** Every scrolling overflow seen on ANY frame of a flip, per element and axis, plus how many frames
+ *  carried `data-flipping`. A flip lasts 0.5s and its scrollbars lived only mid-turn, so sampling
+ *  before and after (what this file's stories used to do) passed while the user watched a
+ *  scrollbar flash on every flip. This runs a rAF loop across the whole flip instead.
+ *
+ *  Watched: the card, `.flip-inner`, everything inside it (both faces, the answer body), and every
+ *  ancestor up to <html> — which covers `.cardwrap`, the element that actually overflowed (and
+ *  that also flashed a horizontal bar during a NEW card's slide-in entrance, which a sample
+ *  spanning a grade catches too). A 3D
+ *  rotateY projects the card's near edge LARGER than the card under perspective, and ANY ancestor
+ *  whose overflow is auto can turn that into a scrollbar, so the whole chain is checked, not only
+ *  the faces. `.flip-front` is a bare literal class (see FlashcardsView.tsx); everything else is
+ *  reached through the DOM from it, never by a hashed module class. */
+async function sampleFlip(
+    front: HTMLElement,
+    start: () => Promise<unknown>,
+    ms = 750,
+): Promise<{ overflows: string[]; flippingFrames: number; frames: number }> {
+    const inner = front.parentElement as HTMLElement
+    const card = inner.parentElement as HTMLElement
+    // Inside the card, a scrolling overflow is only wrong DURING the turn — at rest the showing
+    // face's long answer is supposed to scroll, and the hidden face is never painted. Above the
+    // card (`.cardwrap` and up), no frame may overflow at all.
+    const own: HTMLElement[] = [
+        card,
+        inner,
+        ...Array.from(inner.querySelectorAll<HTMLElement>('*')),
+    ]
+    const ancestors: HTMLElement[] = []
+    for (let a = card.parentElement; a; a = a.parentElement) ancestors.push(a)
+    const scrolls = (v: string) => v === 'auto' || v === 'scroll'
+    const label = (el: HTMLElement) =>
+        el === card
+            ? 'flip-card'
+            : el === inner
+              ? 'flip-inner'
+              : `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`
+    const overflows = new Set<string>()
+    let flippingFrames = 0
+    let frames = 0
+    const t0 = performance.now()
+    const done = new Promise<void>(resolve => {
+        const tick = () => {
+            frames++
+            const turning = inner.hasAttribute('data-flipping')
+            if (turning) flippingFrames++
+            for (const el of turning ? [...own, ...ancestors] : ancestors) {
+                const cs = getComputedStyle(el)
+                const dx = el.scrollWidth - el.clientWidth
+                const dy = el.scrollHeight - el.clientHeight
+                if (scrolls(cs.overflowX) && dx > 0) overflows.add(`${label(el)} x`)
+                if (scrolls(cs.overflowY) && dy > 0) overflows.add(`${label(el)} y`)
+            }
+            if (performance.now() - t0 < ms) requestAnimationFrame(tick)
+            else resolve()
+        }
+        requestAnimationFrame(tick)
+    })
+    await start()
+    await done
+    return { overflows: [...overflows], flippingFrames, frames }
+}
+
+const reducedMotion = () =>
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 // `basePath` set so `cardActions()` renders (the ✎/🗑 buttons live on BOTH faces
 // unconditionally — see FlashcardsView.tsx's `cardActions`), which every story above leaves
 // unexercised since none of them pass a basePath.
@@ -306,10 +372,19 @@ export const Revealed: Story = {
         // actually see and hit before the reveal, rather than the back face sitting behind it.
         const front = canvasElement.querySelector('.flip-front') as HTMLElement
         // `.flip-front` is a direct child of `.flip-inner`, the element `data-flipping` +
-        // the `transitionend` listener live on (FlashcardsView.tsx) — reach it via the DOM
+        // the `animationend` listener live on (FlashcardsView.tsx) — reach it via the DOM
         // parent, not a class query, since `.flip-inner` is a hashed module local.
         const flipInner = front.parentElement as HTMLElement
-        await userEvent.click(await within(front).findByText('capital of France'))
+        // Flip scrollbars, sampled on EVERY frame of the flip (see `sampleFlip`): no element in
+        // the card or anywhere above it may show a scrollbar at any point of the turn.
+        const flip = await sampleFlip(front, () =>
+            userEvent.click(within(front).getByText('capital of France')),
+        )
+        await expect(flip.overflows).toEqual([])
+        // ...and the loop really did straddle the animation, rather than proving nothing by
+        // sampling a card at rest (the flip is skipped outright under reduced motion).
+        if (!reducedMotion())
+            await expect(flip.flippingFrames).toBeGreaterThan(5)
 
         // No "SPACE to reveal answer" hint any more — deleted along with `.fliphint`
         // (bases-polish Task 6). Space still reveals; this just removes the on-card text.
@@ -317,22 +392,8 @@ export const Revealed: Story = {
             canvasElement.textContent?.includes('to reveal answer'),
         ).toBe(false)
 
-        // Flip scrollbars: for the 0.5s rotateY transition (`data-flipping` set), neither face
-        // may report a scrolling overflow — even though `.flip-face` is `overflow-y: auto` at
-        // rest. Checked right after the click, before the transition has had time to settle.
-        const back = canvasElement.querySelector(
-            '[class*="flip-back"]',
-        ) as HTMLElement
-        await expect(flipInner.hasAttribute('data-flipping')).toBe(true)
-        await expect(['auto', 'scroll']).not.toContain(
-            getComputedStyle(front).overflowY,
-        )
-        await expect(['auto', 'scroll']).not.toContain(
-            getComputedStyle(back).overflowY,
-        )
-
-        // Once the transition's `transitionend` fires, `data-flipping` clears and a long answer
-        // can scroll again.
+        // Once the flip's `animationend` fires, `data-flipping` clears and a long answer can
+        // scroll again.
         await waitFor(
             () => {
                 expect(flipInner.hasAttribute('data-flipping')).toBe(false)
@@ -516,6 +577,87 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
             const nextText = next ? next.textContent ?? '' : null
             expect(nextText === null || nextText !== shownBefore).toBe(true)
         })
+    },
+}
+
+/** Graded BEFORE the flip finished — Space, then '1' straight away. The card is disposed
+ *  mid-animation, so its `animationend` never fires; when `flipping` lived on the view rather than
+ *  the card it stayed set and the NEXT card mounted with `data-flipping` stuck on, its faces
+ *  pinned to `overflow: hidden` so a long answer could never scroll. The flag now belongs to the
+ *  keyed card, so the next card must mount at rest. */
+export const GradedMidFlipStartsAtRest: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const first = canvasElement.querySelector('.flip-front') as HTMLElement
+        const shownBefore = first.textContent ?? ''
+        // Sampled across the aborted flip AND the next card's slide-in entrance, which shares
+        // `.cardwrap` (the one ancestor that ever overflowed) with the card it replaces.
+        const run = await sampleFlip(first, () => userEvent.keyboard(' 1'))
+        await expect(run.overflows).toEqual([])
+        let next: HTMLElement | null = null
+        await waitFor(() => {
+            next = canvasElement.querySelector('.flip-front') as HTMLElement | null
+            expect(next).not.toBeNull()
+            expect(next!.textContent).not.toBe(shownBefore)
+        })
+        const nextInner = next!.parentElement as HTMLElement
+        await expect(nextInner.hasAttribute('data-flipping')).toBe(false)
+        await expect(getComputedStyle(next!).overflowY).toBe('auto')
+        // And it stays at rest past the length of the flip it never started.
+        await new Promise(r => setTimeout(r, 700))
+        await expect(nextInner.hasAttribute('data-flipping')).toBe(false)
+    },
+}
+
+const LONG_ANSWER = Array.from(
+    { length: 40 },
+    (_, i) => `${i + 1}. step ${i + 1} of the long answer`,
+).join('\n')
+
+/** A long answer: the flip shows no scrollbar on any frame (the faces go `overflow: hidden` for
+ *  the turn and the turn's geometry keeps `.cardwrap` clear), and once it settles the answer
+ *  scrolls again — the one overflow that is supposed to exist. */
+export const LongAnswerScrollsAfterFlip: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={[
+                    cardRow('card-long', {
+                        front: 'the forty steps',
+                        back: LONG_ANSWER,
+                        due: null,
+                    }),
+                ]}
+                config={config}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        const inner = front.parentElement as HTMLElement
+        const back = front.nextElementSibling as HTMLElement
+        const flip = await sampleFlip(front, () => userEvent.keyboard(' '))
+        await expect(flip.overflows).toEqual([])
+        if (!reducedMotion())
+            await expect(flip.flippingFrames).toBeGreaterThan(5)
+        await waitFor(
+            () => expect(inner.hasAttribute('data-flipping')).toBe(false),
+            { timeout: 2000 },
+        )
+        // Settled: SOMETHING in the back face scrolls the answer, and actually moves.
+        const scroller = [back, ...Array.from(back.querySelectorAll<HTMLElement>('*'))].find(
+            el =>
+                getComputedStyle(el).overflowY === 'auto' &&
+                el.scrollHeight > el.clientHeight,
+        )
+        await expect(scroller).toBeDefined()
+        scroller!.scrollTop = 60
+        await expect(scroller!.scrollTop).toBeGreaterThan(0)
     },
 }
 
