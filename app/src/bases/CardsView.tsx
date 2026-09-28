@@ -8,8 +8,11 @@ import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
-import { isStoredPlaceholder } from './taskWrite'
-import { openRowEditor } from './openRowEditor'
+import { useRowEditor } from './useRowEditor'
+import GroupHeader from '../ui/GroupHeader'
+import EmptyState from '../ui/EmptyState'
+import NoteLink from '../ui/NoteLink'
+import { isActivateKey } from '../ui/widgetKeys'
 import { titleOf } from './kanbanMeta'
 import styles from './CardsView.module.css'
 
@@ -56,21 +59,16 @@ export function CardsView(props: {
     const titleCol = (): string => cols()[0] ?? 'file.name'
     const authorCol = (): string | undefined => cols()[1]
 
-    const editable = () => !!props.basePath
-    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
-    // A task-line row's `file` is the containing NOTE, not the task — the shared row editor
-    // would title itself with the note, rename the whole file, and let `delete` trash it.
-    const taskLine = (row: Row) => typeof row.note.line === 'number'
-    function openEditor(row: Row): void {
-        if (!rowEditable(row)) return
-        openRowEditor({
-            row,
-            config: props.config,
-            view: props.result.view,
-            onChanged: props.onChange,
-            columns: props.result.columns,
-        })
-    }
+    const editor = useRowEditor({
+        config: () => props.config,
+        view: () => props.result.view,
+        columns: () => props.result.columns,
+        onChanged: () => props.onChange?.(),
+    })
+    // `editable` also refuses a task-line row (its `file` is the containing NOTE, so the shared
+    // editor would rename/trash the whole file) and a pending placeholder.
+    const rowEditable = (row: Row) => !!props.basePath && editor.editable(row)
+    const empty = () => props.result.groups.every(g => g.rows.length === 0)
 
     // Cover image config: which property holds the cover, plus fit/aspect-ratio.
     const imageProp = (): string | undefined => props.result.view.image
@@ -99,208 +97,264 @@ export function CardsView(props: {
         return v == null || typeof v === 'object' ? null : String(v)
     }
 
-    // Click anywhere on a (non-body) card opens its note. `bismuth-open` always opens a
-    // fresh tab now (#56), so this needs no flag to get that.
-    const openCard = (row: Row) =>
-        window.dispatchEvent(
-            new CustomEvent('bismuth-open', {
-                detail: { path: row.file.path },
-            }),
-        )
-    /** Left-click opens the editor for every editable row (note rows too, not only owned
-     *  rows); a non-editable row keeps opening its note. Right-click always opens the editor
-     *  when the row is editable (see `onContextMenu` below). */
-    const cardClick = (row: Row) => {
-        if (rowEditable(row) && !taskLine(row)) openEditor(row)
-        else openCard(row)
-    }
+    // An editable card opens the row editor on click, Enter/Space or right-click. A card that is
+    // not editable is not a button: its title is a NoteLink (below), which is what opens the note.
     const cardContextMenu = (row: Row, e: MouseEvent) => {
-        if (!rowEditable(row) || taskLine(row)) return
+        if (!rowEditable(row)) return
         e.preventDefault()
         e.stopPropagation()
-        openEditor(row)
+        editor.open(row)
     }
+    // A stored row has no note to open, so it never gets a link.
+    const linkable = (row: Row) => !Number.isInteger(row.index)
 
     return (
-        <div class={styles.cards}>
-            {/* Index-keyed groups (see ListView): keep each group mounted across a re-resolve so only
+        <Show
+            when={!empty()}
+            fallback={
+                <EmptyState title="no rows">
+                    nothing in this view matches its filters
+                </EmptyState>
+            }
+        >
+            <div class={styles.cards}>
+                {/* Index-keyed groups (see ListView): keep each group mounted across a re-resolve so only
           the inner reference-keyed row <For> diffs — no whole-grid remount/masonry-reflow flash
           on a task toggle. */}
-            <Index each={props.result.groups}>
-                {group => (
-                    <>
-                        <Show when={group().key !== ''}>
-                            <div class={styles.groupHeader}>{group().key}</div>
-                        </Show>
-                        <div
-                            class={
-                                isTasks()
-                                    ? styles.taskCardGrid
-                                    : isBody()
-                                      ? styles.bodyGrid
-                                      : styles.cardGrid
-                            }
-                        >
-                            <For each={group().rows}>
-                                {row => (
-                                    <Show
-                                        when={isTasks()}
-                                        fallback={
-                                            <Show
-                                                when={isBody()}
-                                                fallback={
-                                                    <CardFrame
-                                                        class={styles.cardSlot}
-                                                        interactive
-                                                        role="button"
-                                                        tabindex={0}
-                                                        onClick={() =>
-                                                            cardClick(row)
-                                                        }
-                                                        onContextMenu={e =>
-                                                            cardContextMenu(
-                                                                row,
-                                                                e,
-                                                            )
-                                                        }
-                                                        onKeyDown={e => {
-                                                            if (
-                                                                e.key ===
-                                                                'Enter'
-                                                            )
-                                                                cardClick(row)
-                                                        }}
-                                                    >
-                                                        {/* An image cover (when configured + present) replaces the generated
-                                    text cover; title/author then move into the body below. A row whose
-                                    cover property is empty falls back to the text cover. */}
-                                                        <Show
-                                                            when={coverUrl(row)}
-                                                            fallback={
-                                                                <div
-                                                                    class={
-                                                                        styles.cardCover
-                                                                    }
-                                                                >
-                                                                    <Label
-                                                                        as="div"
-                                                                        tone="default"
-                                                                        lines={
-                                                                            2
-                                                                        }
-                                                                        class={
-                                                                            styles.coverTitle
-                                                                        }
-                                                                    >
-                                                                        {coverTitle(
-                                                                            row,
-                                                                        )}
-                                                                    </Label>
-                                                                    <Show
-                                                                        when={coverAuthor(
-                                                                            row,
-                                                                        )}
-                                                                    >
-                                                                        <Label
-                                                                            as="div"
-                                                                            tone="muted"
-                                                                            class={
-                                                                                styles.coverAuthor
-                                                                            }
-                                                                        >
-                                                                            {coverAuthor(
-                                                                                row,
-                                                                            )}
-                                                                        </Label>
-                                                                    </Show>
-                                                                </div>
+                <Index each={props.result.groups}>
+                    {group => (
+                        <>
+                            <Show when={group().key !== ''}>
+                                <GroupHeader
+                                    class={styles.groupHeader}
+                                    label={group().key}
+                                    count={group().rows.length}
+                                />
+                            </Show>
+                            <div
+                                class={
+                                    isTasks()
+                                        ? styles.taskCardGrid
+                                        : isBody()
+                                          ? styles.bodyGrid
+                                          : styles.cardGrid
+                                }
+                            >
+                                <For each={group().rows}>
+                                    {row => (
+                                        <Show
+                                            when={isTasks()}
+                                            fallback={
+                                                <Show
+                                                    when={isBody()}
+                                                    fallback={
+                                                        <CardFrame
+                                                            class={
+                                                                styles.cardSlot
                                                             }
-                                                        >
-                                                            {url => (
-                                                                <div
-                                                                    class={
-                                                                        styles.cardCoverImg
-                                                                    }
-                                                                    style={{
-                                                                        'aspect-ratio':
-                                                                            String(
-                                                                                aspectRatio(),
-                                                                            ),
-                                                                    }}
-                                                                >
-                                                                    <img
-                                                                        src={url()}
-                                                                        alt={coverTitle(
-                                                                            row,
-                                                                        )}
-                                                                        loading="lazy"
-                                                                        style={{
-                                                                            'object-fit':
-                                                                                imageFit(),
-                                                                        }}
-                                                                        onError={e => {
-                                                                            ;(
-                                                                                e.currentTarget as HTMLImageElement
-                                                                            ).style.visibility =
-                                                                                'hidden'
-                                                                        }}
-                                                                    />
-                                                                </div>
+                                                            interactive={rowEditable(
+                                                                row,
                                                             )}
-                                                        </Show>
-                                                        <CardBodyInner>
-                                                            {/* With an image cover the title/author aren't on the cover, so show
-                                      them as fields; with the text cover they already appear there. */}
-                                                            <CardBody
-                                                                cols={cols()}
-                                                                row={row}
-                                                                config={
-                                                                    props.config
-                                                                }
-                                                                titleAsField={
-                                                                    !coverUrl(
+                                                            role={
+                                                                rowEditable(row)
+                                                                    ? 'button'
+                                                                    : undefined
+                                                            }
+                                                            tabindex={
+                                                                rowEditable(row)
+                                                                    ? 0
+                                                                    : undefined
+                                                            }
+                                                            onClick={() =>
+                                                                editor.open(row)
+                                                            }
+                                                            onContextMenu={e =>
+                                                                cardContextMenu(
+                                                                    row,
+                                                                    e,
+                                                                )
+                                                            }
+                                                            onKeyDown={e => {
+                                                                if (
+                                                                    rowEditable(
+                                                                        row,
+                                                                    ) &&
+                                                                    isActivateKey(
+                                                                        e,
+                                                                    )
+                                                                ) {
+                                                                    e.preventDefault()
+                                                                    editor.open(
                                                                         row,
                                                                     )
                                                                 }
-                                                                plainTitle
-                                                            />
-                                                        </CardBodyInner>
-                                                    </CardFrame>
-                                                }
-                                            >
-                                                <BodyCard
-                                                    class={styles.bodyGridCard}
-                                                    row={row}
-                                                    result={props.result}
-                                                    config={props.config}
-                                                    mode={
-                                                        cardMode() === 'tasks'
-                                                            ? 'tasks'
-                                                            : 'body'
+                                                            }}
+                                                        >
+                                                            {/* An image cover (when configured + present) replaces the generated
+                                    text cover; title/author then move into the body below. A row whose
+                                    cover property is empty falls back to the text cover. */}
+                                                            <Show
+                                                                when={coverUrl(
+                                                                    row,
+                                                                )}
+                                                                fallback={
+                                                                    <div
+                                                                        class={
+                                                                            styles.cardCover
+                                                                        }
+                                                                    >
+                                                                        <Label
+                                                                            as="div"
+                                                                            tone="default"
+                                                                            lines={
+                                                                                2
+                                                                            }
+                                                                            class={
+                                                                                styles.coverTitle
+                                                                            }
+                                                                        >
+                                                                            <Show
+                                                                                when={
+                                                                                    !rowEditable(
+                                                                                        row,
+                                                                                    ) &&
+                                                                                    linkable(
+                                                                                        row,
+                                                                                    )
+                                                                                }
+                                                                                fallback={coverTitle(
+                                                                                    row,
+                                                                                )}
+                                                                            >
+                                                                                <NoteLink
+                                                                                    path={
+                                                                                        row
+                                                                                            .file
+                                                                                            .path
+                                                                                    }
+                                                                                >
+                                                                                    {coverTitle(
+                                                                                        row,
+                                                                                    )}
+                                                                                </NoteLink>
+                                                                            </Show>
+                                                                        </Label>
+                                                                        <Show
+                                                                            when={coverAuthor(
+                                                                                row,
+                                                                            )}
+                                                                        >
+                                                                            <Label
+                                                                                as="div"
+                                                                                tone="muted"
+                                                                                class={
+                                                                                    styles.coverAuthor
+                                                                                }
+                                                                            >
+                                                                                {coverAuthor(
+                                                                                    row,
+                                                                                )}
+                                                                            </Label>
+                                                                        </Show>
+                                                                    </div>
+                                                                }
+                                                            >
+                                                                {url => (
+                                                                    <div
+                                                                        class={
+                                                                            styles.cardCoverImg
+                                                                        }
+                                                                        style={{
+                                                                            'aspect-ratio':
+                                                                                String(
+                                                                                    aspectRatio(),
+                                                                                ),
+                                                                        }}
+                                                                    >
+                                                                        <img
+                                                                            src={url()}
+                                                                            alt={coverTitle(
+                                                                                row,
+                                                                            )}
+                                                                            loading="lazy"
+                                                                            style={{
+                                                                                'object-fit':
+                                                                                    imageFit(),
+                                                                            }}
+                                                                            onError={e => {
+                                                                                ;(
+                                                                                    e.currentTarget as HTMLImageElement
+                                                                                ).style.visibility =
+                                                                                    'hidden'
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </Show>
+                                                            <CardBodyInner>
+                                                                {/* With an image cover the title/author aren't on the cover, so show
+                                      them as fields; with the text cover they already appear there. */}
+                                                                <CardBody
+                                                                    cols={cols()}
+                                                                    row={row}
+                                                                    config={
+                                                                        props.config
+                                                                    }
+                                                                    titleAsField={
+                                                                        !coverUrl(
+                                                                            row,
+                                                                        )
+                                                                    }
+                                                                    plainTitle={
+                                                                        rowEditable(
+                                                                            row,
+                                                                        ) ||
+                                                                        !linkable(
+                                                                            row,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            </CardBodyInner>
+                                                        </CardFrame>
                                                     }
-                                                />
-                                            </Show>
-                                        }
-                                    >
-                                        {/* A task card carries no cover and no open-on-click: its
+                                                >
+                                                    <BodyCard
+                                                        class={
+                                                            styles.bodyGridCard
+                                                        }
+                                                        row={row}
+                                                        result={props.result}
+                                                        config={props.config}
+                                                        mode={
+                                                            cardMode() ===
+                                                            'tasks'
+                                                                ? 'tasks'
+                                                                : 'body'
+                                                        }
+                                                    />
+                                                </Show>
+                                            }
+                                        >
+                                            {/* A task card carries no cover and no open-on-click: its
                                             description is the whole card, and TaskRow's own wikilinks
                                             are what open a note from it. The TaskChip register
                                             (.taskCard), not the book-cover .card frame. */}
-                                        <CardFrame kind="task">
-                                            <TaskRow
-                                                row={row}
-                                                variant="card"
-                                                onToggle={toggle}
-                                                onSetStatus={setStatus}
-                                            />
-                                        </CardFrame>
-                                    </Show>
-                                )}
-                            </For>
-                        </div>
-                    </>
-                )}
-            </Index>
-        </div>
+                                            <CardFrame kind="task">
+                                                <TaskRow
+                                                    row={row}
+                                                    variant="card"
+                                                    onToggle={toggle}
+                                                    onSetStatus={setStatus}
+                                                />
+                                            </CardFrame>
+                                        </Show>
+                                    )}
+                                </For>
+                            </div>
+                        </>
+                    )}
+                </Index>
+            </div>
+        </Show>
     )
 }

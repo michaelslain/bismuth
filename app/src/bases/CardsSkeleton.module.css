@@ -3,7 +3,7 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: var(--sp-5);
-  padding: 18px;
+  padding: var(--sp-6);
 }
 .card {
   display: flex;

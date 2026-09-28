@@ -1,5 +1,5 @@
 /* ---------- cards view ---------- */
-.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: 18px; }
+.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6); }
 /* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
    ui.cardGridMinWidth setting), each column stretching to share the leftover space.
    Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
@@ -42,7 +42,7 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: var(--sp-5) var(--sp-5) var(--sp-5) 18px;
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) var(--sp-6);
   overflow: hidden;
   background: color-mix(in srgb, var(--teal) 18%, transparent);
 }
@@ -82,5 +82,5 @@
    story) without this masonry context and must not carry it unconditionally. */
 .bodyGridCard { break-inside: avoid; margin: 0 0 var(--sp-5); width: 100%; display: inline-block; }
 
-/* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
-.groupHeader { font-weight: 500; margin: var(--sp-4) 18px var(--sp-2); font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
+/* GroupHeader owns the dot/label/count look; this only sets the header's own gutter. */
+.groupHeader { margin: var(--sp-4) 0 var(--sp-2); }

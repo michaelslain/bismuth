@@ -2,7 +2,7 @@
 // default). Exercises `sampleViewResult` end to end: real rows, run through the real query
 // engine (core/src/bases/query.ts `runView`), rendered by the real CardsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
@@ -154,5 +154,116 @@ export const WithCoverImages: Story = {
                 config={sampleBaseConfig({ views })}
             />
         )
+    },
+}
+
+/** `cardContent: body` — masonry BodyCards over each note's live body. */
+export const BodyContent: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'cards' as const,
+                name: 'Cards',
+                cardContent: 'body' as const,
+            },
+        ]
+        return (
+            <CardsView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(canvasElement.querySelector('.cm-content')).toBeTruthy(),
+        )
+    },
+}
+
+/** `imageFit: contain` + a square `imageAspectRatio` — the frame's ratio and the img's fit come
+ *  from the view config, not the defaults (cover, 0.667). */
+export const ImageFitAndAspect: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'cards' as const,
+                name: 'Reading List',
+                image: 'cover',
+                imageFit: 'contain' as const,
+                imageAspectRatio: 1,
+                order: ['file.name', 'note.author', 'note.status'],
+            },
+        ]
+        const rows: Partial<Row>[] = [
+            bookRow('Piranesi', {
+                author: 'Susanna Clarke',
+                status: 'Todo',
+                cover: PLACEHOLDER_COVER,
+            }),
+        ]
+        return (
+            <CardsView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const img = canvasElement.querySelector('img')!
+        expect(img.style.objectFit).toBe('contain')
+        expect((img.parentElement as HTMLElement).style.aspectRatio).toContain(
+            '1',
+        )
+    },
+}
+
+/** Grouped by `status`: every header reads `LABEL // N` through GroupHeader. */
+export const Grouped: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'cards' as const,
+                name: 'Cards',
+                groupBy: { property: 'status' },
+            },
+        ]
+        return (
+            <CardsView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.textContent).toMatch(/\/\/ \d+/)
+    },
+}
+
+/** A zero-row view shows the `no rows` empty state, never a blank pane. */
+export const Empty: Story = {
+    render: () => (
+        <CardsView
+            result={{ ...sampleViewResult(), groups: [] }}
+            config={sampleBaseConfig()}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        expect(c.getByText('no rows')).toBeInTheDocument()
+        expect(
+            c.getByText('nothing in this view matches its filters'),
+        ).toBeInTheDocument()
+    },
+}
+
+/** Without a basePath a card is not a button: its cover title is a NoteLink that opens the note. */
+export const ReadOnlyCardOpensNote: Story = {
+    render: () => (
+        <CardsView result={sampleViewResult()} config={sampleBaseConfig()} />
+    ),
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.querySelector('[role="button"]')).toBeNull()
+        expect(canvasElement.querySelector('a')).toBeTruthy()
     },
 }

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import CardFrame from './CardFrame'
 
 const meta = {
@@ -41,5 +42,32 @@ export const Task: Story = {
 }
 
 export const TaskDraggable: Story = {
-    args: { kind: 'task', draggable: true, children: <div>Task chip (kanban)</div> },
+    args: {
+        kind: 'task',
+        draggable: true,
+        children: <div>Task chip (kanban)</div>,
+    },
+}
+
+/** `classList` toggles extra classes on the root without replacing the frame's own. */
+export const ClassList: Story = {
+    args: {
+        classList: { extra: true, off: false },
+        children: <div style={{ padding: '16px' }}>classList</div>,
+    },
+    play: async ({ canvasElement }) => {
+        const root = canvasElement.firstElementChild as HTMLElement
+        expect(root.classList.contains('extra')).toBe(true)
+        expect(root.classList.contains('off')).toBe(false)
+    },
+}
+
+/** A task frame that is also interactive and a drop target: both looks compose on the task box. */
+export const TaskInteractiveDropTarget: Story = {
+    args: {
+        kind: 'task',
+        interactive: true,
+        dropTarget: true,
+        children: <div>Task chip (interactive + drop target)</div>,
+    },
 }
