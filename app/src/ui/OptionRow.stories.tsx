@@ -132,12 +132,14 @@ export const Danger: Story = {
     },
 }
 
-/** The keyboard path. There was no focus ring at all before this: tabbing the delete dialog gave
- *  no indication of which irreversible scope was about to be committed.
+/** The keyboard path. No focus ring — every button in the app paints no focus indicator, mouse or
+ *  keyboard, by user decision (2026-09-27): OptionRow is a bare `<button>` and gets the same
+ *  treatment as every other button family member, even though a keyboard user tabbing the delete
+ *  dialog loses the visual cue for which irreversible scope is about to be committed.
  *
  *  `play` reaches the row with a real Tab rather than `.focus()`. That is not fussiness — a
- *  programmatic focus on a button does not satisfy `:focus-visible` in Chrome, so the ring would
- *  compute to `none` and the story would fail against correct CSS. */
+ *  programmatic focus on a button does not satisfy `:focus-visible` in Chrome, so this would prove
+ *  nothing about the keyboard path specifically. */
 export const Focused: Story = {
     render: () => (
         <div style={shell}>
@@ -158,9 +160,6 @@ export const Focused: Story = {
         expect(document.activeElement).toBe(row)
         expect(row.matches(':focus-visible')).toBe(true)
         const cs = getComputedStyle(row)
-        expect(cs.outlineStyle).not.toBe('none')
-        expect(parseFloat(cs.outlineWidth)).toBeGreaterThan(0)
-        // Drawn INSIDE the row, so OptionList's `overflow: hidden` cannot clip it away.
-        expect(parseFloat(cs.outlineOffset)).toBeLessThan(0)
+        expect(cs.outlineStyle).toBe('none')
     },
 }
