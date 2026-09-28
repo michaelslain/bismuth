@@ -1,0 +1,17 @@
+/* ChartConfigBar.tsx — the ViewBar `config` slot for a chart kind. One importer: ChartConfigBar.tsx. */
+
+.bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+
+.field {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.select {
+    min-width: 84px;
+}

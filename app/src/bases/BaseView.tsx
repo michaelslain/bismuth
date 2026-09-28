@@ -59,6 +59,7 @@ import { HeatmapView } from './HeatmapView'
 import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
+import ChartConfigBar from './ChartConfigBar'
 import { CalendarView } from './CalendarView'
 import { calendarSlots } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
@@ -207,6 +208,9 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         </div>
     )
 }
+
+/** The four view kinds ChartConfigBar's pickers apply to. */
+const CHART_VIEW_TYPES = new Set(['bar', 'line', 'stat', 'heatmap'])
 
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
@@ -665,6 +669,44 @@ export function BaseView(props: {
     const [flashcardsSlots, setFlashcardsSlots] = createSignal<
         ViewBarSlots | undefined
     >()
+
+    /** A chart kind's ViewBar contribution is just the `config` region — its x/y/aggregate/bin
+     *  pickers, writing straight to the base file. Only shown when there's a file to write
+     *  (`basePath` — Review Focus #5: an inline ```query block gets no pickers at all). Columns
+     *  offered are the result's resolved columns plus the view's own current x/y, so a picker
+     *  never drops the value it currently shows even when that property isn't in the row set. */
+    const chartConfigSlot = createMemo<ViewBarSlots | undefined>(() => {
+        if (!CHART_VIEW_TYPES.has(activeType())) return undefined
+        const basePath = data()?.basePath
+        const view = activeViewConfig()
+        const res = result()
+        if (!basePath || !view || !res) return undefined
+        const columns = new Set(res.columns)
+        if (view.x) columns.add(view.x)
+        if (view.y) columns.add(view.y)
+        const onSet = (
+            key: 'x' | 'y' | 'aggregate' | 'bin',
+            value: string | undefined,
+        ) => {
+            const path = data()?.basePath
+            if (!path) return
+            void (
+                value === undefined
+                    ? api.deleteViewProperty(path, activeViewIdx(), key)
+                    : api.setViewProperty(path, activeViewIdx(), key, value)
+            ).then(refetchAll)
+        }
+        return {
+            config: (
+                <ChartConfigBar
+                    view={view}
+                    columns={[...columns]}
+                    onSet={onSet}
+                />
+            ),
+        }
+    })
+
     const viewSlots = createMemo<ViewBarSlots | undefined>(() => {
         if (activeType() === 'calendar') {
             // The tasks register's bar contributes no `actions` control any more — task
@@ -672,7 +714,8 @@ export function BaseView(props: {
             // so `calendarSlots()` only needs to know which register is showing.
             return calendarSlots({ isTasks: activeMode() === 'tasks' })
         }
-        return activeType() === 'flashcards' ? flashcardsSlots() : undefined
+        if (activeType() === 'flashcards') return flashcardsSlots()
+        return chartConfigSlot()
     })
 
     // ── The task write seam ───────────────────────────────────────────────────────────────
@@ -1222,6 +1265,7 @@ export function BaseView(props: {
                                                     <HeatmapView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1233,6 +1277,7 @@ export function BaseView(props: {
                                                     <BarView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1244,6 +1289,7 @@ export function BaseView(props: {
                                                     <LineView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                                 <Match
@@ -1255,6 +1301,7 @@ export function BaseView(props: {
                                                     <StatView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        onOpen={props.onOpen}
                                                     />
                                                 </Match>
                                             </Switch>

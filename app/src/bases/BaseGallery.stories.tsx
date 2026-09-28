@@ -103,6 +103,10 @@ type Tile = {
     from?: string
     /** Anything after the frontmatter (the calendar's event table). */
     table?: string[]
+    /** Base-level `formulas:` lines, indented two spaces — the line tile's y plots one, so the
+     *  KaTeX definition gets its `formula.*` appendix and the chart shows real computed numbers,
+     *  not just a raw column. */
+    formulas?: string[]
 }
 
 const TILES: Tile[] = [
@@ -125,8 +129,19 @@ const TILES: Tile[] = [
     },
     { type: 'flashcards', from: '[[Vocab]]' },
     { type: 'bar', view: ['x: status', 'aggregate: count'] },
-    { type: 'line' },
-    { type: 'stat' },
+    {
+        type: 'line',
+        formulas: ['weighted: priority * 2'],
+        view: ['x: due', 'y: formula.weighted', 'aggregate: sum', 'bin: week'],
+    },
+    {
+        type: 'stat',
+        view: [
+            'stats:',
+            '  - { label: total priority, value: sum(priority) }',
+            '  - { label: average priority, value: avg(priority) }',
+        ],
+    },
     { type: 'heatmap', view: ['x: due'] },
 ]
 
@@ -137,6 +152,7 @@ function bodyOf(t: Tile): string {
         '---',
         'type: base',
         ...(t.from ? ['source:', '  kind: notes', `  from: "${t.from}"`] : []),
+        ...(t.formulas ? ['formulas:', ...t.formulas.map(l => `  ${l}`)] : []),
         'views:',
         `  - type: ${t.type}`,
         `    name: ${t.type[0].toUpperCase()}${t.type.slice(1)}`,
