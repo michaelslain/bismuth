@@ -1,0 +1,2 @@
+/* weekday picker */
+.dows { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-4); }

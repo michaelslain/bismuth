@@ -13,6 +13,7 @@ import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CategoryPanel } from './CategoryPanel'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { categories, showCategoryPanel } from '../state'
+import { ToastHost } from '../../Toast'
 
 // <Modal> (which <CategoryPanel> renders through) mounts via a Solid <Portal> straight onto
 // document.body — outside canvasElement/#storybook-root entirely (see Modal.tsx, and the same
@@ -28,27 +29,33 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-function seed() {
-    categories.value = [
-        { name: 'Work', color: 'blue' },
-        { name: 'Personal', color: 'green' },
-    ]
+/** A store that really holds the seeded categories (addCategory pushes synchronously), so the
+ *  panel's writes and the `categories` signal agree. */
+function seededStore(names: [string, string][] = [['Work', 'blue'], ['Personal', 'green']]) {
+    const store = new EventStore(new MemoryBackend())
+    for (const [name, color] of names) void store.addCategory({ name, color })
+    categories.value = store.getCategories()
     showCategoryPanel.value = true
+    return store
+}
+
+function seed() {
+    return seededStore()
 }
 
 /** Resting state: the panel open with two categories. */
 export const Default: Story = {
     render: () => {
-        seed()
-        return <CategoryPanel store={new EventStore(new MemoryBackend())} />
+        const store = seed()
+        return <CategoryPanel {...{ store }} />
     },
 }
 
 /** Regression cover for the outside-click guard described above. */
 export const PopoverIgnoresInsideClicks: Story = {
     render: () => {
-        seed()
-        return <CategoryPanel store={new EventStore(new MemoryBackend())} />
+        const store = seed()
+        return <CategoryPanel {...{ store }} />
     },
     play: async () => {
         const canvas = within(document.body)
@@ -90,5 +97,76 @@ export const PopoverIgnoresInsideClicks: Story = {
                 document.querySelector('[data-testid="category-palette"]'),
             ).toBeNull(),
         )
+    },
+}
+
+const rows = () => document.querySelectorAll('[aria-label^="Delete "]')
+
+/** Regression: Enter in the new-category input added the category TWICE (the input's own handler
+ *  plus a window keydown listener both ran). Exactly one new row must appear. */
+export const EnterAddsExactlyOne: Story = {
+    render: () => {
+        const store = seed()
+        return <CategoryPanel {...{ store }} />
+    },
+    play: async () => {
+        const before = rows().length
+        const input = within(document.body).getByPlaceholderText('category name')
+        await userEvent.type(input, 'Reading')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(rows().length).toBe(before + 1))
+        await new Promise(r => setTimeout(r, 150))
+        expect(rows().length).toBe(before + 1)
+        expect(categories.value.filter(c => c.name === 'Reading')).toHaveLength(1)
+    },
+}
+
+/** Double-click a name to rename it inline; Enter commits. */
+export const Rename: Story = {
+    render: () => {
+        const store = seed()
+        return <CategoryPanel {...{ store }} />
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.dblClick(body.getByText('Work'))
+        await userEvent.keyboard('{Control>}a{/Control}Deep work{Enter}')
+        await waitFor(() =>
+            expect(categories.value.map(c => c.name)).toContain('Deep work'),
+        )
+        expect(body.getByText('Deep work')).toBeTruthy()
+    },
+}
+
+/** Delete removes at once and offers undo, which brings the category back. */
+export const DeleteWithUndo: Story = {
+    render: () => {
+        const store = seed()
+        return (
+            <>
+                <CategoryPanel {...{ store }} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.click(body.getByLabelText('Delete Work'))
+        await waitFor(() =>
+            expect(categories.value.map(c => c.name)).not.toContain('Work'),
+        )
+        expect(body.getByText('deleted Work')).toBeTruthy()
+        await userEvent.click(await body.findByRole('button', { name: 'undo' }))
+        await waitFor(() =>
+            expect(categories.value.map(c => c.name)).toContain('Work'),
+        )
+    },
+}
+
+/** No categories yet — only the add form shows. */
+export const Empty: Story = {
+    render: () => {
+        const store = seededStore([])
+        return <CategoryPanel {...{ store }} />
     },
 }
