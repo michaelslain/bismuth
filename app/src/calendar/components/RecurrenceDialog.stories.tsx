@@ -98,11 +98,16 @@ export const Interactive: Story = {
     },
     play: async () => {
         const body = within(document.body)
+        // The dialog is found by its role + accessible name, which FormModal really renders; a
+        // class-name hook here matched nothing, so the "gone" check below could never fail.
+        const dialog = () =>
+            document.querySelector(
+                '[role="dialog"][aria-label="delete recurring event"]',
+            )
+        expect(dialog()).not.toBeNull()
         const thisEvent = body.getByText('this event')
         await userEvent.click(thisEvent)
-        await waitFor(() =>
-            expect(document.querySelector('.recurrence-dialog')).toBeNull(),
-        )
+        await waitFor(() => expect(dialog()).toBeNull())
         expect(recurrenceAction.value).toBeNull()
     },
 }

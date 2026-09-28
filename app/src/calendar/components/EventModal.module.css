@@ -7,15 +7,13 @@
    SettingsField label-column rows (ui/SettingsField.tsx/SettingsGrid.tsx own that layout + the
    req/opt badge + the hint placement) instead of the old hand-rolled `.evm-titlefield`/
    `.evm-lab`/`.evm-field`/`.evm-grid`/`.evm-daterow` family. What remains here is only the
-   layout this component still owns: the inline date+all-day / time rows, the markdown
-   description box, and the wrapping category/weekday chip rows. */
+   layout this component still owns: the inline date+all-day / time rows and the markdown
+   description box (the category chips live in CategoryPicker, the weekday chips in RecurrenceField). */
 .panel { min-width: 340px; gap: var(--sp-5); }
 
 /* a control-column row holding more than one element side by side (date + all-day toggle,
    start → end time). */
 .row { display: flex; align-items: center; gap: var(--sp-5); }
-
-.allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-ui); color: var(--fg); cursor: pointer; white-space: nowrap; }
 
 .dash { color: var(--faint); font-size: var(--fs-body); }
 
@@ -25,9 +23,3 @@
 .mdedit:hover { border-bottom: var(--rule); }
 .mdedit:focus-within { border-bottom: var(--rule); }
 .mdedit :global(.cm-content) { padding: var(--sp-2) 0; min-height: 76px; box-sizing: border-box; }
-
-/* category chips (selectable) */
-.cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
-
-/* weekday picker */
-.dows { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-4); }

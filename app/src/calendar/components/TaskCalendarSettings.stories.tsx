@@ -169,6 +169,7 @@ export const CategoriesEmpty: Story = {
 export const Interactive: Story = {
     render: () => {
         const [open, setOpen] = createSignal(false)
+        const [fields, setFields] = createSignal<Record<string, string>>({})
         const [colors, setColors] = createSignal(
             taskCategoryColors(['Work', 'Personal'], [
                 { name: 'Work', color: 'blue' },
@@ -191,6 +192,7 @@ export const Interactive: Story = {
                     columns={COLUMNS}
                     notes={NOTES}
                     categoryField="category"
+                    defaultCategory={fields().defaultCategory}
                     names={['Work', 'Personal']}
                     colors={colors()}
                     onPickColor={(name, token) =>
@@ -198,7 +200,9 @@ export const Interactive: Story = {
                             new Map(m).set(name, `var(--${token})`),
                         )
                     }
-                    onSetField={() => {}}
+                    onSetField={(key, value) =>
+                        setFields(f => ({ ...f, [key]: value }))
+                    }
                     onClose={() => setOpen(false)}
                 />
             </Show>
@@ -234,6 +238,17 @@ export const Interactive: Story = {
                 document.querySelector('[data-testid="category-palette"]'),
             ).toBeNull(),
         )
+
+        // The picked swatch is written back into state: Personal's chip now reads violet.
+        expect(
+            (document.querySelectorAll('[data-testid="category-chip"]')[1] as HTMLElement)
+                .innerHTML,
+        ).toContain('--violet')
+
+        // The default-category field writes each keystroke through onSetField and holds it.
+        const field = canvas.getByPlaceholderText('not set') as HTMLInputElement
+        await userEvent.type(field, 'Wor')
+        expect(field.value).toBe('Wor')
 
         const closeBtn = canvas.getByLabelText('Close')
         await userEvent.click(closeBtn)

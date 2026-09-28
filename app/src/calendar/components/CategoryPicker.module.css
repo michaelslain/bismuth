@@ -1,0 +1,2 @@
+/* category chips (selectable), wrapping */
+.cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }

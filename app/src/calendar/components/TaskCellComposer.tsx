@@ -10,6 +10,7 @@ import { TextInput } from '../../ui/TextInput'
 import Select from '../../ui/Select'
 import Text from '../../ui/Text'
 import { isDismissKey, isConfirmKey } from '../../ui/widgetKeys'
+import { gestureStops } from '../../ui/stopGestures'
 import type { TaskComposeTarget } from '../taskCompose'
 import styles from './TaskCellComposer.module.css'
 
@@ -69,15 +70,10 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             class={[styles.composer, props.class ?? '']
                 .filter(Boolean)
                 .join(' ')}
-            // Stop all four so the day cell this sits inside (which wires its own click to open
-            // the "create event" modal, and mousedown to start a drag — see TaskChip.tsx's own
-            // comment on the same trap) cannot re-open itself or start a drag out from under the
-            // composer. `stopPropagation` on click does NOT also stop pointerdown/dblclick, so
-            // each is stopped in its own handler rather than assumed to ride along.
-            onClick={e => e.stopPropagation()}
-            onMouseDown={e => e.stopPropagation()}
-            onPointerDown={e => e.stopPropagation()}
-            onDblClick={e => e.stopPropagation()}
+            // Stops click, mousedown, pointerdown and dblclick so the day cell this sits inside
+            // (which opens the "create event" modal on click and starts a drag on mousedown) cannot
+            // re-open itself or start a drag out from under the composer.
+            {...gestureStops}
         >
             <div class={styles.row}>
                 <Text

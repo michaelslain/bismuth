@@ -10,7 +10,11 @@
 // `onSetField` / `onPickColor`, and the component never touches `api` — that's what makes every
 // one of its states a story. It only holds local UI state for which colour popover is open.
 import { type Component, createSignal, For, Show } from 'solid-js'
-import { baseOf, linkTargetFor } from '../../../../core/src/linkTarget'
+import {
+    dateColumnOptions,
+    categoryColumnOptions,
+    destinationNoteOptions,
+} from '../taskSettingsOptions'
 import FormModal from '../../ui/FormModal'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalBody from '../../ui/ModalBody'
@@ -18,8 +22,8 @@ import ModalFooter from '../../ui/ModalFooter'
 import SettingsSection from '../../ui/SettingsSection'
 import SettingsGrid from '../../ui/SettingsGrid'
 import SettingsField from '../../ui/SettingsField'
-import Select, { type SelectOption } from '../../ui/Select'
-import TextInput from '../../ui/TextInput'
+import Select from '../../ui/Select'
+import SuggestInput from '../../ui/SuggestInput'
 import SettingsHint from '../../ui/SettingsHint'
 import { TextButton } from '../../ui/TextButton'
 import Label from '../../ui/Label'
@@ -51,38 +55,6 @@ export type TaskCalendarSettingsProps = {
     onClose: () => void
 }
 
-/** `props.columns` as Select options, with a leading "not set" entry whose `detail` explains
- *  where a task lands when no column is bound. */
-function dateOptions(columns: string[]): SelectOption[] {
-    return [
-        {
-            value: '',
-            label: 'not set',
-            detail: 'falls back to scheduled, then due',
-        },
-        ...columns.map(c => ({ value: c, label: c })),
-    ]
-}
-
-function columnOptions(columns: string[]): SelectOption[] {
-    return [{ value: '', label: 'not set' }, ...columns.map(c => ({ value: c, label: c }))]
-}
-
-/** `props.notes` (vault-relative paths) as Select options: the basename as the label, the full
- *  path as the detail, and a value that is already the wikilink text to store — the bare
- *  basename when it's unambiguous, else `linkTargetFor`'s path-qualified form. */
-function noteOptions(notes: string[]): SelectOption[] {
-    const ids = notes.map(n => n.replace(/\.md$/, ''))
-    return [
-        { value: '', label: 'not set' },
-        ...ids.map((id, i) => ({
-            value: `[[${linkTargetFor(id, ids)}]]`,
-            label: baseOf(id),
-            detail: notes[i],
-        })),
-    ]
-}
-
 const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
     const [openPicker, setOpenPicker] = createSignal<string | null>(null)
 
@@ -107,7 +79,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                     >
                         <Select
                             value={props.dateField ?? ''}
-                            options={dateOptions(props.columns)}
+                            options={dateColumnOptions(props.columns)}
                             placeholder="not set"
                             onChange={v => props.onSetField('dateField', v)}
                         />
@@ -123,20 +95,16 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                                 label="default category"
                                 span
                             >
-                                <TextInput
+                                <SuggestInput
                                     value={props.defaultCategory ?? ''}
                                     placeholder="not set"
-                                    list="task-calendar-settings-category-names"
-                                    class={styles['category-input']}
+                                    options={props.names.map(value => ({
+                                        value,
+                                    }))}
                                     onInput={v =>
                                         props.onSetField('defaultCategory', v)
                                     }
                                 />
-                                <datalist id="task-calendar-settings-category-names">
-                                    <For each={props.names}>
-                                        {name => <option value={name} />}
-                                    </For>
-                                </datalist>
                             </SettingsField>
                         }
                     >
@@ -151,7 +119,7 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                         >
                             <Select
                                 value={props.taskFile ?? ''}
-                                options={noteOptions(props.notes)}
+                                options={destinationNoteOptions(props.notes)}
                                 placeholder="not set"
                                 onChange={v =>
                                     props.onSetField('taskFile', v)
@@ -181,8 +149,8 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                         >
                             <Select
                                 value={props.categoryField ?? ''}
-                                options={columnOptions(props.columns)}
-                                placeholder="Not set"
+                                options={categoryColumnOptions(props.columns)}
+                                placeholder="not set"
                                 onChange={v =>
                                     props.onSetField('categoryField', v)
                                 }

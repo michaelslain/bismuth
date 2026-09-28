@@ -1,0 +1,64 @@
+import { test, expect } from 'bun:test'
+import { EventStore, MemoryBackend } from './EventStore'
+import {
+    addCategory,
+    renameCategory,
+    deleteCategoryWithUndo,
+} from './categoryActions'
+import { toasts, dismissToast } from './../toastStore'
+
+async function freshStore() {
+    const s = new EventStore(new MemoryBackend())
+    await s.load()
+    return s
+}
+const names = (s: EventStore) => s.getCategories().map(c => c.name)
+const cleanup = () => toasts().forEach(t => dismissToast(t.id))
+
+test('two concurrent adds of the same name add one', async () => {
+    const s = await freshStore()
+    const [a, b] = await Promise.all([
+        addCategory(s, { name: 'Read', color: 'blue' }),
+        addCategory(s, { name: 'Read', color: 'blue' }),
+    ])
+    expect(names(s).filter(n => n === 'Read')).toHaveLength(1)
+    expect([a, b].filter(Boolean)).toHaveLength(1)
+})
+
+test('empty and existing names are refused', async () => {
+    const s = await freshStore()
+    await addCategory(s, { name: 'Read', color: 'blue' })
+    expect(await addCategory(s, { name: '  ', color: 'blue' })).toBe(false)
+    expect(await addCategory(s, { name: 'Read', color: 'rose' })).toBe(false)
+})
+
+test('rename refuses a taken name and retargets events', async () => {
+    const s = await freshStore()
+    await addCategory(s, { name: 'A', color: 'blue' })
+    await addCategory(s, { name: 'B', color: 'rose' })
+    await s.addEvent({ title: 'x', date: '2026-05-10', category: 'A' })
+    expect(await renameCategory(s, 'A', 'B')).toBe(false)
+    expect(await renameCategory(s, 'A', 'C')).toBe(true)
+    expect((s as any).data.events[0].category).toBe('C')
+})
+
+test('delete then undo restores the category and every event category', async () => {
+    const s = await freshStore()
+    await addCategory(s, { name: 'A', color: 'blue' })
+    const ev = await s.addEvent({
+        title: 'x',
+        date: '2026-05-10',
+        category: 'A',
+        categories: ['A', 'Z'],
+    })
+    await deleteCategoryWithUndo(s, 'A')
+    expect(names(s)).not.toContain('A')
+    expect((s as any).data.events[0].category).toBeUndefined()
+    toasts().find(t => t.action?.label === 'undo')!.action!.onClick()
+    await new Promise(r => setTimeout(r, 20))
+    expect(names(s)).toContain('A')
+    const back = (s as any).data.events.find((e: any) => e.id === ev.id)
+    expect(back.category).toBe('A')
+    expect(back.categories).toEqual(['A', 'Z'])
+    cleanup()
+})
