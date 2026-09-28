@@ -1,0 +1,40 @@
+/* BulkCardsEditor.module.css — the Bulk add mode of EditCardsModal (bases/BulkCardsEditor.tsx),
+   split out of EditCardsModal.module.css. OWNS the separator toolbar, the paste textarea and the
+   parsed preview (.cards-pv* + the warning styles).
+
+   Layout sizes that are not spacing are custom properties: the preview index column and the
+   textarea's floor. */
+
+.cards-bulkwrap {
+  --pv-index-w: 18px;
+  --bulk-input-min-h: 240px;
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: var(--sp-2) 0 0;
+}
+.cards-bulk-toolbar { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; padding: var(--sp-3) 0 var(--sp-5); }
+.sp { flex: 1; }
+.hint { white-space: nowrap; }
+.cards-bulk-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: var(--sp-6); min-height: 0; padding-bottom: var(--sp-6); }
+.cards-bulk-input { display: flex; flex-direction: column; min-height: 0; }
+.cards-bulk-lab { margin-bottom: var(--sp-4); }
+/* The standard TextInput supplies the chrome; override font (mono) + sizing. */
+.cards-bulk-input textarea.cards-bulk-textarea {
+  flex: 1; min-height: var(--bulk-input-min-h); resize: none;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.7;
+}
+.cards-bulk-preview { display: flex; flex-direction: column; min-height: 0; }
+.cards-pvhead { display: flex; align-items: baseline; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+.cards-cnt { color: var(--accent); }
+.cards-pvlist { flex: 1; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--r-0); background: var(--bg); padding: var(--sp-3); }
+.cards-pvcard { display: grid; grid-template-columns: var(--pv-index-w) 1fr; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); border-radius: var(--r-0); }
+.cards-pvcard:nth-child(odd) { background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.cards-pi { padding-top: var(--sp-2); text-align: right; }
+.cards-pf { font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); line-height: 1.45; }
+.cards-pb { font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--text-muted); line-height: 1.45; margin-top: var(--sp-2); }
+.cards-pf p, .cards-pb p { margin: 0; }
+/* Flex so the arrow and the back share a line (the rendered <p> is a block). */
+.cards-pb { display: flex; gap: var(--sp-3); }
+.cards-pb::before { content: "→ "; color: var(--blue); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.cards-pvcard.bad .cards-pf { color: var(--accent-purple); }
+.cards-warn-em { color: var(--accent-purple); }
+.cards-warn { color: var(--accent-purple); margin-top: var(--sp-2); }
+.cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: var(--fs-ui); text-align: center; padding: var(--sp-7); }

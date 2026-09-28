@@ -1,0 +1,14 @@
+/* FlashcardsProgress.module.css — the restored session-progress AsciiMeter's slot
+   (bases/FlashcardsProgress.tsx), split out of FlashcardsView.module.css (restored 2026-09-02 at the
+   user's request: "i liked that flashcards ascii meter").
+
+   NOT `max-width: <n>vw` — `vw` is the WINDOW while this view lives in a PANE, so in a split pane or
+   beside the sidebar it sized against a viewport far wider than its container. The meter sizes
+   itself in CELLS from the measured width of this box (fitMeterWidth in ui/ascii/asciiMeterMath.ts),
+   so this rule only has to define the box. It takes a REAL flex line in the deck host (a column):
+   the stage is the flexible sibling that shrinks first. */
+.meter {
+  flex: 0 0 auto; width: 100%; min-width: 0;
+  font-size: var(--fs-ui); line-height: var(--lh-grid);
+  padding: var(--sp-4) var(--sp-5) 0;
+}

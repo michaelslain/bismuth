@@ -15,6 +15,7 @@ import { CardEditor } from './CardEditor'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { api } from '../api'
 import { settings, setSettings } from '../settings'
+import { spyApi } from './_apiSpy'
 
 const meta = {
     title: 'Bases/CardEditor',
@@ -219,5 +220,110 @@ export const RebindMovesToggleBold: Story = {
         } finally {
             setSettings('keybindings', KB_TOGGLE_BOLD, previous)
         }
+    },
+}
+
+const editor = (root: HTMLElement) =>
+    waitFor(() => {
+        const dom = root.querySelector('.cm-editor')
+        const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!v) throw new Error('editor not mounted yet')
+        return v
+    })
+
+/** No `title` prop: nothing to de-duplicate, so the note's own first heading is part of the
+ *  editable body instead of being stripped as a repeat of the card title. */
+export const Untitled: Story = {
+    render: () => (
+        <Frame>
+            <CardEditor path={SAMPLE_ROWS[1].file.path} mode="body" />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const view = await editor(canvasElement)
+        expect(view.state.doc.toString()).toContain(`# ${SAMPLE_ROWS[1].file.name}`)
+    },
+}
+
+/** A body edit persists: the debounced autosave writes `prefix + body + suffix` through `api.write`
+ *  — the note on disk, not just the CodeMirror buffer, carries the edit, frontmatter intact. */
+export const BodyEditPersists: Story = {
+    render: () => (
+        <Frame>
+            <CardEditor
+                path={SAMPLE_ROWS[2].file.path}
+                title={SAMPLE_ROWS[2].file.name}
+                mode="body"
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const path = SAMPLE_ROWS[2].file.path
+        const view = await editor(canvasElement)
+        view.dispatch({ changes: { from: 0, insert: 'EDITED ' } })
+        await waitFor(
+            async () => expect(await api.read(path)).toContain('EDITED '),
+            { timeout: 3000 },
+        )
+    },
+}
+
+let failSpy: ReturnType<typeof spyApi>
+
+/** A read that fails leaves the card on "Loading…" and mounts NO editor. That is deliberate: an
+ *  empty editor whose autosave fired would overwrite the note's frontmatter, so the failure state is
+ *  a card that stays inert, never an empty one that can write. */
+export const ReadFails: Story = {
+    beforeEach: () => {
+        failSpy = spyApi(['read'], {
+            read: () => {
+                throw new Error('vault unreachable')
+            },
+        })
+        return failSpy.restore
+    },
+    render: () => (
+        <Frame>
+            <CardEditor path="projects/Unreadable.md" title="Unreadable" mode="body" />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(failSpy.named('read').length).toBeGreaterThan(0))
+        // Let the rejected read settle through the component's catch.
+        await new Promise(r => requestAnimationFrame(() => r(null)))
+        expect(within(canvasElement).getByText(/loading/i)).toBeInTheDocument()
+        expect(canvasElement.querySelector('.cm-editor')).toBeNull()
+    },
+}
+
+/** A write that fails keeps the edit in the buffer — nothing is thrown away or reverted — and the
+ *  note on disk is untouched, so the next edit (or the flush on close) retries. */
+export const WriteFails: Story = {
+    beforeEach: () => {
+        failSpy = spyApi(['write'], {
+            write: () => {
+                throw new Error('disk full')
+            },
+        })
+        return failSpy.restore
+    },
+    render: () => (
+        <Frame>
+            <CardEditor
+                path={SAMPLE_ROWS[4].file.path}
+                title={SAMPLE_ROWS[4].file.name}
+                mode="body"
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const path = SAMPLE_ROWS[4].file.path
+        const view = await editor(canvasElement)
+        view.dispatch({ changes: { from: 0, insert: 'UNSAVED ' } })
+        await waitFor(() => expect(failSpy.named('write').length).toBeGreaterThan(0), {
+            timeout: 3000,
+        })
+        expect(view.state.doc.toString()).toContain('UNSAVED ')
+        expect(await api.read(path)).not.toContain('UNSAVED ')
     },
 }
