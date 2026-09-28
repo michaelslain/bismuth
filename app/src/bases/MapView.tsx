@@ -20,7 +20,6 @@ import { pushToast } from '../toastStore'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import IconButton from '../ui/IconButton'
-import TextButton from '../ui/TextButton'
 import InlineCode from '../ui/InlineCode'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { createRow } from './AddRowAction'
@@ -47,7 +46,7 @@ interface Marker {
 const markerKey = (row: Row) => `${row.file.path}::${row.index ?? ''}`
 
 /** What the next click on the map does: create a NEW row there (`Add pin`), or write the
- *  coordinates of an EXISTING row (`unplaced (N)` or a pin's `move pin`). */
+ *  coordinates of an EXISTING row (Add pin's `place …` or a pin's `move pin`). */
 type Armed = { kind: 'new' } | { kind: 'row'; row: Row }
 
 // Offline vector basemap. Continents are coarse lng/lat polygon outlines —
@@ -316,7 +315,7 @@ export function MapView(props: {
     const [size, setSize] = createSignal({ w: 800, h: 600 })
 
     // ── Placement / move / remove state ─────────────────────────────────────────────────
-    // The row currently "armed" for placement — picked from the unplaced menu, or from a
+    // The row currently "armed" for placement — picked from Add pin's menu, or from a
     // pin's own "move…" menu item. The next click on the map (not on a pin) writes that
     // row's coordinates and disarms. Escape disarms too.
     const [armed, setArmed] = createSignal<Armed | null>(null)
@@ -346,7 +345,10 @@ export function MapView(props: {
         y: number
         row: Row
     } | null>(null)
-    const [unplacedMenu, setUnplacedMenu] = createSignal<{
+    // `[📌] Add pin`'s own menu — only when ≥1 row lacks a location: `new place` first, then
+    // `place <title>` per unplaced row. With no unplaced rows, Add pin arms straight away and
+    // this menu never opens.
+    const [addPinMenu, setAddPinMenu] = createSignal<{
         x: number
         y: number
     } | null>(null)
@@ -594,12 +596,20 @@ export function MapView(props: {
         setHoverPos(null)
     }
 
-    // Arm a row for placement — from the unplaced menu, or a pin's own "move pin" item.
+    // Arm a row for placement — from `Add pin`'s menu, or a pin's own "move pin" item.
     function arm(row: Row) {
         userMoved = true
         setArmed({ kind: 'row', row })
         setPinMenu(null)
-        setUnplacedMenu(null)
+        setAddPinMenu(null)
+    }
+
+    // Arm creating a NEW row — `Add pin` itself when there is nothing unplaced, or the `new
+    // place` item in its menu when there is.
+    function armNew() {
+        userMoved = true
+        setArmed({ kind: 'new' })
+        setAddPinMenu(null)
     }
 
     // Pan via mouse drag. Track in world-pixel deltas, then unproject the new center.
@@ -694,22 +704,25 @@ export function MapView(props: {
         setZoom(settings.graph.mapDefaultZoom)
     }
 
-    // Add pin: arms creation and nothing else — it never touches center/zoom, so the next click
-    // lands where the user is looking and creates a NEW row there (`createPin`). Placing an
-    // EXISTING row with no coordinates is `unplaced (N)`'s job. Pressed again while armed, it
+    // Add pin never touches center/zoom, so the next click lands where the user is looking.
+    // With rows lacking a location it opens a small menu (`new place`, then `place <title>` per
+    // unplaced row); with none it arms a NEW row straight away. Pressed again while armed, it
     // cancels (like Escape).
-    function onAddPin(): void {
+    function onAddPin(e: MouseEvent): void {
         if (armed()) {
             disarm()
             return
         }
+        if (unplacedRows().length > 0 && writable()) {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            setAddPinMenu({ x: r.left, y: r.bottom })
+            return
+        }
         if (createBlocked()) return
-        userMoved = true
-        setUnplacedMenu(null)
-        setArmed({ kind: 'new' })
+        armNew()
     }
 
-    // The floating chrome (controls, unplaced readout) sits INSIDE the map element, so its
+    // The floating chrome (zoom controls, Add pin) sits INSIDE the map element, so its
     // mousedown would start a pan and — worse — its click would bubble into `onMapClick` and,
     // while armed, drop the pin under the button that was pressed. The chrome claims both.
     function claimPointer(e: MouseEvent): void {
@@ -818,11 +831,20 @@ export function MapView(props: {
         return items
     }
 
-    const unplacedMenuItems = (): MenuItem[] =>
-        unplacedRows().map(row => ({
-            label: plainLabel(titleCol(), row) || row.file.path || '(untitled)',
+    const addPinMenuItems = (): MenuItem[] => [
+        {
+            label: 'new place',
+            icon: 'Plus',
+            disabled: !!createBlocked(),
+            onSelect: armNew,
+        },
+        ...unplacedRows().map((row, i) => ({
+            label: `place ${plainLabel(titleCol(), row) || row.file.path || '(untitled)'}`,
+            icon: 'Pin',
+            separatorBefore: i === 0,
             onSelect: () => arm(row),
-        }))
+        })),
+    ]
 
     return (
         <div class={styles.mapWrap}>
@@ -986,11 +1008,10 @@ export function MapView(props: {
                     />
                 </div>
 
-                {/* Placement, top-left: `Add pin` (the next click creates a NEW row there) +
-                    the unplaced rows (existing rows with no valid lat/lng yet — picking one arms
-                    placing IT). Add pin is only ever disabled when the map cannot create a row,
-                    and then its title says why. Kept at the LEFT so the picker menu, which opens
-                    rightward from its anchor, never runs off the viewport edge. */}
+                {/* Placement, top-left: `Add pin`. The next map click creates a NEW row there, or
+                    — picked from its menu when some rows have no location yet — places one of
+                    those. Disabled only when there is nothing it could do, and then its title says
+                    why. Kept at the LEFT so its menu, which opens rightward, stays on screen. */}
                 <div
                     class={styles.mapUnplaced}
                     onMouseDown={claimPointer}
@@ -1001,34 +1022,21 @@ export function MapView(props: {
                         label={armed() ? 'Cancel placing pin' : 'Add pin'}
                         variant={armed() ? 'selected' : 'normal'}
                         aria-pressed={!!armed()}
-                        disabled={!armed() && !!createBlocked()}
+                        disabled={
+                            !armed() &&
+                            !!createBlocked() &&
+                            !(writable() && unplacedRows().length > 0)
+                        }
                         title={
                             armed()
                                 ? 'Cancel placing pin (esc)'
-                                : (createBlocked() ??
-                                  'Add pin — then click the map where it goes')
+                                : writable() && unplacedRows().length > 0
+                                  ? 'Add pin'
+                                  : (createBlocked() ?? 'Add pin')
                         }
                         data-testid="map-add-pin"
                         onClick={onAddPin}
                     />
-                    <Show when={writable() && unplacedRows().length > 0}>
-                        <TextButton
-                            data-testid="map-unplaced-button"
-                            title={
-                                unplacedRows().length === 1
-                                    ? '1 row has no location — pick one to place it'
-                                    : `${unplacedRows().length} rows have no location — pick one to place it`
-                            }
-                            onClick={e => {
-                                const r = (
-                                    e.currentTarget as HTMLElement
-                                ).getBoundingClientRect()
-                                setUnplacedMenu({ x: r.left, y: r.bottom })
-                            }}
-                        >
-                            {unplacedRows().length} unplaced
-                        </TextButton>
-                    </Show>
                 </div>
 
                 {/* Armed-placement hint. Follows the cursor once it moves over the map;
@@ -1100,14 +1108,14 @@ export function MapView(props: {
                 )}
             </Show>
 
-            <Show when={unplacedMenu()}>
+            <Show when={addPinMenu()}>
                 {m => (
                     <Portal>
                         <ContextMenu
                             x={m().x}
                             y={m().y}
-                            items={unplacedMenuItems()}
-                            onClose={() => setUnplacedMenu(null)}
+                            items={addPinMenuItems()}
+                            onClose={() => setAddPinMenu(null)}
                         />
                     </Portal>
                 )}
