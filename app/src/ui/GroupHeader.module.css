@@ -1,0 +1,12 @@
+/* app/src/ui/GroupHeader.module.css — GroupHeader.tsx is the sole importer. The look is List's
+   former `.lghead` (bases/ListView.module.css), the base per the bases-ds-fix acceptance: micro
+   size, uppercase, eyebrow tracking, the group colour on dot + label, muted count. */
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+}
+.group-label { flex: 0 1 auto; }

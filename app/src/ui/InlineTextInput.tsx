@@ -7,6 +7,7 @@
 // importing that component's stylesheet.
 import styles from './InlineTextInput.module.css'
 import { isConfirmKey, isDismissKey } from './widgetKeys'
+import { gestureStops } from './stopGestures'
 
 export type InlineTextInputProps = {
     /** The starting text. Read once — the input owns the value while it is being edited. */
@@ -51,10 +52,9 @@ function InlineTextInput(props: InlineTextInputProps) {
             class={[styles['inline-input'], props.class]
                 .filter(Boolean)
                 .join(' ')}
-            onClick={e => e.stopPropagation()}
-            // A row that starts a drag on POINTERDOWN is not stopped by stopPropagation on onClick
-            // alone. Stop it here so a press placing the caret is never read as a row gesture.
-            onPointerDown={e => e.stopPropagation()}
+            // A row that starts a drag on pointerdown is not stopped by onClick alone; the spread
+            // stops click, mousedown, pointerdown and dblclick so a caret press is never a row gesture.
+            {...gestureStops}
             onKeyDown={e => {
                 if (isConfirmKey(e)) commit()
                 else if (isDismissKey(e)) cancel()
