@@ -59,7 +59,7 @@ export function StatView(props: ChartViewProps) {
 
     return (
         <ChartFrame
-            empty={tiles().length === 0}
+            empty={rows().length === 0}
             emptyMessage="No data to chart."
         >
             <StatTiles tiles={tiles()} />

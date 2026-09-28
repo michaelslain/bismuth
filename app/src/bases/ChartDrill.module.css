@@ -7,7 +7,7 @@
 .head {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--sp-3);
 }
 

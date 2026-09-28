@@ -61,7 +61,10 @@ const StatTiles: Component<StatTilesProps> = props => {
                             when={tile.error}
                             fallback={
                                 <Show when={tile.tex}>
-                                    <Tex tex={tile.tex ?? ''} class={styles.statTex} />
+                                    <Tex
+                                        tex={tile.tex ? `\\displaystyle ${tile.tex}` : ''}
+                                        class={styles.statTex}
+                                    />
                                 </Show>
                             }
                         >
