@@ -32,9 +32,10 @@ const KINDS: [label: string, id: string, note: Record<string, unknown>][] = [
     // Undeclared: keeps its heuristic look.
     ['undeclared tags', 'tags', { tags: ['a', 'b'] }],
     ['undeclared boolean', 'read', { read: true }],
+    ['undeclared description', 'description', { description: 'a **desert** planet\n\n- spice\n- worms' }],
 ]
 
-function Grid(props: { dense?: boolean; inline?: boolean }) {
+function Grid(props: { dense?: boolean; inline?: boolean; markdown?: boolean }) {
     return (
         <div
             style={{
@@ -55,6 +56,7 @@ function Grid(props: { dense?: boolean; inline?: boolean }) {
                                 config={config}
                                 dense={props.dense}
                                 inline={props.inline}
+                                markdown={props.markdown && id === 'description'}
                             />
                         </div>
                     </div>
@@ -94,3 +96,11 @@ export const Inline: Story = {
     },
 }
 export const DenseInline: Story = { args: { dense: true, inline: true } }
+/** The `markdown` prop forces the block for an UNDECLARED value (a bare `description` on a card). */
+export const UndeclaredMarkdown: Story = {
+    args: { markdown: true },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(c.getByTestId('undeclared description').querySelector('ul')).not.toBeNull()
+    },
+}

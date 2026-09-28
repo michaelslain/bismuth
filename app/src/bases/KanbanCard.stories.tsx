@@ -449,3 +449,37 @@ export const EditPropertyCommits: Story = {
         await waitFor(() => expect(within(canvasElement).getByText('7')).toBeTruthy())
     },
 }
+
+/** An UNDECLARED `description` (no `markdown` type in the config) still renders as a markdown
+ *  block on the card face — list intact, an image embed capped at 180px. */
+export const UndeclaredDescription: Story = {
+    render: () => {
+        const row: Row = {
+            ...SAMPLE_ROWS[0],
+            note: {
+                ...SAMPLE_ROWS[0].note,
+                description: '**Ship** the draft.\n\n- gather feedback\n- revise scope\n\n![[x.png]]',
+            },
+        }
+        return (
+            <Card
+                row={row}
+                titleCol="file.name"
+                metaCols={['status', 'description']}
+                config={sampleBaseConfig()}
+                editable={false}
+                onEditingChange={noop}
+                onRename={noopRename}
+                onSetMeta={noop}
+                onDelete={noop}
+                siblingValues={() => []}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelector('ul')).not.toBeNull())
+        const img = canvasElement.querySelector('img.bismuth-embed-img')
+        await expect(img).not.toBeNull()
+        await expect(getComputedStyle(img as Element).maxHeight).toBe('180px')
+    },
+}
