@@ -6,6 +6,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import ColorChip from './ColorChip'
+import StatusDot from './StatusDot'
 
 const meta = {
     title: 'UI/ColorChip',
@@ -198,5 +199,46 @@ export const EmptyColor: Story = {
         const bg = getComputedStyle(chip).backgroundColor
         expect(bg).not.toBe('rgba(0, 0, 0, 0)')
         expect(bg).not.toBe('transparent')
+    },
+}
+
+/** A custom trigger (a StatusDot) in place of the swatch — the Kanban column header's shape. The
+ *  dot toggles the palette; a pick repaints the dot. Real state, real round trip. */
+export const CustomTrigger: Story = {
+    render: () => {
+        const [color, setColor] = createSignal('var(--graph-2)')
+        const [open, setOpen] = createSignal(false)
+        return (
+            <ColorChip
+                color={color()}
+                open={open()}
+                trigger={<StatusDot color={color()} />}
+                palette={['var(--graph-1)', 'var(--graph-2)', 'var(--graph-3)']}
+                onToggle={() => setOpen(v => !v)}
+                onPick={v => {
+                    setColor(v)
+                    setOpen(false)
+                }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const trigger = within(canvasElement).getByLabelText('Choose colour')
+        await userEvent.click(trigger)
+        await waitFor(() =>
+            expect(
+                document.querySelector('[data-testid="category-palette"]'),
+            ).not.toBeNull(),
+        )
+        await userEvent.click(
+            within(
+                document.querySelector('[data-testid="category-palette"]') as HTMLElement,
+            ).getByLabelText('graph-3'),
+        )
+        await waitFor(() =>
+            expect(
+                document.querySelector('[data-testid="category-palette"]'),
+            ).toBeNull(),
+        )
     },
 }

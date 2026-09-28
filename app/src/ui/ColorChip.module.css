@@ -3,3 +3,6 @@
 .chipwrap { flex: 0 0 auto; display: inline-flex; }
 .pop { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
 .sws { display: flex; gap: var(--sp-3); align-items: center; }
+.trigger { display: inline-flex; align-items: center; padding: var(--sp-2); margin: calc(-1 * var(--sp-2)); border-radius: 50%; cursor: pointer; }
+.trigger:focus, .trigger:focus-visible { outline: none; }
+.trigger:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
