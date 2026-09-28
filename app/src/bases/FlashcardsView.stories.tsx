@@ -305,7 +305,52 @@ export const Revealed: Story = {
         // (FlashcardsView.tsx keeps it that way on purpose) — to click the face a real user can
         // actually see and hit before the reveal, rather than the back face sitting behind it.
         const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        // `.flip-front` is a direct child of `.flip-inner`, the element `data-flipping` +
+        // the `transitionend` listener live on (FlashcardsView.tsx) — reach it via the DOM
+        // parent, not a class query, since `.flip-inner` is a hashed module local.
+        const flipInner = front.parentElement as HTMLElement
         await userEvent.click(await within(front).findByText('capital of France'))
+
+        // No "SPACE to reveal answer" hint any more — deleted along with `.fliphint`
+        // (bases-polish Task 6). Space still reveals; this just removes the on-card text.
+        await expect(
+            canvasElement.textContent?.includes('to reveal answer'),
+        ).toBe(false)
+
+        // Flip scrollbars: for the 0.5s rotateY transition (`data-flipping` set), neither face
+        // may report a scrolling overflow — even though `.flip-face` is `overflow-y: auto` at
+        // rest. Checked right after the click, before the transition has had time to settle.
+        const back = canvasElement.querySelector(
+            '[class*="flip-back"]',
+        ) as HTMLElement
+        await expect(flipInner.hasAttribute('data-flipping')).toBe(true)
+        await expect(['auto', 'scroll']).not.toContain(
+            getComputedStyle(front).overflowY,
+        )
+        await expect(['auto', 'scroll']).not.toContain(
+            getComputedStyle(back).overflowY,
+        )
+
+        // Once the transition's `transitionend` fires, `data-flipping` clears and a long answer
+        // can scroll again.
+        await waitFor(
+            () => {
+                expect(flipInner.hasAttribute('data-flipping')).toBe(false)
+            },
+            { timeout: 2000 },
+        )
+        await expect(getComputedStyle(front).overflowY).toBe('auto')
+
+        // Grading row: three same-tone TextButtons, no `hard` danger colour and no boxed Kbd
+        // chips (both removed by bases-polish Task 6) — each button's title carries the live
+        // keybinding instead.
+        const hard = await within(canvasElement).findByRole('button', {
+            name: 'hard',
+        })
+        await expect(hard.getAttribute('title')).toBe('hard (1)')
+        await expect(
+            canvasElement.querySelector('.asc-kbd'),
+        ).toBeNull()
     },
 }
 
@@ -450,6 +495,18 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
                 canvasElement.querySelector('[class*="grade-row"]'),
             ).not.toBeNull()
         })
+
+        // Space still reveals with the "SPACE to reveal answer" hint gone (bases-polish Task 6
+        // deleted `.fliphint`), and the grade row carries no boxed Kbd chip any more — the
+        // keybinding now lives only in each button's `title`.
+        await expect(
+            canvasElement.textContent?.includes('to reveal answer'),
+        ).toBe(false)
+        await expect(canvasElement.querySelector('.asc-kbd')).toBeNull()
+        const hardBtn = await within(canvasElement).findByRole('button', {
+            name: 'hard',
+        })
+        await expect(hardBtn.getAttribute('title')).toBe('hard (1)')
 
         await userEvent.keyboard('1')
         await waitFor(() => {

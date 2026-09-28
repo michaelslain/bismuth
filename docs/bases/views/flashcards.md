@@ -195,7 +195,7 @@ While the flashcards view is active (and no modal or text field has focus):
 
 Keys `1`/`2`/`3` are ignored until the card is revealed.
 
-These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. The grade key badges shown on each button render `settings.keybindings[id]` too, so a rebind updates the on-screen hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
+These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. There is no on-card `SPACE to reveal answer` hint and no boxed key chip beside the grade buttons — each grading button's `title` attribute (`hard (1)`, `good (2)`, `easy (3)`) renders `settings.keybindings[id]` instead, so a rebind updates the hover hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
 
 ---
 
@@ -270,7 +270,7 @@ The progress meter is **not** in the header strip. `flashcardsSlots()` (`app/src
 
 ## Card Rendering
 
-Both the front and back of a card render their content as markdown (Monaspace prose font; inline `code` in monospace). The rendering is done by `renderMarkdown()` from `./markdown`.
+Both the front and back of a card render their content as markdown, in the same prose font the editor uses for note prose (`--prose-font`/`--prose-font-size`); inline `code` and code blocks stay the UI/mono stack at `--code-font-size`. The rendering is done by `renderMarkdown()` from `./markdown`.
 
 ### Flip Animation
 
@@ -281,7 +281,7 @@ The card uses a CSS 3D flip (`rotateY` transition):
 
 ### Edit / Reset / Delete on Card Face
 
-Pencil, RotateCcw ("reset progress"), and Trash2 icon buttons appear on both the front and back faces. Pencil opens the single-card edit modal; Trash2 deletes the card immediately (without a confirmation prompt); RotateCcw resets the current card — see [Resetting Progress](#resetting-progress) below. `stopPropagation` prevents these clicks from also triggering the reveal flip.
+Pencil, RotateCcw ("reset progress"), and Trash2 icon buttons appear on both the front and back faces, grouped as an `IconBar` (the same `--bar-icon-gap` spacing as the sidebar bar) rather than a bespoke button row. Pencil opens the single-card edit modal; Trash2 deletes the card immediately (without a confirmation prompt); RotateCcw resets the current card — see [Resetting Progress](#resetting-progress) below. `stopPropagation` prevents these clicks from also triggering the reveal flip.
 
 ---
 

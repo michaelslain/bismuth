@@ -27,7 +27,8 @@ import InlineCode from '../ui/InlineCode'
 import BarLabel from '../ui/BarLabel'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
-import Kbd, { Key } from '../ui/ascii/Kbd'
+import IconBar from '../ui/IconBar'
+import { parseCombo } from '../ui/ascii/parseCombo'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
 import styles from './FlashcardsView.module.css'
@@ -67,6 +68,14 @@ const GRADE_KEYS: {
     { response: 'good', id: 'flashcard-good' },
     { response: 'easy', id: 'flashcard-easy' },
 ]
+
+/** Plain-text rendering of a grade button's live keybinding, for its `title` — reuses
+ *  `parseCombo` (Kbd's own combo parser) rather than re-deriving the Mod/Shift/etc. glyphs, and
+ *  takes only the FIRST alternative and its first cap: a grade key is always a single key
+ *  ("1"/"2"/"3" by default, or whatever a rebind sets it to), never a chord. */
+function gradeKeyLabel(id: KeybindingId): string {
+    return parseCombo(settings.keybindings[id])[0]?.[0] ?? ''
+}
 
 /** Everything the deck's contribution to the view bar reads, as ACCESSORS. Plain values would be
  *  read once at construction and never again — the slots are built exactly once per mounted deck
@@ -258,6 +267,12 @@ export function FlashcardsView(props: {
 
     const [pos, setPos] = createSignal(restored.pos)
     const [revealed, setRevealed] = createSignal(false)
+    // True from the moment `revealed` toggles until the 0.5s CSS rotateY transition on
+    // `.flip-inner` finishes (its `transitionend`) — exposed as `data-flipping` so both faces can
+    // switch to `overflow: hidden` for exactly that window. A face with `overflow-y: auto` mid-flip
+    // shows a scrollbar mid-rotation even when its content doesn't overflow at rest, because the
+    // 3D transform briefly changes the face's rendered box.
+    const [flipping, setFlipping] = createSignal(false)
     // In-flight lock: true while a grade's async row-write / refetch is settling, so a
     // second press can't advance a second card (see canGrade / the double-skip fix).
     const [grading, setGrading] = createSignal(false)
@@ -514,7 +529,8 @@ export function FlashcardsView(props: {
     // task exists to prevent. Reading hidden() only inside the JSX attribute position below gets
     // the compiler's fine-grained createRenderEffect treatment instead, same as `inert` above it.
     const cardActions = (hidden: () => boolean) => (
-        <div
+        <IconBar
+            label="Card actions"
             class={styles['card-actions']}
             onClick={e => e.stopPropagation()}
             aria-hidden={hidden() || undefined}
@@ -538,7 +554,7 @@ export function FlashcardsView(props: {
                 onClick={deleteCurrent}
                 size="sm"
             />
-        </div>
+        </IconBar>
     )
 
     // ── Keyboard: flashcard-flip reveals, flashcard-hard/good/easy grade — all
@@ -557,7 +573,10 @@ export function FlashcardsView(props: {
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
-            if (!revealed()) setRevealed(true)
+            if (!revealed()) {
+                setFlipping(true)
+                setRevealed(true)
+            }
             return
         }
         if (revealed()) {
@@ -835,11 +854,27 @@ export function FlashcardsView(props: {
                                 {() => (
                                     <div
                                         class={`${styles['flip-card']} ${styles['card-appear']} ${revealed() ? styles['flipped'] : ''}`}
-                                        onClick={() =>
-                                            !revealed() && setRevealed(true)
-                                        }
+                                        onClick={() => {
+                                            if (!revealed()) {
+                                                setFlipping(true)
+                                                setRevealed(true)
+                                            }
+                                        }}
                                     >
-                                        <div class={styles['flip-inner']}>
+                                        <div
+                                            class={styles['flip-inner']}
+                                            data-flipping={
+                                                flipping() || undefined
+                                            }
+                                            onTransitionEnd={e => {
+                                                if (
+                                                    e.propertyName ===
+                                                        'transform' &&
+                                                    e.target === e.currentTarget
+                                                )
+                                                    setFlipping(false)
+                                            }}
+                                        >
                                             {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
                                             shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
                                             <div
@@ -855,12 +890,6 @@ export function FlashcardsView(props: {
                                                         current()!,
                                                     )}
                                                 />
-                                                <div class={styles['fliphint']}>
-                                                    <Kbd>
-                                                        <Key>SPACE</Key>
-                                                    </Kbd>{' '}
-                                                    to reveal answer
-                                                </div>
                                             </div>
                                             <div
                                                 class={`${styles['flip-face']} ${styles['flip-back']}`}
@@ -893,19 +922,12 @@ export function FlashcardsView(props: {
                             <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
-                                        <div class={styles['grade-item']}>
-                                            <TextButton
-                                                danger={g.response === 'hard'}
-                                                onClick={() => grade(g.response)}
-                                            >
-                                                {g.response}
-                                            </TextButton>
-                                            <Kbd
-                                                combo={
-                                                    settings.keybindings[g.id]
-                                                }
-                                            />
-                                        </div>
+                                        <TextButton
+                                            title={`${g.response} (${gradeKeyLabel(g.id)})`}
+                                            onClick={() => grade(g.response)}
+                                        >
+                                            {g.response}
+                                        </TextButton>
                                     )}
                                 </For>
                             </div>
