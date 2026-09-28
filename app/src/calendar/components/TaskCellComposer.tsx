@@ -91,7 +91,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                     value={text()}
                     onInput={setText}
                     data-testid="task-cell-composer-input"
-                    // The pattern CategoryPanel.tsx's rename field already uses: focus has to be
+                    // The same pattern InlineTextInput uses for the category rename field: focus has to be
                     // deferred a tick past mount, or the element isn't attached yet to focus.
                     ref={el => {
                         input = el

@@ -121,7 +121,7 @@ export const EnterAddsExactlyOne: Story = {
     },
 }
 
-/** Double-click a name to rename it inline; Enter commits. */
+/** Click a name to rename it inline; Enter commits. */
 export const Rename: Story = {
     render: () => {
         const store = seed()
@@ -129,7 +129,7 @@ export const Rename: Story = {
     },
     play: async () => {
         const body = within(document.body)
-        await userEvent.dblClick(body.getByText('Work'))
+        await userEvent.click(body.getByText('Work'))
         await userEvent.keyboard('{Control>}a{/Control}Deep work{Enter}')
         await waitFor(() =>
             expect(categories.value.map(c => c.name)).toContain('Deep work'),

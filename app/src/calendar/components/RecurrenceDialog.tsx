@@ -1,6 +1,7 @@
 import { recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
+import { deleteEventWithUndo, type RecurrenceScope } from '../eventActions'
 import { prettyDate } from '../dates'
 import { Show, For } from 'solid-js'
 import FormModal from '../../ui/FormModal'
@@ -11,7 +12,7 @@ import ModalFooter from '../../ui/ModalFooter'
 import OptionRow from '../../ui/OptionRow'
 import OptionList from '../../ui/OptionList'
 
-type Scope = 'one' | 'all' | 'following'
+type Scope = RecurrenceScope
 
 export function RecurrenceDialog(props: { store: EventStore }) {
     async function handle(scope: Scope): Promise<void> {
@@ -20,15 +21,16 @@ export function RecurrenceDialog(props: { store: EventStore }) {
         const { type, masterId, occurrenceDate, updates } = action
 
         if (type === 'delete') {
-            if (scope === 'one') {
-                await props.store.deleteOccurrence(masterId, occurrenceDate)
-            } else if (scope === 'all') {
-                const master = events.value.find(e => e.id === masterId)
-                if (master?.recurrence)
-                    await props.store.deleteSeries(master.recurrence.seriesId)
-            } else {
-                await props.store.deleteFollowing(masterId, occurrenceDate)
-            }
+            // deleteEventWithUndo refreshes itself and pushes the undo toast
+            const master = events.value.find(e => e.id === masterId)
+            if (master)
+                await deleteEventWithUndo(
+                    props.store,
+                    { ...master, date: occurrenceDate },
+                    scope,
+                )
+            recurrenceAction.value = null
+            return
         } else if (type === 'edit' && updates) {
             if (scope === 'one') {
                 await props.store.editOccurrence(
