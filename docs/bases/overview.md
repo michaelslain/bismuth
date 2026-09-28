@@ -191,7 +191,7 @@ Every revalidation re-runs `/rows` + `runView`, producing brand-new group and ro
 - `rowsEqual(a, b)` compares only what a view renders — a `fileIdentity` of `name`/`path`/`folder`/`ext`/`tags`/`links` plus the full `note` and `formula` objects. The volatile stat fields (`mtime`/`ctime`/`size`) are **deliberately excluded**: a body-only edit (ticking a task inside a card) bumps `mtime` but changes nothing the view shows except the body, which `BodyCard` re-reads in place — including `mtime` would remount the card on every keystroke-driven save. (Trade-off: a view surfacing `file.mtime` as a column shows a slightly stale timestamp until the row changes structurally.) `note.line` is likewise excluded from the comparison (it's positional, not rendered content, and just as volatile as the key above) — a task that only moved lines still compares equal and keeps its DOM; on reuse, `reconcileRows` patches the volatile `note.line` and `Row.index` handles onto the kept object in place, since callers still address a row by one of those (task toggles write `note.line`; `rowUpdate`/`rowDelete` write `Row.index`) and a stale handle would target the wrong row/line once a sibling sinks or shifts.
 - `reconcileRows(prev, next)` returns the previous array reference verbatim when nothing changed (same length, order, every row reused), so the enclosing group object is reused too.
 
-The active view is picked via a `SegmentedToggle` when there is more than one view; `runView(config, rows, idx, hostMeta)` (from `core/src/bases/query.ts`) computes the `ViewResult` for the active table/cards/kanban/etc. view. **Full-pane views** bypass `runView` and render directly from `data().rows`: `fullPane()` (`BaseView.tsx`) is `true` for `flashcards`, and for `calendar` **except** when its mode is `tasks` (`activeType() === 'flashcards' || (activeType() === 'calendar' && activeMode() !== 'tasks')`) — a calendar view in `mode: tasks` (or the legacy `calendarContent: tasks`) is not full-pane and goes through `runView` like table/cards/list.
+The active view is picked via the `ViewTabs` strip (shown when there is more than one view, or the base is editable — see [Managing views](#managing-views)); `runView(config, rows, idx, hostMeta)` (from `core/src/bases/query.ts`) computes the `ViewResult` for the active table/cards/kanban/etc. view. **Full-pane views** bypass `runView` and render directly from `data().rows`: `fullPane()` (`BaseView.tsx`) is `true` for `flashcards`, and for `calendar` **except** when its mode is `tasks` (`activeType() === 'flashcards' || (activeType() === 'calendar' && activeMode() !== 'tasks')`) — a calendar view in `mode: tasks` (or the legacy `calendarContent: tasks`) is not full-pane and goes through `runView` like table/cards/list.
 
 ---
 
@@ -464,6 +464,49 @@ groupBy: { property: formula.urgency }
 columns: [Overdue, This week, Later]
 ---
 ```
+
+---
+
+## Managing views
+
+Everything above describes the `views:` YAML shape; none of it requires hand-editing the file
+any more. The tab strip above the base ([`ViewTabs`](../../app/src/bases/ViewTabs.tsx), owned
+by [`BaseView`](../../app/src/bases/BaseView.tsx)) is a full editor for a base's `views:`
+array — for any real `type: base` **file** (an embedded ` ```query ` block, which has no file
+of its own to rewrite, still gets the same-looking tabs with none of this wired):
+
+- **Add a view** — the trailing `[+]` opens a menu of the 12 view kinds; picking one appends a
+  new view named after the kind ("Kanban"), de-duplicated against existing names ("Table 2" if
+  a "Table" already exists) — same naming rule **duplicate** uses.
+- **Rename** — double-click a tab, or right-click → *rename*, to edit its label inline.
+- **Duplicate** — right-click → *duplicate* clones the view (including its filters/sort/
+  columns/field bindings) and inserts the copy right after the original, selecting it.
+- **Reorder** — right-click → *move left* / *move right* swaps a view with its neighbor.
+- **Change kind** — right-click → *change kind ▸* re-renders the SAME view (its filters,
+  source, columns, etc. all stay) as a different `type:` — switching a table to a kanban board
+  without losing its configuration.
+- **Toggle tasks mode** — right-click → *turn on/off tasks mode* flips the view's `mode:`
+  (normal ⇄ tasks — see [the mode axis](#three-axes-kind-mode-and-origin)) and drops the legacy
+  `calendarContent:` spelling if the view still carried it.
+- **View settings** — right-click → *view settings* opens the same generic
+  [`BaseSettings`](../../app/src/bases/BaseSettings.tsx) panel **for every view kind,
+  including calendar** — filters, source, and field bindings are all reachable there even for
+  a calendar view, which the bar's own gear icon still routes to the calendar's own settings
+  modal instead (both open the same underlying data; the gear is calendar-specific chrome, the
+  tab menu is the generic path that always works).
+- **Delete** — right-click → *delete* opens a nested *confirm delete* item (no `confirm()`
+  dialog) — refused when it's the base's only view, since a base always needs at least one.
+- **Keyboard** — a focused tab opens its menu with Shift+F10 or the dedicated ContextMenu key,
+  the same vocabulary as a task checkbox's status menu.
+
+Every structural edit reads the file's raw frontmatter fresh, applies the edit
+(`app/src/bases/viewsEdit.ts`, pure and unit-tested), and writes the whole `views:` array back
+with `api.setProperty(path, 'views', …)`. A base still using the `view: <kind>` shorthand
+and/or [flat top-level view keys](#top-level-flat-view-keys) — i.e. one with no explicit
+`views:` array yet — is **materialized** on its first structural edit: a `views:` array is
+synthesized whose first (only) entry carries `view:`'s kind plus every flat key that was set,
+and those top-level keys (including `view:` itself) are deleted, so nothing the user already
+configured silently moves to a different view or gets duplicated in two places.
 
 ---
 

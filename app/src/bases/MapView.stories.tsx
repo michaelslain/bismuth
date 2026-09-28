@@ -2,10 +2,19 @@
 // curated dataset has no lat/lng, so this story mints its own small "places" dataset (real
 // FileMeta shape) with valid coordinates, run through the real query engine so `result.columns`
 // (marker label source) is genuine.
+//
+// Placement/move/remove writes (Task F) go through `api.setProperties`/`api.rowUpdate`, so the
+// interactive stories below seed `setTransport(fakeTransport(...))` — a real write against a
+// live backend has nothing to hit in Storybook, and the fake gives every mutation a 200 ack.
+// A pin mid-drag is pointer-position state, not storyable; these instead cover the two states
+// the brief calls out: the unplaced-rows menu with placement armed, and a pin's own menu.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
 
 const meta = {
     title: 'Bases/MapView',
@@ -90,5 +99,79 @@ export const CustomFieldsFixedFraming: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** Some rows have no valid `lat`/`lng` — they show up in the "unplaced (N)" control instead
+ *  of silently vanishing. `play()` opens that menu and picks one, arming placement: the map
+ *  now shows a "placing … — esc to cancel" hint that follows the cursor, and the next click
+ *  on the map would write that row's coordinates. */
+export const UnplacedRowsArmed: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const rows: Partial<Row>[] = [
+            ...PLACES,
+            placeRow('Unmapped Cafe', {}), // no lat/lng at all
+            placeRow('Bad Coords', { lat: 'north-ish', lng: 12 }), // unparseable lat
+        ]
+        return (
+            <div style={{ height: '480px' }}>
+                <MapView
+                    result={sampleViewResult(rows, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+
+        const unplacedButton = await canvas.findByTestId('map-unplaced-button')
+        expect(unplacedButton).toHaveTextContent('unplaced (2)')
+        await userEvent.click(unplacedButton)
+
+        const option = await body.findByText('Unmapped Cafe')
+        await userEvent.click(option)
+
+        const hint = await canvas.findByText(/placing Unmapped Cafe/)
+        expect(hint).toBeVisible()
+    },
+}
+
+/** Right-clicking a placed pin (or Shift+F10 while it's focused) opens its own menu:
+ *  open the note, move it (re-arms placement for that row), or remove it from the map. */
+export const PinMenuOpen: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        return (
+            <div style={{ height: '480px' }}>
+                <MapView
+                    result={sampleViewResult(PLACES, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const pin = canvasElement.querySelector(
+            '[class*="mapPin"]',
+        ) as HTMLElement
+        pin.dispatchEvent(
+            new MouseEvent('contextmenu', {
+                bubbles: true,
+                cancelable: true,
+                clientX: 100,
+                clientY: 100,
+            }),
+        )
+        expect(await body.findByText('open note')).toBeVisible()
+        expect(await body.findByText('move…')).toBeVisible()
+        expect(await body.findByText('remove from map')).toBeVisible()
     },
 }

@@ -4,11 +4,15 @@
 // shows for every view type. Saving calls `api.setProperty` per changed field — the global
 // fakeTransport (.storybook/preview.ts) answers any unmapped POST with a generic 200 ack (see
 // ui/_fakeTransport.ts), so SAVE completing here proves the write path runs without asserting
-// on a specific backend response.
+// on a specific backend response. `SecondViewWritesSecondView` swaps in a spied transport to
+// assert exactly WHERE a save lands (views[1], not the flat top level that configures views[0]).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { BaseSettings } from './BaseSettings'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
+import { setTransport } from '../api'
+import { spiedTransport } from '../ui/_kanbanSpiedTransport'
+import { parseBaseFile } from '../../../core/src/bases/parse'
 
 const meta = {
     title: 'Bases/BaseSettings',
@@ -30,7 +34,7 @@ export const Table: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -91,7 +95,7 @@ export const Kanban: Story = {
                     },
                 ],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -111,7 +115,7 @@ export const Flashcards: Story = {
                     { type: 'flashcards', name: 'Review', bidirectional: true },
                 ],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -131,7 +135,7 @@ export const BarChart: Story = {
                     { type: 'bar', name: 'By status', x: 'due', y: 'priority' },
                 ],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -149,7 +153,7 @@ export const Heatmap: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'heatmap', name: 'Activity', x: 'due' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -168,7 +172,7 @@ export const NoBasePath: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             rows={SAMPLE_ROWS}
             onClose={noop}
             onSaved={noop}
@@ -186,7 +190,7 @@ export const EmptyRows: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={[]}
             onClose={noop}
@@ -224,7 +228,7 @@ export const TypeIntoPropertyName: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -257,7 +261,7 @@ export const TypeOptions: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -291,7 +295,7 @@ export const DuplicatePropertyName: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -310,9 +314,7 @@ export const DuplicatePropertyName: Story = {
         nameInput.focus()
         await userEvent.clear(nameInput)
         await userEvent.type(nameInput, 'status')
-        await expect(
-            canvas.getByText(/duplicate name/i),
-        ).toBeInTheDocument()
+        await expect(canvas.getByText(/duplicate name/i)).toBeInTheDocument()
         const saveBtn = canvas.getByText('save').closest('button')
         await expect(saveBtn).not.toBeNull()
         await expect(saveBtn!.disabled).toBe(true)
@@ -332,7 +334,7 @@ export const ExpandPropertyRow: Story = {
             config={sampleBaseConfig({
                 views: [{ type: 'table', name: 'Table' }],
             })}
-            viewIdx={0}
+            viewIndex={0}
             basePath="projects/roadmap.md"
             rows={SAMPLE_ROWS}
             onClose={noop}
@@ -364,4 +366,153 @@ export const ExpandPropertyRow: Story = {
             deleteButton.contains(document.elementFromPoint(cx, cy)),
         ).toBe(true)
     },
+}
+
+const MULTI_VIEW_BASE = `---
+type: base
+source:
+  kind: notes
+  where: file.inFolder("projects")
+formulas:
+  late: 'date(due) < today() && !done'
+filters:
+  and:
+    - '!file.hasTag("archive")'
+    - or:
+        - 'priority > 1'
+        - done
+views:
+  - type: table
+    name: All
+    summaries:
+      priority: Average
+  - type: cards
+    name: Gallery
+    image: cover
+    imageFit: contain
+    sort:
+      - property: status
+        direction: ASC
+      - property: priority
+        direction: DESC
+---
+`
+const MULTI_PATH = 'projects/multi.md'
+const multiConfig = () =>
+    parseBaseFile(MULTI_VIEW_BASE, { name: 'multi', path: MULTI_PATH }).config
+
+/** The first view of a multi-view base: source, a filter tree deeper than one list (its nested
+ *  `or:` shows as an expression row), a formula, and the table-only summaries section. */
+export const TableWithEverything: Story = {
+    render: () => (
+        <BaseSettings
+            type="table"
+            config={multiConfig()}
+            viewIndex={0}
+            basePath={MULTI_PATH}
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+}
+
+/** BUG 0 regression: editing the SECOND view must write `views[1]` — the old panel wrote every
+ *  key flat, and a flat key configures views[0], so it silently reconfigured the first view. */
+export const SecondViewWritesSecondView: Story = {
+    render: () => {
+        const spy = spiedTransport({ files: { [MULTI_PATH]: MULTI_VIEW_BASE } })
+        setTransport(spy.transport)
+        ;(globalThis as { __baseSettingsCalls?: unknown }).__baseSettingsCalls =
+            spy.calls
+        return (
+            <BaseSettings
+                type="cards"
+                config={multiConfig()}
+                viewIndex={1}
+                basePath={MULTI_PATH}
+                rows={SAMPLE_ROWS}
+                onClose={noop}
+                onSaved={noop}
+            />
+        )
+    },
+    play: async () => {
+        const canvas = within(document.body)
+        const name = (await canvas.findByDisplayValue(
+            'Gallery',
+        )) as HTMLInputElement
+        await userEvent.clear(name)
+        await userEvent.type(name, 'Covers')
+        await userEvent.click(canvas.getByText('save'))
+        const calls = (
+            globalThis as {
+                __baseSettingsCalls?: { path: string; body: unknown }[]
+            }
+        ).__baseSettingsCalls!
+        await new Promise(r => setTimeout(r, 50))
+        await expect(calls).toContainEqual({
+            path: '/set-property',
+            body: {
+                path: MULTI_PATH,
+                viewIndex: 1,
+                key: 'name',
+                value: 'Covers',
+            },
+        })
+        // nothing else was rewritten — an untouched section writes nothing
+        await expect(
+            calls.filter(c => c.path === '/set-property'),
+        ).toHaveLength(1)
+    },
+}
+
+/** Map: latitude/longitude column bindings + the opening frame (zoom + center). */
+export const MapPlaces: Story = {
+    render: () => (
+        <BaseSettings
+            type="map"
+            config={sampleBaseConfig({
+                views: [
+                    {
+                        type: 'map',
+                        name: 'Places',
+                        lat: 'latitude',
+                        zoom: 6,
+                        center: { lat: 40.7, lng: -74 },
+                    },
+                ],
+            })}
+            viewIndex={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
+}
+
+/** Cards: the image column binding, what a card shows, and the cover fit + shape. */
+export const Cards: Story = {
+    render: () => (
+        <BaseSettings
+            type="cards"
+            config={sampleBaseConfig({
+                views: [
+                    {
+                        type: 'cards',
+                        name: 'Gallery',
+                        image: 'status',
+                        imageFit: 'contain',
+                        imageAspectRatio: 1,
+                    },
+                ],
+            })}
+            viewIndex={0}
+            basePath="projects/roadmap.md"
+            rows={SAMPLE_ROWS}
+            onClose={noop}
+            onSaved={noop}
+        />
+    ),
 }

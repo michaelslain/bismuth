@@ -482,6 +482,39 @@ and there is no chip to drag. Once a line is migrated (automatically or via
 as described. Only the ONE field that placed the task is touched; a second
 date field on the same line is left exactly as it was.
 
+### Editing, deleting, and moving a task from the UI
+
+Three more write-backs, all pure line/block rewrites in `core/src/taskEdit.ts`,
+round out task management without hand-editing the file:
+
+- **`updateTaskLineFields(line, patch)`** behind `POST /tasks/update` rewrites
+  the description and/or the `due`/`scheduled`/`start`/priority bracket
+  fields on one line. A `patch` key set to `null` clears that field; an
+  absent key leaves it untouched. Every field the patch does NOT touch —
+  `done`, `created`, `cancelled`, `[every …]`, tags — is preserved, and the
+  whole line is re-emitted in the same canonical field order [migration](#migrating-from-the-emoji-syntax)
+  already uses (dates `due, scheduled, start, done, created, cancelled`, then
+  priority, then recurrence), so repeated edits stay idempotent in layout.
+- **`removeTaskItem(content, line)`** behind `POST /tasks/delete` removes the
+  task ITEM at `line` — the head line plus any deeper-indented, non-blank
+  continuation/sub-task lines beneath it — permanently (git history retains
+  the prior state). This is the same per-item rule `collectBlock`
+  (`core/src/taskReorder.ts`) applies while walking a whole block, narrowed to
+  just the one item so a sibling task below it is never swept up.
+- **`POST /tasks/move`** resolves its `to` ref exactly like `POST
+  /tasks/create`'s `file` (`resolveTaskFilePath`), removes the item from its
+  current note the same way `/tasks/delete` does, and appends the removed
+  lines verbatim to the destination note. Moving onto the note the task is
+  already in is a no-op.
+
+Full request/response shapes: [HTTP API reference](../api/http-reference.md).
+The frontend seam over all three is `app/src/api.ts`'s `updateTaskLine`/
+`deleteTaskLine`/`moveTaskLine`, and `app/src/bases/taskEdit.ts` (`updateTask`/
+`deleteTask`/`moveTask`) is what a UI component calls — it dispatches to
+these line endpoints for a checkbox task, or to the stored-row write seam
+(`app/src/bases/taskWrite.ts`) for a task kept as a base row instead of a
+checkbox line.
+
 ## Migrating from the emoji syntax
 
 The parser reads bracket fields only, so a vault written before this syntax
@@ -959,4 +992,4 @@ The pre-migration spelling of the same task —
 the vault is opened, or by running `bismuth task migrate` by hand; the
 parser itself no longer reads it.
 
-Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskParse.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/migrationPoll.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`
+Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskParse.ts`, `core/src/taskEdit.ts`, `core/src/taskCreate.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `app/src/bases/taskEdit.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/migrationPoll.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskEdit.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`

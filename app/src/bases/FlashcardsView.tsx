@@ -442,6 +442,21 @@ export function FlashcardsView(props: {
         props.onReviewed()
     }
 
+    // Reset the current card's progress: strips its due/ease/interval columns (and, on a
+    // bidirectional deck, their `*Back` companions) so it reviews as new again — front/back and
+    // every other field are untouched. Mirrors EditCardsModal's per-card "reset progress".
+    const resetCurrentCard = async () => {
+        const c = current()
+        if (!c || !props.basePath) return
+        const keys = [dueField(), easeField(), intervalField()]
+        if (bidirectional())
+            keys.push(...keys.map(k => revScheduleCol(k)))
+        const next = { ...c.r.note }
+        for (const k of keys) delete next[k]
+        await api.rowUpdate(props.basePath, c.index, next)
+        props.onReviewed()
+    }
+
     // Delete the current card and advance: rowDelete drops it from the base, the
     // onReviewed refetch shrinks the queue, and the next card shifts into this pos
     // (so we stay put — same as grading a card out of the due queue).
@@ -508,6 +523,12 @@ export function FlashcardsView(props: {
                 icon="Pencil"
                 label="Edit this card"
                 onClick={openCardEdit}
+                size="sm"
+            />
+            <IconButton
+                icon="RotateCcw"
+                label="Reset this card's progress"
+                onClick={resetCurrentCard}
                 size="sm"
             />
             <IconButton
@@ -692,6 +713,10 @@ export function FlashcardsView(props: {
                     deckName={fileBasename(props.basePath!)}
                     frontField={frontField()}
                     backField={backField()}
+                    dueField={dueField()}
+                    easeField={easeField()}
+                    intervalField={intervalField()}
+                    bidirectional={bidirectional()}
                     onClose={() => setEditing(false)}
                     onChanged={() => props.onReviewed()}
                 />

@@ -169,6 +169,16 @@ In **body/tasks mode**, the card body is an editor, not a click-to-open target �
 
 ---
 
+## Adding, Editing and Deleting Rows (Properties Mode)
+
+In **properties mode** only (`body`/`tasks` cards are covered by [Inline Editing](#inline-editing-body--tasks-mode) below), every card's properties are reachable from the UI — no action requires hand-editing the base file or a note's frontmatter. Requires a saved base file (`basePath` set); an embedded `query` block is read-only.
+
+- **Add a card**: the "+ row" button in the view bar (mode `normal` only). A base that **owns its rows** (no `source:`) appends a new row to the base's own body; a **notes-sourced** base creates a new note in the base's folder. Either way the row/property editor opens immediately to fill it in; a toast warns if the base's filters would hide the new card from this view.
+- **Edit a card's properties**: a card whose row is stored in the base's own body (no note behind it) opens the editor on a plain click — [Click-to-Open](#click-to-open) above only applies to a card backed by a real note. A note-backed card keeps opening the note on click and gets a hover/focus-reveal pencil icon, top-right over the cover, that opens the property editor instead.
+- **Delete a card**: open the editor (above) and use "delete" in its footer — a stored row is removed by index, a note is moved to trash, both with an Undo toast.
+
+---
+
 ## Inline Editing (Body / Tasks Mode)
 
 Body and tasks cards are fully editable in place, with autosave and external-change reconciliation — there is no "edit mode" toggle and no rendered-then-replaced preview. This is `CardEditor.tsx`, a CodeMirror 6 editor configured to read like the note editor's live-preview (transparent, gutterless, auto-height, prose font, `livePreview` + markdown + code highlighting), not a boxed code block.
@@ -212,7 +222,7 @@ The settings panel (opened via the gear icon on the view toolbar) for cards is t
 - **Columns section** — toggle individual columns visible/hidden. At least one column must remain visible (toggling the last visible column is blocked; the button shows "At least one column must stay visible").
 - **Sort & group section** — pick a sort property + direction (ASC/DESC) and a group-by property + direction.
 
-There is no UI in the settings panel for `image`, `imageFit`, `imageAspectRatio`, or `cardContent`. These must be set directly in the base file's YAML frontmatter. The settings panel saves via `api.setProperty` for `order`, `sort`, and `groupBy`.
+**Settings.** Cards also get an **image column** picker under *column mapping* (`image`; "text cover" = unset) and a **cards** section: *card shows* (`cardContent`: properties / body / tasks), and — once an image column is bound — *image fit* (`imageFit`: cover / contain) and *cover shape* (`imageAspectRatio`, presets 2:3 … 16:9; a hand-written ratio is kept as its own option). The panel writes these into this view (`views[i]`), not as flat top-level keys, so they never reconfigure another view.
 
 ---
 

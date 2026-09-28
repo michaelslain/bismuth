@@ -3,8 +3,11 @@ import type { Row } from '../../../core/src/bases/types'
 import { todayISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
 import Text from '../ui/Text'
+import { IconButton } from '../ui/IconButton'
 import TaskCheck from './TaskCheck'
 import { checkStatus, isOverdue, PRIORITY_MARK } from './taskDisplay'
+import { isEditableTask } from './taskEdit'
+import { openTaskEditor } from './openTaskEditor'
 import styles from './TaskRow.module.css'
 
 // Render a task description as lightweight inline markdown — wikilinks become
@@ -94,6 +97,13 @@ export type TaskRowProps = {
     variant?: 'list' | 'card'
     /** Merged onto the root so one caller can adjust one instance without forking this. */
     class?: string
+    /** Which `note.*` key a STORED row's category lives under — passed through to the edit
+     *  modal opened by the trailing pencil button. Optional: undefined lets the modal fall
+     *  back to its own default ('category'). */
+    categoryField?: string
+    /** Called after the edit modal saves, deletes, or moves the task — lets the caller
+     *  refetch. Optional: a caller with no refetch of its own (a story) can omit it. */
+    onChanged?: () => void
 }
 
 /**
@@ -174,6 +184,22 @@ const TaskRow: Component<TaskRowProps> = props => {
                     </Text>
                 </Show>
             </Text>
+            <Show when={isEditableTask(props.row)}>
+                <IconButton
+                    icon="Pencil"
+                    label="Edit task"
+                    size="sm"
+                    class={styles.editBtn}
+                    onClick={e => {
+                        e.stopPropagation()
+                        openTaskEditor({
+                            row: props.row,
+                            categoryField: props.categoryField,
+                            onChanged: props.onChanged,
+                        })
+                    }}
+                />
+            </Show>
         </div>
     )
 }

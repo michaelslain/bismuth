@@ -12,3 +12,11 @@
    renderings of a single affordance — keeping it would just re-create the drift one view at a
    time. Any OTHER anchor inside a bullet (a markdown link in the note's own text) intentionally
    keeps the content layer's link style rather than borrowing the note-link one. */
+
+/* Row-editing affordances (openRowEditor.tsx). An owned row's bullet becomes a plain button (no
+   destination note to open); a note row keeps its renderTitle anchor and gains a hover/focus-
+   reveal edit icon for its properties, same treatment as ListView/TableView. */
+.bulletRowWrap { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.bulletBtn { font: inherit; color: inherit; text-align: left; }
+.bulletEditBtn { opacity: 0; transition: opacity 0.12s ease; }
+.bulletItem:hover .bulletEditBtn, .bulletRowWrap:focus-within .bulletEditBtn { opacity: 1; }

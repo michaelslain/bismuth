@@ -291,6 +291,31 @@ export const InlineMarkup: Story = {
 }
 
 /**
+ * The trailing edit pencil — present for BOTH origins (a scanned line task carries `note.line`,
+ * a stored row carries a valid `index`), since `isEditableTask` (taskEdit.ts) accepts either.
+ * It stays in the DOM (and the tab order) at all times — only its opacity is 0 until hover/
+ * focus-within — so this asserts presence + aria-label rather than visibility, which a
+ * screenshot diff covers instead.
+ */
+export const EditButton: Story = {
+    render: () => (
+        <Rows
+            rows={[
+                scanned({ description: 'a scanned line task' }),
+                stored({ description: 'a stored row task', status: 'todo' }),
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const buttons = canvas.getAllByLabelText('Edit task')
+        expect(buttons.length).toBe(2)
+        for (const b of buttons)
+            expect(b.classList.contains(styles.editBtn)).toBe(true)
+    },
+}
+
+/**
  * The SAME task from the two producers, stacked. This is the claim tasks mode rests on: a task
  * scanned out of a note's checkbox line and a task stored as a row in a base's own body are
  * indistinguishable to every view downstream. If the two rows below ever render differently,

@@ -56,6 +56,8 @@ Integer percentage (e.g. `250` = 2.5×) tracking the card's difficulty multiplie
 
 Integer day count for the current review interval. Missing/empty on a new card.
 
+`frontField`, `backField`, `dueField`, `easeField` and `intervalField` are all bound in the view's settings panel (the gear in the view bar, under column mapping) — no YAML edit needed.
+
 ### `bidirectional` (boolean, default `false`)
 
 When `true`, every row produces **two** queue entries: a forward entry (front → back) and a reverse entry (back → front). Each direction is scheduled independently using separate companion columns — see [Bidirectional Mode](#bidirectional-mode) below.
@@ -277,9 +279,9 @@ The card uses a CSS 3D flip (`rotateY` transition):
 - **Same card, reveal**: clicking the card or pressing Space triggers the flip from front to back. The card element persists so the transition plays.
 - **New card**: the card element is keyed by `{index}:{dir}`. When the current card changes (different index or different direction), the old element is unmounted and a fresh one is created. The fresh element plays a scale+fade entrance animation (`card-appear`) instead of an unwanted backward flip.
 
-### Edit / Delete on Card Face
+### Edit / Reset / Delete on Card Face
 
-Pencil and Trash2 icon buttons appear on both the front and back faces. Clicking them opens the single-card edit modal or deletes the card immediately (without a confirmation prompt). `stopPropagation` prevents these clicks from also triggering the reveal flip.
+Pencil, RotateCcw ("reset progress"), and Trash2 icon buttons appear on both the front and back faces. Pencil opens the single-card edit modal; Trash2 deletes the card immediately (without a confirmation prompt); RotateCcw resets the current card — see [Resetting Progress](#resetting-progress) below. `stopPropagation` prevents these clicks from also triggering the reveal flip.
 
 ---
 
@@ -295,7 +297,7 @@ The deck-wide card manager, opened by the CARDS button (Layers icon) in the head
 
 ### Cards (List) Mode
 
-A scrollable list of all cards in the deck. Each row shows a row number handle, an editable Front cell, an editable Back cell, and a delete button.
+A scrollable list of all cards in the deck. Each row shows a row number handle, an editable Front cell, an editable Back cell, a per-card "reset progress" button, and a delete button.
 
 **Inline editing**: each cell (`CardCell`) renders a markdown preview (driven by a `<div class="cell-md">`) with a transparent `<textarea>` layered over it. The preview drives the cell's height so there is no font-load or auto-grow race. Editing reveals the raw markdown on `:focus-within`; the textarea commits to the backend on `blur` via `api.rowUpdate()`.
 
@@ -305,7 +307,17 @@ A scrollable list of all cards in the deck. Each row shows a row number handle, 
 
 **Deletion**: Trash2 button calls `api.rowDelete()` (`POST /row/delete`). The local `cards` array is updated immediately (no full refetch during editing). `onChanged()` fires on modal close if any mutation occurred.
 
-**Local state mirroring**: the modal holds a local `cards: Note[]` array initialized from `props.rows`. Array position equals backend row index. All edits, additions, deletions, and reorders update this array in sync with the backend calls so the modal UI stays consistent without triggering a refetch per keystroke.
+**Local state mirroring**: the modal holds a local `cards: Note[]` array initialized from `props.rows`. Array position equals backend row index. All edits, additions, deletions, resets, and reorders update this array in sync with the backend calls so the modal UI stays consistent without triggering a refetch per keystroke.
+
+### Resetting Progress
+
+Without a way to clear a card's scheduling from the UI, the only way to make a card "new" again was hand-editing the base file's YAML — this closes that gap.
+
+"Reset progress" removes a card's `dueField`/`easeField`/`intervalField` columns (and, on a bidirectional deck, their `*Back` companions) from its note, so the next review treats it as a brand-new card. Front, back, and every other field are untouched.
+
+- **Per card** (list mode, RotateCcw icon button next to Delete): resets that one card immediately via `api.rowUpdate()` — no confirmation, same as Delete.
+- **Reset all** (`EditCardsModal`'s footer, next to the card count): resets every card in the deck via `api.rowUpdateMany()` in one request. This is an inline **two-step confirm** — the first click arms it (the label flips to "reset all — click again to confirm" and turns danger-toned, auto-disarming after 4 seconds); only the second click, while armed, actually writes. No native `confirm()` dialog.
+- **Current card during review** (`FlashcardsView`'s card face, RotateCcw icon next to Pencil/Trash2): resets the card currently being reviewed via `api.rowUpdate()`, then calls `onReviewed()` to refresh the queue — no confirmation.
 
 ### Bulk Add Mode
 
@@ -353,6 +365,8 @@ Clicking ADD creates each card in sequence via `api.rowCreate()`, then switches 
 | Delete current card | `api.rowDelete(basePath, index)` | `POST /row/delete` |
 | Add card (inline/bulk) | `api.rowCreate(basePath, note)` | `POST /row/update` with `index: null` |
 | Edit card in modal | `api.rowUpdate(basePath, index, note)` | `POST /row/update` |
+| Reset progress (current card / one card in modal) | `api.rowUpdate(basePath, index, note)` (fields stripped) | `POST /row/update` |
+| Reset progress (whole deck, modal "reset all") | `api.rowUpdateMany(basePath, updates)` (fields stripped) | `POST /rows/update` |
 | Delete card in modal | `api.rowDelete(basePath, index)` | `POST /row/delete` |
 | Reorder cards | `api.rowReorder(basePath, from, to)` | `POST /row/reorder` |
 

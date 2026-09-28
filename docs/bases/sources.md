@@ -831,6 +831,19 @@ version, token)`. Solid keeps the previous value painted while revalidating, so
 reopening a base or opening it in a split paints instantly from the last resolution
 (a `BaseSkeleton` shows only on cold load).
 
+## Editing the source in the settings panel
+
+The view settings modal's **source** section (`app/src/bases/SourceFields.tsx`, logic in `sourceForm.ts`) sets where rows come from without YAML:
+
+| "rows from" | Writes |
+|---|---|
+| this base's own rows | removes `source:` (the body table, or every note when there is none) |
+| vault notes | `source: { kind: notes, where?, from? }` |
+| vault tasks | `source: { kind: tasks, where?, from? }` |
+| another base | `source: { kind: base, ref: "[[Other]]" }` |
+
+`where` is built with the filter-condition editor (see [filters](./filters.md#editing-filters-in-the-settings-panel)); a legacy Tasks-DSL `where` shows as one expression row and is kept verbatim. "Limit to base" is `from`; the base pickers list every note as `[[name]]`. The panel always writes the **object form** — it needs no sibling keys and YAML quotes the expression, so a `#` inside it can't be eaten as a comment — and removes the now-dead top-level `where`/`from`/`ref` a string-form source read. An untouched section writes nothing. When the active view has its **own** `source:`, the section edits that override (and says so); otherwise it edits the base-level source shared by every view.
+
 ## Edge cases & gotchas (summary)
 
 - **Unquoted `from: [[X]]` / `ref: [[X]]`** parse as nested YAML arrays, not

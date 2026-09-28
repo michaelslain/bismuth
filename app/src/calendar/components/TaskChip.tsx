@@ -12,7 +12,7 @@
 import type { Component } from 'solid-js'
 import { onMount, Show } from 'solid-js'
 import type { PlacedTask } from '../taskPlacement'
-import { isTaskLine } from '../taskPlacement'
+import { isWritableTask, taskRowRef } from '../taskPlacement'
 import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
 import { chipKeyAction, taskKey } from '../taskChipKeys'
@@ -55,8 +55,7 @@ function statusWord(char: string): string {
     return ''
 }
 
-const READ_ONLY_TITLE =
-    "Can't toggle — this task was created from a base that owns its rows, not a markdown line"
+const READ_ONLY_TITLE = "Can't toggle — this task has nowhere a write could land"
 
 // A focusable element that still holds focus (or contains the thing that does) means the user
 // deliberately went there — e.g. clicked into the EventModal that a reschedule opened — while
@@ -74,12 +73,11 @@ function focusWasLost(): boolean {
 // NOTE: props are read whole, never destructured. Destructuring here would read
 // `task` once at setup and never see a later reschedule or completion.
 const TaskChip: Component<TaskChipProps> = props => {
-    // isTaskLine (taskPlacement.ts) is the ONE predicate for "can this row be written to" —
+    // isWritableTask (taskPlacement.ts) is the ONE predicate for "can this row be written to" —
     // dragging, ticking, and the right-click status menu all read it, so none of the three can
-    // silently disagree about which rows are writable. A self-owned base's row (no `source:`)
-    // fails it: it is a YAML row, not a markdown checkbox line, so there is nowhere for a
-    // toggle/status/reschedule write to land.
-    const writable = () => isTaskLine(props.task)
+    // silently disagree about which rows are writable. Covers both a markdown checkbox line
+    // AND a row a base owns (an own-rows base's rows are writable too — see taskWrite.ts).
+    const writable = () => isWritableTask(props.task)
 
     let root: HTMLDivElement | undefined
     const key = () => taskKey(props.task.row)
@@ -134,16 +132,10 @@ const TaskChip: Component<TaskChipProps> = props => {
                 props.onReschedule?.(action.days)
             }}
             onDragStart={e => {
-                if (!writable() || !e.dataTransfer) return
+                const ref = taskRowRef(props.task)
+                if (!ref || !e.dataTransfer) return
                 e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData(
-                    TASK_DRAG_MIME,
-                    encodeTaskDrag({
-                        path: props.task.row.file.path,
-                        line: props.task.row.note.line as number,
-                        field: props.task.field!,
-                    }),
-                )
+                e.dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag(ref))
             }}
             onClick={e => {
                 // The day cell this chip renders inside wires its OWN onClick to open the

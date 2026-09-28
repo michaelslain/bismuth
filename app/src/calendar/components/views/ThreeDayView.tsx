@@ -5,6 +5,7 @@ import { TimeGrid } from './TimeGrid'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
 import type { PlacedTask } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
+import type { TaskRowRef } from '../../taskDrag'
 import { addDays } from '../../dates'
 
 export function ThreeDayView(props: {
@@ -13,7 +14,7 @@ export function ThreeDayView(props: {
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
     onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
-    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
+    onRescheduleTask?: (ref: TaskRowRef, date: string) => void
     compose?: TaskComposeProps
     colorFor?: (task: PlacedTask) => string | undefined
 }) {

@@ -1,7 +1,11 @@
 import { For, Index, Show } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { renderValue } from './renderValue'
+import { renderTitle } from './renderValue'
 import TaskRow from './TaskRow'
+import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
+import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { openRowEditor } from './openRowEditor'
 import styles from './BulletsView.module.css'
 
 /**
@@ -22,6 +26,11 @@ export function BulletsView(props: {
     mode?: 'normal' | 'tasks'
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
+    /** The base file, so a bullet can open the row/property editor — same gate as
+     *  TableView's/ListView's. */
+    basePath?: string
+    /** Refetch after a row edit/delete lands — BaseView's `refetchAll`. */
+    onChange?: () => void
 }) {
     const col = (): string => props.result.columns[0] ?? 'file.name'
     // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on
@@ -32,6 +41,18 @@ export function BulletsView(props: {
     const isTasks = () => props.mode === 'tasks'
     const toggle = (row: Row, e: Event) => props.onToggle?.(row, e)
     const setStatus = (row: Row, e: MouseEvent) => props.onSetStatus?.(row, e)
+    const editable = () => !!props.basePath
+    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    function openEditor(row: Row): void {
+        if (!rowEditable(row)) return
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+            columns: props.result.columns,
+        })
+    }
     return (
         <div class={styles.bullets}>
             {/* Index-keyed groups (see ListView): the inner reference-keyed row <For> is the only
@@ -50,7 +71,58 @@ export function BulletsView(props: {
                                     <li class={styles.bulletItem}>
                                         <Show
                                             when={isTasks()}
-                                            fallback={renderValue(col(), row)}
+                                            fallback={
+                                                <div
+                                                    class={styles.bulletRowWrap}
+                                                >
+                                                    <Show
+                                                        when={
+                                                            rowEditable(row) &&
+                                                            canWriteStoredRow(
+                                                                row,
+                                                            )
+                                                        }
+                                                        fallback={renderTitle(
+                                                            col(),
+                                                            row,
+                                                        )}
+                                                    >
+                                                        <PlainButton
+                                                            class={
+                                                                styles.bulletBtn
+                                                            }
+                                                            onClick={() =>
+                                                                openEditor(row)
+                                                            }
+                                                        >
+                                                            {renderTitle(
+                                                                col(),
+                                                                row,
+                                                            )}
+                                                        </PlainButton>
+                                                    </Show>
+                                                    <Show
+                                                        when={
+                                                            rowEditable(row) &&
+                                                            !canWriteStoredRow(
+                                                                row,
+                                                            )
+                                                        }
+                                                    >
+                                                        <IconButton
+                                                            icon="Pencil"
+                                                            label="Edit properties"
+                                                            class={
+                                                                styles.bulletEditBtn
+                                                            }
+                                                            onClick={e => {
+                                                                e.stopPropagation()
+                                                                openEditor(row)
+                                                            }}
+                                                        />
+                                                    </Show>
+                                                </div>
+                                            }
                                         >
                                             <TaskRow
                                                 row={row}

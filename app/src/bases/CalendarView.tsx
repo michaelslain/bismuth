@@ -33,7 +33,11 @@ import { CalendarSettings } from '../calendar/components/CalendarSettings'
 import TaskCalendarSettings from '../calendar/components/TaskCalendarSettings'
 import { placeRows } from '../calendar/taskPlacement'
 import type { PlacedTask } from '../calendar/taskPlacement'
-import type { TaskComposeProps } from '../calendar/taskCompose'
+import type {
+    TaskComposeProps,
+    TaskComposeTarget,
+} from '../calendar/taskCompose'
+import type { TaskRowRef } from '../calendar/taskDrag'
 import {
     taskCategoryName,
     taskCategoryNames,
@@ -45,6 +49,14 @@ import {
     prospectiveStoredTaskRow,
 } from './taskScope'
 import { appendTaskLine } from './taskCreate'
+import {
+    canWriteStoredRow,
+    storedNote,
+    toggleStoredTask,
+    setStoredTaskStatus,
+} from './taskWrite'
+import type { StoredTaskWrite } from './taskWrite'
+import { statusFromChar } from '../../../core/src/taskReorder'
 import { todayISO } from '../../../core/src/dates'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { refToPath } from '../../../core/src/bases/sourceSpec'
@@ -54,6 +66,7 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
 import CalendarFrame from '../calendar/components/CalendarFrame'
 import { BaseBackend } from './calendarBase'
+import { openTaskEditor } from './openTaskEditor'
 
 /**
  * Calendar view type — one Bases view kind with two registers, gated on `mode: 'normal' |
@@ -257,7 +270,9 @@ function TasksCalendar(props: {
     viewIndex: number
     onChange?: () => void
 }) {
-    const rows = createMemo(() => props.result?.groups.flatMap(g => g.rows) ?? [])
+    const rows = createMemo(
+        () => props.result?.groups.flatMap(g => g.rows) ?? [],
+    )
     // The active view's own config, already resolved server-side into `result.view` — the
     // same object `placed` below already reads `.dateField` off, so `dateField`/
     // `categoryField`/`taskFile`/`defaultCategory` all come from here rather than indexing
@@ -286,40 +301,110 @@ function TasksCalendar(props: {
     // itself; this only owns WHERE the composer is open and WHAT commit does with its text.
     const [composeDate, setComposeDate] = createSignal<string | null>(null)
 
-    const destination = () => {
-        if (props.ownsRows)
-            return props.basePath ? fileBasename(props.basePath) : ''
+    // ---- targets: every destination a composed task could land in ------------------------
+    // Sourced (`source: tasks`): one target per distinct source note among the rows already on
+    // the grid, `id` = its vault PATH (what a checkbox-line write needs) and `label` = its
+    // basename (what a chip's category already reads it as — taskCategory.ts's `row.file.name`
+    // for a scanned row) — so a target's colour always matches the chips already painted from
+    // that same note. The view's own `taskFile` is folded in too (even before it has any rows
+    // of its own yet), since it is where a plain "+ task" used to write unconditionally.
+    //
+    // Owns its rows (no `source:`): one target per category NAME in play — every name already
+    // seen on a row, plus every `categories:` the base has declared but has no rows for yet —
+    // and one more for "no category" (`id: ''`), since an owned-rows task never NEEDS a
+    // category.
+    const targets = createMemo<TaskComposeTarget[]>(() => {
+        const colorMap = colors()
+        if (props.ownsRows) {
+            const declared = (props.config?.categories ?? []).map(c => c.name)
+            const seen = new Set<string>()
+            const names: string[] = []
+            for (const name of [
+                ...taskCategoryNames(rows(), categoryField()),
+                ...declared,
+            ]) {
+                if (seen.has(name)) continue
+                seen.add(name)
+                names.push(name)
+            }
+            return [
+                { id: '', label: 'no category' },
+                ...names.map(name => ({
+                    id: name,
+                    label: name,
+                    color: colorMap.get(name),
+                })),
+            ]
+        }
+        const byPath = new Map<string, TaskComposeTarget>()
+        for (const row of rows()) {
+            if (typeof row.note.line !== 'number') continue
+            if (byPath.has(row.file.path)) continue
+            byPath.set(row.file.path, {
+                id: row.file.path,
+                label: row.file.name,
+                color: colorMap.get(row.file.name),
+            })
+        }
+        const path = taskFileTargetId([...byPath.keys()])
+        if (path && !byPath.has(path)) {
+            const label = fileBasename(path)
+            byPath.set(path, { id: path, label, color: colorMap.get(label) })
+        }
+        return [...byPath.values()]
+    })
+
+    // The view's `taskFile` as a target id. A `[[General Tasks]]` ref names a note by BASENAME,
+    // the way a wikilink does, so match it against the source notes already on the grid first —
+    // `refToPath` alone turns it into a ROOT path (`General Tasks.md`) that never equals the real
+    // `tasks/General Tasks.md`, which listed the same note twice in the picker and preselected
+    // the phantom one.
+    function taskFileTargetId(rowPaths: string[]): string {
         const taskFile = view()?.taskFile
-        return taskFile ? fileBasename(refToPath(taskFile)) : ''
+        if (!taskFile) return ''
+        const path = refToPath(taskFile)
+        if (!path || rowPaths.includes(path)) return path
+        const base = fileBasename(path)
+        return rowPaths.find(p => fileBasename(p) === base) ?? path
     }
 
-    // The composer's marker colour: the resolved colour for the view's defaultCategory. Prefer
-    // `colors()` — the map every chip in this grid was painted from — since a solo
-    // `taskCategoryColors([name])` call skips the collision probing and can disagree with the
-    // chips directly above the composer. Fall back only when the category has no rows yet (a
-    // base with no rows yet, or none of this category yet, so `colors()` has no entry for it).
-    const composeColor = createMemo(() => {
-        const name = view()?.defaultCategory
-        if (!name) return undefined
-        return (
-            colors().get(name) ??
-            taskCategoryColors([name], props.config?.categories).get(name)
-        )
-    })
+    // The last-picked target for the session, so switching days keeps the same destination
+    // instead of resetting to the default every time the composer reopens. Seeded lazily below,
+    // not here — targets() isn't known yet at module init.
+    const [pickedTarget, setPickedTarget] = createSignal<string | null>(null)
+
+    const defaultTarget = () => {
+        if (props.ownsRows) return view()?.defaultCategory ?? ''
+        const path = taskFileTargetId(targets().map(t => t.id))
+        if (path && targets().some(t => t.id === path)) return path
+        return targets()[0]?.id ?? ''
+    }
+
+    const target = () => {
+        const picked = pickedTarget()
+        if (picked !== null && targets().some(t => t.id === picked))
+            return picked
+        return defaultTarget()
+    }
+
+    const currentTarget = () => targets().find(t => t.id === target())
+
+    const destination = () => currentTarget()?.label ?? ''
+    const composeColor = () => currentTarget()?.color
 
     const commitTask = async (date: string, text: string) => {
         const vc = view()
+        const targetId = target()
         if (props.ownsRows) {
             if (!props.basePath) return
             const field = vc?.categoryField || 'category'
-            const category = vc?.defaultCategory
             // The description comes FIRST and is never empty — the old bar button wrote
             // just `[scheduled <day>]`, a blank chip the user could not find again.
             const note: Record<string, unknown> = {
                 description: text,
                 status: 'todo',
                 scheduled: date,
-                ...(category ? { [field]: category } : {}),
+                ...(targetId ? { [field]: targetId } : {}),
             }
             try {
                 await api.rowCreate(props.basePath, note)
@@ -330,7 +415,11 @@ function TasksCalendar(props: {
                 return
             }
             if (props.config && vc) {
-                const prospective = prospectiveStoredTaskRow(props.basePath, note, 0)
+                const prospective = prospectiveStoredTaskRow(
+                    props.basePath,
+                    note,
+                    0,
+                )
                 if (!newTaskVisible(props.config, vc, prospective))
                     pushToast(
                         `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
@@ -340,10 +429,9 @@ function TasksCalendar(props: {
             return
         }
 
-        const taskFile = vc?.taskFile
-        if (!taskFile) {
-            // No destination configured — a silent no-op here is exactly what made the
-            // old button read as broken. Open settings so the user can name one.
+        // Sourced: nothing to write to at all only when there are truly no targets — a
+        // sourced base with no `taskFile` set AND no rows yet to pick a note from.
+        if (!targetId) {
             showCalendarSettings.value = true
             pushToast(
                 'Set a destination note for new tasks in this calendar’s settings first',
@@ -353,7 +441,9 @@ function TasksCalendar(props: {
         const body = `${text} [scheduled ${date}]`
         let dest: string
         try {
-            dest = await appendTaskLine(taskFile, body)
+            // targetId is already a vault PATH (see targets() above) — POST /tasks/create
+            // resolves an exact path exactly, same as a `[[Note]]` ref.
+            dest = await appendTaskLine(targetId, body)
         } catch (err) {
             pushToast(
                 `Could not create the task: ${err instanceof Error ? err.message : String(err)}`,
@@ -381,6 +471,13 @@ function TasksCalendar(props: {
         get color() {
             return composeColor()
         },
+        get targets() {
+            return targets()
+        },
+        get target() {
+            return target()
+        },
+        setTarget: id => setPickedTarget(id),
         open: date => setComposeDate(date),
         commit: (date, text) => void commitTask(date, text),
         cancel: () => setComposeDate(null),
@@ -410,7 +507,13 @@ function TasksCalendar(props: {
         // frontmatter, and an empty categoryField would name a column with no name.
         if (value === '')
             void api.deleteViewProperty(props.basePath, props.viewIndex, key)
-        else void api.setViewProperty(props.basePath, props.viewIndex, key, value)
+        else
+            void api.setViewProperty(
+                props.basePath,
+                props.viewIndex,
+                key,
+                value,
+            )
     }
     // Rewrites the base's WHOLE `categories:` array — preserving every category already
     // declared and adding the picked one only when it is not there yet.
@@ -420,41 +523,106 @@ function TasksCalendar(props: {
         const idx = declared.findIndex(c => c.name === name)
         const next =
             idx >= 0
-                ? declared.map((c, i) => (i === idx ? { name, color: token } : c))
+                ? declared.map((c, i) =>
+                      i === idx ? { name, color: token } : c,
+                  )
                 : [...declared, { name, color: token }]
         void api.setProperty(props.basePath, 'categories', next)
     }
 
-    // Left-click the marker toggles the task (POST /tasks/toggle by path + line, same
-    // as every other row-based task view — ListView.tsx, CardBody.tsx); clicking the
-    // chip body opens the source note.
-    const toggleTaskRow = (row: Row) =>
+    // Persist a stored-row write: rewrite the row, then APPEND a spawned recurrence if the
+    // write produced one — mirrors BaseView.tsx's own `writeStored` exactly (same shape, same
+    // reason: `rowCreate` has no insert-at-index, so a spawned occurrence is appended).
+    const writeStored = (path: string, index: number, write: StoredTaskWrite) =>
         void api
-            .toggleTask(row.file.path, row.note.line as number)
+            .rowUpdate(path, index, write.note)
+            .then(() =>
+                write.next ? api.rowCreate(path, write.next) : undefined,
+            )
+            .catch(err =>
+                pushToast(
+                    `Could not save the task: ${err instanceof Error ? err.message : String(err)}`,
+                ),
+            )
             .finally(() => props.onChange?.())
+
+    // Left-click the marker toggles the task — a markdown LINE via POST /tasks/toggle (same as
+    // every other row-based task view — ListView.tsx, CardBody.tsx), a STORED row (an own-rows
+    // base's row, no source note) via the same rowUpdate seam BaseView.tsx's own toggle uses.
+    // canWriteStoredRow gates the stored branch — a row that fails it is read-only, matching
+    // TaskChip's own `isWritableTask` gate exactly (see taskPlacement.ts).
+    const toggleTaskRow = (row: Row) => {
+        const line = row.note.line
+        if (typeof line === 'number') {
+            void api
+                .toggleTask(row.file.path, line)
+                .finally(() => props.onChange?.())
+            return
+        }
+        if (!canWriteStoredRow(row) || row.index === undefined) return
+        writeStored(row.file.path, row.index, toggleStoredTask(row, todayISO()))
+    }
+    // Clicking the chip body opens the shared task editor (edit/delete/move/priority/dates,
+    // plus an "open note" button of its own) instead of jumping straight to the source note —
+    // the editor is what makes a STORED row's fields (which have no source note to open at all)
+    // reachable from the grid.
     const openTaskRow = (row: Row) =>
-        window.dispatchEvent(
-            new CustomEvent('bismuth-open', { detail: row.file.path }),
-        )
+        openTaskEditor({
+            row,
+            categoryField: categoryField(),
+            categories: names(),
+            destinations: props.ownsRows
+                ? undefined
+                : targets().map(t => ({ label: t.label, path: t.id })),
+            onChanged: () => props.onChange?.(),
+        })
     // Right-click marker → the shared status menu (taskStatusMenu.tsx), same affordance
     // ListView.tsx and the cards view already use. Sets the exact box char rather than
-    // the binary toggle above.
-    const setTaskStatus = (row: Row, char: string) =>
-        void api
-            .toggleTask(row.file.path, row.note.line as number, char)
-            .finally(() => props.onChange?.())
-    // Drag-to-reschedule: TaskChip already resolved WHICH field placed the row
-    // (taskPlacement.ts's placementField, carried in the drag payload — see taskDrag.ts),
-    // so this is a pure pass-through to the write endpoint. No row lookup needed here.
-    const rescheduleTaskRow = (
-        path: string,
-        line: number,
-        field: string,
-        date: string,
-    ) =>
-        void api
-            .rescheduleTask(path, line, field as 'due' | 'scheduled' | 'start', date)
-            .finally(() => props.onChange?.())
+    // the binary toggle above; stored rows go through `setStoredTaskStatus` (statusFromChar
+    // bridges the menu's box char to the TaskStatus name it wants — same bridge BaseView.tsx
+    // uses, imported from core/src/taskReorder to avoid dragging node:fs into the bundle).
+    const setTaskStatus = (row: Row, char: string) => {
+        const line = row.note.line
+        if (typeof line === 'number') {
+            void api
+                .toggleTask(row.file.path, line, char)
+                .finally(() => props.onChange?.())
+            return
+        }
+        if (!canWriteStoredRow(row) || row.index === undefined) return
+        writeStored(
+            row.file.path,
+            row.index,
+            setStoredTaskStatus(row, statusFromChar(char), todayISO()),
+        )
+    }
+    // Drag-to-reschedule (and Alt+arrow): TaskChip already resolved which field placed the row
+    // AND whether it's a line or a stored row (taskPlacement.ts's `taskRowRef`, carried as the
+    // drag payload — see taskDrag.ts's TaskRowRef). A `line` ref is a pure pass-through to the
+    // line endpoint; an `index` ref looks the row up (by path+index) to rewrite its placement
+    // field through the same stored-row seam toggle/status use above — a drop target only knows
+    // the destination day, not the row's other columns, so it can't build the write body itself.
+    const rescheduleTaskRow = (ref: TaskRowRef, date: string) => {
+        if (ref.line !== undefined) {
+            void api
+                .rescheduleTask(
+                    ref.path,
+                    ref.line,
+                    ref.field as 'due' | 'scheduled' | 'start',
+                    date,
+                )
+                .finally(() => props.onChange?.())
+            return
+        }
+        if (ref.index === undefined) return
+        const row = rows().find(
+            r => r.file.path === ref.path && r.index === ref.index,
+        )
+        if (!row || !canWriteStoredRow(row)) return
+        writeStored(ref.path, ref.index, {
+            note: { ...storedNote(row), [ref.field]: date },
+        })
+    }
 
     // No real EventStore is ever read in this register (every view component below only
     // touches `store` inside its OWN events-fallback branch, which `placed` being set

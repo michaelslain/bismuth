@@ -83,7 +83,7 @@ export const NoGroupBy: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const hint = await canvas.findByText(/needs a "groupBy" property/)
+        const hint = await canvas.findByText(/needs a "group by" property/)
         expect(hint.closest('[class*="callout"]')).not.toBeNull()
     },
 }

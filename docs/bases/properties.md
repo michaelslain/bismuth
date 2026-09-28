@@ -224,6 +224,10 @@ You don't have to hand-edit the `properties:` YAML — open the view's settings 
 
 Each declared property collapses to a single name/type/visibility line; clicking it expands one editor at a time (name, type, type-specific extras — `options` for select/multiselect, `number`/`unit` for number, `expr` for formula — plus a default value, reorder up/down arrows, and delete). An "ADD PROPERTY" button appends a new blank entry. The eye icon toggles a property's `hidden` flag without opening the row. Reordering here is what drives declared card/table field order (the same `declaredProperties` order described above).
 
+The same panel also edits the base's **formulas** (`formulas:` — name/expression rows; a duplicate name blocks save, an unparsable expression is flagged under its row) and, per view, everything else a base reads — see [filters](./filters.md#editing-filters-in-the-settings-panel) and [sources](./sources.md#editing-the-source-in-the-settings-panel). Saving writes only changed keys: base-level keys (`source`, `filters`, `formulas`, `properties`) at the top level, view keys into the active view.
+
+Map-form `properties:` (metadata only) are not shown in the list; adding a row there converts the key to list form, replacing the map.
+
 For kanban specifically, this Properties section **replaces** the old per-view "Columns" list — a kanban board's fields, their types, and their visibility all live in one place instead of two.
 
 ### Example: fields scoped to the board

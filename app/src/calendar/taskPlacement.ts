@@ -7,6 +7,8 @@
 //   2. Overdue: an unfinished task whose placed day is before today renders on TODAY,
 //      carrying how many days late it is. A resolved task always stays on its own day.
 import type { Row } from '../../../core/src/bases/types'
+import { canWriteStoredRow } from '../bases/taskWrite'
+import type { TaskRowRef } from './taskDrag'
 
 export interface PlacedTask {
     row: Row
@@ -87,6 +89,28 @@ export function placementField(row: Row, dateField?: string): string | undefined
  *  and such a row has none. See docs/bases/views/calendar.md's tasks-register section. */
 export function isTaskLine(task: PlacedTask): boolean {
     return typeof task.row.note.line === 'number' && task.field !== undefined
+}
+
+/** Identifies which row+field a reschedule (drag or Alt+arrow) would rewrite, or null when
+ *  there is nowhere for a write to land. Covers BOTH writable shapes a placed task can be:
+ *  a markdown checkbox line (`isTaskLine`, addressed by path+line) and a row a base owns
+ *  (`canWriteStoredRow`, addressed by path+index). ONE definition, used by the chip's drag
+ *  source and its Alt+arrow reschedule alike, so the two can never disagree about which rows
+ *  are draggable — the same reasoning `isTaskLine`'s own doc comment gives for itself. */
+export function taskRowRef(task: PlacedTask): TaskRowRef | null {
+    if (task.field === undefined) return null
+    const { row, field } = task
+    if (typeof row.note.line === 'number') return { path: row.file.path, field, line: row.note.line }
+    if (canWriteStoredRow(row)) return { path: row.file.path, field, index: row.index! }
+    return null
+}
+
+/** True when a placed task has ANY write handle — a markdown line OR a stored row this base
+ *  owns. The chip's marker (toggle/status-menu) and its drag/reschedule gate on this together,
+ *  so a self-owned base's rows are no longer read-only from the grid (see docs/bases/views/
+ *  calendar.md's tasks-register section — that limitation is gone). */
+export function isWritableTask(task: PlacedTask): boolean {
+    return isTaskLine(task) || canWriteStoredRow(task.row)
 }
 
 /** Whole days `today` is past `placed`. ISO y/m/d are diffed via Date.UTC, never a
