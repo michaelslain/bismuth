@@ -19,7 +19,7 @@
 // unit label — the edit box always shows/accepts the EDIT-space value (percent scales
 // ×100; see numberFormat.ts's module doc for the storage convention), converted back to
 // the canonical stored number on commit via `parseNumberEdit`.
-import { Show, createSignal } from 'solid-js'
+import { Show, createSignal, onMount } from 'solid-js'
 import Select from '../ui/Select'
 import MultiSelect from '../ui/MultiSelect'
 import type { PropertyEditKind } from './propertyEdit'
@@ -32,6 +32,8 @@ import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import TextInput from '../ui/TextInput'
 import { renderTags } from './renderValue'
+import { api } from '../api'
+import { mergeTagOptions, vaultTagNames } from './tagSuggestions'
 import styles from './PropertyValueEditor.module.css'
 
 /** `#`-prefix a bare option string, matching `renderTags`' own per-tag formatting — used for a
@@ -46,6 +48,11 @@ function tagOption(v: string): string {
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
  *  carried an identical copy, but its version was deleted along with the rest of the dead
  *  `kbDesc*` markup, so there is no longer a second copy for this one to be "duplicated from". */
+// The vault's tag names as of the last fetch, shared by every tags editor — a picker opens
+// showing the last-known set at once, then widens when its own refresh lands (MultiSelect
+// appends late options without moving rows already on screen).
+let lastVaultTags: string[] = []
+
 function autoGrow(el: HTMLTextAreaElement): void {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
@@ -83,6 +90,21 @@ export function PropertyValueEditor(props: {
         return String(props.value)
     }
     const [draft, setDraft] = createSignal(toDraft())
+    // A `tags` editor suggests every tag in the vault — the SAME source the note editor's `#tag`
+    // and frontmatter `tags:` completion read (the graph's `tag` nodes; App.tsx's
+    // `tagCandidates`) — after this column's and this row's own values (`kind.options`).
+    const [vaultTags, setVaultTags] = createSignal(lastVaultTags)
+    onMount(() => {
+        if (props.kind.kind !== 'tags') return
+        api.graph()
+            .then(g => {
+                lastVaultTags = vaultTagNames(g)
+                setVaultTags(lastVaultTags)
+            })
+            .catch(() => {
+                // offline / no graph yet — the column's own values still stand
+            })
+    })
     // Captured by the markdown textarea's ref so onInput's autoGrow can reach the raw
     // element — TextInput's onInput only hands back the string value.
     let markdownAreaEl: HTMLTextAreaElement | undefined
@@ -114,7 +136,11 @@ export function PropertyValueEditor(props: {
         const k = props.kind
         if (k.kind === 'multiselect')
             return { options: k.options, creatable: false }
-        if (k.kind === 'tags') return { options: k.options, creatable: true }
+        if (k.kind === 'tags')
+            return {
+                options: mergeTagOptions(k.options, vaultTags()),
+                creatable: true,
+            }
         return null
     }
 

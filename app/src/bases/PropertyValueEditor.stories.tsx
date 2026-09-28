@@ -11,6 +11,8 @@ import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
 
 const meta = {
     title: 'Bases/PropertyValueEditor',
@@ -330,6 +332,62 @@ export const TagsCreatable: Story = {
         await userEvent.type(filterInput, 'brand-new{Enter}')
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["bug","brand-new"]',
+        )
+    },
+}
+
+/** Interactive (`tags`): suggestions include every tag in the VAULT — the graph's tag nodes, the
+ *  same source the note editor's tag completion reads — after the column's own values. Typing
+ *  `ch` narrows to the vault-only `#chicken` (highlighted), Tab autofills it, and the closed
+ *  trigger shows it as a `#` tag. */
+export const TagsSuggestVaultTags: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                graph: {
+                    nodes: ['chicken', 'chores', 'frontend'].map(t => ({
+                        id: `tag:${t}`,
+                        label: `#${t}`,
+                        kind: 'tag',
+                    })),
+                    edges: [],
+                },
+            }),
+        )
+        return (
+            <Harness
+                kind={{ kind: 'tags', options: ['frontend', 'bug'] }}
+                initial={['bug']}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const filterInput = (await within(document.body).findByPlaceholderText(
+            'filter or add',
+        )) as HTMLInputElement
+        const labels = () =>
+            [...document.querySelectorAll<HTMLElement>('.bismuth-popover-label')].map(
+                l => (l.textContent ?? '').trim(),
+            )
+        // Column values first, then the vault's (deduped: frontend appears once).
+        await waitFor(() =>
+            expect(labels()).toEqual(['#bug', '#frontend', '#chicken', '#chores']),
+        )
+        await userEvent.type(filterInput, 'ch')
+        await waitFor(() => expect(labels()).toEqual(['#chicken', '#chores']))
+        const active = document.querySelector('.bismuth-popover-row--selected')
+        expect(active?.textContent).toContain('#chicken')
+        await userEvent.keyboard('{Tab}')
+        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+            '["bug","chicken"]',
+        )
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() =>
+            expect(document.querySelector('.bismuth-popover')).toBeNull(),
+        )
+        expect(canvasElement.querySelector('button')?.textContent).toContain(
+            '#bug#chicken',
         )
     },
 }

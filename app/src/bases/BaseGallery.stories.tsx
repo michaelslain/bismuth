@@ -163,6 +163,9 @@ function bodyOf(t: Tile): string {
     ].join('\n')
 }
 
+/** Tags that exist in the vault but on none of the table's rows. */
+const VAULT_TAGS = ['chicken', 'chores', 'recipes']
+
 function seed(): void {
     setTransport(
         fakeTransport({
@@ -171,6 +174,15 @@ function seed(): void {
             // `onChange` refetch leaves BaseView's version-gated row cache and shows the edit.
             versioned: true,
             files: Object.fromEntries(TILES.map(t => [pathOf(t), bodyOf(t)])),
+            // The vault's tag nodes — what a tags picker suggests beyond its own column (the
+            // note editor's tag completion reads the same graph). A few live only elsewhere in
+            // the "vault", so typing `ch` in the table's tags cell finds `#chicken`.
+            graph: {
+                nodes: [...VAULT_TAGS, ...SAMPLE_ROWS.flatMap(r => (r.note.tags as string[]) ?? [])]
+                    .filter((t, i, all) => all.indexOf(t) === i)
+                    .map(t => ({ id: `tag:${t}`, label: `#${t}`, kind: 'tag' })),
+                edges: [],
+            },
         }),
     )
 }
