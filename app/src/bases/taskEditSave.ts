@@ -63,10 +63,12 @@ export function initialTaskFields(
     }
 }
 
-async function writeStatus(row: Row, statusChar: string): Promise<void> {
+/** Writes the status and returns the row later field patches must build on: a stored row's
+ *  patch rebuilds the note from the row it is given, so it must see the new status. */
+async function writeStatus(row: Row, statusChar: string): Promise<Row> {
     if (isLine(row)) {
         await api.toggleTask(row.file.path, row.note.line as number, statusChar)
-        return
+        return row
     }
     const write = setStoredTaskStatus(
         row,
@@ -75,6 +77,7 @@ async function writeStatus(row: Row, statusChar: string): Promise<void> {
     )
     await api.rowUpdate(row.file.path, row.index!, write.note)
     if (write.next) await api.rowCreate(row.file.path, write.next)
+    return { ...row, note: write.note, derived: [] }
 }
 
 /** Write only what differs between `initial` and `next`: status first, then one field patch,
@@ -85,8 +88,9 @@ export async function saveTaskEdit(
     next: TaskEditFields,
     opts: { categoryField: string },
 ): Promise<void> {
+    let target = row
     if (next.statusChar !== initial.statusChar)
-        await writeStatus(row, next.statusChar)
+        target = await writeStatus(row, next.statusChar)
 
     const patch: TaskPatch = {}
     if (next.description !== initial.description)
@@ -97,7 +101,7 @@ export async function saveTaskEdit(
     if (!isLine(row) && next.category !== initial.category)
         patch.category = next.category || null
     if (Object.keys(patch).length)
-        await updateTask(row, patch, { categoryField: opts.categoryField })
+        await updateTask(target, patch, { categoryField: opts.categoryField })
 
     if (isLine(row) && next.destPath !== initial.destPath)
         await moveTask(row, next.destPath)

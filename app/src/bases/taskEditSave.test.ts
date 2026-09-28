@@ -113,6 +113,19 @@ describe('saveTaskEdit', () => {
         expect(posts[0].path).toBe('/row/update')
         expect(posts[0].body.note.category).toBe('Home')
     })
+    test('a stored row keeps the new status when another field changes too', async () => {
+        const f = initialTaskFields(storedRow, 'category')
+        await saveTaskEdit(
+            storedRow,
+            f,
+            { ...f, statusChar: 'x', description: 'renew v2' },
+            { categoryField: 'category' },
+        )
+        const updates = posts.filter(p => p.path === '/row/update')
+        const last = updates[updates.length - 1]
+        expect(last.body.note.status).toBe('done')
+        expect(last.body.note.description).toBe('renew v2')
+    })
     test('done on a recurring stored row rewrites it and appends the next', async () => {
         const rec = {
             ...storedRow,
