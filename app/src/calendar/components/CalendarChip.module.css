@@ -1,0 +1,6 @@
+/* The shared shell of one calendar chip (an event pill, a task line): a keyboard-reachable,
+   click-to-open surface. Visuals live in the chip that composes it. No outline or ring on any
+   focus, mouse or keyboard (2026-09-27). */
+.chip { cursor: pointer; min-width: 0; }
+.chip:focus,
+.chip:focus-visible { outline: none; }

@@ -1552,7 +1552,7 @@ export const CalendarTasksToggleKeepsPane: Story = {
         observer.observe(canvasElement, { childList: true, subtree: true })
 
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )
         expect(marker).toBeTruthy()
         await userEvent.click(marker!)

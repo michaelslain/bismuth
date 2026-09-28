@@ -1,38 +1,26 @@
 import { For, Index, Show } from 'solid-js'
 import {
     currentDate,
-    events,
+    events as eventsSignal,
     categories,
     showEventModal,
     settings,
 } from '../../state'
+import type { CalendarEvent } from '../../types'
 import { EventStore } from '../../EventStore'
 import { EventChip } from '../EventChip'
-import TaskChip from '../TaskChip'
-import TaskCellComposer from '../TaskCellComposer'
-import DayNumber from '../DayNumber'
-import IconButton from '../../../ui/IconButton'
 import type { PlacedTask } from '../../taskPlacement'
-import { taskRowRef } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
 import type { TaskRowRef } from '../../taskDrag'
-import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
-import { toDateStr, startOfWeek } from '../../dates'
-import { addDaysISO } from '../../../../../core/src/dates'
+import { toDateStr, monthGrid, weekdayNames } from '../../dates'
+import Text from '../../../ui/Text'
+import MonthCell from './MonthCell'
+import TaskDayCell from './TaskDayCell'
 import styles from './MonthView.module.css'
 
-const DAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const DAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-// A grid cell now always carries a real calendar date; `inMonth=false` marks the
-// leading/trailing days that spill in from the previous / next month (dimmed).
-interface Cell {
-    date: Date
-    inMonth: boolean
-}
-
-export function MonthView(props: {
-    store: EventStore
+/** The tasks register's wiring, shared by every view that can show it (month, week, 3-day, day,
+ *  and the all-day strip). Passing `placed` is what selects the tasks register. */
+export type TaskViewProps = {
     placed?: Map<string, PlacedTask[]>
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
@@ -40,42 +28,42 @@ export function MonthView(props: {
     onRescheduleTask?: (ref: TaskRowRef, date: string) => void
     compose?: TaskComposeProps
     colorFor?: (task: PlacedTask) => string | undefined
-}) {
-    const year = () => currentDate.value.getFullYear()
-    const month = () => currentDate.value.getMonth()
-    const mondayFirst = () => settings.value.weekStartsOnMonday
-    const dayNames = () => (mondayFirst() ? DAYS_MON : DAYS_SUN)
-    const today = toDateStr(new Date())
+}
 
-    const cells = (): Cell[] => {
-        const firstOfMonth = new Date(year(), month(), 1)
-        const weekStart = startOfWeek(firstOfMonth, mondayFirst())
-        const firstDay = Math.round(
-            (firstOfMonth.getTime() - weekStart.getTime()) / 86400000,
+export type MonthViewProps = {
+    store: EventStore
+    /** Events to draw. Defaults to the calendar's shared `events` signal. */
+    events?: CalendarEvent[]
+} & TaskViewProps
+
+export function MonthView(props: MonthViewProps) {
+    const mondayFirst = () => settings.value.weekStartsOnMonday
+    const today = toDateStr(new Date())
+    const cells = () =>
+        monthGrid(
+            currentDate.value.getFullYear(),
+            currentDate.value.getMonth(),
+            mondayFirst(),
         )
-        const daysInMonth = new Date(year(), month() + 1, 0).getDate()
-        const total = Math.ceil((firstDay + daysInMonth) / 7) * 7
-        const c: Cell[] = []
-        for (let i = 0; i < total; i++) {
-            const dayOffset = i - firstDay
-            const date = new Date(year(), month(), 1 + dayOffset)
-            c.push({ date, inMonth: dayOffset >= 0 && dayOffset < daysInMonth })
-        }
-        return c
-    }
+    const allEvents = () => props.events ?? eventsSignal.value
 
     return (
         <div class={styles['month-view']}>
             <div class={styles.scroller} data-testid="month-scroller">
                 <div class={styles['month-grid-header']}>
-                    <For each={dayNames()}>
+                    <For each={weekdayNames(mondayFirst())}>
                         {d => (
-                            <div
+                            <Text
+                                as="div"
+                                size="micro"
+                                tone="faint"
+                                weight="inherit"
+                                eyebrow
                                 class={styles['month-day-name']}
                                 data-testid="month-day-name"
                             >
                                 {d}
-                            </div>
+                            </Text>
                         )}
                     </For>
                 </div>
@@ -83,150 +71,57 @@ export function MonthView(props: {
                     <Index each={cells()}>
                         {cell => {
                             const dateStr = () => toDateStr(cell().date)
-                            const dayNum = () => cell().date.getDate()
-                            const inMonth = () => cell().inMonth
-                            const isToday = () => dateStr() === today
-                            const dayEvents = () =>
-                                events.value.filter(e => e.date === dateStr())
-                            const dayTasks = () =>
-                                props.placed?.get(dateStr()) ?? []
                             return (
-                                <div
-                                    class={styles['month-cell']}
-                                    data-testid="month-cell"
-                                    onClick={() => {
-                                        // Tasks register: a bare cell click opens the inline
-                                        // composer for THIS day (props.compose) rather than the
-                                        // "create event" modal — tasks and events are different
-                                        // files/writes, and the composer knows which one to write
-                                        // to. The events register's create-event click below is
-                                        // untouched.
-                                        if (props.placed) {
-                                            props.compose?.open(dateStr())
-                                            return
-                                        }
-                                        showEventModal.value = { date: dateStr() }
+                                <MonthCell
+                                    date={dateStr()}
+                                    day={cell().date.getDate()}
+                                    inMonth={cell().inMonth}
+                                    today={dateStr() === today}
+                                    // Tasks register: a bare click opens the inline composer for THIS
+                                    // day rather than the create-event modal — tasks and events are
+                                    // different files, and the composer knows which to write to.
+                                    onOpen={() => {
+                                        if (props.placed) props.compose?.open(dateStr())
+                                        else showEventModal.value = { date: dateStr() }
                                     }}
-                                    onDragOver={e => {
-                                        // Only a cell in the TASKS register accepts a task drop —
-                                        // must preventDefault for `drop` to fire at all (browsers
-                                        // reject a drop on any element that never opts in).
-                                        if (!props.placed) return
-                                        e.preventDefault()
-                                        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                                    }}
-                                    onDrop={e => {
-                                        if (!props.placed) return
-                                        e.preventDefault()
-                                        const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
-                                        const payload = raw ? decodeTaskDrag(raw) : null
-                                        if (!payload) return
-                                        props.onRescheduleTask?.(payload, dateStr())
-                                    }}
+                                    onDropTask={
+                                        props.placed
+                                            ? (ref, date) => props.onRescheduleTask?.(ref, date)
+                                            : undefined
+                                    }
                                 >
-                                    <DayNumber
-                                        day={dayNum()}
-                                        today={isToday()}
-                                        class={`${styles['month-cell-number']}${inMonth() ? '' : ` ${styles['dim']}`}`}
-                                    />
-                                    {/* Tasks register only, and only while the composer isn't
-                                        already open for this day — quiet by default (opacity 0),
-                                        revealed on cell hover/focus-within so a keyboard user
-                                        tabbing through the grid still finds it. Absolutely
-                                        positioned so it never adds height to `.month-cell-events`
-                                        and can't shift chip layout. */}
-                                    <Show when={props.placed && props.compose?.date !== dateStr()}>
-                                        <IconButton
-                                            icon="Plus"
-                                            label="Add task"
-                                            size="sm"
-                                            class={styles['add-task']}
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                props.compose?.open(dateStr())
-                                            }}
-                                        />
-                                    </Show>
-                                    <div
-                                        class={styles['month-cell-events']}
-                                        data-testid="month-cell-events"
-                                    >
-                                        <Show
-                                            when={props.placed}
-                                            fallback={
-                                                <For each={dayEvents()}>
-                                                    {e => (
-                                                        <EventChip
-                                                            event={e}
-                                                            masterId={
-                                                                e.recurrence
-                                                                    ? e.id
-                                                                    : undefined
-                                                            }
-                                                            occurrenceDate={
-                                                                e.recurrence
-                                                                    ? dateStr()
-                                                                    : undefined
-                                                            }
-                                                            categories={
-                                                                categories.value
-                                                            }
-                                                            store={props.store}
-                                                        />
-                                                    )}
-                                                </For>
-                                            }
-                                        >
-                                            <For each={dayTasks()}>
-                                                {t => (
-                                                    <TaskChip
-                                                        task={t}
-                                                        color={props.colorFor?.(t)}
-                                                        onToggle={() =>
-                                                            props.onToggleTask?.(
-                                                                t.row,
-                                                            )
+                                    <Show
+                                        when={props.placed}
+                                        fallback={
+                                            <For each={allEvents().filter(e => e.date === dateStr())}>
+                                                {e => (
+                                                    <EventChip
+                                                        event={e}
+                                                        masterId={e.recurrence ? e.id : undefined}
+                                                        occurrenceDate={
+                                                            e.recurrence ? dateStr() : undefined
                                                         }
-                                                        onOpen={() =>
-                                                            props.onOpenTask?.(
-                                                                t.row,
-                                                            )
-                                                        }
-                                                        onSetStatus={char =>
-                                                            props.onSetTaskStatus?.(
-                                                                t.row,
-                                                                char,
-                                                            )
-                                                        }
-                                                        onReschedule={days => {
-                                                            const ref = taskRowRef(t)
-                                                            if (!ref) return
-                                                            // from the day the chip is DRAWN on (a carried task sits on
-                                                            // today), matching drag-and-drop
-                                                            props.onRescheduleTask?.(
-                                                                ref,
-                                                                addDaysISO(dateStr(), days),
-                                                            )
-                                                        }}
+                                                        categories={categories.value}
+                                                        store={props.store}
                                                     />
                                                 )}
                                             </For>
-                                            <Show when={props.compose?.date === dateStr()}>
-                                                <TaskCellComposer
-                                                    destination={props.compose!.destination}
-                                                    color={props.compose!.color}
-                                                    targets={props.compose!.targets}
-                                                    target={props.compose!.target}
-                                                    onTargetChange={props.compose!.setTarget}
-                                                    onCommit={text =>
-                                                        props.compose!.commit(dateStr(), text)
-                                                    }
-                                                    onCancel={() => props.compose!.cancel()}
-                                                />
-                                            </Show>
-                                        </Show>
-                                    </div>
-                                </div>
+                                        }
+                                    >
+                                        {placed => (
+                                            <TaskDayCell
+                                                date={dateStr()}
+                                                tasks={placed().get(dateStr()) ?? []}
+                                                onToggleTask={props.onToggleTask}
+                                                onOpenTask={props.onOpenTask}
+                                                onSetTaskStatus={props.onSetTaskStatus}
+                                                onRescheduleTask={props.onRescheduleTask}
+                                                compose={props.compose}
+                                                colorFor={props.colorFor}
+                                            />
+                                        )}
+                                    </Show>
+                                </MonthCell>
                             )
                         }}
                     </Index>

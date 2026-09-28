@@ -12,6 +12,11 @@ import CalendarFrame from '../CalendarFrame'
 // the window, so a story has to state one.
 const STORY_H = '760px'
 
+import { expect, within } from 'storybook/test'
+import { placeRows } from '../../taskPlacement'
+import { taskRow } from '../../../ui/_calendarAssertions'
+import { todayISO } from '../../../../../core/src/dates'
+
 const meta = {
     title: 'Calendar/DayView',
     component: DayView,
@@ -83,5 +88,34 @@ export const DenseDay: Story = {
                 </CalendarFrame>
             </div>
         )
+    },
+}
+
+/** The tasks register: `placed` selects it, so the view draws all-day task chips through
+ *  TaskAllDayStrip and never mounts the hourly grid. */
+export const TasksRegister: Story = {
+    render: () => {
+        seedCalendarState({ date: new Date() })
+        const today = todayISO()
+        const placed = placeRows(
+            [
+                taskRow('pay rent', { line: 1, scheduled: today }),
+                taskRow('call [[Ana]] about **the** roadmap', { line: 2, scheduled: today }),
+            ],
+            today,
+        )
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <DayView store={new EventStore(new MemoryBackend())} {...{ placed }} />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        expect(c.getAllByRole('checkbox').length).toBe(2)
+        expect(c.queryByTestId('time-grid-day-col')).toBeNull()
+        expect(canvasElement.textContent).not.toContain('[[Ana]]')
     },
 }

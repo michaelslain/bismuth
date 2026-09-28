@@ -1,0 +1,105 @@
+import { For, Index, Show, createMemo, type Component } from 'solid-js'
+import type { CalendarEvent, Category } from '../../types'
+import { EventStore } from '../../EventStore'
+import { dragState } from '../../state'
+import { categoryFill, eventCategoryColors } from '../../categoryColor'
+import DragGhost from './DragGhost'
+import TimeGridEvent from './TimeGridEvent'
+import {
+    eventMinutes,
+    ghostBox,
+    layoutDay,
+    timedOn,
+} from './timeGridLayout'
+import { clamp } from './timeGridDrag'
+import styles from './TimeGridDayColumn.module.css'
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+export type TimeGridDayColumnProps = {
+    /** `YYYY-MM-DD` */
+    date: string
+    today?: boolean
+    /** Every event in view; the column keeps its own day's timed ones. */
+    events: CalendarEvent[]
+    categories: Category[]
+    store: EventStore
+    /** The column element, for the grid's pointer maths. */
+    ref?: (el: HTMLDivElement) => void
+    onMouseDown: (e: MouseEvent) => void
+    onEventMouseDown: (e: MouseEvent, event: CalendarEvent, masterId?: string) => void
+}
+
+/** One day of the hourly grid. Reads the shared `dragState` for its own ghost and to dim the
+ *  event being moved; every pointer handler is the grid's. */
+const TimeGridDayColumn: Component<TimeGridDayColumnProps> = props => {
+    const layout = createMemo(() => layoutDay(timedOn(props.events, props.date)))
+    const ghost = () => {
+        const state = dragState.value
+        if (!state || state.date !== props.date) return null
+        if (state.type === 'create') {
+            return {
+                startMin: Math.min(state.startMinutes, state.currentMinutes),
+                endMin: Math.max(state.startMinutes, state.currentMinutes),
+                color: 'var(--accent)',
+            }
+        }
+        const span = eventMinutes(state.event)
+        return {
+            startMin: state.startMinutes,
+            endMin: clamp(state.startMinutes + (span.endMin - span.startMin)),
+            color:
+                categoryFill(eventCategoryColors(state.event, props.categories)) ??
+                'var(--accent)',
+        }
+    }
+    const movingId = () => {
+        const s = dragState.value
+        return s?.type === 'move' ? s.event.id : undefined
+    }
+    return (
+        <div
+            class={`${styles.col}${props.today ? ` ${styles.today}` : ''}`}
+            data-testid="time-grid-day-col"
+            ref={props.ref}
+            onMouseDown={e => props.onMouseDown(e)}
+        >
+            <Index each={HOURS}>
+                {() => (
+                    <div class={styles.hourBlock}>
+                        <div class={styles.hourCell} />
+                        <div class={styles.halfCell} />
+                    </div>
+                )}
+            </Index>
+            <For each={layout()}>
+                {item => (
+                    <TimeGridEvent
+                        {...{ item }}
+                        date={props.date}
+                        categories={props.categories}
+                        store={props.store}
+                        dimmed={movingId() === item.event.id}
+                        onMouseDown={props.onEventMouseDown}
+                    />
+                )}
+            </For>
+            <Show when={ghost()}>
+                {g => {
+                    const box = () => ghostBox(g().startMin, g().endMin)
+                    return (
+                        <DragGhost
+                            top={box().top}
+                            height={box().height}
+                            startMin={g().startMin}
+                            endMin={box().endMin}
+                            color={g().color}
+                        />
+                    )
+                }}
+            </Show>
+        </div>
+    )
+}
+
+export default TimeGridDayColumn

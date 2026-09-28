@@ -46,3 +46,11 @@ export function decodeTaskDrag(raw: string): TaskRowRef | null {
         return v as TaskRowRef
     return null
 }
+
+/** The one drop-handler body every task drop target shares: claim the event, then read our
+ *  payload out of it. Null for a foreign drag (a file-tree row, a text selection). */
+export function readTaskDrop(e: DragEvent): TaskRowRef | null {
+    e.preventDefault()
+    const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
+    return raw ? decodeTaskDrag(raw) : null
+}

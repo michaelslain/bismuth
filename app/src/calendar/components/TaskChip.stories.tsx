@@ -121,9 +121,9 @@ export const WithCategoryColour: Story = {
         ),
     play: async ({ canvasElement }) => {
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.style.color).toBe('var(--teal)')
+        expect(marker.style.getPropertyValue("--task-check-color")).toBe('var(--teal)')
         // the marker is the chip root's FIRST element child — nothing (no band span) precedes it.
         const root = marker.closest('div')!
         expect(root.firstElementChild).toBe(marker)
@@ -146,9 +146,9 @@ export const CarriedWithCategoryColour: Story = {
         ),
     play: async ({ canvasElement }) => {
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.style.color).toBe('var(--violet)')
+        expect(marker.style.getPropertyValue("--task-check-color")).toBe('var(--violet)')
     },
 }
 
@@ -166,9 +166,9 @@ export const CarriedWithoutCategoryColour: Story = {
         ),
     play: async ({ canvasElement }) => {
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.style.color).toBe('')
+        expect(marker.style.getPropertyValue("--task-check-color")).toBe('')
         // "carried" proven by the painted hairline (TaskChip.module.css's `.carried`), not by a
         // hashed CSS-module class name — same convention CalendarView.stories.tsx's
         // MonthWithTasks uses.
@@ -347,7 +347,7 @@ export const ResolvedDone: Story = {
         ),
     play: async ({ canvasElement }) => {
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
         expect(marker.textContent?.trim()).toBe('[x]')
     },
@@ -368,7 +368,7 @@ export const ResolvedCancelled: Story = {
         ),
     play: async ({ canvasElement }) => {
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
         expect(marker.textContent?.trim()).toBe('[-]')
     },
@@ -420,7 +420,7 @@ export const StopsPropagation: Story = {
             '[data-testid="ancestor"]',
         )!
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
         const title = canvasElement.querySelector<HTMLElement>(
             '[data-testid="task-chip-title"]',
@@ -464,7 +464,7 @@ export const RightClickOpensStatusMenu: Story = {
     play: async ({ canvasElement }) => {
         delete (window as unknown as { __picked?: string }).__picked
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
         // userEvent has no native "right click" — a contextmenu event is what the browser
         // fires for one, and it's what the marker's own onContextMenu listens for.
@@ -559,10 +559,10 @@ export const MarkerNotInteractiveForSelfOwnedRow: Story = {
     play: async ({ canvasElement }) => {
         const calls = (window as unknown as { __calls: string[] }).__calls
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.getAttribute('aria-disabled')).toBe('true')
-        expect(marker.title).toContain("Can't toggle")
+        expect(marker.getAttribute('aria-readonly')).toBe('true')
+        expect(marker.tabIndex).toBe(-1) // display only: not a second tab stop
 
         // Clicking the marker must NOT toggle — but must not be a dead zone either: the click
         // falls through to the chip's own open-on-click, same as clicking the title would.
@@ -599,9 +599,9 @@ export const MarkerInteractiveForSourcedRow: Story = {
     play: async ({ canvasElement }) => {
         const calls = (window as unknown as { __calls2: string[] }).__calls2
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.getAttribute('aria-disabled')).toBeNull()
+        expect(marker.getAttribute('aria-readonly')).toBeNull()
         await userEvent.click(marker)
         expect(calls).toEqual(['toggled'])
     },
@@ -628,9 +628,9 @@ export const MarkerInteractiveForStoredRow: Story = {
     play: async ({ canvasElement }) => {
         const calls = (window as unknown as { __calls3: string[] }).__calls3
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )!
-        expect(marker.getAttribute('aria-disabled')).toBeNull()
+        expect(marker.getAttribute('aria-readonly')).toBeNull()
         await userEvent.click(marker)
         expect(calls).toEqual(['toggled'])
         // draggable too — the same isWritableTask gate covers drag as well as the marker.
