@@ -1,0 +1,63 @@
+import { describe, expect, test } from 'bun:test'
+import { layoutBars } from './barRows'
+
+describe('layoutBars', () => {
+    test('widths add up to columns', () => {
+        const points = [
+            { key: 'a', label: 'short', value: 3 },
+            { key: 'b', label: 'a much longer label', value: 9 },
+        ]
+        const columns = 60
+        const rows = layoutBars(points, columns)
+        for (const row of rows) {
+            expect(row.label.length + row.value.length + row.fill + row.track + 4).toBe(columns)
+        }
+    })
+
+    test('negative values clamp fill to 0', () => {
+        const points = [
+            { key: 'a', label: 'a', value: -5 },
+            { key: 'b', label: 'b', value: 10 },
+        ]
+        const rows = layoutBars(points, 40)
+        expect(rows[0].fill).toBe(0)
+        expect(rows[1].fill).toBeGreaterThan(0)
+    })
+
+    test('all-zero values give fill 0 with no NaN', () => {
+        const points = [
+            { key: 'a', label: 'a', value: 0 },
+            { key: 'b', label: 'b', value: 0 },
+        ]
+        const rows = layoutBars(points, 40)
+        for (const row of rows) {
+            expect(row.fill).toBe(0)
+            expect(Number.isNaN(row.fill)).toBe(false)
+            expect(Number.isNaN(row.track)).toBe(false)
+        }
+    })
+
+    test('widest label wins — every label pads to the same width', () => {
+        const points = [
+            { key: 'a', label: 'x', value: 1 },
+            { key: 'b', label: 'a much wider label', value: 2 },
+        ]
+        const rows = layoutBars(points, 60)
+        expect(rows[0].label.length).toBe('a much wider label'.length)
+        expect(rows[1].label.length).toBe('a much wider label'.length)
+    })
+
+    test('value column right-aligned to the widest value', () => {
+        const points = [
+            { key: 'a', label: 'a', value: 1 },
+            { key: 'b', label: 'b', value: 123 },
+        ]
+        const rows = layoutBars(points, 40)
+        expect(rows[0].value.length).toBe(rows[1].value.length)
+        expect(rows[0].value.endsWith('1')).toBe(true)
+    })
+
+    test('empty points list produces no rows', () => {
+        expect(layoutBars([], 40)).toEqual([])
+    })
+})
