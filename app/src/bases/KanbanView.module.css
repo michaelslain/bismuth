@@ -54,8 +54,8 @@
   padding: 0 0 var(--sp-3);
   box-sizing: border-box;
   /* Pins the header to the hover-revealed `[✎][🗑]` IconBar's own control size (--h-control,
-     global.css) rather than the natural (icons-hidden) content height, so their reveal never
-     grows the header and shifts the title/count. */
+     global.css) so the header height matches boards whose columns carry the bar, read-only or
+     not (the bar itself is absolutely positioned and never sizes the header). */
   min-height: calc(var(--h-control) + var(--sp-3));
   /* Positioning ancestor for the color-dot's popover anchor wrapper (.kbColorAnchor) below. */
   position: relative;
@@ -92,17 +92,30 @@
    controller accepts as a token-vs-literal ruling, not real drift. */
 .kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
-.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
-/* Rename/delete `IconBar` — sits in normal flow right of the count (not absolutely over it, the
-   old `…` trigger's trick), so it RESERVES its own space and never shifts the title/count when
-   revealed. At rest it's invisible + non-interactive; header `:hover`/`:focus-within` fades it
-   in. Only opacity/pointer-events transition — layout never moves. */
+/* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
+   its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right
+   edge with no reserved gap (the in-flow bar used to hold it 26px short). */
+.kbHeaderTrail { margin-left: auto; position: relative; display: flex; align-items: center; flex: none; }
+.kanbanCount { font-size: var(--fs-ui); color: var(--faint); }
+/* Rename/delete `IconBar` — absolutely positioned immediately left of the count (`right: 100%` of
+   the trail), so revealing it moves neither the title nor the count. At rest it is invisible and
+   non-interactive; hovering ANYWHERE on the column (not just the thin header strip — the user
+   hovered the lane and saw nothing, round-2 item 9) or focusing inside the header fades it in.
+   `[data-hover]` is the same hover, set from pointerenter/leave in KanbanView.tsx, so a story's
+   `userEvent.hover` (a synthetic event CSS `:hover` never sees) reveals it too. Only
+   opacity/pointer-events transition — layout never moves. */
 .kbHeaderActions {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: var(--sp-3);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
 }
-.kanbanColHeader:hover .kbHeaderActions,
+.kanbanColumn:hover .kbHeaderActions,
+.kanbanColumn[data-hover] .kbHeaderActions,
 .kanbanColHeader:focus-within .kbHeaderActions {
   opacity: 1;
   pointer-events: auto;
@@ -130,14 +143,25 @@
 /* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
    when a card hovers this column. Spacing comes purely from the column's flex `gap` (plus the
    column's top padding), so the placeholder sits with the same margins as a real card in any
-   slot — including the very top. A negative margin-bottom cancels the trailing gap while
-   collapsed so an inactive placeholder adds no space between cards.
+   slot — including the very top. A negative margin-TOP cancels the gap while collapsed so an
+   inactive placeholder adds no space between cards. It is the top margin, not the bottom, on
+   purpose: a column always ends in a collapsed placeholder (the trailing drop slot), and on a
+   read-only board (no add-card button after it) that placeholder is the LAST child. A negative
+   margin-bottom there shrank the list's layout height below the placeholder's own border box, so
+   `.kanbanCards` measured scrollHeight 200 vs clientHeight 193 on a two-card board and painted a
+   scrollbar with nothing to scroll (round-2 item 8). A negative margin-top pulls the box up into
+   the space already laid out, so it never pokes past the end — and overflow toward the top is
+   never scrollable. Spacing between cards is identical either way.
    Acceptance: "Kanban card enter/leave does not animate height/margin-bottom" — those two flip
    instantly (a card's own layout, not this component's), only opacity/border/background ease. */
 .kanbanPlaceholder {
   height: 0;
   opacity: 0;
-  margin-bottom: -9px;
+  /* Exactly the list's flex gap plus this box's own 2px of border, so a collapsed placeholder
+     nets ZERO height: it sits flush on the card above instead of overlapping it by 1px (the old
+     -9px), which on a read-only board left the last card 1px past the list's end — a 1px
+     phantom scroll. */
+  margin-top: calc(-1 * (var(--sp-3) + 2px));
   border: 1px solid transparent;
   border-radius: var(--r-0);
   background: transparent;
@@ -148,7 +172,7 @@
 .kanbanPlaceholderActive {
   height: var(--kb-drag-h, 46px);
   opacity: 1;
-  margin-bottom: 0;
+  margin-top: 0;
   border-color: var(--bismuth-accent-border);
   background: transparent;
 }

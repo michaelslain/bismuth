@@ -5,9 +5,10 @@ import { within } from 'storybook/test'
 
 /** Focuses a kanban column header's hover-revealed `[✎]`/`[🗑]` IconButton (rename/delete —
  *  `KanbanView.module.css`'s `.kbHeaderActions`, opacity/pointer-events 0 at rest, revealed on
- *  the header's `:hover`/`:focus-within`). CSS `:hover` can't be posed from a story — it follows
- *  the physical pointer, `userEvent.hover` only dispatches events without moving it (see
- *  TabRail.stories.tsx) — but `:focus-within` follows real focus, so focusing the button itself
+ *  the column's `:hover`/`[data-hover]` or the header's `:focus-within`). CSS `:hover` can't be
+ *  posed from a story — it follows the physical pointer, `userEvent.hover` only dispatches events
+ *  without moving it (see TabRail.stories.tsx; KanbanView's own `data-hover` mirror is what
+ *  HeaderActionsOnHover exercises) — but `:focus-within` follows real focus, so focusing the button itself
  *  both reveals it and gives it keyboard focus in one step, same as a real keyboard user tabbing
  *  to it. Returns the column element so the caller can scope its own follow-up queries (the
  *  rename field that replaces the title renders inline in this same header, not portaled). */

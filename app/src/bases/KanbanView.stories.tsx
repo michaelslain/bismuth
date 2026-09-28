@@ -26,10 +26,29 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+/** Every column's card list (`[data-kbcol]`'s last child) must not overflow when its cards fit —
+ *  a list whose scrollHeight exceeds its clientHeight paints a scrollbar with nothing to scroll.
+ *  Round-2 item 8: the trailing collapsed drop placeholder's negative margin-bottom made a
+ *  read-only two-card column measure 200 vs 193. */
+async function expectNoPhantomScroll(canvasElement: HTMLElement) {
+    await waitFor(() =>
+        expect(
+            canvasElement.querySelectorAll('[data-kbcol]').length,
+        ).toBeGreaterThan(0),
+    )
+    const lists = [
+        ...canvasElement.querySelectorAll<HTMLElement>('[data-kbcol]'),
+    ].map(col => col.lastElementChild as HTMLElement)
+    for (const list of lists) {
+        expect(list.scrollHeight).toBeLessThanOrEqual(list.clientHeight)
+        expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth)
+    }
+}
+
 /** Grouped by `status` (required for kanban — without a `groupBy` the view renders a hint
  *  instead of a board) with `order` set so each card shows its `priority`/`tags` meta chips.
- *  No `basePath` -> read-only board (no drag/add composer), matching an embedded ```query
- *  kanban. */
+ *  No `basePath` -> read-only board (no drag/add composer, and no header `[✎][🗑]` — there is
+ *  nothing it could write to), matching an embedded ```query kanban. */
 export const Default: Story = {
     render: () => {
         const views = kanbanViews()
@@ -40,6 +59,9 @@ export const Default: Story = {
                 onChange={noop}
             />
         )
+    },
+    play: async ({ canvasElement }) => {
+        await expectNoPhantomScroll(canvasElement)
     },
 }
 
@@ -59,6 +81,85 @@ export const EditableWithPinnedColumns: Story = {
                 onChange={noop}
             />
         )
+    },
+}
+
+/** Hovering a column reveals its header's `[✎]` rename (and `[🗑]` delete, only on an EMPTY
+ *  column — "Blocked" here) without moving the title or the count: the bar is hung off the
+ *  count's left edge, so at rest the count sits flush against the header's right edge. The hover
+ *  is the whole column, not just the header strip. `userEvent.hover` is synthetic (CSS `:hover`
+ *  never sees it), so this exercises the `data-hover` half of the reveal; the `:hover` half was
+ *  proven with real CDP pointer moves (round-2 item 9). */
+export const HeaderActionsOnHover: Story = {
+    render: () => {
+        const views = kanbanViews({
+            groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
+        })
+        return (
+            <KanbanView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="stories/kanban-demo.md"
+                onChange={noop}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const col = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                '[data-kbcol="Blocked"]',
+            )
+            expect(el).not.toBeNull()
+            return el!
+        })
+        // Measure after the UI font lands — a late font swap re-measures the count's digits.
+        await document.fonts.ready
+        const header = col.firstElementChild!.firstElementChild as HTMLElement
+        const bar = within(col).getByRole('toolbar', { name: 'Column actions' })
+        const count = within(header).getByText('00')
+        const rect = (el: Element) => el.getBoundingClientRect()
+
+        // At rest: hidden, and the count sits flush right (no gap reserved for the bar).
+        expect(getComputedStyle(bar).opacity).toBe('0')
+        expect(
+            Math.abs(rect(header).right - rect(count).right),
+        ).toBeLessThanOrEqual(1)
+        const countLeft = rect(count).left
+
+        await userEvent.hover(col)
+        await waitFor(() => expect(getComputedStyle(bar).opacity).toBe('1'))
+        expect(getComputedStyle(bar).pointerEvents).toBe('auto')
+        expect(getComputedStyle(bar).visibility).toBe('visible')
+        const rename = within(bar).getByLabelText('Rename column')
+        const del = within(bar).getByLabelText('Delete column')
+        for (const b of [rename, del]) {
+            expect(rect(b).width).toBeGreaterThan(0)
+            expect(rect(b).height).toBeGreaterThan(0)
+        }
+        // Revealing it moved nothing, and it sits left of the count, not over it.
+        expect(Math.abs(rect(count).left - countLeft)).toBeLessThan(0.5)
+        expect(rect(bar).right).toBeLessThanOrEqual(countLeft)
+
+        await userEvent.unhover(col)
+        await waitFor(() => expect(getComputedStyle(bar).opacity).toBe('0'))
+
+        // A non-empty column offers rename only.
+        const todo = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol="Todo"]',
+        )!
+        await userEvent.hover(todo)
+        const todoBar = within(todo).getByRole('toolbar', {
+            name: 'Column actions',
+        })
+        await waitFor(() =>
+            expect(getComputedStyle(todoBar).opacity).toBe('1'),
+        )
+        expect(within(todoBar).queryByLabelText('Delete column')).toBeNull()
+        await userEvent.unhover(todo)
+        await waitFor(() =>
+            expect(getComputedStyle(todoBar).opacity).toBe('0'),
+        )
+        await expectNoPhantomScroll(canvasElement)
     },
 }
 
@@ -237,16 +338,27 @@ const MANY_CARDS_ROWS = Array.from({ length: 12 }, () => ({
 
 /** A column with 12+ cards: the header count reads `12`, not `2` or `012` — `padCount` pads a
  *  single digit to two and leaves three-plus digits alone — and the column scrolls internally
- *  rather than growing past the board's own height. */
+ *  rather than growing past the board's own height. The host caps the board's height the way an
+ *  editor pane does: without a cap the board grows to its tallest column and nothing ever
+ *  overflows — this story's scroll assertion used to pass only on the 7px phantom overflow the
+ *  trailing drop placeholder caused (round-2 item 8), not on real overflow. */
 export const ManyCardsInOneColumn: Story = {
     render: () => {
         const views = kanbanViews()
         return (
-            <KanbanView
-                result={sampleViewResult(MANY_CARDS_ROWS, { views })}
-                config={sampleBaseConfig({ views })}
-                onChange={noop}
-            />
+            <div
+                style={{
+                    height: '420px',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                }}
+            >
+                <KanbanView
+                    result={sampleViewResult(MANY_CARDS_ROWS, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onChange={noop}
+                />
+            </div>
         )
     },
     play: async ({ canvasElement }) => {

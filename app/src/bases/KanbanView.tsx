@@ -225,6 +225,9 @@ export function KanbanView(props: {
     // The column whose header is mid-rename — swaps the title `Text` for the same inline
     // `KanbanColumnNameInput` the old `…` menu's rename step used.
     const [renamingCol, setRenamingCol] = createSignal<string | null>(null)
+    // The column the pointer is over — reveals that column's header `[✎][🗑]` bar (as
+    // `data-hover`, alongside CSS `:hover`) so a story's synthetic `userEvent.hover` shows it too.
+    const [hoverCol, setHoverCol] = createSignal<string | null>(null)
     const [composerCol, setComposerCol] = createSignal<string | null>(null)
     const [draft, setDraft] = createSignal('')
     // Paths minted this session, so two quick adds don't collide before a refetch lands.
@@ -1580,6 +1583,13 @@ export function KanbanView(props: {
                                             isLastCol(),
                                     }}
                                     style={{ '--kb-col-color': color() }}
+                                    data-hover={
+                                        hoverCol() === key ? '' : undefined
+                                    }
+                                    onPointerEnter={() => setHoverCol(key)}
+                                    onPointerLeave={() =>
+                                        setHoverCol(c => (c === key ? null : c))
+                                    }
                                 >
                                     <div
                                         class={styles.kbColorAnchor}
@@ -1651,49 +1661,53 @@ export function KanbanView(props: {
                                                     }
                                                 />
                                             </Show>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kanbanCount}
-                                            >
-                                                {padCount(
-                                                    group().rows.length,
-                                                )}
-                                            </Text>
-                                            <Show when={canAdd()}>
-                                                <IconBar
-                                                    label="Column actions"
-                                                    class={
-                                                        styles.kbHeaderActions
-                                                    }
-                                                >
-                                                    <IconButton
-                                                        icon="Pencil"
-                                                        label="Rename column"
-                                                        onClick={() =>
-                                                            setRenamingCol(
-                                                                group().key,
-                                                            )
-                                                        }
-                                                    />
-                                                    <Show
-                                                        when={
-                                                            group().rows
-                                                                .length === 0
+                                            {/* Count flush right; the actions bar hangs off its left edge
+                                                (absolute), so revealing it moves nothing. */}
+                                            <div class={styles.kbHeaderTrail}>
+                                                <Show when={canAdd()}>
+                                                    <IconBar
+                                                        label="Column actions"
+                                                        class={
+                                                            styles.kbHeaderActions
                                                         }
                                                     >
                                                         <IconButton
-                                                            icon="Trash2"
-                                                            label="Delete column"
+                                                            icon="Pencil"
+                                                            label="Rename column"
                                                             onClick={() =>
-                                                                void deleteColumn(
+                                                                setRenamingCol(
                                                                     group().key,
                                                                 )
                                                             }
                                                         />
-                                                    </Show>
-                                                </IconBar>
-                                            </Show>
+                                                        <Show
+                                                            when={
+                                                                group().rows
+                                                                    .length === 0
+                                                            }
+                                                        >
+                                                            <IconButton
+                                                                icon="Trash2"
+                                                                label="Delete column"
+                                                                onClick={() =>
+                                                                    void deleteColumn(
+                                                                        group().key,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </Show>
+                                                    </IconBar>
+                                                </Show>
+                                                <Text
+                                                    as="span"
+                                                    inherit
+                                                    class={styles.kanbanCount}
+                                                >
+                                                    {padCount(
+                                                        group().rows.length,
+                                                    )}
+                                                </Text>
+                                            </div>
                                         </div>
 
                                         {/* Color picker popover */}
