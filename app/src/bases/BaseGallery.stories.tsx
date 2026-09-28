@@ -18,6 +18,7 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { Label } from '../ui/_storyKit'
 import { settings, setSettings } from '../settings'
+import { whenMathReady } from '../editor/katexLoader'
 import type { Row, SourceSpec, ViewType } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 
@@ -103,6 +104,10 @@ type Tile = {
     from?: string
     /** Anything after the frontmatter (the calendar's event table). */
     table?: string[]
+    /** Base-level `formulas:` lines, indented two spaces — the line tile's y plots one, so the
+     *  KaTeX definition gets its `formula.*` appendix and the chart shows real computed numbers,
+     *  not just a raw column. */
+    formulas?: string[]
 }
 
 const TILES: Tile[] = [
@@ -125,8 +130,19 @@ const TILES: Tile[] = [
     },
     { type: 'flashcards', from: '[[Vocab]]' },
     { type: 'bar', view: ['x: status', 'aggregate: count'] },
-    { type: 'line' },
-    { type: 'stat' },
+    {
+        type: 'line',
+        formulas: ['weighted: priority * 2'],
+        view: ['x: due', 'y: formula.weighted', 'aggregate: sum', 'bin: week'],
+    },
+    {
+        type: 'stat',
+        view: [
+            'stats:',
+            '  - { label: total priority, value: sum(priority) }',
+            '  - { label: average priority, value: avg(priority) }',
+        ],
+    },
     { type: 'heatmap', view: ['x: due'] },
 ]
 
@@ -137,6 +153,7 @@ function bodyOf(t: Tile): string {
         '---',
         'type: base',
         ...(t.from ? ['source:', '  kind: notes', `  from: "${t.from}"`] : []),
+        ...(t.formulas ? ['formulas:', ...t.formulas.map(l => `  ${l}`)] : []),
         'views:',
         `  - type: ${t.type}`,
         `    name: ${t.type[0].toUpperCase()}${t.type.slice(1)}`,
@@ -239,6 +256,15 @@ async function allTilesResolved({ canvasElement }: { canvasElement: HTMLElement 
     })
     const calendar = within(canvas.getByTestId('gallery-calendar'))
     await waitFor(() => expect(calendar.getByText('Roadmap review')).toBeInTheDocument())
+    // The stat tile's KaTeX expression only paints after the lazy katex module resolves.
+    await whenMathReady()
+    await waitFor(() => {
+        const stat = canvas.getByTestId('gallery-stat')
+        expect(stat.querySelector('.katex')).toBeInTheDocument()
+        const values = Array.from(stat.querySelectorAll('[class*="statValue"]'))
+        expect(values.length).toBeGreaterThan(0)
+        for (const v of values) expect(v.textContent?.trim()).not.toBe('—')
+    })
     // Nothing on mount may move the page: the gallery opens at its first tile.
     expect(canvasElement.ownerDocument.defaultView?.scrollY).toBe(0)
 }
