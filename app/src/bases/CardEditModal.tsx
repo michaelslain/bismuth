@@ -90,6 +90,11 @@ export function CardEditModal(props: {
      *  right-click context-menu path; see KanbanView/KanbanCard). */
     onDelete: () => void
     onClose: () => void
+    /** Opens the underlying note (dispatches `bismuth-open`) — supplied only for a NOTE-backed
+     *  row (see mount sites: openRowEditor.tsx / KanbanCard.tsx). Absent for a stored row with
+     *  no note file behind it, or a row being freshly created (AddRowAction). When given, the
+     *  footer's trailing group gains a plain `[open note]` before `[done]`. */
+    onOpenNote?: () => void
 }) {
     let titleRef: HTMLInputElement | undefined
     const fieldRefs = new Map<string, HTMLElement>()
@@ -429,6 +434,18 @@ export function CardEditModal(props: {
                     </Show>
                 }
             >
+                <Show when={props.onOpenNote}>
+                    {onOpenNote => (
+                        <TextButton
+                            onClick={() => {
+                                close()
+                                onOpenNote()()
+                            }}
+                        >
+                            open note
+                        </TextButton>
+                    )}
+                </Show>
                 <TextButton primary onClick={close}>
                     done
                 </TextButton>

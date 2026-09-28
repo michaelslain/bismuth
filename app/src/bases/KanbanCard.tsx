@@ -17,6 +17,7 @@ import { renderCell, isTagColumn } from './renderValue'
 import { formatNumberDisplay } from './numberFormat'
 import { columnLabel } from './columnLabel'
 import { metaVisible, titleOf, writableKey } from './kanbanMeta'
+import { canWriteStoredRow } from './taskWrite'
 import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { isConfirmKey } from '../ui/widgetKeys'
@@ -396,6 +397,18 @@ export function KanbanCard(props: {
                         onSetMeta={(id, v, opts) => commitMeta(id, v, opts)}
                         onDelete={commitDelete}
                         onClose={closeEdit}
+                        onOpenNote={
+                            canWriteStoredRow(props.row)
+                                ? undefined
+                                : () =>
+                                      window.dispatchEvent(
+                                          new CustomEvent('bismuth-open', {
+                                              detail: {
+                                                  path: props.row.file.path,
+                                              },
+                                          }),
+                                      )
+                        }
                     />
                 )}
             </Show>
