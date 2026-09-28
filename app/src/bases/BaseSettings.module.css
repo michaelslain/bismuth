@@ -20,7 +20,8 @@
 /* collapsed line: chevron / name / muted type badge / eye toggle */
 .panel .propset-head { display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
 .panel .propset-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.panel .propset-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* No focus ring — every button in the app paints no focus indicator, mouse or keyboard, by user
+   decision (2026-09-27). */
 .panel .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .panel .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
 .panel .propset-row.open .propset-chev { transform: rotate(90deg); }
