@@ -2,12 +2,14 @@
    A year-wide contribution grid: as many 2-character-pitch week columns (glyph + space) as the
    pane fits, ending on the week holding the later of today and the latest data date. */
 .heatmap { display: flex; flex-direction: column; gap: var(--sp-4); }
+.heatmap { width: max-content; }
 .heatMonths {
   display: flex;
-  font-size: var(--fs-micro);
+  font-size: var(--fs-ui);
   color: var(--faint);
   font-family: var(--ui-font-stack);
 }
+.heatMonthLabel { font-size: var(--fs-micro); }
 .heatGutter { width: 2ch; flex: none; }
 .heatMonthCol { width: 2ch; flex: none; overflow: visible; white-space: nowrap; }
 .heatGrid { display: flex; flex-direction: column; }
@@ -18,6 +20,9 @@
 .heatCol.lv1 { color: var(--text-muted); }
 .heatCol.lv2, .heatCol.lv3 { color: var(--accent); }
 .heatCol.selected { color: var(--fg); }
+.lv0 { color: var(--faint); }
+.lv1 { color: var(--text-muted); }
+.lv2, .lv3 { color: var(--accent); }
 .legend {
   display: flex;
   align-items: center;
@@ -27,4 +32,4 @@
   color: var(--faint);
   font-family: var(--ui-font-stack);
 }
-.legend .legendGlyph { width: 12px; text-align: center; }
+.legend .legendGlyph { width: 1ch; text-align: center; }
