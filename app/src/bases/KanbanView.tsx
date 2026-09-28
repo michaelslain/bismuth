@@ -1583,20 +1583,18 @@ export function KanbanView(props: {
             return
         }
         try {
-            const current = resolveProperty(id, row)
-            const before = current == null ? '' : String(current)
-            const next = await embedUploadsIntoValue({
+            const { value: next, landed } = await embedUploadsIntoValue({
                 uploads,
                 notePath: row.file.path,
-                value: before,
+                value: () => String(resolveProperty(id, row) ?? ''),
             })
-            if (next === before) return // nothing landed (uploadImageEmbeds already toasted why)
+            if (landed === 0) return // nothing landed (uploadImageEmbeds already toasted why)
             await setMetaProperty(row, id, next)
             const label =
                 row.file.path.split('/').pop()?.replace(/\.md$/, '') ??
                 row.file.path
             pushToast(
-                `Added ${uploads.length === 1 ? 'image' : `${uploads.length} images`} to "${label}"`,
+                `Added ${landed === 1 ? 'image' : `${landed} images`} to "${label}"`,
             )
         } catch (e) {
             pushToast(`Couldn't add image: ${(e as Error).message}`)
