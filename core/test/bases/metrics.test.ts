@@ -1,0 +1,242 @@
+import { describe, test, expect } from 'bun:test'
+import { parseBase } from '../../src/bases/parse'
+import {
+    evaluateMetric,
+    metricResults,
+    defaultMetric,
+} from '../../src/bases/metrics'
+import { buildChartData } from '../../src/bases/chart'
+import type { Row, ViewConfig } from '../../src/bases/types'
+import { EMPTY_FILE } from '../../src/bases/types'
+
+function row(note: Record<string, unknown>): Row {
+    return {
+        file: { ...EMPTY_FILE, name: 'n', basename: 'n', path: 'n.md' },
+        note,
+        formula: {},
+    }
+}
+const view = (v: Partial<ViewConfig>): ViewConfig => ({
+    type: 'stat',
+    name: 'S',
+    ...v,
+})
+
+describe('parseBase stats normalization', () => {
+    test('a bare string entry sets label = value = the string', () => {
+        const cfg = parseBase(
+            'views:\n  - type: stat\n    name: S\n    stats:\n      - "sum(priority)"\n',
+        )
+        expect(cfg.views[0].stats).toEqual([
+            { label: 'sum(priority)', value: 'sum(priority)' },
+        ])
+    })
+
+    test('an object entry keeps its label, defaulting to value when absent', () => {
+        const cfg = parseBase(
+            'views:\n  - type: stat\n    name: S\n    stats:\n      - label: Total\n        value: "sum(priority)"\n      - value: "count()"\n',
+        )
+        expect(cfg.views[0].stats).toEqual([
+            { label: 'Total', value: 'sum(priority)' },
+            { label: 'count()', value: 'count()' },
+        ])
+    })
+
+    test('malformed entries are dropped', () => {
+        const cfg = parseBase(
+            'views:\n  - type: stat\n    name: S\n    stats:\n      - 5\n      - {}\n      - label: NoValue\n',
+        )
+        expect(cfg.views[0].stats).toBeUndefined()
+    })
+
+    test('a non-array stats key is dropped', () => {
+        const cfg = parseBase(
+            'views:\n  - type: stat\n    name: S\n    stats: "sum(priority)"\n',
+        )
+        expect(cfg.views[0].stats).toBeUndefined()
+    })
+})
+
+describe('evaluateMetric', () => {
+    test('count() counts all rows', () => {
+        const rows = [row({}), row({}), row({})]
+        expect(evaluateMetric(rows, 'count()')).toBe(3)
+    })
+
+    test('sum(priority) sums the property across rows', () => {
+        const rows = [row({ priority: 1 }), row({ priority: 2 }), row({ priority: 3 })]
+        expect(evaluateMetric(rows, 'sum(priority)')).toBe(6)
+    })
+
+    test('avg(priority) over no rows is null', () => {
+        expect(evaluateMetric([], 'avg(priority)')).toBeNull()
+    })
+
+    test('sum(price) / sum(units) divides two aggregates', () => {
+        const rows = [
+            row({ price: 10, units: 2 }),
+            row({ price: 20, units: 3 }),
+        ]
+        expect(evaluateMetric(rows, 'sum(price) / sum(units)')).toBe(6)
+    })
+
+    test('count(status == "done") counts rows where the expr is truthy', () => {
+        const rows = [
+            row({ status: 'done' }),
+            row({ status: 'open' }),
+            row({ status: 'done' }),
+        ]
+        expect(evaluateMetric(rows, 'count(status == "done")')).toBe(2)
+    })
+
+    test('max(priority) - min(priority)', () => {
+        const rows = [row({ priority: 1 }), row({ priority: 5 }), row({ priority: 3 })]
+        expect(evaluateMetric(rows, 'max(priority) - min(priority)')).toBe(4)
+    })
+
+    test('a parse error throws', () => {
+        expect(() => evaluateMetric([], 'sum(')).toThrow()
+    })
+
+    test('a bare identifier outside an aggregate throws', () => {
+        expect(() => evaluateMetric([row({ priority: 1 })], 'priority')).toThrow(
+            'priority must be inside sum, avg, min, max or count',
+        )
+    })
+
+    test('division by zero is null', () => {
+        const rows = [row({ price: 10, units: 0 })]
+        expect(evaluateMetric(rows, 'sum(price) / sum(units)')).toBeNull()
+    })
+
+    test('sum over no numbers is 0', () => {
+        expect(evaluateMetric([], 'sum(priority)')).toBe(0)
+    })
+})
+
+describe('defaultMetric', () => {
+    test('count() labelled notes when aggregate is count', () => {
+        const rows = [row({ cat: 'a' }), row({ cat: 'b' })]
+        const data = buildChartData(rows, view({ x: 'cat', aggregate: 'count' }))
+        expect(defaultMetric(view({ x: 'cat', aggregate: 'count' }), data)).toEqual({
+            label: 'notes',
+            value: 'count()',
+        })
+    })
+
+    test('count() labelled notes when no y resolves', () => {
+        const rows = [row({ cat: 'a' })]
+        const data = buildChartData(rows, view({ x: 'cat' }))
+        expect(defaultMetric(view({ x: 'cat' }), data)).toEqual({
+            label: 'notes',
+            value: 'count()',
+        })
+    })
+
+    test('sum of y labelled "sum of <name>"', () => {
+        const rows = [row({ date: '2026-05-01', priority: 3 })]
+        const v = view({ x: 'date', y: 'priority', aggregate: 'sum' })
+        const data = buildChartData(rows, v)
+        expect(defaultMetric(v, data)).toEqual({
+            label: 'sum of priority',
+            value: 'sum(priority)',
+        })
+    })
+
+    test('avg of y labelled "average of <name>"', () => {
+        const rows = [row({ date: '2026-05-01', priority: 3 })]
+        const v = view({ x: 'date', y: 'priority', aggregate: 'avg' })
+        const data = buildChartData(rows, v)
+        expect(defaultMetric(v, data)).toEqual({
+            label: 'average of priority',
+            value: 'avg(priority)',
+        })
+    })
+})
+
+describe('metricResults', () => {
+    const today = '2026-06-15' // a Monday
+
+    test('uses declared stats when present', () => {
+        const rows = [row({ date: '2026-06-15', priority: 2 })]
+        const v = view({
+            x: 'date',
+            bin: 'week',
+            stats: [{ label: 'Total', value: 'sum(priority)' }],
+        })
+        const results = metricResults(rows, v, today)
+        expect(results).toHaveLength(1)
+        expect(results[0].label).toBe('Total')
+        expect(results[0].source).toBe('sum(priority)')
+        expect(results[0].value).toBe(2)
+    })
+
+    test('synthesizes a default metric when no stats declared', () => {
+        const rows = [row({ date: '2026-06-15', priority: 2 })]
+        const v = view({ x: 'date', y: 'priority', aggregate: 'sum', bin: 'week' })
+        const results = metricResults(rows, v, today)
+        expect(results).toHaveLength(1)
+        expect(results[0].label).toBe('sum of priority')
+    })
+
+    test('current/previous/series bin by the current date when x is a date axis', () => {
+        const rows = [
+            row({ date: '2026-06-15', priority: 2 }), // this week (Mon)
+            row({ date: '2026-06-08', priority: 5 }), // last week
+        ]
+        const v = view({
+            x: 'date',
+            bin: 'week',
+            stats: [{ label: 'Total', value: 'sum(priority)' }],
+        })
+        const [r] = metricResults(rows, v, today)
+        expect(r.hasTime).toBe(true)
+        expect(r.bin).toBe('week')
+        expect(r.current).toBe(2)
+        expect(r.previous).toBe(5)
+        expect(r.series).toHaveLength(12)
+        expect(r.series[11]).toBe(2) // last entry = current bin
+        expect(r.series[10]).toBe(5) // previous bin
+    })
+
+    test('a bin with no rows evaluates over an empty set', () => {
+        const rows = [row({ date: '2026-06-15', priority: 2 })]
+        const v = view({
+            x: 'date',
+            bin: 'week',
+            stats: [{ label: 'Total', value: 'count()' }],
+        })
+        const [r] = metricResults(rows, v, today)
+        expect(r.previous).toBe(0) // count() over [] is 0
+    })
+
+    test('hasTime is false and current/previous/series are null/empty when x is not a date', () => {
+        const rows = [row({ cat: 'a', priority: 2 })]
+        const v = view({
+            x: 'cat',
+            stats: [{ label: 'Total', value: 'sum(priority)' }],
+        })
+        const [r] = metricResults(rows, v, today)
+        expect(r.hasTime).toBe(false)
+        expect(r.current).toBeNull()
+        expect(r.previous).toBeNull()
+        expect(r.series).toEqual([])
+        expect(r.value).toBe(2)
+    })
+
+    test('an evaluation error sets error and nulls the numbers rather than throwing', () => {
+        const rows = [row({ date: '2026-06-15', priority: 2 })]
+        const v = view({
+            x: 'date',
+            bin: 'week',
+            stats: [{ label: 'Bad', value: 'priority' }], // bare ident outside aggregate
+        })
+        const results = metricResults(rows, v, today)
+        expect(results).toHaveLength(1)
+        expect(results[0].error).toBeTruthy()
+        expect(results[0].value).toBeNull()
+        expect(results[0].current).toBeNull()
+        expect(results[0].previous).toBeNull()
+        expect(results[0].series).toEqual([])
+    })
+})

@@ -11,6 +11,8 @@ export interface ChartPoint {
     label: string
     value: number
     date?: string
+    /** Indices into the `rows` array passed to buildChartData — the notes behind this bucket. */
+    rows: number[]
 }
 
 export interface ChartData {
@@ -19,6 +21,11 @@ export interface ChartData {
     max: number
     isDate: boolean
     valueLabel: string
+    /** The RESOLVED axes (after auto-detection); undefined when nothing resolved. */
+    x?: string
+    y?: string
+    aggregate: Aggregate
+    bin: Bin
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
@@ -109,9 +116,10 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
 
     const buckets = new Map<
         string,
-        { label: string; vals: number[]; date?: string }
+        { label: string; vals: number[]; date?: string; rows: number[] }
     >()
-    for (const r of rows) {
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i]
         let key: string, label: string, date: string | undefined
         if (isDate) {
             const iso = toISODate(x ? resolveProperty(x, r) : null)
@@ -124,12 +132,14 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
             key = String(raw ?? '')
             label = key
         }
-        if (!buckets.has(key)) buckets.set(key, { label, vals: [], date })
+        if (!buckets.has(key)) buckets.set(key, { label, vals: [], date, rows: [] })
+        const bucket = buckets.get(key)!
+        bucket.rows.push(i)
         if (agg === 'count' || !y) {
-            buckets.get(key)!.vals.push(1)
+            bucket.vals.push(1)
         } else {
             const n = toNumber(resolveProperty(y, r))
-            if (!Number.isNaN(n)) buckets.get(key)!.vals.push(n)
+            if (!Number.isNaN(n)) bucket.vals.push(n)
         }
     }
 
@@ -138,6 +148,7 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
         label: b.label,
         date: b.date,
         value: aggregate(agg, b.vals),
+        rows: b.rows,
     }))
 
     if (isDate)
@@ -151,6 +162,10 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
         max: values.length ? Math.max(...values) : 0,
         isDate,
         valueLabel: agg === 'count' ? 'count' : (y ?? 'count'),
+        x,
+        y,
+        aggregate: agg,
+        bin,
     }
 }
 
@@ -161,21 +176,35 @@ export interface HeatCell {
 
 /**
  * Lay date-binned points into a GitHub-style grid: an array of week columns, each 7 cells (Mon..Sun).
- * The first column starts on the Monday on/before the earliest point; the final column is always
- * padded out to Sunday (7 cells) even when no data exists for days after the last point. Missing days
- * are `value: null`. Callers must pass pre-aggregated points (one per date) — duplicate dates are
- * last-write-wins (buildChartData already aggregates per day, so this holds in practice).
+ * Without a `range`, the first column starts on the Monday on/before the earliest point and the
+ * final column is padded out to Sunday (7 cells) even when no data exists for days after the last
+ * point. With a `range`, the grid instead spans exactly the Monday on/before `range.start` through
+ * the Sunday on/after `range.end`, regardless of where the data actually falls — points outside
+ * that span are simply not drawn, and days inside it with no data are `value: null`. Missing days
+ * are always `value: null`. Callers must pass pre-aggregated points (one per date) — duplicate
+ * dates are last-write-wins (buildChartData already aggregates per day, so this holds in practice).
  */
-export function buildHeatmapWeeks(points: ChartPoint[]): {
+export function buildHeatmapWeeks(
+    points: ChartPoint[],
+    range?: { start: string; end: string },
+): {
     weeks: HeatCell[][]
 } {
     const byDate = new Map<string, number>()
     for (const p of points) if (p.date) byDate.set(p.date, p.value) // one entry per date; last wins (see doc)
-    const dates = [...byDate.keys()].sort()
-    if (dates.length === 0) return { weeks: [] }
 
-    const start = binKey(dates[0], 'week') // Monday on/before first point
-    const end = dates[dates.length - 1]
+    let start: string
+    let end: string
+    if (range) {
+        start = binKey(range.start, 'week') // Monday on/before range.start
+        const endWeekStart = binKey(range.end, 'week')
+        end = addDaysISO(endWeekStart, 6) // Sunday on/after range.end
+    } else {
+        const dates = [...byDate.keys()].sort()
+        if (dates.length === 0) return { weeks: [] }
+        start = binKey(dates[0], 'week') // Monday on/before first point
+        end = dates[dates.length - 1]
+    }
 
     const weeks: HeatCell[][] = []
     let col: HeatCell[] = []
