@@ -14,7 +14,7 @@ import { createSignal, For, Show, type Component } from 'solid-js'
 import type { ViewType } from '../../../core/src/bases/types'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { openContextMenu } from '../nativeMenu'
-import { BASE_VIEW_KINDS } from '../baseViews'
+import { addMenuItems, tabMenuItems } from './viewTabMenu'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import InlineTextInput from '../ui/InlineTextInput'
@@ -53,74 +53,19 @@ const ViewTabs: Component<ViewTabsProps> = props => {
         items: MenuItem[]
     } | null>(null)
 
-    const kindItems = (i: number): MenuItem[] =>
-        BASE_VIEW_KINDS.filter(k => k.view !== props.views[i].type).map(k => ({
-            label: k.label,
-            icon: k.icon,
-            onSelect: () => props.onChangeType(i, k.view as ViewType),
-        }))
-
-    const tabMenuItems = (i: number): MenuItem[] => {
-        const v = props.views[i]
-        return [
-            { label: 'rename', icon: 'Pencil', onSelect: () => setRenaming(i) },
-            {
-                label: 'duplicate',
-                icon: 'Copy',
-                onSelect: () => props.onDuplicate(i),
-            },
-            { label: 'change kind', icon: 'Table', submenu: kindItems(i) },
-            {
-                label:
-                    v.mode === 'tasks'
-                        ? 'turn off tasks mode'
-                        : 'turn on tasks mode',
-                icon: 'ListChecks',
-                onSelect: () => props.onToggleMode(i),
-            },
-            {
-                label: 'move left',
-                icon: 'ArrowLeft',
-                disabled: i === 0,
-                onSelect: () => props.onMove(i, -1),
-            },
-            {
-                label: 'move right',
-                icon: 'ArrowRight',
-                disabled: i === props.views.length - 1,
-                onSelect: () => props.onMove(i, 1),
-            },
-            {
-                label: 'view settings',
-                icon: 'Settings',
-                onSelect: () => props.onOpenSettings(i),
-            },
-            {
-                label: 'delete',
-                icon: 'Trash2',
-                danger: true,
-                // Never offers to drop the last view. No confirm() — a nested "confirm delete"
-                // row is the confirmation, the same submenu mechanic as "change kind".
-                disabled: props.views.length <= 1,
-                submenu: [
-                    {
-                        label: 'confirm delete',
-                        danger: true,
-                        onSelect: () => props.onDelete(i),
-                    },
-                ],
-            },
-        ]
-    }
+    const tabMenu = (i: number) =>
+        tabMenuItems(props.views, i, {
+            onRename: setRenaming,
+            onDuplicate: props.onDuplicate,
+            onChangeType: props.onChangeType,
+            onToggleMode: props.onToggleMode,
+            onMove: props.onMove,
+            onOpenSettings: props.onOpenSettings,
+            onDelete: props.onDelete,
+        })
 
     const openTabMenu = (i: number, x: number, y: number) =>
-        openContextMenu(x, y, tabMenuItems(i), setMenu)
-
-    const addMenuItems: MenuItem[] = BASE_VIEW_KINDS.map(k => ({
-        label: k.label,
-        icon: k.icon,
-        onSelect: () => props.onAdd(k.view as ViewType),
-    }))
+        openContextMenu(x, y, tabMenu(i), setMenu)
 
     return (
         <div class={`${styles.tabs} ${props.class ?? ''}`} data-view-tabs="">
@@ -176,7 +121,12 @@ const ViewTabs: Component<ViewTabsProps> = props => {
                     size="sm"
                     onClick={e => {
                         const r = e.currentTarget.getBoundingClientRect()
-                        openContextMenu(r.left, r.bottom, addMenuItems, setMenu)
+                        openContextMenu(
+                            r.left,
+                            r.bottom,
+                            addMenuItems(props.onAdd),
+                            setMenu,
+                        )
                     }}
                 />
             </Show>
