@@ -12,6 +12,7 @@ import { createMenuNav } from './popover/createMenuNav'
 import BracketToggle from './BracketToggle'
 import FormControl from './FormControl'
 import TextInput from './TextInput'
+import { isConfirmKey } from './widgetKeys'
 import styles from './MultiSelect.module.css'
 
 export type MultiSelectProps = {
@@ -135,7 +136,7 @@ function MultiSelect(props: MultiSelectProps) {
                         placeholder={props.creatable ? 'filter or add' : 'filter'}
                         onKeyDown={e => {
                             e.stopPropagation()
-                            if (e.key === 'Enter' && rows().length === 0 && canCreate()) {
+                            if (isConfirmKey(e) && rows().length === 0 && canCreate()) {
                                 e.preventDefault()
                                 create()
                                 return
