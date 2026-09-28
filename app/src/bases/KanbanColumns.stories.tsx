@@ -1,5 +1,6 @@
-// Visual spec for <KanbanView>'s column management: add/rename/delete a column, the column
-// `…` menu, and the trailing bare `+` composer (AddColumn). Split out of KanbanView.stories.tsx
+// Visual spec for <KanbanView>'s column management: add/rename/delete a column via its
+// hover-revealed `[✎]`/`[🗑]` header actions, and the trailing bare `+` composer (AddColumn).
+// Split out of KanbanView.stories.tsx
 // — board rendering + colour lives there, own-rows/row-write behaviour in
 // KanbanStoredRows.stories.tsx. Exercises `sampleViewResult` end to end: real rows, run through
 // the real query engine (core/src/bases/query.ts `runView`) with a `groupBy`, rendered by the
@@ -18,7 +19,7 @@ import {
     restTextOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
 import { fakeTransport } from '../ui/_fakeTransport'
-import { kanbanViews, openColumnMenu } from '../ui/_kanbanProbes'
+import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
 import { toasts } from '../toastStore'
@@ -120,7 +121,7 @@ export const AddColumn: Story = {
     },
 }
 
-/** A NOTE board (SAMPLE_ROWS, two cards in "Todo"): the column header's `…` menu → Rename →
+/** A NOTE board (SAMPLE_ROWS, two cards in "Todo"): the column header's hover-revealed `[✎]` →
  *  `Backlog` rewrites `columns` (Todo → Backlog) AND moves both "Todo" cards there in ONE
  *  batched `/set-properties` write — `status` is a declared `select` property here
  *  (`_baseFixtures.tsx`), so this also proves the two writes (columns, cards) both land without
@@ -142,7 +143,6 @@ export const RenameColumn: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
         const todoBefore = canvasElement.querySelector<HTMLElement>(
             '[data-kbcol="Todo"]',
         )!
@@ -151,18 +151,17 @@ export const RenameColumn: Story = {
         )
         expect(cardsBefore.length).toBe(2)
 
-        // Scope to Todo's own menu trigger rather than assuming it's rendered first — column
-        // order is derived data (groupBy option order), not a layout guarantee this story should
-        // depend on (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
-        await openColumnMenu(canvasElement, 'Todo')
-        await userEvent.click(await body.findByText(/^rename$/i))
-        // The rename input focuses via queueMicrotask inside a portal — under a loaded pooled
-        // run findBy's 1000ms default raced it, so wait longer, scoped to the menu panel.
+        // Scope to Todo's own header rather than assuming it's rendered first — column order is
+        // derived data (groupBy option order), not a layout guarantee this story should depend on
+        // (DeleteEmptyColumn already scopes the same way, to `blockedCol`).
+        const col = focusColumnHeaderButton(
+            canvasElement,
+            'Todo',
+            'Rename column',
+        )
+        await userEvent.keyboard('{Enter}')
         const input = await waitFor(
-            () =>
-                within(
-                    body.getByTestId('kanban-column-menu'),
-                ).getByDisplayValue('Todo'),
+            () => within(col).getByDisplayValue('Todo'),
             { timeout: 3000 },
         )
         await userEvent.clear(input)
@@ -258,16 +257,15 @@ export const RenameColumnRoundTrip: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
-
         async function renameVia(fromKey: string, toName: string) {
-            await openColumnMenu(canvasElement, fromKey)
-            await userEvent.click(await body.findByText(/^rename$/i))
+            const col = focusColumnHeaderButton(
+                canvasElement,
+                fromKey,
+                'Rename column',
+            )
+            await userEvent.keyboard('{Enter}')
             const input = await waitFor(
-                () =>
-                    within(
-                        body.getByTestId('kanban-column-menu'),
-                    ).getByDisplayValue(fromKey),
+                () => within(col).getByDisplayValue(fromKey),
                 { timeout: 3000 },
             )
             await userEvent.clear(input)
@@ -304,8 +302,8 @@ export const RenameColumnRoundTrip: Story = {
     },
 }
 
-/** `EditableWithPinnedColumns`' pinned-but-empty "Blocked" column: the `…` menu offers Delete
- *  (`canDelete` — no cards), and picking it removes the column from `columns` and from the
+/** `EditableWithPinnedColumns`' pinned-but-empty "Blocked" column: the header's hover-revealed
+ *  `[🗑]` is shown (`canDelete` — no cards), and clicking it removes the column from `columns` and from the
  *  board. */
 export const DeleteEmptyColumn: Story = {
     render: () => {
@@ -325,14 +323,12 @@ export const DeleteEmptyColumn: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
         expect(
             canvasElement.querySelector('[data-kbcol="Blocked"]'),
         ).not.toBeNull()
 
-        await openColumnMenu(canvasElement, 'Blocked')
-        const del = await body.findByText(/^delete$/i)
-        await userEvent.click(del)
+        focusColumnHeaderButton(canvasElement, 'Blocked', 'Delete column')
+        await userEvent.keyboard('{Enter}')
 
         await waitFor(() =>
             expect(
@@ -382,15 +378,15 @@ export const RenameColumnPartial: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
-        await openColumnMenu(canvasElement, 'Todo')
-        await userEvent.click(await body.findByText(/^rename$/i))
+        const col = focusColumnHeaderButton(
+            canvasElement,
+            'Todo',
+            'Rename column',
+        )
+        await userEvent.keyboard('{Enter}')
         const input = await waitFor(
-            () =>
-                within(
-                    body.getByTestId('kanban-column-menu'),
-                ).getByDisplayValue('Todo'),
+            () => within(col).getByDisplayValue('Todo'),
             { timeout: 3000 },
         )
         await userEvent.clear(input)
@@ -441,11 +437,9 @@ export const DeleteColumnPartial: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
-        await openColumnMenu(canvasElement, 'Blocked')
-        const del = await body.findByText(/^delete$/i)
-        await userEvent.click(del)
+        focusColumnHeaderButton(canvasElement, 'Blocked', 'Delete column')
+        await userEvent.keyboard('{Enter}')
         await waitFor(() => expect(toasts().length).toBe(before + 1))
         expect(toasts()[before].message).toContain(
             'Delete column partially applied',
@@ -504,12 +498,10 @@ export const AddColumnFailsRestoresRemoved: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const body = within(canvasElement.ownerDocument.body)
         const before = toasts().length
 
-        await openColumnMenu(canvasElement, 'Blocked')
-        const del = await body.findByText(/^delete$/i)
-        await userEvent.click(del)
+        focusColumnHeaderButton(canvasElement, 'Blocked', 'Delete column')
+        await userEvent.keyboard('{Enter}')
         await waitFor(() =>
             expect(
                 canvasElement.querySelector('[data-kbcol="Blocked"]'),
@@ -553,13 +545,14 @@ export const RenameColumnKeepsAuto: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const body = within(canvasElement.ownerDocument.body)
-        await openColumnMenu(canvasElement, 'Todo')
-        await userEvent.click(await body.findByText(/^rename$/i))
+        const col = focusColumnHeaderButton(
+            canvasElement,
+            'Todo',
+            'Rename column',
+        )
+        await userEvent.keyboard('{Enter}')
         const input = await waitFor(() =>
-            within(body.getByTestId('kanban-column-menu')).getByDisplayValue(
-                'Todo',
-            ),
+            within(col).getByDisplayValue('Todo'),
         )
         await userEvent.clear(input)
         // A same-auto-color key that isn't just casing/whitespace of the original, so this

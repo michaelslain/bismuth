@@ -91,10 +91,10 @@ export const NoGroupBy: Story = {
 // Captured by ColorPickerPickAndDismiss's render() and read back in its play().
 let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
 
-/** The column colour picker — Task 6: composes `ui/AnchoredPopover` (the same primitive
- *  KanbanColumnMenu's `…` menu uses), so its content is PORTALED, not a descendant of
+/** The column colour picker — Task 6: composes `ui/AnchoredPopover` (the same primitive the
+ *  header's color dot uses), so its content is PORTALED, not a descendant of
  *  `canvasElement` — queries for it go through `body`, not `canvas`, same pattern
- *  KanbanColumnMenu.stories.tsx uses. Clicking a column's colour dot reveals the palette
+ *  KanbanColumns.stories.tsx uses for the rename/delete `IconBar`. Clicking a column's colour dot reveals the palette
  *  `Swatch`es (each aria-labelled by its colour name, e.g. "rose") plus the "Auto" option that
  *  clears an override. Needs `basePath` (`editable()`) for the dot button to be enabled at all.
  *  The first column ("Doing" — the data's own first-seen status value, no `groupOrder` pins it)

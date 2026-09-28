@@ -49,7 +49,7 @@ import {
 } from './kanbanColumnOrder'
 import KanbanAddColumn from './KanbanAddColumn'
 import { createKanbanDrag, type KanbanCardDrop } from './kanbanDrag'
-import KanbanColumnMenu from './KanbanColumnMenu'
+import KanbanColumnNameInput from './KanbanColumnNameInput'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
     appendEmbedToValue,
@@ -84,6 +84,7 @@ import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import IconButton from '../ui/IconButton'
+import IconBar from '../ui/IconBar'
 import TextInput from '../ui/TextInput'
 import Swatch from '../ui/Swatch'
 import AnchoredPopover from '../ui/AnchoredPopover'
@@ -221,6 +222,9 @@ export function KanbanView(props: {
 
     // UI popovers / composers, keyed by column key (only one open at a time).
     const [pickerCol, setPickerCol] = createSignal<string | null>(null)
+    // The column whose header is mid-rename — swaps the title `Text` for the same inline
+    // `KanbanColumnNameInput` the old `…` menu's rename step used.
+    const [renamingCol, setRenamingCol] = createSignal<string | null>(null)
     const [composerCol, setComposerCol] = createSignal<string | null>(null)
     const [draft, setDraft] = createSignal('')
     // Paths minted this session, so two quick adds don't collide before a refetch lands.
@@ -748,7 +752,7 @@ export function KanbanView(props: {
         const idx = props.viewIndex ?? 0
 
         // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
-        // The column menu's Rename is now gated on `canAdd()` (editable + writable groupBy),
+        // The header's `[✎]` rename action is gated on `canAdd()` (editable + writable groupBy),
         // but keep this belt-and-braces: without it, the `columns` write below would still
         // rename the pinned column while every card's status write is skipped (statusKey
         // null), leaving an empty new column pinned alongside the untouched old one on reload.
@@ -897,8 +901,9 @@ export function KanbanView(props: {
         }
     }
 
-    // ── Column delete — only ever called for an empty column (KanbanColumnMenu gates it via
-    // `canDelete`); removes the key from `columns` and any `groupColors` override. ──
+    // ── Column delete — only ever called for an empty column (the header's `[🗑]` is only
+    // rendered when the column has no cards); removes the key from `columns` and any
+    // `groupColors` override. ──
     async function deleteColumn(key: string): Promise<void> {
         if (!props.basePath) return
         if (groupByKey(key).rows.length > 0) return
@@ -1602,15 +1607,43 @@ export function KanbanView(props: {
                                                     class={styles.dot}
                                                 />
                                             </PlainButton>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kanbanColTitle}
+                                            <Show
+                                                when={
+                                                    renamingCol() ===
+                                                    group().key
+                                                }
+                                                fallback={
+                                                    <Text
+                                                        as="span"
+                                                        inherit
+                                                        class={
+                                                            styles.kanbanColTitle
+                                                        }
+                                                    >
+                                                        {group().key === ''
+                                                            ? '(empty)'
+                                                            : group().key}
+                                                    </Text>
+                                                }
                                             >
-                                                {group().key === ''
-                                                    ? '(empty)'
-                                                    : group().key}
-                                            </Text>
+                                                <KanbanColumnNameInput
+                                                    initial={group().key}
+                                                    existing={columnKeys().filter(
+                                                        k => k !== group().key,
+                                                    )}
+                                                    selectOnMount
+                                                    onSubmit={to => {
+                                                        void renameColumn(
+                                                            group().key,
+                                                            to,
+                                                        )
+                                                        setRenamingCol(null)
+                                                    }}
+                                                    onCancel={() =>
+                                                        setRenamingCol(null)
+                                                    }
+                                                />
+                                            </Show>
                                             <Text
                                                 as="span"
                                                 inherit
@@ -1621,27 +1654,38 @@ export function KanbanView(props: {
                                                 )}
                                             </Text>
                                             <Show when={canAdd()}>
-                                                <KanbanColumnMenu
-                                                    name={group().key}
-                                                    canDelete={
-                                                        group().rows.length ===
-                                                        0
+                                                <IconBar
+                                                    label="Column actions"
+                                                    class={
+                                                        styles.kbHeaderActions
                                                     }
-                                                    existing={columnKeys().filter(
-                                                        k => k !== group().key,
-                                                    )}
-                                                    onRename={to =>
-                                                        void renameColumn(
-                                                            group().key,
-                                                            to,
-                                                        )
-                                                    }
-                                                    onDelete={() =>
-                                                        void deleteColumn(
-                                                            group().key,
-                                                        )
-                                                    }
-                                                />
+                                                >
+                                                    <IconButton
+                                                        icon="Pencil"
+                                                        label="Rename column"
+                                                        onClick={() =>
+                                                            setRenamingCol(
+                                                                group().key,
+                                                            )
+                                                        }
+                                                    />
+                                                    <Show
+                                                        when={
+                                                            group().rows
+                                                                .length === 0
+                                                        }
+                                                    >
+                                                        <IconButton
+                                                            icon="Trash2"
+                                                            label="Delete column"
+                                                            onClick={() =>
+                                                                void deleteColumn(
+                                                                    group().key,
+                                                                )
+                                                            }
+                                                        />
+                                                    </Show>
+                                                </IconBar>
                                             </Show>
                                         </div>
 

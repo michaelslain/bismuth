@@ -53,12 +53,11 @@
   margin: 0 var(--sp-5);
   padding: 0 0 var(--sp-3);
   box-sizing: border-box;
-  /* Pins the header to the `…` trigger's own size (--h-control, defined in
-     KanbanColumnMenu.module.css) rather than the natural content height, since the trigger is
-     absolutely positioned and so cannot size the header itself. */
+  /* Pins the header to the hover-revealed `[✎][🗑]` IconBar's own control size (--h-control,
+     global.css) rather than the natural (icons-hidden) content height, so their reveal never
+     grows the header and shifts the title/count. */
   min-height: calc(var(--h-control) + var(--sp-3));
-  /* Positioning ancestor for the `…` trigger (KanbanColumnMenu.module.css's `.trigger`), which is
-     absolutely positioned over the count's slot instead of pushing it sideways. */
+  /* Positioning ancestor for the color-dot's popover anchor wrapper (.kbColorAnchor) below. */
   position: relative;
   /* The column hue appears ONLY here (the underline) and on the dot (Acceptance 4) — no
      header background tint. `--kb-col-color` is always set inline per column (KanbanView.tsx),
@@ -93,22 +92,21 @@
    controller accepts as a token-vs-literal ruling, not real drift. */
 .kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
-.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); transition: opacity 120ms ease; }
-/* The column menu's `…` trigger (KanbanColumnMenu.tsx) sits absolutely positioned over the
-   count's own slot (see `.kanbanColHeader`'s `position: relative` above) and is shown on header
-   hover or keyboard focus anywhere inside the header — `[data-kbcolmenu-trigger]` is that
-   component's own runtime hook (a data attribute, not a class, so this reaches across the
-   component boundary the same sanctioned way `data-kbcol`/`data-kbcard` already do in this
-   file). Its own at-rest/hover/focus-visible states live in KanbanColumnMenu.module.css. Because
-   the trigger occupies the count's slot rather than pushing it, the count fades out exactly when
-   the trigger is shown — on hover/focus-within, and while the menu itself is open (the
-   `:has([aria-expanded='true'])` rule below covers the case where the pointer has moved off the
-   header but the popover is still open). */
-.kanbanColHeader:hover [data-kbcolmenu-trigger],
-.kanbanColHeader:focus-within [data-kbcolmenu-trigger] { opacity: 1; pointer-events: auto; }
-.kanbanColHeader:hover .kanbanCount,
-.kanbanColHeader:focus-within .kanbanCount { opacity: 0; }
-.kanbanColHeader:has([data-kbcolmenu-trigger][aria-expanded='true']) .kanbanCount { opacity: 0; }
+.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
+/* Rename/delete `IconBar` — sits in normal flow right of the count (not absolutely over it, the
+   old `…` trigger's trick), so it RESERVES its own space and never shifts the title/count when
+   revealed. At rest it's invisible + non-interactive; header `:hover`/`:focus-within` fades it
+   in. Only opacity/pointer-events transition — layout never moves. */
+.kbHeaderActions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.kanbanColHeader:hover .kbHeaderActions,
+.kanbanColHeader:focus-within .kbHeaderActions {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
