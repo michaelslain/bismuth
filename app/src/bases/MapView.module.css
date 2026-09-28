@@ -112,30 +112,6 @@
   font-size: var(--fs-micro);
   line-height: 1;
 }
-/* Offline-vector attribution badge, bottom-left. */
-.mapAttribution {
-  position: absolute;
-  left: 18px;
-  bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-micro);
-  color: var(--faint);
-  pointer-events: none;
-}
-.mapOfflineBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 18px;
-  padding: 0 var(--sp-4);
-  border-radius: var(--r-0);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  background: var(--surface-2);
-  color: var(--green);
-}
 .mapEmpty {
   position: absolute;
   inset: 0;

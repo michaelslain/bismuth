@@ -1211,6 +1211,7 @@ export function BaseView(props: {
                                                         result={res()}
                                                         config={data()!.config}
                                                         onOpen={props.onOpen}
+                                                        onChange={refetchAll}
                                                     />
                                                 </Match>
                                                 <Match

@@ -156,9 +156,12 @@ export function MapView(props: {
     result: ViewResult
     config: BaseConfig
     onOpen?: (path: string) => void
-    /** Called after a pin is placed, moved or removed writes successfully. Mutating endpoints
-     *  already invalidate + push SSE, so a view refetches on its own without this — it's an
-     *  extra hook for a caller (or a story/test) that wants to react synchronously. */
+    /** Called after a pin is placed, moved or removed writes successfully. The real backend's
+     *  mutating endpoints already invalidate + push SSE, but the ROUTE from that push back to
+     *  this view's own `resolveRows` result runs through BaseView's own refetch, not a self-
+     *  contained loop inside MapView — and Storybook's fake transport pushes no SSE at all, so
+     *  without this callback wired to BaseView's `refetchAll` (as every sibling view does), a
+     *  placed/moved/removed pin never reappears until something else refetches. */
     onChange?: () => void
 }) {
     const latKey = () => props.result.view.lat ?? 'lat'
@@ -870,24 +873,6 @@ export function MapView(props: {
                     >
                         {scaleBar().label}
                     </Text>
-                </div>
-
-                {/* Offline-vector attribution badge. */}
-                <div class={styles.mapAttribution}>
-                    <Text as="span" inherit class={styles.mapOfflineBadge}>
-                        offline vector
-                    </Text>
-                    <Show when={markers().length > 0}>
-                        <Text
-                            as="span"
-                            size="inherit"
-                            tone="faint"
-                            weight="inherit"
-                        >
-                            {markers().length}{' '}
-                            {markers().length === 1 ? 'place' : 'places'}
-                        </Text>
-                    </Show>
                 </div>
 
                 <Show when={markers().length === 0}>

@@ -116,7 +116,6 @@ The map renders several overlaid elements:
 - **Unplaced-rows control** (top-left) — a `[ unplaced (N) ]` button, shown only when at least one row lacks valid coordinates and the view's fields are writable; opens a menu that arms placement for the picked row.
 - **Placing hint** — a small floating label reading "placing `<title>` — esc to cancel", shown while a row is armed for placement.
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
-- **Attribution badge** (bottom-right) — `WifiOff` icon + "Offline vector" label, plus a marker count (`N places`) when markers are present.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.
 
 ## CSS Variables
