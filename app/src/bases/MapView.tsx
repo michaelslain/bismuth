@@ -13,7 +13,6 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { titleOf } from './kanbanMeta'
 import { canWriteStoredRow, storedNote } from './taskWrite'
-import { chipKeyAction } from '../ui/chipKeys'
 import { settings } from '../settings'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
@@ -46,7 +45,7 @@ import {
     siblingFolder as siblingFolderOf,
 } from './mapCoords'
 import styles from './MapView.module.css'
-import { isDismissKey } from '../ui/widgetKeys'
+import { isDismissKey, isMenuKey } from '../ui/widgetKeys'
 
 interface Marker {
     row: Row
@@ -546,7 +545,7 @@ export function MapView(props: {
 
     // ── Pin pointer handlers (drag to move; a plain click opens the pin — see openPin) ──────
     function onPinPointerDown(e: PointerEvent, m: Marker): void {
-        if (!writable() || e.button !== 0) return
+        if (!writable() || e.button !== 0 || noteFor(m.row) !== undefined) return
         e.stopPropagation()
         ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
         setDragState({
@@ -618,14 +617,7 @@ export function MapView(props: {
     }
 
     function onPinKeyDown(e: KeyboardEvent, m: Marker): void {
-        const action = chipKeyAction({
-            key: e.key,
-            altKey: e.altKey,
-            shiftKey: e.shiftKey,
-            ctrlKey: e.ctrlKey,
-            metaKey: e.metaKey,
-        })
-        if (action?.kind !== 'menu' || pinMenuItems(m.row).length === 0) return
+        if (!isMenuKey(e) || pinMenuItems(m.row).length === 0) return
         e.preventDefault()
         e.stopPropagation()
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -728,7 +720,9 @@ export function MapView(props: {
                                     passThrough={!!armed()}
                                     notePath={cur() ? noteFor(cur()!.row) : undefined}
                                     hint={
-                                        writable()
+                                        cur() && noteFor(cur()!.row) !== undefined
+                                            ? 'Open note'
+                                            : writable()
                                             ? 'Click to edit — drag to move, right-click for more'
                                             : 'Click to edit'
                                     }
@@ -738,7 +732,8 @@ export function MapView(props: {
                                     // event let a pin drag also pan the map under it, so the
                                     // dropped pin landed twice as far as it was dragged.
                                     onMouseDown={e => {
-                                        if (writable()) e.stopPropagation()
+                                        if (writable() && noteFor(m().row) === undefined)
+                                            e.stopPropagation()
                                     }}
                                     onPointerDown={e => onPinPointerDown(e, m())}
                                     onPointerMove={e => onPinPointerMove(e, m())}

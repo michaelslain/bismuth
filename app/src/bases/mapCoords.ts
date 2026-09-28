@@ -325,7 +325,7 @@ export function siblingFolder(
 }
 
 // ── Basemap data ────────────────────────────────────────────────────────────────────────
-// them in the same world-pixel space as the markers so they pan/zoom together.
+// Coarse continent outlines ([lng, lat]) — drawn in the same world-pixel space as the markers so they pan/zoom together.
 export const LANDMASSES: [number, number][][] = [
     // North America
     [
