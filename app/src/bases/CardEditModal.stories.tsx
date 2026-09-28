@@ -2,19 +2,21 @@
 // (KanbanCard). Unlike the card face (KanbanCard.stories.tsx), which only shows properties that
 // already have a value, this modal lists the title plus EVERY declared property — including
 // empty ones — each with a type-aware control: a real Milkdown WYSIWYG surface for `markdown`
-// (the SAME rich editor notes use, via MilkdownField), an instant Yes/No Chip for `boolean`, and
-// the shared PropertyValueEditor for everything else (text/number/date/select/multiselect).
+// (the SAME rich editor notes use, via MilkdownField), an instant Yes/No ChipToggle for `boolean`,
+// and the shared PropertyValueEditor for everything else (text/number/date/select/multiselect).
+// PropertyControl owns that dispatch (see PropertyControl.stories.tsx).
 //
 // Reuses the same sample dataset + config as KanbanCard/KanbanView's stories
 // (ui/_baseFixtures.ts) so the property vocabulary (status/priority/done/due/tags) matches what
 // the real board declares, rather than a story-invented shape.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show } from 'solid-js'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { metaColumns } from './kanbanMeta'
-import { tagsFieldView } from '../ui/_tagsFieldPlay'
+import { pressKey, tagsFieldView } from '../ui/_tagsFieldPlay'
+import { dateFieldPresets } from './dateFieldPresets'
 import type { Row } from '../../../core/src/bases/types'
 
 const meta = {
@@ -29,13 +31,61 @@ type Story = StoryObj<typeof meta>
 const config = sampleBaseConfig()
 const noop = () => {}
 const metaCols = ['status', 'priority', 'done', 'due', 'tags']
-const openNoteButton = (): HTMLButtonElement | null =>
+const footerButton = (label: string): HTMLButtonElement | null =>
     [...document.querySelectorAll('button')].find(
-        b => b.textContent?.trim() === 'open note',
+        b => b.textContent?.trim() === label,
     ) ?? null
+const openNoteButton = () => footerButton('open note')
+
+/** A modal wired to real state: every callback appends to a visible log (`data-testid="log"`),
+ *  and a committed value writes back onto the row so the controls reflect it — what
+ *  KanbanCard's optimistic commit does. The plays assert the log. */
+const Live = (p: {
+    row?: Row
+    metaCols?: string[]
+    config?: typeof config
+    focusTarget?: string
+    heading?: string
+    emptyHint?: string
+    hasFileIdentity?: boolean
+}) => {
+    const start = p.row ?? SAMPLE_ROWS[1]
+    const [row, setRow] = createSignal<Row>(start)
+    const [log, setLog] = createSignal<string[]>([])
+    const push = (entry: string) => setLog(l => [...l, entry])
+    return (
+        <>
+            <div data-testid="log">{log().join(' | ')}</div>
+            <CardEditModal
+                row={row()}
+                titleCol="file.name"
+                metaCols={p.metaCols ?? metaCols}
+                config={p.config ?? config}
+                focusTarget={p.focusTarget}
+                heading={p.heading}
+                emptyHint={p.emptyHint}
+                hasFileIdentity={p.hasFileIdentity}
+                siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
+                onRename={t => push(`rename ${t}`)}
+                onSetMeta={(id, v) => {
+                    push(`set ${id} ${JSON.stringify(v)}`)
+                    setRow(r => ({ ...r, note: { ...r.note, [id]: v } }))
+                }}
+                onDelete={() => push('delete')}
+                onClose={() => push('close')}
+            />
+        </>
+    )
+}
+const logText = () =>
+    document.querySelector('[data-testid="log"]')?.textContent ?? ""
+const trigger = (): HTMLElement =>
+    document.querySelector<HTMLElement>('[data-select-trigger]')!
+const pointer = (el: Element) =>
+    userEvent.pointer({ keys: '[MouseLeft>]', target: el })
 
 /** Every declared property control at once: select (status), number (priority), boolean
- *  (done — the Chip toggle), date (due), multiselect (tags). No markdown property in the
+ *  (done — the ChipToggle), date (due), multiselect (tags). No markdown property in the
  *  curated sample config, so `CardEditModal.tsx`'s Milkdown branch is exercised separately —
  *  see `MilkdownField.stories.tsx` for that surface on its own. */
 export const Default: Story = {
@@ -366,5 +416,141 @@ export const WithOpenNote: Story = {
         expect(
             document.querySelector('input[placeholder="Untitled"]'),
         ).toBeNull()
+    },
+}
+
+/** Every commit path, on real state: the title (Enter), a select, a number, the boolean toggle, a
+ *  date, a tag list, then delete and done — each asserted in the log the harness keeps. */
+export const CommitsEveryField: Story = {
+    render: () => <Live />,
+    play: async () => {
+        // Title: Enter blurs, and the blur commits the trimmed draft.
+        const title = document.querySelector<HTMLInputElement>('input[placeholder="Untitled"]')!
+        await userEvent.clear(title)
+        await userEvent.type(title, 'Renamed card{Enter}')
+        await waitFor(() => expect(logText()).toContain('rename Renamed card'))
+
+        // Select (status): open the menu, pick Done.
+        await userEvent.click(trigger())
+        await userEvent.click(
+            await waitFor(() => {
+                const el = [...document.querySelectorAll('*')].find(
+                    e => e.children.length === 0 && e.textContent === 'Done',
+                )
+                expect(el).toBeTruthy()
+                return el!
+            }),
+        )
+        await waitFor(() => expect(logText()).toContain('set status "Done"'))
+
+        // Number (priority): edit, Enter.
+        const priority = document.querySelector<HTMLInputElement>('input[type="number"]')!
+        await userEvent.clear(priority)
+        await userEvent.type(priority, '5{Enter}')
+        await waitFor(() => expect(logText()).toContain('set priority 5'))
+
+        // Boolean (done): the ChipToggle flips false -> true.
+        const chip = document.querySelector<HTMLElement>('[aria-pressed]')!
+        await expect(chip.getAttribute('aria-pressed')).toBe('false')
+        await userEvent.click(chip)
+        await waitFor(() => expect(logText()).toContain('set done true'))
+
+        // Date (due): the shared picker, preset Today.
+        await userEvent.click(document.querySelector('[data-testid="date-field-trigger"]')!)
+        const popover = await waitFor(() => {
+            const el = document.querySelector('[data-testid="date-field-popover"]')
+            expect(el).not.toBeNull()
+            return el!
+        })
+        await pointer([...popover.querySelectorAll('span')].find(e => e.textContent === 'Today')!)
+        await waitFor(() =>
+            expect(logText()).toContain(`set due "${dateFieldPresets()[0].date}"`),
+        )
+
+        // Tags: replace the line, Enter commits the list once.
+        const view = await tagsFieldView(document.body)
+        view.focus() // leaving the field is what commits, so it has to hold focus first
+        view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: 'frontend, docs, ' },
+            userEvent: 'input.type',
+        })
+        pressKey(view, 'Enter')
+        await waitFor(() => expect(logText()).toContain('set tags ["frontend","docs"]'))
+
+        // Footer: delete reports once, done flushes and closes.
+        footerButton('delete')!.click()
+        await waitFor(() => expect(logText()).toContain('| delete'))
+        footerButton('done')!.click()
+        await waitFor(() => expect(logText().endsWith('close')).toBe(true))
+    },
+}
+
+// A declared `markdown` property: the modal renders a Milkdown surface for it, not a textarea.
+const markdownConfig = sampleBaseConfig({
+    properties: { notes: { type: { kind: 'markdown' } } },
+    declaredProperties: ['notes'],
+})
+
+/** A markdown property is the rich Milkdown surface. Typing only drafts; closing (done) flushes the
+ *  draft through onSetMeta exactly once. */
+export const MarkdownPropertyFlushesOnClose: Story = {
+    render: () => (
+        <Live
+            row={{ ...SAMPLE_ROWS[1], note: { ...SAMPLE_ROWS[1].note, notes: '' } }}
+            metaCols={['notes']}
+            config={markdownConfig}
+        />
+    ),
+    play: async () => {
+        const editable = await waitFor(() => {
+            const el = document.querySelector<HTMLElement>('[contenteditable="true"]')
+            expect(el).not.toBeNull()
+            return el!
+        })
+        expect(document.querySelector('textarea')).toBeNull()
+        editable.focus()
+        await userEvent.type(editable, 'Ship the picker')
+        // A draft only: nothing is written until blur or close.
+        expect(logText()).not.toContain('set notes')
+        footerButton('done')!.click()
+        await waitFor(() => expect(logText()).toContain('set notes "Ship the picker'))
+        await waitFor(() => expect(logText().endsWith('close')).toBe(true))
+        expect(logText().match(/set notes/g)!.length).toBe(1)
+    },
+}
+
+/** `hasFileIdentity={false}` (a row with no file behind it): no title field and no delete button,
+ *  but the properties still edit. */
+export const NoFileIdentity: Story = {
+    render: () => <Live hasFileIdentity={false} />,
+    play: async () => {
+        expect(document.querySelector('input[placeholder="Untitled"]')).toBeNull()
+        expect(footerButton('delete')).toBeNull()
+        const priority = document.querySelector<HTMLInputElement>('input[type="number"]')!
+        await userEvent.clear(priority)
+        await userEvent.type(priority, '9{Enter}')
+        await waitFor(() => expect(logText()).toContain('set priority 9'))
+        expect(logText()).not.toContain('rename')
+        footerButton('done')!.click()
+        await waitFor(() => expect(logText().endsWith('close')).toBe(true))
+        expect(logText()).not.toContain('rename')
+    },
+}
+
+/** No editable columns, with the caller's own `heading` and `emptyHint` (openRowEditor's row
+ *  wording) instead of the kanban defaults. */
+export const CustomHeadingEmptyColumns: Story = {
+    render: () => (
+        <Live
+            metaCols={[]}
+            heading="edit row"
+            emptyHint="this row has no properties to edit."
+        />
+    ),
+    play: async () => {
+        await expect(document.body.textContent).toContain('edit row')
+        await expect(document.body.textContent).toContain('this row has no properties to edit.')
+        await expect(document.body.textContent).not.toContain('edit card')
+        await expect(document.body.textContent).not.toContain('this board declares')
     },
 }

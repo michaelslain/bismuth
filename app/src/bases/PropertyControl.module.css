@@ -1,0 +1,7 @@
+/* PropertyControl — the boolean toggle shrinks to fit: a SettingsField's control slot is a column
+   flex container with no align-items, so a bare inline-flex button would blockify and stretch
+   across the row. Height matches every sibling control in the modal. */
+.bool {
+    align-self: flex-start;
+    height: var(--h-control);
+}

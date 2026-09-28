@@ -15,16 +15,10 @@
      `:global()` reach into this hashed class. */
   height: var(--kb-meta-height, var(--h-control));
 }
-.kbMetaSelect { display: inline-flex; margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1))); }
-.kbMetaSelectTrigger {
-  height: var(--kb-meta-height, auto); min-height: 0; box-sizing: border-box; padding: var(--sp-1) 22px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0);
-}
-/* Chrome (transparent, `--rule-soft` underline, accent underline + inset shadow on focus) comes
-   from the shared `.ui-input` textarea rule FormControl composes — PropertyValueEditor.tsx no
-   longer passes `plain`. `overflow: hidden` stays local: it's what keeps this field scrollbar-
-   free while autoGrow() (PropertyValueEditor.tsx) resizes it inline to fit its content. */
-.kbMetaMarkdownArea {
-  box-sizing: border-box;
+/* DateFieldEditor's trigger, sized like `.kbMetaInput` so a date sits on the same baseline and
+   edges as the text/number inputs beside it, and reading the same --kb-meta-* bridge. */
+.kbMetaDate {
+  max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box;
   margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
-  overflow: hidden;
+  height: var(--kb-meta-height, var(--h-control)); min-height: 0;
 }

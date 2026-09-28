@@ -4,7 +4,7 @@ import type { Row } from '../../../core/src/bases/types'
 import type { Schema } from '../../../core/src/schema/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { isLink, type Link } from '../../../core/src/bases/values'
-import { bareName } from './propertyEdit'
+import { bareName } from './columnKinds'
 
 /** Clean display label for a Link: explicit display text, else the basename of the path with
  * the .md extension stripped. */

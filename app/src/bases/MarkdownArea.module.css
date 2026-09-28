@@ -1,0 +1,10 @@
+/* MarkdownArea — chrome (transparent, --rule-soft underline, accent underline on focus) comes from
+   the shared `.ui-input` textarea rule FormControl composes. `overflow: hidden` stays local: it is
+   what keeps the field scrollbar-free while autoGrow() (MarkdownArea.tsx) resizes it inline to fit
+   its content. The margin reads the same --kb-meta-margin bridge PropertyValueEditor's other
+   controls do, so a host (CardEditModal) zeroes all of them at once. */
+.area {
+    box-sizing: border-box;
+    margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
+    overflow: hidden;
+}

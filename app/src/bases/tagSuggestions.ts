@@ -32,3 +32,47 @@ export function mergeTagOptions(...lists: ReadonlyArray<string>[]): string[] {
         }
     return out
 }
+
+/** A shared, time-boxed cache of the vault's tag names. Every tags editor reads it: `last()` is
+ *  the last-known set (suggest it at once), `load()` refreshes it — one fetch is shared by every
+ *  caller within `ttl` ms, so opening cell after cell never re-downloads the whole vault graph
+ *  just to read its tag names. A failed fetch is forgotten so the next `load()` retries. */
+export function createVaultTagsCache(
+    fetchTags: () => Promise<string[]>,
+    opts: { ttl?: number; now?: () => number } = {},
+): {
+    last: () => string[]
+    load: () => Promise<string[]>
+    reset: () => void
+} {
+    const ttl = opts.ttl ?? 30_000
+    const now = opts.now ?? Date.now
+    let last: string[] = []
+    let inflight: { at: number; tags: Promise<string[]> } | null = null
+    return {
+        last: () => last,
+        load: () => {
+            if (!inflight || now() - inflight.at > ttl) {
+                const entry = {
+                    at: now(),
+                    tags: fetchTags().then(
+                        tags => {
+                            last = tags
+                            return tags
+                        },
+                        e => {
+                            if (inflight === entry) inflight = null
+                            throw e
+                        },
+                    ),
+                }
+                inflight = entry
+            }
+            return inflight.tags
+        },
+        reset: () => {
+            inflight = null
+            last = []
+        },
+    }
+}
