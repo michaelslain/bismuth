@@ -2,8 +2,8 @@
 // the cards view (BodyCard) and the note editor (livePreview's CodeMirror checkbox widget).
 // `char` is the box char written between the brackets; the CURRENT status is filtered out so
 // the menu only ever offers the OTHER modes (per the spec).
-import { render } from 'solid-js/web'
 import { ContextMenu, type MenuItem } from './ContextMenu'
+import { mountModal } from './ui/mountModal'
 
 export interface TaskStatusOption {
     char: string
@@ -52,21 +52,12 @@ export function openTaskStatusMenu(
     cur: string,
     onPick: (char: string) => void,
 ): void {
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    let dispose = () => {}
-    const close = () => {
-        dispose()
-        host.remove()
-    }
-    dispose = render(
-        () =>
-            ContextMenu({
-                x,
-                y,
-                items: taskStatusItems(cur, onPick),
-                onClose: close,
-            }),
-        host,
-    )
+    mountModal(close => (
+        <ContextMenu
+            x={x}
+            y={y}
+            items={taskStatusItems(cur, onPick)}
+            onClose={close}
+        />
+    ))
 }
