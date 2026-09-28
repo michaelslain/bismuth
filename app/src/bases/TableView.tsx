@@ -4,6 +4,7 @@ import {
     Show,
     createSignal,
     createEffect,
+    onMount,
     on,
     type JSX,
 } from 'solid-js'
@@ -25,12 +26,9 @@ import { settings } from '../settings'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
-import { commitMeta, commitDelete } from './openRowEditor'
+import { commitMeta, openRowEditor } from './openRowEditor'
 import { writableKey } from './kanbanMeta'
 import TableCell from './TableCell'
-import { Portal } from 'solid-js/web'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
-import { openContextMenu } from '../nativeMenu'
 import styles from './TableView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -100,27 +98,17 @@ export function TableView(props: {
         )
     }
 
-    const [menu, setMenu] = createSignal<{
-        x: number
-        y: number
-        items: MenuItem[]
-    } | null>(null)
     function onRowContextMenu(e: MouseEvent, row: Row): void {
-        if (!rowEditable(row) || typeof row.note.line === 'number') return
+        if (!rowEditable(row)) return
         e.preventDefault()
         e.stopPropagation()
-        openContextMenu(
-            e.clientX,
-            e.clientY,
-            [
-                {
-                    label: 'delete row',
-                    icon: 'Trash2',
-                    onSelect: () => void commitDelete(row, props.onChange),
-                },
-            ],
-            setMenu,
-        )
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+            columns: cols(),
+        })
     }
 
     // Re-apply persisted widths whenever they change (e.g. on reload / refetch).
@@ -236,21 +224,36 @@ export function TableView(props: {
         window.addEventListener('pointerup', onUp)
     }
 
-    // We can pin the table to a rigid, spreadsheet-style layout only when EVERY visible
-    // column has a known width. The pinned table width is the exact SUM of those widths,
-    // so resizing one column never redistributes space to the others: the grabbed column
-    // changes, columns after it shift as a block, and columns before it stay exactly put.
-    // A partial map (e.g. a column added after widths were saved) falls back to the fluid
-    // 100% layout until a resize re-seeds every column.
+    // Columns with no STORED width (never resized, or a column added after widths were
+    // saved) get a default seeded once, on first paint, from the header's own rendered
+    // natural width — before this signal fills in, the table renders auto-layout (identical
+    // to today's pre-fixed appearance), and it fills in synchronously on mount, before the
+    // browser paints, so the default and the natural width are the same pixels. After that
+    // the table is fixed forever: opening a cell's editor mounts inside a `<td>` whose column
+    // width is already pinned, so it can never widen the column.
+    const [defaultW, setDefaultW] = createSignal<Record<string, number>>({})
+    const [mounted, setMounted] = createSignal(false)
+    onMount(() => {
+        const ths = headerEls()
+        const seed: Record<string, number> = {}
+        cols().forEach((c, i) => {
+            if (w()[c] == null && ths[i]) seed[c] = ths[i].offsetWidth
+        })
+        setDefaultW(seed)
+        setMounted(true)
+    })
+    const colWidth = (c: string): number | undefined => w()[c] ?? defaultW()[c]
+
+    // Once mounted, EVERY visible column has a width (stored, or the natural-width default
+    // above) — the table is table-layout:fixed and carries a <colgroup> from then on. The
+    // pinned table width is the exact SUM of those widths, so resizing one column never
+    // redistributes space to the others: the grabbed column changes, columns after it shift
+    // as a block, and columns before it stay exactly put.
     const totalWidth = (): number | null => {
-        const map = w()
-        if (cols().length === 0) return null
+        if (!mounted() || cols().length === 0) return null
         let sum = 0
-        for (const c of cols()) {
-            const cw = map[c]
-            if (!cw) return null
-            sum += cw
-        }
+        for (const c of cols())
+            sum += colWidth(c) ?? settings.ui.tableMinColWidth
         return sum
     }
     const fixed = () => totalWidth() !== null
@@ -271,16 +274,15 @@ export function TableView(props: {
     }
 
     return (
-        <>
-            <table class={styles.table} style={tableStyle()}>
+        <table class={styles.table} style={tableStyle()}>
                 <Show when={fixed()}>
                     <colgroup>
                         <For each={cols()}>
                             {c => (
                                 <col
                                     style={
-                                        w()[c]
-                                            ? { width: `${w()[c]}px` }
+                                        colWidth(c)
+                                            ? { width: `${colWidth(c)}px` }
                                             : undefined
                                     }
                                 />
@@ -428,20 +430,6 @@ export function TableView(props: {
                         </tr>
                     </tfoot>
                 </Show>
-            </table>
-            {/* The row menu renders at <body>: a menu element cannot live inside <table>. */}
-            <Portal>
-                <Show when={menu()}>
-                    {m => (
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            onClose={() => setMenu(null)}
-                        />
-                    )}
-                </Show>
-            </Portal>
-        </>
+        </table>
     )
 }
