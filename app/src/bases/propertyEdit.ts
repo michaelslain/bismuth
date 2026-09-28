@@ -228,11 +228,10 @@ export function selectOptionsWithCurrent(
 // ── PropertyValueEditor's draft/commit/readonly helpers ─────────────────────────────────
 // Pure, so they are testable without mounting Solid.
 
-/** The text an editor box opens with for `value`: a date cut to its input width, a number in
+/** The text an editor box opens with for `value`: a number in
  *  EDIT space (percent ×100, see numberFormat.ts), anything else as its string. null → ''. */
 export function propertyDraft(kind: PropertyEditKind, value: unknown): string {
     if (value == null) return ''
-    if (kind.kind === 'date') return String(value).slice(0, kind.time ? 16 : 10)
     if (kind.kind === 'number') {
         const n = typeof value === 'number' ? value : Number(value)
         return Number.isFinite(n)

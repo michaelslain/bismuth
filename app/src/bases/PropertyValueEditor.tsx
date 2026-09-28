@@ -146,6 +146,7 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
                         value={props.value}
                         onCommit={props.onCommit}
                         onDismiss={props.onCancel}
+                        openOnMount={autofocus()}
                     />
                 )}
             </Match>

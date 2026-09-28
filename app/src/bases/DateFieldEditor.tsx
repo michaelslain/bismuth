@@ -6,7 +6,7 @@
 // Why not ui/Popover: Popover is only the floating SURFACE (border + --lift), with no anchoring,
 // and DatePicker already paints that surface itself (`.bismuth-popover`) — wrapping it would
 // draw two frames. So this owns only the anchor + dismiss layer, same as ui/Select.tsx.
-import { Show, createSignal, type Component } from 'solid-js'
+import { Show, createSignal, onMount, type Component } from 'solid-js'
 import AnchoredPopover from '../ui/AnchoredPopover'
 import DatePicker, { type DatePickerKind } from '../editor/DatePicker'
 import { parseDateValue, composeDateValue } from '../editor/datePickerCore'
@@ -26,6 +26,9 @@ export type DateFieldEditorProps = {
     /** Fired when the popover closes WITHOUT a pick (Escape or a click away), so a host that
      *  mounted this as a transient cell editor can end its edit. */
     onDismiss?: () => void
+    /** Open the picker as soon as this mounts — for a transient cell editor, whose trigger would
+     *  otherwise sit closed and never fire `onDismiss` on a click away. */
+    openOnMount?: boolean
 }
 
 const DateFieldEditor: Component<DateFieldEditorProps> = props => {
@@ -58,6 +61,10 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
         props.onCommit(composeDateValue(kind(), d, t) || null)
         if (closeAfter) close()
     }
+
+    onMount(() => {
+        if (props.openOnMount) openPicker()
+    })
 
     return (
         <>
@@ -114,7 +121,6 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                             }}
                         />
                     </div>
-
                 </Show>
             </AnchoredPopover>
         </>
