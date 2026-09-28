@@ -42,11 +42,11 @@ import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { columnLabel } from './columnLabel'
 import { titleOf, writableKey } from './kanbanMeta'
-import { appendEmbedToValue, isImagePath } from './kanbanImageDrop'
+import { isImagePath } from './kanbanImageDrop'
+import { embedUploadsIntoValue } from './imageEmbedWrite'
 import {
     isFileDrag,
     nativeDropPoint,
-    uploadImageEmbeds,
     uploadsFromFiles,
     uploadsFromNativePaths,
     type ImageUpload,
@@ -188,7 +188,7 @@ export function CardEditModal(props: {
      *  picture appears at once, and COMMIT immediately — a drop is a deliberate act, so it shouldn't
      *  wait for a blur to reach disk.
      *
-     *  The new value comes from the same pure `appendEmbedToValue` the board's card-face drop uses,
+     *  The new value comes from the same `embedUploadsIntoValue` the board's card-face drop uses,
      *  so an image dropped here and one dropped on the card produce byte-identical markdown (an
      *  earlier cut inserted at the drop point via ProseMirror and glued the embed onto the end of
      *  the preceding sentence — `description: text.![[img.png]]`). Reading the CURRENT markdown off
@@ -200,13 +200,16 @@ export function CardEditModal(props: {
         uploads: ImageUpload[],
     ): Promise<void> {
         if (uploads.length === 0) return
-        const embeds = await uploadImageEmbeds(uploads, props.row.file.path)
-        if (embeds.length === 0) return
         const handle = fields.get(id)?.handle
         const current = handle
             ? handle.getMarkdown()
             : (mdDrafts[id] ?? String(untrack(() => value(id)) ?? ''))
-        const next = appendEmbedToValue(current, embeds.join('\n'))
+        const next = await embedUploadsIntoValue({
+            uploads,
+            notePath: props.row.file.path,
+            value: current,
+        })
+        if (next === current) return
         mdDrafts[id] = next
         handle?.setMarkdown(next) // programmatic set → no onChange, hence the explicit draft write above
         commitMarkdown(id)
