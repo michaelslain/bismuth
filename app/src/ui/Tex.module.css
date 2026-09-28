@@ -1,0 +1,10 @@
+/* app/src/ui/Tex.module.css — the KaTeX primitive (see Tex.tsx). Colour is the caller's: KaTeX's
+   own stylesheet (loaded lazily by editor/katexLoader.ts) never sets a `color` on `.katex`, so it
+   already inherits from whatever ancestor sets it (a --text-muted footer line, a --faint tile
+   expression) — this rule just makes that inheritance explicit at the root instead of relying on
+   the accident of KaTeX's CSS never having overridden it. Size is KaTeX's own em-based metrics;
+   this file never sets font-size. */
+
+.tex {
+    color: inherit;
+}

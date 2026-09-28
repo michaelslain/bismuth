@@ -163,6 +163,12 @@ const SKIP_MODULES = new Set<string>([
     // ChartDrill app/src`.
     'bases/ChartReadout.module.css',
     'bases/ChartDrill.module.css',
+    // chart-views Task 3: ui/Tex.tsx is the KaTeX primitive landed ahead of the chart views that
+    // will render it (later tasks). No production importer exists yet — confirmed via
+    // `grep -rln 'Tex\b' app/src` returning only Tex.tsx itself and Tex.stories.tsx — same shape as
+    // Callout/Frontmatter above: a real component, structurally unreachable by `vite build` until
+    // a later task mounts it.
+    'ui/Tex.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

@@ -164,7 +164,11 @@ const CHECKS = `(() => {
     // a class, since its real class is CSS-module-hashed) joins this list for the same reason: its
     // spans' font-size is legitimately the PDF's own glyph size times the page's zoom, computed by
     // pdf.js's own calc()-based CSS contract (PdfPageCanvas.module.css) — never our type scale.
-    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet, [data-testid="pdf-text-layer"]'
+    // .katex joins the list for the same reason: KaTeX sizes its own glyphs in ems off the
+    // ambient font-size (ui/Tex.tsx deliberately never sets font-size — DESIGN.md's "Typed, Not
+    // Drawn" north star exempts KaTeX's own output from the app's type scale), so it will always
+    // trip font-size-off-scale under any design.
+    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet, [data-testid="pdf-text-layer"], .katex'
     const inForeign = el => !!el.closest(FOREIGN)
     const all = []
     for (const r of roots)
