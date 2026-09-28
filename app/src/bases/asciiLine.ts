@@ -56,13 +56,24 @@ function rowFor(
  * would be narrower than `MIN_SLOT` (2 chars) for the full point count, only the last K points
  * that fit are kept (`firstIndex` says how many were dropped from the front).
  *
- * `opts.trend`, when given, is called with a (possibly fractional) index into the ORIGINAL
- * `points` array — the caller owns converting that index to its own t/value — and its result is
- * drawn as a faint `.` in every otherwise-blank cell (never overwriting the data line/points).
+ * `opts.trend`, when given, is called with a `t` that is LINEAR IN COLUMNS: when `opts.xs` is
+ * given, `t` is interpolated in `xs`'s own units (matching a real-time trend fit); otherwise `t`
+ * is a (possibly fractional) index into the ORIGINAL `points` array. Either way the caller owns
+ * converting `t` to its own value, and the result is drawn as a faint `.` only between the first
+ * and last visible point's columns, every 2nd column, in cells still blank after the data line.
+ *
+ * `opts.xs`, when given, is one time-value per point (same length as `points`, same units the
+ * trend fit uses) and places points at their real relative spacing instead of even index spacing
+ * — a category axis should omit it and keep index spacing.
  */
 export function buildLinePlot(
     points: LinePoint[],
-    opts: { columns: number; height?: number; trend?: (i: number) => number },
+    opts: {
+        columns: number
+        height?: number
+        xs?: number[]
+        trend?: (t: number) => number
+    },
 ): LinePlot & { colOf: (i: number) => number; gutter: number; firstIndex: number } {
     const height = opts.height ?? 12
     const n0 = points.length
@@ -77,14 +88,23 @@ export function buildLinePlot(
         }
     }
 
-    const scaleMax = Math.max(0, ...points.map(p => p.value))
-    const scaleMin = Math.min(0, ...points.map(p => p.value))
+    const rawMax = Math.max(...points.map(p => p.value))
+    const rawMin = Math.min(...points.map(p => p.value))
+    // Everything negative: let the max stay negative instead of forcing 0 into range and
+    // squeezing all the ink into a sliver at the top.
+    const scaleMax = rawMax
+    // Data hugging (or crossing) zero keeps a zero-anchored floor; data sitting well above zero
+    // gets a floor fitted just under its own minimum instead of a mostly-empty bottom half.
+    const scaleMin =
+        rawMax === rawMin || rawMin <= 0 || rawMin <= 0.5 * rawMax
+            ? Math.min(0, rawMin)
+            : Math.floor(rawMin - 0.1 * (rawMax - rawMin))
     const mid = (scaleMax + scaleMin) / 2
 
     const maxTick = formatValue(scaleMax)
     const midTick = formatValue(mid)
-    const zeroTick = formatValue(0)
-    const gutter = Math.max(maxTick.length, midTick.length, zeroTick.length) + 1
+    const minTick = formatValue(scaleMin)
+    const gutter = Math.max(maxTick.length, midTick.length, minTick.length) + 1
 
     const avail = Math.max(MIN_SLOT, opts.columns - gutter - 1)
     let n = n0
@@ -98,7 +118,16 @@ export function buildLinePlot(
 
     const visible = points.slice(firstIndex)
     const plotWidth = n * slotWidth
-    const localColOf = (i: number) => i * slotWidth + Math.floor(slotWidth / 2)
+    const xsVisible = opts.xs ? opts.xs.slice(firstIndex) : null
+    const xsSpan = xsVisible && n > 1 ? xsVisible[n - 1] - xsVisible[0] : 0
+    const useXs = !!xsVisible && xsSpan > 0
+    const localColOf = (i: number) => {
+        if (useXs && xsVisible) {
+            const frac = (xsVisible[i] - xsVisible[0]) / xsSpan
+            return Math.round(frac * (plotWidth - slotWidth)) + Math.floor(slotWidth / 2)
+        }
+        return i * slotWidth + Math.floor(slotWidth / 2)
+    }
     const colOf = (i: number) => gutter + localColOf(i)
     const rowOf = (i: number) => rowFor(visible[i].value, scaleMin, scaleMax, height)
 
@@ -131,7 +160,7 @@ export function buildLinePlot(
         for (let k = 0; k < colRow.length; k++) {
             const c = c0 + k
             const r = colRow[k]
-            if (c === c0 || c === c1) continue // points drawn separately, below
+            if (c === c0) continue // the marker column is drawn separately, below
             const prev = colRow[k - 1]
             if (Math.abs(r - prev) > 1) {
                 const lo = Math.min(prev, r)
@@ -146,13 +175,22 @@ export function buildLinePlot(
     // Markers drawn last so they win over any connecting glyph landing on the same cell.
     for (let i = 0; i < n; i++) setCell(rowOf(i), localColOf(i), 'o', 'point')
 
-    // Trend: a faint `.` at every column, only where the cell is still blank.
-    if (opts.trend) {
+    // Trend: a faint `.` every 2nd column, strictly between the first and last point's columns
+    // (never extrapolated past the data), only where the cell is still blank.
+    if (opts.trend && n > 0) {
         const half = Math.floor(slotWidth / 2)
-        for (let c = 0; c < plotWidth; c++) {
-            const fracVisible = (c - half) / slotWidth
-            const origIndex = firstIndex + fracVisible
-            const value = opts.trend(origIndex)
+        const cStart = localColOf(0)
+        const cEnd = localColOf(n - 1)
+        const xsDenom = plotWidth - slotWidth
+        for (let c = cStart; c <= cEnd; c += 2) {
+            let t: number
+            if (useXs && xsVisible) {
+                const frac = xsDenom > 0 ? (c - half) / xsDenom : 0
+                t = xsVisible[0] + frac * xsSpan
+            } else {
+                t = firstIndex + (c - half) / slotWidth
+            }
+            const value = opts.trend(t)
             const r = rowFor(value, scaleMin, scaleMax, height)
             if (kinds[r][c] === 'blank') setCell(r, c, '.', 'trend')
         }
@@ -184,10 +222,10 @@ export function buildLinePlot(
 
         const maxRow = rowFor(scaleMax, scaleMin, scaleMax, height)
         const midRow = rowFor(mid, scaleMin, scaleMax, height)
-        const zeroRow = rowFor(0, scaleMin, scaleMax, height)
+        const minRow = rowFor(scaleMin, scaleMin, scaleMax, height)
         let tickText = ''
         if (r === maxRow) tickText = maxTick
-        else if (r === zeroRow) tickText = zeroTick
+        else if (r === minRow) tickText = minTick
         else if (r === midRow) tickText = midTick
         const tick = tickText
             ? tickText.padStart(gutter - 1) + ' '
