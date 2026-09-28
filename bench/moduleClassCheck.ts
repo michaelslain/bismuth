@@ -155,6 +155,10 @@ const SKIP_MODULES = new Set<string>([
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
     'chat/ChatSessionProbe.module.css',
+    // bases-ds-fix task 3: TaskText.tsx has no app importer YET (only its own .stories.tsx) —
+    // task 13 swaps it into TaskRow, and task 21 into TaskChip. REMOVE this entry once TaskRow
+    // imports TaskText, so the check guards it again.
+    'bases/TaskText.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')
