@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import type { Bin } from '../../../core/src/dates'
 import { buildChartData } from '../../../core/src/bases/chart'
@@ -100,6 +100,11 @@ export function LineView(props: ChartViewProps) {
         return parts
     })
 
+    createEffect(() => {
+        const k = drillKey()
+        if (k !== null && !data().points.some(p => p.key === k)) setDrillKey(null)
+    })
+
     const drillPoint = createMemo(() => {
         const key = drillKey()
         if (key === null) return null
@@ -182,12 +187,16 @@ export function LineView(props: ChartViewProps) {
             footer={
                 <div class={styles.footer}>
                     <Tex
-                        display
                         class={styles.muted}
-                        tex={chartDefinitionLatex(data(), props.config.formulas)}
+                        tex={'\\displaystyle ' + chartDefinitionLatex(data(), props.config.formulas)}
                     />
                     <Show when={fit()}>
-                        {f => <Tex display class={styles.muted} tex={trendLatex(f())} />}
+                        {f => (
+                            <Tex
+                                class={styles.muted}
+                                tex={'\\displaystyle ' + trendLatex(f())}
+                            />
+                        )}
                     </Show>
                 </div>
             }

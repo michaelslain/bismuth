@@ -221,6 +221,19 @@ describe('chartDefinitionLatex', () => {
             bin: 'week',
             isDate: true,
         }
+        expect(chartDefinitionLatex(spec, { ppu: 'note.price / note.qty' })).toBe(
+            'y(t) = \\sum_{n \\in B_t} n.\\text{ppu} \\qquad B_t = \\{\\, n : \\operatorname{week}(n.\\text{due}) = t \\,\\} \\qquad \\text{ppu} = \\frac{\\text{price}}{\\text{qty}}',
+        )
+    })
+
+    test('formula y also resolves the legacy formula.<name> key', () => {
+        const spec: ChartSpec = {
+            x: 'note.due',
+            y: 'formula.ppu',
+            aggregate: 'sum',
+            bin: 'week',
+            isDate: true,
+        }
         expect(chartDefinitionLatex(spec, { 'formula.ppu': 'note.price / note.qty' })).toBe(
             'y(t) = \\sum_{n \\in B_t} n.\\text{ppu} \\qquad B_t = \\{\\, n : \\operatorname{week}(n.\\text{due}) = t \\,\\} \\qquad \\text{ppu} = \\frac{\\text{price}}{\\text{qty}}',
         )
@@ -234,7 +247,7 @@ describe('chartDefinitionLatex', () => {
             bin: 'week',
             isDate: true,
         }
-        expect(chartDefinitionLatex(spec, { 'formula.ppu': '((' })).toBe(
+        expect(chartDefinitionLatex(spec, { ppu: '((' })).toBe(
             'y(t) = \\sum_{n \\in B_t} n.\\text{ppu} \\qquad B_t = \\{\\, n : \\operatorname{week}(n.\\text{due}) = t \\,\\}',
         )
     })

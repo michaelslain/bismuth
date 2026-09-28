@@ -189,12 +189,15 @@ export function chartDefinitionLatex(
         base = noXLine(spec.aggregate, yProp)
     }
 
-    if (spec.y?.startsWith('formula.') && formulas && formulas[spec.y]) {
-        try {
-            const parsed = exprToLatex(parseExpr(formulas[spec.y]))
-            return `${base} \\qquad \\text{${escapeTex(yProp)}} = ${parsed}`
-        } catch {
-            return base
+    if (spec.y?.startsWith('formula.') && formulas) {
+        const src = formulas[yProp] ?? formulas[spec.y]
+        if (src) {
+            try {
+                const parsed = exprToLatex(parseExpr(src))
+                return `${base} \\qquad \\text{${escapeTex(yProp)}} = ${parsed}`
+            } catch {
+                return base
+            }
         }
     }
     return base
