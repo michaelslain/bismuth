@@ -115,7 +115,7 @@ export function clearSpot(mapEl: HTMLElement): { x: number; y: number } {
 }
 
 /** Placing an EXISTING row that has no coordinates, with a real-mouse event sequence at every
- *  step: zoom in (so the framing is the USER's, not the initial fit) → press `unplaced (N)` →
+ *  step: zoom in (so the framing is the USER's, not the initial fit) → press `[N unplaced]` →
  *  pick `pick` → press an empty spot on the map (with jitter). Asserts the pin lands (count +1,
  *  unplaced readout drops by one) AND that neither arming nor placing — nor the refetch after the
  *  write — moved the map. */
@@ -135,7 +135,7 @@ export async function placeUnplacedByMouse(
     const unplacedButton = await scope.findByTestId('map-unplaced-button')
     await waitFor(() =>
         expect(unplacedButton).toHaveTextContent(
-            `unplaced (${unplacedBefore})`,
+            `${unplacedBefore} unplaced`,
         ),
     )
     const before = pinCount(root)
@@ -169,7 +169,7 @@ export async function placeUnplacedByMouse(
     })
     if (unplacedBefore > 1)
         expect(unplacedButton).toHaveTextContent(
-            `unplaced (${unplacedBefore - 1})`,
+            `${unplacedBefore - 1} unplaced`,
         )
     expect(framing(mapEl)).toBe(userFraming)
 }

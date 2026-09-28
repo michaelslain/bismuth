@@ -145,6 +145,17 @@
 }
 /* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
 .mapUnplaced button:disabled { cursor: not-allowed; }
+/* The `[N unplaced]` TextButton shares this row's tone with its `[📌]` IconButton sibling, which
+   never underlines on hover — Button.module.css's default TextButton hover DOES underline
+   (`.btn--text:not(.btn--unselected):hover:not(:disabled) .textLabel`), read as a stray link
+   affordance next to a plain icon button (bases-polish round 4 item 1). Can't touch Button's own
+   hashed `.textLabel` class (one-importer rule) or its shared behaviour (every other TextButton in
+   the app keeps the underline) — override locally via Button's `data-*` runtime hooks instead,
+   at matching specificity (5 class-level selectors each side) plus two type selectors so this rule
+   wins the tie. */
+.mapUnplaced button[data-kind="text"][data-state="normal"]:hover:not(:disabled) span {
+    text-decoration: none;
+}
 /* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
    cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
 .mapArmed {
