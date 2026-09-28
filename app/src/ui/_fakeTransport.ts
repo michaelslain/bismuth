@@ -20,7 +20,13 @@
 import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
-import { parseFrontmatter } from '../../../core/src/frontmatter'
+import {
+    parseFrontmatter,
+    setFrontmatterKey,
+    deleteFrontmatterKey,
+    setFrontmatterViewKey,
+    deleteFrontmatterViewKey,
+} from '../../../core/src/frontmatter'
 import {
     start as startServerVersion,
     serverVersion,
@@ -78,6 +84,7 @@ export interface FakeTransportSeed {
 
 let fakeVersion = 1
 let fakePoll: (() => unknown) | undefined
+let disposeFake: (() => void) | undefined
 
 const fakeVersionDeps: Partial<StartDeps> = {
     eventSourceFactory: () => {
@@ -98,16 +105,30 @@ const fakeVersionDeps: Partial<StartDeps> = {
 function armFakeServerVersion(): void {
     fakePoll = undefined
     const dispose = startServerVersion(fakeVersionDeps)
-    if (fakePoll) return
+    if (fakePoll) {
+        disposeFake = dispose
+        return
+    }
     // Someone else already started it — take it over.
     dispose()
-    startServerVersion(fakeVersionDeps)
+    disposeFake = startServerVersion(fakeVersionDeps)
 }
 
 /** True once a `versioned` transport has captured the poll — a story's play() asserts this so
  *  it cannot pass vacuously against a bump that silently went nowhere. */
 export function fakeServerVersionArmed(): boolean {
     return fakePoll !== undefined
+}
+
+/** Release the fake `serverVersion` ownership `armFakeServerVersion` took — call from an
+ *  `onCleanup` in any story that arms it (e.g. a gallery mounting many `versioned` tiles), so
+ *  the NEXT story's own `startServerVersion` call is not a silent no-op against an owner that
+ *  never let go. Without this, `started` stays true in the preview iframe past this story's
+ *  unmount and the next versioned story's poll is never captured. */
+export function disarmFakeServerVersion(): void {
+    disposeFake?.()
+    disposeFake = undefined
+    fakePoll = undefined
 }
 
 /** What `mutatingHandler` does after a write: advance the version and deliver it. Always past
@@ -227,18 +248,48 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             }
             return new Response('ok')
         }
+        // A `viewIndex` targets `views[viewIndex][key]` of a `type: base` note (kanban column
+        // rename/colour, view-tab rename/reorder) — mirror the real server (`setFrontmatterViewKey`/
+        // `deleteFrontmatterViewKey` in core/src/server.ts) by editing the SEEDED FILE TEXT, not a
+        // row: a base's own `views:` config lives in its frontmatter, not in any row `/rows` ever
+        // resolved. Without this, `armFakeServerVersion`'s bump still fires but the next `/file`
+        // read (BaseView's doc refetch) hands back the same unedited text, so a gallery tile's
+        // kanban column rename/delete looks acked but never shows.
         if (pathname === '/set-property') {
-            const { path: p, key, value } = body as {
+            const { path: p, key, value, viewIndex } = body as {
                 path: string
                 key: string
                 value: unknown
+                viewIndex?: number
+            }
+            const raw = files.get(p)
+            if (raw !== undefined) {
+                files.set(
+                    p,
+                    typeof viewIndex === 'number'
+                        ? setFrontmatterViewKey(raw, viewIndex, key, value)
+                        : setFrontmatterKey(raw, key, value),
+                )
             }
             const row = rowIndex.get(p)
             if (row) row.note[key] = value
             return new Response('ok')
         }
         if (pathname === '/delete-property') {
-            const { path: p, key } = body as { path: string; key: string }
+            const { path: p, key, viewIndex } = body as {
+                path: string
+                key: string
+                viewIndex?: number
+            }
+            const raw = files.get(p)
+            if (raw !== undefined) {
+                files.set(
+                    p,
+                    typeof viewIndex === 'number'
+                        ? deleteFrontmatterViewKey(raw, viewIndex, key)
+                        : deleteFrontmatterKey(raw, key),
+                )
+            }
             const row = rowIndex.get(p)
             if (row) delete row.note[key]
             return new Response('ok')
