@@ -16,10 +16,6 @@ import type {
 import { runView } from '../../../core/src/bases/query'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
-// The overdue class lives on <TaskRow> now (it was extracted out of ListView), so the class
-// this asserts has to be read from TaskRow's module — BaseView.module.css no longer defines
-// it, and `classList.contains(undefined)` would quietly assert nothing.
-import styles from './TaskRow.module.css'
 
 const meta = {
     title: 'Bases/ListView',
@@ -285,12 +281,12 @@ export const TasksWithMetadata: Story = {
         expect(recurrenceChip).toBeInTheDocument()
         expect(futureChip).toBeInTheDocument()
 
-        // The overdue chip carries the overdue CLASS — not a colour comparison, which is
-        // brittle across the app's four themes and was already proven distinct from the
-        // non-overdue token separately. The control row's future-dated due chip must NOT
-        // carry it, or a mutation making every due chip "overdue" would still pass.
-        expect(overdueChip.classList.contains(styles.overdue)).toBe(true)
-        expect(futureChip.classList.contains(styles.overdue)).toBe(false)
+        // The overdue class lives in TaskFieldChips's own module, so compare the RENDERED
+        // colour: the overdue chip must differ from the control row's future-dated due chip,
+        // or a mutation making every due chip "overdue" would still pass.
+        expect(getComputedStyle(overdueChip).color).not.toBe(
+            getComputedStyle(futureChip).color,
+        )
 
         // The toggle is wired to real state: clicking the first row's box flips it.
         const box = canvas.getAllByRole('checkbox')[0]

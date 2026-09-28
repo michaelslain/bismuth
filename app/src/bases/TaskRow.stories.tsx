@@ -6,7 +6,9 @@
 // passes in — which is the failure mode this component exists to prevent, since both producers
 // are supposed to be indistinguishable to it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
 import TaskRow from './TaskRow'
 import { taskToRow, normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
 import { syntheticBaseFile, type Row } from '../../../core/src/bases/types'
@@ -117,11 +119,15 @@ export const EveryStatus: Story = {
         // The done row's body strikes through; the cancelled row's does not. Both boxes
         // differ, so without this a swapped `.done` binding would still look plausible.
         expect(
-            canvas.getByText('done — shipped').classList.contains(styles.done),
+            canvas
+                .getByText('done — shipped')
+                .closest(`.${styles.taskBody}`)!
+                .classList.contains(styles.done),
         ).toBe(true)
         expect(
             canvas
                 .getByText('cancelled — decided against')
+                .closest(`.${styles.taskBody}`)!
                 .classList.contains(styles.done),
         ).toBe(false)
     },
@@ -200,10 +206,8 @@ export const EveryField: Story = {
             '[every week]',
         ])
             expect(canvas.getByText(text)).toBeInTheDocument()
-        // The bare row contributes no chips, so exactly five exist on the page.
-        expect(
-            canvasElement.querySelectorAll(`.${styles.taskField}`).length,
-        ).toBe(5)
+        // The bare row contributes no chips, so nothing but the five above is on the page.
+        expect(canvas.queryAllByTitle(/priority$/).length).toBe(1)
     },
 }
 
@@ -241,21 +245,22 @@ export const Overdue: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        const chips = canvasElement.querySelectorAll(`.${styles.taskField}`)
-        expect(chips.length).toBe(4)
-        const overdue = [...chips].map(c =>
-            c.classList.contains(styles.overdue),
-        )
-        expect(overdue).toEqual([true, false, false, false])
-        // …and the one that IS overdue is the row that says so, not merely "some chip".
-        expect(
-            canvas
-                .getByText(formatDateField('due', DATES.overdue), {
-                    selector: `.${styles.overdue}`,
-                })
-                .textContent,
-        ).toBe(formatDateField('due', DATES.overdue))
+        // Compare the computed colour of each due chip: the class lives in TaskFieldChips's own
+        // module (see TaskFieldChips.stories.tsx), so here we assert the outcome, not the class.
+        const rows = canvasElement.querySelectorAll(`.${styles.taskItem}`)
+        expect(rows.length).toBe(4)
+        const dueColors = [...rows].map(r => {
+            const chip = within(r as HTMLElement).getByText(
+                new RegExp(`^\\[due `),
+            )
+            return getComputedStyle(chip).color
+        })
+        const late = dueColors[0]
+        expect(late).not.toBe(getComputedStyle(canvasElement).color)
+        // The future, done-late and cancelled rows are all NOT the overdue colour.
+        expect(dueColors[1]).not.toBe(late)
+        expect(dueColors[2]).not.toBe(late)
+        expect(dueColors[3]).not.toBe(late)
     },
 }
 
@@ -277,16 +282,56 @@ export const InlineMarkup: Story = {
         const canvas = within(canvasElement)
         expect(canvas.getByText('the spec')).toBeInTheDocument()
         expect(canvas.getByText('#q4')).toBeInTheDocument()
-        expect(canvas.getByText('ship it').tagName).toBe('STRONG')
-        expect(canvas.getByText('soon').tagName).toBe('EM')
-        // The wikilink and the tag are the two that carry their own class, and both are
-        // module-hashed — a call site holding a stale literal would render unstyled text.
+        // Bold and italic are weight and style on Text, not <strong>/<em>.
         expect(
-            canvas.getByText('the spec').classList.contains(styles.taskLink),
-        ).toBe(true)
-        expect(canvas.getByText('#q4').classList.contains(styles.taskTag)).toBe(
-            true,
+            Number(getComputedStyle(canvas.getByText('ship it')).fontWeight),
+        ).toBeGreaterThan(500)
+        expect(getComputedStyle(canvas.getByText('soon')).fontStyle).toBe(
+            'italic',
         )
+        // The wikilink is a real link (focusable, reachable by Tab), not a styled span.
+        expect(canvas.getByText('the spec').tagName).toBe('A')
+    },
+}
+
+/** Clicking a wikilink opens its note; an external link opens a tab with noopener; a
+ *  javascript: url is inert text. */
+export const LinkClick: Story = {
+    render: () => (
+        <Rows
+            rows={[
+                scanned({
+                    description:
+                        'see [[Design/Spec|the spec]] or [docs](https://example.com/d) or [bad](javascript:alert(1))',
+                }),
+            ]}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const opened: string[] = []
+        const onOpen = (e: Event) =>
+            opened.push((e as CustomEvent<string>).detail)
+        window.addEventListener('bismuth-open', onOpen)
+        const realOpen = window.open
+        const tabs: [unknown, unknown, unknown][] = []
+        window.open = ((u: unknown, t: unknown, f: unknown) => {
+            tabs.push([u, t, f])
+            return null
+        }) as typeof window.open
+        try {
+            await userEvent.click(canvas.getByText('the spec'))
+            expect(opened).toEqual(['Design/Spec.md'])
+            await userEvent.click(canvas.getByText('docs'))
+            expect(tabs).toEqual([
+                ['https://example.com/d', '_blank', 'noopener'],
+            ])
+            // The javascript: url is text: no button, no link.
+            expect(canvas.getByText('bad').closest('a, button')).toBeNull()
+        } finally {
+            window.removeEventListener('bismuth-open', onOpen)
+            window.open = realOpen
+        }
     },
 }
 
@@ -298,20 +343,38 @@ export const InlineMarkup: Story = {
  * screenshot diff covers instead.
  */
 export const EditButton: Story = {
-    render: () => (
-        <Rows
-            rows={[
-                scanned({ description: 'a scanned line task' }),
-                stored({ description: 'a stored row task', status: 'todo' }),
-            ]}
-        />
-    ),
+    render: () => {
+        setTransport(fakeTransport({}))
+        return (
+            <Rows
+                rows={[
+                    scanned({ description: 'a scanned line task' }),
+                    stored({
+                        description: 'a stored row task',
+                        status: 'todo',
+                    }),
+                ]}
+            />
+        )
+    },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const buttons = canvas.getAllByLabelText('Edit task')
         expect(buttons.length).toBe(2)
         for (const b of buttons)
             expect(b.classList.contains(styles.editBtn)).toBe(true)
+        // Clicking one opens the edit modal on that task (it portals to document.body).
+        await userEvent.click(buttons[0])
+        const body = within(document.body)
+        expect(
+            await body.findByDisplayValue('a scanned line task'),
+        ).toBeInTheDocument()
+        await userEvent.click(body.getByText('cancel'))
+        await waitFor(() =>
+            expect(
+                body.queryByDisplayValue('a scanned line task'),
+            ).not.toBeInTheDocument(),
+        )
     },
 }
 

@@ -8,14 +8,14 @@
    NOTHING HERE MAY BE NAMED `bismuth-*`. `.bismuth-task-field` is a GLOBAL class written into
    runtime-generated HTML strings by bases/taskCardMarkup.ts; it stays in global.css's
    `styles/content.css` section —
-   this component's fields are styled entirely by the module-local `.taskField` below instead
+   this component's fields are styled entirely by the module-local `.field` in TaskFieldChips.module.css instead
    of also carrying that global class, since the compact register no longer shares the boxed
    chip look `.bismuth-task-field` draws. app/src/cssLayering.test.ts guards the distinction. */
 .taskItem {
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  padding: 1px 18px;
+  padding: 1px var(--sp-6); /* 1px vertical nudge is optical */
   /* --fs-ui in the list view's own gutter; a `card` (bullets/cards/kanban) drops to
      --fs-micro below, TaskChip's own size, since it already sits inside a tighter frame. */
   font-size: var(--fs-ui);
@@ -26,19 +26,8 @@
 }
 .taskBody { flex: 1; min-width: 0; word-break: break-word; }
 .taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
-.taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-.taskTag { color: var(--teal); font-family: var(--ui-font-stack); }
-/* Unboxed inline muted text, matching TaskChip's field register — no border, no chip frame.
-   Fields flow after the description and wrap as whole units via `white-space: nowrap`. */
-.taskField {
-  margin-left: var(--sp-2);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.taskField.overdue { color: var(--danger); }
-
 /* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
-   list's 18px gutter — the card already has one — and drop to --fs-micro, TaskChip's size. */
+   list's gutter — the card already has one — and drop to --fs-micro, TaskChip's size. */
 .inCard { padding-left: 0; padding-right: 0; font-size: var(--fs-micro); }
 
 /* The trailing edit pencil: invisible until the row is hovered/focused, but never removed
