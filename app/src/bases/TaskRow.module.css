@@ -15,7 +15,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  padding: 1px var(--sp-6); /* 1px vertical nudge is optical */
+  padding: var(--sp-1) var(--sp-6);
   /* --fs-ui in the list view's own gutter; a `card` (bullets/cards/kanban) drops to
      --fs-micro below, TaskChip's own size, since it already sits inside a tighter frame. */
   font-size: var(--fs-ui);
