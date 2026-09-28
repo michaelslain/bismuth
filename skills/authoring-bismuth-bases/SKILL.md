@@ -26,6 +26,19 @@ A **base** is an ordinary `.md` file with `type: base` in its YAML frontmatter �
 | A single aggregated number (sum/avg/count) as one big tile — no breakdown | `stat` |
 | Daily activity over a long span (a year), as a GitHub-style contribution grid | `heatmap` |
 
+### `stat` view: declared metrics (`stats:`)
+
+A `stat` view renders one tile per entry in `stats:` — each entry is a bare string (label = value = that string) or `{ label?, value }` with `value` a metric expression: `count()`, `count(status == "done")`, `sum(priority)`, `avg(price)`, `sum(price) / sum(units)`. A bare property name outside `sum`/`avg`/`min`/`max`/`count` fails to parse — a metric has no single row to evaluate it against. With no `stats:` declared, the view synthesizes one metric from its own `x`/`y`/`aggregate`. Full semantics + the KaTeX/period-split/sparkline rendering: `docs/bases/views/charts.md`.
+
+```yaml
+views:
+  - type: stat
+    stats:
+      - label: total pages
+        value: sum(pages)
+      - value: count()
+```
+
 ## Workflow
 
 1. **Pick a kind** from the table above.
