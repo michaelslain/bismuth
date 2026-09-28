@@ -239,3 +239,48 @@ export const PlaceUnplaced: Story = {
         await placeUnplacedByMouse(canvasElement, 'Unmapped Cafe', 2)
     },
 }
+
+/** A map with no `basePath` (an embed): read-only. `Add pin` is disabled with the reason as its
+ *  title, and each pin is a note link that opens its note rather than the row editor. */
+export const ReadOnly: Story = {
+    render: () => {
+        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        return (
+            <div style={{ height: '480px' }}>
+                <MapView
+                    result={sampleViewResult(PLACES, { views })}
+                    config={sampleBaseConfig({ views })}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        expect(canvas.getByTestId('map-add-pin')).toBeDisabled()
+        expect(canvas.getByRole('link', { name: 'Tokyo' })).toBeInTheDocument()
+        expect(canvas.queryAllByRole('button', { name: /Tokyo/ })).toHaveLength(0)
+    },
+}
+
+/** No row has a valid location: the `no rows have a location` empty state over the bare basemap. */
+export const Empty: Story = {
+    render: () => {
+        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        return (
+            <div style={{ height: '480px' }}>
+                <MapView
+                    result={sampleViewResult(
+                        [placeRow('Unmapped Cafe', {})],
+                        { views },
+                    )}
+                    config={sampleBaseConfig({ views })}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        expect(
+            await within(canvasElement).findByText('no rows have a location'),
+        ).toBeVisible()
+    },
+}
