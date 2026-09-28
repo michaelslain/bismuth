@@ -33,6 +33,7 @@ import type {
 } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
 import { normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
+import { buildChartData } from '../../../core/src/bases/chart'
 import { statusFromChar } from '../../../core/src/taskReorder'
 import { todayISO } from '../../../core/src/dates'
 import {
@@ -684,23 +685,36 @@ export function BaseView(props: {
         const columns = new Set(res.columns)
         if (view.x) columns.add(view.x)
         if (view.y) columns.add(view.y)
+        const resolved = buildChartData(
+            res.groups.flatMap(g => g.rows),
+            view.type === 'heatmap' ? { ...view, bin: 'day' } : view,
+        )
         const onSet = (
-            key: 'x' | 'y' | 'aggregate' | 'bin',
-            value: string | undefined,
+            changes: Partial<Record<'x' | 'y' | 'aggregate' | 'bin', string | undefined>>,
         ) => {
             const path = data()?.basePath
             if (!path) return
-            void (
-                value === undefined
-                    ? api.deleteViewProperty(path, activeViewIdx(), key)
-                    : api.setViewProperty(path, activeViewIdx(), key, value)
-            ).then(refetchAll)
+            void (async () => {
+                for (const [key, value] of Object.entries(changes)) {
+                    if (value === undefined)
+                        await api.deleteViewProperty(path, activeViewIdx(), key)
+                    else
+                        await api.setViewProperty(path, activeViewIdx(), key, value)
+                }
+                await refetchAll()
+            })().catch(writeFailed('update the chart axes'))
         }
         return {
             config: (
                 <ChartConfigBar
                     view={view}
                     columns={[...columns]}
+                    resolved={{
+                        x: resolved.x,
+                        y: resolved.y,
+                        aggregate: resolved.aggregate,
+                        bin: resolved.bin,
+                    }}
                     onSet={onSet}
                 />
             ),

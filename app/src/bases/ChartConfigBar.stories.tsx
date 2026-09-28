@@ -17,11 +17,13 @@ function Controlled(props: { view: ViewConfig }): JSX.Element {
             <ChartConfigBar
                 view={view()}
                 columns={COLUMNS}
-                onSet={(key, value) =>
+                onSet={changes =>
                     setView(v => {
                         const next = { ...v }
-                        if (value === undefined) delete next[key]
-                        else next[key] = value as never
+                        for (const [key, value] of Object.entries(changes)) {
+                            if (value === undefined) delete next[key as keyof ViewConfig]
+                            else next[key as keyof ViewConfig] = value as never
+                        }
                         return next
                     })
                 }

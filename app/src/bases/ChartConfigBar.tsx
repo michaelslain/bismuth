@@ -10,7 +10,15 @@ import styles from './ChartConfigBar.module.css'
 export type ChartConfigBarProps = {
     view: ViewConfig
     columns: string[]
-    onSet: (key: 'x' | 'y' | 'aggregate' | 'bin', value: string | undefined) => void
+    /** The axes the chart actually resolved (auto-detection applied) — used as each picker's
+     *  fallback display value when the view config leaves that field unset. */
+    resolved?: {
+        x?: string
+        y?: string
+        aggregate?: Aggregate
+        bin?: Bin
+    }
+    onSet: (changes: Partial<Record<'x' | 'y' | 'aggregate' | 'bin', string | undefined>>) => void
     class?: string
 }
 
@@ -49,24 +57,29 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
         props.columns.map(c => ({ value: c, label: columnLabel(c, NO_CONFIG) })),
     )
 
-    const xValue = createMemo(() => props.view.x ?? props.columns[0] ?? '')
-    const yValue = createMemo(() => props.view.y ?? COUNT_ROWS)
+    const xValue = createMemo(
+        () => props.view.x ?? props.resolved?.x ?? props.columns[0] ?? '',
+    )
+    const yValue = createMemo(() => props.view.y ?? props.resolved?.y ?? COUNT_ROWS)
     const yOptions = createMemo<SelectOption[]>(() => [
         { value: COUNT_ROWS, label: '(count rows)' },
         ...columnOptions(),
     ])
     const aggregateValue = createMemo<Aggregate>(
-        () => props.view.aggregate ?? (props.view.y ? 'sum' : 'count'),
+        () => props.view.aggregate ?? props.resolved?.aggregate ?? (props.view.y ? 'sum' : 'count'),
     )
-    const binValue = createMemo<Bin>(() => props.view.bin ?? 'day')
+    const binValue = createMemo<Bin>(() => props.view.bin ?? props.resolved?.bin ?? 'day')
 
     const setY = (value: string) => {
         if (value === COUNT_ROWS) {
-            props.onSet('y', undefined)
-            props.onSet('aggregate', 'count')
+            props.onSet({ y: undefined, aggregate: 'count' })
             return
         }
-        props.onSet('y', value)
+        const changes: Partial<Record<'x' | 'y' | 'aggregate' | 'bin', string | undefined>> = {
+            y: value,
+        }
+        if (aggregateValue() === 'count') changes.aggregate = 'sum'
+        props.onSet(changes)
     }
 
     return (
@@ -76,7 +89,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                 <Select
                     value={xValue()}
                     options={columnOptions()}
-                    onChange={v => props.onSet('x', v || undefined)}
+                    onChange={v => props.onSet({ x: v || undefined })}
                     class={styles.select}
                 />
             </div>
@@ -95,7 +108,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                     <Select
                         value={aggregateValue()}
                         options={AGGREGATE_OPTIONS}
-                        onChange={v => props.onSet('aggregate', v as Aggregate)}
+                        onChange={v => props.onSet({ aggregate: v as Aggregate })}
                         class={styles.select}
                     />
                 </div>
@@ -106,7 +119,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                     <Select
                         value={binValue()}
                         options={BIN_OPTIONS}
-                        onChange={v => props.onSet('bin', v as Bin)}
+                        onChange={v => props.onSet({ bin: v as Bin })}
                         class={styles.select}
                     />
                 </div>

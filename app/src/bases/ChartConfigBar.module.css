@@ -9,7 +9,7 @@
 .field {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
 }
 
 /* x/y/agg/bin are one short word each and must never ellipsize — Label's shared min-width: 0

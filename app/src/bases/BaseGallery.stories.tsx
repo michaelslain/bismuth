@@ -264,6 +264,8 @@ async function allTilesResolved({ canvasElement }: { canvasElement: HTMLElement 
         const values = Array.from(stat.querySelectorAll('[class*="statValue"]'))
         expect(values.length).toBeGreaterThan(0)
         for (const v of values) expect(v.textContent?.trim()).not.toBe('—')
+        const line = canvas.getByTestId('gallery-line')
+        expect(line.querySelector('.katex')).toBeInTheDocument()
     })
     // Nothing on mount may move the page: the gallery opens at its first tile.
     expect(canvasElement.ownerDocument.defaultView?.scrollY).toBe(0)
