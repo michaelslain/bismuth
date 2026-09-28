@@ -14,7 +14,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
-import { fakeServerVersionArmed, fakeTransport } from '../ui/_fakeTransport'
+import { disarmFakeServerVersion, fakeServerVersionArmed, fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { Label } from '../ui/_storyKit'
 import { settings, setSettings } from '../settings'
@@ -223,6 +223,10 @@ function Gallery(): JSX.Element {
     const prevView = settings.calendar.defaultView
     setSettings('calendar', 'defaultView', 'month')
     onCleanup(() => setSettings('calendar', 'defaultView', prevView))
+    // seed() armed the fake server version for every versioned tile above — release it on
+    // unmount so the next story's own `startServerVersion` call is not a silent no-op against
+    // an owner this gallery never let go of (see `disarmFakeServerVersion`'s doc comment).
+    onCleanup(disarmFakeServerVersion)
     return (
         <div
             data-gallery
