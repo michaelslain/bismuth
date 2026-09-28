@@ -58,9 +58,9 @@ function row(folder: string, name: string, note: Record<string, unknown>): Row {
     }
 }
 
-// Two rows deliberately carry no lat/lng — the map's own "[N unplaced]" control needs at
+// Two rows deliberately carry no lat/lng — `Add pin`'s `place <title>` menu items need at
 // least one to open, and MapPinsLand's play() drops N from 2 to 1 by placing one of them,
-// which asserting `1 unplaced` still visible needs a second unplaced row left over.
+// which asserting one `place …` item still offered needs a second unplaced row left over.
 const PLACE_ROWS: Row[] = [
     row('places', 'Tokyo', { lat: 35.6762, lng: 139.6503 }),
     row('places', 'Nairobi', { lat: -1.2921, lng: 36.8219 }),
@@ -89,7 +89,7 @@ const VOCAB_ROWS: Row[] = [
 /** A fresh, deep copy of every dataset — the gallery's mutable row store for ONE mount. The
  *  fake transport writes edits into these objects, so copying per mount keeps a pin placed (or a
  *  box ticked) in one story from leaking into the next: Storybook's preview iframe keeps module
- *  state across story switches, and `MapPinsLand` asserts the starting `2 unplaced`. */
+ *  state across story switches, and `MapPinsLand` asserts the starting two `place …` items. */
 function freshRows(): (spec: SourceSpec) => Row[] {
     const copy = (rows: Row[]) => JSON.parse(JSON.stringify(rows)) as Row[]
     const places = copy(PLACE_ROWS)
@@ -291,7 +291,7 @@ export const AllKinds: Story = {
  *  - `Add pin` → press the map → a NEW note is created in `places/` (the gallery's rows gain it
  *    through the fake's create path) and its row editor opens → typing a name shows on the pin;
  *  - a left-click on an existing pin opens ITS editor, and a rename there relabels the pin;
- *  - `[N unplaced]` still places an existing row with no coordinates.
+ *  - `Add pin`'s `place <title>` still places an existing row with no coordinates.
  *  Each write goes through BaseView's `onChange={refetchAll}`, which only reaches the transport
  *  because the write also bumps the server version (`versioned: true`) — otherwise BaseView's
  *  version-gated row cache answers with the pre-write rows. The zoom and centre the user chose

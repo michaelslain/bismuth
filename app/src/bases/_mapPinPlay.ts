@@ -114,11 +114,19 @@ export function clearSpot(mapEl: HTMLElement): { x: number; y: number } {
     throw new Error('no clear spot on the map to click')
 }
 
+/** The `place <title>` rows `Add pin`'s menu offers — one per row with no location. Empty when
+ *  the menu is not open. */
+function placeItems(doc: Document): string[] {
+    return [...doc.querySelectorAll('.bismuth-popover-label')]
+        .map(el => (el.textContent ?? '').trim())
+        .filter(t => t.startsWith('place '))
+}
+
 /** Placing an EXISTING row that has no coordinates, with a real-mouse event sequence at every
- *  step: zoom in (so the framing is the USER's, not the initial fit) → press `[N unplaced]` →
- *  pick `pick` → press an empty spot on the map (with jitter). Asserts the pin lands (count +1,
- *  unplaced readout drops by one) AND that neither arming nor placing — nor the refetch after the
- *  write — moved the map. */
+ *  step: zoom in (so the framing is the USER's, not the initial fit) → press `Add pin` → its menu
+ *  offers `new place` then one `place <title>` per unplaced row → pick `place <pick>` → press an
+ *  empty spot on the map (with jitter). Asserts the pin lands (count +1, the row leaves the menu)
+ *  AND that neither arming nor placing — nor the refetch after the write — moved the map. */
 export async function placeUnplacedByMouse(
     root: HTMLElement,
     pick: string,
@@ -132,12 +140,8 @@ export async function placeUnplacedByMouse(
     const scope = within(root)
     const body = within(doc.body)
     const mapEl = await sizedMap(root)
-    const unplacedButton = await scope.findByTestId('map-unplaced-button')
-    await waitFor(() =>
-        expect(unplacedButton).toHaveTextContent(
-            `${unplacedBefore} unplaced`,
-        ),
-    )
+    const add = await scope.findByTestId('map-add-pin')
+    expect(scope.queryByTestId('map-unplaced-button')).toBeNull()
     const before = pinCount(root)
 
     if (zoomFirst) {
@@ -150,8 +154,14 @@ export async function placeUnplacedByMouse(
     }
     const userFraming = framing(mapEl)
 
-    pressEl(unplacedButton, 1)
-    pressEl(await body.findByText(pick), 1)
+    // A person presses what they can see: bring the map's top-left into view first (an earlier
+    // step's editor dialog can leave the page scrolled), since `pressEl` hits whatever is on top.
+    add.scrollIntoView({ block: 'center' })
+    pressEl(add, 1)
+    await body.findByText('new place')
+    await waitFor(() => expect(placeItems(doc)).toHaveLength(unplacedBefore))
+    expect(framing(mapEl)).toBe(userFraming)
+    pressEl(await body.findByText(`place ${pick}`), 1)
     await scope.findByText(new RegExp(`placing ${pick}`))
     expect(mapEl.className).toContain('mapArmed')
     expect(framing(mapEl)).toBe(userFraming)
@@ -167,11 +177,20 @@ export async function placeUnplacedByMouse(
         expect(pinCount(root)).toBe(before + 1)
         expect(scope.getByText(pick)).toBeInTheDocument()
     })
-    if (unplacedBefore > 1)
-        expect(unplacedButton).toHaveTextContent(
-            `${unplacedBefore - 1} unplaced`,
-        )
     expect(framing(mapEl)).toBe(userFraming)
+
+    // The placed row has left Add pin's menu.
+    if (unplacedBefore > 1) {
+        add.scrollIntoView({ block: 'center' })
+        pressEl(add, 1)
+        await body.findByText('new place')
+        await waitFor(() =>
+            expect(placeItems(doc)).toHaveLength(unplacedBefore - 1),
+        )
+        expect(placeItems(doc)).not.toContain(`place ${pick}`)
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(body.queryByText('new place')).toBeNull())
+    }
 }
 
 /** The open row editor (CardEditModal inside a Modal), anywhere in the document. */
@@ -194,7 +213,7 @@ async function renameInEditor(doc: Document, title: string): Promise<void> {
 }
 
 /** `Add pin` end to end, every press a real-mouse sequence WITH jitter: zoom in (the user's own
- *  framing) → press `Add pin` (crosshair, armed) → press an empty spot → a NEW row is created
+ *  framing) → press `Add pin` (→ `new place` when its menu opens; crosshair, armed) → press an empty spot → a NEW row is created
  *  there (pin count +1) and its row editor opens → type `title`, Enter, Escape → the new pin
  *  reads `title` after the refetch. The map's framing never moves at any step. */
 export async function addPinByMouse(root: HTMLElement, title: string): Promise<void> {
@@ -215,6 +234,13 @@ export async function addPinByMouse(root: HTMLElement, title: string): Promise<v
     const add = await scope.findByTestId('map-add-pin')
     expect(add).not.toBeDisabled()
     pressEl(add, 1)
+    // With rows lacking a location Add pin opens its menu first; `new place` arms a new row.
+    const menuNew = await waitFor(
+        () =>
+            within(doc.body).queryByText('new place') ??
+            scope.getByText(/click to add a pin/),
+    )
+    if ((menuNew.textContent ?? '').trim() === 'new place') pressEl(menuNew, 1)
     await scope.findByText(/click to add a pin/)
     expect(mapEl.className).toContain('mapArmed')
     expect(getComputedStyle(mapEl).cursor).toBe('crosshair')

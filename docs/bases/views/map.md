@@ -81,7 +81,7 @@ A click past the world's edge (the basemap paints sea there) lands on the neares
 
 ### Placing a row with no coordinates yet
 
-Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. When there is at least one, a `[N unplaced]` button appears beside **Add pin** — the way to place an EXISTING row. Clicking it opens a menu listing every unplaced row by its title (the same first-column label a marker's chip shows); picking one **arms placement** — the map shows a "placing `<title>` — esc to cancel" hint that follows the cursor, and the *next click anywhere on the map* writes that row's coordinates at the clicked point and disarms. Pressing `Escape` disarms without writing.
+Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. When there is at least one, **Add pin** opens a small menu instead of arming straight away: `new place` first (arms creating a new row, as below), then one `place <title>` item per unplaced row (the same first-column label a marker's chip shows) — the way to place an EXISTING row. Picking one **arms placement** — the map shows a "placing `<title>` — esc to cancel" hint that follows the cursor, and the *next click anywhere on the map* writes that row's coordinates at the clicked point and disarms. Pressing `Escape` disarms without writing.
 
 ### Moving a pin
 
@@ -92,7 +92,7 @@ A placed pin can be dragged to a new position: press and drag it, and its coordi
 Right-clicking a pin (or pressing `Shift+F10` — or the `ContextMenu` key — while it's focused) opens a menu with three actions:
 
 - **edit** — the row editor, same as a plain click.
-- **move pin** — arms placement for that row (the same armed state the unplaced menu starts), so the next map click relocates it.
+- **move pin** — arms placement for that row (the same armed state Add pin's `place <title>` starts), so the next map click relocates it.
 - **remove pin** — deletes the row's `lat`/`lng` fields, turning it back into an unplaced row. It does not delete the note or any other property.
 
 ### How the write lands
@@ -120,7 +120,7 @@ The map renders several overlaid elements:
 - **SVG basemap** — sea background, graticule grid (30° meridians, 20° parallels; equator and prime meridian drawn bolder), and landmass polygons.
 - **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator. Draggable, right-clickable and (when focused) `Shift+F10`-able when the view's coordinates are writable — see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins).
 - **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Map` fit to pins).
-- **Placement group** (top-left) — the `Pin` **Add pin** `IconButton` (arms creating a new row), plus a `[N unplaced]` button shown only on a writable view with at least one row lacking valid coordinates; its menu arms placement for the picked row. It sits at the left so that menu, which opens rightward from its anchor, stays on screen.
+- **Placement group** (top-left) — the `Pin` **Add pin** `IconButton`. With no unplaced rows it arms creating a new row; with at least one (on a writable view) it opens a menu — `new place`, then `place <title>` per unplaced row. It sits at the left so that menu, which opens rightward from its anchor, stays on screen.
 - **Placing hint** — a small floating label reading "placing `<title>` — esc to cancel", shown while a row is armed for placement.
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.
@@ -190,7 +190,7 @@ views:
 - **The title chip uses the first resolved column**, not necessarily `file.name`. If a view declares `order: [status, file.name]`, markers will be labeled with `status` values.
 - **No tile network dependency**: the basemap is entirely self-contained vector geometry hardcoded in the component. Markers will render correctly in air-gapped environments.
 - **ResizeObserver drives the map size**: the component observes its container and re-projects on resize. Initial SSR/static size assumptions (800×600) are replaced once the element mounts.
-- **A `formula.*`, `file.*` or `this.*` `lat`/`lng` makes the map read-only**: there is no frontmatter key to write those back to, so the "unplaced" control never appears and a pin's context menu drops "move pin"/"remove pin" down to "edit" only.
+- **A `formula.*`, `file.*` or `this.*` `lat`/`lng` makes the map read-only**: there is no frontmatter key to write those back to, so Add pin never offers `place …` items and a pin's context menu drops "move pin"/"remove pin" down to "edit" only.
 - **Written coordinates are rounded to 6 decimal places**, whether from a placement click or a drag — a base whose notes carry more precise hand-written coordinates keeps them until a pin over that row is placed/moved again.
 
 Source: `app/src/bases/MapView.tsx`, `app/src/bases/mapCoords.ts` (pure projection + coordinate-write math, unit-tested in `app/src/bases/mapCoords.test.ts`), `app/src/bases/taskWrite.ts` (`canWriteStoredRow`/`storedNote`, shared with the rest of Bases' row-index write seam), `core/src/bases/types.ts`, `core/test/bases/parse.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `app/src/bases/MapView.module.css`

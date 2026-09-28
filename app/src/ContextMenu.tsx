@@ -201,15 +201,23 @@ export function ContextMenu(props: {
     // calendar chips — passes through, since they all render this component). A right-click
     // that opens a new menu no longer leaves another surface's menu on screen.
     let disposeActive: (() => void) | undefined
+    // The deferred click-listener registration. A menu that closes before it fires (opened and
+    // picked in the same tick) must cancel it — otherwise the listener is added AFTER cleanup ran,
+    // is never removed, and closes every menu opened afterwards on the first click.
+    let docClickTimer: ReturnType<typeof setTimeout> | undefined
 
     onMount(() => {
         disposeActive = registerActiveMenu(() => props.onClose())
         // Defer so the click that opened the menu doesn't immediately close it.
-        setTimeout(() => document.addEventListener('click', handleDocClick), 0)
+        docClickTimer = setTimeout(() => {
+            docClickTimer = undefined
+            document.addEventListener('click', handleDocClick)
+        }, 0)
         document.addEventListener('keydown', onKeyDown)
     })
     onCleanup(() => {
         disposeActive?.()
+        clearTimeout(docClickTimer)
         document.removeEventListener('click', handleDocClick)
         document.removeEventListener('keydown', onKeyDown)
     })
