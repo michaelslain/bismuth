@@ -90,7 +90,7 @@
 /* color-mix(), not rgba(): same rendered colour as the UA default this reproduces — the css
    baseline differs only in serialization (`color(srgb 1 1 1 / 0.3)` vs `rgba(...)`), which the
    controller accepts as a token-vs-literal ruling, not real drift. */
-.kbDotBtn:disabled { cursor: default; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
+.kbDotBtn:disabled { cursor: not-allowed; color: color-mix(in srgb, var(--on-scrim) 30%, transparent); }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 /* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
    its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right

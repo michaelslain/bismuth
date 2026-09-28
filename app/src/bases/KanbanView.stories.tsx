@@ -143,7 +143,8 @@ export const HeaderActionsOnHover: Story = {
         await userEvent.unhover(col)
         await waitFor(() => expect(getComputedStyle(bar).opacity).toBe('0'))
 
-        // A non-empty column offers rename only.
+        // A non-empty column offers BOTH rename and delete (round-3 item 3 — deleting it clears
+        // the grouping value off its cards instead of refusing).
         const todo = canvasElement.querySelector<HTMLElement>(
             '[data-kbcol="Todo"]',
         )!
@@ -154,7 +155,9 @@ export const HeaderActionsOnHover: Story = {
         await waitFor(() =>
             expect(getComputedStyle(todoBar).opacity).toBe('1'),
         )
-        expect(within(todoBar).queryByLabelText('Delete column')).toBeNull()
+        expect(
+            within(todoBar).queryByLabelText('Delete column'),
+        ).not.toBeNull()
         await userEvent.unhover(todo)
         await waitFor(() =>
             expect(getComputedStyle(todoBar).opacity).toBe('0'),

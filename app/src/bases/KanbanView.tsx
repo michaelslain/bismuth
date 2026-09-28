@@ -904,23 +904,54 @@ export function KanbanView(props: {
         }
     }
 
-    // ── Column delete — only ever called for an empty column (the header's `[🗑]` is only
-    // rendered when the column has no cards); removes the key from `columns` and any
-    // `groupColors` override. ──
+    // ── Column delete — the header's `[🗑]` now shows on EVERY column, not only an empty one.
+    // An empty column deletes exactly as before: drop the key from `columns` (+ any
+    // `groupColors` override). A non-empty column ALSO clears the grouping value off every one
+    // of its cards first — same batched-write shape as renameColumn's card move, just targeting
+    // '' (the no-value/"(empty)" lane) instead of a new name — so the cards survive, landing
+    // wherever a card with no value already renders, and offers an Undo that re-adds the column
+    // and puts each card's value back. ──
     async function deleteColumn(key: string): Promise<void> {
         if (!props.basePath) return
-        if (groupByKey(key).rows.length > 0) return
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
+        // Cards to clear, captured BEFORE the optimistic overlay below hides `key` — excluding
+        // stored-row PLACEHOLDERS (an optimistic add not yet resolved to a real row), same
+        // exclusion renameColumn applies to `movedRows`.
+        const cardRows = groupByKey(key).rows.filter(
+            r => !isStoredPlaceholder(r),
+        )
+        let statusKey: string | null = null
+        if (cardRows.length > 0) {
+            const gb = groupBy()
+            statusKey = gb ? writableKey(gb.property) : null
+            // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
+            // The header's `[🗑]` is gated on `canAdd()` (editable + writable groupBy), but keep
+            // this belt-and-braces, mirroring renameColumn.
+            if (statusKey === null) return
+            // A view `limit` truncates `groupByKey(key).rows` — clearing would move only the
+            // visible cards and strand the rest under a column that no longer exists.
+            if (typeof props.result.view.limit === 'number') {
+                pushToast('delete unavailable // this view has a limit')
+                return
+            }
+        }
         const keys = removeColumnKey(columnKeys(), key)
         const alreadyRemoved = pendingRemovedCols().has(key)
         const prevOrder = pendingColOrder()
+        const writtenPending: Record<string, PendingMove> = {}
+        cardRows.forEach((r, k) => {
+            writtenPending[rowId(r)] = { key: '', order: k, keyOnly: true }
+        })
         let columnsLanded = false
-        // Optimistic, like add/rename: the column disappears instantly. Both signals rolled back
-        // on a failed write — otherwise the column vanishes from the UI for good even though the
-        // server still has it, or worse, columnKeys() keeps hiding a key the server never lost.
+        // Optimistic, like add/rename: the column disappears instantly (its cards' overlay moves
+        // them into the '' lane in the same tick). Both rolled back on a failed write — otherwise
+        // the column vanishes from the UI for good even though the server still has it, or worse,
+        // columnKeys() keeps hiding a key the server never lost.
         setPendingColOrder(keys)
         setPendingRemovedCols(prev => new Set(prev).add(key))
+        if (cardRows.length > 0)
+            setPending(prev => ({ ...prev, ...writtenPending }))
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
             columnsLanded = true
@@ -938,12 +969,54 @@ export function KanbanView(props: {
                         next,
                     )
             }
+            if (cardRows.length > 0 && statusKey !== null) {
+                const storedRows = cardRows.filter(canWriteStoredRow)
+                const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
+                if (storedRows.length > 0) {
+                    const items = storedRows.map(r => ({
+                        path: r.file.path,
+                        index: r.index!,
+                        note: { ...storedNote(r), [statusKey!]: '' },
+                    }))
+                    for (const [path, group] of groupUpdatesByPath(items)) {
+                        await api.rowUpdateMany(
+                            path,
+                            group.map(g => ({ index: g.index, note: g.note })),
+                        )
+                    }
+                }
+                if (noteRows.length > 0) {
+                    const writes = noteRows.map(r => ({
+                        path: r.file.path,
+                        key: statusKey!,
+                        value: '',
+                    }))
+                    await api.setProperties(writes)
+                }
+            }
             props.onChange()
+            if (cardRows.length > 0 && statusKey !== null) {
+                const movedStatusKey = statusKey
+                pushToast(
+                    `Deleted column "${key === '' ? '(empty)' : key}"`,
+                    {
+                        label: 'Undo',
+                        onClick: () =>
+                            void undoDeleteColumn(
+                                key,
+                                movedStatusKey,
+                                cardRows,
+                            ),
+                    },
+                )
+            }
         } catch (e) {
             rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev =>
                 rollbackRemoved(prev, alreadyRemoved ? null : key),
             )
+            if (cardRows.length > 0)
+                setPending(prev => rollbackPending(prev, writtenPending))
             if (columnsLanded) {
                 props.onChange()
                 pushToast(
@@ -952,6 +1025,52 @@ export function KanbanView(props: {
                 return
             }
             pushToast(`Delete column failed: ${(e as Error).message}`)
+        }
+    }
+
+    /** Undo for a non-empty column's delete: re-add `key` to `columns` and put every cleared
+     *  card's grouping value back. Best-effort like `restoreStoredCard`/`restoreCard` above — it
+     *  writes the SAME `cardRows` snapshot captured at delete time, not a fresh re-read. */
+    async function undoDeleteColumn(
+        key: string,
+        statusKey: string,
+        cardRows: Row[],
+    ): Promise<void> {
+        if (!props.basePath) return
+        const basePath = props.basePath
+        const idx = props.viewIndex ?? 0
+        try {
+            await api.setViewProperty(basePath, idx, 'columns', [
+                ...columnKeys(),
+                key,
+            ])
+            const storedRows = cardRows.filter(canWriteStoredRow)
+            const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
+            if (storedRows.length > 0) {
+                const items = storedRows.map(r => ({
+                    path: r.file.path,
+                    index: r.index!,
+                    note: { ...storedNote(r), [statusKey]: key },
+                }))
+                for (const [path, group] of groupUpdatesByPath(items)) {
+                    await api.rowUpdateMany(
+                        path,
+                        group.map(g => ({ index: g.index, note: g.note })),
+                    )
+                }
+            }
+            if (noteRows.length > 0) {
+                const writes = noteRows.map(r => ({
+                    path: r.file.path,
+                    key: statusKey,
+                    value: key,
+                }))
+                await api.setProperties(writes)
+            }
+            props.onChange()
+            pushToast(`Restored column "${key === '' ? '(empty)' : key}"`)
+        } catch (e) {
+            pushToast(`Restore failed: ${(e as Error).message}`)
         }
     }
 
@@ -1680,22 +1799,15 @@ export function KanbanView(props: {
                                                                 )
                                                             }
                                                         />
-                                                        <Show
-                                                            when={
-                                                                group().rows
-                                                                    .length === 0
+                                                        <IconButton
+                                                            icon="Trash2"
+                                                            label="Delete column"
+                                                            onClick={() =>
+                                                                void deleteColumn(
+                                                                    group().key,
+                                                                )
                                                             }
-                                                        >
-                                                            <IconButton
-                                                                icon="Trash2"
-                                                                label="Delete column"
-                                                                onClick={() =>
-                                                                    void deleteColumn(
-                                                                        group().key,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </Show>
+                                                        />
                                                     </IconBar>
                                                 </Show>
                                                 <Text
