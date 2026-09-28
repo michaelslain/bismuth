@@ -1,5 +1,5 @@
 /* ---- KanbanColumnNameInput ---- */
-/* Shared field chrome for both callers (KanbanAddColumn / KanbanColumnMenu): regular weight (not
+/* Shared field chrome for both callers (KanbanAddColumn / KanbanView's header rename): regular weight (not
    the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting hairline box (square,
    Acceptance 11/14 — not just an underline), accent border on focus, and the error's left edge
    aligned to the input's own text x via the same horizontal padding token on both

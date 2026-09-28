@@ -1,9 +1,9 @@
-// A column-name text field shared by KanbanAddColumn (adding a column) and KanbanColumnMenu
-// (renaming one) — Enter confirms, Escape (or an empty/unchanged value) cancels, and a name
-// matching an existing column is refused inline with an `already a column` error. Extracted so
-// the two callers cannot drift on chrome the way they had: KanbanAddColumn inherited its
-// header's 500 font-weight and had no resting field chrome, KanbanColumnMenu's error sat a few
-// px off the input's own text x.
+// A column-name text field shared by KanbanAddColumn (adding a column) and KanbanView's own
+// header (renaming one, via its hover-revealed `[✎]`) — Enter confirms, Escape (or an
+// empty/unchanged value) cancels, and a name matching an existing column is refused inline with
+// an `already a column` error. Extracted so the two callers cannot drift on chrome the way they
+// had: KanbanAddColumn inherited its header's 500 font-weight and had no resting field chrome,
+// the header rename's error sat a few px off the input's own text x.
 import { createSignal, Show, type Component } from 'solid-js'
 import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
