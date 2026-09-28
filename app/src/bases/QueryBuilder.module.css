@@ -2,9 +2,8 @@
  *
  * Query-builder-specific layout on top of the shared form-modal primitives
  * (`ui/FormModal` + `ui/ModalBody` + `ui/SettingsSection`/`SettingsGrid`/`SettingsField`/
- * `SettingsHint`). Only the bits those primitives don't cover: the filter-row grid, the
- * All/Any connective line, and the generated-query preview — all `.qb-*` classes THIS
- * file owns, as hashed CSS-Modules locals.
+ * `SettingsHint`). Only the bits those primitives don't cover: the source toggle's alignment and
+ * the generated-query preview frame — `.qb-*` classes THIS file owns, as hashed CSS-Modules locals.
  *
  * `.panel` carries no rules of its own. QueryBuilder.tsx passes it to
  * `<FormModal class={styles.panel}>`, so it lands on the modal's root panel div alongside
@@ -23,25 +22,6 @@
 
 /* Source segmented control spans the row. */
 .panel .qb-source { align-self: flex-start; }
-
-/* All / Any connective line above the filter rows. */
-.panel .qb-connective { display: flex; align-items: center; gap: var(--sp-4); }
-.panel .qb-conn-lab { font-size: var(--fs-body); color: var(--text-muted); }
-
-/* Filter rows: property | operator | value | remove. */
-.panel .qb-rows { display: flex; flex-direction: column; gap: var(--sp-4); }
-.panel .qb-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
-  gap: var(--sp-4);
-  align-items: center;
-}
-.panel .qb-val { min-width: 0; }
-/* A valueless op (is set / checked …) leaves the value cell empty but keeps the grid columns. */
-.panel .qb-val:empty::before { content: ''; }
-
-/* Remove-filter is now a bare IconButton in the row's `auto` grid column — no box/colour of its
-   own left to give it; `.qb-row`'s own `align-items: center` places it. */
 
 /* Generated-query preview — monospace, read-only, the editor's code look.
    NO max-height/overflow of its own: `.body > *` (ui/ModalBody.module.css) forces

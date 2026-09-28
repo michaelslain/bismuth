@@ -6,6 +6,9 @@ import {
     formulaError,
     nextFormulaName,
     seedFormulaRows,
+    updateFormula,
+    removeFormula,
+    addFormula,
 } from './formulasForm'
 
 describe('formulas form', () => {
@@ -57,5 +60,33 @@ describe('formulas form', () => {
                 { name: '', expr: 'y' },
             ]),
         ).toEqual(['formula.ppu'])
+    })
+})
+
+describe('formula row reducers', () => {
+    const rows = [
+        { name: 'a', expr: '1' },
+        { name: 'b', expr: '2' },
+    ]
+    test('updateFormula patches one row, leaves the rest', () => {
+        expect(updateFormula(rows, 1, { expr: '3' })).toEqual([
+            { name: 'a', expr: '1' },
+            { name: 'b', expr: '3' },
+        ])
+        expect(updateFormula(rows, 0, { name: 'z' })[0]).toEqual({ name: 'z', expr: '1' })
+    })
+    test('removeFormula drops the indexed row', () => {
+        expect(removeFormula(rows, 0)).toEqual([{ name: 'b', expr: '2' }])
+    })
+    test('addFormula appends a uniquely named empty row', () => {
+        expect(addFormula([])).toEqual([{ name: 'formula', expr: '' }])
+        expect(addFormula([{ name: 'formula', expr: '' }])[1].name).toBe('formula 2')
+    })
+    test('reducers do not mutate their input', () => {
+        updateFormula(rows, 0, { name: 'q' })
+        removeFormula(rows, 0)
+        addFormula(rows)
+        expect(rows).toHaveLength(2)
+        expect(rows[0].name).toBe('a')
     })
 })

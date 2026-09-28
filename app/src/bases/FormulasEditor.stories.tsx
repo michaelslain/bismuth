@@ -63,3 +63,20 @@ export const RenameKeepsFocus: Story = {
         await expect(name.value).toBe('per page')
     },
 }
+
+/** Add appends a uniquely named empty row; delete removes exactly the row asked. */
+export const AddAndDelete: Story = {
+    render: () => (
+        <Harness initial={[{ name: 'ppu', expr: 'price / pages' }]} />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByText('add formula'))
+        await expect(await c.findByDisplayValue('formula')).toBeInTheDocument()
+        await userEvent.click(c.getByText('add formula'))
+        await expect(await c.findByDisplayValue('formula 2')).toBeInTheDocument()
+        await userEvent.click(c.getAllByLabelText('Delete formula')[0])
+        await expect(c.queryByDisplayValue('ppu')).not.toBeInTheDocument()
+        await expect(c.getAllByLabelText('Delete formula')).toHaveLength(2)
+    },
+}
