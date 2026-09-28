@@ -4,6 +4,10 @@
 // an `already a column` error. Extracted so the two callers cannot drift on chrome the way they
 // had: KanbanAddColumn inherited its header's 500 font-weight and had no resting field chrome,
 // the header rename's error sat a few px off the input's own text x.
+// Renders `ui/TextInput` with its STANDARD chrome (FormControl's underline, the same look every
+// other inline text field in the app uses — the table cell editor, the card modal's fields) —
+// not `plain` mode. A bespoke accent-bordered box here read as its own, different control (round
+// 4 item 2); `.input` below only sizes the field, it does not redraw the border.
 import { createSignal, Show, type Component } from 'solid-js'
 import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
@@ -51,7 +55,6 @@ const KanbanColumnNameInput: Component<KanbanColumnNameInputProps> = props => {
             class={[styles.field, props.className].filter(Boolean).join(' ')}
         >
             <TextInput
-                plain
                 class={styles.input}
                 value={value()}
                 placeholder={props.placeholder}

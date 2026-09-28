@@ -1783,7 +1783,13 @@ export function KanbanView(props: {
                                             {/* Count flush right; the actions bar hangs off its left edge
                                                 (absolute), so revealing it moves nothing. */}
                                             <div class={styles.kbHeaderTrail}>
-                                                <Show when={canAdd()}>
+                                                <Show
+                                                    when={
+                                                        canAdd() &&
+                                                        renamingCol() !==
+                                                            group().key
+                                                    }
+                                                >
                                                     <IconBar
                                                         label="Column actions"
                                                         class={

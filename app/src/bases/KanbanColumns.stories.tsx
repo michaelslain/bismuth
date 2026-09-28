@@ -164,6 +164,15 @@ export const RenameColumn: Story = {
             () => within(col).getByDisplayValue('Todo'),
             { timeout: 3000 },
         )
+        // Round 4 item 2: the hover IconBar must not render (not just fade) while this column is
+        // renaming, and the field is `ui/TextInput`'s standard chrome — an underline only, no
+        // left/top border boxing the field like the old bespoke `plain` chrome did.
+        expect(
+            within(col).queryByRole('toolbar', { name: 'Column actions' }),
+        ).toBeNull()
+        const inputStyle = getComputedStyle(input)
+        expect(inputStyle.borderLeftStyle).toBe('none')
+        expect(inputStyle.borderTopStyle).toBe('none')
         await userEvent.clear(input)
         await userEvent.type(input, 'Backlog')
         await userEvent.keyboard('{Enter}')
