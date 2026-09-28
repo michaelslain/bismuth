@@ -1206,7 +1206,8 @@ export function BaseView(props: {
                                                     <MapView
                                                         result={res()}
                                                         config={data()!.config}
-                                                        onOpen={props.onOpen}
+                                                        basePath={data()!.basePath}
+                                                        ownsRows={ownsRows()}
                                                         onChange={refetchAll}
                                                     />
                                                 </Match>

@@ -17,7 +17,7 @@ import { setTransport } from '../api'
 import { disarmFakeServerVersion, fakeServerVersionArmed, fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { Label } from '../ui/_storyKit'
-import { addPinByMouse } from './_mapPinPlay'
+import { addPinByMouse, editPinByMouse, placeUnplacedByMouse } from './_mapPinPlay'
 import { settings, setSettings } from '../settings'
 import type { Row, SourceSpec, ViewType } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
@@ -272,17 +272,18 @@ export const AllKinds: Story = {
     play: allTilesResolved,
 }
 
-/** Proves the gallery's fake transport holds REAL state, not a canned ack, AND that the map's
- *  add-pin flow works for a real mouse: zoom in, press the map's `Add pin` control, pick Cairo,
- *  press an empty spot — every step dispatched as the full pointerdown → mousedown → pointerup →
- *  mouseup → click sequence at one point (see `_mapPinPlay.ts`; an earlier version dispatched a
- *  lone synthetic `click` and passed while the user's real clicks did nothing). The write goes
- *  through `/set-properties` into the SAME `PLACE_ROWS` objects `/rows` resolved from, and
- *  `onChange={refetchAll}` (wired in BaseView) re-resolves them — so a new pin appears and the
- *  unplaced count drops, with no manual re-render — while the zoom and centre the user chose
- *  survive arming, placing and that refetch. The refetch only reaches the transport because
- *  the write also bumps the server version (`versioned: true`); otherwise BaseView's
- *  version-gated row cache answers it with the pre-write rows. */
+/** Proves the gallery's fake transport holds REAL state, not a canned ack, AND that the map works
+ *  for a real mouse, every press the full pointerdown → mousedown → (1–3px jitter) → pointerup →
+ *  mouseup → click sequence (see `_mapPinPlay.ts`; an earlier version dispatched a lone synthetic
+ *  `click` and passed while the user's real clicks did nothing):
+ *  - `Add pin` → press the map → a NEW note is created in `places/` (the gallery's rows gain it
+ *    through the fake's create path) and its row editor opens → typing a name shows on the pin;
+ *  - a left-click on an existing pin opens ITS editor, and a rename there relabels the pin;
+ *  - `unplaced (N)` still places an existing row with no coordinates.
+ *  Each write goes through BaseView's `onChange={refetchAll}`, which only reaches the transport
+ *  because the write also bumps the server version (`versioned: true`) — otherwise BaseView's
+ *  version-gated row cache answers with the pre-write rows. The zoom and centre the user chose
+ *  survive every step. */
 async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
     // The bump rides a poll callback captured from `serverVersion.start()`. Uncaptured, every
     // bump is a silent no-op and this story would fail for the wrong reason — or, against a
@@ -290,10 +291,12 @@ async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
     expect(fakeServerVersionArmed()).toBe(true)
     const pane = within(canvasElement).getByTestId('gallery-map')
     pane.scrollIntoView({ block: 'center' })
-    await addPinByMouse(pane, 'Cairo', 2)
+    await addPinByMouse(pane, 'Harbor Lookout')
+    await editPinByMouse(pane, 'Tokyo', 'Tokyo Office')
+    await placeUnplacedByMouse(pane, 'Cairo', 2, false)
 }
 
-/** Same gallery, isolated to prove writes stick — see `mapPinLands` for what it checks and why. */
+/** Same gallery, isolated to prove the map's writes stick — see `mapPinLands`. */
 export const MapPinsLand: Story = {
     render: () => <Gallery />,
     play: mapPinLands,

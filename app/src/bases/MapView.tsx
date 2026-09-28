@@ -23,6 +23,8 @@ import IconButton from '../ui/IconButton'
 import TextButton from '../ui/TextButton'
 import InlineCode from '../ui/InlineCode'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { createRow } from './AddRowAction'
+import { openRowEditor } from './openRowEditor'
 import {
     project,
     unproject,
@@ -40,6 +42,13 @@ interface Marker {
     lat: number
     lng: number
 }
+
+/** A pin's identity across refetches: a note row by path, a stored row by path + index. */
+const markerKey = (row: Row) => `${row.file.path}::${row.index ?? ''}`
+
+/** What the next click on the map does: create a NEW row there (`Add pin`), or write the
+ *  coordinates of an EXISTING row (`unplaced (N)` or a pin's `move pin`). */
+type Armed = { kind: 'new' } | { kind: 'row'; row: Row }
 
 // Offline vector basemap. Continents are coarse lng/lat polygon outlines —
 // enough to read as a world map without any network tiles. Each ring is a
@@ -156,14 +165,20 @@ const GRAT_LAT = 20
 export function MapView(props: {
     result: ViewResult
     config: BaseConfig
-    onOpen?: (path: string) => void
+    /** The base file — what `Add pin` creates a row through (AddRowAction's `createRow`). With
+     *  none, the map can still place/move/remove existing rows but cannot create one. */
+    basePath?: string
+    /** True when the base owns its rows (BaseView's `ownsRows`): a new pin is a row in the base
+     *  file's own table rather than a new note. */
+    ownsRows?: boolean
     /** Called after a pin is placed, moved or removed writes successfully. The real backend's
      *  mutating endpoints already invalidate + push SSE, but the ROUTE from that push back to
      *  this view's own `resolveRows` result runs through BaseView's own refetch, not a self-
      *  contained loop inside MapView — and Storybook's fake transport pushes no SSE at all, so
      *  without this callback wired to BaseView's `refetchAll` (as every sibling view does), a
-     *  placed/moved/removed pin never reappears until something else refetches. */
-    onChange?: () => void
+     *  placed/moved/removed pin never reappears until something else refetches. Awaited when it
+     *  returns a promise, so a newly created pin is on the map before its editor opens. */
+    onChange?: () => unknown
 }) {
     const latKey = () => props.result.view.lat ?? 'lat'
     const lngKey = () => props.result.view.lng ?? 'lng'
@@ -208,6 +223,13 @@ export function MapView(props: {
         },
     )
     const markers = createMemo(() => partitioned().placed)
+    // Pins render keyed by row identity, not by Marker object: every refetch builds new Marker
+    // objects, and keying on those re-created every pin <button> — a press that landed just as a
+    // write's refetch arrived went down on one element and up on its replacement, so no click.
+    const markerByKey = createMemo(
+        () => new Map(markers().map(m => [markerKey(m.row), m])),
+    )
+    const markerKeys = createMemo(() => [...markerByKey().keys()])
     const unplacedRows = createMemo(() => partitioned().unplaced)
 
     // Initial framing: use view.center/zoom if given; else center+fit on the markers
@@ -297,7 +319,9 @@ export function MapView(props: {
     // The row currently "armed" for placement — picked from the unplaced menu, or from a
     // pin's own "move…" menu item. The next click on the map (not on a pin) writes that
     // row's coordinates and disarms. Escape disarms too.
-    const [armed, setArmed] = createSignal<Row | null>(null)
+    const [armed, setArmed] = createSignal<Armed | null>(null)
+    // A background pan in progress — drives the `grabbing` cursor (a class, not an inline style).
+    const [panning, setPanning] = createSignal(false)
     const [hoverPos, setHoverPos] = createSignal<{
         x: number
         y: number
@@ -339,10 +363,7 @@ export function MapView(props: {
 
         // Escape disarms placement from anywhere, not just while the map has focus.
         const onKeyDown = (e: KeyboardEvent) => {
-            if (isDismissKey(e) && armed()) {
-                setArmed(null)
-                setHoverPos(null)
-            }
+            if (isDismissKey(e) && armed()) disarm()
         }
         document.addEventListener('keydown', onKeyDown)
         onCleanup(() => document.removeEventListener('keydown', onKeyDown))
@@ -480,10 +501,103 @@ export function MapView(props: {
         }
     }
 
-    // Arm a row for placement — from the unplaced menu, or a pin's own "move…" item.
+    // Whether `Add pin` can create a row at all, and — when it cannot — why, for its title.
+    const createBlocked = (): string | null => {
+        if (!writable())
+            return `Pins can't be added: ${latKey()} / ${lngKey()} are computed, not note properties`
+        if (!props.basePath)
+            return "Pins can't be added: this map is not backed by a base file"
+        return null
+    }
+
+    // The folder a new NOTE row lands in: beside an existing note row, so a folder-scoped source
+    // still selects it (KanbanView's `boardFolder()` does the same). Undefined = the base's own.
+    const siblingFolder = (): string | undefined => {
+        for (const g of props.result.groups)
+            for (const r of g.rows)
+                if (r.index === undefined && r.file.path)
+                    return r.file.path.includes('/')
+                        ? r.file.path.slice(0, r.file.path.lastIndexOf('/'))
+                        : ''
+        return undefined
+    }
+
+    /** The row a create just made, once the refetch has it on the map: a note row by its path,
+     *  a stored row as the one marker at exactly these coordinates that was not there before. */
+    async function findCreated(
+        created: Row,
+        lat: number,
+        lng: number,
+        before: Set<string>,
+    ): Promise<Row | undefined> {
+        for (let i = 0; i < 20; i++) {
+            const hit = markers().find(m =>
+                props.ownsRows
+                    ? !before.has(markerKey(m.row)) &&
+                      m.lat === lat &&
+                      m.lng === lng
+                    : m.row.file.path === created.file.path,
+            )
+            if (hit) return hit.row
+            await new Promise(r => setTimeout(r, 50))
+        }
+        return undefined
+    }
+
+    // Add pin: create a NEW row at (lat, lng) through the same path the bar's `[+]` uses, then
+    // open the row editor on it so the person names it and fills its properties.
+    async function createPin(lat: number, lng: number): Promise<void> {
+        const basePath = props.basePath
+        const latField = writableFieldKey(latKey())
+        const lngField = writableFieldKey(lngKey())
+        if (!basePath || !latField || !lngField) return
+        const before = new Set(markers().map(m => markerKey(m.row)))
+        try {
+            const created = await createRow({
+                basePath,
+                config: props.config,
+                ownsRows: !!props.ownsRows,
+                note: { [latField]: lat, [lngField]: lng },
+                folder: siblingFolder(),
+            })
+            await props.onChange?.()
+            const row = await findCreated(created, lat, lng, before)
+            if (!row && props.ownsRows) {
+                // A stored row has no write handle until it is seen with its index.
+                pushToast(
+                    `Pin added to ${basePath} — it does not match this view's filters, so it is not on this map`,
+                )
+                return
+            }
+            editRow(row ?? created)
+        } catch (err) {
+            pushToast(
+                `Could not add pin: ${err instanceof Error ? err.message : String(err)}`,
+            )
+        }
+    }
+
+    // The row editor (title + properties, with `[open note]`) — what a pin's click opens.
+    function editRow(row: Row, focusTarget?: string) {
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: () => void props.onChange?.(),
+            columns: props.result.columns,
+            focusTarget,
+        })
+    }
+
+    function disarm() {
+        setArmed(null)
+        setHoverPos(null)
+    }
+
+    // Arm a row for placement — from the unplaced menu, or a pin's own "move pin" item.
     function arm(row: Row) {
         userMoved = true
-        setArmed(row)
+        setArmed({ kind: 'row', row })
         setPinMenu(null)
         setUnplacedMenu(null)
     }
@@ -499,7 +613,7 @@ export function MapView(props: {
         dragging = true
         dragLastX = e.clientX
         dragLastY = e.clientY
-        ;(e.currentTarget as HTMLElement).style.cursor = 'grabbing'
+        setPanning(true)
     }
 
     function onMouseMove(e: MouseEvent): void {
@@ -518,16 +632,17 @@ export function MapView(props: {
         setCenter(unproject(c.x - dx, c.y - dy, zoom()))
     }
 
-    function onMouseUp(e: MouseEvent): void {
+    function onMouseUp(): void {
         dragging = false
-        ;(e.currentTarget as HTMLElement).style.cursor = ''
+        setPanning(false)
     }
 
-    // Click to place: fires only when a row is armed and the click landed on the map
-    // background (a pin's own onClick stops propagation, so this never double-fires there).
+    // Click to place: fires only when armed and the click landed on the map background. Pins
+    // are click-through while armed (`.mapArmed .mapPin`), so a click beside a label still
+    // lands here instead of opening that pin's editor.
     function onMapClick(e: MouseEvent): void {
-        const row = armed()
-        if (!row || !mapEl) return
+        const a = armed()
+        if (!a || !mapEl) return
         const rect = mapEl.getBoundingClientRect()
         const { lat, lng } = screenToLatLng(
             e.clientX - rect.left,
@@ -536,9 +651,9 @@ export function MapView(props: {
             centerWorld(),
             zoom(),
         )
-        setArmed(null)
-        setHoverPos(null)
-        void writeCoords(row, lat, lng)
+        disarm()
+        if (a.kind === 'new') void createPin(lat, lng)
+        else void writeCoords(a.row, lat, lng)
     }
 
     // Zoom keeping a screen point anchored. `anchor` is screen-px within the map;
@@ -579,23 +694,19 @@ export function MapView(props: {
         setZoom(settings.graph.mapDefaultZoom)
     }
 
-    // Add pin: the map's own "place a pin" entry point. It arms placement and nothing else —
-    // it never touches center/zoom, so the next click lands where the user is looking. One
-    // unplaced row arms straight away; several open the same picker the `unplaced (N)` readout
-    // does, anchored under this button. Pressed again while armed, it cancels (like Escape).
-    function onAddPin(e: MouseEvent): void {
+    // Add pin: arms creation and nothing else — it never touches center/zoom, so the next click
+    // lands where the user is looking and creates a NEW row there (`createPin`). Placing an
+    // EXISTING row with no coordinates is `unplaced (N)`'s job. Pressed again while armed, it
+    // cancels (like Escape).
+    function onAddPin(): void {
         if (armed()) {
-            setArmed(null)
-            setHoverPos(null)
+            disarm()
             return
         }
-        const rows = unplacedRows()
-        if (rows.length === 1) {
-            arm(rows[0])
-            return
-        }
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-        setUnplacedMenu({ x: r.left, y: r.bottom })
+        if (createBlocked()) return
+        userMoved = true
+        setUnplacedMenu(null)
+        setArmed({ kind: 'new' })
     }
 
     // The floating chrome (controls, unplaced readout) sits INSIDE the map element, so its
@@ -664,7 +775,7 @@ export function MapView(props: {
             suppressNextPinClick = false
             return
         }
-        props.onOpen?.(m.row.file.path)
+        editRow(m.row)
     }
 
     function onPinContextMenu(e: MouseEvent, m: Marker): void {
@@ -690,17 +801,13 @@ export function MapView(props: {
 
     const pinMenuItems = (row: Row): MenuItem[] => {
         const items: MenuItem[] = [
-            {
-                label: 'open note',
-                icon: 'ExternalLink',
-                onSelect: () => props.onOpen?.(row.file.path),
-            },
+            { label: 'edit', icon: 'Pencil', onSelect: () => editRow(row) },
         ]
         if (writable()) {
             items.push(
-                { label: 'move…', icon: 'Pin', onSelect: () => arm(row) },
+                { label: 'move pin', icon: 'Pin', onSelect: () => arm(row) },
                 {
-                    label: 'remove from map',
+                    label: 'remove pin',
                     icon: 'Trash2',
                     danger: true,
                     separatorBefore: true,
@@ -721,7 +828,10 @@ export function MapView(props: {
         <div class={styles.mapWrap}>
             <div
                 class={styles.map}
-                classList={{ [styles.mapArmed]: !!armed() }}
+                classList={{
+                    [styles.mapArmed]: !!armed(),
+                    [styles.mapPanning]: panning(),
+                }}
                 ref={mapEl}
                 onMouseDown={onMouseDown}
                 onMouseMove={onMouseMove}
@@ -768,26 +878,44 @@ export function MapView(props: {
                 </svg>
 
                 <div class={styles.mapMarkers}>
-                    <For each={markers()}>
-                        {m => {
+                    <For each={markerKeys()}>
+                        {key => {
+                            // Read through the key on every access: the Marker behind a key is
+                            // replaced by each refetch (a renamed title, a moved pin).
+                            const cur = () => markerByKey().get(key)
+                            const m = () => cur()!
+                            const dragging = () => {
+                                const ds = dragState()
+                                return !!ds && ds.moved && ds.row === cur()?.row
+                            }
                             const pos = () => {
-                                const p = project(m.lat, m.lng, zoom())
+                                const mk = cur()
+                                if (!mk) return { x: -9999, y: -9999 }
+                                const p = project(mk.lat, mk.lng, zoom())
                                 const s = toScreen(p.x, p.y)
                                 const ds = dragState()
-                                if (ds && ds.row === m.row)
+                                if (ds && ds.row === mk.row)
                                     return { x: s.x + ds.dx, y: s.y + ds.dy }
                                 return s
                             }
-                            const title = plainLabel(titleCol(), m.row)
+                            const title = () => {
+                                const mk = cur()
+                                return mk ? plainLabel(titleCol(), mk.row) : ''
+                            }
                             return (
                                 <PlainButton
                                     class={styles.mapPin}
+                                    classList={{ [styles.mapPinDragging]: dragging() }}
                                     style={{
                                         left: `${pos().x}px`,
                                         top: `${pos().y}px`,
                                     }}
-                                    title="Click to open — drag to move, right-click to move or remove"
-                                    onClick={e => onPinClick(e, m)}
+                                    title={
+                                        writable()
+                                            ? 'Click to edit — drag to move, right-click for more'
+                                            : 'Click to edit'
+                                    }
+                                    onClick={e => onPinClick(e, m())}
                                     // A pin claims its mousedown too, not just its pointerdown:
                                     // the map pans on MOUSEdown, and stopping only the pointer
                                     // event let a pin drag also pan the map under it, so the
@@ -795,11 +923,11 @@ export function MapView(props: {
                                     onMouseDown={e => {
                                         if (writable()) e.stopPropagation()
                                     }}
-                                    onPointerDown={e => onPinPointerDown(e, m)}
-                                    onPointerMove={e => onPinPointerMove(e, m)}
-                                    onPointerUp={e => onPinPointerUp(e, m)}
-                                    onContextMenu={e => onPinContextMenu(e, m)}
-                                    onKeyDown={e => onPinKeyDown(e, m)}
+                                    onPointerDown={e => onPinPointerDown(e, m())}
+                                    onPointerMove={e => onPinPointerMove(e, m())}
+                                    onPointerUp={e => onPinPointerUp(e, m())}
+                                    onContextMenu={e => onPinContextMenu(e, m())}
+                                    onKeyDown={e => onPinKeyDown(e, m())}
                                 >
                                     <Text
                                         as="span"
@@ -808,7 +936,7 @@ export function MapView(props: {
                                         weight="inherit"
                                         class={styles.mapPinChip}
                                     >
-                                        {title}
+                                        {title()}
                                     </Text>
                                     {/* Accent glyph marker — no drawn teardrop shape, per bases-map.card.html
                       ("@ a record"). */}
@@ -858,32 +986,32 @@ export function MapView(props: {
                     />
                 </div>
 
-                {/* Placement, top-left: `Add pin` + the unplaced rows (no valid lat/lng yet).
-                    Picking one arms placement; the next click on the map writes its
-                    coordinates. Hidden entirely on a read-only (formula/file-derived) map,
-                    since there's nowhere to write. Kept at the LEFT so the picker menu, which
-                    opens rightward from its anchor, never runs off the viewport edge. */}
-                <Show when={writable()}>
-                    <div
-                        class={styles.mapUnplaced}
-                        onMouseDown={claimPointer}
-                        onClick={claimPointer}
-                    >
-                        <IconButton
-                            icon="Pin"
-                            label={armed() ? 'Cancel placing pin' : 'Add pin'}
-                            variant={armed() ? 'selected' : 'normal'}
-                            aria-pressed={!!armed()}
-                            disabled={!armed() && unplacedRows().length === 0}
-                            title={
-                                !armed() && unplacedRows().length === 0
-                                    ? 'Every row already has a pin'
-                                    : undefined
-                            }
-                            data-testid="map-add-pin"
-                            onClick={onAddPin}
-                        />
-                        <Show when={unplacedRows().length > 0}>
+                {/* Placement, top-left: `Add pin` (the next click creates a NEW row there) +
+                    the unplaced rows (existing rows with no valid lat/lng yet — picking one arms
+                    placing IT). Add pin is only ever disabled when the map cannot create a row,
+                    and then its title says why. Kept at the LEFT so the picker menu, which opens
+                    rightward from its anchor, never runs off the viewport edge. */}
+                <div
+                    class={styles.mapUnplaced}
+                    onMouseDown={claimPointer}
+                    onClick={claimPointer}
+                >
+                    <IconButton
+                        icon="Pin"
+                        label={armed() ? 'Cancel placing pin' : 'Add pin'}
+                        variant={armed() ? 'selected' : 'normal'}
+                        aria-pressed={!!armed()}
+                        disabled={!armed() && !!createBlocked()}
+                        title={
+                            armed()
+                                ? 'Cancel placing pin (esc)'
+                                : (createBlocked() ??
+                                  'Add pin — then click the map where it goes')
+                        }
+                        data-testid="map-add-pin"
+                        onClick={onAddPin}
+                    />
+                    <Show when={writable() && unplacedRows().length > 0}>
                             <TextButton
                                 data-testid="map-unplaced-button"
                                 onClick={e => {
@@ -893,17 +1021,16 @@ export function MapView(props: {
                                     setUnplacedMenu({ x: r.left, y: r.bottom })
                                 }}
                             >
-                                unplaced ({unplacedRows().length})
-                            </TextButton>
-                        </Show>
-                    </div>
-                </Show>
+                            unplaced ({unplacedRows().length})
+                        </TextButton>
+                    </Show>
+                </div>
 
                 {/* Armed-placement hint. Follows the cursor once it moves over the map;
                     shown at a fixed corner before that so arming is visible immediately,
                     without waiting on a mousemove event. */}
                 <Show when={armed()}>
-                    {row => (
+                    {a => (
                         <div
                             class={styles.mapPlacingLabel}
                             style={
@@ -916,9 +1043,12 @@ export function MapView(props: {
                             }
                         >
                             <Text as="span" inherit>
-                                placing{' '}
-                                {plainLabel(titleCol(), row()) ||
-                                    row().file.path}{' '}
+                                {(() => {
+                                    const cur = a()
+                                    return cur.kind === 'new'
+                                        ? 'click to add a pin'
+                                        : `placing ${plainLabel(titleCol(), cur.row) || cur.row.file.path}`
+                                })()}{' '}
                                 — esc to cancel
                             </Text>
                         </div>

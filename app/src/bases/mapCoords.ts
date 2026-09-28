@@ -51,6 +51,12 @@ export function round6(n: number): number {
  * view (center world-pixel coords + zoom), resolve the geographic coordinate it lands on —
  * the inverse of the renderer's own `toScreen`/`geoToScreen`. Rounded to 6 decimals so a
  * placed or dragged pin writes a clean value.
+ *
+ * CLAMPED to the range MapView draws a marker for (lat ±85, lng ±180). The basemap paints sea
+ * past the world's edges, so a click there is an ordinary-looking click — and unclamped it wrote
+ * e.g. `lng: -182.98`, which the view then files under `unplaced` instead of drawing: the pin
+ * silently never appeared. On a wide pane at low zoom most of the surface is past an edge, which
+ * is why placing "sometimes worked". A click off the world now lands on its nearest edge.
  */
 export function screenToLatLng(
     screenX: number,
@@ -62,7 +68,8 @@ export function screenToLatLng(
     const wx = centerWorld.x + (screenX - size.w / 2)
     const wy = centerWorld.y + (screenY - size.h / 2)
     const { lat, lng } = unproject(wx, wy, zoom)
-    return { lat: round6(lat), lng: round6(lng) }
+    const clamp = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v))
+    return { lat: round6(clamp(lat, 85)), lng: round6(clamp(lng, 180)) }
 }
 
 /**

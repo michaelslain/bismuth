@@ -6,7 +6,9 @@
 // itself — the `*.stories.*` glob (see `.storybook/main.ts`) skips underscore-prefixed files.
 //
 // Covers the paths `api`'s most-used verbs hit: GET /tree, GET /file, PUT /file, POST /rows,
-// POST /tasks/create, POST /row/update, POST /set-properties (+ /set-property, /delete-property).
+// POST /tasks/create, POST /row/update (incl. `index: null` = append a row), POST /set-properties
+// (+ /set-property, /delete-property), POST /move (renames the row), and a PUT/checked write that
+// CREATES a note (it becomes a row beside its folder's siblings — see `noteCreated`).
 // The row-mutating ones write into the SAME Row objects `/rows` already handed back (see
 // `indexRow`), so a table toggle, kanban move, multiselect edit or map pin sticks across a
 // refetch — real, mutable state, not a canned ack. Every OTHER mutation (move/delete/toggle
@@ -201,8 +203,58 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     // directly (a MapView story renders `sampleViewResult(rows)` with no `/rows` call of its own)
     // can still write into them and see the write on its next re-render.
     if (Array.isArray(seedRows)) for (const row of seedRows) indexRow(rowIndex, row)
+    // Every row ARRAY the seed has handed out (the array seed up front, each resolver result as it
+    // is first seen) — where a CREATED row has to go for the next read to include it. A new note
+    // joins every array already holding a note in its folder (the shape of a folder-scoped base,
+    // which is what a `from:` source resolves to in practice); an appended stored row joins the
+    // array holding its base file's other stored rows.
+    const knownArrays = new Set<Row[]>()
+    const createdNotes: Row[] = []
+    const adopt = (arr: Row[], row: Row): void => {
+        if (arr.includes(row)) return
+        if (!arr.some(r => r.index === undefined && r.file.folder === row.file.folder))
+            return
+        if (arr.some(r => r.file.path === row.file.path)) return
+        arr.push(row)
+    }
+    const noteFromText = (path: string, text: string): Row | undefined => {
+        if (!path.endsWith('.md')) return undefined
+        const name = path.split('/').pop()!.replace(/\.md$/, '')
+        const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+        return {
+            file: {
+                name,
+                basename: name,
+                path,
+                folder,
+                ext: 'md',
+                size: text.length,
+                ctime: 0,
+                mtime: 0,
+                tags: [],
+                links: [],
+            },
+            note: parseFrontmatter(text).data as Record<string, unknown>,
+            formula: {},
+        }
+    }
+    /** A write that CREATES a note (nothing indexed at that path yet) makes it a row, the way the
+     *  real server's next `/rows` would find the new file. */
+    const noteCreated = (path: string, text: string): void => {
+        if (rowIndex.has(path)) return
+        const row = noteFromText(path, text)
+        if (!row) return
+        indexRow(rowIndex, row)
+        createdNotes.push(row)
+        for (const arr of knownArrays) adopt(arr, row)
+    }
+    if (Array.isArray(seedRows)) knownArrays.add(seedRows)
     const resolveRows = (spec: SourceSpec): Row[] => {
         const rows = rowsSource(spec)
+        if (!knownArrays.has(rows)) {
+            knownArrays.add(rows)
+            for (const row of createdNotes) adopt(rows, row)
+        }
         for (const row of rows) indexRow(rowIndex, row)
         // A versioned transport answers like the wire: a fresh copy, so a refetch after a write
         // is a NEW array Solid sees change, while the index above keeps the seed objects the
@@ -235,9 +287,46 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 index: number | null
                 note: Record<string, unknown>
             }
-            const row =
-                index === null ? undefined : rowIndex.get(`${file}::${index}`)
+            if (index === null) {
+                // Append (api.rowCreate): the real server upserts a new row at the END of the
+                // file's own table, so its index is one past the last stored row.
+                for (const arr of knownArrays) {
+                    const siblings = arr.filter(
+                        r => r.file.path === file && r.index !== undefined,
+                    )
+                    if (!siblings.length) continue
+                    const created: Row = {
+                        file: { ...siblings[0].file },
+                        note,
+                        formula: {},
+                        index: Math.max(...siblings.map(r => r.index!)) + 1,
+                    }
+                    arr.push(created)
+                    indexRow(rowIndex, created)
+                    break
+                }
+                return new Response('ok')
+            }
+            const row = rowIndex.get(`${file}::${index}`)
             if (row) row.note = note
+            return new Response('ok')
+        }
+        // A rename (a row editor's title field on a note row): the SAME Row object moves, so every
+        // array holding it reads the new name on its next resolve.
+        if (pathname === '/move') {
+            const { from, to } = body as { from: string; to: string }
+            const raw = files.get(from)
+            if (raw !== undefined) {
+                files.delete(from)
+                files.set(to, raw)
+            }
+            const row = rowIndex.get(from)
+            if (row) {
+                const name = to.split('/').pop()!.replace(/\.md$/, '')
+                row.file = { ...row.file, path: to, name, basename: name }
+                rowIndex.delete(from)
+                indexRow(rowIndex, row)
+            }
             return new Response('ok')
         }
         // Batch property writes (kanban multi-card reorder, a map pin's lat+lng in one
@@ -373,7 +462,9 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     path: string
                     contents: string
                 }
+                const isNew = !files.has(p)
                 files.set(p, contents)
+                if (isNew) noteCreated(p, contents)
                 return new Response('ok')
             }
             return new Response('ok')
@@ -415,10 +506,21 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             contents: string,
             baseText: string,
         ) => {
-            const current = files.get(path) ?? ''
+            // A path an indexed ROW already holds is taken even with no seeded file text — the
+            // real server reads that note off disk, so a create aimed at it must conflict.
+            const current =
+                files.get(path) ??
+                (rowIndex.has(path) ? '---\n---\n' : '')
             if (current !== baseText)
                 return { conflict: true as const, current }
+            const isNew = !files.has(path) && !rowIndex.has(path)
             files.set(path, contents)
+            if (isNew) {
+                // A brand-new note is a structural change the real watcher reports, so a
+                // versioned transport advances the version too (an ordinary autosave does not).
+                noteCreated(path, contents)
+                await bump('/file')
+            }
             return { conflict: false as const }
         },
         convertHeic: async () => {
