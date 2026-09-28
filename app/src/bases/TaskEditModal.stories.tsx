@@ -3,9 +3,10 @@
 // normalizeStoredTaskRow), same discipline as TaskRow.stories.tsx, so a hand-built fixture
 // can't quietly drift from what the app actually passes in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskEditModal from './TaskEditModal'
-import { setTransport } from '../api'
+import { setTransport, type Transport } from '../api'
+import { toasts, dismissToast } from '../toastStore'
 import { fakeTransport } from '../ui/_fakeTransport'
 import {
     taskToRow,
@@ -23,7 +24,66 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const noop = () => {}
+let closes = 0
+let changes = 0
+const onClose = () => {
+    closes++
+}
+const onChanged = () => {
+    changes++
+}
+
+type Call = { path: string; body: any }
+let calls: Call[] = []
+
+/** The in-memory transport, with every write recorded so `play()` can assert what was sent.
+ *  `fail` rejects writes; `gate` holds them until it resolves (to observe the busy state). */
+function recording(
+    seed: Parameters<typeof fakeTransport>[0],
+    opts: { fail?: boolean; gate?: Promise<void> } = {},
+): Transport {
+    const base = fakeTransport(seed)
+    const write = async (path: string, body: unknown) => {
+        calls.push({ path, body })
+        await opts.gate
+        if (opts.fail) throw new Error('disk full')
+    }
+    return {
+        ...base,
+        post: async (path, body) => {
+            await write(path, body)
+            return base.post(path, body)
+        },
+        postJson: async <T,>(path: string, body: unknown) => {
+            await write(path, body)
+            if (path === '/tasks/move')
+                return { path: (body as { to: string }).to } as unknown as T
+            return base.postJson<T>(path, body)
+        },
+    }
+}
+
+function reset(): void {
+    closes = 0
+    changes = 0
+    calls = []
+    for (const t of toasts()) dismissToast(t.id)
+}
+
+/** A stored row that recurs weekly — ticking it done rewrites it and appends the next one. */
+function recurringTask(): ReturnType<typeof normalizeStoredTaskRow> {
+    return normalizeStoredTaskRow({
+        file: syntheticBaseFile('boards/tasks.md'),
+        note: {
+            description: 'water the plants',
+            status: 'todo',
+            due: '2026-11-01',
+            recurrence: 'every week',
+        },
+        formula: {},
+        index: 1,
+    })
+}
 
 /** A task SCANNED out of a note's checkbox line — carries `note.line`, so the modal offers a
  *  "note" destination picker instead of a category field. */
@@ -68,16 +128,18 @@ const VAULT_FILES = {
     'Inbox.md': '# Inbox\n',
 }
 
+
+const body = () => within(document.body)
+
 export const LineTask: Story = {
     render: () => {
+        reset()
         setTransport(fakeTransport({ files: VAULT_FILES }))
-        return <TaskEditModal row={lineTask()} onClose={noop} />
+        return <TaskEditModal row={lineTask()} onClose={onClose} />
     },
     play: async () => {
-        // FormModal -> Modal portals its dialog to document.body (ui/Modal.tsx), so it never
-        // lands inside canvasElement — query document.body instead, same as
-        // TaskCalendarSettings.stories.tsx does for the identical reason.
-        const canvas = within(document.body)
+        // FormModal -> Modal portals its dialog to document.body, so query document.body.
+        const canvas = body()
         expect(
             await canvas.findByDisplayValue('finish the hero section'),
         ).toBeInTheDocument()
@@ -91,49 +153,213 @@ export const LineTask: Story = {
 
 export const StoredTaskWithCategories: Story = {
     render: () => {
+        reset()
         setTransport(fakeTransport({}))
         return (
             <TaskEditModal
                 row={storedTask()}
                 categoryField="category"
                 categories={['Admin', 'Home', 'Errands']}
-                onClose={noop}
+                onClose={onClose}
             />
         )
     },
     play: async () => {
-        const canvas = within(document.body)
+        const canvas = body()
         expect(
             await canvas.findByDisplayValue('renew the domain'),
         ).toBeInTheDocument()
-        expect(canvas.getByDisplayValue('Admin')).toBeInTheDocument()
+        const category = canvas.getByDisplayValue('Admin')
+        expect(category).toBeInTheDocument()
         // A stored row offers a category field, not a note destination select.
         expect(canvas.getByText('category')).toBeInTheDocument()
         expect(canvas.queryByText('note')).not.toBeInTheDocument()
+        // Focusing the field offers the other categories (SuggestInput, not a datalist).
+        await userEvent.clear(category)
+        await userEvent.type(category, 'H')
+        expect(await canvas.findByText('Home')).toBeInTheDocument()
     },
 }
 
-/** The delete footer's inline two-step confirm: "[ delete ]" arms into "[ confirm delete ] [
- *  cancel ]" rather than a browser confirm() dialog — the daemon rows' own idiom
- *  (DaemonCrons.tsx), reused here rather than inventing a modal-on-a-modal. */
-export const DeleteConfirm: Story = {
+/** `destinations` supplied by the caller: the picker lists them by label, with the folder as
+ *  detail, and the row's own note is preselected. */
+export const Destinations: Story = {
     render: () => {
-        setTransport(fakeTransport({ files: VAULT_FILES }))
-        return <TaskEditModal row={lineTask()} onClose={noop} />
+        reset()
+        setTransport(fakeTransport({}))
+        return (
+            <TaskEditModal
+                row={lineTask()}
+                destinations={[
+                    { label: 'Website Relaunch', path: 'Projects/Website Relaunch.md' },
+                    { label: 'Health', path: 'Areas/Health.md' },
+                ]}
+                onClose={onClose}
+            />
+        )
     },
     play: async () => {
-        const canvas = within(document.body)
-        const deleteBtn = await canvas.findByText('delete')
-        await userEvent.click(deleteBtn)
-        expect(await canvas.findByText('confirm delete')).toBeInTheDocument()
-        // "keep" (not a second "cancel") disarms — the footer's own trailing "cancel" still
-        // closes the whole modal, so two buttons both reading "cancel" side by side would be
-        // ambiguous about which one they dismiss.
-        expect(canvas.getByText('keep')).toBeInTheDocument()
-        expect(canvas.getAllByText('cancel').length).toBe(1)
-        // The original single "delete" trigger is gone while armed.
+        const canvas = body()
+        await userEvent.click(await canvas.findByText('Website Relaunch'))
+        expect(await canvas.findByText('Health')).toBeInTheDocument()
+        expect(canvas.getByText('Areas')).toBeInTheDocument()
+    },
+}
+
+/** Editing the description and pressing save writes ONLY the changed field, then closes. */
+export const SaveWrites: Story = {
+    render: () => {
+        reset()
+        setTransport(recording({ files: VAULT_FILES }))
+        return (
+            <TaskEditModal
+                row={lineTask()}
+                onChanged={onChanged}
+                onClose={onClose}
+            />
+        )
+    },
+    play: async () => {
+        const canvas = body()
+        const input = await canvas.findByDisplayValue('finish the hero section')
+        await userEvent.type(input, ' v2')
+        await userEvent.click(canvas.getByText('save'))
+        await waitFor(() => expect(closes).toBe(1))
+        const writes = calls.filter(c => c.path === '/tasks/update')
+        expect(writes.length).toBe(1)
+        expect(writes[0].body.line).toBe(3)
+        expect(writes[0].body.patch).toEqual({
+            description: 'finish the hero section v2',
+        })
+        expect(changes).toBe(1)
+    },
+}
+
+/** Enter in the description field saves, the same as the button. */
+export const EnterToSave: Story = {
+    render: () => {
+        reset()
+        setTransport(recording({ files: VAULT_FILES }))
+        return <TaskEditModal row={lineTask()} onClose={onClose} />
+    },
+    play: async () => {
+        const canvas = body()
+        const input = await canvas.findByDisplayValue('finish the hero section')
+        await userEvent.type(input, '!{Enter}')
+        await waitFor(() => expect(closes).toBe(1))
         expect(
-            canvas.queryByText('delete', { exact: true }),
-        ).not.toBeInTheDocument()
+            calls.find(c => c.path === '/tasks/update')?.body.patch.description,
+        ).toBe('finish the hero section!')
+    },
+}
+
+let release: () => void = () => {}
+
+/** While a write is in flight the save button reads "…" and is disabled, a second press writes
+ *  nothing more, and the modal stays open until the write lands. */
+export const Busy: Story = {
+    render: () => {
+        reset()
+        const gate = new Promise<void>(r => {
+            release = r
+        })
+        setTransport(recording({ files: VAULT_FILES }, { gate }))
+        return <TaskEditModal row={lineTask()} onClose={onClose} />
+    },
+    play: async () => {
+        const canvas = body()
+        const input = await canvas.findByDisplayValue('finish the hero section')
+        await userEvent.type(input, '!')
+        await userEvent.click(canvas.getByText('save'))
+        const busy = await canvas.findByText('…')
+        expect(busy.closest('button')).toBeDisabled()
+        await userEvent.type(input, '{Enter}')
+        expect(calls.filter(c => c.path === '/tasks/update').length).toBe(1)
+        expect(closes).toBe(0)
+        release()
+        await waitFor(() => expect(closes).toBe(1))
+    },
+}
+
+/** A failed write keeps the modal open and raises an error toast. */
+export const SaveError: Story = {
+    render: () => {
+        reset()
+        setTransport(recording({ files: VAULT_FILES }, { fail: true }))
+        return <TaskEditModal row={lineTask()} onClose={onClose} />
+    },
+    play: async () => {
+        const canvas = body()
+        const input = await canvas.findByDisplayValue('finish the hero section')
+        await userEvent.type(input, '!')
+        await userEvent.click(canvas.getByText('save'))
+        await waitFor(() =>
+            expect(toasts().map(t => t.message)).toContain(
+                'Could not save the task: disk full',
+            ),
+        )
+        expect(closes).toBe(0)
+        expect(canvas.getByText('save').closest('button')).not.toBeDisabled()
+    },
+}
+
+/** A stored, recurring row set to Done: the row is rewritten as done and the next occurrence
+ *  is appended as a new row. */
+export const StoredStatusRecurrence: Story = {
+    render: () => {
+        reset()
+        setTransport(recording({}))
+        return <TaskEditModal row={recurringTask()} onClose={onClose} />
+    },
+    play: async () => {
+        const canvas = body()
+        await userEvent.click(await canvas.findByText('To do'))
+        await userEvent.click(await canvas.findByText('Done'))
+        await userEvent.click(canvas.getByText('save'))
+        await waitFor(() => expect(closes).toBe(1))
+        const rows = calls.filter(c => c.path === '/row/update')
+        expect(rows.length).toBe(2)
+        expect(rows[0].body.index).toBe(1)
+        expect(rows[0].body.note.status).toBe('done')
+        expect(rows[1].body.index).toBeNull()
+        expect(rows[1].body.note.status).toBe('todo')
+    },
+}
+
+/** Delete is immediate: no confirm step. It writes, closes, and raises a "deleted …" toast
+ *  whose undo puts the task back. */
+export const DeleteThenUndo: Story = {
+    render: () => {
+        reset()
+        setTransport(recording({ files: VAULT_FILES }))
+        return (
+            <TaskEditModal
+                row={lineTask()}
+                onChanged={onChanged}
+                onClose={onClose}
+            />
+        )
+    },
+    play: async () => {
+        const canvas = body()
+        await userEvent.click(await canvas.findByText('delete'))
+        await waitFor(() => expect(closes).toBe(1))
+        expect(calls.map(c => c.path)).toEqual(['/tasks/delete'])
+        expect(canvas.queryByText('confirm delete')).not.toBeInTheDocument()
+        const toast = toasts().find(
+            t => t.message === 'deleted finish the hero section',
+        )
+        expect(toast?.action?.label).toBe('undo')
+        toast!.action!.onClick()
+        await waitFor(() =>
+            expect(calls.map(c => c.path)).toEqual([
+                '/tasks/delete',
+                '/tasks/create',
+            ]),
+        )
+        expect(calls[1].body).toEqual({
+            file: 'Projects/Website Relaunch.md',
+            body: 'finish the hero section [high] [due 2026-10-01]',
+        })
     },
 }
