@@ -11,7 +11,7 @@
 // reads its own base file over `api.read`, so its body is seeded into `files` as well.
 import { onCleanup, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
@@ -57,12 +57,17 @@ function row(folder: string, name: string, note: Record<string, unknown>): Row {
     }
 }
 
+// Two rows deliberately carry no lat/lng — the map's own "unplaced (N)" control needs at
+// least one to open, and MapPinsLand's play() drops N from 2 to 1 by placing one of them,
+// which asserting `unplaced (1)` still visible needs a second unplaced row left over.
 const PLACE_ROWS: Row[] = [
     row('places', 'Tokyo', { lat: 35.6762, lng: 139.6503 }),
     row('places', 'Nairobi', { lat: -1.2921, lng: 36.8219 }),
     row('places', 'Reykjavik', { lat: 64.1466, lng: -21.9426 }),
     row('places', 'Buenos Aires', { lat: -34.6037, lng: -58.3816 }),
     row('places', 'Vancouver', { lat: 49.2827, lng: -123.1207 }),
+    row('places', 'Cairo', {}),
+    row('places', 'Lima', {}),
 ]
 
 const VOCAB_ROWS: Row[] = [
@@ -247,4 +252,77 @@ async function allTilesResolved({ canvasElement }: { canvasElement: HTMLElement 
 export const AllKinds: Story = {
     render: () => <Gallery />,
     play: allTilesResolved,
+}
+
+/** Proves the gallery's fake transport holds REAL state, not a canned ack: opening the map
+ *  tile's unplaced menu, picking a row and clicking the map writes that row's coordinates
+ *  through `/set-properties` into the SAME `PLACE_ROWS` objects `/rows` resolved from, and
+ *  `onChange={refetchAll}` (wired in BaseView) re-resolves them — so a new pin appears and the
+ *  unplaced count drops, with no manual re-render. */
+async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
+    const pane = within(canvasElement).getByTestId('gallery-map')
+    const body = within(canvasElement.ownerDocument.body)
+
+    // Each pin is a `<button>` wrapping a chip + glyph that ALSO carry a `mapPin*` class, so
+    // the tag filter is what keeps this a pin count instead of triple-counting.
+    const pinCount = () => pane.querySelectorAll('button[class*="mapPin"]').length
+    const unplacedButton = await within(pane).findByTestId(
+        'map-unplaced-button',
+    )
+    // Rows have resolved by the time the unplaced button shows a real count, so it's the first
+    // safe point to read the starting pin count — reading it before this races the initial fetch.
+    expect(unplacedButton).toHaveTextContent('unplaced (2)')
+    const before = pinCount()
+    await userEvent.click(unplacedButton)
+
+    const option = await body.findByText('Cairo')
+    await userEvent.click(option)
+    await within(pane).findByText(/placing Cairo/)
+
+    const wrap = pane.querySelector('[class*="mapWrap"]') as HTMLElement
+    const mapEl = wrap.firstElementChild as HTMLElement
+    if (!mapEl.className.includes('mapArmed'))
+        throw new Error(`map not armed after picking Cairo: ${mapEl.className}`)
+    const rect = mapEl.getBoundingClientRect()
+    const doc = canvasElement.ownerDocument
+    // Any of the 5 already-placed pins (or a floating control) could sit exactly where a naive
+    // center-click would land and swallow it via its own onClick/pointer-events — so probe a
+    // few points and click the first one that actually hits the map's own background element.
+    const candidates = [
+        [0.5, 0.5],
+        [0.15, 0.85],
+        [0.85, 0.15],
+        [0.15, 0.15],
+        [0.85, 0.85],
+    ]
+    const spot = candidates
+        .map(([fx, fy]) => ({
+            x: rect.left + rect.width * fx,
+            y: rect.top + rect.height * fy,
+        }))
+        .find(p => doc.elementFromPoint(p.x, p.y) === mapEl)
+    if (!spot) throw new Error('no clear spot on the map to click')
+    mapEl.dispatchEvent(
+        new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            clientX: spot.x,
+            clientY: spot.y,
+        }),
+    )
+
+    await waitFor(() => {
+        if (mapEl.className.includes('mapArmed'))
+            throw new Error('still armed after clicking the map')
+    })
+    await waitFor(() => {
+        expect(pinCount()).toBe(before + 1)
+        expect(unplacedButton).toHaveTextContent('unplaced (1)')
+    })
+}
+
+/** Same gallery, isolated to prove writes stick — see `mapPinLands` for what it checks and why. */
+export const MapPinsLand: Story = {
+    render: () => <Gallery />,
+    play: mapPinLands,
 }

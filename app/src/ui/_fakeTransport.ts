@@ -6,10 +6,14 @@
 // itself — the `*.stories.*` glob (see `.storybook/main.ts`) skips underscore-prefixed files.
 //
 // Covers the paths `api`'s most-used verbs hit: GET /tree, GET /file, PUT /file, POST /rows,
-// POST /tasks/create. Every other mutation (move/delete/toggle/...) gets a generic 200 ack
-// rather than a per-route implementation — a story exercising those usually isn't asserting on
-// the response. An unmapped GET throws instead of guessing a shape, since a silently-wrong
-// response is worse than a loud "add a case here" error.
+// POST /tasks/create, POST /row/update, POST /set-properties (+ /set-property, /delete-property).
+// The row-mutating ones write into the SAME Row objects `/rows` already handed back (see
+// `indexRow`), so a table toggle, kanban move, multiselect edit or map pin sticks across a
+// refetch — real, mutable state, not a canned ack. Every OTHER mutation (move/delete/toggle
+// file-level ones, not row ones) gets a generic 200 ack rather than a per-route implementation —
+// a story exercising those usually isn't asserting on the response. An unmapped GET throws
+// instead of guessing a shape, since a silently-wrong response is worse than a loud "add a case
+// here" error.
 import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
@@ -78,6 +82,18 @@ function splitPath(pathAndQuery: string): {
     }
 }
 
+/** Every `Row` object `/rows` has ever handed back, indexed by `file.path` (note rows) and by
+ *  a synthetic `path::index` key (own-rows/stored rows, which share one path across many rows).
+ *  `resolveRows` returns whatever array/object the seed's rows source already holds — the SAME
+ *  Row references every time a given spec resolves — so mutating a row's `.note` in place here
+ *  is enough to make a write "stick": the next `/rows` call returns the same, now-mutated,
+ *  objects. This is what lets a hand-authored fixture array (`const PLACE_ROWS: Row[] = [...]`)
+ *  serve as a gallery/story's REAL mutable row store with no separate store abstraction. */
+function indexRow(index: Map<string, Row>, row: Row): void {
+    index.set(row.file.path, row)
+    if (row.index !== undefined) index.set(`${row.file.path}::${row.index}`, row)
+}
+
 /** Build an in-memory Transport over a plain `Map<path, contents>`. Call `setTransport
  *  (fakeTransport(...))` (app/src/api.ts) before rendering a component that calls `api.*` —
  *  e.g. in a story's `render`, or a decorator shared by every story in a file. */
@@ -86,8 +102,18 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const tree =
         seed.tree ??
         [...files.keys()].map((path): TreeEntry => ({ path, kind: 'file' }))
-    const resolveRows =
-        typeof seed.rows === 'function' ? seed.rows : () => seed.rows ?? []
+    const seedRows = seed.rows
+    const rowsSource: (spec: SourceSpec) => Row[] =
+        typeof seedRows === 'function' ? seedRows : () => seedRows ?? []
+    // Every row `/rows` has ever resolved, so a later `/row/update`/`/set-properties`/
+    // `/set-property`/`/delete-property` can find the SAME Row object and mutate it in place —
+    // see `indexRow` above for why that's what makes state stick across a refetch.
+    const rowIndex = new Map<string, Row>()
+    const resolveRows = (spec: SourceSpec): Row[] => {
+        const rows = rowsSource(spec)
+        for (const row of rows) indexRow(rowIndex, row)
+        return rows
+    }
 
     return {
         getJson: async <T>(path: string): Promise<T> => {
@@ -153,6 +179,48 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 return new Response(JSON.stringify(resolveRows(spec)), {
                     headers: { 'Content-Type': 'application/json' },
                 })
+            }
+            // Own-rows write-back (kanban drag, task status, a map pin on an inline row): the
+            // real server addresses the row by `index` within `file`; here that's the same
+            // `path::index` key `indexRow` registered the last time `/rows` resolved it.
+            if (pathname === '/row/update') {
+                const { file, index, note } = body as {
+                    file: string
+                    index: number | null
+                    note: Record<string, unknown>
+                }
+                const row =
+                    index === null ? undefined : rowIndex.get(`${file}::${index}`)
+                if (row) row.note = note
+                return new Response('ok')
+            }
+            // Batch property writes (kanban multi-card reorder, a map pin's lat+lng in one
+            // request): each write targets a NOTE row by its file path.
+            if (pathname === '/set-properties') {
+                const { writes } = body as {
+                    writes: Array<{ path: string; key: string; value: unknown }>
+                }
+                for (const w of writes) {
+                    const row = rowIndex.get(w.path)
+                    if (row) row.note[w.key] = w.value
+                }
+                return new Response('ok')
+            }
+            if (pathname === '/set-property') {
+                const { path: p, key, value } = body as {
+                    path: string
+                    key: string
+                    value: unknown
+                }
+                const row = rowIndex.get(p)
+                if (row) row.note[key] = value
+                return new Response('ok')
+            }
+            if (pathname === '/delete-property') {
+                const { path: p, key } = body as { path: string; key: string }
+                const row = rowIndex.get(p)
+                if (row) delete row.note[key]
+                return new Response('ok')
             }
             return new Response('ok')
         },
