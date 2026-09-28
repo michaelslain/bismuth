@@ -1,8 +1,14 @@
-import { For, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { buildChartData, type ChartPoint } from '../../../core/src/bases/chart'
-import { chartCaption, bucketReadout, formatValue } from '../../../core/src/bases/chartText'
-import { layoutBars } from './barRows'
+import {
+    chartCaption,
+    bucketReadout,
+    formatValue,
+    axisName,
+    valueAxisName,
+} from '../../../core/src/bases/chartText'
+import { barHeader, layoutBars } from './barRows'
 import type { ChartGrid } from './chartColumns'
 import ChartFrame from './ChartFrame'
 import ChartReadout from './ChartReadout'
@@ -24,7 +30,11 @@ export function BarView(props: ChartViewProps) {
 
     const rows = createMemo<Row[]>(() => props.result.groups.flatMap(g => g.rows))
     const data = createMemo(() => buildChartData(rows(), props.result.view))
-    const bars = createMemo(() => layoutBars(data().points, grid().columns))
+    const headerNames = createMemo(() => ({
+        label: axisName(data().x, data().isDate, data().bin),
+        value: valueAxisName(data().aggregate, data().y),
+    }))
+    const bars = createMemo(() => layoutBars(data().points, grid().columns, headerNames()))
 
     // A data change can drop the bucket a row was selected/hovered on — clear rather than
     // point at a bucket that no longer exists.
@@ -47,12 +57,42 @@ export function BarView(props: ChartViewProps) {
 
     const readoutParts = createMemo(() => {
         const point = activePoint()
-        if (point) return bucketReadout(point.label, point.value, point.rows.length)
+        if (point)
+            return bucketReadout(point.label, point.value, point.rows.length, data().aggregate)
         const best = maxPoint()
         const caption = chartCaption(data())
         if (!best) return [caption]
         return [caption, `peak ${formatValue(best.value)} (${best.label})`]
     })
+
+    // One header row above the bars: the x property's name over the label column, the value's
+    // name (aggregate + y, or `notes` for a count chart) over the value column — same total
+    // width as a body row so it can never overflow on its own (Review Focus #1/#2).
+    const header = createMemo(() => {
+        const rowsData = bars()
+        if (rowsData.length === 0) return undefined
+        const names = headerNames()
+        const barWidth = rowsData[0].fill + rowsData[0].track
+        return barHeader(names.label, names.value, rowsData[0].label.length, rowsData[0].value.length, barWidth)
+    })
+
+    // The selected row's label, with a `>` marker swapped into its leading characters — kept to
+    // the SAME total width as `bar.label` (no reserved column, no overflow risk) by trimming the
+    // real text just enough to fit the marker, ellipsis-truncating if that text was already
+    // filling the column.
+    const markedLabel = (label: string) => {
+        const marker = '> '
+        const text = label.trimEnd()
+        const maxText = label.length - marker.length
+        if (maxText <= 0) return marker.slice(0, label.length)
+        const shown =
+            text.length > maxText
+                ? maxText <= 1
+                    ? text.slice(0, maxText)
+                    : text.slice(0, maxText - 1) + '…'
+                : text
+        return (marker + shown).padEnd(label.length)
+    }
 
     const drillPoint = createMemo(() => data().points.find(p => p.key === selectedKey()))
     const drillRows = createMemo(() => {
@@ -83,6 +123,11 @@ export function BarView(props: ChartViewProps) {
             }
         >
             <div class={styles.barChart}>
+                <Show when={header()}>
+                    <Text as="div" inherit tone="muted" class={styles.header}>
+                        {header()}
+                    </Text>
+                </Show>
                 <For each={bars()}>
                     {bar => (
                         <div
@@ -92,9 +137,15 @@ export function BarView(props: ChartViewProps) {
                             onPointerLeave={() => setHoverKey(undefined)}
                             onClick={() => toggle(bar.key)}
                         >
-                            <Text as="span" inherit tone="muted" class={styles.label}>
+                            <Text
+                                as="span"
+                                inherit
+                                tone={selectedKey() === bar.key ? 'default' : 'muted'}
+                                class={styles.label}
+                            >
                                 {/* layoutBars budgets two 2-space gutters; they are typed here. */}
-                                {bar.label + '  '}
+                                {(selectedKey() === bar.key ? markedLabel(bar.label) : bar.label) +
+                                    '  '}
                             </Text>
                             <Text
                                 as="span"

@@ -145,9 +145,10 @@ Renders each bucket as one full-width row of a character-grid meter — a text r
 ### Visual details
 
 - **One row per bucket**, spanning the full measured width of the chart's body (via `ChartFrame`'s live character-grid measurement — see [Shared chrome](#shared-chart-chrome-readout-drill-viewbar-config)), not a fixed 32-column chart hugging one corner of a wide pane.
+- **Header row** above the bars names both axes: the x property over the label column (`status`, or `due (week)` for a binned date axis) and the value over the value column (`notes` for a count, else e.g. `sum priority`) — `barHeader()` in `barRows.ts`.
 - **Row layout**: `<label>  <fill><track>  <value>` — the label right-padded to the width of the longest label in the series, the fill a run of `#` in `--accent`, the track a run of `.` in `--faint` padding out to a shared right edge, the value right-aligned in `--fg`. All bars are one color — there is no per-index palette.
 - **Bar length**: `fill = round(max(0, value) / max * width)` — a negative value clamps to a zero-length fill rather than going negative.
-- **Hover and selection**: hovering a row turns its fill `--fg`; clicking a row selects it (fill stays `--fg`, every other row's fill drops to `--text-muted`) and opens the drill list.
+- **Hover and selection**: hovering a row turns its fill `--fg`; clicking a row selects it (a `>` marks its label, its fill stays `--fg`, every other row's fill drops to `--text-muted`) and opens the drill list. For a count chart the hover readout reads `Doing // 2 notes` (the value and the note count are the same number, so it is not repeated).
 
 ### Minimal base example (bar)
 
@@ -235,6 +236,8 @@ Renders one tile per **declared metric** (`stats:`) — or, with no `stats:` dec
 
 A metric that fails to parse or evaluate shows `—` as its value and `cannot read: <reason>` in `--danger` in place of the KaTeX expression; the tile's other lines (label, period, sparkline) are simply absent since there's nothing to compute them from, and the other tiles in the view still render normally.
 
+**The sparkline explains itself**: under the glyphs one faint caption names its window and its first/last bin — `last 12 weeks // Jul 6 – Sep 21` — and the current bin's glyph is `--accent`. Hovering a glyph swaps the tile's period line for that bin, e.g. `week of Sep 14 // 3` (`SparklineChart.tsx`; bin keys/labels from `MetricResult.seriesKeys`/`seriesLabels`).
+
 ### Declared metrics (`stats:`)
 
 ```yaml
@@ -319,7 +322,7 @@ Each cell's glyph and CSS class come from a discrete 5-way tier (0 = no data, 1�
 
 When all values are equal (`max === min`), `t` is forced to `1` (top tier). Colors are plain text colors and re-tint when the theme changes.
 
-The legend, `less . - + # more`, is right-aligned directly under the grid's right edge at `--fs-micro`. There is no caption underneath it.
+The legend is right-aligned directly under the grid's right edge at `--fs-micro` and states each glyph's value range in numbers, then what is plotted — e.g. `. none  - 50–149  + 150–248  # 249–347 // words per day` (`legendRanges` in `app/src/bases/heatmapLayout.ts`, computed from the same thresholds `levelOf` uses). Each glyph is in its level colour; the ranges are `--text-muted`.
 
 ### Month label row
 
@@ -327,15 +330,20 @@ Above the grid, a sparse month label row shows the abbreviated month name (e.g. 
 
 ### Hover, click and streak readout
 
-Hovering a cell updates the readout line to that day's label/value/note-count; clicking a cell (with at least one note) opens the drill list for that day, the same as bar and line. See [Shared chart chrome](#shared-chart-chrome-readout-drill-viewbar-config) below.
+Hovering a cell updates the readout line to that day's label/value/note-count. At rest the readout names what is plotted and what a click does, e.g. `sum of words per day // click a day to log a value`. **Right-click** any cell opens the drill list for that day, in every case.
 
-Below the grid, streaks are **one readout line**, not a tile grid:
+**Left-click edits the day**, and what it does depends on where the rows come from (`dayAction` in `app/src/bases/heatmapWrites.ts`, wired by `BaseView`'s heatmap write seam):
 
-```
-18 days logged // current streak 0 days // longest 18 days
-```
+| rows come from | chart | click |
+|---|---|---|
+| the base file's own table (no `source:` query — the default; no daily notes needed) | numeric `y` | an inline number field opens on the day (`HeatmapDayEditor`); Enter/blur saves — updates that day's row, or adds a row `{x: date, y: n}` on an empty day; empty or `0` deletes the row. A day with several rows opens the drill instead (`N entries — edit in the table`). |
+| the base file's own table | count (no `y`) | toggles the day: adds a row `{x: date}`, or deletes that day's rows |
+| a query source (notes/tasks) | numeric `y`, exactly one note that day | the same inline field, saving via `set-property` on that note |
+| a query source | anything else (empty day, several notes, count) | nothing is created; the drill opens and the readout says why (`no note on Sep 14`, `2 notes — open one to edit`) |
 
-`streaks(points, today)` (`heatmapLayout.ts`) computes `entries` (days with `value > 0`), `current` (the run ending at the most recent entry — 0 if that entry isn't today or yesterday, i.e. the streak has lapsed), and `longest` (the longest consecutive-day run in the data), using exact date adjacency. Both `current`/`longest` pluralize (`"1 day"` vs `"N days"`).
+Without a base file to write to (an embedded ```` ```query ```` block), the heatmap is read-only and a click drills. The square updates immediately (a local override), reconciled when fresh rows arrive.
+
+The streak statistics are one readout line under the grid — `<n> days logged // current streak <n> days // longest <n> days` (singular `day` when 1).
 
 ### Empty state message
 
@@ -373,7 +381,7 @@ A single line above the chart, parts joined by ` // `:
 
 ### Drill list (`ChartDrill`, `app/src/bases/ChartDrill.tsx`)
 
-Clicking a bucket opens a list of the notes behind it, under the chart: a header `<label> // N notes` with a `[ clear ]` `TextButton`, then one `TextButton` per note (the note's display name — `rowLabel()` in `chartColumns.ts`) that opens it via the view's `onOpen` prop. Clicking the same bucket again, or `[ clear ]`, closes the list. A data change that removes the selected bucket also closes it. When the view has no `onOpen` (no opener available — e.g. the enclosing context can't navigate), rows render as plain, unclickable text instead of buttons rather than disappearing. The list scrolls past 12 rows.
+Clicking a bucket opens a list of the notes behind it, under the chart: a header `<label> // N notes` with a `[ clear ]` `TextButton`, then one row per note — a faint tree prefix (`|--` / `` `-- ``) and a `NoteLink` with the note's display name (`rowLabel()` in `chartColumns.ts`) that opens it. The header's count is singular for one note (`1 note`). Clicking the same bucket again, or `[ clear ]`, closes the list. A data change that removes the selected bucket also closes it. When the view has no `onOpen` (no opener available — e.g. the enclosing context can't navigate), rows render as plain, unclickable text instead of buttons rather than disappearing. The list scrolls past 12 rows.
 
 ### ViewBar config pickers
 
@@ -529,4 +537,4 @@ Each declared `stats[]` entry is evaluated independently — a bad expression on
 - `core/src/bases/values.ts` — `toNumber` (value coercion)
 - `core/src/bases/parser.ts`/`ast.ts` — the expression grammar `evaluateMetric`/`exprToLatex` walk
 
-Source: `app/src/bases/BarView.tsx`, `app/src/bases/barRows.ts`, `app/src/bases/LineView.tsx`, `app/src/bases/asciiLine.ts`, `app/src/bases/StatView.tsx`, `app/src/bases/StatTiles.tsx`, `app/src/bases/sparkline.ts`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/heatmapLayout.ts`, `app/src/bases/ChartFrame.tsx`, `app/src/bases/ChartReadout.tsx`, `app/src/bases/ChartDrill.tsx`, `app/src/bases/chartColumns.ts`, `app/src/bases/chartViewProps.ts`, `app/src/ui/Tex.tsx`, `core/src/bases/chart.ts`, `core/src/bases/metrics.ts`, `core/src/bases/trend.ts`, `core/src/bases/chartLatex.ts`, `core/src/bases/chartText.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `cli/src/commands/base.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`, `core/test/bases/metrics.test.ts`, `core/test/bases/trend.test.ts`, `core/test/bases/chartLatex.test.ts`, `core/test/bases/chartText.test.ts`
+Source: `app/src/bases/BarView.tsx`, `app/src/bases/barRows.ts`, `app/src/bases/LineView.tsx`, `app/src/bases/asciiLine.ts`, `app/src/bases/StatView.tsx`, `app/src/bases/StatTiles.tsx`, `app/src/bases/sparkline.ts`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/heatmapLayout.ts`, `app/src/bases/heatmapWrites.ts`, `app/src/bases/HeatmapDayEditor.tsx`, `app/src/bases/SparklineChart.tsx`, `app/src/bases/ChartFrame.tsx`, `app/src/bases/ChartReadout.tsx`, `app/src/bases/ChartDrill.tsx`, `app/src/bases/chartColumns.ts`, `app/src/bases/chartViewProps.ts`, `app/src/ui/Tex.tsx`, `core/src/bases/chart.ts`, `core/src/bases/metrics.ts`, `core/src/bases/trend.ts`, `core/src/bases/chartLatex.ts`, `core/src/bases/chartText.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `cli/src/commands/base.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`, `core/test/bases/metrics.test.ts`, `core/test/bases/trend.test.ts`, `core/test/bases/chartLatex.test.ts`, `core/test/bases/chartText.test.ts`

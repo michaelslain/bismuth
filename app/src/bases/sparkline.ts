@@ -1,3 +1,6 @@
+import type { Bin } from '../../../core/src/dates'
+import { formatValue } from '../../../core/src/bases/chartText'
+
 // A 12-bin sparkline of a stat metric's history, rendered as plain text (bases-stat.card.html:
 // the "Typed, not drawn" north star — no SVG, no canvas for this either).
 const GLYPHS = '▁▂▃▄▅▆▇█'
@@ -25,4 +28,27 @@ export function sparkline(series: (number | null)[]): string {
             return GLYPHS[idx]
         })
         .join('')
+}
+
+/** Singular bin word ("day"/"week"/"month"), for the hover period line. */
+export function binWord(bin: Bin): string {
+    return bin
+}
+
+/** Plural bin word ("days"/"weeks"/"months"), for the sparkline's window caption. */
+export function binWordPlural(bin: Bin): string {
+    return `${bin}s`
+}
+
+/** The sparkline's faint window caption, e.g. "last 12 weeks" — names the bin word so a
+ *  reader who has never seen the chart knows what each glyph spans. */
+export function sparklineCaption(bin: Bin, binCount: number): string {
+    return `last ${binCount} ${binWordPlural(bin)}`
+}
+
+/** The tile's period line while a sparkline glyph is hovered, e.g. `week of Jun 8 // 5` —
+ *  replaces the tile's normal `X this week // Y last week` line for as long as the hover
+ *  lasts. `null` renders as `—`, matching StatTiles' own empty-value convention. */
+export function hoverPeriodText(bin: Bin, label: string, value: number | null): string {
+    return `${binWord(bin)} of ${label} // ${value === null ? '—' : formatValue(value)}`
 }

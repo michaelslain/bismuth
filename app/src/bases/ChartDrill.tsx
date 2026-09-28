@@ -2,8 +2,10 @@ import type { Component } from 'solid-js'
 import { For, Show } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { rowLabel } from './chartColumns'
+import { treePrefix } from '../ui/ascii/treePrefix'
 import Text from '../ui/Text'
 import TextButton from '../ui/TextButton'
+import NoteLink from '../ui/NoteLink'
 import styles from './ChartDrill.module.css'
 
 export type ChartDrillProps = {
@@ -20,9 +22,11 @@ export type ChartDrillProps = {
 
 /**
  * The list of notes behind a clicked chart bucket, opened under a chart's body: a header
- * `<title> // N notes` plus `[ clear ]`, then one row per note. A row is a `TextButton` calling
- * `onOpen(row.file.path)` when an opener exists, otherwise plain `Text` — a bucket's notes are
- * still readable with no write target. Scrolls past 12 rows.
+ * `<title> // N notes` plus `[ clear ]`, then one row per note in a faint ASCII tree (`treePrefix`
+ * — the same connector the app's other trees use). A row is a `NoteLink` — the app's one way to
+ * render "open this note" (see NoteLink.tsx) — when a write target exists, otherwise plain `Text`:
+ * a bucket's notes are still readable with no write target (Review Focus #5). Scrolls past 12
+ * rows.
  */
 const ChartDrill: Component<ChartDrillProps> = props => {
     return (
@@ -35,24 +39,22 @@ const ChartDrill: Component<ChartDrillProps> = props => {
             </div>
             <div class={styles.rows}>
                 <For each={props.rows}>
-                    {row => (
-                        <Show
-                            when={props.onOpen}
-                            fallback={
-                                <Text as="div" inherit size="ui" class={styles.row}>
-                                    {rowLabel(row)}
-                                </Text>
-                            }
-                        >
-                            {onOpen => (
-                                <TextButton
-                                    class={styles.row}
-                                    onClick={() => onOpen()(row.file.path)}
-                                >
-                                    {rowLabel(row)}
-                                </TextButton>
-                            )}
-                        </Show>
+                    {(row, i) => (
+                        <div class={styles.row}>
+                            <Text as="span" inherit size="ui" tone="faint" class={styles.prefix}>
+                                {treePrefix(0, i() === props.rows.length - 1)}
+                            </Text>
+                            <Show
+                                when={props.onOpen}
+                                fallback={
+                                    <Text as="span" inherit size="ui">
+                                        {rowLabel(row)}
+                                    </Text>
+                                }
+                            >
+                                <NoteLink path={row.file.path}>{rowLabel(row)}</NoteLink>
+                            </Show>
+                        </div>
                     )}
                 </For>
             </div>

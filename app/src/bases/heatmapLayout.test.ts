@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import type { HeatCell } from '../../../core/src/bases/chart'
 import { buildHeatmapWeeks } from '../../../core/src/bases/chart'
-import { dayLabel, heatmapRange, monthLabels, streaks } from './heatmapLayout'
+import {
+    dayLabel,
+    glyphOf,
+    heatmapRange,
+    legendRanges,
+    levelOf,
+    monthLabels,
+    streaks,
+} from './heatmapLayout'
 
 describe('heatmapRange', () => {
     test('20 columns clamps to 1 week (floor((20-2)/2) = 9, but data-narrow still yields the minimum via columns)', () => {
@@ -141,5 +149,64 @@ describe('streaks', () => {
 describe('dayLabel', () => {
     test('formats as Ddd Mon D', () => {
         expect(dayLabel('2026-07-08')).toBe('Wed Jul 8')
+    })
+})
+
+describe('levelOf / glyphOf', () => {
+    test('a positive value never collapses onto the no-data glyph', () => {
+        // The lowest positive value in the range must be a DIFFERENT glyph from a missing day —
+        // this is exactly the collision that made the old 4-tier scale meaningless.
+        expect(levelOf(1, 1, 347)).not.toBe(0)
+        expect(glyphOf(levelOf(1, 1, 347))).not.toBe(glyphOf(0))
+    })
+
+    test('zero or negative is always level 0 (the no-data glyph)', () => {
+        expect(levelOf(0, 1, 347)).toBe(0)
+        expect(levelOf(-5, 1, 347)).toBe(0)
+        expect(levelOf(null, 1, 347)).toBe(0)
+    })
+
+    test('the top of the range is the highest tier', () => {
+        expect(levelOf(347, 1, 347)).toBe(3)
+        expect(glyphOf(3)).toBe('#')
+    })
+
+    test('a single-value range (min===max) still renders the top tier, not a divide-by-zero', () => {
+        expect(levelOf(50, 50, 50)).toBe(3)
+    })
+})
+
+describe('legendRanges', () => {
+    test('no data at all: just the none entry', () => {
+        expect(legendRanges(0, 0)).toEqual([
+            { level: 0, glyph: '.', levelClass: 'lv0', range: 'none' },
+        ])
+    })
+
+    test('splits [min, max] into three contiguous, non-overlapping bands', () => {
+        const entries = legendRanges(1, 347)
+        expect(entries).toHaveLength(4)
+        expect(entries[0]).toEqual({ level: 0, glyph: '.', levelClass: 'lv0', range: 'none' })
+        expect(entries[1].glyph).toBe('-')
+        expect(entries[2].glyph).toBe('+')
+        expect(entries[3].glyph).toBe('#')
+        // contiguous: each band's low is the previous band's high + 1
+        const parseHi = (r: string) => Number(r.split('–').pop())
+        const parseLo = (r: string) => Number(r.split('–')[0])
+        expect(parseLo(entries[2].range)).toBe(parseHi(entries[1].range) + 1)
+        expect(parseLo(entries[3].range)).toBe(parseHi(entries[2].range) + 1)
+        // spans the full range
+        expect(parseLo(entries[1].range)).toBe(1)
+        expect(parseHi(entries[3].range)).toBe(347)
+    })
+
+    test('every level a real value can take has a matching legend band', () => {
+        const min = 1
+        const max = 347
+        for (const v of [1, 50, 86, 87, 173, 174, 300, 347]) {
+            const level = levelOf(v, min, max)
+            const entry = legendRanges(min, max)[level]
+            expect(entry.glyph).toBe(glyphOf(level))
+        }
     })
 })

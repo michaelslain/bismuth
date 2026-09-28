@@ -3,6 +3,7 @@
 // today (todayISO/addDaysISO) so the period-split line and sparkline show real, non-zero
 // numbers whenever the story is opened, rather than freezing on whatever date it was written.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import type { BasePropertyDef, Row } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { StatView } from './StatView'
@@ -59,6 +60,42 @@ export const DeclaredMetrics: Story = {
                 config={config}
             />
         )
+    },
+}
+
+/** Hovering an older sparkline glyph swaps the tile's period line from the default
+ *  `X this week // Y last week` to that bin's own `week of <label> // <value>`, and leaving
+ *  the glyph restores the default line — the fix for "i dont even know what the bars here
+ *  mean": a bar's meaning is now one hover away. */
+export const HoverSparkline: Story = {
+    render: DeclaredMetrics.render,
+    play: async ({ canvasElement }) => {
+        const periodLine = await waitFor(() => {
+            const el = canvasElement.querySelector('[class*="statPeriod"]')
+            if (!el) throw new Error('no period line yet')
+            return el as HTMLElement
+        })
+        const defaultText = periodLine.textContent
+        expect(defaultText).toMatch(/this week.*last week/)
+
+        const glyphs = await waitFor(() => {
+            const spans = canvasElement.querySelectorAll('[data-bucket]')
+            if (spans.length === 0) throw new Error('no sparkline glyphs yet')
+            return Array.from(spans) as HTMLElement[]
+        })
+        // hover the oldest (first) bin, not the current one, so the text is guaranteed to change
+        await userEvent.hover(glyphs[0])
+        await waitFor(() => {
+            const el = canvasElement.querySelector('[class*="statPeriod"]') as HTMLElement
+            expect(el.textContent).toMatch(/^week of .+ \/\/ /)
+            expect(el.textContent).not.toBe(defaultText)
+        })
+
+        await userEvent.unhover(glyphs[0])
+        await waitFor(() => {
+            const el = canvasElement.querySelector('[class*="statPeriod"]') as HTMLElement
+            expect(el.textContent).toBe(defaultText)
+        })
     },
 }
 

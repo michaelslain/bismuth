@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { layoutBars } from './barRows'
+import { barHeader, layoutBars } from './barRows'
 
 describe('layoutBars', () => {
     test('widths add up to columns', () => {
@@ -88,5 +88,31 @@ describe('layoutBars', () => {
             expect(row.fill).toBeGreaterThanOrEqual(0)
             expect(row.track).toBeGreaterThanOrEqual(0)
         }
+    })
+})
+
+describe('barHeader', () => {
+    test('same total length as a layoutBars row — never the thing that overflows', () => {
+        const points = [
+            { key: 'a', label: 'short', value: 3 },
+            { key: 'b', label: 'a much longer label', value: 9 },
+        ]
+        const columns = 60
+        const rows = layoutBars(points, columns)
+        const barWidth = rows[0].fill + rows[0].track
+        const header = barHeader('status', 'sum priority', rows[0].label.length, rows[0].value.length, barWidth)
+        expect(header.length).toBe(columns)
+    })
+
+    test('label left-aligned, value right-aligned', () => {
+        const header = barHeader('status', 'notes', 6, 5, 5)
+        expect(header.startsWith('status')).toBe(true)
+        expect(header.endsWith('notes')).toBe(true)
+    })
+
+    test('a name longer than its column truncates with an ellipsis, staying in budget', () => {
+        const header = barHeader('due (week) of the quarter', 'sum priority', 8, 4, 5)
+        expect(header.length).toBe(8 + 2 + 5 + 2 + 4)
+        expect(header.slice(0, 8).trim().endsWith('…')).toBe(true)
     })
 })

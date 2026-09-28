@@ -1,37 +1,67 @@
-import { For, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, createEffect, createMemo, createSignal, on } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import {
     buildChartData,
     buildHeatmapWeeks,
+    type Aggregate,
+    type ChartData,
     type HeatCell,
 } from '../../../core/src/bases/chart'
-import { chartCaption, bucketReadout, formatValue } from '../../../core/src/bases/chartText'
+import { bucketReadout, formatValue, propName } from '../../../core/src/bases/chartText'
 import { binLabel, todayISO } from '../../../core/src/dates'
 import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
 import ChartReadout from './ChartReadout'
 import ChartDrill from './ChartDrill'
-import { dayLabel, heatmapRange, monthLabels, streaks } from './heatmapLayout'
+import HeatmapDayEditor from './HeatmapDayEditor'
+import {
+    LEVEL_CLASS,
+    dayLabel,
+    glyphOf,
+    heatmapRange,
+    legendRanges,
+    levelOf,
+    monthLabels,
+    streaks,
+} from './heatmapLayout'
+import { dayAction, type HeatmapWriteSeam } from './heatmapWrites'
 import type { ChartViewProps } from './chartViewProps'
 import styles from './HeatmapView.module.css'
 
 const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
-// Density glyph per intensity tier — a year of activity, one character per day
-// (bases-heatmap.card.html): "intensity is the glyph, never the cell size."
-const GLYPHS = ['.', '-', '+', '#'] as const
-const LEVEL_CLASS = ['lv0', 'lv0', 'lv1', 'lv2', 'lv3'] // index 0 = no data
-
-function levelOf(v: number | null, min: number, max: number): number {
-    if (v === null || v <= 0) return 0
-    const t = max === min ? 1 : (v - min) / (max - min)
-    return 1 + Math.min(GLYPHS.length - 1, Math.floor(t * GLYPHS.length))
-}
-function glyphOf(level: number): string {
-    return level === 0 ? '.' : GLYPHS[Math.min(GLYPHS.length - 1, level - 1)]
+const AGG_WORD: Record<Aggregate, string> = {
+    sum: 'sum of',
+    avg: 'average',
+    min: 'min',
+    max: 'max',
+    count: '',
 }
 
-export function HeatmapView(props: ChartViewProps) {
+/** The resting caption — always "per day" rather than chartText.ts's `chartCaption` "by day of
+ *  <x>", since a heatmap's x is always the calendar day; naming it again would be noise. */
+function heatmapCaption(data: ChartData): string {
+    if (data.aggregate === 'count' || !data.y) return 'notes per day'
+    return `${AGG_WORD[data.aggregate]} ${propName(data.y)} per day`
+}
+
+/** How to interact, spelled out for someone who has never seen this view before — the other half
+ *  of "isn't meaningful": a glyph with no legend and a square that does nothing on click. */
+function interactionHint(writes: HeatmapWriteSeam | undefined): string {
+    if (!writes) return 'right-click a day to see its notes'
+    if (writes.origin === 'base')
+        return writes.isCount ? 'click a day to toggle it' : 'click a day to log a value'
+    return 'right-click a day to see its notes'
+}
+
+export type HeatmapViewProps = ChartViewProps & {
+    /** The write seam BaseView builds from the resolved x/y/aggregate and the rows behind this
+     *  view — undefined when there is no write target (an inline ```query block with no base
+     *  file), in which case every square is read-only and a click only opens the drill list. */
+    writes?: HeatmapWriteSeam
+}
+
+export function HeatmapView(props: HeatmapViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )
@@ -60,11 +90,6 @@ export function HeatmapView(props: ChartViewProps) {
         return DOW.map((_, dow) => weeks.map(week => week[dow]))
     })
 
-    const level = (cell: HeatCell): number => {
-        const { min, max } = data()
-        return levelOf(cell.value, min, max)
-    }
-
     // Bucket by date, so hover/click can look a cell's row-count/rows up in O(1).
     const byDate = createMemo(() => {
         const m = new Map<string, { value: number; rows: number[] }>()
@@ -73,14 +98,32 @@ export function HeatmapView(props: ChartViewProps) {
         return m
     })
 
+    // Optimistic square fill/clear between a write and the refetch it triggers — cleared the
+    // moment fresh rows arrive, whether that confirms the write or (on failure) reverts it.
+    const [overrides, setOverrides] = createSignal<Map<string, number>>(new Map())
+    createEffect(on(rows, () => setOverrides(new Map())))
+    const effectiveValue = (dateISO: string): number | null => {
+        const o = overrides()
+        if (o.has(dateISO)) return o.get(dateISO)!
+        return byDate().get(dateISO)?.value ?? null
+    }
+
+    const level = (cell: HeatCell): number => {
+        const { min, max } = data()
+        return levelOf(effectiveValue(cell.date) ?? cell.value, min, max)
+    }
+
     const [hovered, setHovered] = createSignal<string | null>(null)
     const [selected, setSelected] = createSignal<string | null>(null)
+    const [drillNote, setDrillNote] = createSignal<string | null>(null)
+    const [editing, setEditing] = createSignal<{ date: string; top: number; left: number } | null>(null)
 
-    // A data change that removes the selected bucket closes the drill.
-    createEffect(() => {
-        const sel = selected()
-        if (sel && !byDate().has(sel)) setSelected(null)
-    })
+    // NOTE: there used to be an effect here closing the drill whenever the selected date had no
+    // bucket in `byDate` — meant for "the data changed under us and the row disappeared". That
+    // is no longer a safe signal: a write-seam 'drill' action (heatmapWrites.ts's `dayAction`)
+    // deliberately opens the drill for a day with ZERO rows too (an empty day in a query-sourced
+    // chart, so the reader sees WHY there's nothing to edit), and that day never had a `byDate`
+    // bucket in the first place — the effect would close it the instant it opened.
 
     const peak = createMemo(() => {
         const pts = data().points
@@ -94,12 +137,13 @@ export function HeatmapView(props: ChartViewProps) {
         const h = hovered()
         if (h) {
             const bucket = byDate().get(h)
-            return bucketReadout(dayLabel(h), bucket?.value ?? 0, bucket?.rows.length ?? 0)
+            return bucketReadout(dayLabel(h), effectiveValue(h) ?? bucket?.value ?? 0, bucket?.rows.length ?? 0)
         }
         const p = peak()
-        const caption = chartCaption(data())
-        if (!p || !p.date) return [caption]
-        return [caption, `peak ${formatValue(p.value)} (${binLabel(p.date, 'day')})`]
+        const caption = heatmapCaption(data())
+        const hint = interactionHint(props.writes)
+        if (!p || !p.date) return [caption, hint]
+        return [caption, `peak ${formatValue(p.value)} (${binLabel(p.date, 'day')})`, hint]
     })
 
     const footerText = createMemo(() => {
@@ -121,10 +165,77 @@ export function HeatmapView(props: ChartViewProps) {
         return bucket.rows.map(i => all[i])
     })
 
-    const toggle = (date: string) => {
-        const bucket = byDate().get(date)
-        if (!bucket || bucket.rows.length === 0) return
-        setSelected(prev => (prev === date ? null : date))
+    /** Right-click always opens (or closes) the drill list of the day's rows — independent of
+     *  what a left-click does, and available even with no write seam. */
+    const onCellContextMenu = (cell: HeatCell, e: MouseEvent) => {
+        e.preventDefault()
+        setEditing(null)
+        setDrillNote(null)
+        setSelected(prev => (prev === cell.date ? null : cell.date))
+    }
+
+    const closeEditor = () => setEditing(null)
+
+    const saveDay = (dateISO: string, value: number | undefined) => {
+        const w = props.writes
+        setEditing(null)
+        if (!w) return
+        setOverrides(prev => {
+            const next = new Map(prev)
+            next.set(dateISO, value ?? 0)
+            return next
+        })
+        void w.onSetDay(dateISO, value)
+    }
+
+    const onCellClick = (cell: HeatCell, e: MouseEvent) => {
+        const w = props.writes
+        const bucket = byDate().get(cell.date)
+        const rowCount = bucket?.rows.length ?? 0
+        if (!w) {
+            // Read-only (no write target): the old behaviour — click opens/closes the drill.
+            if (rowCount === 0) return
+            setSelected(prev => (prev === cell.date ? null : cell.date))
+            return
+        }
+        const action = dayAction({
+            origin: w.origin,
+            isCount: w.isCount,
+            dateLabel: dayLabel(cell.date),
+            rowCount,
+            current: bucket?.value,
+        })
+        if (action.kind === 'toggle') {
+            setEditing(null)
+            setSelected(null)
+            const willFill = rowCount === 0
+            setOverrides(prev => {
+                const next = new Map(prev)
+                next.set(cell.date, willFill ? 1 : 0)
+                return next
+            })
+            void w.onToggleDay(cell.date)
+            return
+        }
+        if (action.kind === 'edit') {
+            setSelected(null)
+            const target = e.currentTarget as HTMLElement
+            const wrap = target.closest(`.${styles.heatmap}`) as HTMLElement | null
+            if (wrap) {
+                const wrapRect = wrap.getBoundingClientRect()
+                const cellRect = target.getBoundingClientRect()
+                setEditing({
+                    date: cell.date,
+                    top: cellRect.bottom - wrapRect.top + 4,
+                    left: cellRect.left - wrapRect.left,
+                })
+            }
+            return
+        }
+        // drill, with a message explaining why (several entries, no note, several notes, …)
+        setEditing(null)
+        setDrillNote(action.message)
+        setSelected(cell.date)
     }
 
     return (
@@ -142,12 +253,22 @@ export function HeatmapView(props: ChartViewProps) {
             }
             drill={
                 selected() ? (
-                    <ChartDrill
-                        title={dayLabel(selected()!)}
-                        rows={drillRows()}
-                        onOpen={props.onOpen}
-                        onClear={() => setSelected(null)}
-                    />
+                    <div class={styles.drillWrap}>
+                        {drillNote() ? (
+                            <Text as="div" inherit size="ui" tone="muted" class={styles.drillNote}>
+                                {drillNote()}
+                            </Text>
+                        ) : undefined}
+                        <ChartDrill
+                            title={dayLabel(selected()!)}
+                            rows={drillRows()}
+                            onOpen={props.onOpen}
+                            onClear={() => {
+                                setSelected(null)
+                                setDrillNote(null)
+                            }}
+                        />
+                    </div>
                 ) : undefined
             }
         >
@@ -200,7 +321,10 @@ export function HeatmapView(props: ChartViewProps) {
                                                         prev === cell.date ? null : prev,
                                                     )
                                                 }
-                                                onClick={() => toggle(cell.date)}
+                                                onClick={e => onCellClick(cell, e)}
+                                                onContextMenu={e =>
+                                                    onCellContextMenu(cell, e)
+                                                }
                                             >
                                                 {glyphOf(lv)}
                                             </Text>
@@ -211,40 +335,34 @@ export function HeatmapView(props: ChartViewProps) {
                         )}
                     </For>
                 </div>
+                {editing() ? (
+                    <HeatmapDayEditor
+                        dateLabel={dayLabel(editing()!.date)}
+                        value={effectiveValue(editing()!.date) ?? undefined}
+                        style={{ top: `${editing()!.top}px`, left: `${editing()!.left}px` }}
+                        onSave={value => saveDay(editing()!.date, value)}
+                        onCancel={closeEditor}
+                    />
+                ) : undefined}
                 <div class={styles.legend}>
-                    <Text as="span" inherit>
-                        less
-                    </Text>
-                    <Text
-                        as="span"
-                        inherit
-                        class={`${styles.legendGlyph} ${styles.lv0}`}
-                    >
-                        .
-                    </Text>
-                    <Text
-                        as="span"
-                        inherit
-                        class={`${styles.legendGlyph} ${styles.lv1}`}
-                    >
-                        -
-                    </Text>
-                    <Text
-                        as="span"
-                        inherit
-                        class={`${styles.legendGlyph} ${styles.lv2}`}
-                    >
-                        +
-                    </Text>
-                    <Text
-                        as="span"
-                        inherit
-                        class={`${styles.legendGlyph} ${styles.lv3}`}
-                    >
-                        #
-                    </Text>
-                    <Text as="span" inherit>
-                        more
+                    <For each={legendRanges(data().min, data().max)}>
+                        {entry => (
+                            <Text as="span" inherit class={styles.legendEntry}>
+                                <Text
+                                    as="span"
+                                    inherit
+                                    class={`${styles.legendGlyph} ${styles[entry.levelClass]}`}
+                                >
+                                    {entry.glyph}
+                                </Text>
+                                <Text as="span" inherit class={styles.legendRange}>
+                                    {entry.range}
+                                </Text>
+                            </Text>
+                        )}
+                    </For>
+                    <Text as="span" inherit class={styles.legendRange}>
+                        {`// ${data().valueLabel} per day`}
                     </Text>
                 </div>
             </div>

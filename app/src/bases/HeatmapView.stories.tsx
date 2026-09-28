@@ -2,11 +2,14 @@
 // `buildChartData`/`buildHeatmapWeeks` pipeline (core/src/bases/chart.ts) as the other chart
 // views, but always day-binned. Requires an `x` that resolves to ISO date strings (or a
 // majority-date column for auto-detection) or it renders the empty state.
+import { createMemo, createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
+import { runView } from '../../../core/src/bases/query'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { HeatmapView } from './HeatmapView'
+import type { HeatmapWriteSeam } from './heatmapWrites'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 
 const meta = {
@@ -34,6 +37,30 @@ function entryRow(i: number, iso: string, words: number): Row {
         },
         note: { date: iso, words },
         formula: {},
+    }
+}
+
+/** A row stored in a base file's own table: `index` (position in that table) + `file.path` =
+ *  the base file itself — the two write-back handles `heatmapWrites.ts`/BaseView's write seam
+ *  need (see BaseView.tsx's heatmap-write-seam comment). `y` is optional so the same helper
+ *  builds both a numeric log (EditableValues) and a plain habit-check (ToggleDays, no `words`). */
+function baseRow(i: number, iso: string, basePath: string, words?: number): Row {
+    return {
+        file: {
+            name: 'Journal',
+            basename: 'Journal',
+            path: basePath,
+            folder: '',
+            ext: 'md',
+            size: 128,
+            ctime: 0,
+            mtime: 0,
+            tags: [],
+            links: [],
+        },
+        note: words === undefined ? { date: iso } : { date: iso, words },
+        formula: {},
+        index: i,
     }
 }
 
@@ -193,5 +220,241 @@ export const Narrow: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** Base-owned numeric chart (the default: no `source:`, so the base file's own row table IS the
+ *  data — no daily notes required). Rows live in a signal the story's own `onSetDay` mutates, so
+ *  clicking an empty day, typing a value and pressing Enter visibly fills the square — a no-op
+ *  callback would look identical to a broken one here. */
+export const EditableValues: Story = {
+    render: () => {
+        const views = [
+            { type: 'heatmap' as const, name: 'Journal', x: 'date', y: 'words' },
+        ]
+        const basePath = 'Journal.md'
+        const today = todayISO()
+        const [rows, setRows] = createSignal<Row[]>(
+            [0, -1, -3, -4].map((offset, i) =>
+                baseRow(i, addDaysISO(today, offset), basePath, 60 + i * 40),
+            ),
+        )
+        const result = createMemo(() =>
+            runView(sampleBaseConfig({ views }), rows(), 0),
+        )
+        const writes: HeatmapWriteSeam = {
+            origin: 'base',
+            isCount: false,
+            onSetDay: async (date, value) => {
+                setRows(prev => {
+                    const idx = prev.findIndex(r => r.note.date === date)
+                    if (idx === -1) {
+                        if (value === undefined || value === 0) return prev
+                        return [...prev, baseRow(prev.length, date, basePath, value)]
+                    }
+                    if (value === undefined || value === 0)
+                        return prev.filter((_, i) => i !== idx)
+                    return prev.map((r, i) =>
+                        i === idx ? { ...r, note: { ...r.note, words: value } } : r,
+                    )
+                })
+            },
+            onToggleDay: async () => {},
+        }
+        return (
+            <HeatmapView
+                result={result()}
+                config={sampleBaseConfig({ views })}
+                writes={writes}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const today = todayISO()
+        const emptyDay = addDaysISO(today, -2)
+        let cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )
+            if (!el) throw new Error('empty-day cell not yet rendered')
+            return el
+        })
+        expect(cell.textContent).toBe('.')
+        cell.click()
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLInputElement>('input')
+            if (!el) throw new Error('day editor not yet open')
+            return el
+        })
+        input.value = '42'
+        input.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+        )
+        await waitFor(() => {
+            cell = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )!
+            if (cell.textContent === '.') throw new Error('square not filled yet')
+            return cell
+        })
+        expect(cell.textContent).not.toBe('.')
+        cell.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+        await waitFor(() => {
+            const readout = canvasElement.querySelector('[class*="active"]')
+            if (!readout || !readout.textContent?.includes('42'))
+                throw new Error('readout does not show the saved value yet')
+            return readout
+        })
+    },
+}
+
+/** Base-owned COUNT chart (no `y` — the view counts rows, not a value): clicking a day toggles it
+ *  on (creates a row) or off (deletes every row on that day) rather than opening a number field. */
+export const ToggleDays: Story = {
+    render: () => {
+        const views = [{ type: 'heatmap' as const, name: 'Habit', x: 'date' }]
+        const basePath = 'Habit.md'
+        const today = todayISO()
+        const [rows, setRows] = createSignal<Row[]>(
+            [0, -1, -2].map((offset, i) => baseRow(i, addDaysISO(today, offset), basePath)),
+        )
+        const result = createMemo(() =>
+            runView(sampleBaseConfig({ views }), rows(), 0),
+        )
+        const writes: HeatmapWriteSeam = {
+            origin: 'base',
+            isCount: true,
+            onSetDay: async () => {},
+            onToggleDay: async date => {
+                setRows(prev => {
+                    const hasDay = prev.some(r => r.note.date === date)
+                    if (!hasDay) return [...prev, baseRow(prev.length, date, basePath)]
+                    return prev
+                        .filter(r => r.note.date !== date)
+                        .map((r, i) => ({ ...r, index: i }))
+                })
+            },
+        }
+        return (
+            <HeatmapView
+                result={result()}
+                config={sampleBaseConfig({ views })}
+                writes={writes}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const today = todayISO()
+        const emptyDay = addDaysISO(today, -5)
+        let cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )
+            if (!el) throw new Error('cell not yet rendered')
+            return el
+        })
+        expect(cell.textContent).toBe('.')
+        cell.click()
+        await waitFor(() => {
+            cell = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )!
+            if (cell.textContent === '.') throw new Error('square not toggled on yet')
+            return cell
+        })
+        expect(cell.textContent).not.toBe('.')
+        cell.click()
+        await waitFor(() => {
+            cell = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )!
+            if (cell.textContent !== '.') throw new Error('square not toggled off yet')
+            return cell
+        })
+        expect(cell.textContent).toBe('.')
+    },
+}
+
+/** Query-sourced chart (rows come from a notes source, so squares map to notes — `Row.index` is
+ *  undefined). A day with exactly one note edits its `words` property directly; an empty day has
+ *  nowhere to write, so a click only surfaces why, via the readout/drill message. */
+export const QuerySource: Story = {
+    render: () => {
+        const views = [
+            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
+        ]
+        const today = todayISO()
+        const [rows, setRows] = createSignal<Row[]>([
+            entryRow(0, today, 180),
+        ])
+        const result = createMemo(() =>
+            runView(sampleBaseConfig({ views }), rows(), 0),
+        )
+        const writes: HeatmapWriteSeam = {
+            origin: 'query',
+            isCount: false,
+            onSetDay: async (date, value) => {
+                if (value === undefined) return
+                setRows(prev =>
+                    prev.map(r =>
+                        r.note.date === date ? { ...r, note: { ...r.note, words: value } } : r,
+                    ),
+                )
+            },
+            onToggleDay: async () => {},
+        }
+        return (
+            <HeatmapView
+                result={result()}
+                config={sampleBaseConfig({ views })}
+                writes={writes}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const today = todayISO()
+        // The one-note day edits directly.
+        let cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${today}"]`,
+            )
+            if (!el) throw new Error('one-note cell not yet rendered')
+            return el
+        })
+        cell.click()
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLInputElement>('input')
+            if (!el) throw new Error('day editor not yet open')
+            return el
+        })
+        input.value = '260'
+        input.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+        )
+        await waitFor(() => {
+            cell = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${today}"]`,
+            )!
+            return cell
+        })
+        // An empty day has no note to edit — clicking shows the drill/readout message instead
+        // of an editor, and no input should appear.
+        const emptyDay = addDaysISO(today, -3)
+        const emptyCell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${emptyDay}"]`,
+            )
+            if (!el) throw new Error('empty-day cell not yet rendered')
+            return el
+        })
+        emptyCell.click()
+        await waitFor(() => {
+            const clear = Array.from(
+                canvasElement.querySelectorAll('button'),
+            ).find(b => b.textContent?.includes('clear'))
+            if (!clear) throw new Error('drill not yet open for the empty day')
+            return clear
+        })
+        expect(canvasElement.textContent).toContain('no note on')
     },
 }

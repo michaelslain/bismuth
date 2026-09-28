@@ -1,0 +1,27 @@
+.sparkline {
+    margin-top: var(--sp-1);
+}
+
+.glyphs {
+    font-size: var(--fs-ui);
+    font-family: var(--ui-font-stack);
+    letter-spacing: 0.05em;
+}
+
+.glyph {
+    color: var(--faint);
+    cursor: default;
+}
+
+.glyph:hover {
+    color: var(--fg);
+}
+
+.glyph.current {
+    color: var(--accent);
+}
+
+.caption {
+    font-family: var(--ui-font-stack);
+    margin-top: var(--sp-1);
+}

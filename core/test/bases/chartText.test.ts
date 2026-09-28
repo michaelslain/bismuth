@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    axisName,
     bucketReadout,
     chartCaption,
     formatValue,
     propName,
+    valueAxisName,
 } from '../../src/bases/chartText'
 import type { ChartSpec } from '../../src/bases/chartLatex'
 
@@ -87,7 +89,7 @@ describe('formatValue', () => {
 })
 
 describe('bucketReadout', () => {
-    test('plural notes', () => {
+    test('plural notes (no aggregate — legacy 3-arg call)', () => {
         expect(bucketReadout('Jul 20', 3, 2)).toEqual(['Jul 20', '3', '2 notes'])
     })
     test('singular note', () => {
@@ -99,5 +101,42 @@ describe('bucketReadout', () => {
             '2.7',
             '4 notes',
         ])
+    })
+    test('count aggregate collapses value + note count into one part', () => {
+        expect(bucketReadout('Doing', 2, 2, 'count')).toEqual(['Doing', '2 notes'])
+    })
+    test('count aggregate stays singular for one note', () => {
+        expect(bucketReadout('Doing', 1, 1, 'count')).toEqual(['Doing', '1 note'])
+    })
+    test('non-count aggregate labels the value', () => {
+        expect(bucketReadout('Jul 20', 5, 2, 'sum')).toEqual([
+            'Jul 20',
+            'sum 5',
+            '2 notes',
+        ])
+    })
+})
+
+describe('axisName', () => {
+    test('no x', () => {
+        expect(axisName(undefined, false, 'day')).toBe('')
+    })
+    test('categorical x is just the prop name', () => {
+        expect(axisName('note.status', false, 'day')).toBe('status')
+    })
+    test('date x carries its bin', () => {
+        expect(axisName('note.due', true, 'week')).toBe('due (week)')
+    })
+})
+
+describe('valueAxisName', () => {
+    test('count reads notes', () => {
+        expect(valueAxisName('count', undefined)).toBe('notes')
+    })
+    test('sum reads aggregate + prop name', () => {
+        expect(valueAxisName('sum', 'note.priority')).toBe('sum priority')
+    })
+    test('no y falls back to just the aggregate word', () => {
+        expect(valueAxisName('avg', undefined)).toBe('avg')
     })
 })

@@ -93,7 +93,7 @@ export function LineView(props: ChartViewProps) {
         const idx = hoverIdx()
         if (idx !== null) {
             const p = visiblePoints()[idx]
-            if (p) return bucketReadout(p.label, p.value, p.rows.length)
+            if (p) return bucketReadout(p.label, p.value, p.rows.length, data().aggregate)
         }
         const parts = [caption()]
         const peak = peakPart()

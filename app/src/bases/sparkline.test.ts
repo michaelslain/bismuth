@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { sparkline } from './sparkline'
+import { sparkline, sparklineCaption, hoverPeriodText } from './sparkline'
 
 describe('sparkline', () => {
     test('empty series renders nothing', () => {
@@ -28,5 +28,24 @@ describe('sparkline', () => {
 
     test('negative values scale the same way as positive ones', () => {
         expect(sparkline([-10, 0, 10])).toBe('▁▅█')
+    })
+})
+
+describe('sparklineCaption', () => {
+    test('names the bin word in plural, with the bin count', () => {
+        expect(sparklineCaption('week', 12)).toBe('last 12 weeks')
+        expect(sparklineCaption('day', 12)).toBe('last 12 days')
+        expect(sparklineCaption('month', 6)).toBe('last 6 months')
+    })
+})
+
+describe('hoverPeriodText', () => {
+    test('formats bin word + label + value', () => {
+        expect(hoverPeriodText('week', 'Jun 8', 5)).toBe('week of Jun 8 // 5')
+        expect(hoverPeriodText('day', 'Jun 8', 2.5)).toBe('day of Jun 8 // 2.5')
+    })
+
+    test('a null value renders as —', () => {
+        expect(hoverPeriodText('week', 'Jun 8', null)).toBe('week of Jun 8 // —')
     })
 })

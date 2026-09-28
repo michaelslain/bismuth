@@ -2,7 +2,7 @@
    A year-wide contribution grid: as many 2-character-pitch week columns (glyph + space) as the
    pane fits, ending on the week holding the later of today and the latest data date. */
 .heatmap { display: flex; flex-direction: column; gap: var(--sp-4); }
-.heatmap { width: max-content; }
+.heatmap { width: max-content; position: relative; }
 .heatMonths {
   display: flex;
   font-size: var(--fs-ui);
@@ -33,3 +33,7 @@
   font-family: var(--ui-font-stack);
 }
 .legend .legendGlyph { width: 1ch; text-align: center; }
+.legendEntry { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.legendRange { color: var(--text-muted); }
+.drillWrap { display: flex; flex-direction: column; gap: var(--sp-1); }
+.drillNote { font-style: italic; }

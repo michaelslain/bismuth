@@ -197,6 +197,23 @@ describe('metricResults', () => {
         expect(r.series).toHaveLength(12)
         expect(r.series[11]).toBe(2) // last entry = current bin
         expect(r.series[10]).toBe(5) // previous bin
+        expect(r.seriesKeys).toHaveLength(12)
+        expect(r.seriesKeys[11]).toBe('2026-06-15') // current bin's own key
+        expect(r.seriesKeys[10]).toBe('2026-06-08') // previous bin's key
+        expect(r.seriesLabels).toHaveLength(12)
+        expect(r.seriesLabels[11]).toBe('Jun 15')
+        expect(r.seriesLabels[10]).toBe('Jun 8')
+    })
+
+    test('seriesKeys/seriesLabels are empty when x is not a date axis', () => {
+        const rows = [row({ cat: 'a', priority: 2 })]
+        const v = view({
+            x: 'cat',
+            stats: [{ label: 'Total', value: 'sum(priority)' }],
+        })
+        const [r] = metricResults(rows, v, today)
+        expect(r.seriesKeys).toEqual([])
+        expect(r.seriesLabels).toEqual([])
     })
 
     test('a bin with no rows evaluates over an empty set', () => {

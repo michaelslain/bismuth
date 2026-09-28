@@ -85,7 +85,15 @@ export const HoverAndDrill: Story = {
         })
         const key = row.dataset.bucket
 
-        // Hovering switches the readout to the bucket's own line — `<key> // <value> // N notes`.
+        // A count chart's header names both axes: `status` over the labels, `notes` over the
+        // value column — and never duplicates the value as a raw number in the hover line.
+        await waitFor(() => {
+            expect(canvasElement.textContent).toContain('status')
+            expect(canvasElement.textContent).toContain('notes')
+        })
+
+        // Hovering switches the readout to the bucket's own line — a count chart collapses to
+        // `<key> // N notes` (no separately-labelled value, since it duplicates the count).
         await userEvent.hover(row)
         await waitFor(
             () => {
@@ -98,11 +106,15 @@ export const HoverAndDrill: Story = {
         // Hovering must not rebuild the rows — the node under the pointer stays the same one.
         expect(row.isConnected).toBe(true)
 
-        // Clicking opens the drill list under the chart — a header plus a `[ clear ]` button.
+        // Clicking opens the drill list under the chart — a header plus a `[ clear ]` button —
+        // and marks the selected row's own label with a `>` lead-in.
         // Re-query by bucket so a legitimate re-layout never leaves the click on a detached node.
         const target = canvasElement.querySelector<HTMLElement>(`[data-bucket="${key}"]`)
         if (!target) throw new Error(`row ${key} vanished`)
         await userEvent.click(target)
+        await waitFor(() => {
+            expect(target.textContent?.trimStart().startsWith('>')).toBe(true)
+        })
         const clearButton = await waitFor(
             () => {
                 const btn = Array.from(canvasElement.querySelectorAll('button')).find(b =>

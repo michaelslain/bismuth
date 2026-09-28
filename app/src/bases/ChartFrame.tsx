@@ -45,10 +45,21 @@ const ChartFrame: Component<ChartFrameProps> = props => {
 
     onMount(() => {
         measure()
-        if (!bodyRef || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(() => measure())
-        observer.observe(bodyRef)
-        onCleanup(() => observer.disconnect())
+        if (bodyRef && typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver(() => measure())
+            observer.observe(bodyRef)
+            // The probe's OWN box changes when the mono font swaps in (fallback -> Monaspace
+            // Xenon) without `.body` resizing — that's the font-load overflow bug (Review Focus
+            // #1): columns stayed computed from the fallback font's narrower cellWidth.
+            if (probeRef) observer.observe(probeRef)
+            onCleanup(() => observer.disconnect())
+        }
+        if (typeof document !== 'undefined' && document.fonts) {
+            document.fonts.ready.then(measure)
+            const onLoadingDone = () => measure()
+            document.fonts.addEventListener('loadingdone', onLoadingDone)
+            onCleanup(() => document.fonts.removeEventListener('loadingdone', onLoadingDone))
+        }
     })
 
     return (

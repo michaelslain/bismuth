@@ -57,6 +57,13 @@ import { BulletsView } from './BulletsView'
 import { KanbanView } from './KanbanView'
 import { MapView } from './MapView'
 import { HeatmapView } from './HeatmapView'
+import {
+    planSetValue,
+    planToggle,
+    type HeatmapOrigin,
+    type HeatmapWriteSeam,
+    type WriteRow,
+} from './heatmapWrites'
 import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
@@ -900,6 +907,92 @@ export function BaseView(props: {
         else await refetchRows()
     }
 
+    // ── The heatmap write seam ────────────────────────────────────────────────
+    /**
+     * HeatmapView never calls `api` directly — it is handed a `HeatmapWriteSeam` (heatmapWrites.
+     * ts) built here from the SAME resolved x/y/aggregate `buildChartData` produces for the
+     * chart-axis pickers above, plus whichever origin `ownsRows()` says this view has. `undefined`
+     * (no `basePath`, no resolved date x, or the view isn't a heatmap) means the view is
+     * read-only — an inline ```query block with no base file has nowhere to write, same as the
+     * chart config bar's own `basePath` gate above.
+     *
+     * `chart.points[].rows` are indices into THIS memo's own `rowsAll` flat array (buildChartData
+     * bucketed exactly those rows), so resolving "what's on this day" never needs a second lookup
+     * against `resolveProperty` — the bucketing HeatmapView itself does for rendering already
+     * answered it.
+     */
+    const heatmapWrites = createMemo<HeatmapWriteSeam | undefined>(() => {
+        if (activeType() !== 'heatmap') return undefined
+        const path = data()?.basePath
+        const view = activeViewConfig()
+        const res = result()
+        if (!path || !view || !res) return undefined
+        const rowsAll = res.groups.flatMap(g => g.rows)
+        const chart = buildChartData(rowsAll, { ...view, bin: 'day' })
+        if (!chart.isDate || !chart.x) return undefined
+        const xKey = chart.x
+        const yKey = chart.y
+        const isCount = chart.aggregate === 'count' || !yKey
+        const origin: HeatmapOrigin = ownsRows() ? 'base' : 'query'
+
+        const rowsFor = (date: string): WriteRow[] => {
+            const pt = chart.points.find(p => p.date === date)
+            if (!pt) return []
+            return pt.rows.map(i => {
+                const r = rowsAll[i]
+                return { index: r.index, path: r.file.path, note: r.note }
+            })
+        }
+
+        const onSetDay = async (date: string, entered: number | undefined) => {
+            if (!yKey) return
+            const row = rowsFor(date)[0]
+            const intent = planSetValue({ origin, xKey, yKey, date, row, entered })
+            try {
+                switch (intent.kind) {
+                    case 'none':
+                        return
+                    case 'create':
+                        await api.rowCreate(path, intent.note)
+                        break
+                    case 'update':
+                        await api.rowUpdate(path, intent.index, intent.note)
+                        break
+                    case 'delete':
+                        await api.rowDelete(path, intent.index)
+                        break
+                    case 'set-property':
+                        await api.setProperty(intent.path, intent.key, intent.value)
+                        break
+                }
+                await refetchAll()
+            } catch (err) {
+                writeFailed('log the day')(err)
+            }
+        }
+
+        const onToggleDay = async (date: string) => {
+            const intent = planToggle({ xKey, date, rows: rowsFor(date) })
+            try {
+                switch (intent.kind) {
+                    case 'none':
+                        return
+                    case 'create':
+                        await api.rowCreate(path, intent.note)
+                        break
+                    case 'delete-many':
+                        for (const index of intent.indices) await api.rowDelete(path, index)
+                        break
+                }
+                await refetchAll()
+            } catch (err) {
+                writeFailed('toggle the day')(err)
+            }
+        }
+
+        return { origin, isCount, onSetDay, onToggleDay }
+    })
+
     /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
      *  has no bar-level create action at all any more: a click on a day cell opens an inline
      *  composer that dates the task on that day (CalendarView.tsx's TasksCalendar) — and
@@ -1280,6 +1373,7 @@ export function BaseView(props: {
                                                         result={res()}
                                                         config={data()!.config}
                                                         onOpen={props.onOpen}
+                                                        writes={heatmapWrites()}
                                                     />
                                                 </Match>
                                                 <Match

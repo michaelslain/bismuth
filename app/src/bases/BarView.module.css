@@ -10,6 +10,10 @@
     white-space: pre;
 }
 
+.header {
+    white-space: pre;
+}
+
 .row {
     display: flex;
     cursor: pointer;

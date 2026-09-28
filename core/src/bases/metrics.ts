@@ -5,7 +5,7 @@ import { evaluate } from './evaluate'
 import { toContext } from './query'
 import { toNumber, truthy } from './values'
 import { buildChartData, type ChartData, type Aggregate } from './chart'
-import { binKey, addDaysISO, type Bin } from '../dates'
+import { binKey, binLabel, addDaysISO, type Bin } from '../dates'
 
 export type MetricResult = {
     label: string
@@ -14,6 +14,8 @@ export type MetricResult = {
     current: number | null // over rows in the bin containing `today`
     previous: number | null // over rows in the bin before that
     series: (number | null)[] // the last 12 bins ending at today's bin, oldest first
+    seriesKeys: string[] // ISO bin keys, same length/order as `series`
+    seriesLabels: string[] // binLabel(key, bin) per entry, same length/order as `series`
     bin: Bin // view.bin ?? 'week'
     hasTime: boolean // false when x is not a date axis: current/previous null, series []
     error?: string
@@ -168,6 +170,8 @@ export function metricResults(
         let current: number | null = null
         let previous: number | null = null
         let series: (number | null)[] = []
+        let seriesKeys: string[] = []
+        let seriesLabels: string[] = []
         let error: string | undefined
 
         const rowsForBin = (key: string): Row[] => {
@@ -191,6 +195,8 @@ export function metricResults(
                     k = stepBin(k, bin, -1)
                 }
                 series = keys.map(key => evalMetricExpr(ast, rowsForBin(key)))
+                seriesKeys = keys
+                seriesLabels = keys.map(key => binLabel(key, bin))
             }
         } catch (e) {
             error = e instanceof Error ? e.message : String(e)
@@ -198,6 +204,8 @@ export function metricResults(
             current = null
             previous = null
             series = []
+            seriesKeys = []
+            seriesLabels = []
         }
 
         return {
@@ -207,6 +215,8 @@ export function metricResults(
             current: hasTime ? current : null,
             previous: hasTime ? previous : null,
             series: hasTime ? series : [],
+            seriesKeys: hasTime ? seriesKeys : [],
+            seriesLabels: hasTime ? seriesLabels : [],
             bin,
             hasTime,
             error,

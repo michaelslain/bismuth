@@ -8,7 +8,6 @@ import { formatValue } from '../../../core/src/bases/chartText'
 import { todayISO } from '../../../core/src/dates'
 import ChartFrame from './ChartFrame'
 import StatTiles, { type StatTile } from './StatTiles'
-import { sparkline } from './sparkline'
 import type { ChartViewProps } from './chartViewProps'
 
 // `3 this week // 1 last week` — day bins read as `today`/`yesterday` instead of the generic
@@ -43,18 +42,17 @@ export function StatView(props: ChartViewProps) {
     )
 
     const tiles = createMemo<StatTile[]>(() =>
-        metrics().map((m, i) => {
-            const spark = m.hasTime ? sparkline(m.series) : ''
-            return {
-                label: m.label,
-                value: m.value === null ? '—' : formatValue(m.value),
-                tone: i === 0 ? 'accent' : undefined,
-                period: periodLine(m),
-                spark: spark || undefined,
-                tex: metricTex(m),
-                error: m.error,
-            }
-        }),
+        metrics().map((m, i) => ({
+            label: m.label,
+            value: m.value === null ? '—' : formatValue(m.value),
+            tone: i === 0 ? 'accent' : undefined,
+            period: periodLine(m),
+            spark: m.hasTime
+                ? { values: m.series, keys: m.seriesKeys, labels: m.seriesLabels, bin: m.bin }
+                : undefined,
+            tex: metricTex(m),
+            error: m.error,
+        })),
     )
 
     return (

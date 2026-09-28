@@ -19,6 +19,12 @@
 }
 
 .row {
-    justify-content: flex-start;
-    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-1);
+}
+
+.prefix {
+    white-space: pre;
+    flex-shrink: 0;
 }
