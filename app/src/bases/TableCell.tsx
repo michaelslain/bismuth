@@ -40,21 +40,28 @@ const TableCell: Component<TableCellProps> = props => {
         value: unknown
     } | null>(null)
     const value = () => resolveProperty(props.col, props.row)
-    const open = () =>
-        setEditing({
-            kind: propertyEditKind(
-                props.col,
-                value(),
-                propertyRegistry(),
-                props.siblingValues(),
-                propertyType(props.config, props.col),
-            ),
-            value: value(),
-        })
     const commit = (v: unknown, opts?: { keepOpen?: boolean }) => {
         const t = propertyType(props.config, props.col)
         props.onCommit((t ? coercePropertyValue(t, v) : v) ?? null)
         if (!opts?.keepOpen) setEditing(null)
+    }
+    // A boolean never becomes an `editing` state and never mounts PropertyValueEditor — a click
+    // commits the flip immediately. Checking the kind here (rather than gating on it inside the
+    // editor) is what keeps `editing()` boolean-free, so the Show below never has to special-case
+    // it once open.
+    const open = () => {
+        const kind = propertyEditKind(
+            props.col,
+            value(),
+            propertyRegistry(),
+            props.siblingValues(),
+            propertyType(props.config, props.col),
+        )
+        if (kind.kind === 'boolean') {
+            commit(!(value() === true))
+            return
+        }
+        setEditing({ kind, value: value() })
     }
 
     return (

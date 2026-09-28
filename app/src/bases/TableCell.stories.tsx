@@ -70,3 +70,49 @@ export const EditInPlace: Story = {
         ).toBe('Frank Herbert')
     },
 }
+
+/** A boolean cell never becomes an `editing` state — a click commits the flip immediately,
+ *  with no `PropertyValueEditor`/input ever mounted. Read-only look is the same `x`/blank
+ *  `renderValue.tsx` uses; state is a real signal, so two clicks round-trip true → false → true. */
+export const BooleanToggle: Story = {
+    render: () => {
+        const [done, setDone] = createSignal(false)
+        const row = (): Row => ({
+            file: syntheticBaseFile('Reading List.md'),
+            note: { title: 'Dune', done: done() },
+            formula: {},
+            index: 0,
+        })
+        return (
+            <div style={{ width: '120px', padding: '12px' }}>
+                <TableCell
+                    row={row()}
+                    col="done"
+                    config={sampleBaseConfig()}
+                    siblingValues={() => []}
+                    onCommit={v => setDone(v === true)}
+                >
+                    <Text as="span" data-testid="cell-value">
+                        {done() ? 'x' : ''}
+                    </Text>
+                </TableCell>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cellText = () =>
+            (
+                canvasElement.querySelector('[data-testid="cell-value"]')!
+                    .textContent ?? ''
+            ).trim()
+        expect(cellText()).toBe('')
+        canvasElement.querySelector<HTMLElement>('button')!.click()
+        await new Promise(r => setTimeout(r, 30))
+        expect(cellText()).toBe('x')
+        expect(canvasElement.querySelector('input')).toBeNull()
+        canvasElement.querySelector<HTMLElement>('button')!.click()
+        await new Promise(r => setTimeout(r, 30))
+        expect(cellText()).toBe('')
+        expect(canvasElement.querySelector('input')).toBeNull()
+    },
+}
