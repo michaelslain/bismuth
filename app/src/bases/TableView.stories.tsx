@@ -494,8 +494,13 @@ export const TagsPickerStaysOpenAcrossToggles: Story = {
         await waitFor(() =>
             expect(document.querySelector('.bismuth-popover')).toBeNull(),
         )
-        const shown = cell().textContent ?? ''
-        for (const t of ['alpha', 'beta', 'gamma']) expect(shown).toContain(t)
+        // Closed, the cell reads exactly like the read-only tag style — NOT `alpha,beta,gamma`,
+        // which is what a tags column that is the table's FIRST (title) column used to show
+        // (renderTitle stringified the array). The value itself is still an array.
+        await waitFor(() =>
+            expect((cell().textContent ?? '').trim()).toBe('#alpha#beta#gamma'),
+        )
+        expect(pickRows[0]!.note.tags).toEqual(['alpha', 'beta', 'gamma'])
     },
 }
 

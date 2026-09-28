@@ -5,6 +5,9 @@
 // but every row TOGGLES instead of choosing-and-closing, so the list stays open across several
 // picks. A filter input at the top narrows the rows and, when `creatable`, doubles as the "add
 // a new value" field for an unmatched entry (Enter with no matching row appends it verbatim).
+// Typing behaves like the note editor's tag completion: rows rank prefix-first (prefixRank.ts),
+// the best match is highlighted, and the editor's own accept key (`accept-completion`, Tab by
+// default) or Enter AUTOFILLS the highlighted row — selects it and clears the filter.
 import { createMemo, createSignal, onMount, type JSX } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import PopoverList from './popover/PopoverList'
@@ -13,6 +16,9 @@ import BracketToggle from './BracketToggle'
 import FormControl from './FormControl'
 import TextInput from './TextInput'
 import { isConfirmKey } from './widgetKeys'
+import { prefixRank } from './prefixRank'
+import { matchesKeybinding } from '../keybindings'
+import { settings } from '../settings'
 import styles from './MultiSelect.module.css'
 
 export type MultiSelectProps = {
@@ -41,18 +47,8 @@ export type MultiSelectProps = {
     class?: string
 }
 
-/** `order` filtered by a case-insensitive substring match, keeping its relative order. Takes an
- *  already-ordered list rather than computing selected-first itself — see `MultiSelect`'s
- *  `openMenu`/`order` for why: recomputing "selected first" on every toggle moves the row you
- *  just clicked out from under your cursor mid-session. */
-export function visibleOptions(order: string[], filter: string): string[] {
-    const q = filter.trim().toLowerCase()
-    const matches = (o: string) => !q || o.toLowerCase().includes(q)
-    return order.filter(matches)
-}
-
 /** Selected-first ordering of `options`, computed once (at open) rather than on every render —
- *  the fixed order `visibleOptions` then filters. */
+ *  the fixed order `rows` then filters and ranks. */
 function selectedFirst(options: string[], value: string[]): string[] {
     const selected = options.filter(o => value.includes(o))
     const rest = options.filter(o => !value.includes(o))
@@ -72,7 +68,17 @@ function MultiSelect(props: MultiSelectProps) {
     let triggerRef: HTMLButtonElement | undefined
     let filterRef: HTMLInputElement | undefined
 
-    const rows = createMemo(() => visibleOptions(order(), filter()))
+    // The frozen order plus any option that arrived AFTER it froze, appended — a caller's options
+    // can grow while the list is open (PropertyValueEditor's vault-wide tags land a fetch later),
+    // and appending never moves a row already on screen.
+    const fullOrder = createMemo(() => {
+        const o = order()
+        const late = props.options.filter(x => !o.includes(x))
+        return late.length ? [...o, ...late] : o
+    })
+    // Filtered + ranked prefix-first (the order `order` fixed is kept within each rank), not
+    // re-sorted by selection — see `order` above.
+    const rows = createMemo(() => prefixRank(fullOrder(), filter()))
     const canCreate = createMemo(() => {
         if (!props.creatable) return false
         const q = filter().trim()
@@ -88,6 +94,16 @@ function MultiSelect(props: MultiSelectProps) {
         // A clicked row takes focus, then PopoverList rebuilds every row (its items are fresh
         // objects each render) and focus falls to <body> — typing and arrow keys go nowhere
         // until the user clicks back into the filter. The filter is this list's keyboard home.
+        queueMicrotask(() => filterRef?.focus())
+    }
+
+    /** Tab/Enter on a typed filter: select the highlighted row (never DEselect — autofill only
+     *  adds, like accepting an editor completion), clear the filter, and keep that row
+     *  highlighted in the full list so a second Enter toggles the same row. */
+    function autofill(v: string): void {
+        if (!props.value.includes(v)) props.onChange([...props.value, v])
+        setFilter('')
+        nav.setActive(Math.max(0, rows().indexOf(v)))
         queueMicrotask(() => filterRef?.focus())
     }
 
@@ -186,14 +202,25 @@ function MultiSelect(props: MultiSelectProps) {
                         }
                         onKeyDown={e => {
                             e.stopPropagation()
-                            if (
-                                isConfirmKey(e) &&
-                                rows().length === 0 &&
-                                canCreate()
-                            ) {
-                                e.preventDefault()
-                                create()
-                                return
+                            const confirm = isConfirmKey(e)
+                            const accept =
+                                confirm ||
+                                matchesKeybinding(
+                                    e,
+                                    settings.keybindings['accept-completion'],
+                                )
+                            if (accept && filter().trim()) {
+                                const v = rows()[nav.active()] ?? rows()[0]
+                                if (v) {
+                                    e.preventDefault()
+                                    autofill(v)
+                                    return
+                                }
+                                if (confirm && canCreate()) {
+                                    e.preventDefault()
+                                    create()
+                                    return
+                                }
                             }
                             nav.onKeyDown(e)
                         }}

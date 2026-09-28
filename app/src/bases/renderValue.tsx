@@ -106,7 +106,21 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
     // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
     // its own target; otherwise stringify and open this row's note.
-    const label = isLink(v) ? linkLabel(v as Link) : v == null ? '' : String(v)
+    // A list value must not reach `String()`: that joins with a bare `,` (`alpha,beta,gamma`),
+    // which is how a tags column that happened to be the FIRST column read after an edit — the
+    // same value renderCell shows as `#alpha #beta #gamma` one column over. A tag column keeps
+    // renderTags' own look; any other list joins the way renderValue's generic array branch does.
+    const list = !isLink(v) && Array.isArray(v) ? v.map(String) : null
+    const label = isLink(v)
+        ? linkLabel(v as Link)
+        : list
+          ? list.join(', ')
+          : v == null
+            ? ''
+            : String(v)
+    const tagged = !isLink(v) && isTagColumn(id) && label !== ''
+    const content = (): JSX.Element =>
+        tagged ? renderTags(v) : label || row.file.name
     const target = isLink(v) ? (v as Link).path : row.file.path
     const open = () =>
         window.dispatchEvent(
@@ -120,7 +134,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const linkable = isLink(v) || !Number.isInteger(row.index)
     return (
         <span class={styles.cellTitle}>
-            <Show when={linkable} fallback={<>{label || row.file.name}</>}>
+            <Show when={linkable} fallback={<>{content()}</>}>
                 <a
                     href="#"
                     onClick={e => {
@@ -128,7 +142,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
                         open()
                     }}
                 >
-                    {label || row.file.name}
+                    {content()}
                 </a>
             </Show>
         </span>

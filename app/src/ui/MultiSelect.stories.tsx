@@ -145,3 +145,50 @@ export const EscapeCloses: Story = {
         await expect(document.querySelector('.bismuth-popover')).toBeNull()
     },
 }
+
+/** Interactive: typing ranks prefix matches first and highlights the best one; the accept key
+ *  (`accept-completion`, Tab by default — the note editor's own) autofills it: selected, filter
+ *  cleared, list still open. */
+export const TypeRanksAndAutofills: Story = {
+    render: () => (
+        <Controlled
+            options={['planning', 'mochi', 'chicken', 'chores', 'docs']}
+            creatable
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByRole('button'))
+        const filterInput = (await within(document.body).findByPlaceholderText(
+            'filter or add',
+        )) as HTMLInputElement
+        const rows = () => [
+            ...document.querySelectorAll<HTMLElement>('.bismuth-popover-row'),
+        ]
+        const label = (r: HTMLElement) =>
+            (r.querySelector('.bismuth-popover-label')?.textContent ?? '').trim()
+        await userEvent.type(filterInput, 'ch')
+        // Prefix matches lead (chicken, chores), the substring-only match (mochi) trails.
+        await waitFor(() =>
+            expect(rows().map(label)).toEqual(['chicken', 'chores', 'mochi']),
+        )
+        const highlighted = () =>
+            rows()
+                .filter(r => r.classList.contains('bismuth-popover-row--selected'))
+                .map(label)
+        expect(highlighted()).toEqual(['chicken'])
+        await userEvent.keyboard('{Tab}')
+        await expect(canvas.getByText(/selected:/)).toHaveTextContent('["chicken"]')
+        expect(filterInput.value).toBe('')
+        expect(document.activeElement).toBe(filterInput)
+        expect(document.querySelector('.bismuth-popover')).toBeTruthy()
+        // Enter autofills too — and never DEselects: `chi` + Enter keeps chicken on.
+        await userEvent.type(filterInput, 'chi{Enter}')
+        await expect(canvas.getByText(/selected:/)).toHaveTextContent('["chicken"]')
+        // Enter on a filter with no match still creates it.
+        await userEvent.type(filterInput, 'brand-new{Enter}')
+        await expect(canvas.getByText(/selected:/)).toHaveTextContent(
+            '["chicken","brand-new"]',
+        )
+    },
+}
