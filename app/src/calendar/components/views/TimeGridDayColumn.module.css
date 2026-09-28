@@ -1,0 +1,10 @@
+/* One day's hourly column: the hour/half-hour cells, the event slots and the drag ghost. Its
+   height is the grid's single `--time-grid-height`, set on TimeGrid's root. */
+.col { flex: 1; min-width: 0; position: relative; border-left: 1px solid var(--border-soft); height: var(--time-grid-height); user-select: none; }
+.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.hourBlock { height: calc(var(--time-grid-height) / 24); display: flex; flex-direction: column; }
+/* Hour line on the TOP of the hour-cell (the :00 mark) so it lines up with the gutter hour label,
+   which sits at the top of its block. box-sizing keeps the 1px inside the block — no drift. */
+.hourCell { flex: 1; border-top: 1px solid var(--border-soft); box-sizing: border-box; cursor: pointer; }
+.halfCell { flex: 1; box-sizing: border-box; cursor: pointer; }
+.hourCell:hover, .halfCell:hover { background: var(--hover-bg); }

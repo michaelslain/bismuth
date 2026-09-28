@@ -1,6 +1,7 @@
 // Pure: which task-chip action a keydown means. No framework imports, so the mapping is unit-tested
 // headlessly and TaskChip.tsx only wires the result.
 import type { Row } from '../../../core/src/bases/types'
+import { isMenuKey } from '../ui/widgetKeys'
 
 export type ChipKeyInput = {
     key: string
@@ -31,7 +32,7 @@ export function chipKeyAction(e: ChipKeyInput): ChipKeyAction | null {
         const days = ALT_ARROWS[e.key]
         return days === undefined ? null : { kind: 'reschedule', days }
     }
-    if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) return { kind: 'menu' }
+    if (isMenuKey(e as KeyboardEvent)) return { kind: 'menu' }
     if (e.shiftKey) return null
     if (e.key === 'Enter') return { kind: 'open' }
     if (e.key === ' ') return { kind: 'toggle' }

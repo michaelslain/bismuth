@@ -1,18 +1,15 @@
-import { For, Index, createMemo } from 'solid-js'
+import { For, Index } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
-import { toDateStr, formatGutterHour, formatTime } from '../../dates'
-import { eventCategoryColors, categoryFill } from '../../categoryColor'
-import {
-    showEventModal,
-    dragState,
-    settings,
-    recurrenceAction,
-} from '../../state'
+import { toDateStr, formatGutterHour } from '../../dates'
+import { showEventModal, dragState, settings, recurrenceAction } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
+import Text from '../../../ui/Text'
 import DayHeaderRow from './DayHeaderRow'
 import AllDayRow from './AllDayRow'
+import DayGutter from './DayGutter'
+import TimeGridDayColumn from './TimeGridDayColumn'
 import styles from './TimeGrid.module.css'
 import {
     snap,
@@ -21,71 +18,9 @@ import {
     computeCreatePayload,
     pointerDistance,
 } from './timeGridDrag'
+import { allDayOn, eventMinutes, yToMinutes } from './timeGridLayout'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
-const GRID_PX = 1200
-
-function eventMinutes(e: { startTime?: string; endTime?: string }): {
-    startMin: number
-    endMin: number
-} {
-    const [sh, sm] = (e.startTime ?? '00:00').split(':').map(Number)
-    const startMin = sh * 60 + sm
-    // Default to start+1h, clamped to 23:59 so a late start (e.g. 23:30) never
-    // yields an earlier end (negative duration).
-    const [eh, em] = (
-        e.endTime || minutesToStr(Math.min(startMin + 60, 23 * 60 + 59))
-    )
-        .split(':')
-        .map(Number)
-    const endMin = eh * 60 + em
-    return { startMin, endMin }
-}
-
-function yToMinutes(y: number, colHeight: number): number {
-    return clamp(snap((y / colHeight) * 24 * 60))
-}
-
-/**
- * Lay out overlapping events side-by-side. Events that overlap in time are split into
- * vertical lanes (first-fit greedy), so two events in the same slot — e.g. an event and
- * its duplicate — render as distinct columns instead of stacked on top of each other.
- * Returns id → { lane, lanes } where `lanes` is the width of that event's overlap group.
- */
-function computeLanes(
-    items: { id: string; startMin: number; endMin: number }[],
-): Map<string, { lane: number; lanes: number }> {
-    const sorted = [...items].sort(
-        (a, b) => a.startMin - b.startMin || a.endMin - b.endMin,
-    )
-    const out = new Map<string, { lane: number; lanes: number }>()
-    let cluster: typeof sorted = []
-    let clusterEnd = -Infinity
-    const flush = (): void => {
-        if (!cluster.length) return
-        const laneEnds: number[] = [] // end minute of the last event placed in each lane
-        const placed: Array<[string, number]> = []
-        for (const it of cluster) {
-            let lane = laneEnds.findIndex(end => end <= it.startMin)
-            if (lane === -1) {
-                lane = laneEnds.length
-                laneEnds.push(it.endMin)
-            } else laneEnds[lane] = it.endMin
-            placed.push([it.id, lane])
-        }
-        const lanes = laneEnds.length
-        for (const [id, lane] of placed) out.set(id, { lane, lanes })
-        cluster = []
-        clusterEnd = -Infinity
-    }
-    for (const it of sorted) {
-        if (cluster.length && it.startMin >= clusterEnd) flush() // no overlap with the open cluster
-        cluster.push(it)
-        clusterEnd = Math.max(clusterEnd, it.endMin)
-    }
-    flush()
-    return out
-}
 
 interface Props {
     dates: Date[]
@@ -265,60 +200,6 @@ export function TimeGrid(props: Props) {
         window.addEventListener('mouseup', onMouseUp)
     }
 
-    function ghost(ds: string) {
-        const state = dragState.value
-        if (!state || state.date !== ds) return null
-
-        let startMin: number
-        let endMin: number
-        let color: string
-
-        if (state.type === 'create') {
-            startMin = Math.min(state.startMinutes, state.currentMinutes)
-            endMin = Math.max(state.startMinutes, state.currentMinutes)
-            color = 'var(--accent)'
-        } else {
-            startMin = state.startMinutes
-            const { startMin: evStart, endMin: evEnd } = eventMinutes(
-                state.event,
-            )
-            const duration = evEnd - evStart
-            endMin = clamp(startMin + duration)
-            color =
-                categoryFill(
-                    eventCategoryColors(state.event, props.categories),
-                ) ?? 'var(--accent)'
-        }
-
-        if (endMin <= startMin) endMin = startMin + 15
-
-        // Match the rendered chip's height exactly (see the event block above): short events
-        // get +15min of visual padding and every chip trims 3px, so without this the ghost
-        // came out ~9px shorter than the event it previews.
-        const dur = endMin - startMin
-        const visualDur = dur <= 30 ? dur + 15 : dur
-        const top = (startMin / (24 * 60)) * GRID_PX
-        const height = Math.max((visualDur / (24 * 60)) * GRID_PX - 3, 8)
-
-        return (
-            <div
-                class={styles['cal-drag-ghost']}
-                style={{
-                    top: `${top}px`,
-                    height: `${height}px`,
-                    background: color,
-                }}
-            >
-                {formatTime(
-                    minutesToStr(startMin),
-                    settings.value.militaryTime,
-                )}{' '}
-                —{' '}
-                {formatTime(minutesToStr(endMin), settings.value.militaryTime)}
-            </div>
-        )
-    }
-
     return (
         <div class={styles['time-grid']}>
             <div class={styles['time-grid-body']}>
@@ -328,7 +209,7 @@ export function TimeGrid(props: Props) {
                         <AllDayRow
                             dates={props.dates}
                             cell={ds => (
-                                <For each={props.events.filter(e => e.date === ds && !e.startTime)}>
+                                <For each={allDayOn(props.events, ds)}>
                                     {e => (
                                         <EventChip
                                             event={e}
@@ -343,208 +224,38 @@ export function TimeGrid(props: Props) {
                         />
                     </div>
                     <div class={styles['time-grid-time-rows']}>
-                        <div class={styles['time-gutter-col']}>
+                        <DayGutter>
                             <Index each={HOURS}>
                                 {h => (
                                     <div class={styles['time-gutter-hour-block']}>
-                                        <div class={styles['time-gutter-hour']}>
-                                            {formatGutterHour(
-                                                h(),
-                                                settings.value.militaryTime,
-                                            )}
-                                        </div>
+                                        <Text
+                                            as="div"
+                                            inherit
+                                            class={styles['time-gutter-hour']}
+                                        >
+                                            {formatGutterHour(h(), settings.value.militaryTime)}
+                                        </Text>
                                         <div class={styles['time-gutter-half']} />
                                     </div>
                                 )}
                             </Index>
-                        </div>
+                        </DayGutter>
                         <For each={props.dates}>
                             {d => {
                                 const ds = toDateStr(d)
-                                // Start minutes of every timed event in this column, kept reactive so
-                                // the per-event padding cap below tracks adds/moves/deletes.
-                                const dayStartMins = createMemo(() =>
-                                    props.events
-                                        .filter(
-                                            e => e.date === ds && e.startTime,
-                                        )
-                                        .map(e => eventMinutes(e).startMin),
-                                )
-                                // Side-by-side lanes for events that overlap in time (so a duplicate sits
-                                // next to its original instead of hidden behind it).
-                                const dayLanes = createMemo(() => {
-                                    const dayEvents = props.events.filter(
-                                        e => e.date === ds && e.startTime,
-                                    )
-                                    return computeLanes(
-                                        dayEvents.map(e => {
-                                            const { startMin, endMin } =
-                                                eventMinutes(e)
-                                            // An event with no explicit end defaults to a 1h block (eventMinutes),
-                                            // which would overlap a back-to-back event starting <1h later and force a
-                                            // spurious side-by-side lane. Cap its end at the next event's start (same
-                                            // rule the visual-height padding uses) so consecutive untimed events stack.
-                                            const nextStart = e.endTime
-                                                ? Infinity
-                                                : Math.min(
-                                                      ...dayEvents
-                                                          .map(
-                                                              o =>
-                                                                  eventMinutes(
-                                                                      o,
-                                                                  ).startMin,
-                                                          )
-                                                          .filter(
-                                                              s => s > startMin,
-                                                          ),
-                                                      Infinity,
-                                                  )
-                                            return {
-                                                id: e.id,
-                                                startMin,
-                                                endMin: Math.min(
-                                                    endMin,
-                                                    nextStart,
-                                                ),
-                                            }
-                                        }),
-                                    )
-                                })
                                 return (
-                                    <div
-                                        class={`${styles['time-grid-day-col']}${ds === today ? ` ${styles['today']}` : ''}`}
-                                        data-testid="time-grid-day-col"
+                                    <TimeGridDayColumn
+                                        date={ds}
+                                        today={ds === today}
+                                        events={props.events}
+                                        categories={props.categories}
+                                        store={props.store}
                                         ref={el => (colRefs[ds] = el)}
                                         onMouseDown={e => onColMouseDown(e, ds)}
-                                    >
-                                        <Index each={HOURS}>
-                                            {() => (
-                                                <div class={styles['time-grid-hour-block']}>
-                                                    <div class={styles['time-grid-hour-cell']} />
-                                                    <div class={styles['time-grid-half-cell']} />
-                                                </div>
-                                            )}
-                                        </Index>
-                                        <For
-                                            each={props.events.filter(
-                                                e =>
-                                                    e.date === ds &&
-                                                    e.startTime,
-                                            )}
-                                        >
-                                            {e => {
-                                                const {
-                                                    startMin,
-                                                    endMin: evEndMin,
-                                                } = eventMinutes(e)
-                                                const top =
-                                                    (startMin / (24 * 60)) *
-                                                    GRID_PX
-                                                const duration =
-                                                    evEndMin - startMin
-                                                // Short events get +15min of visual height so the title stays
-                                                // readable, but cap it at the next event's start so the padding
-                                                // never spills into a back-to-back event below (e.g. 8:00–8:30
-                                                // followed by 8:30–10:00).
-                                                const nextStart = Math.min(
-                                                    ...dayStartMins().filter(
-                                                        s => s > startMin,
-                                                    ),
-                                                    Infinity,
-                                                )
-                                                const visualDuration =
-                                                    duration <= 30
-                                                        ? Math.min(
-                                                              duration + 15,
-                                                              Math.max(
-                                                                  duration,
-                                                                  nextStart -
-                                                                      startMin,
-                                                              ),
-                                                          )
-                                                        : duration
-                                                const height = Math.max(
-                                                    (visualDuration /
-                                                        (24 * 60)) *
-                                                        GRID_PX -
-                                                        3,
-                                                    8,
-                                                )
-                                                // Only genuinely tiny blocks (a back-to-back 30-min slot, ~34px) lay out
-                                                // on a single line; 1h+ blocks keep the stacked time-over-title layout so
-                                                // they use their vertical space. Long titles in the stacked layout
-                                                // ellipsize via the 2-line clamp in EventChip.module.css's `.in-grid` rule.
-                                                const compact = height < 42
-                                                // Overlap layout: events that overlap in time get a lane, but instead
-                                                // of an even split (which squishes a long event to half-width for its
-                                                // whole span just because a short event overlaps part of it), each event
-                                                // is offset by its lane and EXTENDS to the right edge, layered by lane.
-                                                // So a long event stays full-width and a shorter overlapping one sits on
-                                                // top of its right portion (and only where they actually overlap in time).
-                                                const li = dayLanes().get(e.id)
-                                                const lanes = li?.lanes ?? 1
-                                                const lane = li?.lane ?? 0
-                                                const left = `calc(3px + (100% - 6px) * ${lane} / ${lanes})`
-                                                const width = `calc((100% - 6px) * ${lanes - lane} / ${lanes})`
-                                                return (
-                                                    <div
-                                                        class={styles['time-grid-event']}
-                                                        style={{
-                                                            top: `${top}px`,
-                                                            height: `${height}px`,
-                                                            left,
-                                                            width,
-                                                            'z-index': lane + 1,
-                                                            /* A stacked (overlapping) chip reads a flat inset separator against the one behind it — not a blurred elevation shadow. */ 'box-shadow':
-                                                                lane > 0
-                                                                    ? 'inset 2px 0 0 0 var(--bg)'
-                                                                    : undefined,
-                                                            opacity:
-                                                                dragState.value
-                                                                    ?.type ===
-                                                                    'move' &&
-                                                                dragState.value
-                                                                    .event
-                                                                    .id === e.id
-                                                                    ? 0.3
-                                                                    : 1,
-                                                        }}
-                                                        onMouseDown={ev =>
-                                                            onChipMouseDown(
-                                                                ev,
-                                                                e,
-                                                                ds,
-                                                                e.recurrence
-                                                                    ? e.id
-                                                                    : undefined,
-                                                            )
-                                                        }
-                                                    >
-                                                        <EventChip
-                                                            event={e}
-                                                            compact={compact}
-                                                            inGrid
-                                                            masterId={
-                                                                e.recurrence
-                                                                    ? e.id
-                                                                    : undefined
-                                                            }
-                                                            occurrenceDate={
-                                                                e.recurrence
-                                                                    ? ds
-                                                                    : undefined
-                                                            }
-                                                            categories={
-                                                                props.categories
-                                                            }
-                                                            store={props.store}
-                                                        />
-                                                    </div>
-                                                )
-                                            }}
-                                        </For>
-                                        {ghost(ds)}
-                                    </div>
+                                        onEventMouseDown={(e, event, masterId) =>
+                                            onChipMouseDown(e, event, ds, masterId)
+                                        }
+                                    />
                                 )
                             }}
                         </For>

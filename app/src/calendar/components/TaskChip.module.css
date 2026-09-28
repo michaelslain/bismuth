@@ -16,23 +16,11 @@
     overflow: hidden;
 }
 
-/* Fallback marker colour. A categorised task overrides this with an inline `color` from
-   `props.color` (TaskChip.tsx), which wins over this class rule — so no class rule here or
-   below may set the marker's colour, or it would fight that inline style on specificity. */
+/* The bracket mark is ui/TaskCheck (its own colour, dimming and cursor); this only keeps it
+   from shrinking or wrapping inside the chip's flex row. */
 .marker {
-    color: var(--text-muted);
-    cursor: pointer;
     flex-shrink: 0;
     white-space: nowrap;
-}
-
-/* A row with no source markdown line (a self-owned base's row) has nowhere for a toggle to
-   land — see isTaskLine (taskPlacement.ts). Same dimmed-and-inert language `.btn:disabled`
-   already uses (global.css's `ui/ui.css` section: opacity 0.4 + cursor default), so a reader who knows that
-   convention reads this the same way without new vocabulary. */
-.readOnly {
-    cursor: default;
-    opacity: 0.4;
 }
 /* min-width guarantees at least ~22 characters of title before .chip's flex-wrap lets "Nd late"
    drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first,

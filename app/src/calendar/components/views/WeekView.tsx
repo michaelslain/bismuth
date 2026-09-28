@@ -3,21 +3,10 @@ import { currentDate, events, categories, settings } from '../../state'
 import { EventStore } from '../../EventStore'
 import { TimeGrid } from './TimeGrid'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
-import type { PlacedTask } from '../../taskPlacement'
-import type { TaskComposeProps } from '../../taskCompose'
-import type { TaskRowRef } from '../../taskDrag'
+import type { TaskViewProps } from './MonthView'
 import { addDays, startOfWeek } from '../../dates'
 
-export function WeekView(props: {
-    store: EventStore
-    placed?: Map<string, PlacedTask[]>
-    onToggleTask?: (row: PlacedTask['row']) => void
-    onOpenTask?: (row: PlacedTask['row']) => void
-    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
-    onRescheduleTask?: (ref: TaskRowRef, date: string) => void
-    compose?: TaskComposeProps
-    colorFor?: (task: PlacedTask) => string | undefined
-}) {
+export function WeekView(props: { store: EventStore } & TaskViewProps) {
     const dates = () => {
         const d = currentDate.value
         const weekStart = startOfWeek(d, settings.value.weekStartsOnMonday)
@@ -38,13 +27,8 @@ export function WeekView(props: {
             {placed => (
                 <TaskAllDayStrip
                     dates={dates()}
+                    {...props}
                     placed={placed()}
-                    onToggleTask={props.onToggleTask}
-                    onOpenTask={props.onOpenTask}
-                    onSetTaskStatus={props.onSetTaskStatus}
-                    onRescheduleTask={props.onRescheduleTask}
-                    compose={props.compose}
-                    colorFor={props.colorFor}
                 />
             )}
         </Show>

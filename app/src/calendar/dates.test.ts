@@ -8,6 +8,8 @@ import {
     weekRange,
     rangeLabel,
     stepDate,
+    monthGrid,
+    weekdayNames,
 } from './dates'
 
 test('toDateStr / addDays', () => {
@@ -190,4 +192,29 @@ test('stepDate — does not mutate its input', () => {
     const d = new Date(2026, 0, 12)
     stepDate(d, 'month', 1)
     expect(toDateStr(d)).toBe('2026-01-12')
+})
+
+test('weekdayNames starts on the chosen weekday', () => {
+    expect(weekdayNames(false, 'en-US')).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
+    expect(weekdayNames(true, 'en-US')).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+})
+
+test('monthGrid pads to whole weeks and marks spill days', () => {
+    // Sept 2026 starts on a Tuesday, 30 days
+    const sun = monthGrid(2026, 8, false)
+    expect(sun.length % 7).toBe(0)
+    expect(sun.length).toBe(35)
+    expect(toDateStr(sun[0].date)).toBe('2026-08-30')
+    expect(sun[0].inMonth).toBe(false)
+    expect(toDateStr(sun[2].date)).toBe('2026-09-01')
+    expect(sun[2].inMonth).toBe(true)
+    expect(sun.filter(c => c.inMonth).length).toBe(30)
+    const mon = monthGrid(2026, 8, true)
+    expect(toDateStr(mon[0].date)).toBe('2026-08-31')
+    expect(toDateStr(mon[1].date)).toBe('2026-09-01')
+})
+
+test('monthGrid grows to six rows when the month needs it', () => {
+    // Aug 2026 starts on a Saturday, 31 days -> 6 rows on a Sunday-first grid
+    expect(monthGrid(2026, 7, false).length).toBe(42)
 })

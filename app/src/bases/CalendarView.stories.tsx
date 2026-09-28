@@ -558,8 +558,8 @@ function coloredTasksRows(): Row[] {
 // The marker's category colour, read from the INLINE style (never getComputedStyle) so an
 // uncategorised marker reads as '' rather than whatever --text-muted resolves to.
 function markerColor(root: HTMLElement): string {
-    const el = root.querySelector('[data-testid="task-chip-marker"]') as HTMLElement | null
-    return el?.style.color ?? ''
+    const el = root.querySelector('[role="checkbox"]') as HTMLElement | null
+    return el?.style.getPropertyValue('--task-check-color') ?? ''
 }
 
 /** Seeds `currentView`/`currentDate` the same way `TasksCalendarStory` does, but with the

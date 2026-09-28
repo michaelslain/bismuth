@@ -224,7 +224,7 @@ export const AlignedWithChips: Story = {
         ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const chipMarkers = canvas.getAllByTestId('task-chip-marker')
+        const chipMarkers = canvas.getAllByRole('checkbox')
         const composerMarker = canvas.getByTestId('task-cell-composer-marker')
         const composerLeft = composerMarker.getBoundingClientRect().left
         for (const marker of chipMarkers) {
