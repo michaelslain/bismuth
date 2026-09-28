@@ -103,7 +103,10 @@
    hovered the lane and saw nothing, round-2 item 9) or focusing inside the header fades it in.
    `[data-hover]` is the same hover, set from pointerenter/leave in KanbanView.tsx, so a story's
    `userEvent.hover` (a synthetic event CSS `:hover` never sees) reveals it too. Only
-   opacity/pointer-events transition — layout never moves. */
+   opacity/pointer-events transition — layout never moves.
+   While THIS column is being renamed, KanbanView.tsx's `<Show>` around this bar drops it from the
+   DOM entirely (not just faded/hidden) — round 4 item 2, the bar used to stay visible over the
+   rename field. The count stays in flow beside the field either way. */
 .kbHeaderActions {
   position: absolute;
   right: 100%;
