@@ -8,7 +8,7 @@
 // toggles booleans directly via a `Chip` and this component never sees that kind.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, fireEvent, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
 
@@ -149,18 +149,27 @@ export const SelectLegacyValue: Story = {
     ),
 }
 
-/** Undeclared tags — a plain comma-separated box, not the chip picker (that's `multiselect`
- *  only, for a DECLARED options list). */
+/** Undeclared tags — a `MultiSelect` (`creatable`), options built from the sibling/own
+ *  values (propertyEdit.ts's `tagsOptions`); this story stands in for that with a fixed
+ *  list. `open` on the underlying editor is unconditional (the kanban chip swaps this in
+ *  already open), so the dropdown is visible immediately. */
 export const Tags: Story = {
     render: () => (
-        <Harness kind={{ kind: 'tags' }} initial={['frontend', 'bug']} />
+        <Harness
+            kind={{
+                kind: 'tags',
+                options: ['frontend', 'bug', 'backend', 'docs'],
+            }}
+            initial={['frontend', 'bug']}
+        />
     ),
 }
 
-/** `multiselect` with two of three declared options already picked — chips + a "+ Add" Select
- *  offering only the remaining option. Static render; see `MultiselectAddRemove` below for the
- *  live add/remove interaction this kind supports (each write commits immediately and keeps
- *  the editor open — no natural "blur" for a set of chip buttons). */
+/** `multiselect` with two of three declared options already picked — the trigger shows them
+ *  joined, and the dropdown (open by default) lists every option, selected ones first, each
+ *  prefixed `[x]`/`[ ]`. Static render; see `MultiselectToggle` below for the live
+ *  toggle interaction (each write commits immediately with `keepOpen: true` — no natural
+ *  "blur" for a set of checkboxes). */
 export const MultiselectPartial: Story = {
     render: () => (
         <Harness
@@ -173,8 +182,8 @@ export const MultiselectPartial: Story = {
     ),
 }
 
-/** `multiselect` with every declared option already selected — the "+ Add" Select doesn't
- *  render at all (`available().length > 0` gates it), only removable chips remain. */
+/** `multiselect` with every declared option already selected — every row shows `[x]`, none
+ *  `[ ]`. */
 export const MultiselectFull: Story = {
     render: () => (
         <Harness
@@ -228,8 +237,8 @@ export const EscapeReverts: Story = {
 
 /** Interactive: Escape must reach `window` from a plain field (so the card modal's own
  *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
- *  NOT reach `window` while a multiselect's own "+ Add" suggestion list is open (that Escape
- *  belongs to the list: it closes the list and stops there, same as any other open popover). */
+ *  NOT reach `window` while a multiselect's own dropdown is open (that Escape belongs to the
+ *  list: it closes the list and stops there, same as any other open popover). */
 export const EscapeBubbles: Story = {
     render: () => (
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
@@ -248,6 +257,15 @@ export const EscapeBubbles: Story = {
         }
         window.addEventListener('keydown', onWindowKeyDown)
 
+        // Multiselect FIRST, before anything else on the page is clicked — its editor mounts
+        // already open (the kanban chip swaps it in open), so a stray outside pointerdown from
+        // interacting with the text field below (userEvent focuses a target via a real click)
+        // would otherwise close it before this assertion runs. Its filter input already has
+        // focus, so an Escape there closes ONLY the dropdown and must not reach window.
+        await within(document.body).findByPlaceholderText('filter')
+        await userEvent.keyboard('{Escape}')
+        await expect(windowEscapes).toEqual([])
+
         // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
@@ -257,21 +275,14 @@ export const EscapeBubbles: Story = {
         )
         await expect(windowEscapes).toEqual(['window'])
 
-        // Multiselect with its "+ Add" suggestion list open: the first Escape closes ONLY
-        // the list and must not reach window.
-        await userEvent.click(canvas.getByText('+ Add'))
-        await within(document.body).findByText('frontend')
-        await userEvent.keyboard('{Escape}')
-        await expect(windowEscapes).toEqual(['window'])
-
         window.removeEventListener('keydown', onWindowKeyDown)
     },
 }
 
-/** Interactive: add a chip via the "+ Add" Select, then remove one by clicking it — each
- *  write commits immediately with `keepOpen: true`, so the editor stays mounted across both
- *  changes instead of closing after the first. */
-export const MultiselectAddRemove: Story = {
+/** Interactive: toggle two rows in the dropdown (it opens already, since the kanban chip
+ *  swaps this editor in open) — each write commits immediately with `keepOpen: true`, so the
+ *  editor stays mounted across both changes instead of closing after the first. */
+export const MultiselectToggle: Story = {
     render: () => (
         <Harness
             kind={{
@@ -283,17 +294,42 @@ export const MultiselectAddRemove: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        // Open the "+ Add" Select and pick "frontend".
-        await userEvent.click(canvas.getByText('+ Add'))
-        const option = await within(document.body).findByText('frontend')
-        await fireEvent.click(option)
+        const popover = await waitFor(() => {
+            const el = document.querySelector('.bismuth-popover') as HTMLElement | null
+            if (!el) throw new Error('popover did not open')
+            return el
+        })
+        const body = within(popover)
+        // Add "frontend".
+        await userEvent.click(await body.findByText('frontend'))
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["planning","frontend"]',
         )
-        // Remove "planning" by clicking its chip.
-        await userEvent.click(canvas.getByText('planning'))
+        // Remove "planning" by clicking its row again.
+        await userEvent.click(await body.findByText('planning'))
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["frontend"]',
+        )
+    },
+}
+
+/** Interactive (`tags`, `creatable`): typing a value that matches no existing option and
+ *  pressing Enter adds it as a new selected value. */
+export const TagsCreatable: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'tags', options: ['frontend', 'bug'] }}
+            initial={['bug']}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const filterInput = await within(document.body).findByPlaceholderText(
+            'filter or add',
+        )
+        await userEvent.type(filterInput, 'brand-new{Enter}')
+        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+            '["bug","brand-new"]',
         )
     },
 }

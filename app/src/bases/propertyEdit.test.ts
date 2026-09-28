@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
     distinctStrings,
     propertyEditKind,
-    multiselectAvailable,
     multiselectCommitValue,
     multiselectValues,
     selectOptionsWithCurrent,
+    tagsOptions,
 } from './propertyEdit'
 import type { Schema } from '../../../core/src/schema/types'
 import type { BasePropertyType } from '../../../core/src/bases/types'
@@ -73,6 +73,7 @@ describe('propertyEditKind', () => {
         }
         expect(propertyEditKind('labels', ['a'], schema, [])).toEqual({
             kind: 'tags',
+            options: ['a'],
         })
     })
 
@@ -92,6 +93,7 @@ describe('propertyEditKind', () => {
         })
         expect(propertyEditKind('tags', ['a', 'b'], noSchema, [])).toEqual({
             kind: 'tags',
+            options: ['a', 'b'],
         })
     })
 
@@ -227,7 +229,7 @@ describe('propertyEditKind — declared type (#100)', () => {
     test('declared list/link/formula have no dedicated editor yet — fall through to the heuristic', () => {
         expect(
             propertyEditKind('items', ['a'], noSchema, [], { kind: 'list' }),
-        ).toEqual({ kind: 'tags' })
+        ).toEqual({ kind: 'tags', options: ['a'] })
         expect(
             propertyEditKind('ref', 'x', noSchema, [], { kind: 'link' }),
         ).toEqual({ kind: 'text' })
@@ -277,6 +279,24 @@ describe('propertyEditKind — description default (#103)', () => {
     })
 })
 
+describe('tagsOptions', () => {
+    test('flattens sibling arrays, unions with the row\'s own values, first-seen order', () => {
+        expect(tagsOptions(['b', 'c'], [['a', 'b'], 'c'])).toEqual([
+            'a',
+            'b',
+            'c',
+        ])
+    })
+    test('drops empties/null/objects, dedupes', () => {
+        expect(
+            tagsOptions(['a'], [['a', '', null, undefined, { x: 1 }]]),
+        ).toEqual(['a'])
+    })
+    test('no siblings, no value -> empty', () => {
+        expect(tagsOptions(null, [])).toEqual([])
+    })
+})
+
 describe('multiselectValues (#101)', () => {
     test('an array of scalars stringifies each element', () => {
         expect(multiselectValues(['bug', 'urgent'])).toEqual(['bug', 'urgent'])
@@ -288,24 +308,6 @@ describe('multiselectValues (#101)', () => {
     })
     test('a bare scalar (hand-edited single value, not a list) becomes a one-element array', () => {
         expect(multiselectValues('bug')).toEqual(['bug'])
-    })
-})
-
-describe('multiselectAvailable (#101)', () => {
-    test('drops already-selected declared options', () => {
-        expect(
-            multiselectAvailable(['bug', 'feature', 'design'], ['bug']),
-        ).toEqual(['feature', 'design'])
-    })
-    test("a selected LEGACY value (outside options) doesn't remove anything from the add list", () => {
-        expect(
-            multiselectAvailable(['bug', 'feature'], ['legacy-value']),
-        ).toEqual(['bug', 'feature'])
-    })
-    test('everything selected -> empty add list', () => {
-        expect(
-            multiselectAvailable(['bug', 'feature'], ['bug', 'feature']),
-        ).toEqual([])
     })
 })
 
