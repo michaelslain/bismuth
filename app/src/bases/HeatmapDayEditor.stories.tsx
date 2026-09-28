@@ -76,7 +76,7 @@ export const EscapeCancels: Story = {
     },
 }
 
-/** Text that is not a number commits as a clear (`cleared`), never as NaN. */
+/** Text that is not a number cancels: the stored value survives, never cleared and never NaN. */
 export const NonNumericInput: Story = {
     args: { dateLabel: 'Tue Jul 8', value: 30, onSave: () => {}, onCancel: () => {} },
     render: () => <Harness initial={30} />,
@@ -89,7 +89,8 @@ export const NonNumericInput: Story = {
         await userEvent.click(input)
         await userEvent.clear(input)
         await userEvent.type(input, 'abc{enter}')
-        await waitFor(() => expect(canvasElement.textContent).toContain('saved: cleared'))
+        await waitFor(() => expect(canvasElement.textContent).toContain('saved: cancelled'))
+        expect(canvasElement.textContent).not.toContain('saved: cleared')
     },
 }
 

@@ -11,10 +11,10 @@ describe('parseDayValue', () => {
         expect(parseDayValue('')).toBeUndefined()
         expect(parseDayValue('   ')).toBeUndefined()
     })
-    test('non-numeric text also reads as clear, never NaN', () => {
-        expect(parseDayValue('abc')).toBeUndefined()
-        expect(parseDayValue('12abc')).toBeUndefined()
-        expect(parseDayValue('Infinity')).toBeUndefined()
+    test('non-numeric text is null (no commit), never a clear and never NaN', () => {
+        expect(parseDayValue('abc')).toBeNull()
+        expect(parseDayValue('12abc')).toBeNull()
+        expect(parseDayValue('Infinity')).toBeNull()
     })
     test('zero is a real value, not a clear', () => {
         expect(parseDayValue('0')).toBe(0)
