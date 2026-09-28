@@ -1,0 +1,27 @@
+/* PropertyDisplay.tsx is the sole reader of these classes. */
+
+/* A declared multiselect: a row of bracket chips, the ChipToggle-selected look ([label] in the
+   accent) without a button underneath, since a read-only value is not a control. */
+.chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.chip { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.chip::before { content: '['; }
+.chip::after { content: ']'; }
+
+/* A declared markdown value as a block (List, Cards, Kanban). Ported from KanbanCard's
+   .kbMetaMarkdown so the block reads the same everywhere. */
+.markdown { display: block; width: 100%; line-height: 1.45; }
+.markdown :global(p) { margin: 0 0 var(--sp-2); }
+.markdown :global(p):last-child { margin-bottom: 0; }
+.markdown :global(ul), .markdown :global(ol) { margin: var(--sp-1) 0; padding-left: var(--sp-6); }
+.markdown :global(.bismuth-embed-img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--r-0);
+  margin: var(--sp-2) 0;
+}
+
+/* Table cell: declared markdown on ONE line, truncated. */
+.inlineMd { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

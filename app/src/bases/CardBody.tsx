@@ -1,38 +1,21 @@
 import { Show } from 'solid-js'
 import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
+import { renderTitle } from './renderValue'
 import {
-    renderTitle,
     isStatusColumn,
     isRatingColumn,
-    bareName,
-} from './renderValue'
+    isPagesColumn,
+    findColumn,
+    asNumber,
+} from './columnKinds'
+import { titleOf } from './kanbanMeta'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import CardTitle from './CardTitle'
 import styles from './CardBody.module.css'
-
-/** Heuristic: which column is a page count (rendered as "N pages" on the right). */
-function isPagesColumn(id: string): boolean {
-    const n = bareName(id)
-    return n === 'pages' || n === 'pagecount' || n === 'page_count'
-}
-
-function findColumn(
-    cols: string[],
-    pred: (id: string) => boolean,
-): string | undefined {
-    return cols.find(pred)
-}
-
-function asNumber(v: unknown): number | null {
-    if (typeof v === 'number' && Number.isFinite(v)) return v
-    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
-        return Number(v)
-    return null
-}
 
 /**
  * Compact book-card body matching the design's Cards/Kanban layout: a serif title
@@ -55,12 +38,7 @@ export function CardBody(props: {
 
     // Plain (non-link) title text — used when the whole card is already a click target
     // (CardsView), so the title isn't a competing inner link.
-    const titleText = (): string => {
-        const v = resolveProperty(titleCol(), props.row)
-        return v == null || typeof v === 'object'
-            ? props.row.file.name
-            : String(v)
-    }
+    const titleText = (): string => titleOf(props.row, titleCol())
 
     const statusCol = (): string | undefined =>
         findColumn(props.cols, isStatusColumn)
@@ -96,7 +74,7 @@ export function CardBody(props: {
     const pages = (): number | null => {
         const c = pagesCol()
         if (!c) return null
-        return asNumber(resolveProperty(c, props.row))
+        return asNumber(resolveProperty(c, props.row)) ?? null
     }
 
     const author = (): string | null => {

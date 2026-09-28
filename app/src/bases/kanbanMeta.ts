@@ -3,14 +3,31 @@
 import type { Row } from '../../../core/src/bases/types'
 import type { Schema } from '../../../core/src/schema/types'
 import { resolveProperty } from '../../../core/src/bases/query'
+import { isLink, type Link } from '../../../core/src/bases/values'
 import { bareName } from './propertyEdit'
 
-/** Plain-string title for a card (the display/first column value, falling back to the
- * filename). Shared by KanbanCard (the card face) and CardEditModal (the edit modal) so a
- * change to title resolution only needs to be made once. */
+/** Clean display label for a Link: explicit display text, else the basename of the path with
+ * the .md extension stripped. */
+export function linkLabel(link: Link): string {
+    return (
+        link.display ||
+        link.path.replace(/\.md$/, '').split('/').pop() ||
+        link.path
+    )
+}
+
+/** Plain-string title for a row (the display/first column value, falling back to the filename).
+ * THE title helper: KanbanCard, CardEditModal, CardBody, BodyCard, CardsView, ListView and the map
+ * marker captions all call it, so a change to title resolution is made once. A Link value shows
+ * its display text; any other object (which would stringify to `[object Object]`) and an empty
+ * or blank value fall back to the file name. */
 export function titleOf(row: Row, titleCol: string): string {
     const v = resolveProperty(titleCol, row)
-    return v == null || typeof v === 'object' ? row.file.name : String(v)
+    if (v == null) return row.file.name
+    if (isLink(v)) return linkLabel(v)
+    if (typeof v === 'object') return row.file.name
+    const s = String(v)
+    return s.trim() === '' ? row.file.name : s
 }
 
 /** On a file-backed board (`titleCol === 'file.name'`) these ids all name the SAME title

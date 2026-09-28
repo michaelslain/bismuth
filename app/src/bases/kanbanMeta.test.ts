@@ -241,6 +241,27 @@ describe('titleOf', () => {
         expect(titleOf(row({}), 'title')).toBe('Card')
         expect(titleOf(row({ title: { a: 1 } }), 'title')).toBe('Card')
     })
+    test('a Link value returns its display text, else its basename without .md', () => {
+        const link = (display?: string) => ({
+            __link: true,
+            path: 'notes/Quote Source.md',
+            ...(display ? { display } : {}),
+        })
+        expect(titleOf(row({ title: link('a quote') }), 'title')).toBe(
+            'a quote',
+        )
+        expect(titleOf(row({ title: link() }), 'title')).toBe('Quote Source')
+    })
+    test('an object value never yields [object Object]', () => {
+        for (const v of [{ a: 1 }, [], [1, 2], new Date(0)])
+            expect(titleOf(row({ title: v }), 'title')).not.toContain(
+                '[object Object]',
+            )
+    })
+    test('an empty or blank title falls back to the file name', () => {
+        expect(titleOf(row({ title: '' }), 'title')).toBe('Card')
+        expect(titleOf(row({ title: '   ' }), 'title')).toBe('Card')
+    })
 })
 
 describe('writableKey', () => {

@@ -11,7 +11,7 @@ import {
 import { Portal } from 'solid-js/web'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
-import { plainLabel } from './renderValue'
+import { titleOf } from './kanbanMeta'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { chipKeyAction } from '../calendar/taskChipKeys'
 import { settings } from '../settings'
@@ -885,7 +885,7 @@ export function MapView(props: {
             onSelect: () => void createPin(lat, lng),
         },
         ...unplacedRows().map((row, i) => ({
-            label: `place ${plainLabel(titleCol(), row) || row.file.path || '(untitled)'} here`,
+            label: `place ${titleOf(row, titleCol()) || row.file.path || '(untitled)'} here`,
             icon: 'Pin',
             separatorBefore: i === 0,
             onSelect: () => void writeCoords(row, lat, lng),
@@ -969,7 +969,7 @@ export function MapView(props: {
                             }
                             const title = () => {
                                 const mk = cur()
-                                return mk ? plainLabel(titleCol(), mk.row) : ''
+                                return mk ? titleOf(mk.row, titleCol()) : ''
                             }
                             return (
                                 <PlainButton
@@ -1104,7 +1104,7 @@ export function MapView(props: {
                                     const cur = a()
                                     return cur.kind === 'new'
                                         ? 'click to add a pin'
-                                        : `placing ${plainLabel(titleCol(), cur.row) || cur.row.file.path}`
+                                        : `placing ${titleOf(cur.row, titleCol()) || cur.row.file.path}`
                                 })()}{' '}
                                 — esc to cancel
                             </Text>
