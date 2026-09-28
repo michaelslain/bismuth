@@ -5,6 +5,8 @@ import { api } from '../api'
 import type { Row } from '../../../core/src/bases/types'
 import type { TaskStatus } from '../../../core/src/tasks'
 import { statusFromChar, statusToChar } from '../../../core/src/taskReorder'
+import { removeTaskItem } from '../../../core/src/taskEdit'
+import { parseBaseFile } from '../../../core/src/bases/parse'
 import { todayISO } from '../../../core/src/dates'
 import { setStoredTaskStatus, storedNote } from './taskWrite'
 import {
@@ -101,33 +103,52 @@ export async function saveTaskEdit(
         await moveTask(row, next.destPath)
 }
 
-/** A checkbox line's text after `- [ ] ` — what `createTask` re-appends. */
-export function lineTaskBody(raw: string): string {
-    return raw.replace(/^\s*[-*+]\s+\[.\]\s?/, '')
+/** Put a removed task block back into `content` at line `index`, verbatim. `index` is clamped to
+ *  the note's current length (before a trailing newline's empty tail), so a note that shrank
+ *  since the delete still gets the block back rather than an error. Pure. */
+export function reinsertTaskBlock(
+    content: string,
+    block: string[],
+    index: number,
+): string {
+    const eol = content.includes('\r\n') ? '\r\n' : '\n'
+    const lines = content.split(/\r?\n/)
+    const max =
+        lines.length > 1 && lines[lines.length - 1] === ''
+            ? lines.length - 1
+            : lines.length
+    lines.splice(Math.max(0, Math.min(index, max)), 0, ...block)
+    return lines.join(eol)
 }
 
-/** Delete now; resolves to the function that puts the task back. A line task returns as a fresh
- *  unchecked line appended to its note (position, status and sub-tasks are not restored); a stored
- *  row returns appended to the base's rows. */
+/** Delete now; resolves to the function that puts the task back EXACTLY. A line task's whole
+ *  block (the line and its sub-tasks, verbatim) is snapshotted from the note first and undo
+ *  re-inserts it at its original line index. A stored row returns at its original index (the
+ *  rows API appends, then `rowReorder` moves it up). */
 export async function deleteTaskUndoable(
     row: Row,
 ): Promise<() => Promise<void>> {
     const path = row.file.path
-    const restore: () => Promise<void> = isLine(row)
-        ? (() => {
-              const body = lineTaskBody(
-                  String(row.note.raw ?? row.note.description ?? ''),
-              )
-              return async () => {
-                  await api.createTask(path, body)
-              }
-          })()
-        : (() => {
-              const note = { ...storedNote(row) }
-              return async () => {
-                  await api.rowCreate(path, note)
-              }
-          })()
+    let restore: () => Promise<void>
+    if (isLine(row)) {
+        const line = row.note.line as number
+        const { removed } = removeTaskItem(await api.read(path), line)
+        restore = async () => {
+            await api.write(
+                path,
+                reinsertTaskBlock(await api.read(path), removed, line),
+            )
+        }
+    } else {
+        const note = { ...storedNote(row) }
+        const index = row.index!
+        restore = async () => {
+            const meta = { name: row.file.name, path }
+            const count = parseBaseFile(await api.read(path), meta).rows.length
+            await api.rowCreate(path, note)
+            if (index < count) await api.rowReorder(path, count, index)
+        }
+    }
     await deleteTask(row)
     return restore
 }
