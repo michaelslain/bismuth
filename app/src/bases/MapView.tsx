@@ -18,13 +18,15 @@ import { settings } from '../settings'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
 import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
-import IconButton from '../ui/IconButton'
 import InlineCode from '../ui/InlineCode'
+import EmptyState from '../ui/EmptyState'
+import MapBasemap from './MapBasemap'
+import MapPin from './MapPin'
+import MapControls from './MapControls'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
-import { createRow } from './AddRowAction'
+import { createRow } from './rowWrites'
 import { newTaskVisible } from './taskScope'
-import { openRowEditor } from './openRowEditor'
+import { useRowEditor } from './useRowEditor'
 import {
     project,
     unproject,
@@ -33,6 +35,15 @@ import {
     pastDragThreshold,
     writableFieldKey,
     shouldReframe,
+    worldToScreen,
+    geoToScreen as geoToScreenAt,
+    isPlaceable,
+    fitView,
+    scaleBarFor,
+    zoomAround,
+    withCoords,
+    withoutCoords,
+    siblingFolder as siblingFolderOf,
 } from './mapCoords'
 import styles from './MapView.module.css'
 import { isDismissKey } from '../ui/widgetKeys'
@@ -49,118 +60,6 @@ const markerKey = (row: Row) => `${row.file.path}::${row.index ?? ''}`
 /** What the next click on the map does: create a NEW row there (`Add pin`), or write the
  *  coordinates of an EXISTING row (Add pin's `place …` or a pin's `move pin`). */
 type Armed = { kind: 'new' } | { kind: 'row'; row: Row }
-
-// Offline vector basemap. Continents are coarse lng/lat polygon outlines —
-// enough to read as a world map without any network tiles. Each ring is a
-// list of [lng, lat] vertices; we project them at the current zoom and draw
-// them in the same world-pixel space as the markers so they pan/zoom together.
-const LANDMASSES: [number, number][][] = [
-    // North America
-    [
-        [-168, 65],
-        [-140, 70],
-        [-95, 72],
-        [-60, 60],
-        [-55, 47],
-        [-70, 42],
-        [-81, 25],
-        [-97, 18],
-        [-105, 23],
-        [-117, 32],
-        [-125, 40],
-        [-130, 55],
-        [-150, 60],
-        [-168, 65],
-    ],
-    // South America
-    [
-        [-80, 9],
-        [-60, 11],
-        [-50, 0],
-        [-35, -8],
-        [-40, -22],
-        [-58, -34],
-        [-70, -52],
-        [-75, -45],
-        [-72, -30],
-        [-81, -15],
-        [-80, -5],
-        [-80, 9],
-    ],
-    // Africa
-    [
-        [-17, 21],
-        [0, 35],
-        [11, 37],
-        [32, 31],
-        [43, 12],
-        [51, 12],
-        [40, -5],
-        [40, -18],
-        [33, -28],
-        [20, -35],
-        [16, -28],
-        [9, -2],
-        [-8, 5],
-        [-17, 12],
-        [-17, 21],
-    ],
-    // Europe
-    [
-        [-10, 36],
-        [-9, 44],
-        [-2, 49],
-        [2, 51],
-        [8, 54],
-        [12, 56],
-        [22, 60],
-        [30, 62],
-        [40, 55],
-        [30, 45],
-        [20, 40],
-        [12, 38],
-        [-10, 36],
-    ],
-    // Asia
-    [
-        [30, 62],
-        [55, 70],
-        [90, 73],
-        [140, 72],
-        [160, 68],
-        [180, 65],
-        [170, 55],
-        [140, 52],
-        [135, 40],
-        [122, 30],
-        [108, 18],
-        [97, 9],
-        [80, 8],
-        [72, 20],
-        [60, 25],
-        [48, 30],
-        [40, 40],
-        [42, 50],
-        [35, 58],
-        [30, 62],
-    ],
-    // Australia
-    [
-        [114, -22],
-        [130, -12],
-        [142, -11],
-        [153, -25],
-        [150, -38],
-        [137, -36],
-        [128, -32],
-        [115, -34],
-        [114, -22],
-    ],
-]
-
-// Coarse graticule spacing in degrees.
-const GRAT_LNG = 30
-const GRAT_LAT = 20
 
 export function MapView(props: {
     result: ViewResult
@@ -205,14 +104,7 @@ export function MapView(props: {
                 for (const row of group.rows) {
                     const lat = toNum(resolveProperty(lk, row))
                     const lng = toNum(resolveProperty(lnk, row))
-                    if (
-                        Number.isNaN(lat) ||
-                        Number.isNaN(lng) ||
-                        lat < -85 ||
-                        lat > 85 ||
-                        lng < -180 ||
-                        lng > 180
-                    ) {
+                    if (!isPlaceable(lat, lng)) {
                         unplaced.push(row)
                         continue
                     }
@@ -238,42 +130,7 @@ export function MapView(props: {
         const v = props.result.view
         if (v.center && typeof v.zoom === 'number')
             return { center: v.center, zoom: v.zoom }
-        const ms = markers()
-        if (ms.length === 0)
-            return {
-                center: { lat: 20, lng: 0 },
-                zoom: settings.graph.mapDefaultZoom,
-            }
-        if (ms.length === 1)
-            return { center: { lat: ms[0].lat, lng: ms[0].lng }, zoom: 10 }
-        let minLat = Infinity,
-            maxLat = -Infinity,
-            minLng = Infinity,
-            maxLng = -Infinity
-        for (const m of ms) {
-            if (m.lat < minLat) minLat = m.lat
-            if (m.lat > maxLat) maxLat = m.lat
-            if (m.lng < minLng) minLng = m.lng
-            if (m.lng > maxLng) maxLng = m.lng
-        }
-        // Rough zoom-fit: pick a zoom whose viewport covers the bbox at 800×600.
-        // Iterate down from max zoom to find the first that fits with 80% padding.
-        const cLat = (minLat + maxLat) / 2
-        const cLng = (minLng + maxLng) / 2
-        for (let z = 14; z >= 1; z--) {
-            const a = project(maxLat, minLng, z)
-            const b = project(minLat, maxLng, z)
-            if (
-                Math.abs(b.x - a.x) < 800 * 0.8 &&
-                Math.abs(b.y - a.y) < 600 * 0.8
-            ) {
-                return { center: { lat: cLat, lng: cLng }, zoom: z }
-            }
-        }
-        return {
-            center: { lat: cLat, lng: cLng },
-            zoom: settings.graph.mapDefaultZoom,
-        }
+        return fitView(markers(), settings.graph.mapDefaultZoom)
     })
 
     const [center, setCenter] = createSignal(initialView().center)
@@ -380,78 +237,15 @@ export function MapView(props: {
     )
 
     // Convert a world-pixel coord into screen-pixel coords inside the map element.
-    function toScreen(wx: number, wy: number) {
-        const { w, h } = size()
-        const c = centerWorld()
-        return { x: w / 2 + (wx - c.x), y: h / 2 + (wy - c.y) }
-    }
+    const toScreen = (wx: number, wy: number) =>
+        worldToScreen(wx, wy, size(), centerWorld())
 
     // Project a geographic point to screen pixels at the current view.
-    function geoToScreen(lat: number, lng: number) {
-        const p = project(lat, lng, zoom())
-        return toScreen(p.x, p.y)
-    }
+    const geoToScreen = (lat: number, lng: number) =>
+        geoToScreenAt(lat, lng, size(), centerWorld(), zoom())
 
-    // Landmass polygons as screen-space SVG path strings.
-    const landPaths = createMemo(() => {
-        // Touch zoom()/centerWorld() (via geoToScreen) so the memo recomputes on pan/zoom.
-        return LANDMASSES.map(ring => {
-            let d = ''
-            for (let i = 0; i < ring.length; i++) {
-                const [lng, lat] = ring[i]
-                const s = geoToScreen(lat, lng)
-                d +=
-                    (i === 0 ? 'M' : 'L') +
-                    s.x.toFixed(1) +
-                    ' ' +
-                    s.y.toFixed(1) +
-                    ' '
-            }
-            return d + 'Z'
-        })
-    })
-
-    // Graticule: meridians (vertical) + parallels (horizontal) as screen lines.
-    // Equator + prime meridian are flagged bold.
-    const graticule = createMemo(() => {
-        const lines: {
-            x1: number
-            y1: number
-            x2: number
-            y2: number
-            bold: boolean
-        }[] = []
-        for (let lng = -180; lng <= 180; lng += GRAT_LNG) {
-            const a = geoToScreen(85, lng)
-            const b = geoToScreen(-85, lng)
-            lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, bold: lng === 0 })
-        }
-        for (let lat = -80; lat <= 80; lat += GRAT_LAT) {
-            const a = geoToScreen(lat, -180)
-            const b = geoToScreen(lat, 180)
-            lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, bold: lat === 0 })
-        }
-        return lines
-    })
-
-    // Scale bar: how many km does a fixed on-screen segment represent, rounded
-    // to a "nice" number. Uses the meters-per-pixel at the map center.
-    const scaleBar = createMemo(() => {
-        const z = zoom()
-        const lat = center().lat
-        // Web-Mercator ground resolution (m/px) at this lat & zoom.
-        const mPerPx = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z
-        const targetPx = 70
-        const rawKm = (mPerPx * targetPx) / 1000
-        // Round down to 1/2/5 × 10^n.
-        const pow = 10 ** Math.floor(Math.log10(rawKm))
-        const mult = rawKm / pow
-        const nice = mult >= 5 ? 5 : mult >= 2 ? 2 : 1
-        const km = nice * pow
-        const widthPx = (km * 1000) / mPerPx
-        const label = km >= 1 ? `${km} km` : `${Math.round(km * 1000)} m`
-        return { widthPx, label }
-    })
+    // Scale bar: ground distance of a fixed on-screen segment, at the map centre.
+    const scaleBar = createMemo(() => scaleBarFor(zoom(), center().lat))
 
     // ── Write seam ───────────────────────────────────────────────────────────────────────
     // A note row writes its lat/lng straight onto frontmatter; a stored (own-rows) row
@@ -463,11 +257,13 @@ export function MapView(props: {
         if (!latField || !lngField) return
         try {
             if (canWriteStoredRow(row)) {
-                const note = {
-                    ...storedNote(row),
-                    [latField]: lat,
-                    [lngField]: lng,
-                }
+                const note = withCoords(
+                    storedNote(row),
+                    latField,
+                    lngField,
+                    lat,
+                    lng,
+                )
                 await api.rowUpdate(row.file.path, row.index!, note)
             } else {
                 await api.setProperties([
@@ -489,9 +285,7 @@ export function MapView(props: {
         if (!latField || !lngField) return
         try {
             if (canWriteStoredRow(row)) {
-                const note = { ...storedNote(row) }
-                delete note[latField]
-                delete note[lngField]
+                const note = withoutCoords(storedNote(row), latField, lngField)
                 await api.rowUpdate(row.file.path, row.index!, note)
             } else {
                 await api.deleteProperty(row.file.path, latField)
@@ -526,15 +320,12 @@ export function MapView(props: {
 
     // The folder a new NOTE row lands in: beside an existing note row, so a folder-scoped source
     // still selects it (KanbanView's `boardFolder()` does the same). Undefined = the base's own.
-    const siblingFolder = (): string | undefined => {
-        for (const g of props.result.groups)
-            for (const r of g.rows)
-                if (r.index === undefined && r.file.path)
-                    return r.file.path.includes('/')
-                        ? r.file.path.slice(0, r.file.path.lastIndexOf('/'))
-                        : ''
-        return undefined
-    }
+    const siblingFolder = (): string | undefined =>
+        siblingFolderOf(
+            props.result.groups.flatMap(g =>
+                g.rows.map(r => ({ path: r.file.path, index: r.index })),
+            ),
+        )
 
     /** The row a create just made, once the refetch has it on the map: a note row by its path,
      *  a stored row as the one marker at exactly these coordinates that was not there before. */
@@ -607,15 +398,20 @@ export function MapView(props: {
     }
 
     // The row editor (title + properties, with `[open note]`) — what a pin's click opens.
+    const rowEditor = useRowEditor({
+        config: () => props.config,
+        view: () => props.result.view,
+        columns: () => props.result.columns,
+        onChanged: () => void props.onChange?.(),
+        // Array-valued siblings feed a tags column's dropdown in the editor.
+        siblingValues: id =>
+            props.result.groups
+                .flatMap(g => g.rows)
+                .map(r => resolveProperty(id, r))
+                .filter(Array.isArray),
+    })
     function editRow(row: Row, focusTarget?: string) {
-        openRowEditor({
-            row,
-            config: props.config,
-            view: props.result.view,
-            onChanged: () => void props.onChange?.(),
-            columns: props.result.columns,
-            focusTarget,
-        })
+        rowEditor.open(row, focusTarget)
     }
 
     function disarm() {
@@ -687,23 +483,11 @@ export function MapView(props: {
     // Zoom keeping a screen point anchored. `anchor` is screen-px within the map;
     // defaults to the map center (used by the +/- buttons).
     function zoomBy(delta: number, anchor?: { x: number; y: number }): void {
-        const z0 = zoom()
-        const z1 = Math.max(1, Math.min(18, z0 + delta))
-        if (z1 === z0) return
+        const next = zoomAround(zoom(), center(), size(), delta, anchor)
+        if (!next) return
         userMoved = true
-        const { w, h } = size()
-        const ax = anchor ? anchor.x : w / 2
-        const ay = anchor ? anchor.y : h / 2
-
-        const c0 = centerWorld()
-        const wx0 = c0.x + (ax - w / 2)
-        const wy0 = c0.y + (ay - h / 2)
-        const scale = 2 ** (z1 - z0)
-        const wx1 = wx0 * scale
-        const wy1 = wy0 * scale
-
-        setZoom(z1)
-        setCenter(unproject(wx1 - (ax - w / 2), wy1 - (ay - h / 2), z1))
+        setZoom(next.zoom)
+        setCenter(next.center)
     }
 
     // Zoom on wheel. Scroll up → zoom in; cursor's world point stays anchored under cursor.
@@ -751,13 +535,6 @@ export function MapView(props: {
         )
         disarm()
         setMapMenu({ x: e.clientX, y: e.clientY, lat, lng })
-    }
-
-    // The floating chrome (zoom controls, Add pin) sits INSIDE the map element, so its
-    // mousedown would start a pan and — worse — its click would bubble into `onMapClick` and,
-    // while armed, drop the pin under the button that was pressed. The chrome claims both.
-    function claimPointer(e: MouseEvent): void {
-        e.stopPropagation()
     }
 
     // Locate: recenter (and fit) on the markers we have.
@@ -822,18 +599,19 @@ export function MapView(props: {
         openPin(m.row)
     }
 
-    // A pin opens its row editor — unless the map is read-only (an embed with no base file) or
-    // the row is a task LINE (its fields are not frontmatter): then it opens the note, as the
-    // other views do.
+    // A pin opens its row editor. A pin that cannot be edited (an embed with no base file, or a
+    // task LINE whose fields are not frontmatter) renders as a NoteLink instead — see `noteFor`.
+    const noteFor = (row: Row): string | undefined =>
+        !props.basePath || typeof row.note.line === 'number'
+            ? row.file.path
+            : undefined
     function openPin(row: Row): void {
-        if (!props.basePath || typeof row.note.line === 'number')
-            window.dispatchEvent(
-                new CustomEvent('bismuth-open', { detail: { path: row.file.path } }),
-            )
-        else editRow(row)
+        if (noteFor(row) === undefined) editRow(row)
     }
 
     function onPinContextMenu(e: MouseEvent, m: Marker): void {
+        // Nothing to offer (a read-only map's link pin): leave the native menu alone.
+        if (pinMenuItems(m.row).length === 0) return
         e.preventDefault()
         e.stopPropagation()
         setPinMenu({ x: e.clientX, y: e.clientY, row: m.row })
@@ -847,7 +625,7 @@ export function MapView(props: {
             ctrlKey: e.ctrlKey,
             metaKey: e.metaKey,
         })
-        if (action?.kind !== 'menu') return
+        if (action?.kind !== 'menu' || pinMenuItems(m.row).length === 0) return
         e.preventDefault()
         e.stopPropagation()
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -855,13 +633,14 @@ export function MapView(props: {
     }
 
     const pinMenuItems = (row: Row): MenuItem[] => {
-        const items: MenuItem[] = [
-            {
-                label: props.basePath && typeof row.note.line !== 'number' ? 'edit' : 'open note',
+        const items: MenuItem[] = []
+        // A pin that opens a note IS the link, so only an editable one offers `edit`.
+        if (noteFor(row) === undefined)
+            items.push({
+                label: 'edit',
                 icon: 'Pencil',
                 onSelect: () => openPin(row),
-            },
-        ]
+            })
         if (writable()) {
             items.push(
                 { label: 'move pin', icon: 'Pin', onSelect: () => arm(row) },
@@ -869,7 +648,7 @@ export function MapView(props: {
                     label: 'remove pin',
                     icon: 'Trash2',
                     danger: true,
-                    separatorBefore: true,
+                    separatorBefore: items.length > 0,
                     onSelect: () => void removeCoords(row),
                 },
             )
@@ -909,42 +688,11 @@ export function MapView(props: {
                 onClick={onMapClick}
                 onContextMenu={onMapContextMenu}
             >
-                {/* Offline vector basemap: sea bg + graticule + landmasses. */}
-                <svg
-                    class={styles.mapVector}
-                    width={size().w}
-                    height={size().h}
-                >
-                    <rect
-                        class={styles.mapSea}
-                        x="0"
-                        y="0"
-                        width={size().w}
-                        height={size().h}
-                    />
-                    <g>
-                        <For each={graticule()}>
-                            {l => (
-                                <line
-                                    class={
-                                        l.bold
-                                            ? styles.mapGridBold
-                                            : styles.mapGrid
-                                    }
-                                    x1={l.x1}
-                                    y1={l.y1}
-                                    x2={l.x2}
-                                    y2={l.y2}
-                                />
-                            )}
-                        </For>
-                    </g>
-                    <g>
-                        <For each={landPaths()}>
-                            {d => <path class={styles.mapLand} d={d} />}
-                        </For>
-                    </g>
-                </svg>
+                <MapBasemap
+                    size={size()}
+                    centerWorld={centerWorld()}
+                    zoom={zoom()}
+                />
 
                 <div class={styles.mapMarkers}>
                     <For each={markerKeys()}>
@@ -972,14 +720,14 @@ export function MapView(props: {
                                 return mk ? titleOf(mk.row, titleCol()) : ''
                             }
                             return (
-                                <PlainButton
-                                    class={styles.mapPin}
-                                    classList={{ [styles.mapPinDragging]: dragging() }}
-                                    style={{
-                                        left: `${pos().x}px`,
-                                        top: `${pos().y}px`,
-                                    }}
-                                    title={
+                                <MapPin
+                                    title={title()}
+                                    x={pos().x}
+                                    y={pos().y}
+                                    dragging={dragging()}
+                                    passThrough={!!armed()}
+                                    notePath={cur() ? noteFor(cur()!.row) : undefined}
+                                    hint={
                                         writable()
                                             ? 'Click to edit — drag to move, right-click for more'
                                             : 'Click to edit'
@@ -997,91 +745,21 @@ export function MapView(props: {
                                     onPointerUp={e => onPinPointerUp(e, m())}
                                     onContextMenu={e => onPinContextMenu(e, m())}
                                     onKeyDown={e => onPinKeyDown(e, m())}
-                                >
-                                    <Text
-                                        as="span"
-                                        size="inherit"
-                                        tone="default"
-                                        weight="inherit"
-                                        class={styles.mapPinChip}
-                                    >
-                                        {title()}
-                                    </Text>
-                                    {/* Accent glyph marker — no drawn teardrop shape, per bases-map.card.html
-                      ("@ a record"). */}
-                                    <Text
-                                        as="span"
-                                        size="inherit"
-                                        tone="inherit"
-                                        weight="bold"
-                                        class={styles.mapPinGlyph}
-                                        aria-hidden="true"
-                                    >
-                                        @
-                                    </Text>
-                                </PlainButton>
+                                />
                             )
                         }}
                     </For>
                 </div>
 
-                {/* Floating controls, top-right — bracket IconButtons. */}
-                <div
-                    class={styles.mapControls}
-                    onMouseDown={claimPointer}
-                    onClick={claimPointer}
-                    onContextMenu={claimPointer}
-                >
-                    <div class={styles.mapZoomStack}>
-                        <IconButton
-                            icon="ZoomIn"
-                            label="Zoom in"
-                            onClick={() => zoomBy(1)}
-                        />
-                        <IconButton
-                            icon="ZoomOut"
-                            label="Zoom out"
-                            onClick={() => zoomBy(-1)}
-                        />
-                    </div>
-                    <IconButton
-                        icon="RotateCcw"
-                        label="Reset view"
-                        onClick={resetView}
-                    />
-                    <IconButton
-                        icon="Map"
-                        label="Fit to pins"
-                        onClick={locate}
-                    />
-                </div>
-
-                {/* Placement, top-left: `Add pin` — the next map click creates a NEW pin there.
-                    Disabled only when the map cannot create a row, and then its title says why.
-                    (A row that exists but has no location is placed from the map's right-click
-                    menu instead: `place <title> here`.) */}
-                <div
-                    class={styles.mapPlacement}
-                    onMouseDown={claimPointer}
-                    onClick={claimPointer}
-                    onContextMenu={claimPointer}
-                >
-                    <IconButton
-                        icon="Pin"
-                        label={armed() ? 'Cancel placing pin' : 'Add pin'}
-                        variant={armed() ? 'selected' : 'normal'}
-                        aria-pressed={!!armed()}
-                        disabled={!armed() && !!createBlocked()}
-                        title={
-                            armed()
-                                ? 'Cancel placing pin (esc)'
-                                : (createBlocked() ??
-                                  'Add pin — then click the map where it goes')
-                        }
-                        data-testid="map-add-pin"
-                        onClick={onAddPin}
-                    />
-                </div>
+                <MapControls
+                    armed={!!armed()}
+                    blockedReason={createBlocked()}
+                    onZoomIn={() => zoomBy(1)}
+                    onZoomOut={() => zoomBy(-1)}
+                    onReset={resetView}
+                    onFit={locate}
+                    onAddPin={onAddPin}
+                />
 
                 {/* Armed-placement hint. Follows the cursor once it moves over the map;
                     shown at a fixed corner before that so arming is visible immediately,
@@ -1096,7 +774,7 @@ export function MapView(props: {
                                           left: `${hoverPos()!.x + 14}px`,
                                           top: `${hoverPos()!.y + 14}px`,
                                       }
-                                    : { left: '16px', top: '52px' }
+                                    : { left: 'var(--sp-6)', top: 'var(--map-hint-top)' }
                             }
                         >
                             <Text as="span" inherit>
@@ -1133,8 +811,11 @@ export function MapView(props: {
 
                 <Show when={markers().length === 0}>
                     <div class={styles.mapEmpty}>
-                        No notes have valid <InlineCode>{latKey()}</InlineCode>{' '}
-                        / <InlineCode>{lngKey()}</InlineCode> properties.
+                        <EmptyState title="no rows have a location">
+                            add <InlineCode>{latKey()}</InlineCode> /{' '}
+                            <InlineCode>{lngKey()}</InlineCode> properties to a
+                            note to pin it
+                        </EmptyState>
                     </div>
                 </Show>
             </div>

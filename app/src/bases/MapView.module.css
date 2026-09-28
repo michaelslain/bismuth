@@ -1,6 +1,9 @@
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
 .map {
+  /* Layout sizes that are not spacing, read below. */
+  --map-scale-bottom: 44px;
+  --map-hint-top: 52px;
   position: relative;
   flex: 1 1 auto;
   overflow: hidden;
@@ -12,99 +15,20 @@
 }
 /* A background pan in progress. */
 .mapPanning { cursor: grabbing; }
-/* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
-.mapVector {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  display: block;
-}
-.mapSea { fill: var(--map-sea); }
-.mapGrid { stroke: var(--map-grid); stroke-width: 0.75; opacity: 0.7; }
-.mapGridBold { stroke: var(--map-coast); stroke-width: 1.25; opacity: 0.85; }
-.mapLand {
-  fill: var(--map-land);
-  stroke: var(--map-coast);
-  stroke-width: 1;
-  stroke-linejoin: round;
-}
+/* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
+   cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
+.mapArmed { cursor: crosshair; }
+/* Pins (MapPin) render inside this layer; it never intercepts a pan itself. */
 .mapMarkers {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-/* Accent glyph marker + label chip, anchored by the glyph's baseline at (left, top) —
-   "a map has to map" (kept as the offline SVG mercator), but the pin itself is now a
-   typed "@" glyph per bases-map.card.html, not a drawn teardrop shape. */
-.mapPin {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: auto;
-  cursor: pointer;
-  transition: transform 120ms ease;
-}
-.mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
-/* A pin being dragged to a new spot. */
-.mapPinDragging { cursor: grabbing; }
-/* While armed, the next click belongs to the MAP: pins go click-through so a click beside (or on)
-   a label still places there, instead of opening that pin's editor under a crosshair cursor. */
-.mapArmed .mapPin { pointer-events: none; }
-.mapPinChip {
-  max-width: 180px;
-  margin-bottom: var(--sp-1);
-  padding: var(--sp-1) var(--sp-4);
-  border-radius: var(--r-0);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  background: var(--pop-bg);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-micro);
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; min-width: 0;
-  /* Floating over the map surface — the shared floating-chrome shadow token. */
-  box-shadow: var(--lift);
-}
-.mapPinGlyph {
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-lead);
-  line-height: 1;
-  color: var(--accent);
-  text-shadow: var(--glow-accent);
-}
-/* Floating controls, top-right. */
-.mapControls {
-  position: absolute;
-  right: 16px;
-  top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  pointer-events: auto;
-  /* The gaps between buttons are not the pannable map — no grab hand there. */
-  cursor: default;
-}
-.mapZoomStack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-/* Zoom in/out, reset and locate are now IconButtons (bracket [icon] look owned by Button) — no
-   per-button box/background/border of our own left to give them, and .mapZoomStack no longer
-   plates itself either: the basemap is our own themed vector surface (.mapSea/.mapLand tokens),
-   not photographic tiles, so a bare bracket reads fine on it — the same assumption the rest of
-   the app's floating bracket controls make (GraphFloater over the graph canvas). All four
-   controls (zoom in, zoom out, reset, locate) are now bare IconButtons spaced --sp-4 apart,
-   nested two levels deep in .mapControls/.mapZoomStack purely for the column/column-within-row
-   grouping — neither div carries a look of its own any more. */
 /* Scale bar, bottom-left above the badge. */
 .mapScale {
   position: absolute;
-  left: 18px;
-  bottom: 44px;
+  left: var(--sp-6);
+  bottom: var(--map-scale-bottom);
   display: flex;
   align-items: flex-end;
   gap: var(--sp-4);
@@ -121,34 +45,14 @@
   font-size: var(--fs-micro);
   line-height: 1;
 }
+/* Empty state (ui/EmptyState) centred over the basemap; the map underneath stays pannable. */
 .mapEmpty {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--bismuth-muted);
   pointer-events: none;
-  font-size: var(--fs-body);
-}
-/* `Add pin`, top-left (mirrors .mapControls at top-right). It arms a new pin; the next click on
-   the map creates it there. */
-.mapPlacement {
-  position: absolute;
-  left: 16px;
-  top: 16px;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  pointer-events: auto;
-  cursor: default;
-}
-/* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
-.mapPlacement button:disabled { cursor: not-allowed; }
-/* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
-   cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
-.mapArmed {
-  cursor: crosshair;
 }
 /* Floating hint that follows the cursor while a row is armed for placement. */
 .mapPlacingLabel {
