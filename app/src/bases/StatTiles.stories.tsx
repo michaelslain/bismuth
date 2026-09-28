@@ -42,3 +42,47 @@ export const StreakCards: Story = {
         ],
     },
 }
+
+/** StatView's full declared-metric tile: value, label, period split, sparkline, KaTeX — in
+ *  acceptance order and tone (period/label `--text-muted`, sparkline `--accent`, KaTeX `--faint`). */
+export const WithMetricFields: Story = {
+    args: {
+        tiles: [
+            {
+                label: 'total price',
+                value: '42',
+                tone: 'accent',
+                period: '12 this week // 9 last week',
+                spark: '▂▃▅▄▆▅▇▆█▇▆▇',
+                tex: '\\sum_{n \\in \\text{notes}} n.\\text{price}',
+            },
+            {
+                label: 'units',
+                value: '18',
+                period: '5 this week // 4 last week',
+                spark: '▁▂▃▄▅▆▇█',
+                tex: '\\sum_{n \\in \\text{notes}} n.\\text{units}',
+            },
+        ],
+    },
+}
+
+/** A metric that failed to parse/evaluate: `—` for its value, `cannot read: <reason>` in
+ *  `--danger` where the KaTeX line would be — the other tile still renders normally. */
+export const WithError: Story = {
+    args: {
+        tiles: [
+            {
+                label: 'price per unit',
+                value: '2.3',
+                tone: 'accent',
+                tex: '\\frac{\\sum_{n \\in \\text{notes}} n.\\text{price}}{\\sum_{n \\in \\text{notes}} n.\\text{units}}',
+            },
+            {
+                label: 'bad metric',
+                value: '—',
+                error: 'priority must be inside sum, avg, min, max or count',
+            },
+        ],
+    },
+}
