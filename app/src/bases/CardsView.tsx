@@ -10,6 +10,7 @@ import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
 import { isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
+import { titleOf } from './kanbanMeta'
 import styles from './CardsView.module.css'
 
 /** A value is already a usable image src (remote URL or inline data) vs a vault path. */
@@ -91,10 +92,7 @@ export function CardsView(props: {
         return isDirectUrl(s) ? s : api.assetUrl(s)
     }
 
-    const coverTitle = (row: Row): string => {
-        const v = resolveProperty(titleCol(), row)
-        return v == null ? row.file.name : String(v)
-    }
+    const coverTitle = (row: Row): string => titleOf(row, titleCol())
     const coverAuthor = (row: Row): string | null => {
         if (!authorCol()) return null
         const v = resolveProperty(authorCol()!, row)

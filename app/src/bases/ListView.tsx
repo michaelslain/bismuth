@@ -1,7 +1,9 @@
 import { For, Index, Show } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
-import { renderValue, isTaskRow } from './renderValue'
+import { renderValue } from './renderValue'
+import { isTaskRow } from './columnKinds'
+import { titleOf } from './kanbanMeta'
 import { groupColor } from '../ui/StatusDot'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
@@ -105,7 +107,6 @@ export function ListView(props: {
                                         />
                                     )
 
-                                const title = resolveProperty(firstCol(), row)
                                 const author = authorCol()
                                     ? resolveProperty(authorCol()!, row)
                                     : null
@@ -121,9 +122,7 @@ export function ListView(props: {
                                         }}
                                     >
                                         <Label fill>
-                                            {title == null
-                                                ? row.file.name
-                                                : String(title)}
+                                            {titleOf(row, firstCol())}
                                             <Show
                                                 when={
                                                     author != null &&

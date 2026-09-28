@@ -13,7 +13,8 @@ import {
     coercePropertyValue,
 } from '../../../core/src/bases/properties'
 import { renderMarkdown } from './markdown'
-import { renderCell, isTagColumn } from './renderValue'
+import { renderCell } from './renderValue'
+import { isTagColumn } from './columnKinds'
 import { formatNumberDisplay } from './numberFormat'
 import { columnLabel } from './columnLabel'
 import { metaVisible, titleOf, writableKey } from './kanbanMeta'

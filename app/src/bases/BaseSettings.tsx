@@ -26,7 +26,7 @@ import {
 import { FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
-import { capitalize } from './renderValue'
+import { capitalize } from './columnKinds'
 import { columnLabel } from './columnLabel'
 import { declaredPropertyKeys } from '../../../core/src/bases/properties'
 import {

@@ -135,7 +135,7 @@ governance:
   framework: solid
   source: [app/src]
   components:
-    match: "**/[A-Z]*.tsx"
+    match: "**/*.tsx"
     exclude: ["**/*.stories.tsx", "**/*.test.tsx", "**/_*"]
   stylesheets:
     match: "**/*.module.css"
@@ -174,6 +174,11 @@ governance:
     sibling: "{name}.stories.tsx"
     exempt:
       - app/src/index.tsx          # boot entry; mounts the app, nothing to render in isolation
+      - app/src/bases/openRowEditor.tsx   # imperative modal mount helper, no rendered surface of its own; covered by CardEditModal stories
+      - app/src/bases/openTaskEditor.tsx  # same, covered by TaskEditModal stories
+      - app/src/editor/openQueryBuilder.tsx  # same, covered by QueryBuilder stories
+      - app/src/editor/datePickerExtension.tsx  # a CodeMirror widget, plain-DOM library territory
+      - app/src/editor/noteTitleWidget.tsx      # a CodeMirror widget
   checks: {}
 ---
 

@@ -14,11 +14,13 @@ import { canonicalId, resolveProperty } from '../../../core/src/bases/query'
 import {
     renderCell,
     renderTitle,
+} from './renderValue'
+import {
     isTagColumn,
     isRatingColumn,
     isStatusColumn,
     bareName,
-} from './renderValue'
+} from './columnKinds'
 import { columnLabel } from './columnLabel'
 import { todayISO } from '../../../core/src/dates'
 import { checkStatus, isOverdue } from './taskDisplay'
@@ -105,7 +107,9 @@ export function TableView(props: {
     // editor (a tags toggle's own write revalidates the base while the picker is still open).
     const cellBody = (c: string, ci: number, row: () => Row): JSX.Element => {
         const display = () =>
-            ci === 0 ? renderTitle(c, row()) : renderCell(c, row())
+            ci === 0
+                ? renderTitle(c, row())
+                : renderCell(c, row(), false, props.config, true)
         // A NOTE row's title opens the note, as it always has; its other cells edit in place.
         const editable = createMemo(
             () =>

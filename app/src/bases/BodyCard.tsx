@@ -1,6 +1,6 @@
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
-import { resolveProperty } from '../../../core/src/bases/query'
 import { renderValue } from './renderValue'
+import { titleOf } from './kanbanMeta'
 import { CardEditor } from './CardEditor'
 import CardTitle from './CardTitle'
 import styles from './BodyCard.module.css'
@@ -22,12 +22,7 @@ export function BodyCard(props: {
 }) {
     const firstCol = () => props.result.columns[0] ?? 'file.name'
     // Plain-string title used both as the chip and to detect+strip a duplicate `# Title` heading.
-    const titleText = (): string => {
-        const v = resolveProperty(firstCol(), props.row)
-        return v == null || typeof v === 'object'
-            ? props.row.file.name
-            : String(v)
-    }
+    const titleText = (): string => titleOf(props.row, firstCol())
 
     return (
         <div class={`${styles.bodyCard} ${props.class ?? ''}`}>
