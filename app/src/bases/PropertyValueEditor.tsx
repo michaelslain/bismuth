@@ -220,7 +220,7 @@ export function PropertyValueEditor(props: {
                     value={multiselectValues(props.value)}
                     options={mk().options}
                     creatable={mk().creatable}
-                    open
+                    open={autofocus()}
                     onChange={next =>
                         props.onCommit(multiselectCommitValue(next), {
                             keepOpen: true,

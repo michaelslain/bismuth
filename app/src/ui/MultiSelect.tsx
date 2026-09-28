@@ -95,6 +95,7 @@ function MultiSelect(props: MultiSelectProps) {
     function close(): void {
         setOpen(false)
         setFilter('')
+        triggerRef?.focus()
         props.onClose?.()
     }
 
@@ -110,6 +111,18 @@ function MultiSelect(props: MultiSelectProps) {
                 type="button"
                 class={`${styles.trigger} ${props.class ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
+                onKeyDown={e => {
+                    if (open()) return
+                    if (
+                        e.key === 'ArrowDown' ||
+                        e.key === 'Enter' ||
+                        e.key === ' '
+                    ) {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openMenu()
+                    }
+                }}
             >
                 <span
                     class={styles.value}

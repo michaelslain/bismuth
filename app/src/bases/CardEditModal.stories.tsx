@@ -148,11 +148,12 @@ export const OrderListsTitle: Story = {
         )
         expect(titleInput).not.toBeNull()
         expect(titleInput!.value).toBe('Has Title Frontmatter')
-        // `tags` (a genuinely declared multiselect) legitimately keeps its own "+ Add"
-        // chip-picker row — that control is correct and must NOT be asserted away. The bug
-        // was a second row keyed `title`, never `tags`'s own control; `titleLabels.length`
-        // above is what proves the second row is gone.
-        expect(document.body.textContent).toMatch(/\+ Add/)
+        // `tags` (a genuinely declared multiselect) legitimately keeps its own closed
+        // MultiSelect trigger, showing the row's selected value ("frontend", from
+        // SAMPLE_ROWS[1] via HAS_TITLE_ROW) — that control is correct and must NOT be
+        // asserted away. The bug was a second row keyed `title`, never `tags`'s own
+        // control; `titleLabels.length` above is what proves the second row is gone.
+        expect(document.body.textContent).toMatch(/frontend/)
     },
 }
 
