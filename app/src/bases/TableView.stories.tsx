@@ -472,10 +472,10 @@ export const TagsPickerStaysOpenAcrossToggles: Story = {
         const filter = document.activeElement
         expect(filter?.tagName).toBe('INPUT')
 
-        await userEvent.click(option('beta'))
+        await userEvent.click(option('#beta'))
         // The write has landed AND the table re-resolved into fresh row objects.
         await waitFor(() => expect(pickResolves).toBe(1))
-        await userEvent.click(option('gamma'))
+        await userEvent.click(option('#gamma'))
         await waitFor(() => expect(pickResolves).toBe(2))
 
         // Still open, rows exactly where they were, the same filter input still focused, and
@@ -484,8 +484,10 @@ export const TagsPickerStaysOpenAcrossToggles: Story = {
         expect(order()).toEqual(opened)
         expect(document.activeElement).toBe(filter)
         expect(filter?.isConnected).toBe(true)
+        // The trigger now reads exactly like the read-only cell (renderValue.tsx's renderTags:
+        // `#`-prefixed, no separator character — the visual space is a CSS flex gap, not text).
         expect((cell().textContent ?? '').replace('▾', '').trim()).toBe(
-            'alpha, beta, gamma',
+            '#alpha#beta#gamma',
         )
 
         await userEvent.keyboard('{Escape}')

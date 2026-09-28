@@ -31,7 +31,17 @@ import {
 import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import TextInput from '../ui/TextInput'
+import { renderTags } from './renderValue'
 import styles from './PropertyValueEditor.module.css'
+
+/** `#`-prefix a bare option string, matching `renderTags`' own per-tag formatting — used for a
+ *  `tags` kind's open-list rows, so `[x] #alpha` reads the same `#` the closed trigger and the
+ *  read-only cell (renderValue.tsx's `renderTags`) both show. A declared `multiselect` column
+ *  has no read-only `#` styling (renderValue's generic array branch is a plain comma join), so
+ *  its rows stay bare. */
+function tagOption(v: string): string {
+    return `#${v}`
+}
 
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
  *  carried an identical copy, but its version was deleted along with the rest of the dead
@@ -227,6 +237,14 @@ export function PropertyValueEditor(props: {
                         })
                     }
                     onClose={props.onCancel}
+                    // `creatable` is exactly the `tags` kind (propertyEdit.ts's
+                    // `multiSelectKind()` above) — a declared `multiselect` isn't creatable and
+                    // has no `#` styling on its read-only cell (renderValue.tsx's generic array
+                    // branch, a plain comma join), so it gets neither prop and MultiSelect's own
+                    // defaults (comma-joined trigger, bare option labels) already match.
+                    {...(mk().creatable
+                        ? { renderValue: renderTags, formatOption: tagOption }
+                        : {})}
                 />
             )}
         </Show>
