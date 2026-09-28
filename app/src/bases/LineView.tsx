@@ -1,13 +1,14 @@
 import { For, createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
+import type { Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
 import { buildLinePlot } from './asciiLine'
 import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
+import type { ChartViewProps } from './chartViewProps'
 import styles from './LineView.module.css'
 
 /** A value over time, plotted on the character grid — no SVG (bases-line.card.html). */
-export function LineView(props: { result: ViewResult; config: BaseConfig }) {
+export function LineView(props: ChartViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )

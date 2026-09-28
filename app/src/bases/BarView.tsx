@@ -1,8 +1,9 @@
 import { createMemo } from 'solid-js'
-import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
+import type { Row } from '../../../core/src/bases/types'
 import { buildChartData } from '../../../core/src/bases/chart'
 import { AsciiChart } from '../ui/ascii/AsciiMeter'
 import ChartFrame from './ChartFrame'
+import type { ChartViewProps } from './chartViewProps'
 import styles from './BarView.module.css'
 
 // Per-bar palette cycles through the graph color ramp (--graph-0..--graph-4),
@@ -15,7 +16,7 @@ const BAR_PALETTE = [
     'var(--graph-4, var(--gold))',
 ]
 
-export function BarView(props: { result: ViewResult; config: BaseConfig }) {
+export function BarView(props: ChartViewProps) {
     const rows = createMemo<Row[]>(() =>
         props.result.groups.flatMap(g => g.rows),
     )
