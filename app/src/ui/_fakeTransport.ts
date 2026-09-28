@@ -197,6 +197,10 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     // `/set-property`/`/delete-property` can find the SAME Row object and mutate it in place —
     // see `indexRow` above for why that's what makes state stick across a refetch.
     const rowIndex = new Map<string, Row>()
+    // An ARRAY seed is known up front, so index it now: a component handed those same rows
+    // directly (a MapView story renders `sampleViewResult(rows)` with no `/rows` call of its own)
+    // can still write into them and see the write on its next re-render.
+    if (Array.isArray(seedRows)) for (const row of seedRows) indexRow(rowIndex, row)
     const resolveRows = (spec: SourceSpec): Row[] => {
         const rows = rowsSource(spec)
         for (const row of rows) indexRow(rowIndex, row)

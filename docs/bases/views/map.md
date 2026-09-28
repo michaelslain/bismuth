@@ -57,7 +57,7 @@ The view chooses an initial center and zoom according to the following priority:
 3. **Exactly one marker** — centers on that marker at zoom 10.
 4. **Multiple markers** — computes the bounding box of all marker coordinates, picks the highest zoom from 14 down to 1 at which the bounding box fits within an 800×600 reference viewport at 80% padding. Falls back to `graph.mapDefaultZoom` if nothing fits (i.e., all zoom levels have too-large a bbox).
 
-The view re-runs this framing only when the VIEW changes (switching views, or its configured `center`/`zoom`) and once when the first markers arrive — never merely because a marker moved. Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down. The **locate** button still re-fits on demand.
+The view re-runs this framing only when the VIEW changes (switching views, or its configured `center`/`zoom`) and once when the first markers arrive on a map the user has not yet panned, zoomed or armed — never merely because a marker moved (`shouldReframe` in `app/src/bases/mapCoords.ts`). Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down, and placing the FIRST pin on an all-unplaced map used to snap to zoom 10 on it. Arming placement never touches the framing either. The **fit to pins** button still re-fits on demand.
 
 ## Interaction
 
@@ -65,7 +65,8 @@ The view re-runs this framing only when the VIEW changes (switching views, or it
 - **Zoom wheel**: scroll up to zoom in, scroll down to zoom out. The world point under the cursor stays anchored (cursor-anchored zoom).
 - **Zoom buttons**: `+` and `−` buttons in the top-right controls panel zoom around the map center.
 - **Reset (`RotateCcw` icon button, "Reset view")**: resets center and zoom back to the computed initial framing.
-- **Locate button (`Pin` icon button, "Locate notes")**: same as Reset — re-centers and re-fits on the current markers. (Both buttons call the same `initialView()` logic.)
+- **Fit to pins (`Map` icon button, "Fit to pins")**: re-centers and re-fits on the current markers (the computed initial framing). It used to wear the `Pin` glyph as "Locate notes", which read as an add-pin button that reset the zoom and placed nothing; the `Pin` glyph now belongs to **Add pin** (below).
+- The floating controls and the placement group claim their own `mousedown`/`click`, so pressing one never starts a pan and — while armed — never drops the pin under the button that was pressed.
 - Zoom is clamped to `[1, 18]`.
 
 ## Placing, Moving and Removing Pins
@@ -74,7 +75,7 @@ Rows are no longer only readable off hand-written frontmatter — a pin can be p
 
 ### Placing a row with no coordinates yet
 
-Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. When there is at least one, a `[ unplaced (N) ]` button appears at the top-left of the map. Clicking it opens a menu listing every unplaced row by its title (the same first-column label a marker's chip shows); picking one **arms placement** — the map shows a "placing `<title>` — esc to cancel" hint that follows the cursor, and the *next click anywhere on the map* writes that row's coordinates at the clicked point and disarms. Pressing `Escape` disarms without writing.
+Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. The top-left of a writable map carries an **Add pin** control (`Pin` icon button): with one unplaced row it arms that row straight away, with several it opens the same picker as the readout, pressed again while armed it cancels, and with none it is disabled ("Every row already has a pin"). When there is at least one, a `[ unplaced (N) ]` button appears beside it. Clicking it opens a menu listing every unplaced row by its title (the same first-column label a marker's chip shows); picking one **arms placement** — the map shows a "placing `<title>` — esc to cancel" hint that follows the cursor, and the *next click anywhere on the map* writes that row's coordinates at the clicked point and disarms. Pressing `Escape` disarms without writing.
 
 ### Moving a pin
 
@@ -112,8 +113,8 @@ The map renders several overlaid elements:
 
 - **SVG basemap** — sea background, graticule grid (30° meridians, 20° parallels; equator and prime meridian drawn bolder), and landmass polygons.
 - **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator. Draggable, right-clickable and (when focused) `Shift+F10`-able when the view's coordinates are writable — see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins).
-- **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Pin` locate).
-- **Unplaced-rows control** (top-left) — a `[ unplaced (N) ]` button, shown only when at least one row lacks valid coordinates and the view's fields are writable; opens a menu that arms placement for the picked row.
+- **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Map` fit to pins).
+- **Placement group** (top-left, writable views only) — the `Pin` **Add pin** `IconButton`, plus a `[ unplaced (N) ]` button shown only when at least one row lacks valid coordinates; both open a menu that arms placement for the picked row. It sits at the left so that menu, which opens rightward from its anchor, stays on screen.
 - **Placing hint** — a small floating label reading "placing `<title>` — esc to cancel", shown while a row is armed for placement.
 - **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
 - **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.

@@ -6,6 +6,7 @@ import {
     screenToLatLng,
     pastDragThreshold,
     writableFieldKey,
+    shouldReframe,
 } from './mapCoords'
 
 test('project/unproject round-trip within rounding tolerance', () => {
@@ -70,4 +71,32 @@ test('writableFieldKey refuses file./formula./this. — nothing to write back to
     expect(writableFieldKey('file.name')).toBeNull()
     expect(writableFieldKey('formula.computed_lat')).toBeNull()
     expect(writableFieldKey('this.x')).toBeNull()
+})
+
+test('shouldReframe: a view change always re-frames', () => {
+    const base = { framedKey: 'a', hasMarkers: true, framedWithMarkers: true }
+    expect(shouldReframe({ ...base, key: 'b', userMoved: false })).toBe(true)
+    expect(shouldReframe({ ...base, key: 'b', userMoved: true })).toBe(true)
+})
+
+test('shouldReframe: first markers re-frame only an untouched map', () => {
+    const first = {
+        key: 'a',
+        framedKey: 'a',
+        hasMarkers: true,
+        framedWithMarkers: false,
+    }
+    expect(shouldReframe({ ...first, userMoved: false })).toBe(true)
+    // the user zoomed/armed, then placed the first pin: keep their framing
+    expect(shouldReframe({ ...first, userMoved: true })).toBe(false)
+})
+
+test('shouldReframe: a refetch of the same view never re-frames', () => {
+    const same = { key: 'a', framedKey: 'a', framedWithMarkers: true }
+    expect(shouldReframe({ ...same, hasMarkers: true, userMoved: false })).toBe(
+        false,
+    )
+    expect(
+        shouldReframe({ ...same, hasMarkers: false, userMoved: false }),
+    ).toBe(false)
 })

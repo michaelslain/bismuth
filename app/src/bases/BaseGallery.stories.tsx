@@ -11,12 +11,13 @@
 // reads its own base file over `api.read`, so its body is seeded into `files` as well.
 import { onCleanup, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import { disarmFakeServerVersion, fakeServerVersionArmed, fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { Label } from '../ui/_storyKit'
+import { addPinByMouse } from './_mapPinPlay'
 import { settings, setSettings } from '../settings'
 import type { Row, SourceSpec, ViewType } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
@@ -271,12 +272,16 @@ export const AllKinds: Story = {
     play: allTilesResolved,
 }
 
-/** Proves the gallery's fake transport holds REAL state, not a canned ack: opening the map
- *  tile's unplaced menu, picking a row and clicking the map writes that row's coordinates
+/** Proves the gallery's fake transport holds REAL state, not a canned ack, AND that the map's
+ *  add-pin flow works for a real mouse: zoom in, press the map's `Add pin` control, pick Cairo,
+ *  press an empty spot — every step dispatched as the full pointerdown → mousedown → pointerup →
+ *  mouseup → click sequence at one point (see `_mapPinPlay.ts`; an earlier version dispatched a
+ *  lone synthetic `click` and passed while the user's real clicks did nothing). The write goes
  *  through `/set-properties` into the SAME `PLACE_ROWS` objects `/rows` resolved from, and
  *  `onChange={refetchAll}` (wired in BaseView) re-resolves them — so a new pin appears and the
- *  unplaced count drops, with no manual re-render. The refetch only reaches the transport
- *  because the write also bumps the server version (`versioned: true`); otherwise BaseView's
+ *  unplaced count drops, with no manual re-render — while the zoom and centre the user chose
+ *  survive arming, placing and that refetch. The refetch only reaches the transport because
+ *  the write also bumps the server version (`versioned: true`); otherwise BaseView's
  *  version-gated row cache answers it with the pre-write rows. */
 async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
     // The bump rides a poll callback captured from `serverVersion.start()`. Uncaptured, every
@@ -284,64 +289,8 @@ async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
     // cache that happened to be cold, pass without proving anything.
     expect(fakeServerVersionArmed()).toBe(true)
     const pane = within(canvasElement).getByTestId('gallery-map')
-    const body = within(canvasElement.ownerDocument.body)
-
-    // Each pin is a `<button>` wrapping a chip + glyph that ALSO carry a `mapPin*` class, so
-    // the tag filter is what keeps this a pin count instead of triple-counting.
-    const pinCount = () => pane.querySelectorAll('button[class*="mapPin"]').length
-    const unplacedButton = await within(pane).findByTestId(
-        'map-unplaced-button',
-    )
-    // Rows have resolved by the time the unplaced button shows a real count, so it's the first
-    // safe point to read the starting pin count — reading it before this races the initial fetch.
-    expect(unplacedButton).toHaveTextContent('unplaced (2)')
-    const before = pinCount()
-    await userEvent.click(unplacedButton)
-
-    const option = await body.findByText('Cairo')
-    await userEvent.click(option)
-    await within(pane).findByText(/placing Cairo/)
-
-    const wrap = pane.querySelector('[class*="mapWrap"]') as HTMLElement
-    const mapEl = wrap.firstElementChild as HTMLElement
-    if (!mapEl.className.includes('mapArmed'))
-        throw new Error(`map not armed after picking Cairo: ${mapEl.className}`)
-    const rect = mapEl.getBoundingClientRect()
-    const doc = canvasElement.ownerDocument
-    // Any of the 5 already-placed pins (or a floating control) could sit exactly where a naive
-    // center-click would land and swallow it via its own onClick/pointer-events — so probe a
-    // few points and click the first one that actually hits the map's own background element.
-    const candidates = [
-        [0.5, 0.5],
-        [0.15, 0.85],
-        [0.85, 0.15],
-        [0.15, 0.15],
-        [0.85, 0.85],
-    ]
-    const spot = candidates
-        .map(([fx, fy]) => ({
-            x: rect.left + rect.width * fx,
-            y: rect.top + rect.height * fy,
-        }))
-        .find(p => doc.elementFromPoint(p.x, p.y) === mapEl)
-    if (!spot) throw new Error('no clear spot on the map to click')
-    mapEl.dispatchEvent(
-        new MouseEvent('click', {
-            bubbles: true,
-            cancelable: true,
-            clientX: spot.x,
-            clientY: spot.y,
-        }),
-    )
-
-    await waitFor(() => {
-        if (mapEl.className.includes('mapArmed'))
-            throw new Error('still armed after clicking the map')
-    })
-    await waitFor(() => {
-        expect(pinCount()).toBe(before + 1)
-        expect(unplacedButton).toHaveTextContent('unplaced (1)')
-    })
+    pane.scrollIntoView({ block: 'center' })
+    await addPinByMouse(pane, 'Cairo', 2)
 }
 
 /** Same gallery, isolated to prove writes stick — see `mapPinLands` for what it checks and why. */

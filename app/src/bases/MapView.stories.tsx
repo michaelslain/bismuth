@@ -9,12 +9,14 @@
 // A pin mid-drag is pointer-position state, not storyable; these instead cover the two states
 // the brief calls out: the unplaced-rows menu with placement armed, and a pin's own menu.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createMemo, createSignal } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import { addPinByMouse } from './_mapPinPlay'
 
 const meta = {
     title: 'Bases/MapView',
@@ -173,5 +175,45 @@ export const PinMenuOpen: Story = {
         expect(await body.findByText('open note')).toBeVisible()
         expect(await body.findByText('move…')).toBeVisible()
         expect(await body.findByText('remove from map')).toBeVisible()
+    },
+}
+
+/** A map that holds REAL state, so placing a pin actually shows one: the fake transport writes
+ *  `/set-properties` into these same row objects, and `onChange` (BaseView wires `refetchAll`
+ *  there in the app) re-runs the view over them. A static `result` — what every story above
+ *  renders — can arm placement but can never show the placed pin, which read as "adding a pin
+ *  does nothing".
+ *
+ *  `play()` drives the flow with the event sequence a real mouse produces (pointerdown →
+ *  mousedown → pointerup → mouseup → click at one point, bubbling): zoom in, press `Add pin`,
+ *  pick a row, press the map. It asserts the pin lands AND that arming, placing and the
+ *  re-render after the write all leave the user's zoom and centre exactly where they were. */
+export const AddPin: Story = {
+    render: () => {
+        const rows = [
+            ...PLACES,
+            placeRow('Unmapped Cafe', {}),
+            placeRow('Bad Coords', { lat: 'north-ish', lng: 12 }),
+        ].map(r => ({ ...r, note: { ...r.note } }))
+        setTransport(fakeTransport({ rows: rows as Row[] }))
+        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const [tick, setTick] = createSignal(0)
+        const result = createMemo(() => {
+            tick()
+            return sampleViewResult(rows, { views })
+        })
+        return (
+            <div style={{ height: '480px' }}>
+                <MapView
+                    result={result()}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                    onChange={() => setTick(t => t + 1)}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await addPinByMouse(canvasElement, 'Unmapped Cafe', 2)
     },
 }
