@@ -95,8 +95,14 @@ export const HoverAndDrill: Story = {
             { timeout: 5000 },
         )
 
+        // Hovering must not rebuild the rows — the node under the pointer stays the same one.
+        expect(row.isConnected).toBe(true)
+
         // Clicking opens the drill list under the chart — a header plus a `[ clear ]` button.
-        await userEvent.click(row)
+        // Re-query by bucket so a legitimate re-layout never leaves the click on a detached node.
+        const target = canvasElement.querySelector<HTMLElement>(`[data-bucket="${key}"]`)
+        if (!target) throw new Error(`row ${key} vanished`)
+        await userEvent.click(target)
         const clearButton = await waitFor(
             () => {
                 const btn = Array.from(canvasElement.querySelectorAll('button')).find(b =>

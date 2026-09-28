@@ -13,7 +13,12 @@ import styles from './BarView.module.css'
 
 /** A row of typed `#` per bucket, sized to fill the pane — no SVG (bases-bar.card.html). */
 export function BarView(props: ChartViewProps) {
-    const [grid, setGrid] = createSignal<ChartGrid>({ columns: 20, cellWidth: 0 })
+    // ChartFrame reports a fresh object on every resize callback; an identical measure must not
+    // re-run layoutBars, or `<For>` (keyed by reference) rebuilds every row under the pointer.
+    const [grid, setGrid] = createSignal<ChartGrid>(
+        { columns: 20, cellWidth: 0 },
+        { equals: (a, b) => a.columns === b.columns && a.cellWidth === b.cellWidth },
+    )
     const [hoverKey, setHoverKey] = createSignal<string | undefined>(undefined)
     const [selectedKey, setSelectedKey] = createSignal<string | undefined>(undefined)
 
@@ -88,7 +93,8 @@ export function BarView(props: ChartViewProps) {
                             onClick={() => toggle(bar.key)}
                         >
                             <Text as="span" inherit tone="muted" class={styles.label}>
-                                {bar.label}
+                                {/* layoutBars budgets two 2-space gutters; they are typed here. */}
+                                {bar.label + '  '}
                             </Text>
                             <Text
                                 as="span"
@@ -106,7 +112,7 @@ export function BarView(props: ChartViewProps) {
                                 {'.'.repeat(bar.track)}
                             </Text>
                             <Text as="span" inherit class={styles.value}>
-                                {bar.value}
+                                {'  ' + bar.value}
                             </Text>
                         </div>
                     )}
