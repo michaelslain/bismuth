@@ -1,59 +1,6 @@
-/* BaseSettings.module.css — the base-level Properties editor's `.propset-*` rows (was
-   `.evm-modal .propset-*` in calendar/Calendar.module.css, #104's progressive-disclosure property
-   list) plus `.spaced`, a small local helper giving the two standalone toggle rows (flashcards'
-   bidirectional toggle, kanban's hide-labels toggle) the same top margin an inline
-   `style={{ 'margin-top': '8px' }}` used to. `.panel` (passed to <FormModal class={styles.panel}>)
-   is the qualifier that replaces `.evm-modal` below — CSS Modules exports it from these
-   descendant rules alone, so no standalone `.panel { }` rule is needed. */
+/* BaseSettings.module.css — two small helpers: `.spaced` gives the kanban hide-labels toggle its
+   top margin, `.error` colours the save-failure hint. The Properties editor's rows live in
+   PropertyRowEditor.module.css / PropertiesFields.module.css. */
 
-.spaced { margin-top: 8px; }
-
-/* ----- Base properties (#104) -----
-   Progressive disclosure: a calm, scannable LIST (one bordered surface, like
-   `ToggleList`) where every row is a single quiet name/type/visibility line by
-   default. Clicking a row (`.propset-head`) expands ONE full editor at a time
-   (`.propset-body`: name/type inputs, type-specific extras, reorder/delete) —
-   collapsed rows never show a form control, only text + an icon toggle. */
-.panel .propset-list { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
-.panel .propset-row + .propset-row { border-top: 1px solid var(--border-soft); }
-
-/* collapsed line: chevron / name / muted type badge / eye toggle */
-.panel .propset-head { display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
-.panel .propset-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-/* No focus ring — every button in the app paints no focus indicator, mouse or keyboard, by user
-   decision (2026-09-27). */
-.panel .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.panel .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
-.panel .propset-row.open .propset-chev { transform: rotate(90deg); }
-.panel .propset-name-txt { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.panel .propset-name-txt.empty { color: var(--faint); font-style: italic; }
-.panel .propset-kind { flex: 0 0 auto; font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
-/* Placement only — an IconButton draws its own `[icon]` brackets, size and colour; this just
-   keeps it from stretching/shrinking as a flex sibling of the name text + kind badge. */
-.panel .propset-eye { flex: 0 0 auto; }
-
-/* expanded editor: full form for exactly one row. `--surface-1` (one step below the list's
-   `--surface-2`) so the name/kind/default/format controls' own fill actually shows against the
-   panel — without it every control painted the same colour as the row background and read as
-   loose text with no chrome, unlike the filled Sort by/Group by selects above. */
-.panel .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); background: var(--surface-1); }
-.panel .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
-/* The name field's own column — wraps its TextInput + the duplicate-name warning below it, so
-   the grid cell grows with the warning instead of it overflowing into the kind Select's column. */
-.panel .propset-field { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
-.panel .propset-kind-select { width: 100%; }
-.panel .propset-dupe { color: var(--danger); }
-.panel .propset-extra { width: 100%; }
-/* Fits the option list with at least 4 visible lines and grows with the content up to 12 lines
-   before the resize handle takes over — was a fixed 84px (~3.5 lines) that never grew. */
-.panel .propset-options { min-height: calc(4lh + 2 * var(--sp-3)); field-sizing: content; max-height: calc(12lh + 2 * var(--sp-3)); resize: vertical; }
-.panel .propset-numrow { display: flex; gap: var(--sp-4); }
-.propset-numrow-unit { flex: 1; }
-.panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
-.panel .propset-foot .sp { flex: 1; }
-/* Placement only — the move up/down IconButtons draw their own brackets, size, colour and
-   disabled state; this just keeps them from stretching in the footer row. */
-.panel .propset-btn { flex: 0 0 auto; }
-
-.panel .propset-add { margin-top: var(--sp-1); }
+.spaced { margin-top: var(--sp-4); }
 .error { color: var(--danger); }

@@ -1,6 +1,7 @@
 // Visual spec for <SummariesFields> — a table's footer aggregations, one picker per visible column.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
+import { expect, userEvent, within } from 'storybook/test'
 import SummariesFields from './SummariesFields'
 
 const meta = {
@@ -32,6 +33,21 @@ export const Table: Story = {
             initial={{ 'file.name': 'Count', priority: 'Average' }}
         />
     ),
+}
+
+/** Real state: picking an aggregation for a column shows it on that column's picker. */
+export const PickAggregation: Story = {
+    render: () => (
+        <Harness columns={['file.name', 'priority']} initial={{}} />
+    ),
+    play: async ({ canvasElement }) => {
+        const pickers = canvasElement.querySelectorAll<HTMLElement>(
+            '[data-select-trigger]',
+        )
+        await userEvent.click(pickers[1])
+        await userEvent.click(await within(document.body).findByText('average'))
+        await expect(pickers[1].textContent).toMatch(/average/)
+    },
 }
 
 export const NoVisibleColumns: Story = {
