@@ -119,6 +119,7 @@ const TaskChip: Component<TaskChipProps> = props => {
                     : 'Enter'
             }
             onKeyDown={e => {
+                if (e.target !== e.currentTarget) return
                 const action = chipKeyAction(e)
                 if (!action) return
                 e.preventDefault()

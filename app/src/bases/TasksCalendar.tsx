@@ -384,7 +384,7 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
     // not a second data path.
     const store = new EventStore(new MemoryBackend())
 
-    // The tasks register's wiring, once — every view takes the same six props.
+    // The tasks register's wiring, once — every view takes the same seven props.
     const taskProps = {
         get placed() {
             return placed()

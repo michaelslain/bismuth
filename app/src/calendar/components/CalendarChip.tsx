@@ -52,6 +52,9 @@ const CalendarChip: Component<CalendarChipProps> = props => {
             aria-label={own.label}
             onClick={e => {
                 e.stopPropagation()
+                // A click on a control inside the chip (note link, link button) is that control's.
+                const inner = (e.target as Element).closest('a, button')
+                if (inner && inner !== e.currentTarget) return
                 own.onOpen()
             }}
             onContextMenu={e => {
