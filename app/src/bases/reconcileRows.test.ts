@@ -1,5 +1,6 @@
 import { test, expect, describe } from 'bun:test'
 import {
+    mountKeys,
     rowKey,
     rowsEqual,
     reconcileRows,
@@ -338,5 +339,39 @@ describe('reconcileViewResult', () => {
     test('no previous result → returns next verbatim', () => {
         const next = result([group('', [taskRow('a.md', 1, 'todo')])])
         expect(reconcileViewResult(undefined, next)).toBe(next)
+    })
+})
+
+describe('mountKeys', () => {
+    const stored = (index: number, tags: string[]): Row => ({
+        file: fm('boards/b.md') as Row['file'],
+        note: { tags },
+        formula: {},
+        index,
+    })
+    test('stored rows in one base body get distinct keys from their own index', () => {
+        const keys = mountKeys([stored(0, ['a']), stored(1, ['b'])])
+        expect(new Set(keys).size).toBe(2)
+    })
+    test('an edited row keeps its key, so its cells are not remounted', () => {
+        const before = mountKeys([stored(0, ['a']), stored(1, ['b'])])
+        const after = mountKeys([stored(0, ['a', 'c']), stored(1, ['b'])])
+        expect(after).toEqual(before)
+    })
+    test('a re-sort moves each key with its row', () => {
+        const [k0, k1] = mountKeys([stored(0, ['a']), stored(1, ['b'])])
+        expect(mountKeys([stored(1, ['b']), stored(0, ['a'])])).toEqual([
+            k1,
+            k0,
+        ])
+    })
+    test('rows sharing a key get an occurrence suffix instead of a duplicate', () => {
+        const note = {
+            file: fm('n.md') as Row['file'],
+            note: {},
+            formula: {},
+        } as Row
+        const keys = mountKeys([note, { ...note }])
+        expect(keys[0]).not.toBe(keys[1])
     })
 })

@@ -105,12 +105,25 @@ export const BooleanToggle: Story = {
                 canvasElement.querySelector('[data-testid="cell-value"]')!
                     .textContent ?? ''
             ).trim()
+        const button = () =>
+            canvasElement.querySelector<HTMLElement>('button')!
+        // A real hover (not just `.click()`, which never fires mouseenter) must not paint the
+        // text-cell "click to edit" background on a boolean cell — it commits on click
+        // immediately, so that affordance would be misleading here.
+        await userEvent.hover(button())
+        expect(getComputedStyle(button()).backgroundColor).toBe(
+            'rgba(0, 0, 0, 0)',
+        )
         expect(cellText()).toBe('')
-        canvasElement.querySelector<HTMLElement>('button')!.click()
+        button().click()
         await new Promise(r => setTimeout(r, 30))
         expect(cellText()).toBe('x')
         expect(canvasElement.querySelector('input')).toBeNull()
-        canvasElement.querySelector<HTMLElement>('button')!.click()
+        expect(getComputedStyle(button()).backgroundColor).toBe(
+            'rgba(0, 0, 0, 0)',
+        )
+        await userEvent.unhover(button())
+        button().click()
         await new Promise(r => setTimeout(r, 30))
         expect(cellText()).toBe('')
         expect(canvasElement.querySelector('input')).toBeNull()

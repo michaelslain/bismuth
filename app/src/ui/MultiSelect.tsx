@@ -32,29 +32,38 @@ export type MultiSelectProps = {
     class?: string
 }
 
-/** Selected values (in `options`' own order) first, then the rest, each group filtered by a
- *  case-insensitive substring match and keeping its relative order — never re-sorted. */
-export function visibleOptions(
-    options: string[],
-    value: string[],
-    filter: string,
-): string[] {
+/** `order` filtered by a case-insensitive substring match, keeping its relative order. Takes an
+ *  already-ordered list rather than computing selected-first itself — see `MultiSelect`'s
+ *  `openMenu`/`order` for why: recomputing "selected first" on every toggle moves the row you
+ *  just clicked out from under your cursor mid-session. */
+export function visibleOptions(order: string[], filter: string): string[] {
     const q = filter.trim().toLowerCase()
     const matches = (o: string) => !q || o.toLowerCase().includes(q)
-    const selected = options.filter(o => value.includes(o) && matches(o))
-    const rest = options.filter(o => !value.includes(o) && matches(o))
+    return order.filter(matches)
+}
+
+/** Selected-first ordering of `options`, computed once (at open) rather than on every render —
+ *  the fixed order `visibleOptions` then filters. */
+function selectedFirst(options: string[], value: string[]): string[] {
+    const selected = options.filter(o => value.includes(o))
+    const rest = options.filter(o => !value.includes(o))
     return [...selected, ...rest]
 }
 
 function MultiSelect(props: MultiSelectProps) {
     const [open, setOpen] = createSignal(props.open ?? false)
     const [filter, setFilter] = createSignal('')
+    // The row order while the list is open, frozen at the moment it opened (see `selectedFirst`).
+    // Toggling a row changes `props.value` but must NOT reshuffle this — that is what used to
+    // move the just-clicked row out from under the pointer, so a second click landed on a
+    // DIFFERENT option than the one the user meant to toggle back.
+    const [order, setOrder] = createSignal<string[]>(
+        selectedFirst(props.options, props.value),
+    )
     let triggerRef: HTMLButtonElement | undefined
     let filterRef: HTMLInputElement | undefined
 
-    const rows = createMemo(() =>
-        visibleOptions(props.options, props.value, filter()),
-    )
+    const rows = createMemo(() => visibleOptions(order(), filter()))
     const canCreate = createMemo(() => {
         if (!props.creatable) return false
         const q = filter().trim()
@@ -67,12 +76,20 @@ function MultiSelect(props: MultiSelectProps) {
             ? props.value.filter(x => x !== v)
             : [...props.value, v]
         props.onChange(next)
+        // A clicked row takes focus, then PopoverList rebuilds every row (its items are fresh
+        // objects each render) and focus falls to <body> — typing and arrow keys go nowhere
+        // until the user clicks back into the filter. The filter is this list's keyboard home.
+        queueMicrotask(() => filterRef?.focus())
     }
 
     function create(): void {
         const v = filter().trim()
         if (!v) return
         props.onChange([...props.value, v])
+        // A brand-new value isn't in `props.options` (frozen for the editor's whole open span —
+        // see TableCell.tsx), so it needs adding to the frozen order too, or it would toggle
+        // selected while staying invisible in the list.
+        setOrder(o => (o.includes(v) ? o : [v, ...o]))
         setFilter('')
         nav.setActive(0)
     }
@@ -88,6 +105,7 @@ function MultiSelect(props: MultiSelectProps) {
     })
 
     function openMenu(): void {
+        setOrder(selectedFirst(props.options, props.value))
         nav.setActive(rows().length ? 0 : -1)
         setOpen(true)
         queueMicrotask(() => filterRef?.focus())
@@ -126,7 +144,9 @@ function MultiSelect(props: MultiSelectProps) {
             >
                 <span
                     class={styles.value}
-                    classList={{ [styles.placeholder!]: props.value.length === 0 }}
+                    classList={{
+                        [styles.placeholder!]: props.value.length === 0,
+                    }}
                 >
                     {props.value.length
                         ? props.value.join(', ')
@@ -136,7 +156,11 @@ function MultiSelect(props: MultiSelectProps) {
                     ▾
                 </span>
             </FormControl>
-            <AnchoredPopover anchor={() => triggerRef} open={open()} onDismiss={close}>
+            <AnchoredPopover
+                anchor={() => triggerRef}
+                open={open()}
+                onDismiss={close}
+            >
                 <div class={styles.panel}>
                     <TextInput
                         ref={filterRef}
@@ -146,10 +170,16 @@ function MultiSelect(props: MultiSelectProps) {
                             setFilter(v)
                             nav.setActive(0)
                         }}
-                        placeholder={props.creatable ? 'filter or add' : 'filter'}
+                        placeholder={
+                            props.creatable ? 'filter or add' : 'filter'
+                        }
                         onKeyDown={e => {
                             e.stopPropagation()
-                            if (isConfirmKey(e) && rows().length === 0 && canCreate()) {
+                            if (
+                                isConfirmKey(e) &&
+                                rows().length === 0 &&
+                                canCreate()
+                            ) {
                                 e.preventDefault()
                                 create()
                                 return
@@ -160,7 +190,11 @@ function MultiSelect(props: MultiSelectProps) {
                     <PopoverList
                         items={rows().map(o => ({
                             label: o,
-                            prefix: <BracketToggle checked={props.value.includes(o)} />,
+                            prefix: (
+                                <BracketToggle
+                                    checked={props.value.includes(o)}
+                                />
+                            ),
                         }))}
                         active={nav.active()}
                         onActivate={i => {

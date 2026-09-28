@@ -3,7 +3,7 @@
 // rendered by the real TableView component — proving the bases fixture module actually works,
 // not just typechecks.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { TableView } from './TableView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
@@ -196,7 +196,9 @@ const EDIT_PATH = 'boards/editable-table.md'
 const EDIT_CONFIG: BaseConfig = {
     declaredProperties: ['status', 'done'],
     properties: {
-        status: { type: { kind: 'select', options: ['Todo', 'Doing', 'Done'] } },
+        status: {
+            type: { kind: 'select', options: ['Todo', 'Doing', 'Done'] },
+        },
     },
     views: [{ type: 'table', name: 'Table' }],
 }
@@ -270,15 +272,16 @@ export const EditableBooleanAndSelect: Story = {
         expect(doneIdx).toBeGreaterThanOrEqual(0)
         const before = widths()
 
-        const firstRowCells = () =>
-            [
-                ...canvasElement.querySelectorAll<HTMLElement>(
-                    'tbody tr:first-child td',
-                ),
-            ]
+        const firstRowCells = () => [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                'tbody tr:first-child td',
+            ),
+        ]
 
         // Opening the select cell's (non-boolean) editor must not resize any column.
-        firstRowCells()[statusIdx]!.querySelector<HTMLElement>('button')!.click()
+        firstRowCells()
+            [statusIdx]!.querySelector<HTMLElement>('button')!
+            .click()
         await new Promise(r => setTimeout(r, 30))
         const editorTrigger =
             firstRowCells()[statusIdx]!.querySelector<HTMLElement>('button')
@@ -311,7 +314,12 @@ const TASK_LINE_CONFIG: BaseConfig = {
 }
 const TASK_LINE_ROWS: Row[] = [
     {
-        file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+        file: {
+            ...EMPTY_FILE,
+            name: 'tasks',
+            basename: 'tasks',
+            path: 'tasks.md',
+        },
         note: { description: 'ship the parser', line: 5, status: 'todo' },
         formula: {},
     },
@@ -358,12 +366,11 @@ export const TagsColumnListsWholeBoard: Story = {
             )
         const tagsIdx = colIndex('tags')
         expect(tagsIdx).toBeGreaterThanOrEqual(0)
-        const firstRowCells = () =>
-            [
-                ...canvasElement.querySelectorAll<HTMLElement>(
-                    'tbody tr:first-child td',
-                ),
-            ]
+        const firstRowCells = () => [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                'tbody tr:first-child td',
+            ),
+        ]
         // Row 0's OWN value is only "alpha" — opening its cell must still offer "beta"/"gamma"
         // from row 1. The tags editor autofocuses its dropdown open on mount.
         firstRowCells()[tagsIdx]!.querySelector<HTMLElement>('button')!.click()
@@ -374,6 +381,119 @@ export const TagsColumnListsWholeBoard: Story = {
         expect(labels).toContain('alpha')
         expect(labels).toContain('beta')
         expect(labels).toContain('gamma')
+    },
+}
+
+// The tags picker across several toggles, with a row store that RE-RESOLVES after every write
+// the way BaseView does on a version bump — `runView` hands back brand-new row objects, which is
+// what used to unmount the very cell being edited and slam the picker shut after one toggle.
+const PICK_PATH = 'boards/tags-picker.md'
+const PICK_CONFIG: BaseConfig = {
+    declaredProperties: ['tags'],
+    views: [{ type: 'table', name: 'Table' }],
+}
+const pickSeed = (): Row[] => [
+    {
+        file: syntheticBaseFile(PICK_PATH),
+        note: { tags: ['alpha'] },
+        formula: {},
+        index: 0,
+    },
+    {
+        file: syntheticBaseFile(PICK_PATH),
+        note: { tags: ['beta', 'gamma'] },
+        formula: {},
+        index: 1,
+    },
+]
+let pickRows: Row[] = pickSeed()
+let pickResolves = 0
+
+export const TagsPickerStaysOpenAcrossToggles: Story = {
+    render: () => {
+        pickRows = pickSeed()
+        pickResolves = 0
+        const base = fakeTransport()
+        setTransport({
+            ...base,
+            post: async (path, body) => {
+                if (path === '/row/update') {
+                    const { index, note } = body as {
+                        index: number
+                        note: Record<string, unknown>
+                    }
+                    pickRows = pickRows.map((r, i) =>
+                        i === index ? { ...r, note } : r,
+                    )
+                    return new Response('ok')
+                }
+                return base.post(path, body)
+            },
+        })
+        function Table() {
+            const [result, setResult] = createSignal(
+                runView(PICK_CONFIG, pickRows, 0),
+            )
+            return (
+                <TableView
+                    result={result()}
+                    config={PICK_CONFIG}
+                    basePath={PICK_PATH}
+                    onChange={() => {
+                        pickResolves++
+                        setResult(runView(PICK_CONFIG, pickRows, 0))
+                    }}
+                />
+            )
+        }
+        return <Table />
+    },
+    play: async ({ canvasElement }) => {
+        const tagsIdx = [
+            ...canvasElement.querySelectorAll('thead th'),
+        ].findIndex(
+            th => (th.textContent ?? '').trim().toLowerCase() === 'tags',
+        )
+        expect(tagsIdx).toBeGreaterThanOrEqual(0)
+        const cell = () =>
+            canvasElement.querySelectorAll<HTMLElement>(
+                'tbody tr:first-child td',
+            )[tagsIdx]!
+        const labels = () => [
+            ...document.querySelectorAll<HTMLElement>('.bismuth-popover-label'),
+        ]
+        const order = () => labels().map(l => (l.textContent ?? '').trim())
+        const option = (name: string) =>
+            labels().find(l => l.textContent?.trim() === name)!
+
+        await userEvent.click(cell().querySelector('button')!)
+        await waitFor(() => expect(order().length).toBe(3))
+        const opened = order()
+        const filter = document.activeElement
+        expect(filter?.tagName).toBe('INPUT')
+
+        await userEvent.click(option('beta'))
+        // The write has landed AND the table re-resolved into fresh row objects.
+        await waitFor(() => expect(pickResolves).toBe(1))
+        await userEvent.click(option('gamma'))
+        await waitFor(() => expect(pickResolves).toBe(2))
+
+        // Still open, rows exactly where they were, the same filter input still focused, and
+        // the picker's own trigger showing both toggles.
+        expect(document.querySelector('.bismuth-popover')).toBeTruthy()
+        expect(order()).toEqual(opened)
+        expect(document.activeElement).toBe(filter)
+        expect(filter?.isConnected).toBe(true)
+        expect((cell().textContent ?? '').replace('▾', '').trim()).toBe(
+            'alpha, beta, gamma',
+        )
+
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() =>
+            expect(document.querySelector('.bismuth-popover')).toBeNull(),
+        )
+        const shown = cell().textContent ?? ''
+        for (const t of ['alpha', 'beta', 'gamma']) expect(shown).toContain(t)
     },
 }
 
