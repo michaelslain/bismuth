@@ -1,5 +1,5 @@
-import { expect, test, describe, beforeEach } from 'bun:test'
-import { setTransport, type Transport } from '../api'
+import { expect, test, describe, beforeEach, afterEach } from 'bun:test'
+import { apiBase, httpTransport, setTransport, type Transport } from '../api'
 import { removeTaskItem } from '../../../core/src/taskEdit'
 import { parseBaseFile } from '../../../core/src/bases/parse'
 import {
@@ -15,6 +15,9 @@ import {
     reinsertTaskBlock,
     TASK_PRIORITIES,
 } from './taskEditSave'
+
+const originalBase = apiBase()
+afterEach(() => setTransport(httpTransport(originalBase)))
 
 let posts: { path: string; body: any }[] = []
 
