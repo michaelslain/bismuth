@@ -280,7 +280,7 @@ When `groupBy` is absent, a single group with `key: ""` is produced; the heading
 Every non-task row in either view is reachable from the UI — no action requires hand-editing the base file or a note's frontmatter. Requires a saved base file (`basePath` set); an embedded `query` block is read-only.
 
 - **Add a row**: the "+ row" button in the view bar (mode `normal` only — `mode: tasks` keeps its own "+ task" button). A base that **owns its rows** (no `source:`) appends a new row to the base's own body; a **notes-sourced** base creates a new note in the base's folder. Either way the row/property editor opens immediately to fill it in; a toast warns if the base's filters would hide the new row from this view.
-- **Edit a row's properties**: a row stored in the base's own body opens the editor on a plain click (it has no note to open, so its click target is the editor). A note-backed row keeps opening the note on click and gets a hover/focus-reveal pencil icon (`list`: at the row's trailing edge; `bullets`: beside the bullet) that opens the property editor instead.
+- **Edit a row's properties**: a row stored in the base's own body opens the editor on a plain click (it has no note to open, so its click target is the editor). A note-backed row keeps opening the note on left-click; right-click on the row opens the property editor instead — no pencil icon.
 - **Delete a row**: open the editor (above) and use "delete" in its footer — a stored row is removed by index, a note is moved to trash, both with an Undo toast.
 
 ---

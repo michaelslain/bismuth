@@ -7,7 +7,6 @@ import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
-import IconButton from '../ui/IconButton'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
 import styles from './ListView.module.css'
@@ -109,73 +108,49 @@ export function ListView(props: {
                                     ? resolveProperty(authorCol()!, row)
                                     : null
                                 return (
-                                    <div class={styles.lrowWrap}>
-                                        <PlainButton
-                                            class={styles.lrow}
-                                            onClick={() => openRow(row)}
-                                        >
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.ltextGlyph}
-                                                aria-hidden="true"
+                                    <PlainButton
+                                        class={styles.lrow}
+                                        onClick={() => openRow(row)}
+                                        onContextMenu={e => {
+                                            if (!rowEditable(row)) return
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            openEditor(row)
+                                        }}
+                                    >
+                                        <Label fill>
+                                            {title == null
+                                                ? row.file.name
+                                                : String(title)}
+                                            <Show
+                                                when={
+                                                    author != null &&
+                                                    typeof author !== 'object'
+                                                }
                                             >
-                                                ✎
-                                            </Text>
-                                            <Label fill>
-                                                {title == null
-                                                    ? row.file.name
-                                                    : String(title)}
-                                                <Show
-                                                    when={
-                                                        author != null &&
-                                                        typeof author !==
-                                                            'object'
-                                                    }
-                                                >
-                                                    <Text
-                                                        as="span"
-                                                        size="inherit"
-                                                        tone="faint"
-                                                        weight="inherit"
-                                                    >
-                                                        {' '}
-                                                        — {String(author)}
-                                                    </Text>
-                                                </Show>
-                                            </Label>
-                                            <Show when={rightCol()}>
                                                 <Text
                                                     as="span"
                                                     size="inherit"
-                                                    tone="muted"
+                                                    tone="faint"
                                                     weight="inherit"
-                                                    class={styles.lrowRight}
                                                 >
-                                                    {renderValue(
-                                                        rightCol()!,
-                                                        row,
-                                                    )}
+                                                    {' '}
+                                                    — {String(author)}
                                                 </Text>
                                             </Show>
-                                        </PlainButton>
-                                        <Show
-                                            when={
-                                                rowEditable(row) &&
-                                                !canWriteStoredRow(row)
-                                            }
-                                        >
-                                            <IconButton
-                                                icon="Pencil"
-                                                label="Edit properties"
-                                                class={styles.lEditBtn}
-                                                onClick={e => {
-                                                    e.stopPropagation()
-                                                    openEditor(row)
-                                                }}
-                                            />
+                                        </Label>
+                                        <Show when={rightCol()}>
+                                            <Text
+                                                as="span"
+                                                size="inherit"
+                                                tone="muted"
+                                                weight="inherit"
+                                                class={styles.lrowRight}
+                                            >
+                                                {renderValue(rightCol()!, row)}
+                                            </Text>
                                         </Show>
-                                    </div>
+                                    </PlainButton>
                                 )
                             }}
                         </For>

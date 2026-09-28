@@ -220,6 +220,36 @@ export const KeyboardOpensEdit: Story = {
     },
 }
 
+/** Right-click on the card face opens the same edit modal a tap does (row affordances: no
+ *  pencils, right-click opens the editor) — and does not start a drag. */
+export const ContextMenuOpensEdit: Story = {
+    render: () => (
+        <div style={{ width: '240px' }}>
+            <KanbanCard
+                row={SAMPLE_ROWS[1]}
+                titleCol="file.name"
+                metaCols={['priority', 'tags']}
+                config={config}
+                editable
+                onEditingChange={noop}
+                onRename={noop}
+                onSetMeta={noop}
+                onDelete={noop}
+                siblingValues={() => []}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const face = canvas.getByRole('button', { name: /^edit /i })
+
+        face.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit card' })
+    },
+}
+
 /** Non-editable face carries neither `role` nor `tabIndex` — there is nothing to activate. */
 export const NotEditableHasNoButtonRole: Story = {
     render: () => (

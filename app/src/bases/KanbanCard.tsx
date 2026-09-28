@@ -204,6 +204,17 @@ export function KanbanCard(props: {
         e.preventDefault()
         openEdit()
     }
+    // Right-click opens the same edit modal a tap does — a whole-card affordance, not tied to
+    // whichever element sits under the pointer, so no `data-edit-target` resolution here (opens
+    // on the first field, same as a bare-body tap). No drag to guard against: a contextmenu event
+    // never follows a pointer-drag gesture, but preventDefault still suppresses the native menu
+    // and stopPropagation keeps KanbanView's own row-level context menu from also firing.
+    const onContextMenu = (e: MouseEvent) => {
+        if (!props.editable) return
+        e.preventDefault()
+        e.stopPropagation()
+        openEdit()
+    }
 
     return (
         <div
@@ -215,6 +226,7 @@ export function KanbanCard(props: {
             onPointerDown={onDown}
             onPointerUp={onUp}
             onKeyDown={onKeyDown}
+            onContextMenu={onContextMenu}
         >
             <div
                 class={styles.kbCardTitle}
