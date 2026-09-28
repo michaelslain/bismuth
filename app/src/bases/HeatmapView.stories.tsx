@@ -94,6 +94,19 @@ export const YearOfData: Story = {
     },
 }
 
+/** `x` resolves to a non-date column (status) — the empty state must show, not a blank grid. */
+export const NonDateX: Story = {
+    render: () => {
+        const views = [{ type: 'heatmap' as const, name: 'Activity', x: 'status' }]
+        return (
+            <HeatmapView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+}
+
 /** Hover shows the bucket's date/value/note-count in the readout; clicking opens the drill list
  *  of notes behind that day, and clicking again (or `[ clear ]`) closes it. */
 export const HoverAndDrill: Story = {

@@ -129,7 +129,7 @@ export function HeatmapView(props: ChartViewProps) {
 
     return (
         <ChartFrame
-            empty={grid().weeks.length === 0}
+            empty={!data().isDate || data().points.length === 0}
             emptyMessage="No dated rows to chart. Set an x date column in view settings."
             onGrid={g => setColumns(g.columns)}
             readout={
@@ -161,7 +161,9 @@ export function HeatmapView(props: ChartViewProps) {
                                 inherit
                                 class={styles.heatMonthCol}
                             >
-                                {label}
+                                <Text as="span" inherit class={styles.heatMonthLabel}>
+                                    {label}
+                                </Text>
                             </Text>
                         )}
                     </For>
