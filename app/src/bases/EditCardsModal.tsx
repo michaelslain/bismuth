@@ -13,6 +13,8 @@ import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
+import { parseBaseFile } from '../../../core/src/bases/parse'
+import { fileBasename } from '../../../core/src/pathUtils'
 import CardsListEditor from './CardsListEditor'
 import BulkCardsEditor from './BulkCardsEditor'
 import { resetKeys, stripSchedule } from './flashcardsActions'
@@ -73,8 +75,10 @@ export function EditCardsModal(props: {
     const [mode, setMode] = createSignal<Mode>('list')
     const [busy, setBusy] = createSignal(false)
     let dirty = false
+    let closed = false
 
     const close = () => {
+        closed = true
         if (dirty) props.onChanged()
         props.onClose()
     }
@@ -114,14 +118,29 @@ export function EditCardsModal(props: {
             })
         })
 
-    const restoreCard = (index: number, note: Note) =>
-        locked(async () => {
+    // The toast outlives the modal, so this must not lean on modal state: it counts the rows on
+    // disk, waits for any in-flight write (a busy `locked` would silently do nothing), and once the
+    // modal has closed it is the one to tell the review queue the deck changed.
+    const restoreCard = async (index: number, note: Note) => {
+        while (busy()) await new Promise(r => setTimeout(r, 25))
+        return locked(async () => {
+            const meta = {
+                name: fileBasename(props.basePath),
+                path: props.basePath,
+            }
+            const count = parseBaseFile(await api.read(props.basePath), meta)
+                .rows.length
             await api.rowCreate(props.basePath, note)
-            const last = cards().length
-            if (index < last)
-                await api.rowReorder(props.basePath, last, index)
+            if (index < count)
+                await api.rowReorder(props.basePath, count, index)
             setCards(insertAt(cards(), index, note))
-        })
+            if (closed) props.onChanged()
+        }).catch(e =>
+            pushToast(
+                `Could not undo: ${e instanceof Error ? e.message : String(e)}`,
+            ),
+        )
+    }
 
     // Reset progress: drops a card's (or every card's) due/ease/interval columns so it reviews as
     // new again, without touching front/back or any other field.

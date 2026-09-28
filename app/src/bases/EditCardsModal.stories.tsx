@@ -8,6 +8,7 @@
 // `data-testid`. Solid components cannot mount under Bun's test runner, so a real-browser
 // Storybook `play` is the sole instrument for this behaviour.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { EditCardsModal } from './EditCardsModal'
 import type { FileMeta, Row } from '../../../core/src/bases/types'
@@ -15,6 +16,7 @@ import { spyApi } from './_apiSpy'
 import { toasts, dismissToast } from '../toastStore'
 
 const noop = () => {}
+let changed = 0
 
 function file(name: string): FileMeta {
     return {
@@ -65,8 +67,11 @@ const args = {
 
 const VERBS = ['rowUpdate', 'rowUpdateMany', 'rowCreate', 'rowDelete', 'rowReorder'] as const
 let spy: ReturnType<typeof spyApi>
+// What the base file holds once the first card is deleted — undo re-counts rows from it.
+const AFTER_DELETE =
+    '---\ntype: base\n---\n\n| front | back |\n| --- | --- |\n| Capital of Japan? | Tokyo |\n'
 const install = () => {
-    spy = spyApi([...VERBS])
+    spy = spyApi([...VERBS, 'read'], { read: async () => AFTER_DELETE })
     for (const t of toasts()) dismissToast(t.id)
     return spy.restore
 }
@@ -253,5 +258,47 @@ export const ReorderByKeyboard: Story = {
         expect(spy.named('rowReorder')[0].args).toEqual(['cards/geography.md', 0, 1])
         const first = cardRows()[0].querySelector('[data-cell="front"] textarea') as HTMLTextAreaElement
         expect(first.value).toBe('Capital of Japan?')
+    },
+}
+
+/** Undo AFTER the modal has closed: the toast outlives the modal, so the restore must re-count the
+ *  rows on disk (one left after the delete), write the card back, and fire `onChanged` itself —
+ *  the close already ran, so nothing else would tell the review queue. */
+export const UndoAfterClose: Story = {
+    render: () => {
+        const [open, setOpen] = createSignal(true)
+        return (
+            <>
+                <Show when={open()}>
+                    <EditCardsModal
+                        {...args}
+                        onClose={() => setOpen(false)}
+                        onChanged={() => {
+                            changed += 1
+                        }}
+                    />
+                </Show>
+                <span data-testid="closed">{open() ? 'open' : 'closed'}</span>
+            </>
+        )
+    },
+    beforeEach: () => {
+        changed = 0
+        return install()
+    },
+    play: async () => {
+        await userEvent.click(within(cardRows()[0] as HTMLElement).getByLabelText('Delete card'))
+        await waitFor(() => expect(cardRows()).toHaveLength(1))
+        await userEvent.click(body().getByText('done'))
+        await waitFor(() => expect(cardRows()).toHaveLength(0))
+        expect(changed).toBe(1)
+
+        toasts().at(-1)!.action!.onClick()
+        await waitFor(() => expect(changed).toBe(2))
+        expect(spy.named('rowCreate')[0].args[1]).toEqual({
+            front: 'Capital of France?',
+            back: 'Paris',
+        })
+        expect(spy.named('rowReorder')[0].args).toEqual(['cards/geography.md', 1, 0])
     },
 }

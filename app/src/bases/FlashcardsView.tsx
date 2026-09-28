@@ -567,6 +567,8 @@ export function FlashcardsView(props: {
                 /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
         )
             return
+        // Space on a focused action/grade button must activate it; only the flip card (aria-pressed) flips.
+        if (el?.tagName === 'BUTTON' && !el.hasAttribute('aria-pressed')) return
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()

@@ -506,6 +506,38 @@ export const FlipCardRevealsOnEnter: Story = {
     },
 }
 
+/** Space on a focused action button activates THAT button. The global flip key must not swallow it:
+ *  Edit opens the single-card modal and the card stays face-down. */
+export const SpaceActivatesFocusedActionButton: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={CARD_EDIT_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector(
+            'button[aria-pressed]',
+        ) as HTMLElement
+        const edit = (await within(canvasElement).findByLabelText(
+            'Edit this card',
+        )) as HTMLElement
+        edit.focus()
+        await expect(document.activeElement).toBe(edit)
+        await userEvent.keyboard(' ')
+        await waitFor(() =>
+            expect(
+                within(document.body).getByPlaceholderText('Front / prompt…'),
+            ).toHaveValue('capital of France'),
+        )
+        await expect(card.getAttribute('aria-pressed')).toBe('false')
+    },
+}
+
 // A distinct basePath, seeded via the real session store (same technique as CRAM_BASE_PATH
 // above) with `pos` already past the last due card — the same restore path a tab-switch back
 // to a finished deck exercises, not a fabricated prop.
