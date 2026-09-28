@@ -6,13 +6,14 @@ import { IconButton } from '../ui/IconButton'
 import { columnLabel } from './columnLabel'
 import {
     DATE_PRESETS,
-    VALUELESS,
     defaultOpFor,
+    editorKind as editorKindFor,
     folderValues,
     inferType,
     opsFor,
     tagValues,
 } from './filterOps'
+import { withCurrent } from './selectOptions'
 import type { CondRow, FilterRow, RawRow } from './filterForm'
 import type { NotesOp } from './queryGen'
 import styles from './FilterConditionRow.module.css'
@@ -64,11 +65,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
     // the editor kind does — re-creating the editor on every keystroke would drop focus.
     const editorKind = createMemo(() => {
         const c = cond()
-        if (!c || VALUELESS.has(c.op)) return 'none'
-        if (c.op === 'has_tag' || c.op === 'not_tag') return 'tag'
-        if (c.op === 'in_folder' || c.op === 'folder_is') return 'folder'
-        if (c.op === 'date_before' || c.op === 'date_after') return 'date'
-        return 'text'
+        return c ? editorKindFor(c.op, c.type) : 'none'
     })
     const val = () => cond()?.val ?? ''
     const setVal = (v: string) => props.onPatch({ val: v })
@@ -82,7 +79,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
             <Match when={editorKind() === 'tag'}>
                 <Select
                     value={val()}
-                    options={withCurrent(tagValues(props.rows), val())}
+                    options={withCurrent(tagValues(props.rows).map(opt), val())}
                     placeholder="pick a tag"
                     onChange={setVal}
                 />
@@ -90,7 +87,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
             <Match when={editorKind() === 'folder'}>
                 <Select
                     value={val()}
-                    options={withCurrent(folderValues(props.rows), val())}
+                    options={withCurrent(folderValues(props.rows).map(opt), val())}
                     placeholder="pick a folder"
                     onChange={setVal}
                 />
@@ -172,12 +169,6 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
             )}
         </Show>
     )
-}
-
-function withCurrent(values: string[], current: string): SelectOption[] {
-    const all =
-        current && !values.includes(current) ? [...values, current] : values
-    return all.map(opt)
 }
 
 export default FilterConditionRow
