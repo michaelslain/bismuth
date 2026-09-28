@@ -222,6 +222,15 @@ export function openRowEditor(opts: {
     // move is still in flight. Track the path as a promise chain so `onOpenNote` always waits
     // on the latest rename's real destination.
     let notePath: Promise<string> = Promise.resolve(row.file.path)
+    let lastTitle: string | undefined
+    const liveRow = (): Promise<Row> =>
+        owned
+            ? Promise.resolve(row)
+            : notePath.then(path =>
+                  path === row.file.path
+                      ? row
+                      : { ...row, file: { ...row.file, path } },
+              )
     dispose = render(
         () =>
             CardEditModal({
@@ -237,14 +246,23 @@ export function openRowEditor(opts: {
                 heading: 'edit row',
                 emptyHint: 'this row has no editable properties.',
                 onRename: t => {
+                    // The modal commits its title on Enter (blur) AND again on close, both
+                    // against this same original `row` — a second rename to the same title
+                    // re-moved a path that no longer existed ("Rename failed" after naming a
+                    // new map pin). Only a title that differs from the last one committed moves.
+                    if (t.trim() === lastTitle) return
+                    lastTitle = t.trim()
                     notePath = commitRename(row, view, t, onChanged).then(
                         p => p ?? row.file.path,
                     )
                 },
-                onSetMeta: (id, v) => void commitMeta(row, id, v, onChanged),
+                // After a rename a NOTE row lives at a new path — writes wait for it and go
+                // there, not to the path the modal was opened with (which no longer exists).
+                onSetMeta: (id, v) =>
+                    void liveRow().then(r => commitMeta(r, id, v, onChanged)),
                 onDelete: () => {
                     close()
-                    void commitDelete(row, onChanged)
+                    void liveRow().then(r => commitDelete(r, onChanged))
                 },
                 onClose: close,
                 onOpenNote: owned

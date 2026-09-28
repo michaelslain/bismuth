@@ -10,6 +10,8 @@
   border-radius: var(--r-0);
   user-select: none;
 }
+/* A background pan in progress. */
+.mapPanning { cursor: grabbing; }
 /* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
 .mapVector {
   position: absolute;
@@ -45,6 +47,11 @@
   transition: transform 120ms ease;
 }
 .mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
+/* A pin being dragged to a new spot. */
+.mapPinDragging { cursor: grabbing; }
+/* While armed, the next click belongs to the MAP: pins go click-through so a click beside (or on)
+   a label still places there, instead of opening that pin's editor under a crosshair cursor. */
+.mapArmed .mapPin { pointer-events: none; }
 .mapPinChip {
   max-width: 180px;
   margin-bottom: var(--sp-1);
@@ -77,6 +84,8 @@
   flex-direction: column;
   gap: var(--sp-4);
   pointer-events: auto;
+  /* The gaps between buttons are not the pannable map — no grab hand there. */
+  cursor: default;
 }
 .mapZoomStack {
   display: flex;
@@ -132,7 +141,10 @@
   align-items: center;
   gap: var(--sp-4);
   pointer-events: auto;
+  cursor: default;
 }
+/* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
+.mapUnplaced button:disabled { cursor: not-allowed; }
 /* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
    cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
 .mapArmed {

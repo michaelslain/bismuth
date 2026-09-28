@@ -16,7 +16,11 @@ import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
-import { addPinByMouse } from './_mapPinPlay'
+import {
+    addPinByMouse,
+    editPinByMouse,
+    placeUnplacedByMouse,
+} from './_mapPinPlay'
 
 const meta = {
     title: 'Bases/MapView',
@@ -63,7 +67,6 @@ export const Default: Story = {
                 <MapView
                     result={sampleViewResult(PLACES, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -97,7 +100,6 @@ export const CustomFieldsFixedFraming: Story = {
                 <MapView
                     result={sampleViewResult(rows, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -122,7 +124,6 @@ export const UnplacedRowsArmed: Story = {
                 <MapView
                     result={sampleViewResult(rows, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -144,7 +145,8 @@ export const UnplacedRowsArmed: Story = {
 }
 
 /** Right-clicking a placed pin (or Shift+F10 while it's focused) opens its own menu:
- *  open the note, move it (re-arms placement for that row), or remove it from the map. */
+ *  edit (the row editor a left-click also opens), move pin (re-arms placement for that row),
+ *  or remove pin (clears its coordinates — the row itself stays). */
 export const PinMenuOpen: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -154,7 +156,6 @@ export const PinMenuOpen: Story = {
                 <MapView
                     result={sampleViewResult(PLACES, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -172,48 +173,68 @@ export const PinMenuOpen: Story = {
                 clientY: 100,
             }),
         )
-        expect(await body.findByText('open note')).toBeVisible()
-        expect(await body.findByText('move…')).toBeVisible()
-        expect(await body.findByText('remove from map')).toBeVisible()
+        expect(await body.findByText('edit')).toBeVisible()
+        expect(await body.findByText('move pin')).toBeVisible()
+        expect(await body.findByText('remove pin')).toBeVisible()
     },
 }
 
-/** A map that holds REAL state, so placing a pin actually shows one: the fake transport writes
- *  `/set-properties` into these same row objects, and `onChange` (BaseView wires `refetchAll`
- *  there in the app) re-runs the view over them. A static `result` — what every story above
- *  renders — can arm placement but can never show the placed pin, which read as "adding a pin
- *  does nothing".
- *
- *  `play()` drives the flow with the event sequence a real mouse produces (pointerdown →
- *  mousedown → pointerup → mouseup → click at one point, bubbling): zoom in, press `Add pin`,
- *  pick a row, press the map. It asserts the pin lands AND that arming, placing and the
- *  re-render after the write all leave the user's zoom and centre exactly where they were. */
+/** A map over REAL state: the fake transport writes into these same row objects (and creates
+ *  new notes beside them in `places/`), and `onChange` (BaseView wires `refetchAll` there in the
+ *  app) re-runs the view over them — so a created row, a placed pin and a renamed title all show.
+ *  `basePath` is what lets `Add pin` create a row at all. */
+function LiveMap(props: { rows: Partial<Row>[] }) {
+    const rows = props.rows.map(r => ({ ...r, note: { ...r.note } }))
+    setTransport(fakeTransport({ rows: rows as Row[] }))
+    const views = [{ type: 'map' as const, name: 'Atlas' }]
+    const [tick, setTick] = createSignal(0)
+    const result = createMemo(() => {
+        tick()
+        return sampleViewResult(rows, { views })
+    })
+    return (
+        <div style={{ height: '480px' }}>
+            <MapView
+                result={result()}
+                config={sampleBaseConfig({ views })}
+                basePath="places/Places.md"
+                onChange={() => setTick(t => t + 1)}
+            />
+        </div>
+    )
+}
+
+const WITH_UNPLACED: Partial<Row>[] = [
+    ...PLACES,
+    placeRow('Unmapped Cafe', {}),
+    placeRow('Bad Coords', { lat: 'north-ish', lng: 12 }),
+]
+
+/** `Add pin` creates a NEW row where you click and opens its editor. `play()` drives it with the
+ *  event sequence a real mouse produces, jitter included (pointerdown → mousedown → a 1–3px move
+ *  → pointerup → mouseup → click): zoom in, press `Add pin`, press the map, name the row in the
+ *  editor — and asserts the pin appears, carries the typed name, and that arming, creating and
+ *  every refetch leave the user's zoom and centre exactly where they were. */
 export const AddPin: Story = {
-    render: () => {
-        const rows = [
-            ...PLACES,
-            placeRow('Unmapped Cafe', {}),
-            placeRow('Bad Coords', { lat: 'north-ish', lng: 12 }),
-        ].map(r => ({ ...r, note: { ...r.note } }))
-        setTransport(fakeTransport({ rows: rows as Row[] }))
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
-        const [tick, setTick] = createSignal(0)
-        const result = createMemo(() => {
-            tick()
-            return sampleViewResult(rows, { views })
-        })
-        return (
-            <div style={{ height: '480px' }}>
-                <MapView
-                    result={result()}
-                    config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
-                    onChange={() => setTick(t => t + 1)}
-                />
-            </div>
-        )
-    },
+    render: () => <LiveMap rows={WITH_UNPLACED} />,
     play: async ({ canvasElement }) => {
-        await addPinByMouse(canvasElement, 'Unmapped Cafe', 2)
+        await addPinByMouse(canvasElement, 'Harbor Lookout')
+    },
+}
+
+/** A left-click on a pin opens the row editor for THAT row (title + properties, `[open note]`);
+ *  renaming it there changes the pin's label once the rows refetch. */
+export const EditPin: Story = {
+    render: () => <LiveMap rows={PLACES} />,
+    play: async ({ canvasElement }) => {
+        await editPinByMouse(canvasElement, 'Nairobi', 'Nairobi Office')
+    },
+}
+
+/** `unplaced (N)` still places EXISTING rows that have no coordinates: pick one, press the map. */
+export const PlaceUnplaced: Story = {
+    render: () => <LiveMap rows={WITH_UNPLACED} />,
+    play: async ({ canvasElement }) => {
+        await placeUnplacedByMouse(canvasElement, 'Unmapped Cafe', 2)
     },
 }
