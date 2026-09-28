@@ -3,8 +3,11 @@ import { toDateStr } from '../../dates'
 import { addDaysISO } from '../../../../../core/src/dates'
 import TaskChip from '../TaskChip'
 import TaskCellComposer from '../TaskCellComposer'
+import IconButton from '../../../ui/IconButton'
 import type { PlacedTask } from '../../taskPlacement'
+import { taskRowRef } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
+import type { TaskRowRef } from '../../taskDrag'
 import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import DayHeaderRow from './DayHeaderRow'
 import AllDayRow from './AllDayRow'
@@ -26,7 +29,7 @@ export function TaskAllDayStrip(props: {
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
     onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
-    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
+    onRescheduleTask?: (ref: TaskRowRef, date: string) => void
     compose?: TaskComposeProps
     colorFor?: (task: PlacedTask) => string | undefined
 }) {
@@ -47,7 +50,7 @@ export function TaskAllDayStrip(props: {
                     const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
                     const payload = raw ? decodeTaskDrag(raw) : null
                     if (!payload) return
-                    props.onRescheduleTask?.(payload.path, payload.line, payload.field, ds)
+                    props.onRescheduleTask?.(payload, ds)
                 }}
                 cell={ds => (
                     // AllDayRow owns the outer `.cell` box (its own module, not ours) and only
@@ -67,24 +70,38 @@ export function TaskAllDayStrip(props: {
                                     onOpen={() => props.onOpenTask?.(t.row)}
                                     onSetStatus={char => props.onSetTaskStatus?.(t.row, char)}
                                     onReschedule={days => {
-                                        const line = t.row.note.line
-                                        if (t.field === undefined || typeof line !== 'number') return
+                                        const ref = taskRowRef(t)
+                                        if (!ref) return
                                         // from the day the chip is DRAWN on (a carried task sits on
                                         // today), matching drag-and-drop
-                                        props.onRescheduleTask?.(
-                                            t.row.file.path,
-                                            line,
-                                            t.field,
-                                            addDaysISO(ds, days),
-                                        )
+                                        props.onRescheduleTask?.(ref, addDaysISO(ds, days))
                                     }}
                                 />
                             )}
                         </For>
+                        {/* Quiet by default, revealed on hover/focus-within — see
+                            MonthView.module.css's `.add-task` for the same idiom; this cell fills
+                            its whole AllDayRow box already, so the button just anchors to ITS
+                            own top-right corner. */}
+                        <Show when={props.compose?.date !== ds}>
+                            <IconButton
+                                icon="Plus"
+                                label="Add task"
+                                size="sm"
+                                class={styles.addTask}
+                                onClick={e => {
+                                    e.stopPropagation()
+                                    props.compose?.open(ds)
+                                }}
+                            />
+                        </Show>
                         <Show when={props.compose?.date === ds}>
                             <TaskCellComposer
                                 destination={props.compose!.destination}
                                 color={props.compose!.color}
+                                targets={props.compose!.targets}
+                                target={props.compose!.target}
+                                onTargetChange={props.compose!.setTarget}
                                 onCommit={text => props.compose!.commit(ds, text)}
                                 onCancel={() => props.compose!.cancel()}
                             />

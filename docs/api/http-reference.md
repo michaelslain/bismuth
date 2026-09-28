@@ -578,6 +578,27 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`. `setTaskLineDate` itself throws a plain `Error("not a task line")` (→ `500`, not `400`) if the addressed line isn't a checkbox task at all — unlike `/tasks/toggle`'s bounds check, there's no dedicated `AppError` for that case.
 - **`pathOf`:** `path`.
 
+### `POST /tasks/update`
+- **Body:** `{ path: string, line: number, patch: { description?: string, due?: string | null, scheduled?: string | null, start?: string | null, priority?: "highest" | "high" | "medium" | "low" | "lowest" | null } }` (`line` 0-based). A `patch` key set to `null` clears that field; an absent key leaves it untouched. The UI counterpart to hand-editing a task line's text/dates/priority.
+- **Action:** `updateTaskLineFields(lines[line], patch)` (`core/src/taskEdit.ts`) rewrites the description and/or the `due`/`scheduled`/`start`/priority bracket fields, re-emitting every field it touches AND every field it doesn't (`done`, `created`, `cancelled`, `[every …]`, tags) in the canonical order `taskMigrate.ts` already uses — dates `due, scheduled, start, done, created, cancelled`, then priority, then recurrence — so repeated edits are idempotent in layout. Checkbox char, indentation, and CRLF are preserved.
+- **Response:** `"ok"`.
+- **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`. `updateTaskLineFields` itself throws a plain `Error("not a task line")` (→ `500`) if the addressed line isn't a checkbox task.
+- **`pathOf`:** `path`.
+
+### `POST /tasks/delete`
+- **Body:** `{ path: string, line: number }` (`line` 0-based).
+- **Action:** `removeTaskItem(content, line)` (`core/src/taskEdit.ts`) removes the task ITEM at `line` — the head line plus any deeper-indented, non-blank continuation/sub-task lines beneath it (mirrors the per-item rule `collectBlock`/`taskReorder.ts` uses while walking a whole block, restricted to just this one item so a sibling task below it is never swept up). Permanent; git history retains the prior state.
+- **Response:** `"ok"`.
+- **Errors:** `AppError("EINVAL", "line out of range", 400)`.
+- **`pathOf`:** `path`.
+
+### `POST /tasks/move`
+- **Body:** `{ path: string, line: number, to: string }` (`line` 0-based). `to` is a `taskFile`-style ref — a wikilink, bare name, or path — resolved exactly like `POST /tasks/create`'s `file`.
+- **Action:** resolves `to` via `resolveTaskFilePath` (`core/src/taskCreate.ts`) against the vault's live note list. If it resolves to the SAME path the task is already in, this is a no-op that still returns success. Otherwise removes the task item from `path` (`removeTaskItem`, same block rule as `/tasks/delete`) and appends its removed lines verbatim to the destination note (creating it if it doesn't exist yet), inserting the separating newline only when the destination doesn't already end in one.
+- **Response:** `{ path: string }` — the vault-relative path the task now lives in (the destination, or the original `path` unchanged on a same-file no-op).
+- **Errors:** `AppError("EINVAL", "line out of range", 400)`.
+- **`pathOf`:** none passed → full invalidation (two notes can change; the destination path isn't known until `resolveTaskFilePath` runs, which `pathOf` can't do — same reasoning as `/tasks/create`).
+
 ### `POST /tasks/archive`
 - **Body:** `{ path?: string }` (a missing/non-JSON body is tolerated → treated as `{}`). With a `path`, only that note is archived; without one, the whole vault (`listMarkdown`, every `.md`).
 - **Action:** `archiveResolvedTasks(...)` strips completed/cancelled tasks from the note text, rewriting only files that actually changed (`removed > 0`). Removal is permanent (git history retains the prior state via the autosave snapshots).
@@ -805,6 +826,9 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/folder-visibility` | mutating | yes (.settings) |
 | POST | `/tasks/toggle` | mutating | yes |
 | POST | `/tasks/reschedule` | mutating | yes |
+| POST | `/tasks/update` | mutating | yes |
+| POST | `/tasks/delete` | mutating | yes |
+| POST | `/tasks/move` | mutating | yes (full) |
 | POST | `/tasks/archive` | mutating | yes |
 | POST | `/tasks/create` | mutating | yes (full) |
 | POST | `/cards/review` | mutating | yes |

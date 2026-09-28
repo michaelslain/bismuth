@@ -371,6 +371,16 @@ source:
   where: not done
 ```
 
+## Editing filters in the settings panel
+
+The view settings modal (gear in the view bar, `app/src/bases/BaseSettings.tsx`) has a **filters** section with two editors — **this view** (`views[i].filters`) and **every view** (the base-level `filters:`) — and the same editor builds a notes/tasks source's `where:`. Each is a list of conditions under one **match all / any** switch (`and:` / `or:`):
+
+- A **condition** is property / operator / value pickers (the operator set follows the property's type: text, number, date, checkbox, tag, list). It compiles to the same leaf the ` ```query ` builder emits (`queryGen.ts`'s `compileNotesRow`).
+- An **expression** row holds any Bases expression verbatim. "Edit as expression" turns a condition into one.
+- Nothing is dropped on save (`app/src/bases/filterForm.ts`): an untouched editor writes nothing; a row you didn't edit is written back exactly as it was — a nested `or:`/`not:` subtree, or a top-level `not:`, shows as one expression row and is saved as the **same subtree**; a leaf becomes a visual condition only when recompiling it reproduces its exact tokens (`done == true` stays an expression, since the builder would write `done == "true"`); a malformed or mixed `&&`/`||` string is one expression row. A condition still missing its value is skipped until it has one.
+- Written shape: one condition → a bare string; several → `{and: [...]}` / `{or: [...]}`; none → the key is removed. A source `where` (a string, not a tree) joins rows as `(a) && (b)`.
+- On a base with no `views:` array, a view filter would collide with the base-level `filters:` key, so the first save of one converts the base to a one-entry `views:` list (its flat keys keep folding onto that view).
+
 ## `this.` host-note context
 
 When a base is rendered **inline inside another note** (an embedded `query` block), the host note's frontmatter flows in as `this.*`. `runView(base, rows, viewIndex, hostThis)` passes `hostThis` into both formula computation and `toContext`, so filters can reference it.

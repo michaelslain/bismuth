@@ -1,0 +1,17 @@
+/* app/src/bases/ViewTabs.tsx's own local stylesheet.
+
+   `.tabs` mirrors ui/SegmentedToggle.module.css's `.segmented` exactly — the same bracket-
+   sibling gap (`--sp-4`) every other bar in the app uses — since this strip keeps the
+   SegmentedToggle look while adding rename/menu/add affordances SegmentedToggle itself has
+   no per-option hook for. `.rename` sizes the inline rename field to roughly a tab's own
+   width so swapping a TextButton for it doesn't visibly reflow the strip. */
+
+.tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+
+.rename {
+    width: 10em;
+}

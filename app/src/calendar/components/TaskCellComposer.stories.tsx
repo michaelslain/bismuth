@@ -2,6 +2,8 @@
 // task it is about to become: same marker/font/size as TaskChip, plus a `→ destination` line
 // that truncates rather than growing the cell. See TaskChip.stories.tsx for the sibling spec
 // this file's shape is modeled on.
+import { createSignal, For } from 'solid-js'
+import Text from '../../ui/Text'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, within } from 'storybook/test'
 import TaskCellComposer from './TaskCellComposer'
@@ -28,7 +30,12 @@ const narrowCell = cell('120px')
 function chipTask(description: string): PlacedTask {
     return {
         row: {
-            file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+            file: {
+                ...EMPTY_FILE,
+                name: 'tasks',
+                basename: 'tasks',
+                path: 'tasks.md',
+            },
             note: { description, placed: '2026-09-09', resolved: false },
             formula: {},
         },
@@ -59,7 +66,11 @@ export const Empty: Story = {
 export const NoDestination: Story = {
     render: () =>
         monthCell(
-            <TaskCellComposer destination="" onCommit={() => {}} onCancel={() => {}} />,
+            <TaskCellComposer
+                destination=""
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />,
         ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -217,7 +228,10 @@ export const AlignedWithChips: Story = {
         const composerMarker = canvas.getByTestId('task-cell-composer-marker')
         const composerLeft = composerMarker.getBoundingClientRect().left
         for (const marker of chipMarkers) {
-            expect(marker.getBoundingClientRect().left).toBeCloseTo(composerLeft, 0)
+            expect(marker.getBoundingClientRect().left).toBeCloseTo(
+                composerLeft,
+                0,
+            )
         }
     },
 }
@@ -241,7 +255,8 @@ export const BlurCommitsThenClears: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const calls = (window as unknown as { __blurCalls: string[] }).__blurCalls
+        const calls = (window as unknown as { __blurCalls: string[] })
+            .__blurCalls
         const canvas = within(canvasElement)
         const input = canvas.getByTestId(
             'task-cell-composer-input',
@@ -257,6 +272,101 @@ export const BlurCommitsThenClears: Story = {
     },
 }
 
+/** Task 1 (per-task destination): 2+ `targets` replaces the plain `→ destination` text with a
+ *  picker — proves the picker renders (not the text), shows the CURRENT target's label, and
+ *  that opening it lists every target by name. The picker itself is `ui/Select`, so its own
+ *  open/close/keyboard behaviour is Select's own story's job — this only proves the wiring:
+ *  the composer hands Select the right `options`/`value` and repaints the marker in the picked
+ *  target's colour. */
+export const TargetPicker: Story = {
+    render: () => {
+        // Real state, so the picker can be tried by hand: picking a target changes it, and
+        // Enter lists the task under the target it was written to.
+        const targets = [
+            { id: 'work.md', label: 'Work', color: 'var(--blue)' },
+            { id: 'personal.md', label: 'Personal', color: 'var(--rose)' },
+        ]
+        const [target, setTarget] = createSignal('work.md')
+        const [written, setWritten] = createSignal<string[]>([])
+        const label = () => targets.find(t => t.id === target())!.label
+        return (
+            <>
+                {monthCell(
+                    <TaskCellComposer
+                        destination={label()}
+                        targets={targets}
+                        target={target()}
+                        onTargetChange={setTarget}
+                        onCommit={text =>
+                            setWritten(w => [...w, `${text} → ${label()}`])
+                        }
+                        onCancel={() => {}}
+                    />,
+                )}
+                <For each={written()}>
+                    {w => (
+                        <Text as="div" data-testid="written-task">
+                            {w}
+                        </Text>
+                    )}
+                </For>
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // the plain destination line is GONE — a picker stands in its place
+        const destination = canvas.getByTestId('task-cell-composer-destination')
+        expect(destination.textContent).not.toContain('no destination note')
+        const trigger = destination.querySelector(
+            '[data-select-trigger]',
+        ) as HTMLElement
+        expect(trigger).not.toBeNull()
+        // includes the trigger's own caret glyph ("▾") after the label
+        expect(trigger.textContent?.trim()).toBe('Work▾')
+        // the marker picked up the CURRENT target's colour, same contract as the plain `color`
+        // prop — see WithCategoryColour above.
+        const marker = canvas.getByTestId('task-cell-composer-marker')
+        expect(marker.style.color).toBe('var(--blue)')
+
+        await userEvent.click(trigger)
+        const body = within(document.body)
+        await userEvent.click(await body.findByText('Personal'))
+        expect(trigger.textContent?.trim()).toBe('Personal▾')
+        expect(marker.style.color).toBe('var(--rose)')
+        const input = canvas.getByTestId(
+            'task-cell-composer-input',
+        ) as HTMLInputElement
+        expect(document.activeElement).toBe(input)
+        await userEvent.type(input, 'call the dentist{Enter}')
+        expect(canvas.getByTestId('written-task').textContent).toBe(
+            'call the dentist → Personal',
+        )
+    },
+}
+
+/** A single target (or none) never shows a picker — nothing to pick between, so the plain
+ *  `→ destination` text stays exactly as it always has. */
+export const SingleTargetStaysPlainText: Story = {
+    render: () =>
+        monthCell(
+            <TaskCellComposer
+                destination="General Tasks"
+                targets={[{ id: 'general.md', label: 'General Tasks' }]}
+                target="general.md"
+                onTargetChange={() => {}}
+                onCommit={() => {}}
+                onCancel={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const destination = canvas.getByTestId('task-cell-composer-destination')
+        expect(destination.querySelector('[data-select-trigger]')).toBeNull()
+        expect(destination.textContent?.trim()).toBe('→ General Tasks')
+    },
+}
+
 /** [Important finding] a sourced calendar with no `taskFile` set (a new task calendar's
  *  first-run state) has `destination === ''` — the same state that drives the composer's own
  *  `--danger` "no destination note // set one in settings" hint below the input.
@@ -267,7 +377,8 @@ export const BlurCommitsThenClears: Story = {
 export const EnterKeepsDraftWithNoDestination: Story = {
     render: () => {
         const calls: string[] = []
-        ;(window as unknown as { __noDestCalls?: string[] }).__noDestCalls = calls
+        ;(window as unknown as { __noDestCalls?: string[] }).__noDestCalls =
+            calls
         return monthCell(
             <TaskCellComposer
                 destination=""
@@ -277,7 +388,8 @@ export const EnterKeepsDraftWithNoDestination: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const calls = (window as unknown as { __noDestCalls: string[] }).__noDestCalls
+        const calls = (window as unknown as { __noDestCalls: string[] })
+            .__noDestCalls
         const canvas = within(canvasElement)
         const input = canvas.getByTestId(
             'task-cell-composer-input',
@@ -285,7 +397,11 @@ export const EnterKeepsDraftWithNoDestination: Story = {
 
         await userEvent.type(input, 'water the plants')
         input.dispatchEvent(
-            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+            new KeyboardEvent('keydown', {
+                key: 'Enter',
+                bubbles: true,
+                cancelable: true,
+            }),
         )
 
         expect(calls).toEqual(['water the plants'])

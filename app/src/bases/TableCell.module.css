@@ -1,0 +1,17 @@
+/* The resting cell is a full-width, left-aligned, borderless button, so clicking anywhere in the
+   cell (not just on its text) opens the editor, and an empty cell is still a target. */
+.cell {
+    display: block;
+    width: 100%;
+    min-height: 1.4em;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: text;
+}
+.cell:hover {
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.editor {
+    width: 100%;
+}

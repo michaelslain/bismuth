@@ -617,35 +617,52 @@ above — never by the marker's own colour.
 ### Chip behavior
 
 **Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
-`isTaskLine(task)` (`app/src/calendar/taskPlacement.ts`): does the row carry a real markdown line
-number (`note.line`) AND a resolvable placement field.** A `source: tasks` row always does. A
-self-owned base's row never does — it's a YAML row, not a markdown line. The marker, the drag
-gesture and the context menu all read this ONE function rather than three separate checks, so
-they cannot silently disagree about which rows are writable (see
-[the self-owned-row limitation](#creating-a-task) below for what that means in practice).
+`isWritableTask(task)` (`app/src/calendar/taskPlacement.ts`): does the row resolve to EITHER a
+real markdown line (`isTaskLine` — `note.line` plus a resolvable placement field) OR a stored row
+this base owns (`canWriteStoredRow` — `Row.index` is a real, non-negative write handle; see
+`app/src/bases/taskWrite.ts`).** A `source: tasks` row satisfies the first; an own-rows base's row
+(no `source:`) satisfies the second, via the same `POST /rows` seam `BaseView.tsx`'s own
+toggle/status-menu use for every other row-based view. The marker, the drag gesture and the
+context menu all read this ONE function rather than three separate checks, so they cannot
+silently disagree about which rows are writable. The only rows that still fail it are ones with
+NEITHER a line nor a stored index — a note row surfaced some other way, or a row still awaiting
+its `rowCreate` round-trip.
 
-- **Left-click the `[ ]` marker** toggles the task, writing back through `POST /tasks/toggle` by
+`taskRowRef(task)` (also `taskPlacement.ts`) is the write-side counterpart: it resolves the SAME
+row to whichever locator a write needs — `{ path, field, line }` for a markdown line (`POST
+/tasks/reschedule` addresses it by path+line) or `{ path, field, index }` for a stored row (`POST
+/rows` addresses it by path+index) — so the chip's drag payload (`app/src/calendar/taskDrag.ts`'s
+`TaskRowRef`) and its Alt+arrow reschedule can never disagree about which shape a given task is.
+
+- **Left-click the `[ ]` marker** toggles the task — a markdown line via `POST /tasks/toggle` by
   path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`, the cards
-  view) — but only when `isTaskLine` is true. When it is false, the marker renders **dimmed and
+  view), a stored row via `api.rowUpdate` carrying `toggleStoredTask`'s result (`taskWrite.ts`) —
+  but only when `isWritableTask` is true. When it is false, the marker renders **dimmed and
   inert** (`opacity: 0.4`, `aria-disabled="true"`, `TaskChip.module.css`'s `.readOnly`): clicking
   it does not toggle, and the click falls through to the chip's own open-on-click instead of
   landing in a silent dead zone.
 - **Right-click the marker** opens the shared status menu (`app/src/taskStatusMenu.tsx` —
-  same affordance the cards view and `ListView.tsx` already use) when `isTaskLine` is true,
+  same affordance the cards view and `ListView.tsx` already use) when `isWritableTask` is true,
   offering every status OTHER than the task's current one; picking one calls `POST /tasks/toggle`
-  with an explicit `status` char. When `isTaskLine` is false, right-click does nothing special —
-  no custom menu, no error.
-- **Clicking the chip body** opens the source note at that line (`bismuth-open` event) —
-  unconditionally, whether or not the row is writable.
+  (a line) or `rowUpdate` with `setStoredTaskStatus`'s result (a stored row) with an explicit
+  status. When `isWritableTask` is false, right-click does nothing special — no custom menu, no
+  error.
+- **Clicking the chip body** opens the shared task editor (`app/src/bases/openTaskEditor.tsx` —
+  edit description/priority/dates, change category/destination, delete, plus its own "open note"
+  button) rather than jumping straight to the source note. This is what makes a STORED row's
+  fields — which have no source note to open at all — reachable from the grid; a markdown-line
+  row's editor still offers "open note" for the old one-click-to-the-file behavior.
 - **Dragging a chip to another day** (native HTML5 drag-and-drop — `draggable` on the chip,
-  `dragover`/`drop` on the day cell) reschedules it, when `isTaskLine` is true: `POST
-  /tasks/reschedule` rewrites the ONE field that PLACED the task — `scheduled` or `due`, whichever
-  `placementField` (`taskPlacement.ts`) resolved at drag-start, computed the same way `placedDate`
-  picks scheduled over due — to the dropped-on day, always in **bracket form** regardless of the
-  line's current spelling (see [tasks syntax → rescheduling a date field](../../tasks/syntax.md#rescheduling-a-date-field)).
-  This is the ONLY way a carried task's stored date ever changes: rolling onto today (above) never
-  touches the file. A row failing `isTaskLine` is not `draggable` at all — there is no "source
-  markdown line" for a drop to rewrite.
+  `dragover`/`drop` on the day cell) reschedules it, when `isWritableTask` is true: the field that
+  PLACED the task — `scheduled` or `due`, whichever `placementField` (`taskPlacement.ts`) resolved
+  at drag-start, computed the same way `placedDate` picks scheduled over due — is rewritten to the
+  dropped-on day, either via `POST /tasks/reschedule` (a line, always in **bracket form**
+  regardless of the line's current spelling — see [tasks syntax → rescheduling a date
+  field](../../tasks/syntax.md#rescheduling-a-date-field)) or via `rowUpdate` (a stored row, the
+  drop target looks the row up by path+index among the view's own rows to build the write body,
+  since a drop only knows the destination day). This is the ONLY way a carried task's stored date
+  ever changes: rolling onto today (above) never touches the file. A row failing `isWritableTask`
+  is not `draggable` at all — there is nowhere for a drop to write.
 
 The day cell's own `mousedown`-based drag (the events register's drag-to-move/drag-to-create,
 above) and its `click`-based "new event" affordance are both suppressed in the tasks register — a
@@ -663,9 +680,9 @@ tabbing through a day's cells reaches every task individually. Its `onKeyDown` d
 the pure `chipKeyAction(e)` (`app/src/calendar/taskChipKeys.ts`) what the keydown means, and
 `TaskChip.tsx` only wires the result:
 
-| Key | Action | Requires `isTaskLine`? |
+| Key | Action | Requires `isWritableTask`? |
 |---|---|---|
-| `Enter` | Open the source note at that line | No — works even on a read-only chip |
+| `Enter` | Open the shared task editor (same as clicking the chip body) | No — works even on a read-only chip |
 | `Space` | Toggle done / not-done | Yes |
 | `Shift+F10` or `ContextMenu` | Open the status menu (the same one the cards and list views use) | Yes |
 | `Alt+←` / `Alt+→` | Reschedule ±1 day | Yes |
@@ -673,10 +690,10 @@ the pure `chipKeyAction(e)` (`app/src/calendar/taskChipKeys.ts`) what the keydow
 | `Ctrl` or `Cmd` held, with any key | Ignored — passes through to the app/browser shortcut untouched | — |
 | `Shift` held with anything other than `F10` (including `Shift+Alt+←`) | Ignored | — |
 
-A chip whose row fails `isTaskLine` — a self-owned base's YAML row, see [Chip
-behavior](#chip-behavior) above — still opens on `Enter`; toggle, the status menu, and reschedule
-are no-ops on it, the same as their mouse equivalents (`TaskChip.tsx` checks `writable()` before
-acting on any of the other three).
+A chip whose row fails `isWritableTask` — one with neither a markdown line nor a stored `Row.index`
+(see [Chip behavior](#chip-behavior) above) — still opens on `Enter`; toggle, the status menu, and
+reschedule are no-ops on it, the same as their mouse equivalents (`TaskChip.tsx` checks
+`writable()` before acting on any of the other three).
 
 **Focus follows the task across its own rewrite.** Toggling, setting a status, or rescheduling
 writes the row, which re-renders the chip as a brand-new element — often in a different cell (a
@@ -708,32 +725,53 @@ not part of `calendarSlots()` at all; see [Task calendar settings](#task-calenda
 
 ### Creating a task
 
-Clicking empty space in any day cell — a month cell, or a week/3-day/day strip cell via
-`TaskAllDayStrip` — opens an inline composer at the bottom of that cell's chip stack
-(`TaskCellComposer.tsx`), autofocused. It shows a `[ ]` marker matching a real chip's, a text
-input, and a `→ <destination>` line naming where the task will land. Keys:
+**A quiet `+` sits in the top-right corner of every tasks-register day cell** (`IconButton`,
+`aria-label="Add task"`) — invisible at rest, revealed on cell hover or `:focus-within` so a
+keyboard user tabbing through the grid still finds it, absolutely positioned so it never adds
+height to the cell and can't shift a chip's layout. Clicking it — or clicking empty space
+anywhere in the cell, the older affordance, still live — opens an inline composer at the bottom
+of that cell's chip stack (`TaskCellComposer.tsx`), autofocused. It shows a `[ ]` marker matching
+a real chip's and a text input. Keys:
 
 | Key / event | Result |
 |---|---|
-| `Enter`, text non-empty | Commits the task, clears the input, and leaves the composer open on the same day — a second task is one keystroke away |
-| `Enter`, text empty | Closes the composer (same as Escape) |
+| `Enter` in the text input, text non-empty | Commits the task, clears the input, and leaves the composer open on the same day — a second task is one keystroke away |
+| `Enter` in the text input, text empty | Closes the composer (same as Escape) |
 | `Escape` | Closes the composer, discarding any typed text |
-| Blur, text non-empty | Commits the task (same as Enter) |
-| Blur, text empty | Closes the composer (same as Escape) |
+| Blur to OUTSIDE the composer, text non-empty | Commits the task (same as Enter) |
+| Blur to OUTSIDE the composer, text empty | Closes the composer (same as Escape) |
+| `Tab` from the text input | Reaches the destination picker (below), when there is one — a blur that lands INSIDE the composer (the picker) neither commits nor cancels |
+
+**The `→ <destination>` line is a PICKER, not fixed text, whenever there is more than one place a
+task could land.** `TaskComposeProps.targets` (`app/src/calendar/taskCompose.ts`) is every
+destination the composer could write to — computed by `TasksCalendar` (`CalendarView.tsx`) from
+the SAME distinction as [Where a task's rows come from](#where-a-tasks-rows-come-from) above:
+
+| The base | One target per | `id` | `label` |
+|---|---|---|---|
+| sources tasks (`source: tasks`) | distinct source note already among the grid's rows, PLUS the view's `taskFile` (even with no rows of its own yet) | the note's vault path | the note's basename — matches `taskCategory.ts`'s `row.file.name`, so a target's colour always matches the chips already painted from that note |
+| owns its rows (no `source:`) | category NAME in play — every name already seen on a row, plus every declared `categories:` with no rows yet — plus one more, `id: ''`, for "no category" | the category name (or `''`) | the category name (or `no category`) |
+
+Fewer than two targets renders the plain `→ destination` text exactly as before (`ui/Select` adds
+nothing when there is nothing to pick between); two or more renders `Select`
+(`TaskCellComposer.tsx`) in its place, and the composer's `[ ]` marker repaints in the CURRENTLY
+PICKED target's own colour rather than the view's `defaultCategory`. The picked target is
+remembered for the session (`TasksCalendar`'s own signal), so switching days keeps the same
+destination instead of resetting to the default every time the composer reopens.
 
 `TaskComposeProps` (`app/src/calendar/taskCompose.ts`) is the whole contract — `date` (which
-cell, or `null`), `destination`, `open(date)`, `commit(date, text)`, `cancel()` — built once per
-register (`TasksCalendar` in `CalendarView.tsx`) and threaded through every view component as one
-prop, so month/week/3-day/day never grow their own copy of "where is the composer open".
+cell, or `null`), `destination` (the current target's label), `targets`, `target`, `setTarget`,
+`open(date)`, `commit(date, text)`, `cancel()` — built once per register (`TasksCalendar` in
+`CalendarView.tsx`) and threaded through every view component as one prop, so month/week/3-day/day
+never grow their own copy of "where is the composer open".
 
-What commit writes depends on which kind of base is open, the SAME distinction as
-[Where a task's rows come from](#where-a-tasks-rows-come-from) above — and the written text always
-carries the **description first**, never a bare date field on its own:
+What commit writes depends on the picked `target`, and the written text always carries the
+**description first**, never a bare date field on its own:
 
 | The base | A task is | Commit writes |
 |---|---|---|
-| owns its rows (no `source:`) | a row in the base file | `api.rowCreate(basePath, note)`, `note` = `{ description: text, status: 'todo', scheduled: date, [categoryField ?? 'category']: defaultCategory }` — the category key only when a `defaultCategory` is set in [Task calendar settings](#task-calendar-settings) |
-| sources tasks (`source: tasks`) | a checkbox line in a note | `<text> [scheduled <date>]` appended to the note named by `taskFile`, via `POST /tasks/create` |
+| owns its rows (no `source:`) | a row in the base file | `api.rowCreate(basePath, note)`, `note` = `{ description: text, status: 'todo', scheduled: date, [categoryField ?? 'category']: target }` — the category key only when the picked target is not `''` ("no category") |
+| sources tasks (`source: tasks`) | a checkbox line in a note | `<text> [scheduled <date>]` appended to the note the picked target names (its `id`, already a vault PATH), via `POST /tasks/create` |
 
 **`taskFile` is resolved against the vault, server-side, not turned into a path client-side.**
 `POST /tasks/create` → `core/src/taskCreate.ts`'s `resolveTaskFilePath(ref, noteIds)`: an exact
@@ -749,27 +787,24 @@ unfindable. `appendTaskLine` (both `core/src/taskCreate.ts`'s server-side implem
 vault-relative path it actually wrote to, so the caller reacts to where the task really landed,
 not a guess.
 
-**A self-owned base's task can be CREATED from the grid but not COMPLETED from the grid.** This is
-a real, permanent limitation, not a bug: [tasks are fundamentally a checkbox LINE](../../tasks/syntax.md)
-— that is what the syntax, the parser, `bismuth task migrate`, `POST /tasks/toggle` and the
-right-click status menu all operate on. A base that owns its rows stores tasks as YAML rows
-instead, a different data model that only the creation path above ever addresses. So on a
-self-owned tasks calendar, committing the composer writes a new row fine, but that row's chip
-renders its `[ ]` marker **dimmed and inert** (`isTaskLine`, `app/src/calendar/taskPlacement.ts` —
-the same predicate that gates dragging): clicking it does not toggle, right-click does not open the
-status menu, and there is no error — the click simply falls through to opening the note instead,
-same as clicking anywhere else on the chip. Ticking such a task means opening the note (or the
-base file itself) and editing the row's own `resolved`/`statusChar` fields directly. Building a
-second, row-based write path for toggling was deliberately left undone: it is scope nobody has
-designed yet, and a half-designed write path is worse than a clearly bounded, documented gap. If a
-vault needs both self-owned rows AND grid-completable tasks, use `source: tasks` with a `taskFile`
-instead — every task then really is a checkbox line.
+**A self-owned base's task can now be CREATED and COMPLETED from the grid — this used to be a
+documented, permanent limitation and no longer is.** Before `isWritableTask`/`canWriteStoredRow`
+existed, a self-owned tasks calendar's rows rendered read-only: the `[ ]` marker was dimmed and
+inert, dragging was disabled, and ticking a task meant opening the note (or the base file itself)
+and editing `resolved`/`statusChar` by hand. Toggle, the status menu, and drag/Alt+arrow reschedule
+now all go through the same `api.rowUpdate` seam `BaseView.tsx`'s own row-based views already use
+(`app/src/bases/taskWrite.ts`'s `toggleStoredTask`/`setStoredTaskStatus`, plus a direct field
+rewrite for reschedule) — see [Chip behavior](#chip-behavior) above for exactly which interaction
+maps to which write. The only rows still read-only are ones with no write handle at all (neither a
+markdown line nor a real `Row.index`) — see the note at the end of that section.
 
-**`source: tasks` with no `taskFile` set: the composer opens fine, but committing writes nothing.**
-A grid cell says which DAY, not which FILE — nothing here guesses a daily-note convention or any
-other default destination. Committing with no `taskFile` opens [Task calendar
-settings](#task-calendar-settings) and toasts `Set a destination note for new tasks in this
-calendar’s settings first`, so the user can name one instead of the write silently going nowhere.
+**`source: tasks` with no `taskFile` AND no rows yet: the composer opens fine, but committing
+writes nothing.** This is now the ONLY no-destination case — as soon as either a `taskFile` is set
+OR at least one task row already exists (so there's a source note to target), the destination
+picker (above) has something to offer and a commit always lands somewhere. With truly nothing to
+pick from, committing opens [Task calendar settings](#task-calendar-settings) and toasts `Set a
+destination note for new tasks in this calendar’s settings first`, so the user can name one instead
+of the write silently going nowhere.
 `taskFile` is a top-level frontmatter key (`core/src/bases/parse.ts`'s `FIELD_KEYS`, same
 flat-persistence mechanism as `dateField`/`categoryField`), so it needs no nested `views:` block:
 

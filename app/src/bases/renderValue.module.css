@@ -1,7 +1,6 @@
 /* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
    medium-weight label — no SVG icon. */
 .cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: 500; }
-.titleGlyph { color: var(--accent); flex: 0 0 auto; font-family: var(--ui-font-stack); }
 /* Dates render mono at the chrome type size (not the inherited prose size). */
 .dateCell { font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
 /* Typed boolean glyph: "x" for true, blank for false — no SVG check. */

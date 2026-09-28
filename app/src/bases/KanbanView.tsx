@@ -1517,8 +1517,9 @@ export function KanbanView(props: {
             when={groupBy()}
             fallback={
                 <Callout class={styles.kanbanHint}>
-                    This kanban view needs a "groupBy" property. Add e.g.{' '}
-                    <InlineCode>groupBy: note.status</InlineCode> to the view.
+                    This kanban view needs a "group by" property. Open{' '}
+                    <InlineCode>Settings</InlineCode> (the gear in the view
+                    bar) and set group by.
                 </Callout>
             }
         >

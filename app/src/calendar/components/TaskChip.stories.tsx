@@ -26,13 +26,14 @@ function task(
     description: string,
     placed: string,
     late: number,
-    opts?: { line?: number; field?: string },
+    opts?: { line?: number; index?: number; field?: string },
 ): PlacedTask {
     return {
         row: {
             file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
             note: { description, placed, resolved: false, line: opts?.line },
             formula: {},
+            index: opts?.index,
         },
         placed,
         late,
@@ -528,16 +529,20 @@ export const DraggableOnlyWhenSourced: Story = {
     },
 }
 
-/** THE RULING this pair of stories proves: a self-owned base's row (no `source:`, so no
- *  `note.line`) can be CREATED from the calendar (Toolbar.tsx's `[ + task ]`) but cannot be
- *  COMPLETED from the grid, because completion rewrites a markdown line and such a row has
- *  none. Before `isTaskLine` was extracted and applied here, the marker's click/context-menu
- *  handlers had NO such guard — only `draggable` did — so clicking this exact chip's checkbox
- *  threw a 500 (`toggleTaskLine(undefined, …)`) instead of failing gracefully. This story is
- *  what would have caught that: it asserts `onToggle`/`onSetStatus` are NEVER called for a
- *  non-writable row, and that the click still does something useful (opens the note) rather
- *  than landing in a silent dead zone. Also the story the visual sweep sees the dimmed
- *  (`opacity: 0.4`, `aria-disabled`) marker through — see TaskChip.module.css's `.readOnly`. */
+/** A self-owned base's row is now WRITABLE from the grid whenever it carries a real write
+ *  handle (`Row.index >= 0` — `canWriteStoredRow`, taskWrite.ts) — see
+ *  `MarkerInteractiveForStoredRow` below for that case. The row this story fixtures has
+ *  NEITHER a markdown `line` NOR a stored `index` (a note row scanned some other way, or a
+ *  placeholder still awaiting its `rowCreate` round-trip — `isStoredPlaceholder`), so it is the
+ *  one genuinely unwritable shape `isWritableTask` (taskPlacement.ts) still refuses. Before
+ *  `isTaskLine` (now folded into `isWritableTask`) was extracted and applied here, the marker's
+ *  click/context-menu handlers had NO such guard — only `draggable` did — so clicking this
+ *  exact chip's checkbox threw a 500 (`toggleTaskLine(undefined, …)`) instead of failing
+ *  gracefully. This story is what would have caught that: it asserts `onToggle`/`onSetStatus`
+ *  are NEVER called for a non-writable row, and that the click still does something useful
+ *  (opens the note) rather than landing in a silent dead zone. Also the story the visual sweep
+ *  sees the dimmed (`opacity: 0.4`, `aria-disabled`) marker through — see
+ *  TaskChip.module.css's `.readOnly`. */
 export const MarkerNotInteractiveForSelfOwnedRow: Story = {
     render: () => {
         const calls: string[] = []
@@ -599,6 +604,38 @@ export const MarkerInteractiveForSourcedRow: Story = {
         expect(marker.getAttribute('aria-disabled')).toBeNull()
         await userEvent.click(marker)
         expect(calls).toEqual(['toggled'])
+    },
+}
+
+/** A stored row (an own-rows base's row, `Row.index` set, no markdown `line`) is now writable
+ *  from the grid — the fix for the "task calendar has no way to add a task, for a specific
+ *  category especially" finding also made completing one from the grid possible, not just
+ *  creating it. Proven the same behavioral way as `MarkerInteractiveForSourcedRow`: by actually
+ *  clicking, not by reading an attribute. */
+export const MarkerInteractiveForStoredRow: Story = {
+    render: () => {
+        const calls: string[] = []
+        ;(window as unknown as { __calls3?: string[] }).__calls3 = calls
+        return cell(
+            <TaskChip
+                task={task('buy stamps', '2026-09-09', 0, { index: 2, field: 'scheduled' })}
+                onToggle={() => calls.push('toggled')}
+                onOpen={() => calls.push('opened')}
+                onSetStatus={() => calls.push('status')}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __calls3: string[] }).__calls3
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.getAttribute('aria-disabled')).toBeNull()
+        await userEvent.click(marker)
+        expect(calls).toEqual(['toggled'])
+        // draggable too — the same isWritableTask gate covers drag as well as the marker.
+        const chip = marker.closest('div')!
+        expect(chip.getAttribute('draggable')).toBe('true')
     },
 }
 

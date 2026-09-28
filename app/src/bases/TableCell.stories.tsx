@@ -1,0 +1,72 @@
+import { createSignal } from 'solid-js'
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent } from 'storybook/test'
+import TableCell from './TableCell'
+import { sampleBaseConfig } from '../ui/_baseFixtures'
+import { syntheticBaseFile } from '../../../core/src/bases/types'
+import type { Row } from '../../../core/src/bases/types'
+import Text from '../ui/Text'
+
+const meta = {
+    title: 'Bases/TableCell',
+    component: TableCell,
+} satisfies Meta<typeof TableCell>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+/** One text cell with REAL state: click it, type, press Enter, and the new value renders —
+ *  the same loop a table row runs, with the vault write replaced by a signal. A second click
+ *  proves the next edit opens focused too (a browser honours `autofocus` only once per page,
+ *  which is exactly how the second edit in a table used to type into nothing). */
+export const EditInPlace: Story = {
+    render: () => {
+        const [author, setAuthor] = createSignal('Frank Herbert')
+        const row = (): Row => ({
+            file: syntheticBaseFile('Reading List.md'),
+            note: { title: 'Dune', author: author() },
+            formula: {},
+            index: 0,
+        })
+        return (
+            <div style={{ width: '280px', padding: '12px' }}>
+                <TableCell
+                    row={row()}
+                    col="author"
+                    config={sampleBaseConfig()}
+                    siblingValues={() => []}
+                    onCommit={v => setAuthor(String(v ?? ''))}
+                >
+                    <Text as="span" data-testid="cell-value">
+                        {author()}
+                    </Text>
+                </TableCell>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const open = async () => {
+            canvasElement.querySelector<HTMLElement>('button')!.click()
+            await new Promise(r => setTimeout(r, 30))
+            const input = canvasElement.querySelector('input')!
+            expect(document.activeElement).toBe(input)
+            return input
+        }
+        let input = await open()
+        await userEvent.clear(input)
+        await userEvent.type(input, 'F. Herbert{Enter}')
+        await new Promise(r => setTimeout(r, 30))
+        expect(
+            canvasElement.querySelector('[data-testid="cell-value"]')!
+                .textContent,
+        ).toBe('F. Herbert')
+        input = await open()
+        await userEvent.clear(input)
+        await userEvent.type(input, 'Frank Herbert{Enter}')
+        await new Promise(r => setTimeout(r, 30))
+        expect(
+            canvasElement.querySelector('[data-testid="cell-value"]')!
+                .textContent,
+        ).toBe('Frank Herbert')
+    },
+}

@@ -264,6 +264,19 @@ Every other column renders exactly as it does in `mode: normal` — the title co
 
 ---
 
+## Adding, Editing and Deleting Rows
+
+Every row a table can show is reachable from the UI — no action requires hand-editing the base file or a note's frontmatter.
+
+**Requires a saved base file** (`basePath` set) — same gate as reorder/resize above. An embedded `query` block is read-only.
+
+- **Add a row**: the "+ row" button in the view bar (mode `normal` only — `mode: tasks` keeps its own "+ task" button instead). A base that **owns its rows** (no `source:`) appends a new row to the base's own body, seeded from any declared property `default`s. A **notes-sourced** base creates a new note (named "Untitled", deduped) in the base's folder, seeded the same way. Then click its cells to fill it in; if the base's filters would hide the new row from this view, a toast says so and names where it actually landed.
+- **Edit a cell**: click it. The cell turns into a type-aware editor in place (`TableCell.tsx` over `PropertyValueEditor`: text, number, date, select, markdown, … — a declared property type picks the control, otherwise the value's own shape does; a table never guesses a dropdown from the other rows' values). Enter or blur saves, Escape cancels. The write is `openRowEditor.tsx`'s `commitMeta`: a row stored in the base's own body is rewritten by index, a note row's frontmatter key is set (an emptied cell removes the key). `file.*`/`formula.*` columns and a task LINE's fields stay read-only here — a task line edits through the task editor.
+- **Delete a row**: right-click it → "delete row". A row stored in the base's own body is removed by index; a note row is moved to trash — both offer an Undo toast.
+- A note row's title cell **still opens the note** on a plain click, exactly as before; its other cells edit in place. There is no separate pencil button.
+
+---
+
 ## Settings Modal
 
 Clicking the gear icon in the view bar opens the `BaseSettings` modal (not a page — it floats over the live view). For record types including `table`:
@@ -276,7 +289,9 @@ On save, `order` is written as the array of toggled-on column ids in display ord
 
 **Reset** returns all fields to defaults (all columns visible, no sort, no group).
 
-**Save** calls `api.setProperty` for each changed field and then refetches.
+**Save** writes only the keys that changed, then refetches.
+
+**Settings (full panel).** Beyond columns/sort/group the same modal sets everything a table reads: the view's **name**, **kind** and **rows are** records/tasks (`mode`); the base's **source**; **filters** for this view and for every view; a **row limit** (`limit`, per group when grouped); multi-key **sort** ("sort by" + any number of "then by"); **summaries** — one aggregation per visible column (`summaries:`, `Sum` `Average` `Min` `Max` `Count` `Empty` `Filled` `Unique`; a hidden column keeps its summary; an existing key's `note.`-prefixed spelling is reused); and the base's **formulas**, whose `formula.<name>` columns join the columns list. View keys go into `views[i]` of the active view (`setViewProperty`); a flat top-level copy of the same key — which would override `views[0]` — is removed when `views[0]` is written. The write planning lives in `app/src/bases/baseSettingsPlan.ts`.
 
 ---
 

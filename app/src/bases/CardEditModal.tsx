@@ -67,6 +67,12 @@ export function CardEditModal(props: {
     config: BaseConfig
     /** Which control to focus on open: the title (titleCol / undefined) or a specific property id. */
     focusTarget?: string
+    /** Modal title — defaults to "edit card" (the kanban wording). openRowEditor passes
+     *  "edit row" for a bare row that isn't sitting on a kanban board. */
+    heading?: string
+    /** Copy for the empty state when there are no editable columns to list — defaults to the
+     *  kanban board's wording. openRowEditor passes a row-flavored equivalent. */
+    emptyHint?: string
     /** Every OTHER row's raw value for a property id, across the board — feeds the select fallback. */
     siblingValues: (id: string) => unknown[]
     /** See KanbanCard's prop of the same name — whether the title field and DELETE button
@@ -361,8 +367,12 @@ export function CardEditModal(props: {
     }
 
     return (
-        <FormModal onClose={close} label="edit card" width={460}>
-            <ModalHeader title="edit card" onClose={close} />
+        <FormModal
+            onClose={close}
+            label={props.heading ?? 'edit card'}
+            width={460}
+        >
+            <ModalHeader title={props.heading ?? 'edit card'} onClose={close} />
 
             <ModalBody>
                 <SettingsGrid class={styles.metaVars}>
@@ -403,7 +413,8 @@ export function CardEditModal(props: {
 
                     <Show when={cols().length === 0}>
                         <EmptyState>
-                            this board declares no editable properties.
+                            {props.emptyHint ??
+                                'this board declares no editable properties.'}
                         </EmptyState>
                     </Show>
                 </SettingsGrid>

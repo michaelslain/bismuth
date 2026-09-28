@@ -23,6 +23,7 @@ import {
     resolveAsset,
     writeBinary,
     uniqueAssetPath,
+    fileExists,
 } from './files'
 import { commitVault, scheduleBackup, snapshotMessage } from './backup'
 import {
@@ -53,7 +54,9 @@ import {
     reorderTaskBlocks,
     archiveResolvedTasks,
 } from './tasks'
-import { appendTaskLine } from './taskCreate'
+import { appendTaskLine, resolveTaskFilePath } from './taskCreate'
+import { updateTaskLineFields, removeTaskItem } from './taskEdit'
+import type { TaskPatch } from './taskEdit'
 import { todayISO } from './dates'
 import {
     dueCards,
@@ -2858,6 +2861,87 @@ export function createServer(cfg: CoreConfig) {
             },
             b => b.path,
         ),
+
+        // Edit a task's description and/or due/scheduled/start/priority fields in place —
+        // the UI counterpart to hand-editing the line. `patch` keys set to `null` clear that
+        // field; an absent key leaves it untouched. See updateTaskLineFields (taskEdit.ts).
+        'POST /tasks/update': mutatingHandler(
+            async req => {
+                const { path, line, patch } = (await req.json()) as {
+                    path: string
+                    line: number
+                    patch: TaskPatch
+                }
+                const content = await readNote(cfg.vault, path)
+                const eol = content.includes('\r\n') ? '\r\n' : '\n'
+                const lines = content.split(/\r?\n/)
+                if (line < 0 || line >= lines.length) {
+                    throw new AppError('EINVAL', 'line out of range', 400)
+                }
+                lines[line] = updateTaskLineFields(lines[line], patch)
+                await writeNote(cfg.vault, path, lines.join(eol))
+                return ok()
+            },
+            b => b.path,
+        ),
+
+        // Delete a task LINE's whole block (the line plus any deeper-indented sub-tasks /
+        // wrapped continuation) from the note. See removeTaskItem (taskEdit.ts).
+        'POST /tasks/delete': mutatingHandler(
+            async req => {
+                const { path, line } = (await req.json()) as {
+                    path: string
+                    line: number
+                }
+                const content = await readNote(cfg.vault, path)
+                let result
+                try {
+                    result = removeTaskItem(content, line)
+                } catch {
+                    throw new AppError('EINVAL', 'line out of range', 400)
+                }
+                await writeNote(cfg.vault, path, result.content)
+                return ok()
+            },
+            b => b.path,
+        ),
+
+        // Move a task LINE's whole block to another note, resolving `to` exactly like
+        // POST /tasks/create's `file` (a taskFile ref: wikilink, bare name, or path).
+        // Moving onto the note it's already in is a no-op that still reports success.
+        'POST /tasks/move': mutatingHandler(async req => {
+            const { path, line, to } = (await req.json()) as {
+                path: string
+                line: number
+                to: string
+            }
+            const noteIds = (await listMarkdown(cfg.vault)).map(rel =>
+                rel.endsWith('.md') ? rel.slice(0, -3) : rel,
+            )
+            const destPath = resolveTaskFilePath(to, noteIds)
+            if (destPath === path) return ok({ path })
+
+            const content = await readNote(cfg.vault, path)
+            let result
+            try {
+                result = removeTaskItem(content, line)
+            } catch {
+                throw new AppError('EINVAL', 'line out of range', 400)
+            }
+            await writeNote(cfg.vault, path, result.content)
+
+            const destText = fileExists(cfg.vault, destPath)
+                ? await readNote(cfg.vault, destPath)
+                : ''
+            const sep =
+                destText.length === 0 || destText.endsWith('\n') ? '' : '\n'
+            await writeNote(
+                cfg.vault,
+                destPath,
+                `${destText}${sep}${result.removed.join('\n')}\n`,
+            )
+            return ok({ path: destPath })
+        }),
 
         // Archive completed/cancelled tasks. With a `path`, only that note; otherwise the whole
         // vault. Removal is permanent (git retains history). Returns the count removed.

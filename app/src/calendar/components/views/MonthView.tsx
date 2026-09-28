@@ -11,8 +11,11 @@ import { EventChip } from '../EventChip'
 import TaskChip from '../TaskChip'
 import TaskCellComposer from '../TaskCellComposer'
 import DayNumber from '../DayNumber'
+import IconButton from '../../../ui/IconButton'
 import type { PlacedTask } from '../../taskPlacement'
+import { taskRowRef } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
+import type { TaskRowRef } from '../../taskDrag'
 import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import { toDateStr, startOfWeek } from '../../dates'
 import { addDaysISO } from '../../../../../core/src/dates'
@@ -34,7 +37,7 @@ export function MonthView(props: {
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
     onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
-    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
+    onRescheduleTask?: (ref: TaskRowRef, date: string) => void
     compose?: TaskComposeProps
     colorFor?: (task: PlacedTask) => string | undefined
 }) {
@@ -118,12 +121,7 @@ export function MonthView(props: {
                                         const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
                                         const payload = raw ? decodeTaskDrag(raw) : null
                                         if (!payload) return
-                                        props.onRescheduleTask?.(
-                                            payload.path,
-                                            payload.line,
-                                            payload.field,
-                                            dateStr(),
-                                        )
+                                        props.onRescheduleTask?.(payload, dateStr())
                                     }}
                                 >
                                     <DayNumber
@@ -131,6 +129,24 @@ export function MonthView(props: {
                                         today={isToday()}
                                         class={`${styles['month-cell-number']}${inMonth() ? '' : ` ${styles['dim']}`}`}
                                     />
+                                    {/* Tasks register only, and only while the composer isn't
+                                        already open for this day — quiet by default (opacity 0),
+                                        revealed on cell hover/focus-within so a keyboard user
+                                        tabbing through the grid still finds it. Absolutely
+                                        positioned so it never adds height to `.month-cell-events`
+                                        and can't shift chip layout. */}
+                                    <Show when={props.placed && props.compose?.date !== dateStr()}>
+                                        <IconButton
+                                            icon="Plus"
+                                            label="Add task"
+                                            size="sm"
+                                            class={styles['add-task']}
+                                            onClick={e => {
+                                                e.stopPropagation()
+                                                props.compose?.open(dateStr())
+                                            }}
+                                        />
+                                    </Show>
                                     <div
                                         class={styles['month-cell-events']}
                                         data-testid="month-cell-events"
@@ -183,18 +199,12 @@ export function MonthView(props: {
                                                             )
                                                         }
                                                         onReschedule={days => {
-                                                            const line = t.row.note.line
-                                                            if (
-                                                                t.field === undefined ||
-                                                                typeof line !== 'number'
-                                                            )
-                                                                return
+                                                            const ref = taskRowRef(t)
+                                                            if (!ref) return
                                                             // from the day the chip is DRAWN on (a carried task sits on
                                                             // today), matching drag-and-drop
                                                             props.onRescheduleTask?.(
-                                                                t.row.file.path,
-                                                                line,
-                                                                t.field,
+                                                                ref,
                                                                 addDaysISO(dateStr(), days),
                                                             )
                                                         }}
@@ -205,6 +215,9 @@ export function MonthView(props: {
                                                 <TaskCellComposer
                                                     destination={props.compose!.destination}
                                                     color={props.compose!.color}
+                                                    targets={props.compose!.targets}
+                                                    target={props.compose!.target}
+                                                    onTargetChange={props.compose!.setTarget}
                                                     onCommit={text =>
                                                         props.compose!.commit(dateStr(), text)
                                                     }

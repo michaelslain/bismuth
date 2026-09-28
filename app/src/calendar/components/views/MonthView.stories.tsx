@@ -17,7 +17,11 @@ import type { PlacedTask } from '../../taskPlacement'
 import { todayISO, addDaysISO } from '../../../../../core/src/dates'
 import type { Row } from '../../../../../core/src/bases/types'
 import { EMPTY_FILE } from '../../../../../core/src/bases/types'
-import { assertChipsWhole, assertHeaderAligned, taskRow } from '../../../ui/_calendarAssertions'
+import {
+    assertChipsWhole,
+    assertHeaderAligned,
+    taskRow,
+} from '../../../ui/_calendarAssertions'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -110,17 +114,32 @@ export const DenseTasks: Story = {
                 ),
             ),
             ...Array.from({ length: 4 }, (_, i) =>
-                taskRow(`today task ${i + 1}`, { line: 100 + i, scheduled: today }),
+                taskRow(`today task ${i + 1}`, {
+                    line: 100 + i,
+                    scheduled: today,
+                }),
             ),
-            taskRow('a quiet task in three days', { line: 200, scheduled: addDaysISO(today, 3) }),
-            taskRow('a quiet task in five days', { line: 201, scheduled: addDaysISO(today, 5) }),
-            taskRow('a quiet task in nine days', { line: 202, scheduled: addDaysISO(today, 9) }),
+            taskRow('a quiet task in three days', {
+                line: 200,
+                scheduled: addDaysISO(today, 3),
+            }),
+            taskRow('a quiet task in five days', {
+                line: 201,
+                scheduled: addDaysISO(today, 5),
+            }),
+            taskRow('a quiet task in nine days', {
+                line: 202,
+                scheduled: addDaysISO(today, 9),
+            }),
         ]
         const placed = placeRows(rows, today)
         return (
             <div style={{ width: '720px', height: '560px' }}>
                 <CalendarFrame>
-                    <MonthView store={new EventStore(new MemoryBackend())} placed={placed} />
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={placed}
+                    />
                 </CalendarFrame>
             </div>
         )
@@ -130,12 +149,20 @@ export const DenseTasks: Story = {
         // assert on the chip ROOT (the title's parent), which is what squashed
         assertChipsWhole(canvasElement, `:has(> ${chips})`)
         assertHeaderAligned(canvasElement)
-        const scroller = canvasElement.querySelector<HTMLElement>('[data-testid="month-scroller"]')!
+        const scroller = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="month-scroller"]',
+        )!
         // the dense month MUST overflow, or the header-alignment-while-scrolling check above proved nothing
         expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
         // the busy week grew; a quiet week did not
-        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
-        const heights = cells.map(c => Math.round(c.getBoundingClientRect().height))
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        const heights = cells.map(c =>
+            Math.round(c.getBoundingClientRect().height),
+        )
         expect(Math.max(...heights)).toBeGreaterThan(Math.min(...heights) * 2)
     },
 }
@@ -167,18 +194,33 @@ export const QuietTasks: Story = {
         return (
             <div style={{ width: '720px', height: '560px' }}>
                 <CalendarFrame>
-                    <MonthView store={new EventStore(new MemoryBackend())} placed={placed} />
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={placed}
+                    />
                 </CalendarFrame>
             </div>
         )
     },
     play: async ({ canvasElement }) => {
-        const scroller = canvasElement.querySelector<HTMLElement>('[data-testid="month-scroller"]')!
-        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
-        expect(scroller.scrollHeight).toBeLessThanOrEqual(scroller.clientHeight + 1)
+        const scroller = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="month-scroller"]',
+        )!
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        expect(scroller.scrollHeight).toBeLessThanOrEqual(
+            scroller.clientHeight + 1,
+        )
         const last = cells[cells.length - 1].getBoundingClientRect()
-        expect(Math.abs(last.bottom - scroller.getBoundingClientRect().bottom)).toBeLessThanOrEqual(2)
-        const heights = new Set(cells.map(c => Math.round(c.getBoundingClientRect().height)))
+        expect(
+            Math.abs(last.bottom - scroller.getBoundingClientRect().bottom),
+        ).toBeLessThanOrEqual(2)
+        const heights = new Set(
+            cells.map(c => Math.round(c.getBoundingClientRect().height)),
+        )
         expect(heights.size).toBeLessThanOrEqual(2) // equal rows (±1px rounding)
         // today's number keeps the circle's colour even though MonthView merges its own muted class onto
         // it — fails if DayNumber's `.root.today` specificity is ever lowered. The comparison number is
@@ -186,18 +228,33 @@ export const QuietTasks: Story = {
         // leading/trailing-month spillover) — never a hardcoded day-of-month that could collide with
         // today's own real date.
         const numbers = cells.map(c => c.firstElementChild as HTMLElement)
-        const todayCircle = numbers.find(n => Math.round(n.getBoundingClientRect().width) === 20)!
-        const other = numbers.find(n => n !== todayCircle && getComputedStyle(n).opacity === '1')!
-        expect(getComputedStyle(todayCircle).color).not.toBe(getComputedStyle(other).color)
+        const todayCircle = numbers.find(
+            n => Math.round(n.getBoundingClientRect().width) === 20,
+        )!
+        const other = numbers.find(
+            n => n !== todayCircle && getComputedStyle(n).opacity === '1',
+        )!
+        expect(getComputedStyle(todayCircle).color).not.toBe(
+            getComputedStyle(other).color,
+        )
     },
 }
 /** Minimal PlacedTask fixture for the transition stories below, matching
  *  TaskAllDayStrip.stories.tsx's own `task()` helper — these stories only need a task that
  *  renders one chip, not a real markdown-backed row. */
-function placedTask(description: string, placed: string, late: number): PlacedTask {
+function placedTask(
+    description: string,
+    placed: string,
+    late: number,
+): PlacedTask {
     return {
         row: {
-            file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+            file: {
+                ...EMPTY_FILE,
+                name: 'tasks',
+                basename: 'tasks',
+                path: 'tasks.md',
+            },
             note: { description, placed, resolved: false },
             formula: {},
         },
@@ -222,6 +279,9 @@ export const ComposerOpensOnCellClick: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -232,12 +292,20 @@ export const ComposerOpensOnCellClick: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
         expect(cells.length).toBeGreaterThan(20)
-        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
+        expect(
+            cells[10].querySelector('[data-testid="task-cell-composer-input"]'),
+        ).toBeNull()
         await userEvent.click(cells[10])
         await new Promise(r => setTimeout(r, 0))
-        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+        expect(
+            cells[10].querySelector('[data-testid="task-cell-composer-input"]'),
+        ).not.toBeNull()
     },
 }
 
@@ -256,6 +324,9 @@ export const ComposerMovesBetweenCells: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -266,15 +337,203 @@ export const ComposerMovesBetweenCells: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
         await userEvent.click(cells[10])
         await new Promise(r => setTimeout(r, 0))
-        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+        expect(
+            cells[10].querySelector('[data-testid="task-cell-composer-input"]'),
+        ).not.toBeNull()
         await userEvent.click(cells[11])
         await new Promise(r => setTimeout(r, 0))
         // the FIRST cell's composer is GONE — not merely a second one also present
-        expect(cells[10].querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
-        expect(cells[11].querySelector('[data-testid="task-cell-composer-input"]')).not.toBeNull()
+        expect(
+            cells[10].querySelector('[data-testid="task-cell-composer-input"]'),
+        ).toBeNull()
+        expect(
+            cells[11].querySelector('[data-testid="task-cell-composer-input"]'),
+        ).not.toBeNull()
+    },
+}
+
+/** Task 2 (discoverable add): a quiet `+` sits in the top-right corner of every tasks-register
+ *  cell, invisible until the cell is hovered or a control inside it holds focus — otherwise this
+ *  is the finding the whole plan started from ("there is no way to add a task"), just moved from
+ *  "click empty space" to "click a labelled button", so the affordance must actually be there to
+ *  find. Proves it's present, quiet at rest, revealed on hover, and opens the SAME composer a
+ *  bare cell click does. */
+export const AddTaskButtonReveals: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={new Map()}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
+                            open: d => setOpenDate(d),
+                            commit: () => setOpenDate(null),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        const cell = cells[10]
+        const button = cell.querySelector<HTMLElement>(
+            '[aria-label="Add task"]',
+        )!
+        expect(button).not.toBeNull()
+        // quiet at rest
+        expect(getComputedStyle(button).opacity).toBe('0')
+        // Real pointer hover isn't reliably reproducible through synthetic events in this
+        // runner, so this proves the OTHER half of "quiet by default, reachable by keyboard":
+        // giving the button itself real DOM focus reveals it via `.month-cell:focus-within`,
+        // which is unconditional on HOW focus arrived (unlike `:hover`, which needs a real
+        // pointer move) — this is exactly the path a keyboard user tabbing through the grid
+        // takes.
+        button.focus()
+        // the opacity change is CSS-transitioned (`--dur`), so the computed value right after
+        // triggering it is still mid-transition — wait past the transition before reading it.
+        await new Promise(r => setTimeout(r, 200))
+        expect(getComputedStyle(button).opacity).toBe('1')
+        await userEvent.click(button)
+        await new Promise(r => setTimeout(r, 0))
+        expect(
+            cell.querySelector('[data-testid="task-cell-composer-input"]'),
+        ).not.toBeNull()
+    },
+}
+
+/** The whole add-a-task loop with REAL state, so it can be tried by hand: `+` (or a click on
+ *  empty cell space) opens the composer, the `→` picker switches which note the task goes to,
+ *  Enter adds a chip in that note's colour and keeps the composer open for the next one. The
+ *  rows live in a signal here, standing in for the vault write + refetch the real calendar does
+ *  (`CalendarView.tsx`'s commitTask), which Storybook's fake transport cannot persist. */
+export const AddTasksToACategory: Story = {
+    render: () => {
+        const today = todayISO()
+        seedCalendarState({ date: new Date(`${today}T12:00:00`) })
+        const notes = [
+            {
+                id: 'tasks/General Tasks.md',
+                label: 'General Tasks',
+                color: 'var(--blue)',
+            },
+            {
+                id: 'tasks/MATH 128A Tasks.md',
+                label: 'MATH 128A Tasks',
+                color: 'var(--rose)',
+            },
+            {
+                id: 'tasks/HIST 100 Tasks.md',
+                label: 'HIST 100 Tasks',
+                color: 'var(--green)',
+            },
+        ]
+        const fileOf = (id: string) => {
+            const n = notes.find(x => x.id === id)!
+            return {
+                ...EMPTY_FILE,
+                name: n.label,
+                basename: n.label,
+                path: n.id,
+            }
+        }
+        const [rows, setRows] = createSignal<Row[]>([
+            {
+                ...taskRow('problem set 3', { line: 0, scheduled: today }),
+                file: fileOf(notes[1].id),
+            },
+        ])
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        const [target, setTarget] = createSignal(notes[0].id)
+        const placed = () => placeRows(rows(), today)
+        const colorOf = (t: PlacedTask) =>
+            notes.find(n => n.id === t.row.file.path)?.color
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={placed()}
+                        colorFor={colorOf}
+                        compose={{
+                            date: openDate(),
+                            destination: notes.find(n => n.id === target())!
+                                .label,
+                            color: notes.find(n => n.id === target())!.color,
+                            targets: notes,
+                            target: target(),
+                            setTarget,
+                            open: d => setOpenDate(d),
+                            commit: (date, text) =>
+                                setRows(r => [
+                                    ...r,
+                                    {
+                                        ...taskRow(text, {
+                                            line: r.length,
+                                            scheduled: date,
+                                        }),
+                                        file: fileOf(target()),
+                                    },
+                                ]),
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cell = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ].find(c => !!c.querySelector('[role="button"]'))!
+        await userEvent.click(
+            cell.querySelector<HTMLElement>('[aria-label="Add task"]')!,
+        )
+        await new Promise(r => setTimeout(r, 0))
+        const trigger = cell.querySelector<HTMLElement>(
+            '[data-select-trigger]',
+        )!
+        await userEvent.click(trigger)
+        const option = [
+            ...document.body.querySelectorAll<HTMLElement>('*'),
+        ].find(
+            e =>
+                e.children.length === 0 &&
+                e.textContent?.trim() === 'HIST 100 Tasks',
+        )!
+        await userEvent.click(option)
+        await new Promise(r => setTimeout(r, 0))
+        expect(trigger.textContent).toContain('HIST 100 Tasks')
+        // the composer survived the pick, and focus went back to the input
+        const input = cell.querySelector<HTMLInputElement>(
+            '[data-testid="task-cell-composer-input"]',
+        )!
+        expect(document.activeElement).toBe(input)
+        await userEvent.type(input, 'read chapter 4{Enter}')
+        await new Promise(r => setTimeout(r, 0))
+        expect(cell.textContent).toContain('read chapter 4')
     },
 }
 
@@ -285,7 +544,9 @@ export const ChipClickDoesNotOpenComposer: Story = {
         seedCalendarState({ date: anchor })
         const [openDate, setOpenDate] = createSignal<string | null>(null)
         const [openedCount, setOpenedCount] = createSignal(0)
-        const placed = new Map([['2026-01-14', [placedTask('write the report', '2026-01-14', 0)]]])
+        const placed = new Map([
+            ['2026-01-14', [placedTask('write the report', '2026-01-14', 0)]],
+        ])
         return (
             <div style={{ height: STORY_H }}>
                 <CalendarFrame>
@@ -296,6 +557,9 @@ export const ChipClickDoesNotOpenComposer: Story = {
                         compose={{
                             date: openDate(),
                             destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: d => setOpenDate(d),
                             commit: () => setOpenDate(null),
                             cancel: () => setOpenDate(null),
@@ -307,11 +571,20 @@ export const ChipClickDoesNotOpenComposer: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const title = canvasElement.querySelector<HTMLElement>('[data-testid="task-chip-title"]')!
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
         await userEvent.click(title)
         await new Promise(r => setTimeout(r, 0))
-        expect(canvasElement.querySelector('[data-testid="opened-count"]')!.textContent).toBe('1')
-        expect(canvasElement.querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
+        expect(
+            canvasElement.querySelector('[data-testid="opened-count"]')!
+                .textContent,
+        ).toBe('1')
+        expect(
+            canvasElement.querySelector(
+                '[data-testid="task-cell-composer-input"]',
+            ),
+        ).toBeNull()
     },
 }
 
@@ -342,6 +615,9 @@ export const ComposerBelowChips: Story = {
                             date: '2026-01-14',
                             destination: 'General Tasks',
                             color: 'var(--blue)',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
                             open: () => {},
                             commit: () => {},
                             cancel: () => {},
@@ -353,17 +629,29 @@ export const ComposerBelowChips: Story = {
     },
     play: async ({ canvasElement }) => {
         const boxes = [
-            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell-events"]'),
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell-events"]',
+            ),
         ]
-        const box = boxes.find(b => b.querySelector('[data-testid="task-chip-title"]'))!
+        const box = boxes.find(b =>
+            b.querySelector('[data-testid="task-chip-title"]'),
+        )!
         const children = [...box.children]
         expect(children.length).toBe(3) // 2 chips + the composer
-        expect(children[0].querySelector('[data-testid="task-chip-title"]')).not.toBeNull()
-        expect(children[1].querySelector('[data-testid="task-chip-title"]')).not.toBeNull()
+        expect(
+            children[0].querySelector('[data-testid="task-chip-title"]'),
+        ).not.toBeNull()
+        expect(
+            children[1].querySelector('[data-testid="task-chip-title"]'),
+        ).not.toBeNull()
         // the composer is LAST — proves it never displaces the chips above it
         const composer = children[2]
-        expect(composer.querySelector('[data-testid="task-cell-composer-marker"]')).not.toBeNull()
-        expect(composer.querySelector('[data-testid="task-chip-title"]')).toBeNull()
+        expect(
+            composer.querySelector('[data-testid="task-cell-composer-marker"]'),
+        ).not.toBeNull()
+        expect(
+            composer.querySelector('[data-testid="task-chip-title"]'),
+        ).toBeNull()
         // the colour reaches the marker itself, as an inline style carrying the exact design
         // token, not a hardcoded stand-in colour
         const marker = composer.querySelector<HTMLElement>(

@@ -7,6 +7,9 @@ import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
+import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { openRowEditor } from './openRowEditor'
 import styles from './ListView.module.css'
 
 export function ListView(props: {
@@ -25,6 +28,10 @@ export function ListView(props: {
     // gets from `canWriteStoredRow`.
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
+    /** The base file, so a row can open the row/property editor — same gate as TableView's. */
+    basePath?: string
+    /** Refetch after a row edit/delete lands — BaseView's `refetchAll`. */
+    onChange?: () => void
 }) {
     const firstCol = (): string => props.result.columns[0] ?? 'file.name'
     const authorCol = (): string | undefined => props.result.columns[1]
@@ -34,6 +41,25 @@ export function ListView(props: {
         window.dispatchEvent(
             new CustomEvent('bismuth-open', { detail: row.file.path }),
         )
+
+    const editable = () => !!props.basePath
+    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    function openEditor(row: Row): void {
+        if (!rowEditable(row)) return
+        openRowEditor({
+            row,
+            config: props.config,
+            view: props.result.view,
+            onChanged: props.onChange,
+            columns: props.result.columns,
+        })
+    }
+    /** Owned rows have nowhere else to open (no note) — the row itself opens the editor;
+     *  a note row keeps opening the note, with a separate edit icon for properties. */
+    function openRow(row: Row): void {
+        if (rowEditable(row) && canWriteStoredRow(row)) openEditor(row)
+        else open(row)
+    }
 
     const toggle = (row: Row, e: Event) => props.onToggle?.(row, e)
     const setStatus = (row: Row, e: MouseEvent) => props.onSetStatus?.(row, e)
@@ -83,51 +109,73 @@ export function ListView(props: {
                                     ? resolveProperty(authorCol()!, row)
                                     : null
                                 return (
-                                    <PlainButton
-                                        class={styles.lrow}
-                                        onClick={() => open(row)}
-                                    >
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles.ltextGlyph}
-                                            aria-hidden="true"
+                                    <div class={styles.lrowWrap}>
+                                        <PlainButton
+                                            class={styles.lrow}
+                                            onClick={() => openRow(row)}
                                         >
-                                            ✎
-                                        </Text>
-                                        <Label fill>
-                                            {title == null
-                                                ? row.file.name
-                                                : String(title)}
-                                            <Show
-                                                when={
-                                                    author != null &&
-                                                    typeof author !== 'object'
-                                                }
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                class={styles.ltextGlyph}
+                                                aria-hidden="true"
                                             >
+                                                ✎
+                                            </Text>
+                                            <Label fill>
+                                                {title == null
+                                                    ? row.file.name
+                                                    : String(title)}
+                                                <Show
+                                                    when={
+                                                        author != null &&
+                                                        typeof author !==
+                                                            'object'
+                                                    }
+                                                >
+                                                    <Text
+                                                        as="span"
+                                                        size="inherit"
+                                                        tone="faint"
+                                                        weight="inherit"
+                                                    >
+                                                        {' '}
+                                                        — {String(author)}
+                                                    </Text>
+                                                </Show>
+                                            </Label>
+                                            <Show when={rightCol()}>
                                                 <Text
                                                     as="span"
                                                     size="inherit"
-                                                    tone="faint"
+                                                    tone="muted"
                                                     weight="inherit"
+                                                    class={styles.lrowRight}
                                                 >
-                                                    {' '}
-                                                    — {String(author)}
+                                                    {renderValue(
+                                                        rightCol()!,
+                                                        row,
+                                                    )}
                                                 </Text>
                                             </Show>
-                                        </Label>
-                                        <Show when={rightCol()}>
-                                            <Text
-                                                as="span"
-                                                size="inherit"
-                                                tone="muted"
-                                                weight="inherit"
-                                                class={styles.lrowRight}
-                                            >
-                                                {renderValue(rightCol()!, row)}
-                                            </Text>
+                                        </PlainButton>
+                                        <Show
+                                            when={
+                                                rowEditable(row) &&
+                                                !canWriteStoredRow(row)
+                                            }
+                                        >
+                                            <IconButton
+                                                icon="Pencil"
+                                                label="Edit properties"
+                                                class={styles.lEditBtn}
+                                                onClick={e => {
+                                                    e.stopPropagation()
+                                                    openEditor(row)
+                                                }}
+                                            />
                                         </Show>
-                                    </PlainButton>
+                                    </div>
                                 )
                             }}
                         </For>

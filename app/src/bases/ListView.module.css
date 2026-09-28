@@ -30,3 +30,11 @@
 /* Faint author suffix after a list row's title. */
 /* The optional right-aligned third column (dates / counts). */
 .lrowRight { font-size: var(--fs-ui); flex: 0 0 auto; }
+
+/* Row-editing affordances (openRowEditor.tsx): a note row's `.lrow` opens the note as before,
+   with a hover/focus-reveal edit icon beside it for its properties; an owned row's `.lrow`
+   opens the editor directly (see ListView.tsx's `openRow`), so it gets no separate icon. */
+.lrowWrap { display: flex; align-items: center; }
+.lrowWrap .lrow { flex: 1; }
+.lEditBtn { flex: 0 0 auto; margin-right: var(--sp-4); opacity: 0; transition: opacity 0.12s ease; }
+.lrowWrap:hover .lEditBtn, .lrowWrap:focus-within .lEditBtn { opacity: 1; }

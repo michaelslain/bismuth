@@ -68,7 +68,19 @@ import { capitalize } from './renderValue'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
-import { SegmentedToggle } from '../ui/SegmentedToggle'
+import ViewTabs from './ViewTabs'
+import {
+    readViews,
+    addView,
+    duplicateView,
+    removeView,
+    renameView,
+    moveView,
+    changeViewType,
+    toggleViewMode,
+    type RawView,
+} from './viewsEdit'
+import AddRowAction from './AddRowAction'
 import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
@@ -548,6 +560,89 @@ export function BaseView(props: {
         return p ? noteLabel(p) : undefined
     })
 
+    // The active view's index, clamped to the DOCUMENT's view count (not the resolved rows') —
+    // shared by every call site that used to inline this same `Math.min(activeView(), …)`
+    // expression (the kanban/calendar viewIndex props, BaseSettings' viewIdx, and now the
+    // column-reorder/width writes below and ViewTabs' `active`).
+    const activeViewIdx = createMemo(() =>
+        Math.min(activeView(), Math.max(0, (doc()?.config.views.length ?? 1) - 1)),
+    )
+
+    /** Reads the base file's raw frontmatter, applies a pure `viewsEdit.ts` transform to its
+     *  `views:` array, and persists the result — materializing a `view:`-shorthand/flat-keys
+     *  base into an explicit `views:` array on first structural edit (see viewsEdit.ts's
+     *  module doc), so nothing the user already configured moves to a different view.
+     *  `pickActive` computes the tab to land on from the POST-edit array, so e.g. duplicating
+     *  view 0 lands on the new view 1, and deleting the active view lands on its left
+     *  neighbor. Read-only bases (no `editPath()`) can't reach here — ViewTabs never wires
+     *  these callbacks when `editable` is false. */
+    const editViews = async (
+        edit: (views: RawView[]) => RawView[],
+        pickActive: (views: RawView[]) => number,
+    ) => {
+        const path = editPath()
+        if (!path) return
+        const text = await api.read(path)
+        const { views, removedKeys } = readViews(text)
+        const next = edit(views)
+        await api.setProperty(path, 'views', next)
+        for (const key of removedKeys) await api.deleteProperty(path, key)
+        setActiveView(pickActive(next))
+        await refetchAll()
+    }
+
+    const handleAddView = (type: string) =>
+        void editViews(
+            views => addView(views, type),
+            next => next.length - 1,
+        ).catch(writeFailed('add the view'))
+
+    const handleDuplicateView = (i: number) =>
+        void editViews(
+            views => duplicateView(views, i),
+            () => i + 1,
+        ).catch(writeFailed('duplicate the view'))
+
+    const handleDeleteView = (i: number) =>
+        void editViews(
+            views => removeView(views, i),
+            next => Math.min(Math.max(0, i - 1), next.length - 1),
+        ).catch(writeFailed('delete the view'))
+
+    const handleRenameView = (i: number, name: string) =>
+        void editViews(
+            views => renameView(views, i, name),
+            () => i,
+        ).catch(writeFailed('rename the view'))
+
+    const handleMoveView = (i: number, dir: -1 | 1) =>
+        void editViews(
+            views => moveView(views, i, dir),
+            next => Math.min(Math.max(0, i + dir), next.length - 1),
+        ).catch(writeFailed('move the view'))
+
+    const handleChangeViewType = (i: number, type: string) =>
+        void editViews(
+            views => changeViewType(views, i, type),
+            () => i,
+        ).catch(writeFailed('change the view kind'))
+
+    const handleToggleViewMode = (i: number) =>
+        void editViews(
+            views => toggleViewMode(views, i),
+            () => i,
+        ).catch(writeFailed('change the view mode'))
+
+    /** "view settings" from the tab menu ALWAYS opens the generic BaseSettings panel, for
+     *  every view kind including calendar — unlike the bar's gear (BaseSettingsAction below),
+     *  which keeps routing a calendar view to its own settings modal. This is the fix for
+     *  calendar's settings being otherwise unreachable (filters/source/kind can't be edited). */
+    const handleOpenViewSettings = (i: number) => {
+        setActiveView(i)
+        setSettingsMode(true)
+        setSourceMode(false)
+    }
+
     /** A view KIND that contributes controls to the base's bar returns ViewBarSlots rather than
      *  rendering a bar of its own — so the base owns the one bar and the kind only says WHICH
      *  REGION each of its controls belongs in. Replaces the old spacer/`<CalendarToolbar inline/>`
@@ -870,15 +965,30 @@ export function BaseView(props: {
                     }
                     locus={viewSlots()?.locus}
                     facet={
-                        <Show when={(data()?.config.views.length ?? 0) > 1}>
-                            <SegmentedToggle
+                        <Show
+                            when={
+                                (data()?.config.views.length ?? 0) > 1 ||
+                                !!editPath()
+                            }
+                        >
+                            <ViewTabs
                                 class={styles.tabs}
-                                value={activeView()}
-                                onChange={setActiveView}
-                                options={data()!.config.views.map((v, i) => ({
-                                    id: i,
-                                    label: v.name,
+                                views={(data()?.config.views ?? []).map(v => ({
+                                    name: v.name,
+                                    type: v.type,
+                                    mode: viewMode(v),
                                 }))}
+                                active={activeViewIdx()}
+                                onSelect={setActiveView}
+                                editable={!!editPath()}
+                                onAdd={handleAddView}
+                                onRename={handleRenameView}
+                                onDuplicate={handleDuplicateView}
+                                onDelete={handleDeleteView}
+                                onMove={handleMoveView}
+                                onChangeType={handleChangeViewType}
+                                onToggleMode={handleToggleViewMode}
+                                onOpenSettings={handleOpenViewSettings}
                             />
                         </Show>
                     }
@@ -888,6 +998,19 @@ export function BaseView(props: {
                         <>
                             {viewSlots()?.actions}
                             <AddTaskAction />
+                            <Show when={data()}>
+                                {d => (
+                                    <AddRowAction
+                                        basePath={d().basePath}
+                                        config={d().config}
+                                        view={activeViewConfig()!}
+                                        viewIndex={activeViewIdx()}
+                                        ownsRows={ownsRows()}
+                                        mode={activeMode()}
+                                        onAdded={refetchAll}
+                                    />
+                                )}
+                            </Show>
                             <BaseSettingsAction />
                             <EditQueryAction />
                             <BaseSourceAction />
@@ -941,14 +1064,17 @@ export function BaseView(props: {
                                                         onSetStatus={
                                                             setTaskRowStatus
                                                         }
+                                                        basePath={data()!.basePath}
+                                                        onChange={refetchAll}
                                                         config={data()!.config}
                                                         onReorder={
                                                             data()!.basePath
                                                                 ? c => {
                                                                       void api
-                                                                          .setProperty(
+                                                                          .setViewProperty(
                                                                               data()!
                                                                                   .basePath!,
+                                                                              activeViewIdx(),
                                                                               'order',
                                                                               c,
                                                                           )
@@ -965,9 +1091,10 @@ export function BaseView(props: {
                                                         onWidthsChange={
                                                             data()!.basePath
                                                                 ? cw => {
-                                                                      void api.setProperty(
+                                                                      void api.setViewProperty(
                                                                           data()!
                                                                               .basePath!,
+                                                                          activeViewIdx(),
                                                                           'columnWidths',
                                                                           cw,
                                                                       )
@@ -1022,6 +1149,8 @@ export function BaseView(props: {
                                                 >
                                                     <CardsView
                                                         result={res()}
+                                                        basePath={data()!.basePath}
+                                                        onChange={refetchAll}
                                                         config={data()!.config}
                                                         mode={activeMode()}
                                                         onToggle={
@@ -1040,6 +1169,8 @@ export function BaseView(props: {
                                                 >
                                                     <ListView
                                                         result={res()}
+                                                        basePath={data()!.basePath}
+                                                        onChange={refetchAll}
                                                         config={data()!.config}
                                                         mode={activeMode()}
                                                         onToggle={
@@ -1058,6 +1189,8 @@ export function BaseView(props: {
                                                 >
                                                     <BulletsView
                                                         result={res()}
+                                                        basePath={data()!.basePath}
+                                                        onChange={refetchAll}
                                                         config={data()!.config}
                                                         mode={activeMode()}
                                                         onToggle={
@@ -1179,10 +1312,8 @@ export function BaseView(props: {
                 <BaseSettings
                     type={activeType()}
                     config={data()!.config}
-                    viewIdx={Math.min(
-                        activeView(),
-                        Math.max(0, data()!.config.views.length - 1),
-                    )}
+                    viewIdx={activeViewIdx()}
+                    viewIndex={activeView()}
                     basePath={data()!.basePath}
                     rows={data()!.rows}
                     onClose={() => setSettingsMode(false)}
