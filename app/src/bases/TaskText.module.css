@@ -1,0 +1,15 @@
+/* One task description: inline runs that wrap with the surrounding line. */
+.taskText {
+  overflow-wrap: anywhere;
+}
+/* An external `[label](url)` — a PlainButton that reads as a link, not a control. */
+.link {
+  display: inline;
+  text-align: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.italic {
+  font-style: italic;
+}

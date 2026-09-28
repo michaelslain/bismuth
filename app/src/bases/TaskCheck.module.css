@@ -22,6 +22,16 @@
 .taskCheck[data-status='done'] { color: var(--accent); }
 .taskCheck[data-status='doing'] { color: var(--accent-purple); }
 .taskCheck[data-status='cancelled'] { opacity: 0.65; }
+/* `color` — a caller-supplied glyph colour (TaskChip's category colour). Declared after the
+   status and :hover rules at equal specificity so it wins over all of them. */
+.taskCheck[data-colored],
+.taskCheck[data-colored]:hover,
+.taskCheck[data-colored][data-status] { color: var(--task-check-color, var(--text-muted)); }
+/* `readOnly` — display only: dimmed, no pointer affordance, no hover accent. */
+.taskCheck[data-readonly] { opacity: 0.55; cursor: default; }
+.taskCheck[data-readonly]:not([data-colored]):hover { color: var(--text-muted); }
+.taskCheck[data-readonly][data-status='done']:not([data-colored]):hover { color: var(--accent); }
+.taskCheck[data-readonly][data-status='doing']:not([data-colored]):hover { color: var(--accent-purple); }
 
 /* A table `status` cell holds the check alone, so it has no flex row to sit in — center it
    the way the row's `align-items: baseline` does for <TaskRow>. */
