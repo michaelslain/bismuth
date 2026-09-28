@@ -68,7 +68,9 @@ export const States: Story = {
     },
 }
 
-/** Danger + disabled. */
+/** Danger + disabled. `play` pins the cursor contract every button in the app inherits from
+ *  here: `pointer` on an enabled button, `not-allowed` on a disabled one — never `default`,
+ *  which reads as "nothing happens" rather than "this control is off". */
 export const DangerAndDisabled: Story = {
     render: () => (
         <Row>
@@ -79,6 +81,15 @@ export const DangerAndDisabled: Story = {
             <TextButton disabled>cancel</TextButton>
         </Row>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const enabled = canvas.getAllByRole('button', { name: 'delete' })[0]
+        const disabledDelete = canvas.getAllByRole('button', { name: 'delete' })[1]
+        const disabledCancel = canvas.getByRole('button', { name: 'cancel' })
+        expect(getComputedStyle(enabled).cursor).toBe('pointer')
+        expect(getComputedStyle(disabledDelete).cursor).toBe('not-allowed')
+        expect(getComputedStyle(disabledCancel).cursor).toBe('not-allowed')
+    },
 }
 
 /** A typical modal footer pairing (Cancel / Delete). */
