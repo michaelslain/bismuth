@@ -2,14 +2,17 @@ import type { Component, JSX } from 'solid-js'
 import { Show, onCleanup, onMount } from 'solid-js'
 import type { ChartGrid } from './chartColumns'
 import { columnsFor } from './chartColumns'
+import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import styles from './ChartFrame.module.css'
 
 export type ChartFrameProps = {
-    /** True when the view has nothing to plot — renders `emptyMessage` instead of `children`. */
+    /** True when the view has nothing to plot — renders the one `no data to chart` empty state
+     *  instead of `children`. */
     empty: boolean
-    /** Fallback copy shown in the empty state; each chart view supplies its own wording. */
-    emptyMessage: JSX.Element
+    /** Optional body under that title, for a view whose empty state has a specific remedy (the
+     *  heatmap's missing date column). The title itself is not overridable. */
+    emptyHint?: JSX.Element
     class?: string
     /** One line above the body — see ChartReadout. */
     readout?: JSX.Element
@@ -24,7 +27,7 @@ export type ChartFrameProps = {
 
 /**
  * The chart chrome shared by Bar/Heatmap/Line/Stat views (bases-*.card.html): fixed outer
- * padding + scroll, one consistent empty-state message, and — new here — the readout/footer/
+ * padding + scroll, one consistent empty state (`ui/EmptyState`), and — new here — the readout/footer/
  * drill slots plus a live character-grid measurement every chart view needs to lay out its own
  * text grid. The body wraps a hidden 10-character probe in its own font; `cellWidth` is a tenth
  * of its rendered width, and `columns` is the body's content width divided by that, floored at
@@ -77,7 +80,7 @@ const ChartFrame: Component<ChartFrameProps> = props => {
                 </Text>
                 <Show
                     when={!props.empty}
-                    fallback={<div class={styles.empty}>{props.emptyMessage}</div>}
+                    fallback={<EmptyState class={styles.empty} title="no data to chart">{props.emptyHint}</EmptyState>}
                 >
                     {props.children}
                 </Show>

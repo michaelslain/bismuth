@@ -15,14 +15,6 @@
 .heatGrid { display: flex; flex-direction: column; }
 .heatRow { display: flex; align-items: center; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--cell-h); }
 .heatDow { width: 2ch; flex: none; color: var(--faint); }
-.heatCol { width: 2ch; flex: none; text-align: center; cursor: pointer; }
-.heatCol.lv0 { color: var(--faint); }
-.heatCol.lv1 { color: var(--text-muted); }
-.heatCol.lv2, .heatCol.lv3 { color: var(--accent); }
-.heatCol.selected { color: var(--fg); }
-.lv0 { color: var(--faint); }
-.lv1 { color: var(--text-muted); }
-.lv2, .lv3 { color: var(--accent); }
 .legend {
   display: flex;
   align-items: center;

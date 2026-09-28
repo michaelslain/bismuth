@@ -1,7 +1,8 @@
 import type { Component } from 'solid-js'
 import { For } from 'solid-js'
 import type { Bin } from '../../../core/src/dates'
-import { sparkline, sparklineCaption } from './sparkline'
+import { sparkline } from './sparkline'
+import { sparklineWindowCaption } from './sparklineWindow'
 import Text from '../ui/Text'
 import styles from './SparklineChart.module.css'
 
@@ -28,10 +29,7 @@ export type SparklineProps = {
  */
 const SparklineChart: Component<SparklineProps> = props => {
     const glyphs = () => sparkline(props.values)
-    const caption = () =>
-        props.labels.length > 1
-            ? `${sparklineCaption(props.bin, props.keys.length)} // ${props.labels[0]} – ${props.labels[props.labels.length - 1]}`
-            : sparklineCaption(props.bin, props.keys.length)
+    const caption = () => sparklineWindowCaption(props.bin, props.labels)
     return (
         <Text as="div" inherit class={`${styles.sparkline} ${props.class ?? ''}`}>
             <Text as="div" inherit class={styles.glyphs}>

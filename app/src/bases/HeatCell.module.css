@@ -1,0 +1,18 @@
+/* HeatCell.tsx ONLY — one heatmap square, or a legend swatch when `static`. The grid that
+   places squares is HeatmapView.module.css. */
+.cell {
+    flex: none;
+    text-align: center;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    line-height: var(--cell-h);
+}
+.interactive {
+    display: block;
+    width: 2ch;
+    cursor: pointer;
+}
+.lv0 { color: var(--faint); }
+.lv1 { color: var(--text-muted); }
+.lv2, .lv3 { color: var(--accent); }
+.cell.selected { color: var(--fg); }
