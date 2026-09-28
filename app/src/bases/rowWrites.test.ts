@@ -10,11 +10,13 @@ afterEach(() => setTransport(httpTransport(originalBase)))
 type Call = { verb: string; path: string; body: unknown }
 
 /** A Transport that records every write and answers `/delete` with a trash path. */
+let baseText = ''
+
 function install(calls: Call[]): void {
     const ok = () => Promise.resolve(new Response('{}'))
     const stub: Transport = {
         getJson: () => Promise.reject(new Error('not stubbed')),
-        getText: () => Promise.reject(new Error('not stubbed')),
+        getText: () => Promise.resolve(baseText),
         post: (path, body) => {
             calls.push({ verb: 'post', path, body })
             return ok()
@@ -67,21 +69,27 @@ test('commitDelete of a note row trashes it and returns an undo that restores it
     expect(changed).toBe(2)
 })
 
-test('commitDelete of a stored row deletes by index and its undo re-creates the row', async () => {
+test('commitDelete of a stored row deletes by index and its undo re-creates the row at its old position', async () => {
     const calls: Call[] = []
     install(calls)
+    baseText = '---\ntype: base\n---\n\n| title |\n| --- |\n| a |\n| b |\n| c |\n'
     const stored: Row = {
         file: placeholderFile('', 'tasks.md'),
         note: { title: 'x' },
         formula: {},
-        index: 2,
+        index: 1,
     }
     const undo = await commitDelete(stored)
-    expect(calls[0]).toEqual({ verb: 'post', path: '/row/delete', body: { file: 'tasks.md', index: 2 } })
+    expect(calls[0]).toEqual({ verb: 'post', path: '/row/delete', body: { file: 'tasks.md', index: 1 } })
     await undo()
     expect(calls[1]).toEqual({
         verb: 'post',
         path: '/row/update',
         body: { file: 'tasks.md', index: null, note: { title: 'x' } },
+    })
+    expect(calls[2]).toEqual({
+        verb: 'post',
+        path: '/row/reorder',
+        body: { file: 'tasks.md', from: 3, to: 1 },
     })
 })
