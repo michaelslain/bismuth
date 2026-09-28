@@ -2,7 +2,7 @@
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
-import SuggestInput from './SuggestInput'
+import SuggestInput, { type SuggestOption } from './SuggestInput'
 import Text from './Text'
 
 const OPTIONS = [
@@ -22,13 +22,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-function Host(props: { initial?: string }) {
+function Host(props: { initial?: string; options?: SuggestOption[] }) {
     const [value, setValue] = createSignal(props.initial ?? '')
     return (
         <div style={{ width: '240px', display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
             <SuggestInput
                 value={value()}
-                options={OPTIONS}
+                options={props.options ?? OPTIONS}
                 placeholder="type a word"
                 onInput={setValue}
             />
@@ -54,6 +54,10 @@ export const TypingFilters: Story = {
         expect(rows.map(r => r.textContent)).toEqual(['catanimal', 'carvehicle'])
         expect(rows[0]!.className).toContain('bismuth-popover-row--selected')
         expect(rows[1]!.className).not.toContain('bismuth-popover-row--selected')
+        // The popup is at least as wide as the field it hangs from.
+        expect(list.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+            input(canvasElement).getBoundingClientRect().width,
+        )
     },
 }
 
@@ -86,3 +90,31 @@ export const AcceptAndDismiss: Story = {
     },
 }
 
+
+const WORKOUT = [{ value: 'Workout' }, { value: 'Worklog' }, { value: 'Reading' }]
+
+/** Enter on an untouched highlight keeps the typed text — it does not silently become "Workout". */
+export const EnterKeepsTypedPrefix: Story = {
+    render: () => <Host options={WORKOUT} />,
+    play: async ({ canvasElement }) => {
+        const el = input(canvasElement)
+        await userEvent.type(el, 'Work')
+        await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).not.toBeNull())
+        await userEvent.keyboard('{Enter}')
+        expect(el.value).toBe('Work')
+        expect(within(canvasElement).getByTestId('suggest-value').textContent).toBe('Work')
+    },
+}
+
+/** ArrowDown touches the highlight, so Enter accepts the option under it. */
+export const ArrowThenEnterAccepts: Story = {
+    render: () => <Host options={WORKOUT} />,
+    play: async ({ canvasElement }) => {
+        const el = input(canvasElement)
+        await userEvent.type(el, 'Work')
+        await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).not.toBeNull())
+        await userEvent.keyboard('{ArrowDown}{Enter}')
+        expect(el.value).toBe('Worklog')
+        expect(within(canvasElement).getByTestId('suggest-value').textContent).toBe('Worklog')
+    },
+}
