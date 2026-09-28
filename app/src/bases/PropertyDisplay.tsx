@@ -27,6 +27,8 @@ export type PropertyDisplayProps = {
     dense?: boolean
     /** Table: a declared markdown value renders on one line via `renderInline`. */
     inline?: boolean
+    /** Render as a markdown block though the type is undeclared (a bare `description` on a card). */
+    markdown?: boolean
     class?: string
 }
 
@@ -72,7 +74,7 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
                 </Text>
             )
         }
-        if (kind === 'markdown' && v != null && v !== '') {
+        if ((kind === 'markdown' || props.markdown) && v != null && v !== '') {
             const src = String(v)
             return props.inline ? (
                 <Text

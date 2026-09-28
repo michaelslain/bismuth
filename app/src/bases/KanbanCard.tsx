@@ -265,6 +265,7 @@ export function KanbanCard(props: {
                                         {...{ id }}
                                         row={displayRow()}
                                         config={props.config}
+                                        markdown={kind().kind === 'markdown'}
                                         dense
                                     />
                                 )
