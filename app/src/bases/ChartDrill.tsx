@@ -29,7 +29,7 @@ const ChartDrill: Component<ChartDrillProps> = props => {
         <div class={`${styles.drill} ${props.class ?? ''}`}>
             <div class={styles.head}>
                 <Text as="span" inherit size="ui" tone="muted">
-                    {props.title} // {props.rows.length} notes
+                    {props.title} // {props.rows.length} {props.rows.length === 1 ? 'note' : 'notes'}
                 </Text>
                 <TextButton onClick={() => props.onClear()}>clear</TextButton>
             </div>

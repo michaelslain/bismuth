@@ -131,6 +131,12 @@ function categoryRows(values: number[]): Partial<Row>[] {
     }))
 }
 
+function labeledRows(labels: string[], values: number[]): Partial<Row>[] {
+    return labels.map((label, i) => ({
+        note: { category: label, amount: values[i] },
+    }))
+}
+
 /** Negative values clamp to zero fill — a row with a negative amount draws no bar, only its
  *  label and value. */
 export const NegativeValues: Story = {
@@ -173,6 +179,40 @@ export const SixtyCategories: Story = {
         const rows = categoryRows(Array.from({ length: 60 }, (_, i) => (i % 7) + 1))
         return (
             <div style={{ width: '900px', height: '480px' }}>
+                <BarView
+                    result={sampleViewResult(rows, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+            </div>
+        )
+    },
+}
+
+/** Long labels + values in the hundreds inside a 300px pane — labels truncate with `…` and the
+ *  bar/track widths never go negative (regression for the barWidth clamp). */
+export const LongLabelsNarrow: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'bar' as const,
+                name: 'Amounts',
+                x: 'category',
+                y: 'amount',
+                aggregate: 'sum' as const,
+            },
+        ]
+        const rows = labeledRows(
+            [
+                'Waiting on review from legal',
+                'Blocked on design sign-off',
+                'Needs a follow-up call',
+                'Ready to ship',
+            ],
+            [120, 340, 275, 512],
+        )
+        return (
+            <div style={{ width: '300px' }}>
                 <BarView
                     result={sampleViewResult(rows, { views })}
                     config={sampleBaseConfig({ views })}
