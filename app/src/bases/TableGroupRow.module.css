@@ -1,0 +1,6 @@
+/* TableGroupRow.tsx is the sole importer. Table keeps its tinted band as the row background. */
+.row { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.cell {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: var(--rule-soft, 1px solid var(--border-soft));
+}

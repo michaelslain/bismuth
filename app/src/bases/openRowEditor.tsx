@@ -15,9 +15,6 @@ import { storedTitleColumn, metaColumns, writableKey } from './kanbanMeta'
 import { commitRename, commitMeta, commitDelete } from './rowWrites'
 import { mountModal } from '../ui/mountModal'
 
-// TableView still imports `commitMeta` from here; its wave-2 owner repoints it at ./rowWrites.
-export { commitMeta } from './rowWrites'
-
 /** The `order:`/declared-property id list to show as editable meta on a bare row — mirrors
  *  `metaSource`'s declared-properties fallback (kanbanMeta.ts) minus the `groupBy` exclusion,
  *  which has no meaning outside a kanban board's grouped columns. An explicit view `order:`
