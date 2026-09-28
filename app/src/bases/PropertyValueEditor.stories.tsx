@@ -47,7 +47,7 @@ function Frame(props: { children: unknown }) {
     )
 }
 
-/** A live harness so a story can show what got committed (or cancelled) — the component itself
+/** A live harness that holds what got committed (or cancelled), for the plays to read — the component itself
  *  is uncontrolled-on-commit (calls back once and the caller decides what happens), so this
  *  mirrors what KanbanCard's `commitMeta` does: apply the value and re-render. */
 function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
@@ -66,15 +66,13 @@ function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
                 }}
                 onCancel={() => setStatus('cancelled')}
             />
-            <div
-                style={{
-                    'margin-top': '10px',
-                    'font-size': 'var(--fs-ui)',
-                    color: 'var(--text-muted)',
-                }}
-            >
-                {status()}: {JSON.stringify(value())}
-            </div>
+            {/* Read by the plays only — not shown: the field itself is what a person looks at. */}
+            <span hidden data-testid="status">
+                {status()}
+            </span>
+            <span hidden data-testid="committed">
+                {status() === 'committed' ? JSON.stringify(value()) : ''}
+            </span>
         </Frame>
     )
 }
@@ -159,7 +157,7 @@ export const SelectLegacyValue: Story = {
     ),
 }
 
-/** Undeclared tags — a TagsField reading `#frontend #bug ` with the caret at the end, like a
+/** Undeclared tags — a TagsField reading `frontend, bug, ` with the caret at the end, like a
  *  frontmatter `tags:` line. Suggestions (propertyEdit.ts's `tagsOptions` + the vault's tags)
  *  appear only once you type. */
 export const Tags: Story = {
@@ -168,7 +166,7 @@ export const Tags: Story = {
             kind={{
                 kind: 'tags',
                 options: ['frontend', 'bug', 'backend', 'docs'],
-                hash: true,
+                tag: true,
             }}
             initial={['frontend', 'bug']}
         />
@@ -199,7 +197,7 @@ export const TextEnterCommits: Story = {
         await userEvent.clear(input)
         await userEvent.type(input, 'New title')
         await userEvent.keyboard('{Enter}')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '"New title"',
         )
     },
@@ -222,7 +220,7 @@ export const EscapeReverts: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '"Original"',
         )
     },
@@ -262,7 +260,7 @@ export const EscapeBubbles: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getAllByText(/committed:/)[0]).toHaveTextContent(
+        await expect(canvas.getAllByTestId('committed')[0]).toHaveTextContent(
             '"Original"',
         )
         await expect(windowEscapes).toEqual(['window'])
@@ -293,7 +291,7 @@ export const MultiselectTypeAndCommit: Story = {
             expect(view.state.doc.toString()).toBe('planning, frontend, '),
         )
         pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '["planning","frontend"]',
         )
     },
@@ -304,7 +302,7 @@ export const MultiselectTypeAndCommit: Story = {
 export const TagsCreatable: Story = {
     render: () => (
         <Harness
-            kind={{ kind: 'tags', options: ['frontend', 'bug'], hash: true }}
+            kind={{ kind: 'tags', options: ['frontend', 'bug'], tag: true }}
             initial={['bug']}
         />
     ),
@@ -314,7 +312,7 @@ export const TagsCreatable: Story = {
         typeInto(view, 'brand-new')
         await waitFor(() => expect(completionLabels()).toEqual([]))
         pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '["bug","brand-new"]',
         )
     },
@@ -322,7 +320,7 @@ export const TagsCreatable: Story = {
 
 /** Interactive (`tags`): suggestions include every tag in the VAULT — the graph's tag nodes, the
  *  same source the note editor's tag completion reads — after the column's own values. Typing
- *  `ch` pops `#chicken` / `#chores` under the word with the first highlighted; Tab takes it;
+ *  `ch` pops `chicken` / `chores` under the value with the first highlighted; Tab takes it;
  *  Enter commits. */
 export const TagsSuggestVaultTags: Story = {
     render: () => {
@@ -341,7 +339,7 @@ export const TagsSuggestVaultTags: Story = {
         )
         return (
             <Harness
-                kind={{ kind: 'tags', options: ['frontend', 'bug'], hash: true }}
+                kind={{ kind: 'tags', options: ['frontend', 'bug'], tag: true }}
                 initial={['bug']}
             />
         )
@@ -349,16 +347,13 @@ export const TagsSuggestVaultTags: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const view = await tagsFieldView(canvasElement)
-        typeInto(view, '#')
-        // A bare `#` offers every unused tag: the column's first, then the vault's (deduped).
-        await expectCompletions(['#frontend', '#chicken', '#chores'])
         typeInto(view, 'ch')
-        await expectCompletions(['#chicken', '#chores'])
-        expect(selectedCompletion()).toBe('#chicken')
+        await expectCompletions(['chicken', 'chores'])
+        expect(selectedCompletion()).toBe('chicken')
         pressKey(view, 'Tab')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#bug #chicken '))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('bug, chicken, '))
         pressKey(view, 'Enter')
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
+        await expect(canvas.getByTestId('committed')).toHaveTextContent(
             '["bug","chicken"]',
         )
     },
@@ -370,7 +365,7 @@ export const TagsSuggestVaultTags: Story = {
 export const UntouchedListWritesNothing: Story = {
     render: () => (
         <Harness
-            kind={{ kind: 'tags', options: [], hash: false }}
+            kind={{ kind: 'tags', options: [], tag: false }}
             initial={['Jane Doe']}
         />
     ),
@@ -379,8 +374,8 @@ export const UntouchedListWritesNothing: Story = {
         const view = await tagsFieldView(canvasElement)
         expect(view.state.doc.toString()).toBe('Jane Doe, ')
         view.contentDOM.blur()
-        await waitFor(() => expect(canvas.getByText(/cancelled/)).toBeInTheDocument())
-        expect(canvas.queryByText(/committed:/)).toBeNull()
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        expect(canvas.getByTestId('committed')).toHaveTextContent('')
         expect(view.state.doc.toString()).toBe('Jane Doe')
     },
 }

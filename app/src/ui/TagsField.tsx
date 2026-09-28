@@ -1,17 +1,17 @@
 // app/src/ui/TagsField.tsx
-// The field a `tags` (or declared `multiselect`) property is edited in — typed like a note's
-// frontmatter `tags:` line, with the note editor's OWN completion popup under the word you are
-// typing. No dropdown checklist, no filter box inside a popup: one line of text, suggestions as
-// you type, Tab / Enter to take one.
+// The field a list property (tags, or a declared `multiselect`) is edited in — typed like a
+// frontmatter list, `planning, docs`, with the note editor's OWN completion popup under the value
+// you are typing. No dropdown checklist, no filter box inside a popup: one line of text,
+// suggestions as you type, Tab / Enter to take one.
 //
 // It is a single-line CodeMirror view so the popup is literally the editor's: the same
 // `autocompletion()` wiring, row display (`completionDisplayConfig`), navigation keys
 // (`completionNavKeymap`) and look (`completionTheme`) as the note editor and card editor. Only the
-// completion SOURCE is this field's — it completes the token under the caret against the caller's
+// completion SOURCE is this field's — it completes the value under the caret against the caller's
 // `suggestions` (tag names, or a declared multiselect's options). The text/value logic is pure and
 // lives in `tagsFieldText.ts`.
 //
-// Keys: typing a word (or `#`) opens the popup; ArrowUp/Down move; Tab (`accept-completion`,
+// Keys: typing a value opens the popup; ArrowUp/Down move; Tab (`accept-completion`,
 // rebindable) or Enter takes the highlighted suggestion; Escape closes the popup — and, with no
 // popup open, cancels (the keydown then bubbles, so a host modal closes too, like TextInput's
 // Escape). Enter with no popup commits; so does leaving the field.
@@ -37,7 +37,6 @@ import {
     acceptCompletion,
     autocompletion,
     completionStatus,
-    startCompletion,
     type CompletionContext,
     type CompletionResult,
 } from '@codemirror/autocomplete'
@@ -64,9 +63,9 @@ export type TagsFieldProps = {
     value: string[]
     /** Every value the popup may suggest, best first (bare names). Read per keystroke. */
     suggestions: () => string[]
-    /** Tags spelling: `#alpha #beta`, whitespace-separated. Off = `A, B` comma-separated (a
-     *  declared multiselect whose options may contain spaces). Default on. */
-    hash?: boolean
+    /** A tag list: each value is drawn teal like ui/Tag while you type, and a leading `#` typed
+     *  out of habit is dropped. Values are comma-separated either way. */
+    tags?: boolean
     /** Fired with the parsed list each time an edit ends (Enter, or leaving the field). */
     onCommit: (next: string[]) => void
     /** Fired when Escape ends the edit without saving. */
@@ -94,10 +93,11 @@ const fieldTheme = EditorView.theme({
     '.cm-placeholder': { color: 'var(--faint)' },
 })
 
-// Every `#tag` token in the field drawn like ui/Tag draws a tag (teal, UI face) — so a tag keeps
-// its look while being typed, instead of turning into plain text the moment the cell opens.
+// Every value of a tag list drawn the way ui/Tag draws a tag (teal, UI face) — so a tag keeps its
+// look while being typed, instead of turning into plain text the moment the cell opens. A value is
+// the run between commas, without its surrounding spaces.
 const tagTokens = new MatchDecorator({
-    regexp: /#[^\s,#]+/g,
+    regexp: /[^,\s](?:[^,]*[^,\s])?/g,
     decoration: Decoration.mark({ class: styles.tagToken }),
 })
 const tagTokenHighlight = ViewPlugin.fromClass(
@@ -114,7 +114,7 @@ const tagTokenHighlight = ViewPlugin.fromClass(
 )
 
 const TagsField: Component<TagsFieldProps> = props => {
-    const hash = () => props.hash !== false
+    const tags = () => props.tags === true
     let host!: HTMLDivElement
     let view: EditorView | undefined
     // Every edit ends through ONE door — leaving the field. Enter blurs (commit); Escape marks the
@@ -149,36 +149,35 @@ const TagsField: Component<TagsFieldProps> = props => {
         if (cancelling || !dirty) {
             cancelling = false
             dirty = false
-            setText(v, tagsToText(committed, hash(), false))
+            setText(v, tagsToText(committed, false))
             props.onCancel()
             return
         }
         dirty = false
-        const next = textToTags(v.state.doc.toString(), hash())
+        const next = textToTags(v.state.doc.toString(), tags())
         committed = next
         // Tidy BEFORE reporting — the caller may unmount the field in onCommit.
-        setText(v, tagsToText(next, hash(), false))
+        setText(v, tagsToText(next, false))
         props.onCommit(next)
     }
 
-    // The completion source: the token under the caret, completed against `suggestions` minus
-    // what the field already holds. It opens as soon as a word (or a bare `#`) is typed.
+    // The completion source: the value under the caret, completed against `suggestions` minus
+    // what the field already holds. It opens as soon as a value is being typed.
     function source(ctx: CompletionContext): CompletionResult | null {
         const before = ctx.state.sliceDoc(0, ctx.pos)
-        const tok = tokenAtCaret(before, hash())
-        const typedHash = hash() && before.slice(tok.from).startsWith('#')
-        if (!ctx.explicit && tok.query === '' && !typedHash) return null
+        const tok = tokenAtCaret(before)
+        if (!ctx.explicit && tok.query === '') return null
         const others = textToTags(
             before.slice(0, tok.from) + ctx.state.sliceDoc(ctx.pos),
-            hash(),
+            tags(),
         )
         const ranked = rankSuggestions(props.suggestions(), tok.query, others)
         if (ranked.length === 0) return null
         return {
             from: tok.from,
             options: ranked.slice(0, 50).map(v => ({
-                label: hash() ? `#${v}` : v,
-                apply: completionInsert(v, hash()),
+                label: v,
+                apply: completionInsert(v),
             })),
             // Already ranked here — CodeMirror must not re-filter or re-sort.
             filter: false,
@@ -188,7 +187,7 @@ const TagsField: Component<TagsFieldProps> = props => {
     onMount(() => {
         // An autofocused field opens ready to type (trailing separator, caret at the end); an
         // unfocused one reads finished, and gains the separator when it is focused.
-        const initial = tagsToText(props.value, hash(), props.autofocus !== false)
+        const initial = tagsToText(props.value, props.autofocus !== false)
         view = new EditorView({
             parent: host,
             state: EditorState.create({
@@ -207,7 +206,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                                           to: tr.newDoc.length,
                                           insert: tr.newDoc
                                               .toString()
-                                              .replace(/\n+/g, hash() ? ' ' : ', '),
+                                              .replace(/\n+/g, ', '),
                                       },
                                       sequential: true,
                                   },
@@ -257,13 +256,6 @@ const TagsField: Component<TagsFieldProps> = props => {
                         )
                             dirty = true
                     }),
-                    EditorView.updateListener.of(u => {
-                        if (!u.docChanged || !hash()) return
-                        if (!u.transactions.some(t => t.isUserEvent('input.type'))) return
-                        const pos = u.state.selection.main.head
-                        if (u.state.sliceDoc(pos - 1, pos) === '#')
-                            queueMicrotask(() => view && startCompletion(view))
-                    }),
                     EditorView.domEventHandlers({
                         mousedown: (_e, v) => {
                             // Only a click that FOCUSES the field — a click inside an already
@@ -277,7 +269,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                                 return false
                             }
                             const doc = v.state.doc.toString()
-                            const next = withTrailingSeparator(doc, hash())
+                            const next = withTrailingSeparator(doc)
                             if (next !== doc)
                                 v.dispatch({
                                     changes: { from: doc.length, insert: next.slice(doc.length) },
@@ -292,7 +284,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                         },
                     }),
                     fieldTheme,
-                    ...(hash() ? [tagTokenHighlight] : []),
+                    ...(tags() ? [tagTokenHighlight] : []),
                     ...(props.placeholder ? [cmPlaceholder(props.placeholder)] : []),
                 ],
             }),
@@ -319,7 +311,7 @@ const TagsField: Component<TagsFieldProps> = props => {
     // user's own typing never round-trips through `value`, so it is never clobbered.
     createEffect(() => {
         committed = props.value
-        const next = tagsToText(props.value, hash(), false)
+        const next = tagsToText(props.value, false)
         if (!view || view.hasFocus || next === view.state.doc.toString()) return
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } })
     })

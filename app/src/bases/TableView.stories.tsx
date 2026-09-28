@@ -377,13 +377,13 @@ export const TagsColumnListsWholeBoard: Story = {
                 'tbody tr:first-child td',
             ),
         ]
-        // Row 0's OWN value is only "alpha" — opening its cell and typing `#` must still offer
-        // "beta"/"gamma" from row 1 (and not "alpha", which the field already holds).
+        // Row 0's OWN value is only "alpha" — opening its cell and typing `b` must still offer
+        // "beta" from row 1.
         firstRowCells()[tagsIdx]!.querySelector<HTMLElement>('button')!.click()
         const view = await tagsFieldView(canvasElement)
-        expect(view.state.doc.toString()).toBe('#alpha ')
-        typeInto(view, '#')
-        await expectCompletions(['#beta', '#gamma'])
+        expect(view.state.doc.toString()).toBe('alpha, ')
+        typeInto(view, 'b')
+        await expectCompletions(['beta'])
     },
 }
 
@@ -465,17 +465,17 @@ export const TagsTypeAcceptCommit: Story = {
         await userEvent.click(cell().querySelector('button')!)
         const view = await tagsFieldView(canvasElement)
         // The field reads like the cell's text, caret at the end, ready for the next tag.
-        expect(view.state.doc.toString()).toBe('#alpha ')
+        expect(view.state.doc.toString()).toBe('alpha, ')
         expect(view.hasFocus).toBe(true)
 
         typeInto(view, 'b')
-        await expectCompletions(['#beta'])
+        await expectCompletions(['beta'])
         pressKey(view, 'Tab')
         typeInto(view, 'g')
-        await expectCompletions(['#gamma'])
+        await expectCompletions(['gamma'])
         pressKey(view, 'Tab')
         await waitFor(() =>
-            expect(view.state.doc.toString()).toBe('#alpha #beta #gamma '),
+            expect(view.state.doc.toString()).toBe('alpha, beta, gamma, '),
         )
         // Nothing was written while typing — the whole list commits once, on Enter.
         expect(pickResolves).toBe(0)

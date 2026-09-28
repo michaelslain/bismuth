@@ -27,14 +27,14 @@ type Story = StoryObj<typeof meta>
 const VAULT_TAGS = ['planning', 'chicken', 'chores', 'frontend', 'docs', 'launch']
 
 /** The field holding its own value: a commit replaces it, a cancel reverts to it. */
-function Harness(props: { initial: string[]; hash?: boolean; options?: string[] }) {
+function Harness(props: { initial: string[]; tags?: boolean; options?: string[] }) {
     const [value, setValue] = createSignal(props.initial)
     return (
         <div style={{ width: '280px' }}>
             <TagsField
                 value={value()}
                 suggestions={() => props.options ?? VAULT_TAGS}
-                hash={props.hash}
+                tags={props.tags}
                 onCommit={setValue}
                 onCancel={() => {}}
             />
@@ -42,9 +42,10 @@ function Harness(props: { initial: string[]; hash?: boolean; options?: string[] 
     )
 }
 
-/** Idle: the tags as text — `#planning #docs ` — caret at the end, ready for the next one. */
+/** Idle: the tags as a comma-separated line — `planning, docs, ` — caret at the end, ready for the
+ *  next one, each tag drawn teal like ui/Tag. */
 export const Idle: Story = {
-    render: () => <Harness initial={['planning', 'docs']} />,
+    render: () => <Harness tags initial={['planning', 'docs']} />,
 }
 
 /** Typing `ch` pops the note editor's completion popup under the word: prefix matches, the
@@ -54,8 +55,8 @@ export const TypingShowsSuggestions: Story = {
     play: async ({ canvasElement }) => {
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'ch')
-        await expectCompletions(['#chicken', '#chores'])
-        expect(selectedCompletion()).toBe('#chicken')
+        await expectCompletions(['chicken', 'chores'])
+        expect(selectedCompletion()).toBe('chicken')
     },
 }
 
@@ -66,16 +67,16 @@ export const AcceptAndCommit: Story = {
     play: async ({ canvasElement }) => {
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'ch')
-        await expectCompletions(['#chicken', '#chores'])
+        await expectCompletions(['chicken', 'chores'])
         pressKey(view, 'ArrowDown')
-        await waitFor(() => expect(selectedCompletion()).toBe('#chores'))
+        await waitFor(() => expect(selectedCompletion()).toBe('chores'))
         pressKey(view, 'Tab')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #chores '))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, chores, '))
         expect(completionLabels()).toEqual([])
         // Enter commits and leaves the field — which then reads finished, no trailing separator.
         pressKey(view, 'Enter')
         await waitFor(() => expect(view.hasFocus).toBe(false))
-        expect(view.state.doc.toString()).toBe('#planning #chores')
+        expect(view.state.doc.toString()).toBe('planning, chores')
     },
 }
 
@@ -85,15 +86,15 @@ export const EscapeClosesPopupThenCancels: Story = {
     play: async ({ canvasElement }) => {
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'fr')
-        await expectCompletions(['#frontend'])
+        await expectCompletions(['frontend'])
         pressKey(view, 'Escape')
         await waitFor(() => expect(completionLabels()).toEqual([]))
         // Still editing: the popup closed, the typed word is still there.
         expect(view.hasFocus).toBe(true)
-        expect(view.state.doc.toString()).toBe('#planning fr')
+        expect(view.state.doc.toString()).toBe('planning, fr')
         pressKey(view, 'Escape')
         await waitFor(() => expect(view.hasFocus).toBe(false))
-        expect(view.state.doc.toString()).toBe('#planning')
+        expect(view.state.doc.toString()).toBe('planning')
     },
 }
 
@@ -103,7 +104,6 @@ export const Multiselect: Story = {
     render: () => (
         <Harness
             initial={['In progress']}
-            hash={false}
             options={['In progress', 'Blocked', 'Done']}
         />
     ),
@@ -124,32 +124,31 @@ export const EditsTwice: Story = {
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'docs')
         pressKey(view, 'Enter')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs'))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, docs'))
         // A word with no suggestions, so no popup is open and Escape cancels straight away.
         typeInto(view, 'zzz')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs zzz'))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, docs, zzz'))
         expect(completionLabels()).toEqual([])
         await new Promise(r => setTimeout(r, 150)) // a person's pause, not a synthetic burst
         pressKey(view, 'Escape')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #docs'))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, docs'))
     },
 }
 
-/** Tags keep their tag look while being typed: every `#tag` token is drawn teal like ui/Tag. */
+/** Tags keep their tag look while being typed: every value of a tag list is drawn teal like
+ *  ui/Tag; a list that is not tags stays plain text. */
 export const TagTokensKeepTheirLook: Story = {
-    render: () => <Harness initial={['planning', 'docs']} />,
+    render: () => <Harness tags initial={['planning', 'docs']} />,
     play: async ({ canvasElement }) => {
         const view = await tagsFieldView(canvasElement)
-        typeInto(view, '#launch')
+        typeInto(view, 'area/research')
         await waitFor(() => {
-            const tokens = [...view.contentDOM.querySelectorAll('span')].filter(el =>
-                /^#\S+$/.test(el.textContent ?? ''),
-            )
-            expect(tokens.map(t => t.textContent)).toEqual(['#planning', '#docs', '#launch'])
-            const teal = getComputedStyle(document.documentElement)
-                .getPropertyValue('--teal')
-                .trim()
-            expect(teal).not.toBe('')
+            const tokens = [...view.contentDOM.querySelectorAll('.cm-line span')]
+            expect(tokens.map(t => t.textContent)).toEqual([
+                'planning',
+                'docs',
+                'area/research',
+            ])
             for (const t of tokens)
                 expect(getComputedStyle(t).color).toBe(getComputedStyle(tokens[0]!).color)
             expect(getComputedStyle(tokens[0]!).color).not.toBe(
@@ -177,10 +176,10 @@ export const OwnerIgnoresCommit: Story = {
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'zzz')
         pressKey(view, 'Enter')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #zzz'))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, zzz'))
         typeInto(view, 'yyy')
         await new Promise(r => setTimeout(r, 150))
         pressKey(view, 'Escape')
-        await waitFor(() => expect(view.state.doc.toString()).toBe('#planning #zzz'))
+        await waitFor(() => expect(view.state.doc.toString()).toBe('planning, zzz'))
     },
 }

@@ -44,10 +44,9 @@ export type PropertyEditKind =
     | { kind: 'date'; time?: boolean }
     | { kind: 'select'; options: string[] }
     | { kind: 'multiselect'; options: string[] }
-    /** An undeclared (or registry `list`) list of strings, edited as one line of text.
-     *  `hash`: the `#tag` spelling (whitespace-separated) — only for a TAG column whose every
-     *  value is a single word; any other list uses commas, so a value may hold spaces. */
-    | { kind: 'tags'; options: string[]; hash: boolean }
+    /** An undeclared (or registry `list`) list of strings, edited as one comma-separated line.
+     *  `tag`: a tag column (`tags`/`tag`) — drawn in the tag look and suggested vault tags. */
+    | { kind: 'tags'; options: string[]; tag: boolean }
     /** A value no editor here can round-trip — a list holding numbers or links, or a comma
      *  inside a comma-separated value. Shown, never edited, so opening it cannot rewrite it. */
     | { kind: 'readonly' }
@@ -174,12 +173,9 @@ export function propertyEditKind(
     return { kind: 'text' }
 }
 
-/** A single `#tag` word: no whitespace, comma or inner `#`. */
-const TAG_WORD_RE = /^#?[^\s,#]+$/
-
 /** How a list value is edited — see the `tags` / `readonly` kinds. Only a list of plain strings
- *  is editable; `#tag` spelling only for a tag column whose values are all single words; a comma
- *  inside a value makes the comma-separated spelling lossy, so that list is shown read-only. */
+ *  is editable, and a comma inside a value would make the comma-separated field split it, so
+ *  that list is shown read-only too. */
 function listEditKind(
     id: string,
     value: unknown,
@@ -187,11 +183,9 @@ function listEditKind(
 ): PropertyEditKind {
     const list = Array.isArray(value) ? value : value == null ? [] : [value]
     if (list.some(v => typeof v !== 'string')) return { kind: 'readonly' }
-    const strings = list as string[]
-    const tagColumn = bareName(id) === 'tags' || bareName(id) === 'tag'
-    const hash = tagColumn && strings.every(v => TAG_WORD_RE.test(v))
-    if (!hash && strings.some(v => v.includes(','))) return { kind: 'readonly' }
-    return { kind: 'tags', options: tagsOptions(value, siblingValues), hash }
+    if ((list as string[]).some(v => v.includes(','))) return { kind: 'readonly' }
+    const tag = bareName(id) === 'tags' || bareName(id) === 'tag'
+    return { kind: 'tags', options: tagsOptions(value, siblingValues), tag }
 }
 
 // ── #101: select/multiselect editor helpers ───────────────────────────────────────────

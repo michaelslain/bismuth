@@ -1,72 +1,52 @@
 // app/src/ui/tagsFieldText.ts
-// Pure text logic behind ui/TagsField — the single-line field a `tags` (or declared `multiselect`)
-// property is edited in, the way a note's frontmatter `tags:` line is typed. The field holds the
-// values as plain text; this module turns a value list into that text, finds the token the caret
-// is on (what the completion popup completes), ranks suggestions for it, and parses the text back
-// into a list on commit. No framework imports, so `bun test` runs it.
+// Pure text logic behind ui/TagsField — the single-line field a list property (tags, or a declared
+// multiselect) is edited in, typed like a frontmatter list: `planning, docs`. The field holds the
+// values as comma-separated text; this module turns a value list into that text, finds the value
+// the caret is on (what the completion popup completes), ranks suggestions for it, and parses the
+// text back into a list on commit. No framework imports, so `bun test` runs it.
 //
-// Two spellings, one per mode:
-//   - `hash` (tags): `#alpha #beta ` — the same text the read-only cell shows. Tags never contain
-//     whitespace, so whitespace or commas separate tokens and a leading `#` is optional to type.
-//   - plain (declared multiselect): `In progress, Done, ` — options may contain spaces, so only a
-//     comma separates tokens.
+// One spelling for every list: values are separated by commas, so a value may hold spaces
+// (`In progress`, `Jane Doe`). For a tag list a leading `#` typed out of habit is dropped.
+
+const SEPARATOR = ', '
 
 /** The field's text for a value list. `trailing` (the focused field) ends with a separator so
- *  the caret sits ready for the next token; an unfocused field shows none — `frontend,` with a
+ *  the caret sits ready for the next value; an unfocused field shows none — `frontend,` with a
  *  dangling comma reads unfinished. Empty list → empty text. */
-export function tagsToText(
-    values: ReadonlyArray<string>,
-    hash: boolean,
-    trailing = true,
-): string {
+export function tagsToText(values: ReadonlyArray<string>, trailing = true): string {
     if (values.length === 0) return ''
-    const text = hash
-        ? values.map(v => `#${v.replace(/^#/, '')}`).join(' ')
-        : values.join(', ')
-    return trailing ? text + separator(hash) : text
+    const text = values.join(SEPARATOR)
+    return trailing ? text + SEPARATOR : text
 }
 
-/** The separator typed after a token in each mode. */
-export function separator(hash: boolean): string {
-    return hash ? ' ' : ', '
-}
-
-/** `text` ending in the mode's separator (what focusing the field does), unless it is empty or
- *  already ends in one. */
-export function withTrailingSeparator(text: string, hash: boolean): string {
+/** `text` ending in a separator (what focusing the field does), unless it is empty or already
+ *  ends in one. */
+export function withTrailingSeparator(text: string): string {
     if (!text.trim()) return text
-    const end = hash ? /[\s,]$/ : /,\s*$/
-    return end.test(text) ? text : text + separator(hash)
+    return /,\s*$/.test(text) ? text : text + SEPARATOR
 }
 
-/** The field's text back into a value list: split on the mode's separators, strip a leading `#`
- *  (hash mode), trim, drop empties, de-duplicate, keep first-seen order. */
-export function textToTags(text: string, hash: boolean): string[] {
-    const parts = hash ? text.split(/[\s,]+/) : text.split(',')
+/** The field's text back into a value list: split on commas, trim, drop a leading `#` when
+ *  `stripHash` (a tag list), drop empties, de-duplicate, keep first-seen order. */
+export function textToTags(text: string, stripHash = false): string[] {
     const out: string[] = []
-    for (const p of parts) {
-        const v = (hash ? p.replace(/^#+/, '') : p).trim()
+    for (const part of text.split(',')) {
+        const v = (stripHash ? part.trim().replace(/^#+/, '') : part).trim()
         if (v && !out.includes(v)) out.push(v)
     }
     return out
 }
 
-/** The token the caret is completing: `from` = where it starts in `textBefore` (INCLUDING a
- *  typed `#` in hash mode, so accepting replaces it too), `query` = the text typed so far without
- *  the `#`. Null when the caret sits right after a separator in plain mode's leading space. */
-export function tokenAtCaret(
-    textBefore: string,
-    hash: boolean,
-): { from: number; query: string } {
-    if (hash) {
-        const m = textBefore.match(/#?[^\s,#]*$/)!
-        const tok = m[0]
-        return { from: textBefore.length - tok.length, query: tok.replace(/^#/, '') }
-    }
+/** The value the caret is completing: `from` = where it starts in `textBefore` (after the last
+ *  comma and any spaces), `query` = the text typed so far (a leading `#` dropped). */
+export function tokenAtCaret(textBefore: string): { from: number; query: string } {
     const lastComma = textBefore.lastIndexOf(',')
     const seg = textBefore.slice(lastComma + 1)
     const lead = seg.length - seg.replace(/^\s+/, '').length
-    return { from: lastComma + 1 + lead, query: seg.slice(lead) }
+    return {
+        from: lastComma + 1 + lead,
+        query: seg.slice(lead).replace(/^#+/, ''),
+    }
 }
 
 /** Suggestions for `query`: the options that START with it (case-insensitive) — the same rule as
@@ -91,7 +71,7 @@ export function rankSuggestions(
     return out
 }
 
-/** What accepting suggestion `value` inserts over the token: the value plus its separator. */
-export function completionInsert(value: string, hash: boolean): string {
-    return hash ? `#${value} ` : `${value}, `
+/** What accepting suggestion `value` inserts over the value being typed: it plus a separator. */
+export function completionInsert(value: string): string {
+    return value + SEPARATOR
 }
