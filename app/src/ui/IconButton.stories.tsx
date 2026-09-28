@@ -4,6 +4,7 @@
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent } from 'storybook/test'
 import { IconButton } from './IconButton'
 import IconBar from './IconBar'
 import { Row } from './_storyKit'
@@ -84,6 +85,38 @@ export const IconSize: Story = {
             <IconButton icon="Settings" label="Settings (24px)" iconSize={24} />
         </Row>
     ),
+}
+
+/** NO OUTLINE, ON ANY BUTTON, MOUSE OR KEYBOARD — not even `:focus-visible` (user request,
+ *  2026-09-23; see Button.module.css's `.btn:focus, .btn:focus-visible { outline: none }`). The
+ *  user's original complaint was a ring left on an icon bracket button after a CLICK, so this
+ *  proves both paths: `tab()` focuses the first button via the keyboard (the one path the UA's own
+ *  `:focus-visible` ring would otherwise paint) and a `click()` focuses the second via the mouse.
+ *  Both assert the SAME three facts — the element actually matches `:focus-visible` (so the check
+ *  is not vacuously true against an unfocused element), `outlineStyle` is `none`, and `boxShadow`
+ *  is `none` (the other property a stray ring could hide behind). */
+export const NoFocusRing: Story = {
+    render: () => (
+        <Row wrap={false} gap="var(--bar-icon-gap)">
+            <IconButton icon="Star" label="Star" />
+            <IconButton icon="Settings" label="Settings" />
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const buttons = [
+            ...canvasElement.querySelectorAll<HTMLButtonElement>('button'),
+        ]
+        const [first, second] = buttons
+
+        await userEvent.tab()
+        expect(first!.matches(':focus-visible')).toBe(true)
+        expect(getComputedStyle(first!).outlineStyle).toBe('none')
+        expect(getComputedStyle(first!).boxShadow).toBe('none')
+
+        await userEvent.click(second!)
+        expect(getComputedStyle(second!).outlineStyle).toBe('none')
+        expect(getComputedStyle(second!).boxShadow).toBe('none')
+    },
 }
 
 /** A row of icon buttons as used in a view-bar / toolbar (e.g. BaseView's Source toggle). */
