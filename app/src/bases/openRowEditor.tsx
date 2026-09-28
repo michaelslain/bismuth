@@ -227,6 +227,14 @@ export function openRowEditor(opts: {
                     void commitDelete(row, onChanged)
                 },
                 onClose: close,
+                onOpenNote: owned
+                    ? undefined
+                    : () =>
+                          window.dispatchEvent(
+                              new CustomEvent('bismuth-open', {
+                                  detail: { path: row.file.path },
+                              }),
+                          ),
             }),
         host,
     )
