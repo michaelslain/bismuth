@@ -2,7 +2,7 @@
 // default). Exercises `sampleViewResult` end to end: real rows, run through the real query
 // engine (core/src/bases/query.ts `runView`), rendered by the real CardsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
@@ -41,7 +41,8 @@ const STORED_CARDS_ROWS: Row[] = [
 ]
 
 /** With `basePath` set (openRowEditor.tsx wired), an owned row's card opens the row editor on
- *  click — it has no note of its own to open, so it gets no separate edit icon. */
+ *  click — it has no note of its own to open. Right-click opens the same editor (no separate
+ *  edit icon anywhere). */
 export const EditableOwnedRow: Story = {
     render: () => (
         <CardsView
@@ -53,14 +54,17 @@ export const EditableOwnedRow: Story = {
     play: async ({ canvasElement }) => {
         const card = canvasElement.querySelector('[role="button"]')
         expect(card).toBeTruthy()
-        expect(
-            canvasElement.querySelector('button[aria-label="Edit properties"]'),
-        ).toBeNull()
+
+        card!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 
-/** With `basePath` set, a note card keeps opening the note on click and gains a hover/focus-
- *  reveal edit-properties icon, top-right over the cover. */
+/** With `basePath` set, left-click on a note card now opens the editor too (not the note) —
+ *  every editable row, note-backed or not, opens the same editor on click; right-click does
+ *  the same. */
 export const EditableNoteRow: Story = {
     render: () => (
         <CardsView
@@ -70,9 +74,13 @@ export const EditableNoteRow: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        expect(
-            canvasElement.querySelector('button[aria-label="Edit properties"]'),
-        ).toBeTruthy()
+        const card = canvasElement.querySelector('[role="button"]')
+        expect(card).toBeTruthy()
+
+        card!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 

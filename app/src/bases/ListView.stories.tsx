@@ -46,7 +46,8 @@ const STORED_ROWS: Row[] = [
 ]
 
 /** With `basePath` set (openRowEditor.tsx wired), an owned row's row button opens the editor
- *  directly — it has no note of its own to open. */
+ *  directly — it has no note of its own to open. Right-click opens the same editor (no
+ *  separate pencil icon anywhere — see BulletsView/CardsView for the same treatment). */
 export const EditableOwnedRow: Story = {
     render: () => (
         <ListView
@@ -59,15 +60,16 @@ export const EditableOwnedRow: Story = {
         const row = canvasElement.querySelector('button')
         expect(row).toBeTruthy()
         expect((row!.textContent ?? '')).toContain('ship the parser')
-        // No separate edit icon on an owned row — the row itself already opens the editor.
-        expect(
-            canvasElement.querySelector('button[aria-label="Edit properties"]'),
-        ).toBeNull()
+
+        row!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 
-/** With `basePath` set, a note row keeps opening its note and gains a hover/focus-reveal
- *  edit-properties icon (present in the DOM either way). */
+/** With `basePath` set, a note row keeps opening its note on left-click; right-click opens
+ *  the property editor. */
 export const EditableNoteRow: Story = {
     render: () => (
         <ListView
@@ -77,9 +79,13 @@ export const EditableNoteRow: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        expect(
-            canvasElement.querySelector('button[aria-label="Edit properties"]'),
-        ).toBeTruthy()
+        const row = canvasElement.querySelector('button')
+        expect(row).toBeTruthy()
+
+        row!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 

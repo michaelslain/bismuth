@@ -160,7 +160,9 @@ The generated text cover has a 4px colored spine bar on the left edge and a grad
 
 ## Click-to-Open
 
-In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in its own tab — `bismuth-open` always routes through `openFile`, which never replaces a pane (#56). The card dispatches `new CustomEvent("bismuth-open", { detail: { path } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
+In **properties mode**, when the base has no `basePath` (a read-only embedded `query` block), clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in its own tab — `bismuth-open` always routes through `openFile`, which never replaces a pane (#56). The card dispatches `new CustomEvent("bismuth-open", { detail: { path } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
+
+When the base is editable (`basePath` set), a click instead opens the property editor for every editable row — note-backed or stored in the base's own body alike — and right-click does the same. See [Adding, Editing and Deleting Rows](#adding-editing-and-deleting-rows-properties-mode) below.
 
 In **body/tasks mode**, the card body is an editor, not a click-to-open target — a click places the cursor. Navigation happens only through inline links (`navigateOnLinkClick`):
 - Clicking a `[[wikilink]]` dispatches `bismuth-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).
@@ -174,7 +176,7 @@ In **body/tasks mode**, the card body is an editor, not a click-to-open target �
 In **properties mode** only (`body`/`tasks` cards are covered by [Inline Editing](#inline-editing-body--tasks-mode) below), every card's properties are reachable from the UI — no action requires hand-editing the base file or a note's frontmatter. Requires a saved base file (`basePath` set); an embedded `query` block is read-only.
 
 - **Add a card**: the "+ row" button in the view bar (mode `normal` only). A base that **owns its rows** (no `source:`) appends a new row to the base's own body; a **notes-sourced** base creates a new note in the base's folder. Either way the row/property editor opens immediately to fill it in; a toast warns if the base's filters would hide the new card from this view.
-- **Edit a card's properties**: a card whose row is stored in the base's own body (no note behind it) opens the editor on a plain click — [Click-to-Open](#click-to-open) above only applies to a card backed by a real note. A note-backed card keeps opening the note on click and gets a hover/focus-reveal pencil icon, top-right over the cover, that opens the property editor instead.
+- **Edit a card's properties**: a click anywhere on an editable card opens the property editor — this now applies to a note-backed card too, not only one stored in the base's own body ([Click-to-Open](#click-to-open) above describes the non-editable case, where a note-backed card still opens the note). Right-click on any editable card opens the same editor. No pencil icon.
 - **Delete a card**: open the editor (above) and use "delete" in its footer — a stored row is removed by index, a note is moved to trash, both with an Undo toast.
 
 ---

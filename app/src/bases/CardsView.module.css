@@ -9,16 +9,12 @@
 .cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: var(--sp-5); align-items: start; }
 /* Stable hook on the rendered <CardFrame> for the nth-child cover-tint rules below — the
    card's own background/border/hover styling now lives on CardFrame itself (its `card`
-   class is CardFrame.module.css's own, not reachable from here under CSS-module hashing).
-   `position: relative` anchors `.cardEditBtn` below. */
+   class is CardFrame.module.css's own, not reachable from here under CSS-module hashing). */
 .cardSlot { position: relative; }
 
-/* Row-editing affordance (openRowEditor.tsx): a note-row card keeps opening the note on
-   click and gains a hover/focus-reveal edit icon for its properties, top-right, over the
-   cover — same treatment as ListView/TableView/BulletsView. An owned-row card has no note
-   to open, so the whole card already opens the editor and gets no separate icon. */
-.cardEditBtn { position: absolute; top: var(--sp-3); right: var(--sp-3); z-index: 1; opacity: 0; transition: opacity 0.12s ease; }
-.cardSlot:hover .cardEditBtn, .cardSlot:focus-within .cardEditBtn { opacity: 1; }
+/* Row-editing affordance (openRowEditor.tsx): a click anywhere on an editable card's `.cardSlot`
+   opens the row/property editor (note rows too, not only owned rows); right-click does the same
+   — no hover-reveal icon. A non-editable card keeps opening its note on click. */
 
 /* Tasks-mode cards: the TaskChip register, not the book-cover card frame — one task per card,
    no cover, no click-to-open (TaskRow's own wikilinks are what navigate), so no hover wash
