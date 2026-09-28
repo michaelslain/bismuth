@@ -252,7 +252,21 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         newTitle: string,
     ): Promise<string | undefined> {
         if (isStoredPlaceholder(row)) return row.file.path
-        return commitRename(row, deps.result().view, newTitle, deps.onChange)
+        // A note row's target path is de-duplicated against the board's own notes, so a
+        // collision gets a ` 2` suffix instead of failing the move.
+        const t = newTitle.trim()
+        let title = t
+        if (t && !canWriteStoredRow(row) && t !== row.file.name) {
+            const dir = parentOf(row.file.path)
+            const desired = `${dir ? dir + '/' : ''}${safeFilename(t)}.md`
+            if (desired !== row.file.path) {
+                const target = dedupe(desired, takenPaths())
+                title = target
+                    .slice(target.lastIndexOf('/') + 1)
+                    .replace(/\.md$/, '')
+            }
+        }
+        return commitRename(row, deps.result().view, title, deps.onChange)
     }
 
     async function setMetaProperty(
@@ -277,10 +291,18 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         o.setDeletedIds(prev => markDeleted(prev, id, deleteSnapshot(row)))
         requestAnimationFrame(deps.drag().playFlip)
         let landed = 0
-        await commitDelete(row, () => {
-            landed++
-            if (landed > 1) o.setDeletedIds(prev => unmarkDeleted(prev, id))
-        })
+        const titleKey = writableKey(deps.titleCol())
+        const title = String(
+            (titleKey ? storedNote(row)[titleKey] : undefined) ?? 'card',
+        )
+        await commitDelete(
+            row,
+            () => {
+                landed++
+                if (landed > 1) o.setDeletedIds(prev => unmarkDeleted(prev, id))
+            },
+            title,
+        )
         if (landed === 0) o.setDeletedIds(prev => unmarkDeleted(prev, id))
     }
 

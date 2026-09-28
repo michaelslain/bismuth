@@ -22,14 +22,7 @@
 }
 .header:active { cursor: grabbing; }
 .title { text-transform: capitalize; color: var(--fg); }
-/* The dot is a StatusDot; on an editable board the ColorChip's swatch is laid over it, fully
-   transparent, as the click target (ColorChip has no custom-trigger slot). Its 4px overhang
-   restores the old dot button's hit area. Tag selector on purpose: the swatch's own class is
-   another module's. `!important` only beats the swatch's inline background. */
-.dotSlot { position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; }
-.dotSlot .chip { position: absolute; inset: calc(-1 * var(--sp-2)); display: flex; }
-.dotSlot .chip > button { width: 100%; height: 100%; border: none; outline: none; border-radius: 50%; background: transparent !important; box-shadow: none; }
-.dotSlot .chip > button:hover { filter: none; transform: none; background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent) !important; }
+.dotSlot { display: inline-flex; align-items: center; flex: 0 0 auto; }
 /* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
    its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right
    edge with no reserved gap. */

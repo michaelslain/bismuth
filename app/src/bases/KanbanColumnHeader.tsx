@@ -42,13 +42,24 @@ export type KanbanColumnHeaderProps = {
     onPointerDown: (e: PointerEvent) => void
 }
 
-const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => (
-    <div class={styles.header} onPointerDown={e => props.onPointerDown(e)}>
+const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
+    // The picker anchors to the whole header row so it opens below the header rule.
+    let headerEl: HTMLDivElement | undefined
+    return (
+    <div
+        ref={headerEl}
+        class={styles.header}
+        onPointerDown={e => props.onPointerDown(e)}
+    >
         <Text as="span" inherit class={styles.dotSlot}>
-            <StatusDot color={props.color} />
-            <Show when={props.editable}>
+            <Show
+                when={props.editable}
+                fallback={<StatusDot color={props.color} />}
+            >
                 <ColorChip
-                    class={styles.chip}
+                    trigger={<StatusDot color={props.color} />}
+                    anchor={() => headerEl}
+                    placement="below"
                     color={props.color}
                     palette={props.palette}
                     open={props.pickerOpen}
@@ -104,6 +115,7 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => (
             </Text>
         </div>
     </div>
-)
+    )
+}
 
 export default KanbanColumnHeader

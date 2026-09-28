@@ -5,9 +5,10 @@
 // `auto` entry). `onPick` hands back the palette entry verbatim, so each caller stores whatever
 // shape its palette holds. The popover is an `AnchoredPopover`, which places it, flips it at a
 // viewport edge and dismisses it on Escape or an outside press.
-import { type Component, For, Show } from 'solid-js'
+import { type Component, For, type JSX, Show } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import ChipToggle from './ChipToggle'
+import PlainButton from './PlainButton'
 import Swatch from './Swatch'
 import { PALETTE_TOKENS, resolvePaletteColor } from './palette'
 import styles from './ColorChip.module.css'
@@ -27,6 +28,13 @@ export type ColorChipProps = {
     /** Renders a first entry for "no explicit colour". */
     auto?: { label: string; selected: boolean; onPick: () => void }
     class?: string
+    /** A custom visible trigger (a StatusDot, say) rendered in place of the Swatch, inside the
+     *  chip's own toggle button — same toggle, same accessible name and pressed state. */
+    trigger?: JSX.Element
+    /** The element the popover anchors to; default is the chip itself. */
+    anchor?: () => HTMLElement | undefined
+    /** Where the popover opens relative to its anchor; default `below`. */
+    placement?: 'below' | 'above'
 }
 
 /** Accessible name for an entry: a token is its own name, `var(--graph-3)` reads `graph-3`. */
@@ -46,15 +54,31 @@ const ColorChip: Component<ColorChipProps> = props => {
             class={`${styles['chipwrap']} ${props.class ?? ''}`}
             data-testid="category-chip"
         >
-            <Swatch
-                size="sm"
-                color={resolvePaletteColor(props.color) || 'var(--accent)'}
-                label="Choose colour"
-                selected={props.open}
-                onClick={props.onToggle}
-            />
+            <Show
+                when={props.trigger}
+                fallback={
+                    <Swatch
+                        size="sm"
+                        color={resolvePaletteColor(props.color) || 'var(--accent)'}
+                        label="Choose colour"
+                        selected={props.open}
+                        onClick={props.onToggle}
+                    />
+                }
+            >
+                <PlainButton
+                    class={styles['trigger']}
+                    aria-label="Choose colour"
+                    title="Choose colour"
+                    aria-pressed={props.open ? 'true' : undefined}
+                    onClick={() => props.onToggle()}
+                >
+                    {props.trigger}
+                </PlainButton>
+            </Show>
             <AnchoredPopover
-                anchor={() => wrapEl}
+                anchor={() => props.anchor?.() ?? wrapEl}
+                placement={props.placement}
                 open={props.open}
                 onDismiss={props.onToggle}
                 class={styles['pop']}

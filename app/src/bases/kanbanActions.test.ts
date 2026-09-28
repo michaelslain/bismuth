@@ -158,6 +158,18 @@ test('deleteColumn drops the key, clears the status off each card and offers Und
     expect(toasts()[before]!.action?.label).toBe('Undo')
 })
 
+test('renameCard to a taken name moves to the suffixed path instead of colliding', async () => {
+    const calls: Call[] = []
+    install(calls)
+    const h = harness()
+    const target = await h.actions.renameCard(row('b', 'Todo'), 'a')
+    expect(target).toBe('board/a 2.md')
+    expect(calls.find(c => c.path === '/move')?.body).toEqual({
+        from: 'board/b.md',
+        to: 'board/a 2.md',
+    })
+})
+
 test('setColColor(null) clears the override, a value writes it', async () => {
     const calls: Call[] = []
     install(calls)
