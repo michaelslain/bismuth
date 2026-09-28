@@ -155,6 +155,7 @@ export function TableView(props: {
         view: () => props.result.view,
         columns: cols,
         onChanged: () => props.onChange?.(),
+        siblingValues: arraySiblingsFor,
     })
     function onRowContextMenu(e: MouseEvent, row: Row): void {
         if (!editable() || !rowEditor.editable(row)) return
