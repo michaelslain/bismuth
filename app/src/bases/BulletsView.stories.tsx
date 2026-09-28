@@ -2,11 +2,13 @@
 // `sampleViewResult` end to end: real rows, run through the real query engine
 // (core/src/bases/query.ts `runView`), rendered by the real BulletsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { createSignal } from 'solid-js'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BulletsView } from './BulletsView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
-import type { Row, BaseConfig } from '../../../core/src/bases/types'
+import { EMPTY_FILE } from '../../../core/src/bases/types'
+import type { Row, BaseConfig, ViewResult } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 
 const meta = {
@@ -58,7 +60,7 @@ export const EditableOwnedRow: Story = {
     play: async ({ canvasElement }) => {
         const btn = canvasElement.querySelector('li button')
         expect(btn).toBeTruthy()
-        expect((btn!.textContent ?? '')).toContain('ship the parser')
+        expect(btn!.textContent ?? '').toContain('ship the parser')
 
         const li = canvasElement.querySelector('li')!
         li.dispatchEvent(
@@ -104,5 +106,112 @@ export const Grouped: Story = {
                 config={sampleBaseConfig({ views })}
             />
         )
+    },
+}
+
+/** Grouped: play asserts the `// N` count the GroupHeader renders. */
+export const GroupedCount: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'bullets' as const,
+                name: 'Bullets',
+                groupBy: { property: 'status' },
+            },
+        ]
+        return (
+            <BulletsView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.textContent).toMatch(/\/\/ \d+/)
+    },
+}
+
+/** A zero-row view shows the `no rows` empty state. */
+export const Empty: Story = {
+    render: () => (
+        <BulletsView
+            result={{ ...sampleViewResult(), groups: [] }}
+            config={sampleBaseConfig()}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        expect(c.getByText('no rows')).toBeInTheDocument()
+        expect(
+            c.getByText('nothing in this view matches its filters'),
+        ).toBeInTheDocument()
+    },
+}
+
+function taskRowOf(description: string, line: number, status = 'todo'): Row {
+    return {
+        file: {
+            ...EMPTY_FILE,
+            name: 'tasks',
+            basename: 'tasks',
+            path: 'tasks.md',
+        },
+        note: {
+            description,
+            status,
+            statusChar: status === 'done' ? 'x' : ' ',
+            line,
+            raw: `- [${status === 'done' ? 'x' : ' '}] ${description}`,
+        },
+        formula: {},
+    }
+}
+
+/** Tasks mode with REAL callbacks: the checkbox flips the row's status in a signal and the
+ *  list re-renders with it. */
+export const TasksMode: Story = {
+    render: () => {
+        const view = { type: 'bullets' as const, name: 'Bullets' }
+        const [rows, setRows] = createSignal<Row[]>([
+            taskRowOf('write the parser', 1),
+            taskRowOf('ship it', 2),
+        ])
+        const result = (): ViewResult => ({
+            view,
+            columns: [],
+            groups: [{ key: '', rows: rows() }],
+            summaries: {},
+        })
+        return (
+            <BulletsView
+                result={result()}
+                config={{ source: { kind: 'tasks' }, views: [view] }}
+                mode="tasks"
+                onToggle={row =>
+                    setRows(rs =>
+                        rs.map(r =>
+                            r === row
+                                ? taskRowOf(
+                                      String(r.note.description),
+                                      r.note.line as number,
+                                      r.note.status === 'done'
+                                          ? 'todo'
+                                          : 'done',
+                                  )
+                                : r,
+                        ),
+                    )
+                }
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const boxes = () => within(canvasElement).getAllByRole('checkbox')
+        expect(boxes()[0].getAttribute('aria-checked')).toBe('false')
+        await userEvent.click(boxes()[0])
+        await waitFor(() =>
+            expect(boxes()[0].getAttribute('aria-checked')).toBe('true'),
+        )
+        expect(boxes()[1].getAttribute('aria-checked')).toBe('false')
     },
 }

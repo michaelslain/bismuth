@@ -15,6 +15,7 @@ import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import CardTitle from './CardTitle'
+import CardMeta from './CardMeta'
 import styles from './CardBody.module.css'
 
 /**
@@ -23,9 +24,10 @@ import styles from './CardBody.module.css'
  * author line, then a single meta row — status word on the LEFT, star rating (or a
  * "N pages" count) on the RIGHT. Replaces the old label:value field dump.
  *
- * Used by CardsView (`titleAsField` — cover shows title/author) and KanbanView
- * (stacks its own title + author). Status/rating/pages columns are detected from
- * `cols`; title = first column, author = next non-status/rating/pages column.
+ * Used by CardsView only (`titleAsField` on a text cover — the cover shows title/author). Kanban
+ * cards render through KanbanCard, not this. Status/rating/pages columns are detected from
+ * `cols`; title = first column, author = next non-status/rating/pages column. Every other
+ * ordered column is drawn by CardMeta, through renderCell with the base config.
  */
 export function CardBody(props: {
     cols: string[]
@@ -88,6 +90,20 @@ export function CardBody(props: {
     const hasMeta = (): boolean =>
         status() != null || rating() != null || pages() != null
 
+    // Ordered columns nothing above draws: not the title, not the author line (on a text cover
+    // that is the second column, which the cover paints), not status/rating/pages.
+    const extraCols = (): string[] => {
+        const author = props.titleAsField ? props.cols[1] : authorCol()
+        return props.cols.filter(
+            (c, i) =>
+                i !== 0 &&
+                c !== author &&
+                !isStatusColumn(c) &&
+                !isRatingColumn(c) &&
+                !isPagesColumn(c),
+        )
+    }
+
     return (
         <>
             {/* Cards already shows the title on the cover; Kanban stacks its own. */}
@@ -135,6 +151,11 @@ export function CardBody(props: {
                     </Text>
                 </div>
             </Show>
+            <CardMeta
+                cols={extraCols()}
+                row={props.row}
+                config={props.config}
+            />
         </>
     )
 }

@@ -3,8 +3,10 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderTitle } from './renderValue'
 import TaskRow from './TaskRow'
 import PlainButton from '../ui/PlainButton'
-import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
-import { openRowEditor } from './openRowEditor'
+import { canWriteStoredRow } from './taskWrite'
+import { useRowEditor } from './useRowEditor'
+import GroupHeader from '../ui/GroupHeader'
+import EmptyState from '../ui/EmptyState'
 import styles from './BulletsView.module.css'
 
 /**
@@ -40,96 +42,105 @@ export function BulletsView(props: {
     const isTasks = () => props.mode === 'tasks'
     const toggle = (row: Row, e: Event) => props.onToggle?.(row, e)
     const setStatus = (row: Row, e: MouseEvent) => props.onSetStatus?.(row, e)
-    const editable = () => !!props.basePath
-    const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
-    function openEditor(row: Row): void {
-        if (!rowEditable(row)) return
-        openRowEditor({
-            row,
-            config: props.config,
-            view: props.result.view,
-            onChanged: props.onChange,
-            columns: props.result.columns,
-        })
-    }
+    const editor = useRowEditor({
+        config: () => props.config,
+        view: () => props.result.view,
+        columns: () => props.result.columns,
+        onChanged: () => props.onChange?.(),
+    })
+    const rowEditable = (row: Row) => !!props.basePath && editor.editable(row)
+    const openEditor = (row: Row) => editor.open(row)
+    const empty = () => props.result.groups.every(g => g.rows.length === 0)
     return (
-        <div class={styles.bullets}>
-            {/* Index-keyed groups (see ListView): the inner reference-keyed row <For> is the only
+        <Show
+            when={!empty()}
+            fallback={
+                <EmptyState title="no rows">
+                    nothing in this view matches its filters
+                </EmptyState>
+            }
+        >
+            <div class={styles.bullets}>
+                {/* Index-keyed groups (see ListView): the inner reference-keyed row <For> is the only
           thing that diffs on a re-resolve, so no full-list remount flash on a task toggle. */}
-            <Index each={props.result.groups}>
-                {group => (
-                    <div class={styles.bulletGroup}>
-                        <Show when={group().key !== ''}>
-                            <div class={styles.bulletGroupHead}>
-                                {group().key}
-                            </div>
-                        </Show>
-                        <ul class={styles.bulletList}>
-                            <For each={group().rows}>
-                                {row => (
-                                    <li
-                                        class={styles.bulletItem}
-                                        onContextMenu={e => {
-                                            if (
-                                                !rowEditable(row) ||
-                                                typeof row.note.line ===
-                                                    'number'
-                                            )
-                                                return
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            openEditor(row)
-                                        }}
-                                    >
-                                        <Show
-                                            when={isTasks()}
-                                            fallback={
-                                                <div
-                                                    class={styles.bulletRowWrap}
-                                                >
-                                                    <Show
-                                                        when={
-                                                            rowEditable(row) &&
-                                                            canWriteStoredRow(
-                                                                row,
-                                                            )
+                <Index each={props.result.groups}>
+                    {group => (
+                        <div class={styles.bulletGroup}>
+                            <Show when={group().key !== ''}>
+                                <GroupHeader
+                                    class={styles.bulletGroupHead}
+                                    label={group().key}
+                                    count={group().rows.length}
+                                />
+                            </Show>
+                            <ul class={styles.bulletList}>
+                                <For each={group().rows}>
+                                    {row => (
+                                        <li
+                                            class={styles.bulletItem}
+                                            onContextMenu={e => {
+                                                if (!rowEditable(row)) return
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                openEditor(row)
+                                            }}
+                                        >
+                                            <Show
+                                                when={isTasks()}
+                                                fallback={
+                                                    <div
+                                                        class={
+                                                            styles.bulletRowWrap
                                                         }
-                                                        fallback={renderTitle(
-                                                            col(),
-                                                            row,
-                                                        )}
                                                     >
-                                                        <PlainButton
-                                                            class={
-                                                                styles.bulletBtn
+                                                        <Show
+                                                            when={
+                                                                rowEditable(
+                                                                    row,
+                                                                ) &&
+                                                                canWriteStoredRow(
+                                                                    row,
+                                                                )
                                                             }
-                                                            onClick={() =>
-                                                                openEditor(row)
-                                                            }
-                                                        >
-                                                            {renderTitle(
+                                                            fallback={renderTitle(
                                                                 col(),
                                                                 row,
                                                             )}
-                                                        </PlainButton>
-                                                    </Show>
-                                                </div>
-                                            }
-                                        >
-                                            <TaskRow
-                                                row={row}
-                                                variant="card"
-                                                onToggle={toggle}
-                                                onSetStatus={setStatus}
-                                            />
-                                        </Show>
-                                    </li>
-                                )}
-                            </For>
-                        </ul>
-                    </div>
-                )}
-            </Index>
-        </div>
+                                                        >
+                                                            <PlainButton
+                                                                class={
+                                                                    styles.bulletBtn
+                                                                }
+                                                                onClick={() =>
+                                                                    openEditor(
+                                                                        row,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {renderTitle(
+                                                                    col(),
+                                                                    row,
+                                                                )}
+                                                            </PlainButton>
+                                                        </Show>
+                                                    </div>
+                                                }
+                                            >
+                                                <TaskRow
+                                                    row={row}
+                                                    variant="card"
+                                                    onToggle={toggle}
+                                                    onSetStatus={setStatus}
+                                                />
+                                            </Show>
+                                        </li>
+                                    )}
+                                </For>
+                            </ul>
+                        </div>
+                    )}
+                </Index>
+            </div>
+        </Show>
     )
 }

@@ -3,6 +3,7 @@
 // from the shared `_baseFixtures` sample dataset, run through the real query engine so `cols`
 // matches what CardsView/KanbanView would actually resolve.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { CardBody } from './CardBody'
 import {
     sampleBaseConfig,
@@ -122,6 +123,10 @@ export const PlainTitle: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        // The tags column is beyond title/status, so CardMeta draws it (label + value).
+        expect(canvasElement.textContent).toContain('tags')
+    },
 }
 
 /** A `pages` column (bare name "pages"/"pagecount"/"page_count") renders "N pages" on the meta
@@ -161,5 +166,31 @@ export const PagesColumnMeta: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** Ordered columns beyond title/author/status/rating/pages are drawn by CardMeta with the base
+ *  config, so a declared type reads here as it does in the other views. */
+export const WithExtraColumns: Story = {
+    render: () => (
+        <div
+            style={{
+                width: '220px',
+                padding: '14px',
+                border: '1px solid var(--border-soft)',
+                'border-radius': '8px',
+            }}
+        >
+            <CardBody
+                cols={[...cols, 'note.tags']}
+                row={SAMPLE_ROWS[1]}
+                config={config}
+                plainTitle
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        // The tags column is beyond title/status, so CardMeta draws it (label + value).
+        expect(canvasElement.textContent).toContain('tags')
     },
 }

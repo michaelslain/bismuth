@@ -1,0 +1,5 @@
+/* The extra property lines on a card: a muted key column and the rendered value. */
+.cardMetaList { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-ui); }
+.item { display: flex; align-items: baseline; gap: var(--sp-4); min-width: 0; }
+.key { flex: 0 0 auto; }
+.value { min-width: 0; overflow-wrap: anywhere; }

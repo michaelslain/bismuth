@@ -2,11 +2,17 @@
 // native checkbox glyphs). Exercises `sampleViewResult` end to end: real rows, run through the
 // real query engine (core/src/bases/query.ts `runView`), rendered by the real ListView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { createSignal } from 'solid-js'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { ListView } from './ListView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { EMPTY_FILE, syntheticBaseFile } from '../../../core/src/bases/types'
-import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
+import type {
+    Row,
+    ViewResult,
+    BaseConfig,
+    ViewConfig,
+} from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
@@ -29,6 +35,11 @@ export const Default: Story = {
     render: () => (
         <ListView result={sampleViewResult()} config={sampleBaseConfig()} />
     ),
+    // Not editable (no basePath): the title is a NoteLink, the row is not a button.
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.querySelector('button')).toBeNull()
+        expect(canvasElement.querySelector('a')).toBeTruthy()
+    },
 }
 
 // A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
@@ -59,7 +70,7 @@ export const EditableOwnedRow: Story = {
     play: async ({ canvasElement }) => {
         const row = canvasElement.querySelector('button')
         expect(row).toBeTruthy()
-        expect((row!.textContent ?? '')).toContain('ship the parser')
+        expect(row!.textContent ?? '').toContain('ship the parser')
 
         row!.dispatchEvent(
             new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
@@ -71,8 +82,7 @@ export const EditableOwnedRow: Story = {
 /** With `basePath` set, a note row now opens the property editor on left-click too (matching
  *  CardsView/KanbanView) — right-click opens the same editor. A non-editable row (no
  *  basePath) is the one that still opens the note; that path has no story of its own here
- *  because `openRow`'s `open()` branch just dispatches `bismuth-open`, exercised end to end
- *  in BaseView's own stories. */
+ *  because that path is now a NoteLink on the title (see Default's play). */
 export const EditableNoteRow: Story = {
     render: () => (
         <ListView
@@ -90,8 +100,12 @@ export const EditableNoteRow: Story = {
     },
 }
 
-/** Grouped by `status` — a colored group heading + row count per distinct value. */
+/** Grouped by `status` — a colored group heading + row count per distinct value. Play asserts
+ *  the `// N` count GroupHeader renders on every header. */
 export const Grouped: Story = {
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.textContent).toMatch(/\/\/ \d+/)
+    },
     render: () => {
         const views = [
             {
@@ -127,7 +141,12 @@ function taskRow(
     },
 ): Row {
     return {
-        file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+        file: {
+            ...EMPTY_FILE,
+            name: 'tasks',
+            basename: 'tasks',
+            path: 'tasks.md',
+        },
         note: {
             description,
             status: opts.resolved ? 'done' : 'todo',
@@ -147,7 +166,12 @@ function taskRow(
 const TASKS_VIEW: ViewConfig = { type: 'list', name: 'List' }
 
 function tasksResult(rows: Row[]): ViewResult {
-    return { view: TASKS_VIEW, columns: [], groups: [{ key: '', rows }], summaries: {} }
+    return {
+        view: TASKS_VIEW,
+        columns: [],
+        groups: [{ key: '', rows }],
+        summaries: {},
+    }
 }
 
 const TASKS_BASE_CONFIG: BaseConfig = {
@@ -205,20 +229,52 @@ const FIXTURE = (() => {
  * would still render five other chips and pass every other gate in this repo.
  */
 export const TasksWithMetadata: Story = {
-    render: () => (
-        <ListView result={tasksResult(FIXTURE.rows)} config={TASKS_BASE_CONFIG} />
-    ),
+    // REAL callbacks: the checkbox flips the row's status in a signal, so the interaction this
+    // story shows is a working one (a noop would render a box that does nothing).
+    render: () => {
+        const [rows, setRows] = createSignal<Row[]>(FIXTURE.rows)
+        return (
+            <ListView
+                result={tasksResult(rows())}
+                config={TASKS_BASE_CONFIG}
+                onToggle={row =>
+                    setRows(rs =>
+                        rs.map(r =>
+                            r === row
+                                ? {
+                                      ...r,
+                                      note: {
+                                          ...r.note,
+                                          status:
+                                              r.note.status === 'done'
+                                                  ? 'todo'
+                                                  : 'done',
+                                      },
+                                  }
+                                : r,
+                        ),
+                    )
+                }
+            />
+        )
+    },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
 
         const priorityChip = canvas.getByText('[high]')
-        const startChip = canvas.getByText(formatDateField('start', FIXTURE.start))
+        const startChip = canvas.getByText(
+            formatDateField('start', FIXTURE.start),
+        )
         const scheduledChip = canvas.getByText(
             formatDateField('scheduled', FIXTURE.scheduled),
         )
-        const overdueChip = canvas.getByText(formatDateField('due', FIXTURE.overdueDue))
+        const overdueChip = canvas.getByText(
+            formatDateField('due', FIXTURE.overdueDue),
+        )
         const recurrenceChip = canvas.getByText('[every week]')
-        const futureChip = canvas.getByText(formatDateField('due', FIXTURE.futureDue))
+        const futureChip = canvas.getByText(
+            formatDateField('due', FIXTURE.futureDue),
+        )
 
         // All five fields on the first row render, with the exact bracket text the field
         // table promises — not merely "some chip exists somewhere".
@@ -235,5 +291,32 @@ export const TasksWithMetadata: Story = {
         // carry it, or a mutation making every due chip "overdue" would still pass.
         expect(overdueChip.classList.contains(styles.overdue)).toBe(true)
         expect(futureChip.classList.contains(styles.overdue)).toBe(false)
+
+        // The toggle is wired to real state: clicking the first row's box flips it.
+        const box = canvas.getAllByRole('checkbox')[0]
+        expect(box.getAttribute('aria-checked')).toBe('false')
+        await userEvent.click(box)
+        await waitFor(() =>
+            expect(
+                canvas.getAllByRole('checkbox')[0].getAttribute('aria-checked'),
+            ).toBe('true'),
+        )
+    },
+}
+
+/** A zero-row view shows the `no rows` empty state. */
+export const Empty: Story = {
+    render: () => (
+        <ListView
+            result={{ ...sampleViewResult(), groups: [] }}
+            config={sampleBaseConfig()}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        expect(c.getByText('no rows')).toBeInTheDocument()
+        expect(
+            c.getByText('nothing in this view matches its filters'),
+        ).toBeInTheDocument()
     },
 }
