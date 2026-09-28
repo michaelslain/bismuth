@@ -1,9 +1,9 @@
 /* ---- KanbanColumnNameInput ---- */
-/* Shared field chrome for both callers (KanbanAddColumn / KanbanColumnMenu): regular weight (not
-   the 500 KanbanAddColumn used to inherit from .kanbanColHeader), a resting hairline box (square,
-   Acceptance 11/14 — not just an underline), accent border on focus, and the error's left edge
-   aligned to the input's own text x via the same horizontal padding token on both
-   (.input / .error). */
+/* Both callers (KanbanAddColumn / KanbanView's header rename) get the field's SIZING only —
+   width, weight, the error's left edge aligned to the input's own text x. The border/padding/
+   focus treatment is `ui/TextInput`'s own FormControl chrome (an underline rule, firming to
+   `--rule` on focus, no fill, no box) — the same chrome every other inline text field in the app
+   uses. Round 4 item 2: a bespoke accent-bordered box here read as its own, different control. */
 .field {
     display: flex;
     flex-direction: column;
@@ -11,22 +11,10 @@
     min-width: 160px;
 }
 .field .input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: var(--sp-2) var(--sp-2);
-    font-size: var(--fs-ui);
     font-weight: 400;
-    color: var(--fg);
-    border: var(--rule);
-    border-radius: var(--r-0);
-    transition: border-color 120ms ease;
 }
-.field .input:focus { border-color: var(--accent); }
-/* The full hairline box above adds a 1px left border .input didn't carry before (it was
-   border-bottom only) — its text now starts 1px further in than a bare padding-left match
-   would give, so this adds that same 1px to keep the error's left edge flush with the input's
-   own text x (KanbanColumnNameInput.stories.tsx's Duplicate play() asserts this). */
+/* FormControl's `.ui-input` has no horizontal padding (padding: 0) — the error's left edge
+   already sits flush with the input's own text x with no extra inset needed. */
 .error {
-    padding-left: calc(var(--sp-2) + 1px);
     color: var(--danger);
 }

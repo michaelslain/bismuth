@@ -51,6 +51,12 @@ export function round6(n: number): number {
  * view (center world-pixel coords + zoom), resolve the geographic coordinate it lands on —
  * the inverse of the renderer's own `toScreen`/`geoToScreen`. Rounded to 6 decimals so a
  * placed or dragged pin writes a clean value.
+ *
+ * CLAMPED to the range MapView draws a marker for (lat ±85, lng ±180). The basemap paints sea
+ * past the world's edges, so a click there is an ordinary-looking click — and unclamped it wrote
+ * e.g. `lng: -182.98`, which the view then files under `unplaced` instead of drawing: the pin
+ * silently never appeared. On a wide pane at low zoom most of the surface is past an edge, which
+ * is why placing "sometimes worked". A click off the world now lands on its nearest edge.
  */
 export function screenToLatLng(
     screenX: number,
@@ -62,12 +68,13 @@ export function screenToLatLng(
     const wx = centerWorld.x + (screenX - size.w / 2)
     const wy = centerWorld.y + (screenY - size.h / 2)
     const { lat, lng } = unproject(wx, wy, zoom)
-    return { lat: round6(lat), lng: round6(lng) }
+    const clamp = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v))
+    return { lat: round6(clamp(lat, 85)), lng: round6(clamp(lng, 180)) }
 }
 
 /**
  * Total on-screen movement below which a pointer-down/up pair on a pin counts as a CLICK
- * (open the note) rather than a DRAG (move the pin) — a few px of tremor shouldn't relocate
+ * (open the pin) rather than a DRAG (move the pin) — a few px of tremor shouldn't relocate
  * a marker the user only meant to open.
  */
 export const DRAG_THRESHOLD_PX = 4
@@ -93,4 +100,24 @@ export function writableFieldKey(id: string): string | null {
     )
         return null
     return id
+}
+
+/**
+ * Whether the map should snap back to its computed framing. Only two things earn a re-frame:
+ * the VIEW changed (a different view, or its configured center/zoom), or the first markers
+ * just arrived on a map the user has not touched yet. Once the user has panned, zoomed, or
+ * armed a placement, the framing is theirs — placing the FIRST pin on an all-unplaced map
+ * used to count as "markers arrived" and snapped to zoom 10 on the new pin, which read as the
+ * add-pin flow resetting the zoom.
+ */
+export function shouldReframe(s: {
+    key: string
+    framedKey: string | null
+    hasMarkers: boolean
+    framedWithMarkers: boolean
+    userMoved: boolean
+}): boolean {
+    if (s.key !== s.framedKey) return true
+    if (s.userMoved) return false
+    return s.hasMarkers && !s.framedWithMarkers
 }

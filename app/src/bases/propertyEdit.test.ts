@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
     distinctStrings,
     propertyEditKind,
-    multiselectAvailable,
     multiselectCommitValue,
     multiselectValues,
     selectOptionsWithCurrent,
+    tagsOptions,
 } from './propertyEdit'
 import type { Schema } from '../../../core/src/schema/types'
 import type { BasePropertyType } from '../../../core/src/bases/types'
@@ -72,7 +72,9 @@ describe('propertyEditKind', () => {
             labels: { type: { kind: 'list', item: 'string' } },
         }
         expect(propertyEditKind('labels', ['a'], schema, [])).toEqual({
+            tag: false,
             kind: 'tags',
+            options: ['a'],
         })
     })
 
@@ -91,7 +93,9 @@ describe('propertyEditKind', () => {
             kind: 'number',
         })
         expect(propertyEditKind('tags', ['a', 'b'], noSchema, [])).toEqual({
+            tag: true,
             kind: 'tags',
+            options: ['a', 'b'],
         })
     })
 
@@ -131,6 +135,30 @@ describe('propertyEditKind', () => {
         expect(propertyEditKind('summary', null, noSchema, [])).toEqual({
             kind: 'text',
         })
+    })
+
+    test('undeclared array value with array siblings -> tags, options union the board', () => {
+        // A table/kanban column across several rows: each row's raw value is itself an
+        // array. propertyEditKind must flatten every sibling array (not treat each array
+        // as one opaque option) so the picker lists every tag the column actually holds.
+        expect(
+            propertyEditKind('tags', ['a'], noSchema, [
+                ['a', 'b'],
+                ['c'],
+            ]),
+        ).toEqual({ kind: 'tags', options: ['a', 'b', 'c'], tag: true })
+    })
+
+    test('a string cell with only-array siblings never becomes a select', () => {
+        // Regression for the tags-dropdown fix: a caller may now pass a column's raw
+        // sibling values unfiltered by row shape. Array siblings must never leak into the
+        // "select from known values" text-column heuristic — only scalar strings should.
+        expect(
+            propertyEditKind('title', 'Hello', noSchema, [
+                ['a', 'b'],
+                ['c', 'd'],
+            ]),
+        ).toEqual({ kind: 'text' })
     })
 })
 
@@ -227,7 +255,7 @@ describe('propertyEditKind — declared type (#100)', () => {
     test('declared list/link/formula have no dedicated editor yet — fall through to the heuristic', () => {
         expect(
             propertyEditKind('items', ['a'], noSchema, [], { kind: 'list' }),
-        ).toEqual({ kind: 'tags' })
+        ).toEqual({ kind: 'tags', options: ['a'], tag: false })
         expect(
             propertyEditKind('ref', 'x', noSchema, [], { kind: 'link' }),
         ).toEqual({ kind: 'text' })
@@ -277,6 +305,24 @@ describe('propertyEditKind — description default (#103)', () => {
     })
 })
 
+describe('tagsOptions', () => {
+    test('flattens sibling arrays, unions with the row\'s own values, first-seen order', () => {
+        expect(tagsOptions(['b', 'c'], [['a', 'b'], 'c'])).toEqual([
+            'a',
+            'b',
+            'c',
+        ])
+    })
+    test('drops empties/null/objects, dedupes', () => {
+        expect(
+            tagsOptions(['a'], [['a', '', null, undefined, { x: 1 }]]),
+        ).toEqual(['a'])
+    })
+    test('no siblings, no value -> empty', () => {
+        expect(tagsOptions(null, [])).toEqual([])
+    })
+})
+
 describe('multiselectValues (#101)', () => {
     test('an array of scalars stringifies each element', () => {
         expect(multiselectValues(['bug', 'urgent'])).toEqual(['bug', 'urgent'])
@@ -288,24 +334,6 @@ describe('multiselectValues (#101)', () => {
     })
     test('a bare scalar (hand-edited single value, not a list) becomes a one-element array', () => {
         expect(multiselectValues('bug')).toEqual(['bug'])
-    })
-})
-
-describe('multiselectAvailable (#101)', () => {
-    test('drops already-selected declared options', () => {
-        expect(
-            multiselectAvailable(['bug', 'feature', 'design'], ['bug']),
-        ).toEqual(['feature', 'design'])
-    })
-    test("a selected LEGACY value (outside options) doesn't remove anything from the add list", () => {
-        expect(
-            multiselectAvailable(['bug', 'feature'], ['legacy-value']),
-        ).toEqual(['bug', 'feature'])
-    })
-    test('everything selected -> empty add list', () => {
-        expect(
-            multiselectAvailable(['bug', 'feature'], ['bug', 'feature']),
-        ).toEqual([])
     })
 })
 
@@ -336,5 +364,31 @@ describe('selectOptionsWithCurrent (#101)', () => {
         expect(selectOptionsWithCurrent(['low', 'medium', 'high'], '')).toEqual(
             ['low', 'medium', 'high'],
         )
+    })
+})
+
+describe('list properties — only what the field can round-trip is editable', () => {
+    const kind = (id: string, value: unknown) =>
+        propertyEditKind(id, value, {}, [])
+    test('a list of strings is one comma-separated field; a tag column gets the tag look', () => {
+        expect(kind('tags', ['alpha', 'two words'])).toMatchObject({ kind: 'tags', tag: true })
+        expect(kind('note.tag', ['alpha'])).toMatchObject({ kind: 'tags', tag: true })
+        expect(kind('authors', ['Jane Doe'])).toMatchObject({ kind: 'tags', tag: false })
+    })
+    test('a list the comma field would split, or one holding numbers or links, is read-only', () => {
+        expect(kind('authors', ['Smith, John'])).toEqual({ kind: 'readonly' })
+        expect(kind('tags', ['a,b'])).toEqual({ kind: 'readonly' })
+        expect(kind('scores', [1, 2])).toEqual({ kind: 'readonly' })
+        expect(kind('related', [{ path: 'Some Note.md', display: 'Some Note' }])).toEqual({
+            kind: 'readonly',
+        })
+    })
+    test('a declared multiselect holding a comma-containing value is read-only', () => {
+        expect(
+            propertyEditKind('who', ['Smith, John'], {}, [], {
+                kind: 'multiselect',
+                options: ['Smith, John'],
+            }),
+        ).toEqual({ kind: 'readonly' })
     })
 })

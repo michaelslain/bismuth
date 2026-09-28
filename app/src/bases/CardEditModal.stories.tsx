@@ -9,11 +9,12 @@
 // (ui/_baseFixtures.ts) so the property vocabulary (status/priority/done/due/tags) matches what
 // the real board declares, rather than a story-invented shape.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { expect, waitFor } from 'storybook/test'
 import { CardEditModal } from './CardEditModal'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { metaColumns } from './kanbanMeta'
+import { tagsFieldView } from '../ui/_tagsFieldPlay'
 import type { Row } from '../../../core/src/bases/types'
 
 const meta = {
@@ -28,6 +29,10 @@ type Story = StoryObj<typeof meta>
 const config = sampleBaseConfig()
 const noop = () => {}
 const metaCols = ['status', 'priority', 'done', 'due', 'tags']
+const openNoteButton = (): HTMLButtonElement | null =>
+    [...document.querySelectorAll('button')].find(
+        b => b.textContent?.trim() === 'open note',
+    ) ?? null
 
 /** Every declared property control at once: select (status), number (priority), boolean
  *  (done — the Chip toggle), date (due), multiselect (tags). No markdown property in the
@@ -58,6 +63,8 @@ export const Default: Story = {
         )
         expect(titleInput).not.toBeNull()
         expect(titleInput!.value).toBe('Ship storybook coverage')
+        // No `onOpenNote` passed — the footer must show no "open note" button.
+        expect(openNoteButton()).toBeNull()
         // The `due` property (a declared `date` kind) renders DateFieldEditor — one trigger that opens the app's DatePicker
         // (editor/DatePicker.tsx, its header date input under the hood) seeded from the row's
         // value ("2026-08-05") — proves the "every declared property, populated" half of this
@@ -142,11 +149,13 @@ export const OrderListsTitle: Story = {
         )
         expect(titleInput).not.toBeNull()
         expect(titleInput!.value).toBe('Has Title Frontmatter')
-        // `tags` (a genuinely declared multiselect) legitimately keeps its own "+ Add"
-        // chip-picker row — that control is correct and must NOT be asserted away. The bug
-        // was a second row keyed `title`, never `tags`'s own control; `titleLabels.length`
-        // above is what proves the second row is gone.
-        expect(document.body.textContent).toMatch(/\+ Add/)
+        // `tags` (a genuinely declared multiselect) legitimately keeps its own TagsField,
+        // reading the row's selected value ("frontend", from
+        // SAMPLE_ROWS[1] via HAS_TITLE_ROW) — that control is correct and must NOT be
+        // asserted away. The bug was a second row keyed `title`, never `tags`'s own
+        // control; `titleLabels.length` above is what proves the second row is gone.
+        const tagsField = await tagsFieldView(document.body)
+        expect(tagsField.state.doc.toString()).toContain('frontend')
     },
 }
 
@@ -191,6 +200,8 @@ export const EmptyCard: Story = {
         )
         expect(dueTrigger).not.toBeNull()
         expect(dueTrigger!.textContent).toBe('Set date…')
+        // No `onOpenNote` passed — the footer must show no "open note" button.
+        expect(openNoteButton()).toBeNull()
     },
 }
 
@@ -305,5 +316,55 @@ export const ReadonlyFieldUpdatesLive: Story = {
             .querySelector<HTMLButtonElement>('[data-testid="swap-row"]')!
             .click()
         await waitFor(() => expect(readonly()?.textContent).toBe('eng'))
+    },
+}
+
+/** `onOpenNote` wired to visible state — proves the footer's `[open note]` button (rendered
+ *  only when the prop is given; see the negative assertions in `Default`/`EmptyCard` above)
+ *  closes the modal FIRST (the same `close` path `done` uses, so any pending title/markdown
+ *  draft still commits) and only then calls `onOpenNote`. A line under the modal reads
+ *  `opened: <path>` once clicked, standing in for the real mount sites' `bismuth-open`
+ *  dispatch (openRowEditor.tsx / KanbanCard.tsx) without this story depending on a global
+ *  event listener. */
+export const WithOpenNote: Story = {
+    render: () => {
+        const [opened, setOpened] = createSignal<string | null>(null)
+        const [closed, setClosed] = createSignal(false)
+        return (
+            <>
+                <div data-testid="opened-readout">opened: {opened() ?? ''}</div>
+                <Show when={!closed()}>
+                    <CardEditModal
+                        row={SAMPLE_ROWS[1]}
+                        titleCol="file.name"
+                        metaCols={metaCols}
+                        config={config}
+                        siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
+                        onRename={noop}
+                        onSetMeta={noop}
+                        onDelete={noop}
+                        onClose={() => setClosed(true)}
+                        onOpenNote={() => setOpened(SAMPLE_ROWS[1].file.path)}
+                    />
+                </Show>
+            </>
+        )
+    },
+    play: async () => {
+        // Same Portal caveat as `Default` above: read document.body, not canvasElement.
+        const button = openNoteButton()
+        expect(button).not.toBeNull()
+        button!.click()
+        await waitFor(() => {
+            expect(document.body.textContent).toMatch(
+                `opened: ${SAMPLE_ROWS[1].file.path}`,
+            )
+        })
+        // FormModal removes its content from the DOM once `closed()` flips — proving the
+        // modal actually closed (the same `close` path `done` uses) rather than staying open
+        // alongside the callback firing.
+        expect(
+            document.querySelector('input[placeholder="Untitled"]'),
+        ).toBeNull()
     },
 }

@@ -72,13 +72,22 @@ const visible = (root: Element, sel: string) =>
         .map(n => n.textContent)
         .join('')
 
+/** TODAY is a plain `TextButton` now (icon-brackets/no-button-outline task) — no `BarLabel`, so it
+ *  never abbreviates, it only ever disappears whole at its `data-bar-drop="3"` tier. Reading its own
+ *  textContent when shown (and '' when the tier has hidden it) is the equivalent of `visible()` for
+ *  a control with exactly one form of its label rather than a long/short pair. */
+const todayText = (root: Element) => {
+    const btn = root.querySelector('[title="Today"]')
+    return shown(btn) ? (btn!.textContent ?? '').trim() : ''
+}
+
 /** The four collapse facts, read off the rendered bar. Each Narrow* story asserts the full tuple
  *  rather than only the one thing its own tier changed — a tier that fires EARLY is just as wrong
  *  as one that never fires, and only the whole tuple can see that. */
 const state = (root: Element) => ({
     actionWords: visible(root, '[title="Categories"]'),
     viewName: visible(root, '[data-segmented] button:first-child'),
-    todayWord: visible(root, '[title="Today"]'),
+    todayWord: todayText(root),
     categoriesShown: shown(root.querySelector('[title="Categories"]')),
 })
 
@@ -96,6 +105,16 @@ export const Default: Story = {
             todayWord: 'today',
             categoriesShown: true,
         })
+        // The bar's one action is a bracket ICON button, titled "New event" — not the retired
+        // "[ + event ]" text control. `aria-label`/`title` both come from IconButton's `label`
+        // prop (see IconButton.tsx), and its only visible content is the icon SVG: the bracket
+        // glyphs are ::before/::after CSS content, so a stray "event" text label would show up
+        // in textContent even though it never appears in the accessible name.
+        const addEvent = canvasElement.querySelector<HTMLButtonElement>(
+            '[aria-label="New event"]',
+        )!
+        expect(addEvent.title).toBe('New event')
+        expect(addEvent.textContent?.trim()).toBe('')
     },
 }
 
@@ -177,10 +196,11 @@ export const Narrow620: Story = {
     },
 }
 
-/** TIER 3 — 510px (a 474px container). 474 is INSIDE the 480 late-word tier (`max-width: 480px`),
- *  so TODAY has already shed its word here for its bare calendar glyph, one tier earlier than the
+/** TIER 3 — 510px (a 474px container). 474 is under the 570px DROP-3 tier TODAY carries
+ *  (`data-bar-drop="3"`), so the whole control is gone here already, one tier earlier than the
  *  view-name/Categories changes that define this story's other assertions — it is the earliest
- *  width in this ladder where TODAY reads icon-only. */
+ *  width in this ladder where TODAY has disappeared. TODAY is a plain `TextButton` (no icon), so
+ *  there is no intermediate icon-only form to pass through on the way down. */
 export const Narrow510: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)

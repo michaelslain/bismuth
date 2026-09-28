@@ -10,6 +10,8 @@
   border-radius: var(--r-0);
   user-select: none;
 }
+/* A background pan in progress. */
+.mapPanning { cursor: grabbing; }
 /* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
 .mapVector {
   position: absolute;
@@ -45,6 +47,11 @@
   transition: transform 120ms ease;
 }
 .mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
+/* A pin being dragged to a new spot. */
+.mapPinDragging { cursor: grabbing; }
+/* While armed, the next click belongs to the MAP: pins go click-through so a click beside (or on)
+   a label still places there, instead of opening that pin's editor under a crosshair cursor. */
+.mapArmed .mapPin { pointer-events: none; }
 .mapPinChip {
   max-width: 180px;
   margin-bottom: var(--sp-1);
@@ -77,6 +84,8 @@
   flex-direction: column;
   gap: var(--sp-4);
   pointer-events: auto;
+  /* The gaps between buttons are not the pannable map — no grab hand there. */
+  cursor: default;
 }
 .mapZoomStack {
   display: flex;
@@ -112,30 +121,6 @@
   font-size: var(--fs-micro);
   line-height: 1;
 }
-/* Offline-vector attribution badge, bottom-left. */
-.mapAttribution {
-  position: absolute;
-  left: 18px;
-  bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-micro);
-  color: var(--faint);
-  pointer-events: none;
-}
-.mapOfflineBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 18px;
-  padding: 0 var(--sp-4);
-  border-radius: var(--r-0);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  background: var(--surface-2);
-  color: var(--green);
-}
 .mapEmpty {
   position: absolute;
   inset: 0;
@@ -146,14 +131,20 @@
   pointer-events: none;
   font-size: var(--fs-body);
 }
-/* Unplaced-rows control, top-left (mirrors .mapControls at top-right). Picking a row from
-   its menu arms placement; the next click on the map writes that row's coordinates. */
-.mapUnplaced {
+/* `Add pin`, top-left (mirrors .mapControls at top-right). It arms a new pin; the next click on
+   the map creates it there. */
+.mapPlacement {
   position: absolute;
   left: 16px;
   top: 16px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
   pointer-events: auto;
+  cursor: default;
 }
+/* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
+.mapPlacement button:disabled { cursor: not-allowed; }
 /* Armed placement: the map itself signals "the next click writes a pin" with a crosshair
    cursor, overriding the grab/grabbing pan cursor the plain .map rule sets. */
 .mapArmed {

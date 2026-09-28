@@ -1,22 +1,27 @@
 // Story helpers shared across KanbanView.stories.tsx / KanbanColumns.stories.tsx /
-// KanbanStoredRows.stories.tsx — the column-menu open sequence and the `views` config literal
-// were each retyped in ~20 stories; this is the one place both live now.
-import { userEvent, within } from 'storybook/test'
+// KanbanStoredRows.stories.tsx — the column header rename/delete sequence and the `views` config
+// literal were each retyped in ~20 stories; this is the one place both live now.
+import { within } from 'storybook/test'
 
-/** Opens a kanban column's `…` menu: finds the column by `data-kbcol="<colKey>"`, takes its
- *  (first) "Column menu" trigger, focuses it — the trigger sits `pointer-events: none` at rest
- *  (Finding 2 — it occupies the count's own slot until hovered/focused), so a pointer click can't
- *  reach it reliably — and presses Enter, same as a real keyboard user would. */
-export async function openColumnMenu(
+/** Focuses a kanban column header's hover-revealed `[✎]`/`[🗑]` IconButton (rename/delete —
+ *  `KanbanView.module.css`'s `.kbHeaderActions`, opacity/pointer-events 0 at rest, revealed on
+ *  the column's `:hover`/`[data-hover]` or the header's `:focus-within`). CSS `:hover` can't be
+ *  posed from a story — it follows the physical pointer, `userEvent.hover` only dispatches events
+ *  without moving it (see TabRail.stories.tsx; KanbanView's own `data-hover` mirror is what
+ *  HeaderActionsOnHover exercises) — but `:focus-within` follows real focus, so focusing the button itself
+ *  both reveals it and gives it keyboard focus in one step, same as a real keyboard user tabbing
+ *  to it. Returns the column element so the caller can scope its own follow-up queries (the
+ *  rename field that replaces the title renders inline in this same header, not portaled). */
+export function focusColumnHeaderButton(
     canvasElement: HTMLElement,
     colKey: string,
-): Promise<void> {
+    label: 'Rename column' | 'Delete column',
+): HTMLElement {
     const col = canvasElement.querySelector<HTMLElement>(
         `[data-kbcol="${colKey}"]`,
     )!
-    const menu = within(col).getAllByLabelText('Column menu')[0]!
-    menu.focus()
-    await userEvent.keyboard('{Enter}')
+    ;(within(col).getByLabelText(label) as HTMLElement).focus()
+    return col
 }
 
 /** The kanban `views` config literal — `type: 'kanban'`, `name: 'Kanban'`, grouped by `status`,

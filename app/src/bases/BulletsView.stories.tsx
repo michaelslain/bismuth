@@ -2,7 +2,7 @@
 // `sampleViewResult` end to end: real rows, run through the real query engine
 // (core/src/bases/query.ts `runView`), rendered by the real BulletsView component.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 import { BulletsView } from './BulletsView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
@@ -59,11 +59,17 @@ export const EditableOwnedRow: Story = {
         const btn = canvasElement.querySelector('li button')
         expect(btn).toBeTruthy()
         expect((btn!.textContent ?? '')).toContain('ship the parser')
+
+        const li = canvasElement.querySelector('li')!
+        li.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 
-/** With `basePath` set, a note row's bullet keeps opening the note and gains a hover/focus-
- *  reveal edit-properties icon. */
+/** With `basePath` set, a note row's bullet keeps opening the note on click; right-click on
+ *  the row opens the property editor. */
 export const EditableNoteRow: Story = {
     render: () => (
         <BulletsView
@@ -73,9 +79,11 @@ export const EditableNoteRow: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        expect(
-            canvasElement.querySelector('button[aria-label="Edit properties"]'),
-        ).toBeTruthy()
+        const li = canvasElement.querySelector('li')!
+        li.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit row' })
     },
 }
 

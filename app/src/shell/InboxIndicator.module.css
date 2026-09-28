@@ -36,10 +36,10 @@
 /* Same treatment as `.status-location` — the status bar has no vertical padding to spare for a hover
    background, so hover buys contrast with colour alone (compare .tab:hover). */
 .status-inbox:hover { color: var(--fg); }
-/* Keyboard focus DOES get a ring: this is the one focusable control in the bar, and unlike hover
-   it must be locatable without a pointer. Inset so the ring stays inside the 18px row instead of
-   being clipped by `.status-bar`'s `overflow: hidden`. */
-.status-inbox:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; color: var(--fg); }
+/* No focus ring — every button in the app paints no focus indicator, mouse or keyboard, by user
+   decision (2026-09-27); this was the one button-family exception and is now consistent with the
+   rest. */
+.status-inbox:focus-visible { color: var(--fg); }
 
 /* The alert state. Only the TEXT is promoted to --fg; the gold stays concentrated in the dot, so
    the signal is a discrete mark rather than a tinted word — a word in --gold would compete with

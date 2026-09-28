@@ -7,14 +7,23 @@
 // interactive stories below seed `setTransport(fakeTransport(...))` — a real write against a
 // live backend has nothing to hit in Storybook, and the fake gives every mutation a 200 ack.
 // A pin mid-drag is pointer-position state, not storyable; these instead cover the two states
-// the brief calls out: the unplaced-rows menu with placement armed, and a pin's own menu.
+// the brief calls out: the map's right-click menu offering the unplaced rows, and a pin's own menu.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { createMemo, createSignal } from 'solid-js'
+import { expect, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { MapView } from './MapView'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import {
+    addPinByMouse,
+    clearSpot,
+    editPinByMouse,
+    placeUnplacedByMouse,
+    rightClickAt,
+    sizedMap,
+} from './_mapPinPlay'
 
 const meta = {
     title: 'Bases/MapView',
@@ -61,7 +70,6 @@ export const Default: Story = {
                 <MapView
                     result={sampleViewResult(PLACES, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -95,18 +103,16 @@ export const CustomFieldsFixedFraming: Story = {
                 <MapView
                     result={sampleViewResult(rows, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
     },
 }
 
-/** Some rows have no valid `lat`/`lng` — they show up in the "unplaced (N)" control instead
- *  of silently vanishing. `play()` opens that menu and picks one, arming placement: the map
- *  now shows a "placing … — esc to cancel" hint that follows the cursor, and the next click
- *  on the map would write that row's coordinates. */
-export const UnplacedRowsArmed: Story = {
+/** Some rows have no valid `lat`/`lng` — instead of silently vanishing, they are offered by the
+ *  map's right-click menu: `new pin here`, then `place <title> here` per row with no location.
+ *  `play()` right-clicks the empty map and shows that menu. */
+export const MapRightClickMenu: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         const views = [{ type: 'map' as const, name: 'Atlas' }]
@@ -120,7 +126,6 @@ export const UnplacedRowsArmed: Story = {
                 <MapView
                     result={sampleViewResult(rows, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
                 />
             </div>
         )
@@ -128,21 +133,20 @@ export const UnplacedRowsArmed: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const body = within(canvasElement.ownerDocument.body)
-
-        const unplacedButton = await canvas.findByTestId('map-unplaced-button')
-        expect(unplacedButton).toHaveTextContent('unplaced (2)')
-        await userEvent.click(unplacedButton)
-
-        const option = await body.findByText('Unmapped Cafe')
-        await userEvent.click(option)
-
-        const hint = await canvas.findByText(/placing Unmapped Cafe/)
-        expect(hint).toBeVisible()
+        expect(canvas.queryByTestId('map-unplaced-button')).toBeNull()
+        const mapEl = await sizedMap(canvasElement)
+        const spot = clearSpot(mapEl)
+        rightClickAt(canvasElement.ownerDocument, spot.x, spot.y)
+        await body.findByText('new pin here')
+        expect(body.getByText('place Unmapped Cafe here')).toBeInTheDocument()
+        expect(body.getByText('place Bad Coords here')).toBeInTheDocument()
     },
 }
 
 /** Right-clicking a placed pin (or Shift+F10 while it's focused) opens its own menu:
- *  open the note, move it (re-arms placement for that row), or remove it from the map. */
+ *  edit (the row editor a left-click also opens), move pin (re-arms placement for that row),
+ *  or remove pin (clears its coordinates — the row itself stays). A map with no base file behind
+ *  it is read-only: its `edit` becomes `open note`. */
 export const PinMenuOpen: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -152,7 +156,7 @@ export const PinMenuOpen: Story = {
                 <MapView
                     result={sampleViewResult(PLACES, { views })}
                     config={sampleBaseConfig({ views })}
-                    onOpen={() => {}}
+                    basePath="stories/places.md"
                 />
             </div>
         )
@@ -170,8 +174,68 @@ export const PinMenuOpen: Story = {
                 clientY: 100,
             }),
         )
-        expect(await body.findByText('open note')).toBeVisible()
-        expect(await body.findByText('move…')).toBeVisible()
-        expect(await body.findByText('remove from map')).toBeVisible()
+        expect(await body.findByText('edit')).toBeVisible()
+        expect(await body.findByText('move pin')).toBeVisible()
+        expect(await body.findByText('remove pin')).toBeVisible()
+    },
+}
+
+/** A map over REAL state: the fake transport writes into these same row objects (and creates
+ *  new notes beside them in `places/`), and `onChange` (BaseView wires `refetchAll` there in the
+ *  app) re-runs the view over them — so a created row, a placed pin and a renamed title all show.
+ *  `basePath` is what lets `Add pin` create a row at all. */
+function LiveMap(props: { rows: Partial<Row>[] }) {
+    const rows = props.rows.map(r => ({ ...r, note: { ...r.note } }))
+    setTransport(fakeTransport({ rows: rows as Row[] }))
+    const views = [{ type: 'map' as const, name: 'Atlas' }]
+    const [tick, setTick] = createSignal(0)
+    const result = createMemo(() => {
+        tick()
+        return sampleViewResult(rows, { views })
+    })
+    return (
+        <div style={{ height: '480px' }}>
+            <MapView
+                result={result()}
+                config={sampleBaseConfig({ views })}
+                basePath="places/Places.md"
+                onChange={() => setTick(t => t + 1)}
+            />
+        </div>
+    )
+}
+
+const WITH_UNPLACED: Partial<Row>[] = [
+    ...PLACES,
+    placeRow('Unmapped Cafe', {}),
+    placeRow('Bad Coords', { lat: 'north-ish', lng: 12 }),
+]
+
+/** `Add pin` creates a NEW row where you click and opens its editor. `play()` drives it with the
+ *  event sequence a real mouse produces, jitter included (pointerdown → mousedown → a 1–3px move
+ *  → pointerup → mouseup → click): zoom in, press `Add pin`, press the map, name the row in the
+ *  editor — and asserts the pin appears, carries the typed name, and that arming, creating and
+ *  every refetch leave the user's zoom and centre exactly where they were. */
+export const AddPin: Story = {
+    render: () => <LiveMap rows={WITH_UNPLACED} />,
+    play: async ({ canvasElement }) => {
+        await addPinByMouse(canvasElement, 'Harbor Lookout')
+    },
+}
+
+/** A left-click on a pin opens the row editor for THAT row (title + properties, `[open note]`);
+ *  renaming it there changes the pin's label once the rows refetch. */
+export const EditPin: Story = {
+    render: () => <LiveMap rows={PLACES} />,
+    play: async ({ canvasElement }) => {
+        await editPinByMouse(canvasElement, 'Nairobi', 'Nairobi Office')
+    },
+}
+
+/** The map's right-click `place <title> here` places EXISTING rows that have no coordinates. */
+export const PlaceUnplaced: Story = {
+    render: () => <LiveMap rows={WITH_UNPLACED} />,
+    play: async ({ canvasElement }) => {
+        await placeUnplacedByMouse(canvasElement, 'Unmapped Cafe', 2)
     },
 }

@@ -46,7 +46,7 @@
      side by side. A fixed height makes the padding purely horizontal breathing room. */
   height: var(--h-control);
 }
-.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 /* ── Keyboard focus ────────────────────────────────────────────────────────────
    No focus ring on buttons: removed at the user's request (2026-09-23) — the ring read as a stray
    "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
@@ -160,15 +160,10 @@
 .btn--icon::after { text-box: trim-both cap alphabetic; translate: 0 -0.055em; }
 .btn--icon::before { margin-right: -0.1em; }
 .btn--icon::after { margin-left: -0.1em; }
-/* focus-visible + hover (normal/unselected) raise the brackets to --accent; selected/danger below
-   go `currentColor` instead, so the brackets track whatever tone the icon itself already carries. */
-.btn--icon:focus-visible::before,
-.btn--icon:focus-visible::after { color: var(--accent); }
-/* The accent brackets alone are too faint a focus indicator for icon buttons — --faint to --accent
-   is a 1.03:1 luminance change on paper (invisible) and 1.93:1 on ink. Keep the brackets AND add
-   the standard focus ring; :focus-visible only fires for keyboard focus, so a mouse-opened modal
-   never shows it. */
-.btn--icon:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+/* hover (normal/unselected) raises the brackets to --accent; selected/danger below go
+   `currentColor` instead, so the brackets track whatever tone the icon itself already carries.
+   No focus-visible treatment — see .btn:focus/.btn:focus-visible above: no button paints a focus
+   indicator, on any kind, mouse or keyboard. */
 .btn--icon.btn--normal:hover:not(:disabled)::before,
 .btn--icon.btn--normal:hover:not(:disabled)::after,
 .btn--icon.btn--unselected:hover:not(:disabled)::before,
@@ -181,7 +176,7 @@
 /* normal — standalone, full opacity */
 .btn--icon.btn--normal { opacity: 1; }
 /* disabled must outrank .btn--normal's opacity:1 above — placed after it so this wins the cascade */
-.btn--icon:disabled { color: var(--faint); cursor: default; }
+.btn--icon:disabled { color: var(--faint); cursor: not-allowed; }
 .btn--icon:disabled::before,
 .btn--icon:disabled::after { color: var(--faint); }
 /* unselected — toggle member, off: full opacity, muted ink (design-pass finding: opacity is not a

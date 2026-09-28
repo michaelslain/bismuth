@@ -76,7 +76,6 @@ import { BaseSettings } from './BaseSettings'
 import { capitalize } from './renderValue'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import { IconTextButton } from '../ui/IconTextButton'
 import ViewTabs from './ViewTabs'
 import {
     readViews,
@@ -91,7 +90,6 @@ import {
 } from './viewsEdit'
 import AddRowAction from './AddRowAction'
 import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
-import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
 import Text from '../ui/Text'
@@ -1006,15 +1004,13 @@ export function BaseView(props: {
                 (ownsRows() ? !!editPath() : !!activeViewConfig()?.taskFile)
             }
         >
-            <IconTextButton
+            <IconButton
                 icon="Plus"
-                title="New task"
+                label="New task"
                 onClick={() =>
                     void addTask().catch(writeFailed('create the task'))
                 }
-            >
-                <BarLabel long="task" drop="early" />
-            </IconTextButton>
+            />
         </Show>
     )
 
@@ -1360,7 +1356,9 @@ export function BaseView(props: {
                                                     <MapView
                                                         result={res()}
                                                         config={data()!.config}
-                                                        onOpen={props.onOpen}
+                                                        basePath={data()!.basePath}
+                                                        ownsRows={ownsRows()}
+                                                        onChange={refetchAll}
                                                     />
                                                 </Match>
                                                 <Match

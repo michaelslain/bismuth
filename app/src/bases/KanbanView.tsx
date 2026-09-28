@@ -49,7 +49,7 @@ import {
 } from './kanbanColumnOrder'
 import KanbanAddColumn from './KanbanAddColumn'
 import { createKanbanDrag, type KanbanCardDrop } from './kanbanDrag'
-import KanbanColumnMenu from './KanbanColumnMenu'
+import KanbanColumnNameInput from './KanbanColumnNameInput'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
 import {
     appendEmbedToValue,
@@ -84,6 +84,7 @@ import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import IconButton from '../ui/IconButton'
+import IconBar from '../ui/IconBar'
 import TextInput from '../ui/TextInput'
 import Swatch from '../ui/Swatch'
 import AnchoredPopover from '../ui/AnchoredPopover'
@@ -139,8 +140,8 @@ export function KanbanView(props: {
     mode?: 'normal' | 'tasks'
     onToggle?: (row: Row, e: Event) => void
     onSetStatus?: (row: Row, e: MouseEvent) => void
-    /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
-     *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
+    /** Open the card's note in a tab. Unused by KanbanView itself today (no host currently
+     *  wires it in) — kept for prop-shape parity with the other views. */
     onOpen?: (path: string) => void
     /** The board owns its rows (no `source:`): a new card is a row in the base file's body,
      *  not a note file. Computed by BaseView (`ownsRows`), the same flag CalendarView gets. */
@@ -221,6 +222,12 @@ export function KanbanView(props: {
 
     // UI popovers / composers, keyed by column key (only one open at a time).
     const [pickerCol, setPickerCol] = createSignal<string | null>(null)
+    // The column whose header is mid-rename — swaps the title `Text` for the same inline
+    // `KanbanColumnNameInput` the old `…` menu's rename step used.
+    const [renamingCol, setRenamingCol] = createSignal<string | null>(null)
+    // The column the pointer is over — reveals that column's header `[✎][🗑]` bar (as
+    // `data-hover`, alongside CSS `:hover`) so a story's synthetic `userEvent.hover` shows it too.
+    const [hoverCol, setHoverCol] = createSignal<string | null>(null)
     const [composerCol, setComposerCol] = createSignal<string | null>(null)
     const [draft, setDraft] = createSignal('')
     // Paths minted this session, so two quick adds don't collide before a refetch lands.
@@ -748,7 +755,7 @@ export function KanbanView(props: {
         const idx = props.viewIndex ?? 0
 
         // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
-        // The column menu's Rename is now gated on `canAdd()` (editable + writable groupBy),
+        // The header's `[✎]` rename action is gated on `canAdd()` (editable + writable groupBy),
         // but keep this belt-and-braces: without it, the `columns` write below would still
         // rename the pinned column while every card's status write is skipped (statusKey
         // null), leaving an empty new column pinned alongside the untouched old one on reload.
@@ -897,22 +904,57 @@ export function KanbanView(props: {
         }
     }
 
-    // ── Column delete — only ever called for an empty column (KanbanColumnMenu gates it via
-    // `canDelete`); removes the key from `columns` and any `groupColors` override. ──
+    // ── Column delete — the header's `[🗑]` now shows on EVERY column, not only an empty one.
+    // An empty column deletes exactly as before: drop the key from `columns` (+ any
+    // `groupColors` override). A non-empty column ALSO clears the grouping value off every one
+    // of its cards first — same batched-write shape as renameColumn's card move, just targeting
+    // '' (the no-value/"(empty)" lane) instead of a new name — so the cards survive, landing
+    // wherever a card with no value already renders, and offers an Undo that re-adds the column
+    // and puts each card's value back. ──
     async function deleteColumn(key: string): Promise<void> {
         if (!props.basePath) return
-        if (groupByKey(key).rows.length > 0) return
         const basePath = props.basePath
         const idx = props.viewIndex ?? 0
+        // Cards to clear, captured BEFORE the optimistic overlay below hides `key` — excluding
+        // stored-row PLACEHOLDERS (an optimistic add not yet resolved to a real row), same
+        // exclusion renameColumn applies to `movedRows`.
+        const cardRows = groupByKey(key).rows.filter(
+            r => !isStoredPlaceholder(r),
+        )
+        let statusKey: string | null = null
+        if (cardRows.length > 0) {
+            const gb = groupBy()
+            statusKey = gb ? writableKey(gb.property) : null
+            // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
+            // The header's `[🗑]` is gated on `canAdd()` (editable + writable groupBy), but keep
+            // this belt-and-braces, mirroring renameColumn.
+            if (statusKey === null) return
+            // A view `limit` truncates `groupByKey(key).rows` — clearing would move only the
+            // visible cards and strand the rest under a column that no longer exists.
+            if (typeof props.result.view.limit === 'number') {
+                pushToast('delete unavailable // this view has a limit')
+                return
+            }
+        }
+        // Captured for Undo: where the column sat and its colour override, both removed below.
+        const prevIndex = columnKeys().indexOf(key)
+        const prevColor = groupColors()[key]
         const keys = removeColumnKey(columnKeys(), key)
         const alreadyRemoved = pendingRemovedCols().has(key)
         const prevOrder = pendingColOrder()
+        const writtenPending: Record<string, PendingMove> = {}
+        cardRows.forEach((r, k) => {
+            writtenPending[rowId(r)] = { key: '', order: k, keyOnly: true }
+        })
         let columnsLanded = false
-        // Optimistic, like add/rename: the column disappears instantly. Both signals rolled back
-        // on a failed write — otherwise the column vanishes from the UI for good even though the
-        // server still has it, or worse, columnKeys() keeps hiding a key the server never lost.
+        // Optimistic, like add/rename: the column disappears instantly (its cards' overlay moves
+        // them into the '' lane in the same tick). Both rolled back on a failed write — otherwise
+        // the column vanishes from the UI for good even though the server still has it, or worse,
+        // columnKeys() keeps hiding a key the server never lost.
         setPendingColOrder(keys)
         setPendingRemovedCols(prev => new Set(prev).add(key))
+        if (cardRows.length > 0)
+            setPending(prev => ({ ...prev, ...writtenPending }))
         try {
             await api.setViewProperty(basePath, idx, 'columns', keys)
             columnsLanded = true
@@ -930,12 +972,52 @@ export function KanbanView(props: {
                         next,
                     )
             }
+            if (cardRows.length > 0 && statusKey !== null) {
+                const storedRows = cardRows.filter(canWriteStoredRow)
+                const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
+                // The cards lose the grouping key entirely (they fall into the no-value lane) —
+                // never an empty string, which a declared `select` would read as invalid.
+                if (storedRows.length > 0) {
+                    const items = storedRows.map(r => {
+                        const note = { ...storedNote(r) }
+                        delete note[statusKey!]
+                        return { path: r.file.path, index: r.index!, note }
+                    })
+                    for (const [path, group] of groupUpdatesByPath(items)) {
+                        await api.rowUpdateMany(
+                            path,
+                            group.map(g => ({ index: g.index, note: g.note })),
+                        )
+                    }
+                }
+                for (const r of noteRows)
+                    await api.deleteProperty(r.file.path, statusKey!)
+            }
             props.onChange()
+            if (cardRows.length > 0 && statusKey !== null) {
+                const movedStatusKey = statusKey
+                pushToast(
+                    `Deleted column "${key === '' ? '(empty)' : key}"`,
+                    {
+                        label: 'Undo',
+                        onClick: () =>
+                            void undoDeleteColumn(
+                                key,
+                                movedStatusKey,
+                                cardRows,
+                                prevIndex,
+                                prevColor,
+                            ),
+                    },
+                )
+            }
         } catch (e) {
             rollbackColOrder(keys, prevOrder)
             setPendingRemovedCols(prev =>
                 rollbackRemoved(prev, alreadyRemoved ? null : key),
             )
+            if (cardRows.length > 0)
+                setPending(prev => rollbackPending(prev, writtenPending))
             if (columnsLanded) {
                 props.onChange()
                 pushToast(
@@ -944,6 +1026,78 @@ export function KanbanView(props: {
                 return
             }
             pushToast(`Delete column failed: ${(e as Error).message}`)
+        }
+    }
+
+    /** Undo for a non-empty column's delete: put the column back WHERE it was (with its colour
+     *  override), and give each cleared card its grouping value back — re-reading every card as
+     *  it is NOW, so an edit made between the delete and the Undo survives. A card that has since
+     *  been given some other value, or has gone, is left alone. */
+    async function undoDeleteColumn(
+        key: string,
+        statusKey: string,
+        cardRows: Row[],
+        prevIndex: number,
+        prevColor: string | undefined,
+    ): Promise<void> {
+        if (!props.basePath) return
+        const basePath = props.basePath
+        const idx = props.viewIndex ?? 0
+        // The delete's own optimistic hide must not outlive the Undo (if the Undo lands before
+        // the delete's refetch, the column would otherwise stay hidden until a remount).
+        setPendingRemovedCols(prev => {
+            const next = new Set(prev)
+            next.delete(key)
+            return next
+        })
+        const current = new Map(
+            props.result.groups.flatMap(g => g.rows).map(r => [rowId(r), r]),
+        )
+        const stillCleared = (r: Row | undefined): r is Row =>
+            !!r && ((r.note as Record<string, unknown>)[statusKey] ?? '') === ''
+        try {
+            const cols = columnKeys().filter(k => k !== key)
+            const at = prevIndex < 0 ? cols.length : Math.min(prevIndex, cols.length)
+            await api.setViewProperty(basePath, idx, 'columns', [
+                ...cols.slice(0, at),
+                key,
+                ...cols.slice(at),
+            ])
+            if (prevColor !== undefined)
+                await api.setViewProperty(basePath, idx, 'groupColors', {
+                    ...groupColors(),
+                    [key]: prevColor,
+                })
+            const live = cardRows
+                .map(r => current.get(rowId(r)))
+                .filter(stillCleared)
+            const storedRows = live.filter(canWriteStoredRow)
+            const noteRows = live.filter(r => !canWriteStoredRow(r))
+            if (storedRows.length > 0) {
+                const items = storedRows.map(r => ({
+                    path: r.file.path,
+                    index: r.index!,
+                    note: { ...storedNote(r), [statusKey]: key },
+                }))
+                for (const [path, group] of groupUpdatesByPath(items)) {
+                    await api.rowUpdateMany(
+                        path,
+                        group.map(g => ({ index: g.index, note: g.note })),
+                    )
+                }
+            }
+            if (noteRows.length > 0) {
+                const writes = noteRows.map(r => ({
+                    path: r.file.path,
+                    key: statusKey,
+                    value: key,
+                }))
+                await api.setProperties(writes)
+            }
+            props.onChange()
+            pushToast(`Restored column "${key === '' ? '(empty)' : key}"`)
+        } catch (e) {
+            pushToast(`Restore failed: ${(e as Error).message}`)
         }
     }
 
@@ -970,20 +1124,26 @@ export function KanbanView(props: {
     // Instead it writes the new title under `titleCol()`'s key (`storedTitleColumn`'s pick)
     // via `api.rowUpdate`, addressed by `row.index` like every other stored-row write
     // (`setMetaProperty`, `dropCard`) — the note's OTHER keys are carried through unchanged.
-    async function renameCard(row: Row, newTitle: string): Promise<void> {
+    // Returns the row's note path AFTER a successful rename (or the unchanged path when
+    // nothing moved) — so `KanbanCard`'s `[open note]` can wait on the real destination
+    // instead of a stale pre-rename path when the two race.
+    async function renameCard(
+        row: Row,
+        newTitle: string,
+    ): Promise<string | undefined> {
         // A placeholder is not yet a row the server knows about — `canWriteStoredRow` is
         // `false` for it (negative index), which without this check would fall through to the
         // note-file branch below and `api.move` the BASE's own file (a placeholder's `file` is
         // `syntheticBaseFile`, the base's own path, not a note). Bail before either branch.
-        if (isStoredPlaceholder(row)) return
+        if (isStoredPlaceholder(row)) return row.file.path
         if (canWriteStoredRow(row)) {
             const key = writableKey(titleCol())
-            if (key === null) return
+            if (key === null) return row.file.path
             const note = { ...storedNote(row), [key]: newTitle }
             // The row's OWN file (see `dropCard`'s comment) — never `props.basePath`, which is
             // the wrong target for a `source:` board's row.
             await api.rowUpdate(row.file.path, row.index!, note)
-            return
+            return row.file.path
         }
         // A rename changes the note's path, so the refetch below re-keys the row and remounts the
         // card (its identity genuinely changed). Editing is single-mode, so there's no open
@@ -992,10 +1152,11 @@ export function KanbanView(props: {
         // narrow, no-existing-data-loss race we accept rather than couple the two async writes.
         const dir = parentOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
-        if (desired === row.file.path) return
+        if (desired === row.file.path) return row.file.path
         const target = dedupe(desired, takenPaths())
         await api.move(row.file.path, target)
         props.onChange()
+        return target
     }
 
     // ── Card meta property (any `order:` property besides title — including `description`,
@@ -1568,6 +1729,13 @@ export function KanbanView(props: {
                                             isLastCol(),
                                     }}
                                     style={{ '--kb-col-color': color() }}
+                                    data-hover={
+                                        hoverCol() === key ? '' : undefined
+                                    }
+                                    onPointerEnter={() => setHoverCol(key)}
+                                    onPointerLeave={() =>
+                                        setHoverCol(c => (c === key ? null : c))
+                                    }
                                 >
                                     <div
                                         class={styles.kbColorAnchor}
@@ -1602,47 +1770,94 @@ export function KanbanView(props: {
                                                     class={styles.dot}
                                                 />
                                             </PlainButton>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kanbanColTitle}
+                                            <Show
+                                                when={
+                                                    renamingCol() ===
+                                                    group().key
+                                                }
+                                                fallback={
+                                                    <Text
+                                                        as="span"
+                                                        inherit
+                                                        class={
+                                                            styles.kanbanColTitle
+                                                        }
+                                                    >
+                                                        {group().key === ''
+                                                            ? '(empty)'
+                                                            : group().key}
+                                                    </Text>
+                                                }
                                             >
-                                                {group().key === ''
-                                                    ? '(empty)'
-                                                    : group().key}
-                                            </Text>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kanbanCount}
-                                            >
-                                                {padCount(
-                                                    group().rows.length,
-                                                )}
-                                            </Text>
-                                            <Show when={canAdd()}>
-                                                <KanbanColumnMenu
-                                                    name={group().key}
-                                                    canDelete={
-                                                        group().rows.length ===
-                                                        0
-                                                    }
+                                                <KanbanColumnNameInput
+                                                    initial={group().key}
                                                     existing={columnKeys().filter(
                                                         k => k !== group().key,
                                                     )}
-                                                    onRename={to =>
+                                                    selectOnMount
+                                                    onSubmit={to => {
                                                         void renameColumn(
                                                             group().key,
                                                             to,
                                                         )
-                                                    }
-                                                    onDelete={() =>
-                                                        void deleteColumn(
-                                                            group().key,
-                                                        )
+                                                        setRenamingCol(null)
+                                                    }}
+                                                    onCancel={() =>
+                                                        setRenamingCol(null)
                                                     }
                                                 />
                                             </Show>
+                                            {/* Count flush right; the actions bar hangs off its left edge
+                                                (absolute), so revealing it moves nothing. */}
+                                            <div class={styles.kbHeaderTrail}>
+                                                <Show
+                                                    when={
+                                                        canAdd() &&
+                                                        renamingCol() !==
+                                                            group().key
+                                                    }
+                                                >
+                                                    <IconBar
+                                                        label="Column actions"
+                                                        class={
+                                                            styles.kbHeaderActions
+                                                        }
+                                                    >
+                                                        <IconButton
+                                                            icon="Pencil"
+                                                            label="Rename column"
+                                                            onClick={() =>
+                                                                setRenamingCol(
+                                                                    group().key,
+                                                                )
+                                                            }
+                                                        />
+                                                        {/* The "(empty)" lane is where cards with
+                                                            no value live — it is not a column
+                                                            that can be deleted. */}
+                                                        <Show when={group().key !== ''}>
+                                                            <IconButton
+                                                                icon="Trash2"
+                                                                label="Delete column"
+                                                                onClick={() =>
+                                                                    void deleteColumn(
+                                                                        group().key,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </Show>
+                                                    </IconBar>
+                                                </Show>
+                                                <Text
+                                                    as="span"
+                                                    inherit
+                                                    class={styles.kanbanCount}
+                                                >
+                                                    {padCount(
+                                                        group().rows.length,
+                                                    )}
+                                                </Text>
+                                            </div>
                                         </div>
 
                                         {/* Color picker popover */}
@@ -1805,7 +2020,7 @@ export function KanbanView(props: {
                                                                                     setEditing
                                                                                 }
                                                                                 onRename={t =>
-                                                                                    void renameCard(
+                                                                                    renameCard(
                                                                                         r(),
                                                                                         t,
                                                                                     )

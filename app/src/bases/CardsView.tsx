@@ -6,10 +6,9 @@ import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
 import TaskRow from './TaskRow'
 import Label from '../ui/Label'
-import IconButton from '../ui/IconButton'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
-import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
+import { isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
 import styles from './CardsView.module.css'
 
@@ -58,6 +57,9 @@ export function CardsView(props: {
 
     const editable = () => !!props.basePath
     const rowEditable = (row: Row) => editable() && !isStoredPlaceholder(row)
+    // A task-line row's `file` is the containing NOTE, not the task — the shared row editor
+    // would title itself with the note, rename the whole file, and let `delete` trash it.
+    const taskLine = (row: Row) => typeof row.note.line === 'number'
     function openEditor(row: Row): void {
         if (!rowEditable(row)) return
         openRowEditor({
@@ -107,11 +109,18 @@ export function CardsView(props: {
                 detail: { path: row.file.path },
             }),
         )
-    /** Owned rows have no note to open — the card itself opens the editor; a note row keeps
-     *  opening the note, with a separate hover-reveal edit icon for its properties. */
+    /** Left-click opens the editor for every editable row (note rows too, not only owned
+     *  rows); a non-editable row keeps opening its note. Right-click always opens the editor
+     *  when the row is editable (see `onContextMenu` below). */
     const cardClick = (row: Row) => {
-        if (rowEditable(row) && canWriteStoredRow(row)) openEditor(row)
+        if (rowEditable(row) && !taskLine(row)) openEditor(row)
         else openCard(row)
+    }
+    const cardContextMenu = (row: Row, e: MouseEvent) => {
+        if (!rowEditable(row) || taskLine(row)) return
+        e.preventDefault()
+        e.stopPropagation()
+        openEditor(row)
     }
 
     return (
@@ -150,6 +159,12 @@ export function CardsView(props: {
                                                         onClick={() =>
                                                             cardClick(row)
                                                         }
+                                                        onContextMenu={e =>
+                                                            cardContextMenu(
+                                                                row,
+                                                                e,
+                                                            )
+                                                        }
                                                         onKeyDown={e => {
                                                             if (
                                                                 e.key ===
@@ -158,32 +173,6 @@ export function CardsView(props: {
                                                                 cardClick(row)
                                                         }}
                                                     >
-                                                        <Show
-                                                            when={
-                                                                rowEditable(
-                                                                    row,
-                                                                ) &&
-                                                                !canWriteStoredRow(
-                                                                    row,
-                                                                )
-                                                            }
-                                                        >
-                                                            <IconButton
-                                                                icon="Pencil"
-                                                                label="Edit properties"
-                                                                class={
-                                                                    styles.cardEditBtn
-                                                                }
-                                                                onClick={(
-                                                                    e: MouseEvent,
-                                                                ) => {
-                                                                    e.stopPropagation()
-                                                                    openEditor(
-                                                                        row,
-                                                                    )
-                                                                }}
-                                                            />
-                                                        </Show>
                                                         {/* An image cover (when configured + present) replaces the generated
                                     text cover; title/author then move into the body below. A row whose
                                     cover property is empty falls back to the text cover. */}

@@ -18,6 +18,7 @@ type Story = StoryObj<typeof meta>
 
 const config = sampleBaseConfig()
 const noop = () => {}
+const noopRename = async () => undefined
 
 function Card(props: Parameters<typeof KanbanCard>[0]) {
     return (
@@ -38,7 +39,7 @@ export const Default: Story = {
             config={config}
             editable={false}
             onEditingChange={noop}
-            onRename={noop}
+            onRename={noopRename}
             onSetMeta={noop}
             onDelete={noop}
             siblingValues={() => []}
@@ -57,7 +58,7 @@ export const NoProperties: Story = {
             config={config}
             editable={false}
             onEditingChange={noop}
-            onRename={noop}
+            onRename={noopRename}
             onSetMeta={noop}
             onDelete={noop}
             siblingValues={() => []}
@@ -84,7 +85,7 @@ export const LongTitle: Story = {
                 config={config}
                 editable={false}
                 onEditingChange={noop}
-                onRename={noop}
+                onRename={noopRename}
                 onSetMeta={noop}
                 onDelete={noop}
                 siblingValues={() => []}
@@ -105,7 +106,7 @@ export const HideLabels: Story = {
             editable
             hideLabels
             onEditingChange={noop}
-            onRename={noop}
+            onRename={noopRename}
             onSetMeta={noop}
             onDelete={noop}
             siblingValues={id => SAMPLE_ROWS.map(r => r.note[id])}
@@ -137,7 +138,7 @@ export const MarkdownDescription: Story = {
                 config={markdownConfig}
                 editable={false}
                 onEditingChange={noop}
-                onRename={noop}
+                onRename={noopRename}
                 onSetMeta={noop}
                 onDelete={noop}
                 siblingValues={() => []}
@@ -157,7 +158,7 @@ export const Tags: Story = {
             config={config}
             editable={false}
             onEditingChange={noop}
-            onRename={noop}
+            onRename={noopRename}
             onSetMeta={noop}
             onDelete={noop}
             siblingValues={() => []}
@@ -175,7 +176,7 @@ export const BooleanProperty: Story = {
             config={config}
             editable={false}
             onEditingChange={noop}
-            onRename={noop}
+            onRename={noopRename}
             onSetMeta={noop}
             onDelete={noop}
             siblingValues={() => []}
@@ -195,7 +196,7 @@ export const KeyboardOpensEdit: Story = {
                 config={config}
                 editable
                 onEditingChange={noop}
-                onRename={noop}
+                onRename={noopRename}
                 onSetMeta={noop}
                 onDelete={noop}
                 siblingValues={() => []}
@@ -220,6 +221,36 @@ export const KeyboardOpensEdit: Story = {
     },
 }
 
+/** Right-click on the card face opens the same edit modal a tap does (row affordances: no
+ *  pencils, right-click opens the editor) — and does not start a drag. */
+export const ContextMenuOpensEdit: Story = {
+    render: () => (
+        <div style={{ width: '240px' }}>
+            <KanbanCard
+                row={SAMPLE_ROWS[1]}
+                titleCol="file.name"
+                metaCols={['priority', 'tags']}
+                config={config}
+                editable
+                onEditingChange={noop}
+                onRename={noopRename}
+                onSetMeta={noop}
+                onDelete={noop}
+                siblingValues={() => []}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const face = canvas.getByRole('button', { name: /^edit /i })
+
+        face.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await within(document.body).findByRole('dialog', { name: 'edit card' })
+    },
+}
+
 /** Non-editable face carries neither `role` nor `tabIndex` — there is nothing to activate. */
 export const NotEditableHasNoButtonRole: Story = {
     render: () => (
@@ -231,7 +262,7 @@ export const NotEditableHasNoButtonRole: Story = {
                 config={config}
                 editable={false}
                 onEditingChange={noop}
-                onRename={noop}
+                onRename={noopRename}
                 onSetMeta={noop}
                 onDelete={noop}
                 siblingValues={() => []}
