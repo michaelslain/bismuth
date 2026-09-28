@@ -1,31 +1,20 @@
-import { For, createMemo } from 'solid-js'
+import { For, createEffect, createMemo, createSignal } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import {
     buildChartData,
     buildHeatmapWeeks,
     type HeatCell,
 } from '../../../core/src/bases/chart'
-import { todayISO, addDaysISO } from '../../../core/src/dates'
+import { chartCaption, bucketReadout, formatValue } from '../../../core/src/bases/chartText'
+import { binLabel, todayISO } from '../../../core/src/dates'
 import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
-import StatTiles, { type StatTile } from './StatTiles'
+import ChartReadout from './ChartReadout'
+import ChartDrill from './ChartDrill'
+import { dayLabel, heatmapRange, monthLabels, streaks } from './heatmapLayout'
 import type { ChartViewProps } from './chartViewProps'
 import styles from './HeatmapView.module.css'
 
-const MONTH_NAMES = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-]
 const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 // Density glyph per intensity tier — a year of activity, one character per day
@@ -50,106 +39,122 @@ export function HeatmapView(props: ChartViewProps) {
     const data = createMemo(() =>
         buildChartData(rows(), { ...props.result.view, bin: 'day' }),
     )
-    const grid = createMemo(() => buildHeatmapWeeks(data().points))
+    const today = createMemo(() => todayISO())
+    const latestData = createMemo<string | null>(() => {
+        const dates = data()
+            .points.map(p => p.date)
+            .filter((d): d is string => !!d)
+        return dates.length ? dates.sort().at(-1)! : null
+    })
+
+    const [columns, setColumns] = createSignal(20)
+    const range = createMemo(() =>
+        heatmapRange(columns(), latestData(), today()),
+    )
+    const grid = createMemo(() => buildHeatmapWeeks(data().points, range()))
 
     // Transpose the column-major week grid (buildHeatmapWeeks: weeks[week][Mon..Sun])
     // into 7 weekday ROWS spanning every week — the card reads Mon..Sun top-to-bottom.
-    const dowRows = createMemo<(HeatCell | null)[][]>(() => {
+    const dowRows = createMemo<HeatCell[][]>(() => {
         const weeks = grid().weeks
-        return DOW.map((_, dow) => weeks.map(week => week[dow] ?? null))
+        return DOW.map((_, dow) => weeks.map(week => week[dow]))
     })
 
-    const level = (cell: HeatCell | null): number => {
-        if (!cell) return 0
+    const level = (cell: HeatCell): number => {
         const { min, max } = data()
         return levelOf(cell.value, min, max)
     }
 
-    // One label per week column: the month name when this column is the first to
-    // fall in a new month, blank otherwise (GitHub-style sparse month row).
-    const monthLabels = createMemo<string[]>(() => {
-        let prev = -1
-        const raw = grid().weeks.map(week => {
-            const iso = week[0]?.date
-            if (!iso) return ''
-            const m = Number(iso.slice(5, 7)) - 1
-            if (m === prev) return ''
-            prev = m
-            return MONTH_NAMES[m] ?? ''
-        })
-        // Each label sits in a 14px column (one week-cell wide) with overflow visible, so a
-        // 3-letter abbreviation spills into the next column. That's invisible for a normal
-        // month (several blank columns follow before the next label), but the grid's FIRST
-        // column is labeled unconditionally regardless of how many of its 7 days actually
-        // fall in that month — when the data starts a day or two into a month, that column's
-        // Monday is still the prior month, so its label lands immediately beside the very
-        // next column's label and the two glyphs merge. Drop a label that doesn't have at
-        // least one blank column of clearance before the next one, favoring the later
-        // (fuller) month over the earlier sliver.
-        let lastKept = -Infinity
-        for (let i = 0; i < raw.length; i++) {
-            if (!raw[i]) continue
-            if (i - lastKept < 2) raw[lastKept] = ''
-            lastKept = i
-        }
-        return raw
+    // Bucket by date, so hover/click can look a cell's row-count/rows up in O(1).
+    const byDate = createMemo(() => {
+        const m = new Map<string, { value: number; rows: number[] }>()
+        for (const p of data().points)
+            if (p.date) m.set(p.date, { value: p.value, rows: p.rows })
+        return m
     })
 
-    // Streak stat cards (entries / current streak / longest streak) over the
-    // day-binned points. A day "counts" when it has a value > 0.
-    const streaks = createMemo(() => {
-        const days = data().points.filter(p => p.date && p.value > 0)
-        const entries = days.length
-        const dates = days.map(p => p.date as string).sort()
-        let longest = 0
-        let current = 0
-        let prev: string | null = null
-        const nextDay = (iso: string) => {
-            const d = new Date(iso + 'T00:00:00')
-            d.setDate(d.getDate() + 1)
-            return d.toISOString().slice(0, 10)
-        }
-        for (const d of dates) {
-            current = prev !== null && nextDay(prev) === d ? current + 1 : 1
-            if (current > longest) longest = current
-            prev = d
-        }
-        // `current` is the run ending at the most recent entry — that's only a live
-        // streak if the last entry is today (or yesterday, with today still open). If
-        // the chain already lapsed, the current streak is 0.
-        const today = todayISO()
-        if (prev !== null && prev !== today && prev !== addDaysISO(today, -1))
-            current = 0
-        return { entries, current, longest }
+    const [hovered, setHovered] = createSignal<string | null>(null)
+    const [selected, setSelected] = createSignal<string | null>(null)
+
+    // A data change that removes the selected bucket closes the drill.
+    createEffect(() => {
+        const sel = selected()
+        if (sel && !byDate().has(sel)) setSelected(null)
     })
 
-    const streakCards = createMemo<StatTile[]>(() => {
-        const s = streaks()
-        const valueStyle = { 'font-size': '22px' } as const
+    const peak = createMemo(() => {
+        const pts = data().points
+        if (pts.length === 0) return null
+        return pts.reduce((a, b) => (b.value > a.value ? b : a))
+    })
+
+    const streakInfo = createMemo(() => streaks(data().points, today()))
+
+    const readoutParts = createMemo<string[]>(() => {
+        const h = hovered()
+        if (h) {
+            const bucket = byDate().get(h)
+            return bucketReadout(dayLabel(h), bucket?.value ?? 0, bucket?.rows.length ?? 0)
+        }
+        const p = peak()
+        const caption = chartCaption(data())
+        if (!p || !p.date) return [caption]
+        return [caption, `peak ${formatValue(p.value)} (${binLabel(p.date, 'day')})`]
+    })
+
+    const footerText = createMemo(() => {
+        const s = streakInfo()
+        const day = (n: number) => (n === 1 ? 'day' : 'days')
         return [
-            { label: 'entries', value: String(s.entries), valueStyle },
-            {
-                label: 'current streak',
-                value: `${s.current} ${s.current === 1 ? 'day' : 'days'}`,
-                valueStyle,
-            },
-            {
-                label: 'longest streak',
-                value: `${s.longest} ${s.longest === 1 ? 'day' : 'days'}`,
-                valueStyle,
-            },
-        ]
+            `${s.entries} ${day(s.entries)} logged`,
+            `current streak ${s.current} ${day(s.current)}`,
+            `longest streak ${s.longest} ${day(s.longest)}`,
+        ].join(' // ')
     })
+
+    const drillRows = createMemo<Row[]>(() => {
+        const sel = selected()
+        if (!sel) return []
+        const bucket = byDate().get(sel)
+        if (!bucket) return []
+        const all = rows()
+        return bucket.rows.map(i => all[i])
+    })
+
+    const toggle = (date: string) => {
+        const bucket = byDate().get(date)
+        if (!bucket || bucket.rows.length === 0) return
+        setSelected(prev => (prev === date ? null : date))
+    }
 
     return (
         <ChartFrame
             empty={grid().weeks.length === 0}
             emptyMessage="No dated rows to chart. Set an x date column in view settings."
+            onGrid={g => setColumns(g.columns)}
+            readout={
+                <ChartReadout parts={readoutParts()} active={hovered() !== null} />
+            }
+            footer={
+                <Text as="div" inherit size="ui" tone="muted">
+                    {footerText()}
+                </Text>
+            }
+            drill={
+                selected() ? (
+                    <ChartDrill
+                        title={dayLabel(selected()!)}
+                        rows={drillRows()}
+                        onOpen={props.onOpen}
+                        onClear={() => setSelected(null)}
+                    />
+                ) : undefined
+            }
         >
             <div class={styles.heatmap}>
                 <div class={styles.heatMonths}>
-                    <div style={{ width: '14px', flex: 'none' }} />
-                    <For each={monthLabels()}>
+                    <div class={styles.heatGutter} />
+                    <For each={monthLabels(grid().weeks)}>
                         {label => (
                             <Text
                                 as="span"
@@ -179,12 +184,21 @@ export function HeatmapView(props: ChartViewProps) {
                                             <Text
                                                 as="span"
                                                 inherit
-                                                class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]}`}
-                                                title={
-                                                    cell
-                                                        ? `${cell.date}: ${cell.value ?? 0}`
+                                                data-bucket={cell.date}
+                                                class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]} ${
+                                                    selected() === cell.date
+                                                        ? styles.selected
                                                         : ''
+                                                }`}
+                                                onPointerEnter={() =>
+                                                    setHovered(cell.date)
                                                 }
+                                                onPointerLeave={() =>
+                                                    setHovered(prev =>
+                                                        prev === cell.date ? null : prev,
+                                                    )
+                                                }
+                                                onClick={() => toggle(cell.date)}
                                             >
                                                 {glyphOf(lv)}
                                             </Text>
@@ -230,12 +244,7 @@ export function HeatmapView(props: ChartViewProps) {
                     <Text as="span" inherit>
                         more
                     </Text>
-                    <div class={styles.legendSpacer} />
-                    <Text as="span" inherit>
-                        intensity is the glyph, never the cell size
-                    </Text>
                 </div>
-                <StatTiles tiles={streakCards()} class={styles.streakStats} />
             </div>
         </ChartFrame>
     )
