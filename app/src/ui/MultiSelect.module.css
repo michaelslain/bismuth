@@ -27,5 +27,21 @@
     padding: var(--popover-pad);
     box-shadow: var(--popover-shadow);
 }
-.filter { padding: var(--sp-2) var(--sp-3); }
-.list { border: none; box-shadow: none; background: transparent; padding: 0; border-radius: 0; }
+.filter { padding: var(--sp-2) var(--sp-3); cursor: text; }
+.list {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    /* PopoverList's row height (`--row-h`, global.css's `.bismuth-popover-row`) defaults to
+       18px, but every row here carries a BracketToggle (`ui/BracketToggle.module.css`'s
+       `.toggle`, `height: var(--h-control)` = 24px). A row box shorter than its own content
+       doesn't clip (no overflow rule on `.bismuth-popover-row`), so the toggle's extra 6px
+       spilled past each row's bottom edge and inflated the LIST's scrollHeight past its
+       clientHeight — a vertical scrollbar even when every row visibly fit (measured: 5 rows,
+       clientHeight 90px, scrollHeight 93px). Matching the row height to the control it hosts
+       removes the overflow at its source, so `.bismuth-popover`'s inherited `overflow-y: auto`
+       only ever scrolls when the option list genuinely exceeds its max-height. */
+    --row-h: var(--h-control);
+}

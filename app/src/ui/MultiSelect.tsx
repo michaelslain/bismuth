@@ -5,7 +5,7 @@
 // but every row TOGGLES instead of choosing-and-closing, so the list stays open across several
 // picks. A filter input at the top narrows the rows and, when `creatable`, doubles as the "add
 // a new value" field for an unmatched entry (Enter with no matching row appends it verbatim).
-import { createMemo, createSignal, onMount } from 'solid-js'
+import { createMemo, createSignal, onMount, type JSX } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
@@ -23,6 +23,15 @@ export type MultiSelectProps = {
     onChange: (next: string[]) => void
     /** Enter on a filter that matches no existing row appends it as a new selected value. */
     creatable?: boolean
+    /** How the closed trigger renders its selected values — a caller whose read-only cell has
+     *  its own formatting (renderValue.tsx's `renderTags`: `#`-prefixed, teal, gap-separated)
+     *  passes it here so the trigger reads IDENTICALLY to that cell instead of this component
+     *  guessing at a generic join. Defaults to a plain `", "`-joined list, which already
+     *  matches the generic (non-tag) read-only array rendering. */
+    renderValue?: (values: string[]) => JSX.Element
+    /** How each open-list row's own label is formatted — e.g. `#`-prefixing a tags column's
+     *  options to match `renderValue`. Defaults to the bare option string. */
+    formatOption?: (value: string) => string
     /** Escape or an outside click. */
     onClose?: () => void
     /** Start open — a table cell that opens straight into the editor sets this. Read once, at
@@ -149,7 +158,9 @@ function MultiSelect(props: MultiSelectProps) {
                     }}
                 >
                     {props.value.length
-                        ? props.value.join(', ')
+                        ? props.renderValue
+                            ? props.renderValue(props.value)
+                            : props.value.join(', ')
                         : (props.placeholder ?? 'Select…')}
                 </span>
                 <span class={styles.caret} aria-hidden="true">
@@ -189,7 +200,7 @@ function MultiSelect(props: MultiSelectProps) {
                     />
                     <PopoverList
                         items={rows().map(o => ({
-                            label: o,
+                            label: props.formatOption ? props.formatOption(o) : o,
                             prefix: (
                                 <BracketToggle
                                     checked={props.value.includes(o)}
