@@ -92,6 +92,7 @@ export const FormulaY: Story = {
         expect(katexBlocks.length).toBeGreaterThan(0)
         const text = canvasElement.textContent ?? ''
         expect(text).toContain('ppu')
+        expect(canvasElement.querySelector('.katex .mfrac')).not.toBeNull()
     },
 }
 
