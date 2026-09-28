@@ -1,8 +1,8 @@
 // app/src/bases/PropertyValueEditor.tsx
 // The type-aware control a kanban meta chip swaps in on click (KanbanCard.tsx): a
-// `Select` for an enum / known-values property, a `MultiSelect` (ui/MultiSelect.tsx) for
-// a declared `multiselect` or a plain (undeclared) `tags` list — the latter `creatable`,
-// a multiline textarea for a declared `markdown` property (#100), and a plain
+// `Select` for an enum / known-values property, a `TagsField` (ui/TagsField.tsx — one line of
+// text with the note editor's completion popup, typed like a frontmatter `tags:` line) for a
+// plain (undeclared) `tags` list or a declared `multiselect`, a multiline textarea for a declared `markdown` property (#100), and a plain
 // (text/number/date-typed) input otherwise. Boolean properties never reach this
 // component — the caller toggles those directly via a `Chip`, so there is no boolean
 // branch here.
@@ -11,9 +11,7 @@
 // blur/Escape leave it); Escape reverts the draft to the ORIGINAL value first, then
 // blurs — so the no-op comparison in the caller's commit handler (KanbanCard's
 // `commitMeta`) skips the write, matching the title/description editors' idiom above it
-// in the same file. `multiselect`/`tags` are the kinds that stay open across several
-// writes (each toggle is naturally multi-step) — see MultiSelect's own doc for how its
-// `onChange` maps onto `{ keepOpen: true }` below.
+// in the same file. `multiselect`/`tags` commit once too — the parsed list, on Enter or blur.
 //
 // A `number` kind carries its declared format (`plain`/`unit`/`currency`/`percent`) +
 // unit label — the edit box always shows/accepts the EDIT-space value (percent scales
@@ -21,7 +19,7 @@
 // the canonical stored number on commit via `parseNumberEdit`.
 import { Show, createSignal, onMount } from 'solid-js'
 import Select from '../ui/Select'
-import MultiSelect from '../ui/MultiSelect'
+import TagsField from '../ui/TagsField'
 import type { PropertyEditKind } from './propertyEdit'
 import {
     multiselectCommitValue,
@@ -31,26 +29,16 @@ import {
 import { numberEditValue, parseNumberEdit } from './numberFormat'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import TextInput from '../ui/TextInput'
-import { renderTags } from './renderValue'
 import { api } from '../api'
 import { mergeTagOptions, vaultTagNames } from './tagSuggestions'
 import styles from './PropertyValueEditor.module.css'
 
-/** `#`-prefix a bare option string, matching `renderTags`' own per-tag formatting — used for a
- *  `tags` kind's open-list rows, so `[x] #alpha` reads the same `#` the closed trigger and the
- *  read-only cell (renderValue.tsx's `renderTags`) both show. A declared `multiselect` column
- *  has no read-only `#` styling (renderValue's generic array branch is a plain comma join), so
- *  its rows stay bare. */
-function tagOption(v: string): string {
-    return `#${v}`
-}
-
 /** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
  *  carried an identical copy, but its version was deleted along with the rest of the dead
  *  `kbDesc*` markup, so there is no longer a second copy for this one to be "duplicated from". */
-// The vault's tag names as of the last fetch, shared by every tags editor — a picker opens
-// showing the last-known set at once, then widens when its own refresh lands (MultiSelect
-// appends late options without moving rows already on screen).
+// The vault's tag names as of the last fetch, shared by every tags editor — a field suggests the
+// last-known set at once, then the refreshed set once its own fetch lands (suggestions are read
+// per keystroke).
 let lastVaultTags: string[] = []
 
 function autoGrow(el: HTMLTextAreaElement): void {
@@ -61,11 +49,8 @@ function autoGrow(el: HTMLTextAreaElement): void {
 export function PropertyValueEditor(props: {
     kind: PropertyEditKind
     value: unknown
-    // `opts.keepOpen` (set by the multiselect/tags branch below, for its toggle writes)
-    // tells the caller (KanbanCard's `commitMeta`) to persist the value WITHOUT closing the
-    // editor — every other kind commits exactly once and always closes, so they simply
-    // omit it.
-    onCommit: (value: unknown, opts?: { keepOpen?: boolean }) => void
+    // Every kind commits exactly once, when its edit ends.
+    onCommit: (value: unknown) => void
     onCancel: () => void
     // Whether the control grabs focus on mount. Defaults to true (the kanban chip swaps this
     // editor in already-focused). A multi-field form (CardEditModal) sets false and manages
@@ -130,17 +115,15 @@ export function PropertyValueEditor(props: {
     // `props.kind` re-derefs on every read, which would otherwise lose the discriminated-
     // union narrowing inside JSX.
     const selectKind = () => (props.kind.kind === 'select' ? props.kind : null)
-    // `multiselect` and `tags` share the exact same editor (ui/MultiSelect) and commit
-    // shape — they differ only in whether an unmatched filter is `creatable`.
-    const multiSelectKind = () => {
+    // `multiselect` and `tags` share one editor (ui/TagsField) and commit shape. A `tags` field
+    // uses the `#tag` spelling and suggests the column's values then the vault's; a declared
+    // `multiselect` uses comma separation (its options may contain spaces) and suggests only its
+    // options — a typed value outside them is still kept (legacy tolerance, like select).
+    const listKind = () => {
         const k = props.kind
-        if (k.kind === 'multiselect')
-            return { options: k.options, creatable: false }
+        if (k.kind === 'multiselect') return { options: k.options, hash: false }
         if (k.kind === 'tags')
-            return {
-                options: mergeTagOptions(k.options, vaultTags()),
-                creatable: true,
-            }
+            return { options: mergeTagOptions(k.options, vaultTags()), hash: true }
         return null
     }
 
@@ -161,7 +144,7 @@ export function PropertyValueEditor(props: {
 
     return (
         <Show
-            when={multiSelectKind()}
+            when={listKind()}
             fallback={
                 <Show
                     when={selectKind()}
@@ -251,26 +234,14 @@ export function PropertyValueEditor(props: {
                 </Show>
             }
         >
-            {mk => (
-                <MultiSelect
+            {lk => (
+                <TagsField
                     value={multiselectValues(props.value)}
-                    options={mk().options}
-                    creatable={mk().creatable}
-                    open={autofocus()}
-                    onChange={next =>
-                        props.onCommit(multiselectCommitValue(next), {
-                            keepOpen: true,
-                        })
-                    }
-                    onClose={props.onCancel}
-                    // `creatable` is exactly the `tags` kind (propertyEdit.ts's
-                    // `multiSelectKind()` above) — a declared `multiselect` isn't creatable and
-                    // has no `#` styling on its read-only cell (renderValue.tsx's generic array
-                    // branch, a plain comma join), so it gets neither prop and MultiSelect's own
-                    // defaults (comma-joined trigger, bare option labels) already match.
-                    {...(mk().creatable
-                        ? { renderValue: renderTags, formatOption: tagOption }
-                        : {})}
+                    suggestions={() => lk().options}
+                    hash={lk().hash}
+                    autofocus={autofocus()}
+                    onCommit={next => props.onCommit(multiselectCommitValue(next))}
+                    onCancel={props.onCancel}
                 />
             )}
         </Show>

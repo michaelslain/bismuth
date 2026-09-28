@@ -1,7 +1,7 @@
 // Visual spec for <PropertyValueEditor> — the type-aware control a kanban meta chip swaps in
 // on click (KanbanCard.tsx): text input, markdown textarea, typed number/date input, a `Select`
-// for an enum, a chip add/remove picker for `multiselect`, and a comma-separated box for a
-// plain (undeclared) tag list. No network, no theme fixture beyond the global tokens — purely a
+// for an enum, and a TagsField (one line of text with the note editor's completion popup) for a
+// plain (undeclared) tag list or a declared `multiselect`. No network, no theme fixture beyond the global tokens — purely a
 // value in, callback out control, so every `PropertyEditKind` variant gets its own story.
 //
 // `boolean` is deliberately absent: the file-level comment on the component says the caller
@@ -13,6 +13,14 @@ import { PropertyValueEditor } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import {
+    completionLabels,
+    expectCompletions,
+    pressKey,
+    selectedCompletion,
+    tagsFieldView,
+    typeInto,
+} from '../ui/_tagsFieldPlay'
 
 const meta = {
     title: 'Bases/PropertyValueEditor',
@@ -151,10 +159,9 @@ export const SelectLegacyValue: Story = {
     ),
 }
 
-/** Undeclared tags — a `MultiSelect` (`creatable`), options built from the sibling/own
- *  values (propertyEdit.ts's `tagsOptions`); this story stands in for that with a fixed
- *  list. `open` on the underlying editor is unconditional (the kanban chip swaps this in
- *  already open), so the dropdown is visible immediately. */
+/** Undeclared tags — a TagsField reading `#frontend #bug ` with the caret at the end, like a
+ *  frontmatter `tags:` line. Suggestions (propertyEdit.ts's `tagsOptions` + the vault's tags)
+ *  appear only once you type. */
 export const Tags: Story = {
     render: () => (
         <Harness
@@ -167,31 +174,14 @@ export const Tags: Story = {
     ),
 }
 
-/** `multiselect` with two of three declared options already picked — the trigger shows them
- *  joined, and the dropdown (open by default) lists every option, selected ones first, each
- *  prefixed `[x]`/`[ ]`. Static render; see `MultiselectToggle` below for the live
- *  toggle interaction (each write commits immediately with `keepOpen: true` — no natural
- *  "blur" for a set of checkboxes). */
+/** `multiselect` with two of three declared options picked — the same field, comma-separated
+ *  (declared options may contain spaces): `planning, frontend, `. */
 export const MultiselectPartial: Story = {
     render: () => (
         <Harness
             kind={{
                 kind: 'multiselect',
                 options: ['planning', 'frontend', 'docs'],
-            }}
-            initial={['planning', 'frontend']}
-        />
-    ),
-}
-
-/** `multiselect` with every declared option already selected — every row shows `[x]`, none
- *  `[ ]`. */
-export const MultiselectFull: Story = {
-    render: () => (
-        <Harness
-            kind={{
-                kind: 'multiselect',
-                options: ['planning', 'frontend'],
             }}
             initial={['planning', 'frontend']}
         />
@@ -239,8 +229,8 @@ export const EscapeReverts: Story = {
 
 /** Interactive: Escape must reach `window` from a plain field (so the card modal's own
  *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
- *  NOT reach `window` while a multiselect's own dropdown is open (that Escape belongs to the
- *  list: it closes the list and stops there, same as any other open popover). */
+ *  NOT reach `window` while a list field's completion popup is open (that Escape belongs to the
+ *  popup: it closes it and stops there, as in the note editor). */
 export const EscapeBubbles: Story = {
     render: () => (
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
@@ -259,13 +249,12 @@ export const EscapeBubbles: Story = {
         }
         window.addEventListener('keydown', onWindowKeyDown)
 
-        // Multiselect FIRST, before anything else on the page is clicked — its editor mounts
-        // already open (the kanban chip swaps it in open), so a stray outside pointerdown from
-        // interacting with the text field below (userEvent focuses a target via a real click)
-        // would otherwise close it before this assertion runs. Its filter input already has
-        // focus, so an Escape there closes ONLY the dropdown and must not reach window.
-        await within(document.body).findByPlaceholderText('filter')
-        await userEvent.keyboard('{Escape}')
+        // The list field: typing opens the completion popup; Escape closes ONLY the popup.
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'fr')
+        await expectCompletions(['frontend'])
+        pressKey(view, 'Escape')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
         await expect(windowEscapes).toEqual([])
 
         // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
@@ -281,10 +270,9 @@ export const EscapeBubbles: Story = {
     },
 }
 
-/** Interactive: toggle two rows in the dropdown (it opens already, since the kanban chip
- *  swaps this editor in open) — each write commits immediately with `keepOpen: true`, so the
- *  editor stays mounted across both changes instead of closing after the first. */
-export const MultiselectToggle: Story = {
+/** Interactive (`multiselect`): type the start of an option — the popup offers the matching
+ *  unused options — Tab takes the highlighted one, Enter commits the whole list once. */
+export const MultiselectTypeAndCommit: Story = {
     render: () => (
         <Harness
             kind={{
@@ -296,27 +284,22 @@ export const MultiselectToggle: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const popover = await waitFor(() => {
-            const el = document.querySelector('.bismuth-popover') as HTMLElement | null
-            if (!el) throw new Error('popover did not open')
-            return el
-        })
-        const body = within(popover)
-        // Add "frontend".
-        await userEvent.click(await body.findByText('frontend'))
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'f')
+        await expectCompletions(['frontend'])
+        pressKey(view, 'Tab')
+        await waitFor(() =>
+            expect(view.state.doc.toString()).toBe('planning, frontend, '),
+        )
+        pressKey(view, 'Enter')
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["planning","frontend"]',
-        )
-        // Remove "planning" by clicking its row again.
-        await userEvent.click(await body.findByText('planning'))
-        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
-            '["frontend"]',
         )
     },
 }
 
-/** Interactive (`tags`, `creatable`): typing a value that matches no existing option and
- *  pressing Enter adds it as a new selected value. */
+/** Interactive (`tags`): a word that matches no suggestion is kept as a new tag — Enter (no
+ *  popup open) commits it. */
 export const TagsCreatable: Story = {
     render: () => (
         <Harness
@@ -326,10 +309,10 @@ export const TagsCreatable: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const filterInput = await within(document.body).findByPlaceholderText(
-            'filter or add',
-        )
-        await userEvent.type(filterInput, 'brand-new{Enter}')
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'brand-new')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        pressKey(view, 'Enter')
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["bug","brand-new"]',
         )
@@ -338,8 +321,8 @@ export const TagsCreatable: Story = {
 
 /** Interactive (`tags`): suggestions include every tag in the VAULT — the graph's tag nodes, the
  *  same source the note editor's tag completion reads — after the column's own values. Typing
- *  `ch` narrows to the vault-only `#chicken` (highlighted), Tab autofills it, and the closed
- *  trigger shows it as a `#` tag. */
+ *  `ch` pops `#chicken` / `#chores` under the word with the first highlighted; Tab takes it;
+ *  Enter commits. */
 export const TagsSuggestVaultTags: Story = {
     render: () => {
         setTransport(
@@ -363,31 +346,18 @@ export const TagsSuggestVaultTags: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const filterInput = (await within(document.body).findByPlaceholderText(
-            'filter or add',
-        )) as HTMLInputElement
-        const labels = () =>
-            [...document.querySelectorAll<HTMLElement>('.bismuth-popover-label')].map(
-                l => (l.textContent ?? '').trim(),
-            )
-        // Column values first, then the vault's (deduped: frontend appears once).
-        await waitFor(() =>
-            expect(labels()).toEqual(['#bug', '#frontend', '#chicken', '#chores']),
-        )
-        await userEvent.type(filterInput, 'ch')
-        await waitFor(() => expect(labels()).toEqual(['#chicken', '#chores']))
-        const active = document.querySelector('.bismuth-popover-row--selected')
-        expect(active?.textContent).toContain('#chicken')
-        await userEvent.keyboard('{Tab}')
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, '#')
+        // A bare `#` offers every unused tag: the column's first, then the vault's (deduped).
+        await expectCompletions(['#frontend', '#chicken', '#chores'])
+        typeInto(view, 'ch')
+        await expectCompletions(['#chicken', '#chores'])
+        expect(selectedCompletion()).toBe('#chicken')
+        pressKey(view, 'Tab')
+        await waitFor(() => expect(view.state.doc.toString()).toBe('#bug #chicken '))
+        pressKey(view, 'Enter')
         await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '["bug","chicken"]',
-        )
-        await userEvent.keyboard('{Escape}')
-        await waitFor(() =>
-            expect(document.querySelector('.bismuth-popover')).toBeNull(),
-        )
-        expect(canvasElement.querySelector('button')?.textContent).toContain(
-            '#bug#chicken',
         )
     },
 }

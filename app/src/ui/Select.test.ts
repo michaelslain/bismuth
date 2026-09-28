@@ -5,11 +5,11 @@
 // only to close the Select's own option list) fell through to "click outside the whole
 // editor" and tore down the entire multiselect editor.
 //
-// MultiSelectEditor has since been replaced by ui/MultiSelect.tsx, which has no document
-// pointerdown guard of its own — it relies on AnchoredPopover's own onDismiss instead. So
-// this no longer pins a guard's wiring; it pins that the hashed-class literal never comes
-// back, in either file, and that any `closest(` call that does exist matches the runtime
-// data-attribute hook rather than a class name.
+// MultiSelectEditor has since been replaced by ui/TagsField.tsx (a single-line editor with the
+// note editor's completion popup), which has no document pointerdown guard at all. So this no
+// longer pins a guard's wiring; it pins that the hashed-class literal never comes back, in
+// either file, and that any `closest(` call that does exist matches the runtime data-attribute
+// hook rather than a class name.
 //
 // Solid components can't be mounted under `bun test` here (solid-js/web resolves to its
 // server build — see CLAUDE.md), so this is a source-level check in the spirit of
@@ -23,7 +23,7 @@ const editorSrc = readFileSync(
     join(import.meta.dir, '../bases/PropertyValueEditor.tsx'),
     'utf8',
 )
-const multiSelectSrc = readFileSync(join(import.meta.dir, 'MultiSelect.tsx'), 'utf8')
+const tagsFieldSrc = readFileSync(join(import.meta.dir, 'TagsField.tsx'), 'utf8')
 
 describe('Select backdrop — dismiss hook survives CSS-module hashing', () => {
     it('the backdrop element carries the data-select-backdrop attribute', () => {
@@ -38,8 +38,8 @@ describe('Select backdrop — dismiss hook survives CSS-module hashing', () => {
         expect(around).toContain('data-select-backdrop')
     })
 
-    it('neither PropertyValueEditor nor MultiSelect reaches the backdrop by its hashed class, and any closest() call targets the data attribute', () => {
-        for (const src of [editorSrc, multiSelectSrc]) {
+    it('neither PropertyValueEditor nor TagsField reaches the backdrop by its hashed class, and any closest() call targets the data attribute', () => {
+        for (const src of [editorSrc, tagsFieldSrc]) {
             // The old literal matched nothing at runtime — guard against it coming back.
             expect(src).not.toContain('.ui-select-backdrop')
             const closestCalls = src.match(/closest\(([^)]*)\)/g) ?? []

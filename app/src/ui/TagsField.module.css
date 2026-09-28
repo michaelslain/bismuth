@@ -1,0 +1,13 @@
+/* app/src/ui/TagsField.module.css — the single-line editor host. FormControl supplies the chrome
+   (underline, focus rule, control height, UI font); this only lets the embedded CodeMirror fill it
+   and vertically centre its one line, and gives the field a text cursor across its whole width. */
+.field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  cursor: text;
+}
+.field > :global(.cm-editor) {
+  flex: 1;
+  min-width: 0;
+}
