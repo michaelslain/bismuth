@@ -155,20 +155,6 @@ const SKIP_MODULES = new Set<string>([
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
     'chat/ChatSessionProbe.module.css',
-    // chart-views Task 4: ChartReadout.tsx and ChartDrill.tsx are new chart-chrome primitives
-    // whose only call sites today are ChartFrame.stories.tsx and their own .stories.tsx — wave 2
-    // (Tasks 5-8) wires them into Bar/Line/Stat/HeatmapView's actual bodies. Same exemption as
-    // Callout/Frontmatter above: real components, structurally unreachable by `vite build` until
-    // that later wave mounts them. Confirmed via `grep -rl ChartReadout app/src` / `grep -rl
-    // ChartDrill app/src`.
-    'bases/ChartReadout.module.css',
-    'bases/ChartDrill.module.css',
-    // chart-views Task 3: ui/Tex.tsx is the KaTeX primitive landed ahead of the chart views that
-    // will render it (later tasks). No production importer exists yet — confirmed via
-    // `grep -rln 'Tex\b' app/src` returning only Tex.tsx itself and Tex.stories.tsx — same shape as
-    // Callout/Frontmatter above: a real component, structurally unreachable by `vite build` until
-    // a later task mounts it.
-    'ui/Tex.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')
