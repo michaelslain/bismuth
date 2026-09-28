@@ -383,7 +383,7 @@ export const TagsColumnListsWholeBoard: Story = {
         const view = await tagsFieldView(canvasElement)
         expect(view.state.doc.toString()).toBe('alpha, ')
         typeInto(view, 'b')
-        await expectCompletions(['beta'])
+        await expectCompletions(['#beta'])
     },
 }
 
@@ -469,10 +469,10 @@ export const TagsTypeAcceptCommit: Story = {
         expect(view.hasFocus).toBe(true)
 
         typeInto(view, 'b')
-        await expectCompletions(['beta'])
+        await expectCompletions(['#beta'])
         pressKey(view, 'Tab')
         typeInto(view, 'g')
-        await expectCompletions(['gamma'])
+        await expectCompletions(['#gamma'])
         pressKey(view, 'Tab')
         await waitFor(() =>
             expect(view.state.doc.toString()).toBe('alpha, beta, gamma, '),

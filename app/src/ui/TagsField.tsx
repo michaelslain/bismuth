@@ -93,12 +93,15 @@ const fieldTheme = EditorView.theme({
     '.cm-placeholder': { color: 'var(--faint)' },
 })
 
-// Every value of a tag list drawn the way ui/Tag draws a tag (teal, UI face) — so a tag keeps its
-// look while being typed, instead of turning into plain text the moment the cell opens. A value is
-// the run between commas, without its surrounding spaces.
+// Every value of a tag list drawn exactly the way ui/Tag draws a tag — `#name`, teal, UI face — so
+// a tag reads the same in the field as in the cell. The `#` is DRAWN (a ::before on the mark), not
+// typed: the text stays `planning, docs`, which is what is saved. A value someone typed with its
+// own `#` is not given a second one. A value is the run between commas, without its spaces.
+const tagMark = Decoration.mark({ class: styles.tagToken })
+const typedHashMark = Decoration.mark({ class: styles.tagTokenTypedHash })
 const tagTokens = new MatchDecorator({
     regexp: /[^,\s](?:[^,]*[^,\s])?/g,
-    decoration: Decoration.mark({ class: styles.tagToken }),
+    decoration: m => (m[0].startsWith('#') ? typedHashMark : tagMark),
 })
 const tagTokenHighlight = ViewPlugin.fromClass(
     class {
@@ -176,7 +179,8 @@ const TagsField: Component<TagsFieldProps> = props => {
         return {
             from: tok.from,
             options: ranked.slice(0, 50).map(v => ({
-                label: v,
+                // A tag list's suggestions read `#name`, like every tag; the insert stays bare.
+                label: tags() ? `#${v}` : v,
                 apply: completionInsert(v),
             })),
             // Already ranked here — CodeMirror must not re-filter or re-sort.

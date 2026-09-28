@@ -320,7 +320,7 @@ export const TagsCreatable: Story = {
 
 /** Interactive (`tags`): suggestions include every tag in the VAULT — the graph's tag nodes, the
  *  same source the note editor's tag completion reads — after the column's own values. Typing
- *  `ch` pops `chicken` / `chores` under the value with the first highlighted; Tab takes it;
+ *  `ch` pops `#chicken` / `#chores` under the value with the first highlighted; Tab takes it;
  *  Enter commits. */
 export const TagsSuggestVaultTags: Story = {
     render: () => {
@@ -348,8 +348,8 @@ export const TagsSuggestVaultTags: Story = {
         const canvas = within(canvasElement)
         const view = await tagsFieldView(canvasElement)
         typeInto(view, 'ch')
-        await expectCompletions(['chicken', 'chores'])
-        expect(selectedCompletion()).toBe('chicken')
+        await expectCompletions(['#chicken', '#chores'])
+        expect(selectedCompletion()).toBe('#chicken')
         pressKey(view, 'Tab')
         await waitFor(() => expect(view.state.doc.toString()).toBe('bug, chicken, '))
         pressKey(view, 'Enter')
