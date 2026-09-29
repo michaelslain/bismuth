@@ -546,7 +546,9 @@ export function FlashcardsView(props: {
         }
         props.onReviewed()
         pushUndoToast(
-            `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front || 'card'}`,
+            front
+                ? `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`
+                : 'deleted card',
             async () => {
                 await restoreRowAt(basePath, note, c.index)
                 if (wasCram) {
