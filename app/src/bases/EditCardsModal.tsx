@@ -12,9 +12,8 @@ import ModalFooter from '../ui/ModalFooter'
 import styles from './EditCardsModal.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
-import { parseBaseFile } from '../../../core/src/bases/parse'
-import { fileBasename } from '../../../core/src/pathUtils'
+import { pushUndoToast } from '../undoToast'
+import { restoreRowAt } from './restoreRow'
 import CardsListEditor from './CardsListEditor'
 import BulkCardsEditor from './BulkCardsEditor'
 import { resetKeys, stripSchedule } from './flashcardsActions'
@@ -112,34 +111,26 @@ export function EditCardsModal(props: {
             const gone = cards()[index]
             await api.rowDelete(props.basePath, index)
             setCards(removeAt(cards(), index))
-            pushToast(`deleted ${deletedLabel(gone, ff())}`, {
-                label: 'undo',
-                onClick: () => void restoreCard(index, gone),
-            })
+            pushUndoToast(`deleted ${deletedLabel(gone, ff())}`, () =>
+                restoreCard(index, gone),
+            )
         })
 
     // The toast outlives the modal, so this must not lean on modal state: it counts the rows on
-    // disk, waits for any in-flight write (a busy `locked` would silently do nothing), and once the
-    // modal has closed it is the one to tell the review queue the deck changed.
+    // disk, waits (bounded) for any in-flight write — a busy `locked` would silently do nothing —
+    // and once the modal has closed it is the one to tell the review queue the deck changed.
+    // A wait that outlasts the bound rejects, and `pushUndoToast` reports `undo failed: busy`.
     const restoreCard = async (index: number, note: Note) => {
-        while (busy()) await new Promise(r => setTimeout(r, 25))
-        return locked(async () => {
-            const meta = {
-                name: fileBasename(props.basePath),
-                path: props.basePath,
-            }
-            const count = parseBaseFile(await api.read(props.basePath), meta)
-                .rows.length
-            await api.rowCreate(props.basePath, note)
-            if (index < count)
-                await api.rowReorder(props.basePath, count, index)
+        const deadline = Date.now() + 2000
+        while (busy()) {
+            if (Date.now() >= deadline) throw new Error('busy')
+            await new Promise(r => setTimeout(r, 25))
+        }
+        await locked(async () => {
+            await restoreRowAt(props.basePath, note, index)
             setCards(insertAt(cards(), index, note))
             if (closed) props.onChanged()
-        }).catch(e =>
-            pushToast(
-                `Could not undo: ${e instanceof Error ? e.message : String(e)}`,
-            ),
-        )
+        })
     }
 
     // Reset progress: drops a card's (or every card's) due/ease/interval columns so it reviews as

@@ -68,6 +68,7 @@ const FlipCard: Component<FlipCardProps> = props => {
             <PlainButton
                 class={`${styles['flip-card']} ${props.revealed ? styles.flipped : ''}`}
                 aria-pressed={props.revealed}
+                data-flip-card
                 onClick={() => {
                     if (!props.revealed) props.onReveal()
                 }}
