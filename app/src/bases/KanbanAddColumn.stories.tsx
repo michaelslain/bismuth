@@ -10,7 +10,7 @@ import {
     fontsSettled,
     ghostOf,
     inputTextOrigin,
-    restTextOrigin,
+    restGlyphOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
 
 const meta = {
@@ -56,7 +56,7 @@ export const Editing: Story = {
         await fontsSettled()
         const ghost = ghostOf(canvasElement)
         const trigger = canvas.getByLabelText('Add a column')
-        const restOrigin = restTextOrigin(ghost)
+        const restOrigin = restGlyphOrigin(ghost)
         const restWidths = boardWidths(canvasElement)
         await userEvent.click(trigger)
         const input = (await canvas.findByPlaceholderText(

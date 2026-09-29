@@ -23,6 +23,7 @@ import {
 } from '../../../core/src/bases/properties'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
+import { pushUndoToast } from '../undoToast'
 import { parentOf } from '../fileTreeOps'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
@@ -628,7 +629,8 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
             }
         }
         // Captured for Undo: where the column sat and its colour override, both removed below.
-        const prevIndex = deps.columnKeys().indexOf(key)
+        const prevKeys = deps.columnKeys()
+        const prevIndex = prevKeys.indexOf(key)
         const prevColor = deps.groupColors()[key]
         const keys = removeColumnKey(deps.columnKeys(), key)
         const alreadyRemoved = o.pendingRemovedCols().has(key)
@@ -687,17 +689,18 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
             deps.onChange()
             if (cardRows.length > 0 && statusKey !== null) {
                 const movedStatusKey = statusKey
-                pushToast(`Deleted column "${key === '' ? '(empty)' : key}"`, {
-                    label: 'Undo',
-                    onClick: () =>
-                        void undoDeleteColumn(
+                pushUndoToast(
+                    `deleted column ${key === '' ? '(empty)' : key}`,
+                    () =>
+                        undoDeleteColumn(
                             key,
                             movedStatusKey,
                             cardRows,
                             prevIndex,
+                            prevKeys,
                             prevColor,
                         ),
-                })
+                )
             }
         } catch (e) {
             rollbackColOrder(keys, prevOrder)
@@ -726,6 +729,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         statusKey: string,
         cardRows: Row[],
         prevIndex: number,
+        prevKeys: string[],
         prevColor: string | undefined,
     ): Promise<void> {
         const basePath = deps.basePath()
@@ -746,8 +750,13 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         )
         const stillCleared = (r: Row | undefined): r is Row =>
             !!r && ((r.note as Record<string, unknown>)[statusKey] ?? '') === ''
-        try {
-            const cols = deps.columnKeys().filter(k => k !== key)
+        // Failures propagate to pushUndoToast, which toasts `undo failed`.
+        {
+            // The delete moved the cards into the '' no-value lane; that lane is only a real
+            // column if it was one before.
+            const cols = deps
+                .columnKeys()
+                .filter(k => k !== key && (k !== '' || prevKeys.includes('')))
             const at =
                 prevIndex < 0 ? cols.length : Math.min(prevIndex, cols.length)
             await api.setViewProperty(basePath, idx, 'columns', [
@@ -787,9 +796,6 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
                 await api.setProperties(writes)
             }
             deps.onChange()
-            pushToast(`Restored column "${key === '' ? '(empty)' : key}"`)
-        } catch (e) {
-            pushToast(`Restore failed: ${(e as Error).message}`)
         }
     }
 
