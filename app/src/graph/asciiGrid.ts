@@ -32,7 +32,6 @@ export const NODE_GLYPHS = ['.', 'o', '@'] as const
 
 /** Layer priority in the cell buffer. A higher layer overwrites a lower one, which is how the
  *  noise field gets CLEARED beneath every edge and node ("or the field reads as mush"). */
-export const LAYER_EMPTY = 0
 export const LAYER_NOISE = 1
 export const LAYER_EDGE = 2
 export const LAYER_NODE = 3

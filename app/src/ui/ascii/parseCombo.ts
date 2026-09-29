@@ -2,22 +2,10 @@
 // Turns a stored keybinding combo ("Mod+Shift+D", or a comma-separated sequence
 // "Mod+`, Mod+J") into display caps: string[][] — one inner array of cap labels
 // per comma-separated alternative.
-//
-// The Mod/Cmd/Meta/Ctrl/Alt/Shift → glyph mapping mirrors
-// app/src/palette/CommandPalette.tsx's inline `formatShortcut()` (same IS_MAC
-// check, same glyphs). That copy only handles the first alternative and doesn't
-// need Enter/Escape/arrow caps, so it wasn't reusable as-is; this is the
-// extracted, fuller version — CommandPalette should adopt this helper instead
-// of its own inline copy next time it's touched.
+// Every modifier/key is plain text or one of the design's sanctioned keyboard caps (⌘ ⌥ ↵ ↑ ↓ — no
+// ⇧/⌫/⇥/←/→); ⌘/⌥ vs Ctrl/Alt follows isMacPlatform().
 
-/** True on macOS/iPadOS/iOS — decides ⌘/⌥ glyphs vs Ctrl/Alt text. Every other modifier/key
- *  is plain text or one of the design's sanctioned keyboard caps (⌘ ⌥ ↵ ↑ ↓ — no ⇧/⌫/⇥/←/→). */
-export function isMacPlatform(): boolean {
-    return (
-        typeof navigator !== 'undefined' &&
-        /Mac|iPhone|iPad/.test(navigator.platform ?? '')
-    )
-}
+import { isMacPlatform } from '../../platform'
 
 const TOKEN: Record<string, (mac: boolean) => string> = {
     Mod: mac => (mac ? '⌘' : 'Ctrl'),

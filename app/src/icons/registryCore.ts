@@ -1,4 +1,4 @@
-// app/src/icons/registry-core.ts
+// app/src/icons/registryCore.ts
 //
 // Pure icon-resolution logic, framework-free so it can be unit
 // tested in a non-DOM environment.

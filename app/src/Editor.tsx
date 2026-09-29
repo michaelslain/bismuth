@@ -40,7 +40,7 @@ import {
 } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { api, apiBase } from './api'
-import { baseName, attachmentTarget } from './attachmentPath'
+import { attachmentTarget } from './attachmentPath'
 import { lastChange } from './serverVersion'
 import { primeNoteCache } from './noteCache'
 // The shared markdown reading+writing stack (live preview + markdown + autocomplete + math +
@@ -92,7 +92,12 @@ import {
 import { takePendingAnchor, clearPendingAnchor } from './pendingAnchor'
 import { takePendingCursor } from './pendingCursor'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
-import { filePathsFromTransfer, isHeicName, jpegNameFor } from './fileIntake'
+import {
+    basename,
+    filePathsFromTransfer,
+    isHeicName,
+    jpegNameFor,
+} from './fileIntake'
 import { nativeDropScale, claimNativeDrop } from './nativeDropRouting'
 import { isTauri } from './nativeMenu'
 import {
@@ -399,7 +404,7 @@ const EMBEDDABLE_EXT = new Set([
 
 /** The wikilink markup for an in-vault attachment: an embed for media, a plain link otherwise. */
 const markupFor = (name: string): string => {
-    const base = baseName(name)
+    const base = basename(name)
     return `${isEmbeddablePath(base) ? '!' : ''}[[${base}]]`
 }
 
@@ -488,7 +493,7 @@ async function uploadEmbed(
                 name = jpegNameFor(name)
             } catch (e) {
                 pushToast(
-                    `Couldn't convert ${baseName(fileName)} to JPEG — saved as-is`,
+                    `Couldn't convert ${basename(fileName)} to JPEG — saved as-is`,
                 )
                 console.error('heic conversion failed', e)
             }
@@ -496,7 +501,7 @@ async function uploadEmbed(
         const finalPath = await api.uploadAsset(
             attachmentTarget(
                 settings.attachments.folder,
-                baseName(name),
+                basename(name),
                 notePath,
             ),
             bytes,
@@ -685,7 +690,7 @@ async function runDropActions(
                         action.url,
                         attachmentTarget(
                             settings.attachments.folder,
-                            baseName(action.name),
+                            basename(action.name),
                             notePath,
                         ),
                     )

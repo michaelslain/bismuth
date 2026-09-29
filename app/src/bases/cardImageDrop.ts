@@ -21,7 +21,8 @@ import { pushToast } from '../Toast'
 import { isTauri } from '../nativeMenu'
 import { nativeDropScale } from '../nativeDropRouting'
 import type { NativeDragDetail } from '../nativeDrop'
-import { attachmentTarget, baseName } from '../attachmentPath'
+import { attachmentTarget } from '../attachmentPath'
+import { basename } from '../fileIntake'
 import { imageEmbed, isImageFile, isImagePath } from './kanbanImageDrop'
 
 /** One image's bytes, ready to upload, keyed by the basename it should take in the vault. */
@@ -69,11 +70,11 @@ export async function uploadsFromNativePaths(
         try {
             const bytes = await readFile(p)
             out.push({
-                name: baseName(p),
+                name: basename(p),
                 bytes: await new Blob([bytes as BlobPart]).arrayBuffer(),
             })
         } catch (e) {
-            pushToast(`Couldn't read ${baseName(p)}`)
+            pushToast(`Couldn't read ${basename(p)}`)
             console.error('native drop read failed', e)
         }
     }
@@ -119,7 +120,7 @@ export async function uploadImageEmbeds(
                 attachmentTarget(settings.attachments.folder, u.name, notePath),
                 u.bytes,
             )
-            embeds.push(imageEmbed(baseName(finalPath)))
+            embeds.push(imageEmbed(basename(finalPath)))
         } catch (e) {
             pushToast(`Couldn't save image: ${(e as Error).message}`)
         }

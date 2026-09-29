@@ -175,8 +175,3 @@ export function onMathReady(cb: () => void): () => void {
 export function whenMathReady(): Promise<void> {
     return new Promise(resolve => onMathReady(resolve))
 }
-
-/** True once KaTeX has loaded — lets a caller skip the async wait on the warm path. */
-export function isMathLoaded(): boolean {
-    return katex !== null
-}

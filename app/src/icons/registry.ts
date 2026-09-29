@@ -31,13 +31,13 @@
 // picks from is the one lazy part; see "The full icon library" below.
 //
 // All name-normalization (case/separator-insensitive matching, the "…Icon" alias, the legacy
-// "Li"/"Lu" vault-icon prefix) is handled by the pure, framework-free registry-core.ts.
+// "Li"/"Lu" vault-icon prefix) is handled by the pure, framework-free registryCore.ts.
 import {
     createIconRegistry,
     type IconEntry,
     type IconRegistry,
-} from './registry-core'
-import { looksLikeIconName, normalizeIconKey } from './registry-core'
+} from './registryCore'
+import { looksLikeIconName, normalizeIconKey } from './registryCore'
 import { LUCIDE_ALIASES } from './lucideAliases'
 import manifestJson from '../assets/icons/icon-manifest.json'
 
