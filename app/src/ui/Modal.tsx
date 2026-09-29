@@ -89,7 +89,11 @@ function Modal(props: ModalProps) {
             : []
 
     const handleKey = (e: KeyboardEvent) => {
+        // A widget inside (or above) us that already consumed the dismiss key — a popover, an
+        // inline input — calls preventDefault; closing on top of that would leak its Escape.
+        if (e.defaultPrevented) return
         if (isDismissKey(e)) {
+            e.preventDefault()
             e.stopPropagation()
             props.onClose()
             return

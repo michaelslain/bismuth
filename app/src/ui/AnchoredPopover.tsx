@@ -75,27 +75,31 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
         if (!props.open) return
         const target = e.target as Node | null
         if (panelEl && target && panelEl.contains(target)) return
+        // The trigger's own click toggles the popover — dismissing here too would close it on
+        // pointerdown and let that click reopen it (or double-fire the caller's cancel).
+        if (target && props.anchor?.()?.contains(target)) return
         props.onDismiss()
     }
-    // Bubble phase, not capture: a caller that already owns its own Escape handling (Select's
-    // trigger stops propagation on its keydown when open, routing Escape through its keyboard
-    // nav instead) still wins, since stopPropagation there keeps the event from ever reaching
-    // window. A caller with no such handling (DateFieldEditor — focus stays on its trigger
-    // button, never moving into the portaled panel) gets Escape-to-dismiss for free.
+    // Capture phase: runs before any bubble-phase window listener (a host Modal's) whatever the
+    // mount order, so `preventDefault()` reliably tells them the dismiss key was consumed here.
+    // Because this runs first, a trigger that also handles Escape while open (Select's) finds
+    // the popover already closed by the time its own handler runs, so it never double-fires.
     function onWindowKeyDown(e: KeyboardEvent): void {
         if (!props.open) return
-        if (isDismissKey(e)) props.onDismiss()
+        if (!isDismissKey(e)) return
+        e.preventDefault()
+        props.onDismiss()
     }
 
     window.addEventListener('resize', reposition)
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('pointerdown', onWindowPointerDown, true)
-    window.addEventListener('keydown', onWindowKeyDown)
+    window.addEventListener('keydown', onWindowKeyDown, true)
     onCleanup(() => {
         window.removeEventListener('resize', reposition)
         window.removeEventListener('scroll', reposition, true)
         window.removeEventListener('pointerdown', onWindowPointerDown, true)
-        window.removeEventListener('keydown', onWindowKeyDown)
+        window.removeEventListener('keydown', onWindowKeyDown, true)
     })
 
     return (
