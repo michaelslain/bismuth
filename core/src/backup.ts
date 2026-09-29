@@ -287,11 +287,6 @@ export function scheduleBackup(dir: string, message: () => string): void {
     })
 }
 
-/** Flush any pending coalesced backup for `dir` immediately (e.g. before shutdown / in tests). */
-export function flushBackup(dir: string): void {
-    fireBackup(dir)
-}
-
 // ── Checkpoints ──────────────────────────────────────────────────────────────
 // A checkpoint is a lightweight git ref (a "bookmark") under refs/bismuth/<name>
 // that marks how far a periodic consumer has processed the autosave history. It is

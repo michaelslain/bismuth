@@ -52,7 +52,7 @@ Any of these prints the usage banner plus an alphabetically sorted table of ever
 
 ## Global Flags & Environment
 
-Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flags are simple `--name <value>` (string) or `--name` (boolean) tokens; positionals are everything else.
+Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flags are simple `--name <value>` or `--name=value` (string; both spellings accepted) or `--name` (boolean) tokens; positionals are everything else.
 
 | Flag / env | Meaning |
 |---|---|
@@ -61,7 +61,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
 | `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (server-talking commands only: `api`, `update status`/`update apply`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, `chat list/read/search`) Base URL of a running server. Every one of these groups — `api` and `update` included — imports and calls the SAME `resolveCore()` (`cli/src/commands/app.ts`); there is no narrower helper anywhere in the CLI. Precedence: `--api` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`, matched by `--vault`/`BISMUTH_VAULT` when set, else the single running core) → `http://localhost:4321`. All of these also route through the SAME `call()` helper, which auto-attaches the owner token when it can — see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) below. |
+| `--api <url>` | (server-talking commands only: `api`, `update status`/`update apply`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, `chat list/read/search`) Base URL of a running server. Every one of these groups — `api` and `update` included — imports and calls the SAME `resolveCore()` (`cli/src/http.ts`); there is no narrower helper anywhere in the CLI. Precedence: `--api` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`, matched by `--vault`/`BISMUTH_VAULT` when set, else the single running core) → `http://localhost:4321`. All of these also route through the SAME `call()` helper, which auto-attaches the owner token when it can — see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) below. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
@@ -79,8 +79,8 @@ Every command that reaches a running server (`api`, `update status`/`update appl
 
 From `cli/src/args.ts`:
 
-- `flag(args, "name")` returns the token immediately after `--name`, or `undefined` if `--name` is absent or last.
-- `bool(args, "name")` is `true` iff `--name` appears anywhere.
+- `flag(args, "name")` returns the token immediately after `--name`, or the text after the first `=` in `--name=value` (`--q=a=b` gives `a=b`, `--name=` gives an empty string), or `undefined` if the flag is absent or a bare `--name` is last. If both spellings appear, the first occurrence in `args` wins.
+- `bool(args, "name")` is `true` iff the exact token `--name` appears anywhere. A boolean flag takes no value, so `--pretty=1` is NOT true (`positionals()` skips it).
 - `positionals(args)` returns non-flag tokens in order. **It treats the token after a `--flag` as that flag's value and skips it — unless that next token itself starts with `--`.** So a flag whose value happens to follow a positional, or a value-less boolean flag, is handled correctly, but a positional that looks like it follows a value-taking flag can be consumed. Put boolean flags (`--pretty`, `--regex`, `--off`, `--clear`) where they won't swallow a positional, or pass them last.
 - Values are NOT type-coerced by the parser; individual commands do their own coercion (see `prop set`, `settings set`, `row` commands which `JSON.parse` values).
 
@@ -717,7 +717,7 @@ bismuth export "Notes/Essay.md" --format csv --vault ~/vault     # ERRORS — cs
 
 ## Server-passthrough commands (`commands/api.ts`)
 
-These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (e.g. `/ui/*` app control, or any route backed by in-memory state). API base resolution is `resolveCore()` (`cli/src/commands/app.ts`, imported directly — the same function `app`/`update`/`gcal`/`relay`/`chat` use, not a narrower one of its own): `--api <url>` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`) → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
+These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (e.g. `/ui/*` app control, or any route backed by in-memory state). API base resolution is `resolveCore()` (`cli/src/http.ts`, imported directly — the same function `app`/`update`/`gcal`/`relay`/`chat` use, not a narrower one of its own): `--api <url>` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`) → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
 
 ### `api <GET|POST|PUT> <path> [--json '<body>'] [--api <url>]`
 Call any server route directly. `<method>` is upper-cased; `<path>` is appended to the base (a leading `/` is added if missing). With `--json`, the value is `JSON.parse`d and sent as the request body with `content-type: application/json`. Missing method/path → `usage: bismuth api <GET|POST|PUT> <path> [--json '<body>']`.

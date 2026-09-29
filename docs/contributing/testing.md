@@ -128,7 +128,7 @@ This discovers nearly every `*.test.ts` file in the repo. Not because `core` nam
 Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
 match against every file's relative path (see "Filter by filename pattern" below for the full
 mechanism), and it happens to match every file under `core/test/` (the path prefix) plus one
-`app/src/` file whose own name contains it (`app/src/icons/registry-core.test.ts`) — 159 files
+`app/src/` file whose own name contains it (`app/src/icons/registryCore.test.ts`) — 159 files
 total, confirmed by exact count. Output (counts are illustrative and grow per commit — expect a
 green `0 fail`; measured 2026-09-03):
 
@@ -672,7 +672,7 @@ Guards against a real, shipped bug class: a CSS comment that closes EARLY becaus
 
 ### `app/src/cssLayering.test.ts`
 
-Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (used correctly today by `bases/BaseView.module.css` and `bases/CardEditModal.module.css` to style `.bismuth-task-box`/`.cm-editor` from inside a module). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in global.css's `App.css` section (9 today — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in that section instead of a component's own module fails the gate immediately rather than growing the pile back.
+Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (e.g. a module styling `.cm-editor` from inside itself). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in global.css's `App.css` section (9 today — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in that section instead of a component's own module fails the gate immediately rather than growing the pile back.
 
 ### `app/src/ui/uiLint.test.ts`
 

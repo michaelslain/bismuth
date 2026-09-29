@@ -359,16 +359,20 @@ Picking one closes the bracket, so the inserted text is a complete
 
 ### Rendering: chips, not raw brackets, but the SAME text
 
-The editor (`app/src/editor/livePreview.ts`) and the cards-view task body
-(`app/src/bases/taskCardMarkup.ts`) both draw a recognized bracket field as a
-visually distinct **chip** (`.cm-task-field` in the editor,
-`.bismuth-task-field` in card bodies) — but this is a **mark on the literal
-text**, not a widget that replaces or hides it. There is nothing to reveal on
-cursor-enter and nothing invented: what you see is exactly what's on disk.
-Both renderers filter `FIELD_SCAN`'s candidates through the same
-`isFieldText`/`classify` guard the parser uses, so a bracket group that is
-NOT a real field (`[chapter 3]`, a malformed date) never gets chip styling —
-it stays plain text, exactly as the parser treats it.
+The editor (`app/src/editor/livePreview.ts`) marks the literal bracket text of a
+recognized field as a chip (`.cm-task-field`) — a **mark on the literal text**,
+not a widget that replaces or hides it. There is nothing to reveal on
+cursor-enter and nothing invented: what you see is exactly what's on disk. The
+editor filters `FIELD_SCAN`'s candidates through the same `isFieldText`/`classify`
+guard the parser uses, so a bracket group that is NOT a real field
+(`[chapter 3]`, a malformed date) stays plain text, exactly as the parser
+treats it.
+
+Task rows (`app/src/bases/TaskFieldChips.tsx`) work differently: they render the
+parser's already-parsed fields (`priority`, `due`, …) as separate chips in the
+module-local `.field`, reformatting dates with `formatDateField`. A non-field
+like `[chapter 3]` never becomes a chip there because the parser never produced
+one.
 
 ## Tags
 
@@ -992,4 +996,4 @@ The pre-migration spelling of the same task —
 the vault is opened, or by running `bismuth task migrate` by hand; the
 parser itself no longer reads it.
 
-Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskParse.ts`, `core/src/taskEdit.ts`, `core/src/taskCreate.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `app/src/bases/taskEdit.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/migrationPoll.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskEdit.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`
+Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskParse.ts`, `core/src/taskEdit.ts`, `core/src/taskCreate.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskWrite.ts`, `app/src/bases/taskEdit.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/migrationPoll.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskEdit.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`

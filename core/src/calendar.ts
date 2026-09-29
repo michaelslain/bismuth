@@ -17,9 +17,10 @@ import { parseRRule, firstOccurrence } from './gcal/recurrence'
 // The recurrence rule model + its date math live in ./bases/recurrence (the canonical copy, which
 // bases/types.ts already re-exports and app/src/export/calendarHtml.ts already imports directly).
 // This module used to carry a byte-identical second copy; it now re-exports that one so the two
-// can't drift. The re-export keeps calendar.ts's own public surface unchanged for cli/src/commands.
+// can't drift. `addDays` + `expandRecurrence` stay on calendar.ts's public surface for cli/src/commands;
+// date formatting is `todayISO` from ./dates (the old `toDateStr` alias was folded into it).
 import { expandRecurrence } from './bases/recurrence'
-export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+export { addDays, expandRecurrence } from './bases/recurrence'
 export type { Recurrence, RecurrenceType } from './bases/recurrence'
 import type { Recurrence } from './bases/recurrence'
 

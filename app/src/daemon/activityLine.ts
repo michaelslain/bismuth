@@ -2,7 +2,7 @@
 // Pure formatter turning one raw ActivityEvent (core/src/daemonActivity.ts — cron/process/daemon
 // lifecycle events from the daemon's activity log) into the four strings + a tone DaemonLog.tsx
 // renders per row. No Solid imports — see activityLine.test.ts. Vocabulary this maps (docs/api/
-// http-reference.md `GET /daemon/logs`): cron started/finished/skipped/stopped, process
+// http-reference.md `GET /daemon/logs`): cron started/finished/skipped, process
 // started/exited/restarting/reaped, daemon brain-started.
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { isFailedResult } from './failedResult'

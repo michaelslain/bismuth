@@ -18,7 +18,7 @@
 //    BUNDLED platform binary via `require.resolve('@openai/codex/package.json')` — an
 //    optionalDependency of `@openai/codex` that measured ~310MB on disk for one platform. Every
 //    OTHER backend in this codebase drives the user's own installed CLI through the same
-//    augmented-PATH lookup (`whichOpencode()` in ../opencode.ts, `whichBinary()` in
+//    augmented-PATH lookup (`whichBinary()` in
 //    ../../claudeWhich.ts) — a vendored second copy of a coding agent is the wrong shape for this
 //    app, adds ~310MB to every contributor's `bun install`, and can silently drift from the actual
 //    version the user has logged into and configured.
@@ -133,12 +133,6 @@ export function sessionCount(): number {
     return sessions.size
 }
 
-/** The user's own `codex` binary, resolved against the same augmented PATH every other backend
- *  uses (homebrew/~/.local/bin/nvm/POSIX dirs — a Finder-launched bundle sees a minimal PATH). */
-export function whichCodex(): string | null {
-    return whichBinary('codex')
-}
-
 /** Codex has none of the dynamic manifest fields Claude/opencode report (no live tool registry, no
  *  slash-command registry — see catalog.ts's rationale for why those capabilities are false), so
  *  this is a single static frame emitted once at session open rather than something re-derived per
@@ -218,7 +212,7 @@ export const CODEX_AGENTS_MD_CONTENT = [
  * Best-effort, opt-in refresh of Codex's memory channel (AGENTS.md) + agents-graph hooks. Reads
  * `settings.codex.*` fresh on every session open (so a toggle takes effect on the NEXT new chat,
  * not a live one) and never throws or blocks a turn on failure — mirrors how chat.ts's
- * buildSystemPrompt / bismuthInstall.ts's registerMcp degrade.
+ * buildDaemonPersona / bismuthInstall.ts's registerMcp degrade.
  */
 async function applyCodexOptIns(cwd: string): Promise<void> {
     try {
@@ -238,7 +232,7 @@ function createSession(
     sink: ChatSink,
     resumeId?: string,
 ): CodexSession | null {
-    const bin = whichCodex()
+    const bin = whichBinary('codex')
     if (!bin) {
         sink({
             type: 'error',

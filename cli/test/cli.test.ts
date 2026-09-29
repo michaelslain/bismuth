@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
 import { parseBaseFile } from '../../core/src/bases/parse'
-import { resolveCore } from '../src/commands/app'
+import { resolveCore } from '../src/http'
 import { manifestKey } from '../../core/src/gcal/manifest'
 
 /**

@@ -262,7 +262,7 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         const be = createLocalBackend({ vault: '/v' })
         const seen: string[][] = []
         be.subscribe(e => seen.push(e.paths))
-        await be.dispatch('POST', '/set-properties', {
+        const res = await be.dispatch('POST', '/set-properties', {
             writes: [
                 { path: 'a.md', key: 'status', value: 'done' },
                 { path: 'a.md', key: 'order', value: 2 },
@@ -274,6 +274,7 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['a.md']).toContain('order: 2')
         expect(files['b.md']).toContain('order: 1')
         expect(files['gone.md']).toBeUndefined()
+        expect(res).toEqual({ skipped: ['gone.md'] })
         expect(seen).toEqual([['a.md', 'b.md']])
     })
 
@@ -346,5 +347,25 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
                 enabled: true,
             }),
         ).rejects.toThrow(/not supported/i)
+    })
+    test('POST /tasks/toggle with status sets that exact char and keeps CRLF', async () => {
+        const { fa, files } = memVault({ 't.md': '- [ ] a\r\n- [ ] b\r\n' })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/tasks/toggle', {
+            path: 't.md',
+            line: 0,
+            status: '/',
+        })
+        expect(files['t.md']).toBe('- [/] a\r\n- [ ] b\r\n')
+    })
+
+    test('POST /tasks/toggle on a non-task line is a 400', async () => {
+        const { fa } = memVault({ 't.md': 'just prose\n- [ ] a' })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/tasks/toggle', { path: 't.md', line: 0 }),
+        ).rejects.toMatchObject({ statusCode: 400 })
     })
 })

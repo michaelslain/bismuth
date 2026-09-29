@@ -27,7 +27,7 @@ import { test, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { ICON_NAMES } from './iconNames'
-import { createIconRegistry } from './registry-core'
+import { createIconRegistry } from './registryCore'
 
 const SRC = join(import.meta.dir, '..')
 

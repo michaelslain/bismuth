@@ -393,12 +393,7 @@ export const commands: CommandMap = {
                 viewKeys.lng = lng ?? ''
                 if (!lat) missing.push('lat')
                 if (!lng) missing.push('lng')
-            } else if (
-                view === 'bar' ||
-                view === 'line' ||
-                view === 'stat' ||
-                view === 'heatmap'
-            ) {
+            } else if (CHART_KINDS.has(view)) {
                 const x = flag(args, 'x')
                 viewKeys.x = x ?? ''
                 if (!x) missing.push('x')
@@ -540,10 +535,8 @@ export const commands: CommandMap = {
             // resolveBaseRows are deliberately tolerant here (an unresolvable ref just resolves
             // to zero rows, no throw — see source.ts) — validate exists to surface exactly the
             // failure that silent path hides.
-            const sourcesToCheck: { label: string; spec: SourceSpec }[] = []
-            if (config.source)
-                sourcesToCheck.push({ label: 'source', spec: config.source })
-            for (const { label, spec } of sourcesToCheck) {
+            const spec = config.source
+            if (spec) {
                 const ref = sourceRefTarget(spec)
                 if (ref) {
                     const refPath = refToPath(ref)
@@ -551,12 +544,12 @@ export const commands: CommandMap = {
                         await readNote(vault, refPath)
                     } catch {
                         errors.push(
-                            `${label}: "${ref}" does not resolve to a file in the vault (looked for ${refPath})`,
+                            `source: "${ref}" does not resolve to a file in the vault (looked for ${refPath})`,
                         )
                     }
                 }
                 if (spec.kind !== 'base' && spec.where)
-                    collectExprErrors(spec.where, `${label}.where`, errors)
+                    collectExprErrors(spec.where, 'source.where', errors)
             }
 
             // 4. A `taskFile` the query's own scope cannot see. `taskFile` names the one note
@@ -572,7 +565,6 @@ export const commands: CommandMap = {
             // A `where:` filter can strand a new task the same way and is NOT checked here —
             // a filter cannot be inverted in general. That case is caught at creation time,
             // where the concrete new row exists and can just be evaluated.
-            const spec = config.source
             if (
                 spec &&
                 spec.kind === 'tasks' &&

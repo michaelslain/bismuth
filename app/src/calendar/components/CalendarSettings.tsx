@@ -6,7 +6,7 @@ import {
     Show,
 } from 'solid-js'
 import {
-    FIELDS,
+    writeColumnMap,
     seedColumnMap,
     defaultColumnMap,
     columnVocabulary,
@@ -59,9 +59,7 @@ export function CalendarSettings(props: {
             { get: busy, set: setBusy },
             'Could not save calendar settings',
             async () => {
-                const m = map()
-                for (const f of FIELDS)
-                    await api.setProperty(props.basePath, f.key, m[f.key] ?? '')
+                await writeColumnMap(api.setProperties, props.basePath, map())
                 props.onChange?.()
             },
         )

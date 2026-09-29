@@ -6,18 +6,13 @@
 import {
     writeNote,
     buildAutoNoteBody,
-    recallMemory,
+    todayISO,
     type TranscriptEntry,
 } from '@bismuth/memory'
 
-/**
- * Recall memory relevant to a prompt, formatted for injection as the UserPromptSubmit
- * hook's `additionalContext`. Returns null when nothing matches. The recall logic (search +
- * `# Memories` formatting + the hard time budget so a bloated graph degrades to "no recall"
- * rather than stalling the prompt) lives in `@bismuth/memory`'s `recallMemory`, shared with
- * core's visual-chat injector so both auto-injectors stay in lockstep.
- */
-export const recallContext = recallMemory
+// Recall (the UserPromptSubmit hook's `additionalContext`) is `@bismuth/memory`'s
+// `recallMemory`, called directly by bin/recall-hook.ts — shared with core's visual-chat
+// injector so both auto-injectors stay in lockstep.
 
 // ── Transcript collection (SessionEnd) ───────────────────────────────────────
 // All transcript→note logic (turn pairing, per-message caps, turn-aware truncation, the
@@ -59,7 +54,7 @@ export async function collectTranscript(
     const pad = (n: number) => String(n).padStart(2, '0')
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
     const sid = sessionId ? sessionId.slice(0, 8) : 'unknown'
-    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const date = todayISO(now)
     try {
         await writeNote(
             `auto-${ts}-${sid}`,

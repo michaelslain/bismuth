@@ -12,7 +12,8 @@ import { EventChip } from '../EventChip'
 import type { PlacedTask } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
 import type { TaskRowRef } from '../../taskDrag'
-import { toDateStr, monthGrid, weekdayNames } from '../../dates'
+import { monthGrid, weekdayNames } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import Text from '../../../ui/Text'
 import MonthCell from './MonthCell'
 import TaskDayCell from './TaskDayCell'
@@ -38,7 +39,7 @@ export type MonthViewProps = {
 
 export function MonthView(props: MonthViewProps) {
     const mondayFirst = () => settings.value.weekStartsOnMonday
-    const today = toDateStr(new Date())
+    const today = todayISO(new Date())
     const cells = () =>
         monthGrid(
             currentDate.value.getFullYear(),
@@ -70,7 +71,7 @@ export function MonthView(props: MonthViewProps) {
                 <div class={styles['month-grid']}>
                     <Index each={cells()}>
                         {cell => {
-                            const dateStr = () => toDateStr(cell().date)
+                            const dateStr = () => todayISO(cell().date)
                             return (
                                 <MonthCell
                                     date={dateStr()}

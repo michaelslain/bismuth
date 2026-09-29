@@ -2,7 +2,7 @@
 //
 // Lucide icon name -> Phosphor slug, for vaults imported from Obsidian. Its Iconize plugin writes
 // `icon: LiHouse` / `icon: LiMountain` into note frontmatter — Lucide names behind an `Li` prefix.
-// registry-core already strips the prefix and matches case/separator-insensitively, so every Lucide
+// registryCore already strips the prefix and matches case/separator-insensitively, so every Lucide
 // name that Phosphor spells the same way (`LiHouse` -> house, `LiLeaf` -> leaf, `LiSignPost` ->
 // signpost) resolves against the full icon library with no entry here.
 //

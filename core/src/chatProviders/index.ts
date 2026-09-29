@@ -17,18 +17,16 @@
 import type { ChatFrame, ChatImage, ChatSink } from '../chat'
 import { CHAT_BACKENDS, CHAT_BACKEND_LIST, type ChatBackend } from './backends'
 import {
-    BACKEND_IDS,
     DEFAULT_BACKEND,
     resolveBackendId,
     type BackendId,
 } from '../agentBackends/catalog'
 import { resolveVisibilityGate } from '../agentBackends/visibilityGate'
 
-/** Kept as an alias so existing imports (server.ts, tests, docs) keep working — the ids now come
- *  from the backend catalog, which is also what the `chat.provider` settings enum derives from. */
-export type ChatProviderId = BackendId
-export const CHAT_PROVIDERS: readonly ChatProviderId[] = BACKEND_IDS
-export const DEFAULT_CHAT_PROVIDER: ChatProviderId = DEFAULT_BACKEND
+/** The ids come from the backend catalog, which is also what the `chat.provider` settings enum
+ *  derives from. */
+type ChatProviderId = BackendId
+const DEFAULT_CHAT_PROVIDER: ChatProviderId = DEFAULT_BACKEND
 
 /**
  * Pure: resolve which provider a chat should run on. `requested` is what the client sent on the

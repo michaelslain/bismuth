@@ -183,6 +183,7 @@ import { openContextMenu, isTauri } from './nativeMenu'
 import './global.css'
 import ChatColorDot from './ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
+import { isMacPlatform } from './platform'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -217,9 +218,7 @@ const GHOST_MAX_W = 200
 // build_main_window) — no typed window controls there. Windows/Linux run fully undecorated
 // (decorations(false)) and get typed `[-] [+] [x]` controls wired to the Tauri window API. A
 // static check (not a signal): the platform never changes mid-session.
-const IS_MAC_PLATFORM =
-    typeof navigator !== 'undefined' &&
-    /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
+const IS_MAC_PLATFORM = isMacPlatform()
 
 async function winMinimize(): Promise<void> {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')

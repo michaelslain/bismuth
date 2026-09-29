@@ -4,7 +4,6 @@ import {
     readFile,
     writeFile,
     unlink,
-    mkdir,
 } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -19,8 +18,9 @@ import {
 
 const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
-import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
+import { parseFrontmatter } from '../lib/frontmatter'
 import { enqueueWrite } from '../lib/writeQueue'
+import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import { heartbeatDevice, isOwner } from '../lib/owner'
 import { loadEnabledVaults } from '../lib/registry.ts'
@@ -1434,48 +1434,6 @@ async function loadCronJob(
     }
 }
 
-export async function runCronJob(
-    name: string,
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const nameCheck = validateCronName(name, ctx)
-    if (!nameCheck.ok) return nameCheck
-    if (runningJobs.has(jobKey(ctx, name)))
-        return {
-            ok: false,
-            error: `Cron job "${name}" is already running. Call cron_stop first to kill it.`,
-        }
-
-    const job = await loadCronJob(name, ctx)
-    if (!job) return { ok: false, error: `Cron job "${name}" not found` }
-
-    const lastFired = await loadLastFired(ctx)
-    await fireJob(ctx, job, lastFired) // await ensures .running.json is written before returning
-    return { ok: true }
-}
-
-/**
- * Write a trigger file so the daemon picks up the run request on its next tick.
- * Used by the MCP server (separate process) instead of runCronJob directly.
- */
-export async function requestCronRun(
-    name: string,
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const nameCheck = validateCronName(name, ctx)
-    if (!nameCheck.ok) return nameCheck
-    const job = await loadCronJob(name, ctx)
-    if (!job) return { ok: false, error: `Cron job "${name}" not found` }
-
-    await mkdir(ctx.triggerDir, { recursive: true })
-    await writeFile(
-        join(ctx.triggerDir, name),
-        new Date().toISOString(),
-        'utf-8',
-    )
-    return { ok: true }
-}
-
 /**
  * Scan every enabled vault's trigger dir for files written by the MCP server and
  * fire those jobs. Driven by the single trigger interval.
@@ -1494,32 +1452,12 @@ async function processAllTriggers(): Promise<void> {
  * Check for trigger files written by the MCP server for one vault and fire those jobs.
  */
 async function processTriggers(ctx: VaultContext): Promise<void> {
-    let files: string[]
-    try {
-        files = await readdir(ctx.triggerDir)
-    } catch {
-        return
-    }
-
-    const triggers = files.filter(f => !f.startsWith('.'))
+    const triggers = await listTriggers(ctx.triggerDir, isOwner)
     if (triggers.length === 0) return
-
-    // Not the owner device: idle. Consume the trigger files so they don't pile
-    // up, but don't fire. Unclaimed => isOwner true => normal behavior.
-    if (!(await isOwner())) {
-        for (const name of triggers) {
-            try {
-                await unlink(join(ctx.triggerDir, name))
-            } catch {}
-        }
-        return
-    }
 
     const lastFired = await loadLastFired(ctx)
     for (const name of triggers) {
-        try {
-            await unlink(join(ctx.triggerDir, name))
-        } catch {}
+        await consumeTrigger(ctx.triggerDir, name)
 
         if (runningJobs.has(jobKey(ctx, name))) {
             console.log(
@@ -1537,235 +1475,4 @@ async function processTriggers(ctx: VaultContext): Promise<void> {
         console.log(`[cron] Trigger firing: ${name}`)
         await fireJob(ctx, job, lastFired)
     }
-}
-
-export async function stopCronJob(
-    name: string,
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const ac = jobAbortControllers.get(jobKey(ctx, name))
-    if (!ac) return { ok: false, error: `Cron job "${name}" is not running` }
-
-    ac.abort()
-
-    // Record as killed. Same cause as a wall-clock kill: from the entry's point of view a session we
-    // aborted is a session that started fine and didn't get to finish, so it earns the un-biased
-    // (fast) retry rather than the environment backoff.
-    await updateLastFired(ctx, name, prev =>
-        nextLastFired(prev, { result: 'killed', cause: 'timeout' }),
-    )
-    await logActivity(ctx, {
-        kind: 'cron',
-        name,
-        event: 'stopped',
-        outcome: 'killed',
-        cause: 'timeout',
-        detail: 'stopped by request',
-    })
-
-    // Clean up running state (fireJob's finally block will also run, but we do it eagerly)
-    await markDone(ctx, name)
-
-    console.log(`[cron] Stopped running job "${name}"`)
-    return { ok: true }
-}
-
-function buildCronFile(opts: {
-    name: string
-    on?: 'file-change'
-    schedule?: string
-    watch?: string
-    model?: string
-    effort?: string
-    catchup?: boolean
-    notify?: boolean
-    enabled?: boolean
-    timeout?: number
-    waitFor?: string
-    incremental?: boolean
-    checkpointDir?: CheckpointDirKind
-    prompt: string
-}): string {
-    const lines = ['---']
-    lines.push(`name: ${frontmatterValue(opts.name)}`)
-    if (opts.on === 'file-change') {
-        lines.push(`on: file-change`)
-        if (opts.watch) lines.push(`watch: ${frontmatterValue(opts.watch)}`)
-    } else if (opts.schedule) {
-        lines.push(`schedule: ${frontmatterValue(opts.schedule)}`)
-    }
-    if (opts.model) lines.push(`model: ${frontmatterValue(opts.model)}`)
-    if (opts.effort) lines.push(`effort: ${frontmatterValue(opts.effort)}`)
-    if (opts.timeout !== undefined && opts.timeout !== DEFAULT_CRON_TIMEOUT)
-        lines.push(`timeout: ${opts.timeout}`)
-    if (opts.waitFor) lines.push(`waitFor: ${frontmatterValue(opts.waitFor)}`)
-    // Default is now true — only emit when explicitly disabled
-    if (opts.catchup === false) lines.push(`catchup: false`)
-    if (opts.notify) lines.push(`notify: true`)
-    if (opts.enabled === false) lines.push(`enabled: false`)
-    if (opts.incremental) lines.push(`incremental: true`)
-    if (opts.checkpointDir === 'memory') lines.push(`checkpointDir: memory`)
-    lines.push('---')
-    lines.push('')
-    lines.push(opts.prompt)
-    lines.push('')
-    return lines.join('\n')
-}
-
-export async function createCronJob(
-    opts: {
-        name: string
-        on?: 'file-change'
-        schedule?: string
-        watch?: string
-        prompt: string
-        model?: string
-        effort?: string
-        catchup?: boolean
-        notify?: boolean
-        enabled?: boolean
-        incremental?: boolean
-        checkpointDir?: CheckpointDirKind
-    },
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const nameCheck = validateCronName(opts.name, ctx)
-    if (!nameCheck.ok) return nameCheck
-
-    if (opts.on === 'file-change') {
-        if (!opts.watch)
-            return {
-                ok: false,
-                error: `file-change crons require a "watch" path/glob`,
-            }
-    } else {
-        if (!opts.schedule)
-            return { ok: false, error: 'Cron schedule is required' }
-        if (!parseCronExpression(opts.schedule))
-            return {
-                ok: false,
-                error: `Invalid cron schedule: "${opts.schedule}"`,
-            }
-    }
-
-    const filePath = join(ctx.cronsDir, `${opts.name}.md`)
-    if (await Bun.file(filePath).exists())
-        return { ok: false, error: `Cron job "${opts.name}" already exists` }
-
-    await Bun.write(filePath, buildCronFile(opts))
-    return { ok: true }
-}
-
-export async function deleteCronJob(
-    name: string,
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const nameCheck = validateCronName(name, ctx)
-    if (!nameCheck.ok) return nameCheck
-    const filePath = join(ctx.cronsDir, `${name}.md`)
-    try {
-        await unlink(filePath)
-        return { ok: true }
-    } catch {
-        return { ok: false, error: `Cron job "${name}" not found` }
-    }
-}
-
-export async function updateCronJob(
-    name: string,
-    updates: {
-        enabled?: boolean
-        schedule?: string
-        on?: 'schedule' | 'file-change'
-        watch?: string
-        model?: string
-        effort?: string
-        catchup?: boolean
-        notify?: boolean
-        waitFor?: string
-        incremental?: boolean
-        checkpointDir?: CheckpointDirKind
-        prompt?: string
-    },
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    const nameCheck = validateCronName(name, ctx)
-    if (!nameCheck.ok) return nameCheck
-    const filePath = join(ctx.cronsDir, `${name}.md`)
-    let content: string
-    try {
-        content = await readFile(filePath, 'utf-8')
-    } catch {
-        return { ok: false, error: `Cron job "${name}" not found` }
-    }
-
-    const { frontmatter, body } = parseFrontmatter(content)
-
-    if (updates.on !== undefined) frontmatter.on = updates.on
-    if (updates.watch !== undefined) frontmatter.watch = updates.watch
-    if (updates.schedule !== undefined) {
-        if (!parseCronExpression(updates.schedule))
-            return {
-                ok: false,
-                error: `Invalid cron schedule: "${updates.schedule}"`,
-            }
-        frontmatter.schedule = updates.schedule
-    }
-    if (updates.enabled !== undefined)
-        frontmatter.enabled = String(updates.enabled)
-    if (updates.model !== undefined) frontmatter.model = updates.model
-    if (updates.effort !== undefined) frontmatter.effort = updates.effort
-    if (updates.catchup !== undefined)
-        frontmatter.catchup = String(updates.catchup)
-    if (updates.notify !== undefined)
-        frontmatter.notify = String(updates.notify)
-    if (updates.waitFor !== undefined) frontmatter.waitFor = updates.waitFor
-    if (updates.incremental !== undefined)
-        frontmatter.incremental = String(updates.incremental)
-    if (updates.checkpointDir !== undefined)
-        frontmatter.checkpointDir = updates.checkpointDir
-
-    const newPrompt = updates.prompt ?? body
-    const isFileChange = frontmatter.on?.trim() === 'file-change'
-    if (isFileChange && !frontmatter.watch)
-        return {
-            ok: false,
-            error: `file-change crons require a "watch" path/glob`,
-        }
-    if (!isFileChange && !frontmatter.schedule)
-        return { ok: false, error: 'Cron schedule is required' }
-
-    await Bun.write(
-        filePath,
-        buildCronFile({
-            // The file's EXISTING frontmatter `name` (a display name may differ from the
-            // lookup key/slug) — never the `name` param above, which is just how the caller
-            // found this file. Passing the slug here would silently rename a display-named
-            // cron back to its filename on every unrelated update (e.g. toggling `enabled`).
-            name: frontmatter.name || name,
-            on: isFileChange ? 'file-change' : undefined,
-            schedule: frontmatter.schedule,
-            watch: frontmatter.watch,
-            model: frontmatter.model,
-            effort: frontmatter.effort,
-            timeout:
-                frontmatter.timeout !== undefined
-                    ? parseTimeoutSecs(frontmatter.timeout)
-                    : undefined,
-            catchup: frontmatter.catchup !== 'false',
-            notify: frontmatter.notify === 'true',
-            enabled: frontmatter.enabled !== 'false',
-            waitFor: frontmatter.waitFor,
-            // `incremental`/`checkpointDir` round-trip through frontmatter (not just `updates`) so an
-            // UNRELATED update (e.g. toggling `enabled`) never silently strips a seeded cron's
-            // incremental scoping — see cron.test.ts.
-            incremental: frontmatter.incremental === 'true',
-            checkpointDir:
-                frontmatter.checkpointDir?.trim() === 'memory'
-                    ? 'memory'
-                    : undefined,
-            prompt: newPrompt,
-        }),
-    )
-    return { ok: true }
 }

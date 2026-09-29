@@ -4,6 +4,7 @@
 // it's unit-testable headlessly, matching the AsciiMeter/asciiMeterMath split.
 
 import { formatValue } from '../../../core/src/bases/chartText'
+import { dayDiff, monthDiff } from '../../../core/src/bases/trend'
 import type { Bin } from '../../../core/src/dates'
 
 export interface LinePoint {
@@ -257,21 +258,8 @@ export function buildLinePlot(
 
 // ---- LineView's date maths + hit-testing, kept pure so they are testable headlessly ----
 
-function dayDiff(a: string, b: string): number {
-    const da = new Date(a.slice(0, 10) + 'T00:00:00')
-    const db = new Date(b.slice(0, 10) + 'T00:00:00')
-    return Math.round((db.getTime() - da.getTime()) / 86400000)
-}
-
-function monthDiff(a: string, b: string): number {
-    const da = new Date(a.slice(0, 10) + 'T00:00:00')
-    const db = new Date(b.slice(0, 10) + 'T00:00:00')
-    return (db.getFullYear() - da.getFullYear()) * 12 + (db.getMonth() - da.getMonth())
-}
-
 /** One time-value per bucket key, in the units core's `fitTrend` uses (days, weeks or months
- *  from the first key) — the `xs` option of `buildLinePlot`. Duplicated from core/src/bases/
- *  trend.ts's private helpers, which are not exported. */
+ *  from the first key) — the `xs` option of `buildLinePlot`. */
 export function timeOffsets(keys: string[], bin: Bin): number[] {
     if (keys.length === 0) return []
     const origin = keys[0]

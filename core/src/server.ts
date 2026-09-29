@@ -47,10 +47,8 @@ import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import type { GraphData, GraphNode, TreeEntry } from './graph'
 import {
     collectVaultTasks,
-    toggleTaskLine,
-    setTaskLineStatus,
+    applyTaskToggle,
     setTaskLineDate,
-    reorderTaskBlocks,
     archiveResolvedTasks,
 } from './tasks'
 import { appendTaskLine, resolveTaskFilePath } from './taskCreate'
@@ -2545,15 +2543,19 @@ export function createServer(cfg: CoreConfig) {
                     list.push({ key: w.key, value: w.value })
                     byPath.set(w.path, list)
                 }
+                const skipped: string[] = []
                 for (const [path, ops] of byPath) {
                     const raw = await readNoteOrNull(cfg.vault, path)
-                    if (raw === null) continue // skip a note that vanished; don't fail the whole batch
+                    if (raw === null) {
+                        skipped.push(path) // a note that vanished: reported, not fatal to the batch
+                        continue
+                    }
                     let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
                     await writeNote(cfg.vault, path, next)
                 }
-                return ok()
+                return ok({ skipped })
             },
             b =>
                 Array.isArray(b.writes)
@@ -2802,26 +2804,13 @@ export function createServer(cfg: CoreConfig) {
                     status?: string
                 }
                 const content = await readNote(cfg.vault, path)
-                const eol = content.includes('\r\n') ? '\r\n' : '\n'
-                const lines = content.split(/\r?\n/)
-                if (line < 0 || line >= lines.length) {
-                    throw new AppError('EINVAL', 'line out of range', 400)
-                }
-                // toggleTaskLine / setTaskLineStatus may return TWO lines (recurrence: the next
-                // occurrence is inserted above the completed one, separated by "\n"). Splicing the
-                // result back as a single array slot keeps that ordering after join("\n").
                 // An explicit `status` (the right-click status menu) sets that exact box char;
-                // otherwise it's the plain binary toggle (checkbox click).
-                lines[line] =
-                    status != null
-                        ? setTaskLineStatus(lines[line], status, todayISO())
-                        : toggleTaskLine(lines[line], todayISO())
-                // Resolved (done/cancelled) tasks sink to the bottom of their list so a checked-off
-                // todo drops below the still-open ones, matching the card view's grouping.
+                // otherwise it's the plain binary toggle (checkbox click). Resolved tasks sink
+                // to the bottom of their list, matching the card view's grouping.
                 await writeNote(
                     cfg.vault,
                     path,
-                    reorderTaskBlocks(lines.join(eol)),
+                    applyTaskToggle(content, line, status, todayISO()),
                 )
                 return ok()
             },

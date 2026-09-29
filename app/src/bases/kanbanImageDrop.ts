@@ -10,7 +10,7 @@
 // neither the card face nor the edit modal renders (both show the title + declared PROPERTIES) — so
 // the picture was written to disk and shown nowhere ("the image is invisibly attached"). The drop
 // now targets the card's markdown property, which BOTH surfaces already render.
-import { baseName } from '../attachmentPath'
+import { basename } from '../fileIntake'
 
 // Image extensions we accept for a card attachment, keyed off the dropped file's NAME (an OS drag
 // exposes only a path/basename, and some drag sources hand a File an empty `type`). Matches the
@@ -29,7 +29,7 @@ const IMAGE_EXT = new Set([
 
 /** Is this filename/path an image we accept for a card attachment (by extension)? Case-insensitive. */
 export function isImagePath(path: string): boolean {
-    const base = baseName(path)
+    const base = basename(path)
     const dot = base.lastIndexOf('.')
     return dot !== -1 && IMAGE_EXT.has(base.slice(dot + 1).toLowerCase())
 }

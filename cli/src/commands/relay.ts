@@ -16,12 +16,11 @@
 // `ok(snapshot())` shape every other read route uses. See docs/cli/reference.md.
 import type { CommandMap } from '../types'
 import { out } from '../args'
-import { call } from '../http'
-import { resolveCore } from './app'
+import { call, needsServer, resolveCore } from '../http'
 
-/** Wording shown when no running app/server is reachable at `base`. */
-const unreachable = (base: string) =>
-    `could not reach a running Bismuth server at ${base} — relay list needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`
+const unreachable = needsServer(
+    'relay list needs a running server',
+)
 
 export const commands: CommandMap = {
     'relay list': {

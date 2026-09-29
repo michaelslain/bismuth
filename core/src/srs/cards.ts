@@ -1,4 +1,5 @@
 import { getFileAccess } from '../fileAccess'
+import { readAllNotes } from '../readAllNotes'
 import { parseFrontmatter } from '../frontmatter'
 import { extractTags } from '../tags'
 import { createError } from '../error'
@@ -84,14 +85,12 @@ function toCards(
 }
 
 export async function collectCards(vault: string): Promise<Card[]> {
-    const { listMarkdown, readNote } = await getFileAccess()
+    const { listMarkdown } = await getFileAccess()
     const rels = await listMarkdown(vault)
-    const contents = await Promise.all(
-        rels.map(async rel => ({ rel, text: await readNote(vault, rel) })),
-    )
+    const contents = await readAllNotes(vault, rels)
 
     const out: Card[] = []
-    for (const { rel, text } of contents) {
+    for (const { rel, content: text } of contents) {
         const { data, body } = parseFrontmatter(text)
         const tags = extractTags(data, body)
         const deck = noteDeck(tags)

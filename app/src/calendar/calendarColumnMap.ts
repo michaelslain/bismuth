@@ -92,3 +92,23 @@ export function columnOptions(
         ...columns.map(c => ({ value: c, label: c })),
     ]
 }
+
+/** Persist the column map onto the base's frontmatter in ONE batch. Throws when the base was
+ *  deleted out from under the modal (the batch reports it as skipped) so the caller toasts
+ *  instead of closing as if the save landed. */
+export async function writeColumnMap(
+    setProperties: (
+        writes: Array<{ path: string; key: string; value: unknown }>,
+    ) => Promise<{ skipped: string[] }>,
+    basePath: string,
+    map: Record<string, string>,
+): Promise<void> {
+    const { skipped } = await setProperties(
+        FIELDS.map(f => ({
+            path: basePath,
+            key: f.key,
+            value: map[f.key] ?? '',
+        })),
+    )
+    if (skipped.includes(basePath)) throw new Error('base no longer exists')
+}

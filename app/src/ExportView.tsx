@@ -25,7 +25,7 @@ import { pageSections } from './export/pageBreaks'
 import { drawingToPng } from './export/drawingRaster'
 import { deliverFile, writeToFolder, type Delivery } from './export/download'
 import { readCache, writeCache } from './viewCache'
-import { baseName } from './attachmentPath'
+import { basename } from './fileIntake'
 import { htmlToPdfBytes } from './export/pdfPrint'
 import PdfPages from './preview/PdfPages'
 import type {
@@ -191,7 +191,7 @@ export function ExportView(props: {
             const text = await api.read(p)
             if (parseFrontmatter(text).data?.type !== 'base') return null
             const { config } = parseBaseFile(text, {
-                name: baseName(p),
+                name: basename(p),
                 path: p,
             })
             return { viewType: config.view.type }

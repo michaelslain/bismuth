@@ -64,7 +64,7 @@ import {
     rebindSessionSink,
     scheduleSessionClose,
 } from '../sessionSink'
-import { claudeLookupPath, claudeSpawnEnv } from '../../claudeWhich'
+import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import {
     ensureOpencodeServer,
     registerOpencodeServerListener,
@@ -112,12 +112,6 @@ import {
     type OpencodeCommandEntry,
     type OpencodeModelEntry,
 } from './opencodeTranslate'
-
-/** Resolve the user's `opencode` binary against the SAME augmented PATH claude resolution uses
- *  (homebrew / ~/.local/bin / nvm / POSIX dirs — a Finder-launched bundle sees a minimal PATH). */
-export function whichOpencode(): string | null {
-    return Bun.which('opencode', { PATH: claudeLookupPath() })
-}
 
 interface OpencodeSession {
     id: string
@@ -395,7 +389,7 @@ async function getOrCreateSession(
     resume: string | undefined,
     memoryDir: string | undefined,
 ): Promise<OpencodeSession | null> {
-    const bin = whichOpencode()
+    const bin = whichBinary('opencode')
     if (!bin) {
         sink({
             type: 'error',
@@ -1006,7 +1000,7 @@ export async function sessionHistoryFrames(
     sessionId: string,
     cwd: string,
 ): Promise<ChatFrame[]> {
-    const bin = whichOpencode()
+    const bin = whichBinary('opencode')
     if (!bin || !/^[\w-]+$/.test(sessionId)) return []
     const server = await ensureOpencodeServer(bin).catch(() => null)
     if (server) {

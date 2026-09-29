@@ -174,15 +174,6 @@ export interface SortSpec {
  */
 export type PropertyType =
     'text' | 'number' | 'checkbox' | 'date' | 'time' | 'list' | 'link'
-export const PROPERTY_TYPES: readonly PropertyType[] = [
-    'text',
-    'number',
-    'checkbox',
-    'date',
-    'time',
-    'list',
-    'link',
-]
 
 /**
  * The canonical, FUNCTIONAL type a declared base property carries (#99). A discriminated

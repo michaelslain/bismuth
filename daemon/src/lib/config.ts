@@ -41,8 +41,8 @@ export interface VaultContext {
      */
     backend: string
     /** settings.codex.writeAgentsMd — opt-in, default false. Only consulted when {@link backend} is
-     *  actually "codex" (buildQueryOptions has no equivalent need for Claude, which gets its persona
-     *  via appendSystemPrompt instead). */
+     *  actually "codex", and only for an OPTIONAL AGENTS.md block: Codex's persona itself rides
+     *  `developer_instructions` on every call (codexSession.ts), Claude's rides its system prompt. */
     codexWriteAgentsMd: boolean
     /** settings.daemon.inheritUserMcp — opt-in, default false. When true, buildQueryOptions sets
      *  `settingSources: ['user']` so the session also sees this machine's own MCP servers and

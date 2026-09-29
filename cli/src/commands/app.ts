@@ -5,28 +5,14 @@
 // the app holds open (core/src/uiControl.ts). A headless CLI has no window, so — unlike the
 // file-based groups — these REQUIRE a running app.
 //
-// Core discovery precedence: --api <url> → BISMUTH_API → CLAUDE_RELAY_URL → run-registry
-// (~/.bismuth/run, matched by --vault/BISMUTH_VAULT, else the single running core) → :4321.
+// Core discovery is `resolveCore` (http.ts): --api <url> → BISMUTH_API → CLAUDE_RELAY_URL →
+// run-registry (~/.bismuth/run, matched by --vault/BISMUTH_VAULT, else the single running core) → :4321.
 // `--window <id>` targets a specific window (see `app windows`); omit it and the single open window
 // is used (none → 404, several → 409, both benign "expected" outcomes, not retry conditions).
 import type { CommandMap } from '../types'
 import { flag, positionals, bool, fail, out } from '../args'
-import { call } from '../http'
-import { resolveRunRegistryBase } from '../../../core/src/runRegistry'
+import { call, resolveCore } from '../http'
 import { uiControlAllowedIds } from '../../../core/src/commands'
-
-/** Resolve the running core's base URL (see module doc for the precedence). */
-export function resolveCore(args: string[]): string {
-    const explicit =
-        flag(args, 'api') ??
-        process.env.BISMUTH_API ??
-        process.env.CLAUDE_RELAY_URL
-    if (explicit) return explicit.replace(/\/+$/, '')
-    const vault = flag(args, 'vault') ?? process.env.BISMUTH_VAULT
-    const fromRegistry = resolveRunRegistryBase(vault)
-    if (fromRegistry) return fromRegistry
-    return 'http://localhost:4321'
-}
 
 /** Wording shown when no running app is reachable at `base`. */
 const unreachable = (base: string) =>

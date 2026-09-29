@@ -8,13 +8,13 @@ export type TrendFit = {
     origin: string
 }
 
-function dayDiff(a: string, b: string): number {
+export function dayDiff(a: string, b: string): number {
     const da = new Date(a.slice(0, 10) + 'T00:00:00')
     const db = new Date(b.slice(0, 10) + 'T00:00:00')
     return Math.round((db.getTime() - da.getTime()) / 86400000)
 }
 
-function monthDiff(a: string, b: string): number {
+export function monthDiff(a: string, b: string): number {
     const da = new Date(a.slice(0, 10) + 'T00:00:00')
     const db = new Date(b.slice(0, 10) + 'T00:00:00')
     return (

@@ -1,5 +1,5 @@
 import { For, Show, type Component, type JSX } from 'solid-js'
-import { toDateStr } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import DayGutter from './DayGutter'
 import styles from './AllDayRow.module.css'
 
@@ -24,7 +24,7 @@ const AllDayRow: Component<AllDayRowProps> = props => (
         <Show when={props.gutter !== false}><DayGutter /></Show>
         <For each={props.dates}>
             {d => {
-                const ds = toDateStr(d)
+                const ds = todayISO(d)
                 return (
                     <div
                         class={styles.cell}
