@@ -1,6 +1,11 @@
 import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
-import { parseTaskLine, extractTasks } from '../src/tasks'
+import {
+    parseTaskLine,
+    extractTasks,
+    applyTaskToggle,
+} from '../src/tasks'
+import { updateTaskLineFields, removeTaskItem } from '../src/taskEdit'
 
 test('parses a plain todo', () => {
     const t = parseTaskLine('- [ ] buy milk', 'shopping.md', 0)!
@@ -736,4 +741,23 @@ test('a bare check mark with no date is still left alone', () => {
     expect(toggleTaskLine(line, '2026-09-09')).toBe(
         '- [ ] shipped ✅ and celebrated',
     )
+})
+
+test('a bad task line is a 400 EINVAL, not a bare Error', () => {
+    const bad = [
+        () => toggleTaskLine('prose', '2026-01-01'),
+        () => setTaskLineStatus('prose', 'x', '2026-01-01'),
+        () => updateTaskLineFields('prose', {}),
+        () => removeTaskItem('a', 5),
+        () => applyTaskToggle('a\nb', 9, undefined, '2026-01-01'),
+    ]
+    for (const f of bad) {
+        try {
+            f()
+            throw new Error('did not throw')
+        } catch (e: any) {
+            expect(e.statusCode).toBe(400)
+            expect(e.code).toBe('EINVAL')
+        }
+    }
 })

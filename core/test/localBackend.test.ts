@@ -347,4 +347,24 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
             }),
         ).rejects.toThrow(/not supported/i)
     })
+    test('POST /tasks/toggle with status sets that exact char and keeps CRLF', async () => {
+        const { fa, files } = memVault({ 't.md': '- [ ] a\r\n- [ ] b\r\n' })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/tasks/toggle', {
+            path: 't.md',
+            line: 0,
+            status: '/',
+        })
+        expect(files['t.md']).toBe('- [/] a\r\n- [ ] b\r\n')
+    })
+
+    test('POST /tasks/toggle on a non-task line is a 400', async () => {
+        const { fa } = memVault({ 't.md': 'just prose\n- [ ] a' })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/tasks/toggle', { path: 't.md', line: 0 }),
+        ).rejects.toMatchObject({ statusCode: 400 })
+    })
 })

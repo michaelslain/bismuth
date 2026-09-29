@@ -15,7 +15,8 @@ import {
     statusFromChar,
     statusToChar,
 } from './taskReorder'
-import { AppError } from './error'
+import { AppError, createError } from './error'
+import { readAllNotes } from './readAllNotes'
 import { formatDateField, advanceDateByRecurrence } from './taskFields'
 import { TASK_LINE, parseTaskLine, extractTasks } from './taskParse'
 import type { Task } from './taskParse'
@@ -144,7 +145,7 @@ export function toggleTaskLine(line: string, today: string): string {
     const cr = line.endsWith('\r') ? '\r' : ''
     const bare = cr ? line.slice(0, -1) : line
     const m = TASK_LINE.exec(bare)
-    if (!m) throw new Error('not a task line')
+    if (!m) throw createError('EINVAL', 'not a task line', 400)
     const [, indent, statusChar, body] = m
     const isDone = statusChar === 'x' || statusChar === 'X'
     if (isDone) {
@@ -175,7 +176,7 @@ export function setTaskLineDate(
     const cr = line.endsWith('\r') ? '\r' : ''
     const bare = cr ? line.slice(0, -1) : line
     const m = TASK_LINE.exec(bare)
-    if (!m) throw new Error('not a task line')
+    if (!m) throw createError('EINVAL', 'not a task line', 400)
     const [, indent, statusChar, body] = m
     // Same two guards as FIELD_SCAN/DONE_SOURCE: a wikilink or markdown link holding this
     // field's name must not be touched.
@@ -215,7 +216,7 @@ export function setTaskLineStatus(
     const cr = line.endsWith('\r') ? '\r' : ''
     const bare = cr ? line.slice(0, -1) : line
     const m = TASK_LINE.exec(bare)
-    if (!m) throw new Error('not a task line')
+    if (!m) throw createError('EINVAL', 'not a task line', 400)
     const [, indent, , body] = m
     const isDone = status === 'x' || status === 'X'
     if (!isDone) {
@@ -269,13 +270,37 @@ export function archiveResolvedTasks(content: string): {
     return { content: out.join(eol), removed }
 }
 
+/**
+ * The whole `POST /tasks/toggle` edit as one pure step, shared by the HTTP server and the
+ * in-process (iPad) backend: detect the file's EOL, range-check `line` (EINVAL 400), set the
+ * exact `status` char when one is given (the status menu) or plain-toggle otherwise, and sink
+ * resolved tasks via reorderTaskBlocks. CRLF files keep CRLF.
+ */
+export function applyTaskToggle(
+    content: string,
+    line: number,
+    status: string | undefined | null,
+    today: string,
+): string {
+    const eol = content.includes('\r\n') ? '\r\n' : '\n'
+    const lines = content.split(/\r?\n/)
+    if (line < 0 || line >= lines.length)
+        throw createError('EINVAL', 'line out of range', 400)
+    // toggleTaskLine / setTaskLineStatus may return TWO lines (recurrence: the next
+    // occurrence is inserted above the completed one, separated by "\n"). Splicing the
+    // result back as a single array slot keeps that ordering after join(eol).
+    lines[line] =
+        status != null
+            ? setTaskLineStatus(lines[line], status, today)
+            : toggleTaskLine(lines[line], today)
+    return reorderTaskBlocks(lines.join(eol))
+}
+
 /** Read every markdown file in the vault and return all checkbox tasks across them. */
 export async function collectVaultTasks(root: string): Promise<Task[]> {
-    const { listMarkdown, readNote } = await getFileAccess()
+    const { listMarkdown } = await getFileAccess()
     const rels = await listMarkdown(root)
-    const contents = await Promise.all(
-        rels.map(async rel => ({ rel, content: await readNote(root, rel) })),
-    )
+    const contents = await readAllNotes(root, rels)
     const out: Task[] = []
     for (const { rel, content } of contents) {
         out.push(...extractTasks(content, rel))

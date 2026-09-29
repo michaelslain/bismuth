@@ -7,6 +7,7 @@
 // `POST /tasks/update`/`/tasks/delete`/`/tasks/move` (core/src/server.ts) are the write-back
 // seam for these; `app/src/bases/taskEdit.ts` is the frontend seam that calls those routes.
 import type { Priority } from './tasks'
+import { createError } from './error'
 import { TASK_LINE } from './taskParse'
 import { parseFields, formatDateField, type FieldKey } from './taskFields'
 
@@ -42,7 +43,7 @@ export function updateTaskLineFields(line: string, patch: TaskPatch): string {
     const cr = line.endsWith('\r') ? '\r' : ''
     const bare = cr ? line.slice(0, -1) : line
     const m = TASK_LINE.exec(bare)
-    if (!m) throw new Error('not a task line')
+    if (!m) throw createError('EINVAL', 'not a task line', 400)
     const [, indent, statusChar, body] = m
 
     const fields = parseFields(body)
@@ -126,7 +127,7 @@ export function removeTaskItem(
 ): { content: string; removed: string[] } {
     const eol = content.includes('\r\n') ? '\r\n' : '\n'
     const lines = content.split(/\r?\n/)
-    if (line < 0 || line >= lines.length) throw new Error('line out of range')
+    if (line < 0 || line >= lines.length) throw createError('EINVAL', 'line out of range', 400)
     const { start, end } = taskItemRange(lines, line)
     const removed = lines.slice(start, end)
     const rest = [...lines.slice(0, start), ...lines.slice(end)]
