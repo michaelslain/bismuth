@@ -11,27 +11,23 @@ import {
     terminalId,
     memoryDir,
     runHook,
+    sessionPayload,
 } from '../lib/report.ts'
-import { recallContext } from '../lib/memory.ts'
+import { recallMemory } from '@bismuth/memory'
 
 runHook(async () => {
     const tid = terminalId()
     if (!tid) return // not launched from a Bismuth terminal tab
     const input = await readHookInput()
     const dir = memoryDir()
+    const session = sessionPayload(input, tid)
 
     // Heartbeat + recall in parallel so recall never serializes behind the POST (both are
-    // budgeted: postRelay 2s, recallContext 800ms — recall must not stall prompt submission).
+    // budgeted: postRelay 2s, recallMemory 800ms — recall must not stall prompt submission).
     const [, context] = await Promise.all([
-        input.session_id
-            ? postRelay('/relay/session', {
-                  sessionId: input.session_id,
-                  terminalId: tid,
-                  cwd: input.cwd ?? '',
-              })
-            : Promise.resolve(),
+        session ? postRelay('/relay/session', session) : Promise.resolve(),
         dir && typeof input.prompt === 'string'
-            ? recallContext(dir, input.prompt)
+            ? recallMemory(dir, input.prompt)
             : Promise.resolve(null),
     ])
 

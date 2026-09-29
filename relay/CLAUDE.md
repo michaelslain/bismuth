@@ -28,8 +28,8 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
    - `UserPromptSubmit` → `bin/recall-hook.ts` → `POST /relay/session` (re-posting the same
      endpoint acts as a heartbeat; self-registers if SessionStart was missed, e.g. a resumed
      session — there is no separate `/relay/session/heartbeat` route). Concurrently, when
-     `BISMUTH_MEMORY_DIR` is set (daemon enabled), `lib/memory.ts`'s `recallContext`
-     (`@bismuth/memory`'s `recallMemory`, 800ms budget) injects matching memories as
+     `BISMUTH_MEMORY_DIR` is set (daemon enabled), `@bismuth/memory`'s
+     `recallMemory` (800ms budget, called directly) injects matching memories as
      `additionalContext`.
    - `SubagentStart` → `bin/subagent-start-hook.ts` → `POST /relay/subagent/start` (add a
      child node under the spawning session).
@@ -60,7 +60,7 @@ relay/
   hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
   bin/                         # the 5 hook scripts + wrap.ts (the generic wrapper-mode session reporter)
   lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating — reused by wrap.ts too
-  lib/memory.ts                # recallContext + collectTranscript — thin over @bismuth/memory, gated on BISMUTH_MEMORY_DIR
+  lib/memory.ts                # collectTranscript — thin over @bismuth/memory, gated on BISMUTH_MEMORY_DIR
   shim/claude                  # PATH shim: exec real claude --plugin-dir <relay> (unchanged, claude-only)
   shim/agent-shim               # generic multi-call PATH shim for other ("wrapper"-mode) backends
   shim/zdotdir/.zshrc           # defines one shell function per BISMUTH_SHIM_SPECS entry (claude + wrapper backends)

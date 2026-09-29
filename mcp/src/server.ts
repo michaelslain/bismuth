@@ -216,7 +216,7 @@ const memoryTools = [
 
 // The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
 // for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
-// daemon-enabled session the server exposes only the always-on five; a machine-wide session
+// daemon-enabled session the server exposes only the always-on six; a machine-wide session
 // with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
@@ -225,6 +225,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 function asText(result: unknown): string {
     if (typeof result === 'string') return result
     return JSON.stringify(result, null, 2)
+}
+
+/** A one-text-block tool result; `isError` is only present when given. */
+function textResult(text: string, isError?: boolean): CallToolResult {
+    return isError === undefined
+        ? { content: [{ type: 'text', text }] }
+        : { content: [{ type: 'text', text }], isError }
+}
+
+// The memory tools, keyed by name. Each takes the raw tool args + the resolved memory dir.
+const memoryHandlers: Record<
+    string,
+    (args: Record<string, unknown>, dir: string) => Promise<unknown>
+> = {
+    remember: (args, dir) =>
+        remember(
+            args as {
+                name: string
+                type?: string
+                tags?: string[]
+                content: string
+                folder?: string
+            },
+            dir,
+        ),
+    recall: (args, dir) =>
+        recall(args as { query: string; folder?: string }, dir),
+    forget: (args, dir) => forget(args as { name: string }, dir),
 }
 
 // Exported (rather than left as an inline callback) so tests can dispatch a fabricated
@@ -238,43 +266,22 @@ export async function handleCallTool(
     try {
         switch (name) {
             case 'bismuth_docs_list':
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: asText(await listDocs(docsRoot)),
-                        },
-                    ],
-                }
+                return textResult(asText(await listDocs(docsRoot)))
             case 'bismuth_docs_search': {
                 const query = args.query as string
                 const limit =
                     typeof args.limit === 'number' ? args.limit : undefined
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: asText(
-                                await searchDocs(docsRoot, query, limit),
-                            ),
-                        },
-                    ],
-                }
+                return textResult(
+                    asText(await searchDocs(docsRoot, query, limit)),
+                )
             }
             case 'bismuth_docs_read': {
                 const path = args.path as string
                 const section =
                     typeof args.section === 'string' ? args.section : undefined
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: asText(
-                                await readDoc(docsRoot, path, section),
-                            ),
-                        },
-                    ],
-                }
+                return textResult(
+                    asText(await readDoc(docsRoot, path, section)),
+                )
             }
             case 'bismuth_skill': {
                 const skillName =
@@ -287,7 +294,7 @@ export async function handleCallTool(
                     skillName === undefined
                         ? asText(listSkills(skillsRoot))
                         : readSkill(skillsRoot, skillName, reference)
-                return { content: [{ type: 'text', text }] }
+                return textResult(text)
             }
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)
@@ -299,42 +306,19 @@ export async function handleCallTool(
                 const group =
                     typeof args.group === 'string' ? args.group : undefined
                 const { text, ok } = await cliHelp(repoRoot, group)
-                return { content: [{ type: 'text', text }], isError: !ok }
+                return textResult(text, !ok)
             }
             case 'remember':
             case 'recall':
             case 'forget': {
                 const dir = memoryDir()
                 if (!dir) {
-                    return {
-                        content: [
-                            {
-                                type: 'text',
-                                text: 'Memory is unavailable — the daemon is not enabled for this vault.',
-                            },
-                        ],
-                        isError: true,
-                    }
+                    return textResult(
+                        'Memory is unavailable — the daemon is not enabled for this vault.',
+                        true,
+                    )
                 }
-                const result =
-                    name === 'remember'
-                        ? await remember(
-                              args as {
-                                  name: string
-                                  type?: string
-                                  tags?: string[]
-                                  content: string
-                                  folder?: string
-                              },
-                              dir,
-                          )
-                        : name === 'recall'
-                          ? await recall(
-                                args as { query: string; folder?: string },
-                                dir,
-                            )
-                          : await forget(args as { name: string }, dir)
-                return { content: [{ type: 'text', text: asText(result) }] }
+                return textResult(asText(await memoryHandlers[name](args, dir)))
             }
             default:
                 // Daemon-management tools (crons/processes/pages/status/devices/owner) bridge the
@@ -342,31 +326,23 @@ export async function handleCallTool(
                 // so an out-of-context invocation degrades gracefully instead of hitting "Unknown tool".
                 if (isDaemonTool(name)) {
                     if (!daemonEnabled()) {
-                        return {
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: 'Daemon tools are unavailable — the daemon is not enabled for this vault.',
-                                },
-                            ],
-                            isError: true,
-                        }
+                        return textResult(
+                            'Daemon tools are unavailable — the daemon is not enabled for this vault.',
+                            true,
+                        )
                     }
                     const { text, isError } = await runDaemonTool(
                         repoRoot,
                         name,
                         args,
                     )
-                    return { content: [{ type: 'text', text }], isError }
+                    return textResult(text, isError)
                 }
-                return {
-                    content: [{ type: 'text', text: `Unknown tool: ${name}` }],
-                    isError: true,
-                }
+                return textResult(`Unknown tool: ${name}`, true)
         }
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        return { content: [{ type: 'text', text: msg }], isError: true }
+        return textResult(msg, true)
     }
 }
 
