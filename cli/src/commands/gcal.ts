@@ -31,8 +31,7 @@
 // "List all" (no <basePath>) therefore reports only entries namespaced to the given vault.
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out, requireVault } from '../args'
-import { call } from '../http'
-import { resolveCore } from './app'
+import { call, needsServer, resolveCore } from '../http'
 import { listGcalSyncTargets } from '../../../core/src/gcal/discover'
 import {
     readManifest,
@@ -42,9 +41,9 @@ import {
 import { loadAppConfig } from '../../../core/src/settings'
 import type { LegacyGcalConfig } from '../../../core/src/gcal/config'
 
-/** Wording shown when no running app/server is reachable at `base`. */
-const unreachable = (base: string) =>
-    `could not reach a running Bismuth server at ${base} — gcal status/connect/sync/disconnect need a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`
+const unreachable = needsServer(
+    'gcal status/connect/sync/disconnect need a running server',
+)
 
 /** This vault's legacy global `googleCalendar.{enabled,calendarId,basePath}` — the migration
  *  fallback `listGcalSyncTargets` consults for the one base the old single mapping named.

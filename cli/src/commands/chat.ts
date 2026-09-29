@@ -40,12 +40,11 @@
 // the first place, not this file and not the CLI's env-var gate.
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out } from '../args'
-import { call } from '../http'
-import { resolveCore } from './app'
+import { call, needsServer, resolveCore } from '../http'
 
-/** Wording shown when no running core is reachable at `base`. */
-const unreachable = (base: string) =>
-    `could not reach a running Bismuth server at ${base} — chat history needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`
+const unreachable = needsServer(
+    'chat history needs a running server',
+)
 
 /** Build a "?a=..&b=.." query string, dropping undefined values. */
 function qs(params: Record<string, string | undefined>): string {
