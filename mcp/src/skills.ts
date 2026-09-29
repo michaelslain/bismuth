@@ -3,11 +3,12 @@
 // itself via ~/.claude/skills/; the other eight backends (opencode, codex, cline, gemini, goose,
 // openclaw, and the ACP variants) have no such mechanism, so MCP is the one surface all nine share.
 // Mirrors docs.ts's shape on purpose — same repo, same pattern, one thing for a reader to already
-// know. Its path-traversal check (`resolveWithin`) is exported and shared with docs.ts rather than
+// know. Its path-traversal check (`resolveWithin`, in paths.ts) is shared with docs.ts rather than
 // duplicated. No external deps — node:fs + node:path only.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
+import { resolveWithin } from './paths'
 
 export interface SkillInfo {
     name: string
@@ -37,16 +38,6 @@ function parseFrontmatter(text: string): {
         else result.description = value
     }
     return result
-}
-
-/** Resolve `target` under `root`, throwing if it would escape (path traversal). */
-export function resolveWithin(root: string, relPath: string): string {
-    const target = resolve(root, relPath)
-    const rootWithSep = root.endsWith(sep) ? root : root + sep
-    if (target !== root && !target.startsWith(rootWithSep)) {
-        throw new Error(`Path traversal rejected: ${relPath}`)
-    }
-    return target
 }
 
 // --- public API -------------------------------------------------------------

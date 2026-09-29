@@ -28,8 +28,8 @@ These two scripts each do **two** best-effort jobs concurrently (`Promise.all`):
 Flow (`relay/bin/recall-hook.ts` + `relay/lib/memory.ts`):
 
 1. No `CLAUDE_TERMINAL_ID` → return (not a Bismuth terminal tab).
-2. Read stdin; in parallel POST `/relay/session` (heartbeat, 2s budget) **and** — if `BISMUTH_MEMORY_DIR` is set and `prompt` is a string — call `recallContext(dir, prompt)` (800ms budget).
-3. `recallContext` runs `searchMemory(prompt, dir)` from `@bismuth/memory` — **pure keyword search, no LLM** (scoring detailed in [memory.md](memory.md)) — racing it against an 800ms timeout so a bloated graph degrades to "no recall" rather than stalling prompt submission. Empty/whitespace prompt or no matches → `null`.
+2. Read stdin; in parallel POST `/relay/session` (heartbeat, 2s budget) **and** — if `BISMUTH_MEMORY_DIR` is set and `prompt` is a string — call `recallMemory(dir, prompt)` (800ms budget).
+3. `recallMemory` runs `searchMemory(prompt, dir)` from `@bismuth/memory` — **pure keyword search, no LLM** (scoring detailed in [memory.md](memory.md)) — racing it against an 800ms timeout so a bloated graph degrades to "no recall" rather than stalling prompt submission. Empty/whitespace prompt or no matches → `null`.
 4. On a non-null result, write the `UserPromptSubmit` `additionalContext` payload to stdout:
 
 ```json
@@ -41,7 +41,7 @@ Flow (`relay/bin/recall-hook.ts` + `relay/lib/memory.ts`):
 }
 ```
 
-`recallContext` is a thin alias for **`recallMemory(dir, prompt, budgetMs?)`** in `@bismuth/memory` (`memory/src/recall.ts`) — the ONE shared recall implementation. Its `formatRecall()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
+The hook calls **`recallMemory(dir, prompt, budgetMs?)`** from `@bismuth/memory` (`memory/src/recall.ts`) directly — the ONE shared recall implementation. Its `formatRecall()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
 
 ### The visual chat recalls too (SDK session, no relay plugin)
 
@@ -119,7 +119,7 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 | --- | --- | --- |
 | Recall + collect are relay-plugin hooks loaded via `claude --plugin-dir <relay>` | EXISTS | `relay/bin/{recall-hook,session-end-hook}.ts`, `terminal.ts` |
 | Hooks gate on `CLAUDE_TERMINAL_ID` && `BISMUTH_MEMORY_DIR`; no `~/.claude/settings.json` write | EXISTS | `relay/lib/report.ts`, `relay/lib/memory.ts` |
-| `recall` injects via `additionalContext`, `# Memories` header, 800ms budget, keyword search | EXISTS | `recallContext` / `formatNotes` / `searchMemory` |
+| `recall` injects via `additionalContext`, `# Memories` header, 800ms budget, keyword search | EXISTS | `recallMemory` / `formatNotes` / `searchMemory` |
 | `collect` pairs user+assistant into `## Turn N` blocks, skips `[Cron: ` + `<50`-char sessions, 12000-char turn-aware truncation, `auto-` note | EXISTS | `CRON_PREFIX`, `MIN_BODY_CHARS`, `MAX_BODY_CHARS`, `extractTurns`, `renderTurns`, `trimToBudget`, `collectTranscript` |
 | `recall-hook` also POSTs `/relay/session`; `session-end-hook` POSTs `/relay/session/end` | EXISTS | the two hook scripts |
 | `message_bot` MCP tool | DOES NOT EXIST (MCP exposes `remember`/`recall`/`forget`) | `mcp/src/{server,memory}.ts` |
