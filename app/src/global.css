@@ -452,8 +452,8 @@
      onto --h-row. */
   --row-h: 18px;
 
-  /* Cap for a scrolling stack of --row-h rows inside a dialog (ToggleList's column-visibility
-     list, and anything shaped like it) — enough rows to browse without the list, and the dialog
+  /* Cap for a scrolling stack of --row-h rows inside a dialog (a RowList's `maxHeight` for the
+     column-visibility list, and anything shaped like it) — enough rows to browse without the list, and the dialog
      around it, growing unbounded. */
   --list-max-h: 320px;
 

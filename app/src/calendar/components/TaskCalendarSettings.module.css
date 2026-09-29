@@ -1,5 +1,0 @@
-/* app/src/calendar/components/TaskCalendarSettings.module.css — the Categories section's
-   name-per-row list. A read-only list here (no rename/delete), unlike CategoryList, so it stays this component's own. */
-.catgroup { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
-.catrow { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-1) var(--sp-5); }
-.catrow + .catrow { border-top: 1px solid var(--border-soft); }

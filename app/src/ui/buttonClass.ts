@@ -8,7 +8,9 @@
 //       "unselected" a member of a toggle/series that is currently OFF (de-emphasized)
 //       "selected"   a member that is currently ON (accent-highlighted)
 //     For icon buttons, "normal" looks like "unselected" but at full opacity.
-// `danger` is an orthogonal tone (destructive actions) layered on any state.
+// `danger` is an orthogonal tone (destructive actions) layered on any state. `danger: 'hover'`
+// is the same tone held back until hover — a remove `[x]` repeated down a list, where a red mark
+// on every row at rest reads as ten errors rather than ten rows.
 // `primary` is a second orthogonal tone: accent + bold, no box — the view's one
 // emphasized action (max one per view; text buttons only).
 // `size` is ignored for `kind: 'text'` — every text button renders at one size
@@ -35,7 +37,7 @@ export function buttonClass(
         kind?: ButtonKind
         state?: ButtonState
         size?: ButtonSize
-        danger?: boolean
+        danger?: boolean | 'hover'
         /** Accent + bold, no box — the view's one emphasized action.
          *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
         primary?: boolean
@@ -51,7 +53,11 @@ export function buttonClass(
         opts.size && opts.size !== 'md' && kind !== 'text'
             ? cls[`btn--${opts.size}`]
             : '',
-        opts.danger ? cls['btn--danger'] : '',
+        opts.danger === 'hover'
+            ? cls['btn--danger-hover']
+            : opts.danger
+              ? cls['btn--danger']
+              : '',
         opts.primary ? cls['btn--primary'] : '',
         opts.class,
     )

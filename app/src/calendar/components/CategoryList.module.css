@@ -1,7 +1,5 @@
-/* the existing categories: one compact row each inside a single bordered group */
-.group { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
-.row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5); }
-.row + .row { border-top: 1px solid var(--border-soft); }
-.name { flex: 1; text-align: left; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -.01em; cursor: text; }
+/* the category name — a PlainButton filling ListRow's main slot; ListRow owns the row's size and
+   weight, so the name only takes the width and the rename cursor */
+.name { flex: 1; min-width: 0; text-align: left; cursor: text; }
 /* inline rename sits exactly where the name was */
-.nameedit { flex: 1; min-width: 0; font-size: var(--fs-lead); font-weight: 600; }
+.nameedit { flex: 1; min-width: 0; }

@@ -488,6 +488,18 @@ the accent. An outline appears only when it means something.
   `--rail` fill band). Actions only — no keybind hints (`esc`, `↵`) anywhere in a modal; every
   modal ends in a real dismiss button (`[cancel]` / `[close]` / `[done]`). Leading edge: leading
   actions (delete, reset); trailing edge: the primary/secondary actions.
+- **Lists in a modal (`RowList` + `ListRow`):** the daemon crons list is the model. Rows sit
+  directly on the modal ground — never in an inset `--surface-2` panel (a box inside the frame) and
+  with no rule between them; they are separated by their height, `--row-h` + `--sp-1` either side
+  (22px). `--fs-ui` regular `--fg`, `--sp-3` between slots, no inline padding, so a row's first glyph
+  sits on the modal's content edge with the section text above it. No fill at rest or on hover: a
+  clickable row never paints a background. A colour is a `StatusDot`, never a filled swatch
+  square; secondary facts (a type, a date span) are `--faint` text, never a boxed badge. A row's
+  remove `[x]` shows only on hover or focus, and is `--faint` until hovered itself, then `--danger`.
+  An inline "add" composer is the list's last row, in the same columns, never a separate card.
+  `OptionRow` (mark, label, faint sublabel on the trailing edge) and `ToggleRow` are single
+  controls that match these metrics without composing `ListRow`. An expanded row hangs its editor off
+  a `--rule-soft` tree line from its chevron, not a filled box.
 - **Popover / menu:** `--pop-bg` with a hairline and `--lift`; 4px inner padding, rows at `--row-h`
   with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
 

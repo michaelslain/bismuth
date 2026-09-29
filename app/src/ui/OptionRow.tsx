@@ -1,5 +1,7 @@
 // app/src/ui/OptionRow.tsx
-// A large single-choice row: an icon mark, a label, a sublabel, and a trailing chevron.
+// A single-choice row: an icon mark, a label, and a faint sublabel on the row's trailing edge — the
+// shape of a daemon crons row (name left, faint status right). Lives in a RowList and matches
+// ListRow by metrics (see OptionRow.module.css).
 // The "pick one of these scopes" control RecurrenceDialog hand-rolled as a bare <button>.
 //
 // Not TextButton (which enforces lowercase bracket labels) and not Button (documented internal-only) —
@@ -33,15 +35,10 @@ const OptionRow: Component<OptionRowProps> = props => (
         <span class={styles['option-ic']}>
             <Icon value={props.icon} />
         </span>
-        <span class={styles['option-txt']}>
-            <span class={styles['option-lab']}>{props.label}</span>
-            <Show when={props.sublabel}>
-                {s => <span class={styles['option-sub']}>{s()}</span>}
-            </Show>
-        </span>
-        <span class={styles['option-chev']}>
-            <Icon value="chevron-right" />
-        </span>
+        <span class={styles['option-lab']}>{props.label}</span>
+        <Show when={props.sublabel}>
+            {s => <span class={styles['option-sub']}>{s()}</span>}
+        </Show>
     </button>
 )
 

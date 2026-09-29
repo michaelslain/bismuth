@@ -16,8 +16,8 @@ export type IconButtonProps = {
     label: string
     /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
     variant?: IconButtonVariant
-    /** Destructive tone — orthogonal to variant. */
-    danger?: boolean
+    /** Destructive tone — orthogonal to variant. `'hover'`: `--faint` at rest, `--danger` on hover. */
+    danger?: boolean | 'hover'
     size?: ButtonSize
     /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number

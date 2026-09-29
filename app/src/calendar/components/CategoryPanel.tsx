@@ -26,47 +26,47 @@ export function CategoryPanel(props: { store: EventStore }) {
                 <ModalHeader title="categories" onClose={close} />
 
                 <ModalBody>
-                    <Show
-                        when={categories.value.length}
-                        fallback={<SettingsHint>no categories yet</SettingsHint>}
-                    >
-                        <CategoryList
-                            categories={categories.value}
-                            onRename={async (name, next) => {
-                                try {
-                                    await renameCategory(props.store, name, next)
-                                } catch (e) {
-                                    pushToast(
-                                        `Could not rename: ${(e as Error).message}`,
-                                    )
-                                }
-                            }}
-                            onRecolor={async (name, color) => {
-                                try {
-                                    await recolorCategory(props.store, name, color)
-                                } catch (e) {
-                                    pushToast(
-                                        `Could not recolor: ${(e as Error).message}`,
-                                    )
-                                }
-                            }}
-                            onDelete={async name => {
-                                try {
-                                    await deleteCategoryWithUndo(
-                                        props.store,
-                                        name,
-                                    )
-                                } catch (e) {
-                                    pushToast(
-                                        `Could not delete: ${(e as Error).message}`,
-                                    )
-                                }
-                            }}
-                        />
+                    <Show when={!categories.value.length}>
+                        <SettingsHint>no categories yet</SettingsHint>
                     </Show>
 
-                    <NewCategoryForm
-                        onAdd={c => addCategory(props.store, c)}
+                    <CategoryList
+                        categories={categories.value}
+                        onRename={async (name, next) => {
+                            try {
+                                await renameCategory(props.store, name, next)
+                            } catch (e) {
+                                pushToast(
+                                    `Could not rename: ${(e as Error).message}`,
+                                )
+                            }
+                        }}
+                        onRecolor={async (name, color) => {
+                            try {
+                                await recolorCategory(props.store, name, color)
+                            } catch (e) {
+                                pushToast(
+                                    `Could not recolor: ${(e as Error).message}`,
+                                )
+                            }
+                        }}
+                        onDelete={async name => {
+                            try {
+                                await deleteCategoryWithUndo(
+                                    props.store,
+                                    name,
+                                )
+                            } catch (e) {
+                                pushToast(
+                                    `Could not delete: ${(e as Error).message}`,
+                                )
+                            }
+                        }}
+                        composer={
+                            <NewCategoryForm
+                                onAdd={c => addCategory(props.store, c)}
+                            />
+                        }
                     />
                 </ModalBody>
 

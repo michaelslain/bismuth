@@ -2,17 +2,16 @@
 // chevron) RecurrenceDialog used to hand-roll as a bare `.rec-opt` button. See OptionRow.tsx's
 // header comment for why this needed its own primitive rather than reusing TextButton/Button.
 //
-// EVERY STORY WRAPS THE ROWS IN <OptionList>, because that is the only way they ship. The row is
-// transparent and draws a hairline against its previous sibling; on a bare background it is
-// therefore a row with no panel, which is not a state the app ever renders and would quietly become
-// the thing people design against.
+// EVERY STORY WRAPS THE ROWS IN <RowList>, because that is the only way they ship: RowList draws the
+// hairline between rows, so a row shown alone would hide the seam people design against. Labels are
+// lowercase, as RecurrenceDialog passes them.
 //
 // Props: icon (registry name, required), label (required), sublabel (optional), danger
 // (destructive tone), onClick (required), class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { OptionRow } from './OptionRow'
-import OptionList from './OptionList'
+import RowList from './RowList'
 
 const meta = {
     title: 'UI/OptionRow',
@@ -20,7 +19,7 @@ const meta = {
     parameters: { layout: 'padded' },
     args: {
         icon: 'CircleCheck',
-        label: 'This event',
+        label: 'this event',
         onClick: () => {},
     },
 } satisfies Meta<typeof OptionRow>
@@ -34,13 +33,13 @@ const shell = { width: '380px' }
 export const Default: Story = {
     render: () => (
         <div style={shell}>
-            <OptionList>
+            <RowList>
                 <OptionRow
                     icon="CircleCheck"
-                    label="This event"
+                    label="this event"
                     onClick={() => {}}
                 />
-            </OptionList>
+            </RowList>
         </div>
     ),
     play: async ({ canvasElement }) => {
@@ -49,34 +48,34 @@ export const Default: Story = {
         expect(row.className).not.toMatch(/danger/)
         expect(
             canvasElement.querySelector('[class*="option-lab"]')!.textContent,
-        ).toBe('This event')
+        ).toBe('this event')
         expect(canvasElement.querySelector('[class*="option-sub"]')).toBeNull()
-        expect(canvasElement.querySelectorAll('svg').length).toBe(2) // mark + chevron
+        expect(canvasElement.querySelectorAll('svg').length).toBe(1) // the mark; no chevron
         // The panel owns the surface now, not the row. A row that paints its own background is the
         // regression that made three choices read as three stacked cards.
         expect(getComputedStyle(row).backgroundColor).toBe('rgba(0, 0, 0, 0)')
     },
 }
 
-/** Icon + label + sublabel — RecurrenceDialog's actual shape ("This and following events" /
+/** Icon + label + sublabel — RecurrenceDialog's actual shape ("this and following events" /
  *  "This and following events onward"). */
 export const Sublabel: Story = {
     render: () => (
         <div style={shell}>
-            <OptionList>
+            <RowList>
                 <OptionRow
                     icon="ArrowRight"
-                    label="This and following events"
-                    sublabel="Tuesday, August 12 onward"
+                    label="this and following events"
+                    sublabel="Aug 12, 2026 onward"
                     onClick={() => {}}
                 />
-            </OptionList>
+            </RowList>
         </div>
     ),
     play: async ({ canvasElement }) => {
         const sub = canvasElement.querySelector('[class*="option-sub"]')
         expect(sub).not.toBeNull()
-        expect(sub!.textContent).toBe('Tuesday, August 12 onward')
+        expect(sub!.textContent).toBe('Aug 12, 2026 onward')
     },
 }
 
@@ -88,21 +87,21 @@ export const Sublabel: Story = {
 export const Danger: Story = {
     render: () => (
         <div style={shell}>
-            <OptionList>
+            <RowList>
                 <OptionRow
                     icon="Calendar"
-                    label="All events"
-                    sublabel="The entire series"
+                    label="all events"
+                    sublabel="the entire series"
                     onClick={() => {}}
                 />
                 <OptionRow
                     icon="Trash2"
-                    label="All events"
-                    sublabel="The entire series"
+                    label="all events"
+                    sublabel="the entire series"
                     danger
                     onClick={() => {}}
                 />
-            </OptionList>
+            </RowList>
         </div>
     ),
     play: async ({ canvasElement }) => {
@@ -122,13 +121,9 @@ export const Danger: Story = {
         for (const ic of [normalIc, dangerIc]) {
             expect(getComputedStyle(ic).backgroundColor).toBe('rgba(0, 0, 0, 0)')
         }
-        // The separator is a hairline between rows, not a box around each: the FIRST row must carry
-        // no top border, the second must. A rule that regressed to `border: 1px solid` on the row
-        // would still look plausible in a screenshot and would fail here.
-        expect(parseFloat(getComputedStyle(rows[0]!).borderTopWidth)).toBe(0)
-        expect(
-            parseFloat(getComputedStyle(rows[1]!).borderTopWidth),
-        ).toBeGreaterThan(0)
+        // No rule between rows and no box around each — rows are separated by their height, like
+        // the daemon crons list. A border creeping back onto the row fails here.
+        for (const r of rows) expect(parseFloat(getComputedStyle(r).borderTopWidth)).toBe(0)
     },
 }
 
@@ -143,15 +138,15 @@ export const Danger: Story = {
 export const Focused: Story = {
     render: () => (
         <div style={shell}>
-            <OptionList>
+            <RowList>
                 <OptionRow
                     icon="Calendar"
-                    label="All events"
-                    sublabel="The entire series"
+                    label="all events"
+                    sublabel="the entire series"
                     danger
                     onClick={() => {}}
                 />
-            </OptionList>
+            </RowList>
         </div>
     ),
     play: async ({ canvasElement }) => {
