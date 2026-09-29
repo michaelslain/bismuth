@@ -1,29 +1,21 @@
 /* ---------- list view ---------- */
 .list { padding: var(--sp-4) 0; }
 .lgroup { padding: var(--sp-4) 0; }
-.lghead {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  padding: var(--sp-4) 18px;
-  font-size: var(--fs-micro);
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.lghead .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
+/* GroupHeader owns the dot/label/count look; this only sets the row's own gutter. */
+.lghead { padding: var(--sp-4) var(--sp-6); }
 .lrow {
   display: flex;
   align-items: center;
   gap: var(--sp-5);
   width: 100%;
-  padding: var(--sp-4) 18px;
+  padding: var(--sp-4) var(--sp-6);
   border-bottom: 1px solid var(--border-soft, var(--border));
   font-size: var(--fs-body);
   color: var(--fg);
   cursor: pointer;
 }
 .lrow:hover { background: var(--hover-bg); }
+.lrow:not(button) { cursor: default; }
 /* flex/min-width/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label fill>`); nothing
    bespoke remained, so the rule and the `class` merge onto the element are both gone. */
 /* Faint author suffix after a list row's title. */
@@ -32,4 +24,4 @@
 
 /* Row-editing affordance (openRowEditor.tsx): right-click on `.lrow` opens the property/row
    editor for any editable row — a note row keeps left-click opening the note, an owned row
-   opens the editor on left-click too (see ListView.tsx's `openRow`). No hover-reveal icon. */
+   opens the editor on left-click too (an editable row renders as a button). No hover-reveal icon. */

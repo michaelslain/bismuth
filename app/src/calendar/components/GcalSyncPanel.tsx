@@ -9,18 +9,19 @@ import { createEffect, createResource, createSignal, Show } from 'solid-js'
 import { settings, setSettings } from '../../settings'
 import { api, summarizeSync } from '../../api'
 import Select from '../../ui/Select'
-import { TextButton } from '../../ui/TextButton'
 import { TextInput } from '../../ui/TextInput'
-import Text from '../../ui/Text'
 import { IconTextButton } from '../../ui/IconTextButton'
 import InlineCode from '../../ui/InlineCode'
-import StatusDot from '../../ui/StatusDot'
 import SettingsSection from '../../ui/SettingsSection'
 import SettingsField from '../../ui/SettingsField'
 import SettingsHint from '../../ui/SettingsHint'
 import ToggleList from '../../ui/ToggleList'
 import ToggleRow from '../../ui/ToggleRow'
 import { pushToast } from '../../Toast'
+import { withBusy } from '../withBusy'
+import { isConfirmKey } from '../../ui/widgetKeys'
+import GcalConnectPrompt from './GcalConnectPrompt'
+import GcalStatusRow from './GcalStatusRow'
 import { GcalConnectModal } from '../../GcalConnectModal'
 import styles from './GcalSyncPanel.module.css'
 
@@ -54,10 +55,12 @@ export function GcalSyncPanel(props: { basePath: string }) {
         setCalId(typeof id === 'string' && id.trim() ? id : 'primary')
     })
 
-    const toggle = async () => {
-        if (busy()) return
-        setBusy(true)
-        try {
+    // Every action shares one guard: a second click while one runs is ignored and a failure
+    // toasts (see withBusy.ts).
+    const busyState = { get: busy, set: setBusy }
+
+    const toggle = () =>
+        withBusy(busyState, "Couldn't update sync", async () => {
             const next = !syncedHere()
             await api.setProperty(props.basePath, 'googleCalendarSync', next)
             // On first enable, make sure a target calendar id is persisted (default "primary").
@@ -69,12 +72,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 )
             }
             await refetchBase()
-        } catch (e) {
-            pushToast(`Couldn't update sync: ${(e as Error).message}`)
-        } finally {
-            setBusy(false)
-        }
-    }
+        })
 
     // Persist the calendar id (on blur / Enter) — only when it actually changed.
     const commitCalId = async () => {
@@ -84,32 +82,21 @@ export function GcalSyncPanel(props: { basePath: string }) {
         await refetchBase()
     }
 
-    const syncNow = async () => {
-        if (busy()) return
-        setBusy(true)
-        try {
+    const saveCalId = () =>
+        withBusy(busyState, "Couldn't save the calendar id", commitCalId)
+
+    const syncNow = () =>
+        withBusy(busyState, 'sync failed', async () => {
             await commitCalId() // flush any pending id edit so this sync targets the right calendar
             pushToast(summarizeSync(await api.gcalSync(props.basePath)))
-        } catch (e) {
-            pushToast(`Sync failed: ${(e as Error).message}`)
-        } finally {
-            setBusy(false)
-        }
-    }
+        })
 
-    const disconnect = async () => {
-        if (busy()) return
-        setBusy(true)
-        try {
+    const disconnect = () =>
+        withBusy(busyState, 'Disconnect failed', async () => {
             await api.gcalDisconnect()
             await refetch()
             pushToast('Disconnected from Google Calendar')
-        } catch (e) {
-            pushToast(`Disconnect failed: ${(e as Error).message}`)
-        } finally {
-            setBusy(false)
-        }
-    }
+        })
 
     return (
         <>
@@ -118,38 +105,14 @@ export function GcalSyncPanel(props: { basePath: string }) {
             <Show
                 when={status()?.connected}
                 fallback={
-                    <div class={styles['gcal-connect']}>
-                        <SettingsHint>
-                            two-way sync between this calendar and google —
-                            events only (no gmail, drive, or contacts).
-                        </SettingsHint>
-                        <IconTextButton
-                            icon="Calendar"
-                            variant="selected"
-                            onClick={() => setShowConnect(true)}
-                        >
-                            connect google calendar
-                        </IconTextButton>
-                    </div>
+                    <GcalConnectPrompt onConnect={() => setShowConnect(true)} />
                 }
             >
-                <div class={styles['gcal-status']}>
-                    <StatusDot color="var(--green)" />
-                    <Text
-                        as="span"
-                        inherit
-                        class={styles['gcal-acct']}
-                    >
-                        {status()!.account}
-                    </Text>
-                    <TextButton
-                        danger
-                        onClick={disconnect}
-                        disabled={busy()}
-                    >
-                        disconnect
-                    </TextButton>
-                </div>
+                <GcalStatusRow
+                    account={status()!.account!}
+                    disabled={busy()}
+                    onDisconnect={disconnect}
+                />
 
                 <div class={styles['gcal-toggle-group']}>
                     <ToggleList>
@@ -157,6 +120,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                             label="sync this calendar with google"
                             checked={syncedHere()}
                             muted={!syncedHere()}
+                            locked={busy()}
                             onToggle={toggle}
                         />
                     </ToggleList>
@@ -182,11 +146,11 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     <TextInput
                         value={calId()}
                         onInput={setCalId}
-                        onBlur={() => void commitCalId()}
+                        onBlur={() => void saveCalId()}
                         onKeyDown={e => {
-                            if (e.key === 'Enter') {
+                            if (isConfirmKey(e)) {
                                 e.preventDefault()
-                                void commitCalId()
+                                void saveCalId()
                             }
                         }}
                         placeholder="primary"
@@ -216,7 +180,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
 
                 <div class={styles['gcal-actions']}>
                     <IconTextButton
-                        icon="RefreshCw"
+                        icon="refresh-cw"
                         variant="selected"
                         onClick={syncNow}
                         disabled={busy()}

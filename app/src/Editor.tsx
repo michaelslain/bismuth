@@ -143,6 +143,7 @@ import {
 } from './editor/reconcileDispatch'
 import { decideSseReconcile } from './editor/sseReconcile'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
+import { openNote } from './ui/openNote'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
 // unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and
@@ -1949,16 +1950,9 @@ export function Editor(props: {
                                     // wikilinkOpenPath (not a bare "+ .md") so an unresolved target naming a
                                     // previewable attachment (e.g. `[[Screenshot ….png]]`) opens as-is instead of
                                     // routing to a blank nonexistent note (#38).
-                                    window.dispatchEvent(
-                                        new CustomEvent('bismuth-open', {
-                                            detail: {
-                                                path: wikilinkOpenPath(
-                                                    target,
-                                                    resolved,
-                                                ),
-                                                heading,
-                                            },
-                                        }),
+                                    openNote(
+                                        wikilinkOpenPath(target, resolved),
+                                        heading,
                                     )
                                     return true
                                 }
@@ -1979,15 +1973,7 @@ export function Editor(props: {
                                         m[2],
                                         props.memoryNames(),
                                     )
-                                    window.dispatchEvent(
-                                        new CustomEvent('bismuth-open', {
-                                            detail: {
-                                                path: memoryRefPath(
-                                                    resolved ?? m[2],
-                                                ),
-                                            },
-                                        }),
-                                    )
+                                    openNote(memoryRefPath(resolved ?? m[2]))
                                     return true
                                 }
                             }

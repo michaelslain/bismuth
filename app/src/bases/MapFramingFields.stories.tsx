@@ -32,3 +32,11 @@ export const FixedFrame: Story = {
         <Harness initial={{ zoom: '6', centerLat: '40.7', centerLng: '-74' }} />
     ),
 }
+
+/** Partial framing: a zoom but no center — the opening frame still fits the markers, so this is
+ *  the state the plan writes only `zoom` for. */
+export const PartialFraming: Story = {
+    render: () => (
+        <Harness initial={{ zoom: '6', centerLat: '40.7', centerLng: '' }} />
+    ),
+}

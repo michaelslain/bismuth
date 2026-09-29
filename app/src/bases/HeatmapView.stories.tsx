@@ -4,7 +4,7 @@
 // majority-date column for auto-detection) or it renders the empty state.
 import { createMemo, createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
@@ -123,6 +123,10 @@ export const YearOfData: Story = {
 
 /** `x` resolves to a non-date column (status) — the empty state must show, not a blank grid. */
 export const NonDateX: Story = {
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('no data to chart'))
+        expect(canvasElement.textContent).toContain('set an x date column')
+    },
     render: () => {
         const views = [{ type: 'heatmap' as const, name: 'Activity', x: 'status' }]
         return (
@@ -130,6 +134,54 @@ export const NonDateX: Story = {
                 result={sampleViewResult(undefined, { views })}
                 config={sampleBaseConfig({ views })}
             />
+        )
+    },
+}
+
+/** Every square is a real button, so Tab reaches it and focus alone shows its readout — a
+ *  keyboard user sees what a pointer user does. */
+export const KeyboardReach: Story = {
+    render: () => {
+        const views = [
+            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
+        ]
+        const rows: Row[] = [entryRow(0, todayISO(), 400)]
+        return (
+            <HeatmapView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                `[data-bucket="${todayISO()}"]`,
+            )
+            if (!el) throw new Error('today cell not yet rendered')
+            return el
+        })
+        expect(cell.tagName).toBe('BUTTON')
+        cell.focus()
+        await waitFor(() => expect(canvasElement.querySelector('[class*="active"]')).not.toBeNull())
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => {
+            const clear = Array.from(canvasElement.querySelectorAll('button')).find(b =>
+                b.textContent?.includes('clear'),
+            )
+            if (!clear) throw new Error('drill not yet open')
+        })
+        // Opening the drill must not cost the keyboard user their place.
+        const key = cell.dataset.bucket!
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => {
+            const clear = Array.from(canvasElement.querySelectorAll('button')).find(b =>
+                b.textContent?.includes('clear'),
+            )
+            expect(clear).toBeUndefined()
+        })
+        expect(document.activeElement).toBe(
+            canvasElement.querySelector(`[data-bucket="${key}"]`),
         )
     },
 }

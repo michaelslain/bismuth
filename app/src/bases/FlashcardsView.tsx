@@ -2,7 +2,6 @@ import {
     createSignal,
     createMemo,
     createEffect,
-    on,
     untrack,
     onMount,
     onCleanup,
@@ -10,10 +9,12 @@ import {
     For,
 } from 'solid-js'
 import { api } from '../api'
+import { pushToast } from '../Toast'
+import { pushUndoToast } from '../undoToast'
+import { restoreRowAt } from './restoreRow'
+import { storedNote } from './taskWrite'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import { Icon } from '../icons/Icon'
-import EmptyState from '../ui/EmptyState'
 import { TextInput } from '../ui/TextInput'
 import Text from '../ui/Text'
 import FormModal from '../ui/FormModal'
@@ -24,14 +25,21 @@ import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
 import { type ViewBarSlots } from '../ui/ViewBar'
 import { IconTextButton } from '../ui/IconTextButton'
-import InlineCode from '../ui/InlineCode'
 import BarLabel from '../ui/BarLabel'
-import AsciiMeter from '../ui/ascii/AsciiMeter'
-import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
 import IconBar from '../ui/IconBar'
 import { parseCombo } from '../ui/ascii/parseCombo'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
+import FlipCard from './FlipCard'
+import FlashcardsSummary from './FlashcardsSummary'
+import FlashcardsProgress from './FlashcardsProgress'
+import {
+    answerColumn,
+    promptColumn,
+    resetKeys,
+    scheduleColumns,
+    stripSchedule,
+} from './flashcardsActions'
 import styles from './FlashcardsView.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
@@ -48,21 +56,15 @@ import {
     nextPosAfterGrade,
     nextCramPos,
     reindexRetiredAfterDelete,
+    reindexRetiredAfterInsert,
     itemKey,
     canGrade,
     progressTotal,
     loadSession,
     saveSession,
-    backField as revScheduleCol,
     type QueueItem,
     type CardDir,
 } from './flashcardsQueue'
-
-// The flip's `card-flip` animation is `none` under reduced motion (FlashcardsView.module.css), so
-// no `animationend` would ever clear `data-flipping` — the card must not set it at all there.
-const prefersReducedMotion = (): boolean =>
-    typeof window !== 'undefined' &&
-    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir }
 
@@ -132,7 +134,10 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
     return {
         locus: (
             <div class={styles['count']} data-testid="fc-count">
-                <b>{state.position()}</b> / {state.total()}
+                <Text as="span" inherit weight="bold" tone="default">
+                    {state.position()}
+                </Text>{' '}
+                / {state.total()}
                 <Show when={state.direction()}>
                     {d => (
                         <>
@@ -176,21 +181,30 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                     inherit
                     class={styles['a']}
                 >
-                    <BarLabel long="HARD" short="H" /> <b>{state.hard()}</b>
+                    <BarLabel long="HARD" short="H" />{' '}
+                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                        {state.hard()}
+                    </Text>
                 </Text>
                 <Text
                     as="span"
                     inherit
                     class={styles['g']}
                 >
-                    <BarLabel long="GOOD" short="G" /> <b>{state.good()}</b>
+                    <BarLabel long="GOOD" short="G" />{' '}
+                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                        {state.good()}
+                    </Text>
                 </Text>
                 <Text
                     as="span"
                     inherit
                     class={styles['e']}
                 >
-                    <BarLabel long="EASY" short="E" /> <b>{state.easy()}</b>
+                    <BarLabel long="EASY" short="E" />{' '}
+                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                        {state.easy()}
+                    </Text>
                 </Text>
             </div>
         ),
@@ -198,7 +212,7 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             <IconTextButton
                 icon="Zap"
                 title="Cram: review every card, no scheduling changes"
-                variant={state.cram() ? 'selected' : 'unselected'}
+                variant={state.cram() ? 'selected' : 'normal'}
                 onClick={() => state.onToggleCram()}
             >
                 {/* LATE, not early. A lightning bolt does not say "cram" — it is the same case as
@@ -341,25 +355,27 @@ export function FlashcardsView(props: {
 
     // Prompt = the side being asked; answer = the side revealed. For a reverse card the
     // back column is the prompt and the front column is the answer.
-    const promptCol = (it: QueueItem) =>
-        it.dir === 'fwd' ? frontField() : backField()
-    const answerCol = (it: QueueItem) =>
-        it.dir === 'fwd' ? backField() : frontField()
     const promptHtml = (it: QueueItem) =>
-        renderMarkdown(String(it.r.note[promptCol(it)] ?? ''))
+        renderMarkdown(
+            String(
+                it.r.note[promptColumn(it.dir, frontField(), backField())] ??
+                    '',
+            ),
+        )
     const answerHtml = (it: QueueItem) =>
-        renderMarkdown(String(it.r.note[answerCol(it)] ?? ''))
+        renderMarkdown(
+            String(
+                it.r.note[answerColumn(it.dir, frontField(), backField())] ??
+                    '',
+            ),
+        )
 
-    // Which scheduling columns a direction advances: forward uses the base triple,
-    // reverse uses the `*Back` companions so each direction is scheduled independently.
-    const scheduleFields = (dir: CardDir) =>
-        dir === 'fwd'
-            ? { due: dueField(), ease: easeField(), interval: intervalField() }
-            : {
-                  due: revScheduleCol(dueField()),
-                  ease: revScheduleCol(easeField()),
-                  interval: revScheduleCol(intervalField()),
-              }
+    // Which scheduling columns a direction advances (see flashcardsActions.ts).
+    const baseSchedule = () => ({
+        due: dueField(),
+        ease: easeField(),
+        interval: intervalField(),
+    })
 
     const grade = async (response: 'hard' | 'good' | 'easy') => {
         const c = current()
@@ -397,7 +413,7 @@ export function FlashcardsView(props: {
                         props.basePath!,
                         c.index,
                         response,
-                        scheduleFields(c.dir),
+                        scheduleColumns(c.dir, baseSchedule()),
                     )
                 setPos(nextPosAfterGrade(pos(), { cram: false, persisted }))
                 props.onReviewed()
@@ -465,11 +481,10 @@ export function FlashcardsView(props: {
     const resetCurrentCard = async () => {
         const c = current()
         if (!c || !props.basePath) return
-        const keys = [dueField(), easeField(), intervalField()]
-        if (bidirectional())
-            keys.push(...keys.map(k => revScheduleCol(k)))
-        const next = { ...c.r.note }
-        for (const k of keys) delete next[k]
+        const next = stripSchedule(
+            c.r.note,
+            resetKeys(baseSchedule(), bidirectional()),
+        )
         await api.rowUpdate(props.basePath, c.index, next)
         props.onReviewed()
     }
@@ -482,13 +497,28 @@ export function FlashcardsView(props: {
     // higher row, and our cram bookkeeping (the index-keyed `retired` pool, the
     // frozen deck-size total, and `pos`) would otherwise go stale — reading as a
     // premature "Cram complete" or resurfacing an already-mastered card. So we
-    // reconcile it against the post-delete deck BEFORE the refetch lands.
+    // reconcile it against the post-delete deck BEFORE the refetch lands (the delete itself has
+    // already succeeded by then, so a failure never touches the counters).
     const deleteCurrent = async () => {
         const c = current()
         if (!c || !props.basePath) return
+        // Delete first: the counters below only move once the row is really gone, so a failed
+        // delete leaves the session exactly as it was.
+        const basePath = props.basePath
+        const row = props.rows[c.index]
+        if (!row) return
+        const note = storedNote(row)
+        const front = String(note[frontField()] ?? '').trim()
+        const wasCram = cram()
+        const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
+        try {
+            await api.rowDelete(basePath, c.index)
+        } catch (e) {
+            pushToast(`Could not delete the card: ${(e as Error).message}`)
+            return
+        }
         setRevealed(false)
-        if (cram()) {
-            const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
+        if (wasCram) {
             const newRetired = new Set(
                 reindexRetiredAfterDelete(retired(), c.index),
             )
@@ -514,29 +544,28 @@ export function FlashcardsView(props: {
                     : nextCramPos(newQueue, pos() - 1, newRetired)
             setPos(np === -1 ? newQueue.length : np)
         }
-        await api.rowDelete(props.basePath, c.index)
         props.onReviewed()
+        pushUndoToast(
+            front
+                ? `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`
+                : 'deleted card',
+            async () => {
+                await restoreRowAt(basePath, note, c.index)
+                if (wasCram) {
+                    setRetired(
+                        new Set(reindexRetiredAfterInsert(retired(), c.index)),
+                    )
+                    setSessionTotal(t => (t === null ? t : t + perRow))
+                }
+                props.onReviewed()
+            },
+        )
     }
 
-    // Edit/delete icons rendered on BOTH card faces so they flip with the card.
-    // stopPropagation keeps a click on them from triggering the card's reveal flip.
-    // `hidden` marks the face the user cannot currently see: both faces stay mounted for the CSS
-    // 3D flip, and backface-visibility hides the back VISUALLY only — without this a keyboard
-    // user tabs into the invisible face's buttons.
-    // `hidden` is an ACCESSOR, not a boolean, and it must stay one: this call sits inside <Show>,
-    // which compiles to a getter read synchronously inside Show's own tracked createMemo. Calling
-    // revealed() here (instead of passing it down) would make cardActions() itself a dependency of
-    // THAT memo, so every reveal would tear down and remount both IconButtons instead of just
-    // flipping aria-hidden on a persistent node — the exact "destroys focusable buttons" shape this
-    // task exists to prevent. Reading hidden() only inside the JSX attribute position below gets
-    // the compiler's fine-grained createRenderEffect treatment instead, same as `inert` above it.
-    const cardActions = (hidden: () => boolean) => (
-        <IconBar
-            label="Card actions"
-            class={styles['card-actions']}
-            onClick={e => e.stopPropagation()}
-            aria-hidden={hidden() || undefined}
-        >
+    // Edit / reset / delete for the current card, handed to FlipCard's `actions` slot — which pins
+    // them outside its reveal button, so a click on one never triggers the flip.
+    const cardActions = () => (
+        <IconBar label="Card actions">
             <IconButton
                 icon="Pencil"
                 label="Edit this card"
@@ -572,6 +601,8 @@ export function FlashcardsView(props: {
                 /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
         )
             return
+        // Space on a focused action/grade button must activate it; only the flip card flips.
+        if (el?.tagName === 'BUTTON' && !el.hasAttribute('data-flip-card')) return
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
@@ -624,105 +655,9 @@ export function FlashcardsView(props: {
     )
     onCleanup(() => props.onBarSlots?.(undefined))
 
-    // The restored ASCII meter's cell count — a fixed character count that cannot reflow, so it
-    // has to be picked against the MEASURED width of its own slot rather than a fraction of the
-    // viewport (see the `.fcmeter` comment in FlashcardsView.module.css for why `vw` is wrong here).
-    // Character width comes from a `ch`-unit probe rather than an approximated ratio: `ch` is the
-    // CSS spec's own measure of the current font's advance width (the width of "0"), read by the
-    // browser's real font metrics — the mono font is settings-driven (appearance.uiFont ->
-    // --ui-font-stack). THE PROBE MUST DECLARE `font-family: var(--ui-font-stack)` ITSELF — it
-    // does NOT inherit the right font by sitting inside `.fcmeter`. `.fcmeter` sets no
-    // font-family of its own, so without an explicit declaration the probe inherits from
-    // `.app-shell`/`.layout`, which hardcode the literal "Monaspace Xenon" stack (global.css's
-    // `App.css` section), while the glyph run it is supposed to be measuring gets its font from
-    // `.asc-meter`'s own `font-family: var(--ui-font-stack)` (global.css's `ui/ui.css` section) —
-    // the setting-driven one. Caught in review by
-    // swapping --ui-font-stack to Georgia on a live story and finding the probe's measured width
-    // BYTE-IDENTICAL: it was measuring the wrong font and it happened not to matter only because
-    // every shipped FONT_STACKS entry is a fixed-width Monaspace variant.
-    // Zero-height + absolutely positioned so the probe never claims space on the flex line.
-    //
-    // CONTAINMENT, if a bad chPx ever DID produce too many cells: `.fcmeter` is `.stage`'s SIBLING
-    // in `.flashcards-host`, not its descendant, so `.stage`'s `overflow: hidden` never applies to
-    // it. The real backstop is `.flashcards-host` itself (`overflow-y: auto`) — once one axis is
-    // non-visible, the other computes to `auto` too, so an oversized meter does not get silently
-    // clipped, it runs off to the right and becomes reachable only by scrolling. `fitMeterWidth`'s
-    // clamp is what is actually supposed to prevent this; the ceiling here is not something to
-    // rely on for correctness, only a description of the failure mode if it did happen.
-    const [meterCells, setMeterCells] = createSignal(30)
-    let meterEl: HTMLDivElement | undefined
-    let probeEl: HTMLSpanElement | undefined
-    onMount(() => {
-        if (!meterEl || !probeEl) return
-        const measure = () => {
-            // `.isConnected`, not just truthiness — Solid does not null a ref on unmount, so
-            // `meterEl` stays a truthy (but detached) node forever. Without this, a
-            // `document.fonts.ready` resolution that lands after this view unmounts would still
-            // call `setMeterCells` on a disposed owner.
-            if (!meterEl?.isConnected || !probeEl) return
-            // clientWidth includes the element's own padding, so subtract it to get the
-            // content-box width actually available to the glyph run.
-            const cs = getComputedStyle(meterEl)
-            const availablePx =
-                meterEl.clientWidth -
-                parseFloat(cs.paddingLeft) -
-                parseFloat(cs.paddingRight)
-            const chPx = probeEl.getBoundingClientRect().width / 10
-            setMeterCells(fitMeterWidth(availablePx, chPx))
-        }
-        const ro = new ResizeObserver(measure)
-        ro.observe(meterEl)
-        // Re-measure once the real font has swapped in — the first paint can still be on a
-        // fallback font, which would otherwise bake a wrong chPx into the initial cell count.
-        void document.fonts?.ready?.then(measure).catch(() => {})
-        onCleanup(() => ro.disconnect())
-    })
-
     return (
         <div class={styles['flashcards-host']}>
-            {/* SESSION PROGRESS — the ASCII meter, restored 2026-09-02 at the user's request after
-                it was removed as collateral when the deck's own 94px header strip went up into the
-                shared view bar (e0423403). It is on the STAGE, not in the bar: 30 cells is ~210px of
-                glyphs, which no 36px bar band can hold and which would have forced a collapse tier
-                of its own. The stage has the room the bar does not.
-                ACCESSIBILITY IS NOT REGRESSED BY BRINGING IT BACK. The reason the glyphs were
-                dropped is real — a screen reader spells "[####......]" out character by character —
-                so the wrapper keeps role=progressbar with the numeric value and the glyph run is
-                aria-hidden. Assistive tech hears "45%"; you see the meter. */}
-            <div
-                ref={el => (meterEl = el)}
-                class={styles['fcmeter']}
-                role="progressbar"
-                aria-label="Session progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(progressPct())}
-                data-testid="fc-progress"
-            >
-                <Text as="span" inherit aria-hidden="true">
-                    <AsciiMeter value={progressPct() / 100} width={meterCells()} />
-                </Text>
-                {/* Invisible ch-unit probe — see the onMount above for what it measures.
-                    `font-family` is set EXPLICITLY, not inherited: `.fcmeter` declares none, so
-                    without this the probe would measure global.css's `App.css` section's hardcoded
-                    shell font instead of the settings-driven one `.asc-meter` (global.css's
-                    `ui/ui.css` section) actually renders with. */}
-                <Text
-                    as="span"
-                    inherit
-                    ref={el => (probeEl = el)}
-                    aria-hidden="true"
-                    style={{
-                        position: 'absolute',
-                        visibility: 'hidden',
-                        width: '10ch',
-                        height: '0px',
-                        overflow: 'hidden',
-                        'pointer-events': 'none',
-                        'font-family': 'var(--ui-font-stack)',
-                    }}
-                />
-            </div>
+            <FlashcardsProgress percent={progressPct()} />
 
             <Show when={editing() && props.basePath}>
                 <EditCardsModal
@@ -744,97 +679,26 @@ export function FlashcardsView(props: {
                 <Show
                     when={queue().length > 0}
                     fallback={
-                        <EmptyState
-                            blockClass={styles['fc-empty']}
-                            titleClass={styles['fc-empty-title']}
-                            bodyClass={styles['fc-empty-body']}
-                            title={
-                                cram()
-                                    ? 'No cards in this deck'
-                                    : 'No cards due'
-                            }
-                        >
-                            <Show
-                                when={!cram()}
-                                fallback={
-                                    <>
-                                        Add rows with{' '}
-                                        <InlineCode>front</InlineCode> /{' '}
-                                        <InlineCode>back</InlineCode> columns.
-                                    </>
-                                }
-                            >
-                                Hit the{' '}
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['inline-bolt']}
-                                >
-                                    <Icon value="Zap" />
-                                </Text>{' '}
-                                button to review everything anyway.
-                            </Show>
-                        </EmptyState>
+                        <FlashcardsSummary
+                            variant="empty"
+                            cram={cram()}
+                            reviewed={graded()}
+                            good={goodCount()}
+                            total={total()}
+                        />
                     }
                 >
                     <Show
                         when={current() !== null}
                         fallback={
-                            <div class={styles['done']}>
-                                <EmptyState
-                                    blockClass={styles['fc-empty']}
-                                    titleClass={styles['fc-empty-title']}
-                                    bodyClass={styles['fc-empty-body']}
-                                    title={
-                                        cram()
-                                            ? 'Cram complete'
-                                            : 'Deck complete'
-                                    }
-                                >
-                                    <Show
-                                        when={cram()}
-                                        fallback={
-                                            <>
-                                                You reviewed <b>{graded()}</b>{' '}
-                                                {graded() === 1
-                                                    ? 'card'
-                                                    : 'cards'}
-                                                <Show when={goodCount() > 0}>
-                                                    {' '}
-                                                    //{' '}
-                                                    <Text
-                                                        as="span"
-                                                        inherit
-                                                        class={
-                                                            styles['good-text']
-                                                        }
-                                                    >
-                                                        good
-                                                    </Text>{' '}
-                                                    on most
-                                                </Show>
-                                                .
-                                            </>
-                                        }
-                                    >
-                                        Every card is{' '}
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles['good-text']}
-                                        >
-                                            easy
-                                        </Text>{' '}
-                                        — you mastered <b>{total()}</b>{' '}
-                                        {total() === 1 ? 'card' : 'cards'} in{' '}
-                                        <b>{graded()}</b>{' '}
-                                        {graded() === 1 ? 'review' : 'reviews'}.
-                                    </Show>
-                                </EmptyState>
-                                <TextButton onClick={restart}>
-                                    review again
-                                </TextButton>
-                            </div>
+                            <FlashcardsSummary
+                                variant="done"
+                                cram={cram()}
+                                reviewed={graded()}
+                                good={goodCount()}
+                                total={total()}
+                                onRestart={restart}
+                            />
                         }
                     >
                         <div class={styles['cardwrap']}>
@@ -850,89 +714,19 @@ export function FlashcardsView(props: {
                             <For
                                 each={[`${current()!.index}:${current()!.dir}`]}
                             >
-                                {() => {
-                                    // True for exactly the flip animation on THIS card (either
-                                    // direction), exposed as `data-flipping` on `.flip-inner`: it
-                                    // runs the `card-flip` keyframes and turns the faces'
-                                    // `overflow` off for that window. Owned by the keyed child, so
-                                    // a card graded mid-flip (Space then `1`) takes its flag with
-                                    // it and the next card always mounts at rest. Driven by an
-                                    // effect on `revealed` (deferred: a fresh card is not a flip)
-                                    // rather than by each reveal call site; skipped under reduced
-                                    // motion, where no animation runs and no `animationend` would
-                                    // ever clear it.
-                                    const [flipping, setFlipping] = createSignal(false)
-                                    createEffect(
-                                        on(
-                                            revealed,
-                                            () => {
-                                                if (!prefersReducedMotion())
-                                                    setFlipping(true)
-                                            },
-                                            { defer: true },
-                                        ),
-                                    )
-                                    onCleanup(() => setFlipping(false))
-                                    const settle = (e: AnimationEvent) => {
-                                        if (e.target === e.currentTarget)
-                                            setFlipping(false)
-                                    }
-                                    return (
-                                        <div
-                                            class={`${styles['flip-card']} ${styles['card-appear']} ${revealed() ? styles['flipped'] : ''}`}
-                                            onClick={() => {
-                                                if (!revealed()) setRevealed(true)
-                                            }}
-                                        >
-                                            <div
-                                                class={styles['flip-inner']}
-                                                data-flipping={
-                                                    flipping() || undefined
-                                                }
-                                                onAnimationEnd={settle}
-                                                onAnimationCancel={settle}
-                                            >
-                                                {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
-                                                shared .flip-face) — left as a bare literal per FlashcardsView.module.css's header. */}
-                                                <div
-                                                    class={`${styles['flip-face']} flip-front`}
-                                                    inert={revealed() || undefined}
-                                                >
-                                                    <Show when={props.basePath}>
-                                                        {cardActions(() => revealed())}
-                                                    </Show>
-                                                    <div
-                                                        class={styles['card-md']}
-                                                        innerHTML={promptHtml(
-                                                            current()!,
-                                                        )}
-                                                    />
-                                                </div>
-                                                <div
-                                                    class={`${styles['flip-face']} ${styles['flip-back']}`}
-                                                    inert={!revealed() || undefined}
-                                                >
-                                                    <Show when={props.basePath}>
-                                                        {cardActions(() => !revealed())}
-                                                    </Show>
-                                                    <div
-                                                        class={styles['qcaption']}
-                                                        innerHTML={promptHtml(
-                                                            current()!,
-                                                        )}
-                                                    />
-                                                    <div class={styles['fcdiv']} />
-                                                    <div
-                                                        class={`${styles['card-md']} ${styles['abody']}`}
-                                                        innerHTML={answerHtml(
-                                                            current()!,
-                                                        )}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )
-                                }}
+                                {() => (
+                                    <FlipCard
+                                        revealed={revealed()}
+                                        onReveal={() => setRevealed(true)}
+                                        promptHtml={promptHtml(current()!)}
+                                        answerHtml={answerHtml(current()!)}
+                                        actions={
+                                            props.basePath
+                                                ? cardActions()
+                                                : undefined
+                                        }
+                                    />
+                                )}
                             </For>
                         </div>
 

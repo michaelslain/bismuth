@@ -1,8 +1,9 @@
 import { Index, Show, type Component } from 'solid-js'
 import type { SortSpec } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
+import { withCurrent } from './selectOptions'
 import SettingsField from '../ui/SettingsField'
-import { IconButton } from '../ui/IconButton'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import styles from './SortFields.module.css'
 
@@ -19,12 +20,6 @@ const DIR_OPTS: SelectOption[] = [
     { value: 'ASC', label: 'ascending' },
     { value: 'DESC', label: 'descending' },
 ]
-
-/** Options with the key's current property kept even when the list lacks it. */
-function withCurrent(options: SelectOption[], current: string): SelectOption[] {
-    if (!current || options.some(o => o.value === current)) return options
-    return [...options, { value: current, label: current }]
-}
 
 /**
  * A view's `sort:` as an ordered list — "sort by" then any number of "then by" keys, each with
@@ -87,12 +82,7 @@ const SortFields: Component<SortFieldsProps> = props => {
                                         })
                                     }
                                 />
-                                <IconButton
-                                    icon="x"
-                                    label="Remove sort key"
-                                    danger
-                                    onClick={() => remove(i)}
-                                />
+                                <RemoveRowButton label="Remove sort key" onClick={() => remove(i)} />
                             </div>
                         </SettingsField>
                     )}

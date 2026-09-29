@@ -1,38 +1,22 @@
 import { Show } from 'solid-js'
 import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
+import { renderTitle } from './renderValue'
 import {
-    renderTitle,
     isStatusColumn,
     isRatingColumn,
-    bareName,
-} from './renderValue'
+    isPagesColumn,
+    findColumn,
+    asNumber,
+} from './columnKinds'
+import { titleOf } from './kanbanMeta'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import CardTitle from './CardTitle'
+import CardMeta from './CardMeta'
 import styles from './CardBody.module.css'
-
-/** Heuristic: which column is a page count (rendered as "N pages" on the right). */
-function isPagesColumn(id: string): boolean {
-    const n = bareName(id)
-    return n === 'pages' || n === 'pagecount' || n === 'page_count'
-}
-
-function findColumn(
-    cols: string[],
-    pred: (id: string) => boolean,
-): string | undefined {
-    return cols.find(pred)
-}
-
-function asNumber(v: unknown): number | null {
-    if (typeof v === 'number' && Number.isFinite(v)) return v
-    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
-        return Number(v)
-    return null
-}
 
 /**
  * Compact book-card body matching the design's Cards/Kanban layout: a serif title
@@ -40,9 +24,10 @@ function asNumber(v: unknown): number | null {
  * author line, then a single meta row — status word on the LEFT, star rating (or a
  * "N pages" count) on the RIGHT. Replaces the old label:value field dump.
  *
- * Used by CardsView (`titleAsField` — cover shows title/author) and KanbanView
- * (stacks its own title + author). Status/rating/pages columns are detected from
- * `cols`; title = first column, author = next non-status/rating/pages column.
+ * Used by CardsView only (`titleAsField` on a text cover — the cover shows title/author). Kanban
+ * cards render through KanbanCard, not this. Status/rating/pages columns are detected from
+ * `cols`; title = first column, author = next non-status/rating/pages column. Every other
+ * ordered column is drawn by CardMeta, through renderCell with the base config.
  */
 export function CardBody(props: {
     cols: string[]
@@ -55,12 +40,7 @@ export function CardBody(props: {
 
     // Plain (non-link) title text — used when the whole card is already a click target
     // (CardsView), so the title isn't a competing inner link.
-    const titleText = (): string => {
-        const v = resolveProperty(titleCol(), props.row)
-        return v == null || typeof v === 'object'
-            ? props.row.file.name
-            : String(v)
-    }
+    const titleText = (): string => titleOf(props.row, titleCol())
 
     const statusCol = (): string | undefined =>
         findColumn(props.cols, isStatusColumn)
@@ -96,7 +76,7 @@ export function CardBody(props: {
     const pages = (): number | null => {
         const c = pagesCol()
         if (!c) return null
-        return asNumber(resolveProperty(c, props.row))
+        return asNumber(resolveProperty(c, props.row)) ?? null
     }
 
     const author = (): string | null => {
@@ -109,6 +89,20 @@ export function CardBody(props: {
     // The right-hand meta: stars when there's a rating, otherwise a page count.
     const hasMeta = (): boolean =>
         status() != null || rating() != null || pages() != null
+
+    // Ordered columns nothing above draws: not the title, not the author line (on a text cover
+    // that is the second column, which the cover paints), not status/rating/pages.
+    const extraCols = (): string[] => {
+        const author = props.titleAsField ? props.cols[1] : authorCol()
+        return props.cols.filter(
+            (c, i) =>
+                i !== 0 &&
+                c !== author &&
+                !isStatusColumn(c) &&
+                !isRatingColumn(c) &&
+                !isPagesColumn(c),
+        )
+    }
 
     return (
         <>
@@ -157,6 +151,11 @@ export function CardBody(props: {
                     </Text>
                 </div>
             </Show>
+            <CardMeta
+                cols={extraCols()}
+                row={props.row}
+                config={props.config}
+            />
         </>
     )
 }

@@ -1,4 +1,5 @@
 import type { Component, JSX } from 'solid-js'
+import { openNote } from './openNote'
 import styles from './NoteLink.module.css'
 
 export type NoteLinkProps = {
@@ -7,6 +8,8 @@ export type NoteLinkProps = {
     /** Visible label. Defaults to the path when omitted. */
     children?: JSX.Element
     class?: string
+    /** `link` (default) is accent-coloured; `title` reads as the row's title (--fg), accent on hover. */
+    tone?: 'link' | 'title'
 }
 
 /**
@@ -28,12 +31,11 @@ export type NoteLinkProps = {
 const NoteLink: Component<NoteLinkProps> = props => (
     <a
         href="#"
+        data-tone={props.tone ?? 'link'}
         class={[styles.noteLink, props.class].filter(Boolean).join(' ')}
         onClick={e => {
             e.preventDefault()
-            window.dispatchEvent(
-                new CustomEvent('bismuth-open', { detail: props.path }),
-            )
+            openNote(props.path)
         }}
     >
         {props.children ?? props.path}

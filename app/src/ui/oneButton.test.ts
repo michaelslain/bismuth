@@ -63,7 +63,7 @@ const RAW_BUTTON_ALLOW: Readonly<Record<string, string>> = {
     // Imperative `document.createElement('button')` — CodeMirror widgets build raw DOM outside
     // the Solid tree, so there is no Button/TextButton to compose here. Known follow-up (Finding
     // 1 in this task's review), not endorsed: flagged for a future migration, not fixed here.
-    'bases/CardEditor.tsx': 'a CodeMirror WidgetType.toDOM fold-toggle — plain-DOM, outside Solid',
+    'editor/cardEditorExtensions.ts': 'a CodeMirror WidgetType.toDOM fold-toggle — plain-DOM, outside Solid',
     'editor/findPanel.ts': 'a CodeMirror search Panel built as raw DOM — plain-DOM, outside Solid',
     'editor/tableWidget.ts':
         'CodeMirror table row/column controls built as raw DOM — plain-DOM, outside Solid',

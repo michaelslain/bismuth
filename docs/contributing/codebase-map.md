@@ -1040,7 +1040,7 @@ Triggers a calendar data refetch from SSE version changes.
 `MonthView.tsx`, `WeekView.tsx`, `ThreeDayView.tsx`, `DayView.tsx`, `TimeGrid.tsx` — per-view layout renderers; `TaskAllDayStrip.tsx` is the tasks register's week/3-day/day layout. Three components shared across those: `DayHeaderRow.tsx` (the weekday+date header over a run of day columns), `AllDayRow.tsx` (one cell per day under a `DayHeaderRow`, `fill` prop stretches it to the pane's bottom), and `DayGutter.tsx` (the empty left-gutter spacer that aligns those rows with `TimeGrid`'s hour labels). `TimeGrid` composes `DayHeaderRow`/`AllDayRow` for the events register and `TaskAllDayStrip` composes the same two for the tasks register, so the two registers can't disagree about column geometry.
 
 #### `calendar/taskChipKeys.ts`
-Pure keymap for a focused `TaskChip`: `chipKeyAction(e)` maps a keydown to `open`/`toggle`/`menu`/`reschedule`; `taskKey(row)` is a task's identity across re-renders (`` `${path}:${line}` ``). No framework imports. Tested.
+`taskKey(row)` is a task's identity across re-renders (`` `${path}:${line}` ``). No framework imports. Tested. The keymap itself, `chipKeyAction(e)` (a keydown to `open`/`toggle`/`menu`/`reschedule`), lives in `ui/chipKeys.ts` so every chip-like surface (TaskChip, TaskCheck, a map pin) shares it.
 
 ---
 

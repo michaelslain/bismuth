@@ -1,112 +1,15 @@
-import { For, Show, type JSX } from 'solid-js'
+import { Show, type JSX } from 'solid-js'
 import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row } from '../../../core/src/bases/types'
 import { isLink, type Link } from '../../../core/src/bases/values'
-import { renderInline, hasInlineMarkup } from './markdown'
-import Stars from '../ui/Stars'
-import { StatusText } from '../ui/StatusDot'
-import Tag from '../ui/Tag'
+import type { BaseConfig } from '../../../core/src/bases/types'
+import { isTagColumn } from './columnKinds'
+import { linkLabel } from './kanbanMeta'
+import PropertyDisplay from './PropertyDisplay'
+import { renderTags } from './valueRenderers'
+import Text from '../ui/Text'
 import styles from './renderValue.module.css'
-import EmptyValue from '../ui/EmptyValue'
 import NoteLink from '../ui/NoteLink'
-
-export function capitalize(s: string): string {
-    return s.length ? s[0].toUpperCase() + s.slice(1) : s
-}
-
-/** Is this row a task? In tasks mode, every row is, by declaration — that is what the mode
- *  MEANS, and it is the only thing that works for a stored row (which has no source line to
- *  sniff for). In normal mode a row can still be a task line that arrived through a
- *  `source: tasks` query, so the shape check (note.line + note.status + note.raw, as
- *  produced by taskToRow) stays as the fallback. */
-export function isTaskRow(
-    row: Row,
-    mode: 'normal' | 'tasks' = 'normal',
-): boolean {
-    if (mode === 'tasks') return true
-    const n = row.note as Record<string, unknown> | undefined
-    return (
-        !!n &&
-        typeof n.line === 'number' &&
-        typeof n.status === 'string' &&
-        'raw' in n
-    )
-}
-
-/** Bare property name (drop file./note./this./formula. namespace), lowercased. */
-export function bareName(id: string): string {
-    const dot = id.indexOf('.')
-    const base = dot >= 0 ? id.slice(dot + 1) : id
-    return base.toLowerCase()
-}
-
-/** Heuristic: which columns should render as colored-dot status text. */
-export function isStatusColumn(id: string): boolean {
-    return bareName(id) === 'status'
-}
-/** Heuristic: which columns are tag lists (rendered as plain teal #tags). */
-export function isTagColumn(id: string): boolean {
-    const n = bareName(id)
-    return n === 'tags' || n === 'tag'
-}
-/** Heuristic: which columns are numeric ratings (rendered as gold stars). */
-export function isRatingColumn(id: string): boolean {
-    const n = bareName(id)
-    return n === 'rating' || n === 'stars' || n === 'score'
-}
-
-/** Colored-dot + word status text (no pill). Delegates to the shared ui component. */
-export function renderStatus(s: string): JSX.Element {
-    return <StatusText status={s} />
-}
-
-/** A tag list as `#alpha, #beta` — each a ui/Tag, comma-separated — which is exactly how the tags
- *  field (ui/TagsField) reads while you edit it, so a cell looks the same at rest and in edit.
- *  `dense` is KanbanCard's compact meta-row sizing (chrome type size) — a flag rather than
- *  KanbanCard reaching into this module's `.tagRow` class, which would break under CSS-module
- *  hashing (each module's classes are local to it). */
-export function renderTags(v: unknown, dense?: boolean): JSX.Element {
-    const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
-    if (tags.length === 0) return <EmptyValue />
-    return (
-        <span class={`${styles.tagRow} ${dense ? styles.tagRowDense : ''}`}>
-            <For each={tags}>
-                {(t, i) => (
-                    <>
-                        <Show when={i() > 0}>{', '}</Show>
-                        <Tag name={t} />
-                    </>
-                )}
-            </For>
-        </span>
-    )
-}
-
-/** Five lucide stars: filled gold up to `n`, faint outline for the rest. */
-export function renderStars(n: number): JSX.Element {
-    return <Stars value={n} />
-}
-
-/** Clean display label for a Link: explicit display text, else the basename
- *  of the path with the .md extension stripped. */
-function linkLabel(link: Link): string {
-    return (
-        link.display ||
-        link.path.replace(/\.md$/, '').split('/').pop() ||
-        link.path
-    )
-}
-
-/** Plain-text label for a value — a Link's display text, else the stringified value,
- *  else the row's file name. No JSX: safe anywhere a caption needs the same label
- *  `renderTitle`/`renderValue` show without mounting a live anchor element (e.g. map
- *  marker chips), since `String()` on an `<a>` DOM node resolves its href, not its text. */
-export function plainLabel(id: string, row: Row): string {
-    const v = resolveProperty(id, row)
-    if (v == null) return row.file.name
-    if (isLink(v)) return linkLabel(v as Link)
-    return String(v)
-}
 
 /** First-column title cell: the label, linked to its note when it has one. */
 export function renderTitle(id: string, row: Row): JSX.Element {
@@ -129,10 +32,6 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     const content = (): JSX.Element =>
         tagged ? renderTags(v) : label || row.file.name
     const target = isLink(v) ? (v as Link).path : row.file.path
-    const open = () =>
-        window.dispatchEvent(
-            new CustomEvent('bismuth-open', { detail: target }),
-        )
     // A row STORED in a base's own body has no note to open: `syntheticBaseFile` hands every
     // such row the BASE's path, as a write-back handle rather than a destination, so the
     // anchor offered "open the file you are already looking at". `Row.index` is the same
@@ -140,72 +39,23 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     // construction. A Link VALUE is unaffected — it names a real destination of its own.
     const linkable = isLink(v) || !Number.isInteger(row.index)
     return (
-        <span class={styles.cellTitle}>
+        <Text as="span" inherit class={styles.cellTitle}>
             <Show when={linkable} fallback={<>{content()}</>}>
-                <a
-                    href="#"
-                    onClick={e => {
-                        e.preventDefault()
-                        open()
-                    }}
-                >
-                    {content()}
-                </a>
+                <NoteLink path={target} tone="title">{content()}</NoteLink>
             </Show>
-        </span>
+        </Text>
     )
 }
 
-/** Smart cell: routes status / tags / rating columns to their themed renderers,
- * everything else to the generic renderValue. The first/title column is handled
- * separately by renderTitle. */
-export function renderCell(id: string, row: Row, dense?: boolean): JSX.Element {
-    const v = resolveProperty(id, row)
-    if (isStatusColumn(id) && v != null && typeof v !== 'object')
-        return renderStatus(String(v))
-    if (isTagColumn(id)) return renderTags(v, dense)
-    if (isRatingColumn(id) && typeof v === 'number') return renderStars(v)
-    return renderValue(id, row)
-}
-
-export function renderValue(id: string, row: Row): JSX.Element {
-    const v = resolveProperty(id, row)
-    if (v === null || v === undefined) return <EmptyValue />
-
-    // A Link value (from file.asLink(...), the link() function, or a link-typed column)
-    // renders as a clickable note link, not "[object Object]".
-    if (isLink(v)) {
-        const link = v as Link
-        const label = linkLabel(link)
-        return <NoteLink path={link.path}>{label}</NoteLink>
-    }
-
-    if (id === 'file.name') {
-        return <NoteLink path={row.file.path}>{String(v)}</NoteLink>
-    }
-
-    if (Array.isArray(v)) {
-        return <span>{v.map(x => String(x)).join(', ')}</span>
-    }
-
-    // Typed glyph, not an SVG check — "x" when true, blank when false (per the ASCII
-    // system's renderValue rule: booleans render as text, never an icon asset).
-    if (typeof v === 'boolean') {
-        return <span class={styles.boolCell}>{v ? 'x' : ''}</span>
-    }
-
-    if (v instanceof Date) {
-        return (
-            <span class={styles.dateCell}>{v.toISOString().slice(0, 10)}</span>
-        )
-    }
-
-    // Plain string/number cell. If it carries inline markup (emphasis, code, a wikilink, a
-    // #tag, or `$math$`), render it through the shared inline markdown renderer so a cell
-    // shows the same formatting + math as the rest of the app; otherwise keep it literal
-    // (cheap, and avoids surprises on plain values).
-    const s = String(v)
-    if (hasInlineMarkup(s))
-        return <span class="bismuth-cell-md" innerHTML={renderInline(s)} />
-    return <span>{s}</span>
+/** Smart cell: a type-aware read-only display of one property (declared number / multiselect /
+ * boolean / markdown per `config`, else the themed status / tags / rating renderers and the
+ * generic renderValue). The first/title column is handled separately by renderTitle. */
+export function renderCell(
+    id: string,
+    row: Row,
+    dense?: boolean,
+    config?: BaseConfig,
+    inline?: boolean,
+): JSX.Element {
+    return <PropertyDisplay {...{ id, row, config, dense, inline }} />
 }

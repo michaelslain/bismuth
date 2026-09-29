@@ -15,6 +15,9 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { GcalSyncPanel } from './GcalSyncPanel'
+import ModalBody from '../../ui/ModalBody'
+import { ToastHost } from '../../Toast'
+import { toasts, dismissToast } from '../../toastStore'
 import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
 import type { GcalStatus } from '../../../../core/src/gcal'
@@ -24,6 +27,17 @@ const meta = {
     title: 'Calendar/GcalSyncPanel',
     component: GcalSyncPanel,
     parameters: { layout: 'fullscreen' },
+    // The real host is CalendarSettings' FormModal > ModalBody (548px panel); 520px is that
+    // panel's body, so field spacing and side padding match the modal.
+    decorators: [
+        Story => (
+            <div style={{ width: '520px', 'max-width': '100%' }}>
+                <ModalBody>
+                    <Story />
+                </ModalBody>
+            </div>
+        ),
+    ],
 } satisfies Meta<typeof GcalSyncPanel>
 
 export default meta
@@ -42,7 +56,11 @@ function baseFixture(view: Record<string, unknown>): ParsedBase {
 
 /** Wrap the shared fakeTransport, answering /gcal/status + this one base's /base fetch, and
  *  delegating everything else (`/tree`, `/file`, `/rows`, ...) to the normal fixture. */
-function seedGcal(status: GcalStatus | null, view: Record<string, unknown>) {
+function seedGcal(
+    status: GcalStatus | null,
+    view: Record<string, unknown>,
+    post?: (path: string, body: unknown) => Promise<unknown>,
+) {
     const inner = fakeTransport()
     const custom: Transport = {
         ...inner,
@@ -56,6 +74,10 @@ function seedGcal(status: GcalStatus | null, view: Record<string, unknown>) {
             if (pathname === '/base') return baseFixture(view) as unknown as T
             return inner.getJson<T>(path)
         },
+        postJson: async <T,>(path: string, body: unknown): Promise<T> =>
+            post && path === '/gcal/sync'
+                ? ((await post(path, body)) as T)
+                : inner.postJson<T>(path, body),
     }
     setTransport(custom)
 }
@@ -159,6 +181,54 @@ export const Interactive: Story = {
                     .querySelector('[data-testid="toggle-row"]')
                     ?.getAttribute('aria-checked'),
             ).toBe('true'),
+        )
+    },
+}
+
+const CONNECTED: GcalStatus = {
+    connected: true,
+    needsCredentials: false,
+    account: 'reader@example.com',
+    timeZone: 'America/Los_Angeles',
+    connectedAt: '2026-07-01T12:00:00.000Z',
+}
+
+/** A sync in flight: the button reads `syncing…`, is disabled, and the sync toggle is locked, so a
+ *  second click cannot start a second run. The sync never resolves. */
+export const Busy: Story = {
+    render: () => {
+        seedGcal(CONNECTED, { googleCalendarSync: true }, () => new Promise(() => {}))
+        return <GcalSyncPanel basePath={BASE_PATH} />
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.click(await body.findByRole('button', { name: /sync now/ }))
+        const busy = await body.findByRole('button', { name: /syncing/ })
+        expect(busy).toBeDisabled()
+        expect(body.getByRole('switch')).toHaveAttribute('aria-disabled', 'true')
+    },
+}
+
+/** A failing sync toasts the reason and frees the button again. */
+export const SyncFailure: Story = {
+    render: () => {
+        toasts().forEach(t => dismissToast(t.id))
+        seedGcal(CONNECTED, { googleCalendarSync: true }, async () => {
+            throw new Error('quota exceeded')
+        })
+        return (
+            <>
+                <GcalSyncPanel basePath={BASE_PATH} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.click(await body.findByRole('button', { name: /sync now/ }))
+        expect(await body.findByText('sync failed: quota exceeded')).toBeTruthy()
+        await waitFor(() =>
+            expect(body.getByRole('button', { name: /sync now/ })).not.toBeDisabled(),
         )
     },
 }

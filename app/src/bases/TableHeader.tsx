@@ -1,0 +1,60 @@
+// The table's header row: one sticky <th> per column, with the reorder/resize affordances the
+// pointer maths in tableColumnDrag.ts drives. It owns no gesture state — TableView hands the hover
+// indexes in and takes the pointer events back out — so it renders in Storybook with stubs.
+import { For, Show, type Component } from 'solid-js'
+import type { BaseConfig } from '../../../core/src/bases/types'
+import { columnLabel } from './columnLabel'
+import Label from '../ui/Label'
+import Text from '../ui/Text'
+import styles from './TableHeader.module.css'
+
+export type TableHeaderProps = {
+    cols: string[]
+    config: BaseConfig
+    /** A header body drags to reorder columns. */
+    reorderable?: boolean
+    /** A header's right edge drags to resize its column. */
+    resizable?: boolean
+    /** The header the reorder drag is currently over (draws the drop cue). */
+    overIdx?: number | null
+    /** The header whose edge the pointer is in (shows the col-resize cursor). */
+    edgeIdx?: number | null
+    onPointerDown?: (idx: number, e: PointerEvent) => void
+    onPointerMove?: (idx: number, e: PointerEvent) => void
+    onPointerLeave?: () => void
+    /** Receives the <thead>, so the owner can measure the rendered headers. */
+    ref?: (el: HTMLTableSectionElement) => void
+    class?: string
+}
+
+const TableHeader: Component<TableHeaderProps> = props => (
+    <thead ref={el => props.ref?.(el)} class={props.class}>
+        <tr>
+            <For each={props.cols}>
+                {(c, i) => (
+                    <th
+                        classList={{
+                            [styles.th]: true,
+                            [styles.thDrag]: !!props.reorderable,
+                            [styles.thOver]: props.overIdx === i(),
+                            [styles.thResizable]: !!props.resizable,
+                            [styles.thAtEdge]: props.edgeIdx === i(),
+                        }}
+                        onPointerDown={e => props.onPointerDown?.(i(), e)}
+                        onPointerMove={e => props.onPointerMove?.(i(), e)}
+                        onPointerLeave={() => props.onPointerLeave?.()}
+                    >
+                        <Label inline class={styles.thLabel}>
+                            {columnLabel(c, props.config)}
+                        </Label>
+                        <Show when={props.resizable}>
+                            <Text as="span" inherit class={styles.thResize} />
+                        </Show>
+                    </th>
+                )}
+            </For>
+        </tr>
+    </thead>
+)
+
+export default TableHeader

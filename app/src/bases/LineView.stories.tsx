@@ -4,8 +4,9 @@
 // an explicit `x:`. `whenMathReady()` is the deterministic seam `play()` awaits before asserting
 // on any KaTeX output (see ui/Tex.stories.tsx) — the very first story to mount races the lazy
 // ~280KB KaTeX chunk.
+import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import type { Row } from '../../../core/src/bases/types'
 import { whenMathReady } from '../editor/katexLoader'
 import { LineView } from './LineView'
@@ -219,5 +220,195 @@ export const Narrow: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** No rows: the one shared empty state, not a blank plot. */
+export const Empty: Story = {
+    render: () => {
+        const views = [{ type: 'line' as const, name: 'Chart', x: 'due', y: 'priority' }]
+        return (
+            <LineView
+                result={sampleViewResult([], { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('no data to chart'))
+        expect(canvasElement.querySelector('pre')).toBeNull()
+    },
+}
+
+/** `bin: "month"` over dates six months apart — the x labels are months and the points are spaced
+ *  by real calendar distance (Jan 1 to Mar 1 is two slots, Mar 1 to Jul 1 four). */
+export const MonthBin: Story = {
+    render: () => {
+        const views = [
+            { type: 'line' as const, name: 'Monthly', x: 'due', y: 'amount', bin: 'month' as const },
+        ]
+        const rows: Partial<Row>[] = [
+            { note: { due: '2026-01-05', amount: 4 } },
+            { note: { due: '2026-01-20', amount: 3 } },
+            { note: { due: '2026-03-10', amount: 9 } },
+            { note: { due: '2026-07-02', amount: 6 } },
+        ]
+        return (
+            <LineView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelector('pre')?.textContent).toMatch(/Jan/))
+        expect(canvasElement.querySelector('pre')?.textContent).toMatch(/Jul/)
+    },
+}
+
+/** `bin: "day"` over a fortnight of daily rows — one point per day, day labels on the axis. */
+export const DayBin: Story = {
+    render: () => {
+        const views = [
+            { type: 'line' as const, name: 'Daily', x: 'due', y: 'amount', bin: 'day' as const },
+        ]
+        const rows: Partial<Row>[] = Array.from({ length: 14 }, (_, i) => ({
+            note: { due: `2026-08-${String(i + 1).padStart(2, '0')}`, amount: (i * 5) % 9 },
+        }))
+        return (
+            <LineView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+}
+
+/** A categorical x (`status`, not a date): points sit at even index spacing, there is no trend
+ *  line, and the axis labels are the category names. */
+export const CategoricalX: Story = {
+    render: () => {
+        const views = [
+            { type: 'line' as const, name: 'By status', x: 'status', y: 'priority', aggregate: 'sum' as const },
+        ]
+        return (
+            <LineView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelector('pre')).not.toBeNull())
+        const plot = canvasElement.querySelector('pre')!.textContent ?? ''
+        expect(plot).toMatch(/[A-Za-z]{3,}/)
+    },
+}
+
+/** `onOpen` wired: with an opener the drill rows are note links. Activating the column with the
+ *  keyboard opens the drill, and clicking a row link fires the app-wide `bismuth-open` event —
+ *  captured into state and shown, so the click is proven rather than assumed. */
+export const OnOpenWired: Story = {
+    render: () => {
+        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const [opened, setOpened] = createSignal<string>('nothing yet')
+        const onOpenEvent = (e: Event) => setOpened((e as CustomEvent<string>).detail)
+        window.addEventListener('bismuth-open', onOpenEvent)
+        onCleanup(() => window.removeEventListener('bismuth-open', onOpenEvent))
+        return (
+            <div>
+                <LineView
+                    result={sampleViewResult(undefined, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+                <div data-testid="opened">opened: {opened()}</div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('pre')
+            if (!el) throw new Error('plot not mounted yet')
+            return el
+        })
+        pre.focus()
+        await userEvent.keyboard('{ArrowRight}{Enter}')
+        const link = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('a')
+            if (!el) throw new Error('drill has no note link yet')
+            return el
+        })
+        await userEvent.click(link)
+        await waitFor(() => expect(canvasElement.textContent).toMatch(/opened: .+\.md/))
+    },
+}
+
+/** Keyboard only: the plot takes focus, the arrows walk the hover column (the readout follows),
+ *  Home/End jump to the ends, Enter opens the drill for the column and Enter again closes it.
+ *  No pointer event is dispatched. */
+export const KeyboardReach: Story = {
+    render: () => {
+        const views = [{ type: 'line' as const, name: 'Chart' }]
+        return (
+            <LineView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+                onOpen={() => {}}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('pre')
+            if (!el) throw new Error('plot not mounted yet')
+            return el
+        })
+        expect(pre.tabIndex).toBe(0)
+        await userEvent.tab()
+        expect(document.activeElement).toBe(pre)
+
+        await userEvent.keyboard('{ArrowRight}')
+        await waitFor(() => expect(canvasElement.querySelector('[class*="active"]')).not.toBeNull())
+        const first = canvasElement.querySelector('[class*="active"]')!.textContent
+        await userEvent.keyboard('{End}')
+        await waitFor(() =>
+            expect(canvasElement.querySelector('[class*="active"]')!.textContent).not.toBe(first),
+        )
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(canvas.getByText('clear')).toBeInTheDocument())
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(canvas.queryByText('clear')).toBeNull())
+    },
+}
+
+/** Space on the focused plot with no hover column is swallowed — the page must not scroll. */
+export const SpaceWithoutHoverDoesNotScroll: Story = {
+    render: () => {
+        const views = [{ type: 'line' as const, name: 'Chart' }]
+        return (
+            <LineView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('pre')
+            if (!el) throw new Error('plot not mounted yet')
+            return el
+        })
+        pre.focus()
+        const ev = new KeyboardEvent('keydown', {
+            key: ' ',
+            code: 'Space',
+            bubbles: true,
+            cancelable: true,
+        })
+        pre.dispatchEvent(ev)
+        expect(ev.defaultPrevented).toBe(true)
+        expect(canvasElement.textContent).not.toContain('clear')
     },
 }

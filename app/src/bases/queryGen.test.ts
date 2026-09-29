@@ -540,3 +540,113 @@ describe('review fixes — task sort, date_within, builder-representable', () =>
         ).toBe(false)
     })
 })
+
+// The QueryBuilder story inputs, pinned to the EXACT block text they generate. The builder's UI
+// composes the shared filter editors; none of that may change one byte of what it hands back.
+describe('QueryBuilder story inputs — generated block text is pinned', () => {
+    const d = () => defaultBuilderState()
+    const body = (s: BuilderState) => buildQueryBlockBody(s)
+
+    test('NotesFresh', () => {
+        expect(body(d())).toBe('source: notes\nviews:\n  - type: table\n    name: Table')
+    })
+    test('NotesEditingExisting', () => {
+        expect(
+            body({
+                ...d(),
+                view: 'kanban',
+                sort: [{ property: 'priority', direction: 'ASC' }],
+                group: 'status',
+                notes: {
+                    connective: 'and',
+                    rows: [row('status', 'equals', 'Doing')],
+                },
+            }),
+        ).toBe(
+            'source: notes where status == "Doing"\nviews:\n  - type: kanban\n    name: Kanban\n    sort:\n      - property: priority\n        direction: ASC\n    groupBy:\n      property: status',
+        )
+    })
+    test('TasksSource', () => {
+        expect(
+            body({
+                ...d(),
+                source: 'tasks',
+                view: 'bullets',
+                tasks: {
+                    status: 'open',
+                    priority: 'high',
+                    due: 'week',
+                    recurring: 'any',
+                    sortKey: 'due',
+                    sortReverse: false,
+                },
+            }),
+        ).toBe(
+            'tasks: |-\n  not done AND priority is high AND due before in 7 days\n  sort by due\nview: bullets',
+        )
+    })
+    test('BaseSource', () => {
+        expect(
+            body({
+                ...d(),
+                source: 'base',
+                baseRef: '[[Draft the roadmap]]',
+                baseWhere: 'priority >= 2',
+            }),
+        ).toBe('of: [[Draft the roadmap]]\nwhere: priority >= 2')
+    })
+    test('AddFilterRow -> insert (first column, empty value) is dropped as incomplete', () => {
+        expect(body(notesState([row('file.name', 'equals', '')]))).toBe(
+            'source: notes\nviews:\n  - type: table\n    name: Table',
+        )
+    })
+    test('one complete + one incomplete row emits only the complete one', () => {
+        expect(
+            body(
+                notesState([
+                    row('status', 'equals', 'Doing'),
+                    row('file.name', 'contains', '  '),
+                    row('', 'raw', ''),
+                    row('done', 'checked'),
+                ]),
+            ),
+        ).toBe(
+            'source: notes where (status == "Doing") && (done)\nviews:\n  - type: table\n    name: Table',
+        )
+    })
+    test('rawWhere wins over rows', () => {
+        expect(
+            body({
+                ...d(),
+                notes: {
+                    connective: 'and',
+                    rows: [],
+                    rawWhere: 'priority > 1 && (status == "Todo" || done)',
+                },
+            }),
+        ).toBe(
+            'source: notes where priority > 1 && (status == "Todo" || done)\nviews:\n  - type: table\n    name: Table',
+        )
+    })
+    test('folder op + date_within + tag, any-connective, sort key + direction', () => {
+        expect(
+            body({
+                ...d(),
+                view: 'cards',
+                sort: [{ property: 'priority', direction: 'DESC' }],
+                group: 'status',
+                limit: 5,
+                notes: {
+                    connective: 'or',
+                    rows: [
+                        row('file.folder', 'in_folder', 'projects'),
+                        row('due', 'date_within', '7', 'date'),
+                        row('tags', 'has_tag', 'planning', 'tag'),
+                    ],
+                },
+            }),
+        ).toBe(
+            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nviews:\n  - type: cards\n    name: Cards\n    sort:\n      - property: priority\n        direction: DESC\n    groupBy:\n      property: status\n    limit: 5',
+        )
+    })
+})

@@ -23,6 +23,6 @@ describe('ChipToggle delegates selection colour to Button', () => {
 
     it('ChipToggle.tsx drives Button via state + accent, not a class it composes itself', () => {
         expect(tsx).toMatch(/state=\{local\.selected \? 'selected' : 'unselected'\}/)
-        expect(tsx).toMatch(/accent=\{local\.tone/)
+        expect(tsx).toMatch(/accent=\{local\.color \?\? \(local\.tone/)
     })
 })

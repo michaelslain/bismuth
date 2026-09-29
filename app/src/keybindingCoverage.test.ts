@@ -67,7 +67,7 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'Enter routing (planSwitcherEnter) commits the highlighted row or runs ask-ai — part of the switcher list\'s own createMenuNav-style contract, not an independently rebindable command',
     },
     {
-        file: 'calendar/taskChipKeys.ts',
+        file: 'ui/chipKeys.ts',
         reason: "a task chip's own interaction grammar (ContextMenu/Shift+F10 opens the OS-standard context-menu gesture, Enter opens, Space toggles, Alt+Arrow reschedules by day) — a per-row micro-widget contract, the same shape as the cell grid's",
     },
     {
@@ -109,14 +109,6 @@ const ALLOWED_FILES: AllowEntry[] = [
     {
         file: 'calendar/components/GcalSyncPanel.tsx',
         reason: 'PENDING SWEEP — a local field\'s own Enter-to-commit, never brought under the ui-confirm migration this plan ran over chat/bases/intro/note-title surfaces (see task-12 report)',
-    },
-    {
-        file: 'calendar/components/EventModal.tsx',
-        reason: 'PENDING SWEEP — the same local Enter-to-commit / Backspace-to-delete pattern, not yet migrated (see task-12 report)',
-    },
-    {
-        file: 'calendar/components/CategoryPanel.tsx',
-        reason: 'PENDING SWEEP — local Enter-to-commit / Escape-to-cancel on inline category fields, not yet migrated (see task-12 report)',
     },
     {
         file: 'chat/ChatQuestionCard.tsx',

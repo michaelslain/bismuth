@@ -1,12 +1,14 @@
 import { Index, Show, createMemo, type Component } from 'solid-js'
 import { TextInput } from '../ui/TextInput'
-import { IconButton } from '../ui/IconButton'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import SettingsHint from '../ui/SettingsHint'
 import {
     duplicateFormulaNames,
     formulaError,
-    nextFormulaName,
+    addFormula,
+    removeFormula,
+    updateFormula,
     type FormulaRow,
 } from './formulasForm'
 import styles from './FormulasEditor.module.css'
@@ -26,9 +28,7 @@ export type FormulasEditorProps = {
 const FormulasEditor: Component<FormulasEditorProps> = props => {
     const dupes = createMemo(() => duplicateFormulaNames(props.rows))
     const update = (i: number, patch: Partial<FormulaRow>) =>
-        props.onChange(
-            props.rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
-        )
+        props.onChange(updateFormula(props.rows, i, patch))
 
     return (
         <div class={`${styles.editor} ${props.class ?? ''}`}>
@@ -57,15 +57,11 @@ const FormulasEditor: Component<FormulasEditorProps> = props => {
                                                 update(i, { expr })
                                             }
                                         />
-                                        <IconButton
-                                            icon="x"
+                                        <RemoveRowButton
                                             label="Delete formula"
-                                            danger
                                             onClick={() =>
                                                 props.onChange(
-                                                    props.rows.filter(
-                                                        (_, idx) => idx !== i,
-                                                    ),
+                                                    removeFormula(props.rows, i),
                                                 )
                                             }
                                         />
@@ -89,12 +85,7 @@ const FormulasEditor: Component<FormulasEditorProps> = props => {
             <div>
                 <IconTextButton
                     icon="Plus"
-                    onClick={() =>
-                        props.onChange([
-                            ...props.rows,
-                            { name: nextFormulaName(props.rows), expr: '' },
-                        ])
-                    }
+                    onClick={() => props.onChange(addFormula(props.rows))}
                 >
                     add formula
                 </IconTextButton>

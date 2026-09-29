@@ -2,6 +2,7 @@
 // falls back to for every non-cards view kind. Standalone here (vs. BaseSkeleton's stories,
 // which exercise it through the `type` prop) so the shape itself — and its per-row width
 // stagger — is directly inspectable.
+import { expect } from 'storybook/test'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { TableSkeleton } from './TableSkeleton'
 
@@ -36,4 +37,22 @@ export const Default: Story = {
             <TableSkeleton />
         </Frame>
     ),
+    play: async ({ canvasElement }) => {
+        // header + 8 body rows of 4 bars each
+        expect(canvasElement.children[0].children[0].children.length).toBe(9)
+        expect(canvasElement.children[0].children[0].children[1].children.length).toBe(4)
+    },
+}
+
+/** Fewer rows and columns — the `rows`/`columns` props resize the silhouette. */
+export const Compact: Story = {
+    render: () => (
+        <Frame>
+            <TableSkeleton rows={3} columns={2} />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.children[0].children[0].children.length).toBe(4)
+        expect(canvasElement.children[0].children[0].children[1].children.length).toBe(2)
+    },
 }

@@ -4,8 +4,12 @@ import {
     propertyEditKind,
     multiselectCommitValue,
     multiselectValues,
+    selectChoices,
     selectOptionsWithCurrent,
     tagsOptions,
+    propertyDraft,
+    draftCommitValue,
+    readonlyText,
 } from './propertyEdit'
 import type { Schema } from '../../../core/src/schema/types'
 import type { BasePropertyType } from '../../../core/src/bases/types'
@@ -390,5 +394,57 @@ describe('list properties — only what the field can round-trip is editable', (
                 options: ['Smith, John'],
             }),
         ).toEqual({ kind: 'readonly' })
+    })
+})
+
+describe('propertyDraft', () => {
+    test('null is empty, text passes through', () => {
+        expect(propertyDraft({ kind: 'text' }, null)).toBe('')
+        expect(propertyDraft({ kind: 'text' }, 'hi')).toBe('hi')
+    })
+    test('percent shows in edit space (x100), unparseable keeps the raw text', () => {
+        expect(propertyDraft({ kind: 'number', format: 'percent' }, 0.42)).toBe('42')
+        expect(propertyDraft({ kind: 'number' }, 'abc')).toBe('abc')
+    })
+})
+
+describe('draftCommitValue', () => {
+    test('empty draft commits null', () => {
+        expect(draftCommitValue({ kind: 'text' }, '  ')).toBeNull()
+        expect(draftCommitValue({ kind: 'number' }, '')).toBeNull()
+    })
+    test('text is trimmed', () => {
+        expect(draftCommitValue({ kind: 'text' }, ' a ')).toBe('a')
+    })
+    test('percent converts back to the stored fraction', () => {
+        expect(draftCommitValue({ kind: 'number', format: 'percent' }, '42')).toBeCloseTo(0.42)
+    })
+    test('unparseable number keeps the raw string', () => {
+        expect(draftCommitValue({ kind: 'number' }, 'twelve')).toBe('twelve')
+    })
+})
+
+describe('readonlyText', () => {
+    test('null is empty, list joins, link uses display then path', () => {
+        expect(readonlyText(null)).toBe('')
+        expect(readonlyText([1, 2, 3])).toBe('1, 2, 3')
+        expect(readonlyText({ path: 'a.md', display: 'A' })).toBe('A')
+        expect(readonlyText({ path: 'a.md' })).toBe('a.md')
+    })
+    test('an object with neither field is JSON', () => {
+        expect(readonlyText({ x: 1 })).toBe('{"x":1}')
+    })
+})
+
+describe('selectChoices', () => {
+    test('a clear entry leads, then the options', () => {
+        expect(selectChoices(['a', 'b'], 'a')).toEqual([
+            { value: '', label: '(clear)' },
+            { value: 'a', label: 'a' },
+            { value: 'b', label: 'b' },
+        ])
+    })
+    test('a current value outside the options is kept, first after clear', () => {
+        expect(selectChoices(['a'], 'z').map(o => o.value)).toEqual(['', 'z', 'a'])
     })
 })

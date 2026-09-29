@@ -65,7 +65,7 @@ All date/time fields are plain strings (`"YYYY-MM-DD"` / `"HH:MM"`). There is no
 interface Category { name: string; color: string }
 ```
 
-`color` is either a **theme token** (one of `"accent" | "teal" | "blue" | "violet" | "green" | "gold" | "rose"`) or any CSS color string (typically a hex from the color picker, e.g. `"#4a90e2"`). Storing the bare token — not the resolved hex — means the category recolors automatically when the theme changes.
+`color` is either a **theme token** (one of `"accent" | "teal" | "blue" | "violet" | "green" | "gold" | "rose"`) or any CSS color string (typically a hex from the color picker, e.g. `"#8296C6"`). Storing the bare token — not the resolved hex — means the category recolors automatically when the theme changes.
 
 ### `Recurrence`
 
@@ -714,7 +714,7 @@ Calendar settings live in `.settings` (the single hidden vault-root settings fil
 | `calendar.militaryTime` | boolean | `false` | 24-hour clock in time labels |
 | `calendar.monthCellMinHeight` | number (px) | `80` | Min height of a day cell in month view |
 | `calendar.timeGutterWidth` | number (px) | `50` | Width of the hour-label gutter in week/day views |
-| `calendar.defaultCategoryColor` | string (hex) | `"#4a90e2"` | Default color pre-filled for new categories |
+| `calendar.defaultCategoryColor` | string (hex) | `"#8296C6"` | Default color pre-filled for new categories |
 
 Settings are **not** stored in `localStorage` — they persist in `.settings` via `POST /set-setting` (the backend is the single writer).
 

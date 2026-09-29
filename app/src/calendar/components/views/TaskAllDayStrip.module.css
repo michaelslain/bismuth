@@ -7,11 +7,6 @@
    not ours — it owns the outer cell box). Fills that cell's full height so a click anywhere in
    the empty area of a quiet day still opens the composer, not just a click landing on a chip. */
 .cellInner { position: relative; height: 100%; min-width: 0; cursor: pointer; }
-/* The tasks register's "add a task" affordance — same quiet-until-hovered idiom as
-   MonthView.module.css's `.add-task`; kept as its own local rather than importing that
-   stylesheet (one component, one importer). */
-/* `.cellInner .addTask` (not the bare class) — see MonthView.module.css's `.add-task` comment:
-   IconButton's own `.btn--icon.btn--normal` rule is a same-specificity two-class compound that
-   also sets `opacity: 1`, so this needs matching specificity to win "quiet at rest". */
-.cellInner .addTask { position: absolute; top: var(--sp-2); right: var(--sp-2); opacity: 0; transition: opacity var(--dur) var(--ease); }
-.cellInner:hover .addTask, .cellInner:focus-within .addTask, .addTask:focus-visible { opacity: 1; }
+/* The "add a task" button (TaskDayCell's `[data-add-task]`) is quiet at rest and shown when this
+   cell is hovered or holds focus. */
+.cellInner:hover [data-add-task], .cellInner:focus-within [data-add-task] { opacity: 1; }

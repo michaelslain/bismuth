@@ -1,0 +1,53 @@
+/* ---- KanbanColumnHeader ---- */
+.header {
+  display: flex; align-items: center; gap: var(--sp-3); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
+  margin: 0 var(--sp-5);
+  padding: 0 0 var(--sp-3);
+  box-sizing: border-box;
+  /* Pins the header to the hover-revealed `[✎][🗑]` IconBar's own control size (--h-control,
+     global.css) so the header height matches boards whose columns carry the bar, read-only or
+     not (the bar itself is absolutely positioned and never sizes the header). */
+  min-height: calc(var(--h-control) + var(--sp-3));
+  position: relative;
+  /* The column hue appears ONLY here (the underline) and on the dot — no header background tint.
+     `--kb-col-color` is set inline on the column (KanbanColumn.tsx). */
+  border-bottom: 1px solid var(--kb-col-color, var(--border-soft));
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  /* Never shrink — a tall column's card list is the one that scrolls internally, so the header
+     must stay full-size and in place rather than the flex column squeezing it. */
+  flex: none;
+}
+.header:active { cursor: grabbing; }
+.title { text-transform: capitalize; color: var(--fg); }
+.dotSlot { display: inline-flex; align-items: center; flex: 0 0 auto; }
+/* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
+   its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right
+   edge with no reserved gap. */
+.trail { margin-left: auto; position: relative; display: flex; align-items: center; flex: none; }
+.count { font-size: var(--fs-ui); color: var(--faint); }
+/* Rename/delete `IconBar` — absolutely positioned immediately left of the count (`right: 100%` of
+   the trail), so revealing it moves neither the title nor the count. At rest it is invisible and
+   non-interactive; hovering ANYWHERE on the column (not just the thin header strip) or focusing
+   inside the header fades it in. The column carries `data-hover`, the same hover set from
+   pointerenter/leave in KanbanView.tsx, so a story's `userEvent.hover` (a synthetic event CSS
+   `:hover` never sees) reveals it too. Only opacity/pointer-events transition — layout never
+   moves. While THIS column is renaming, the `<Show>` around the bar drops it from the DOM. */
+.actions {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: var(--sp-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+[data-kbcol]:hover .actions,
+[data-kbcol][data-hover] .actions,
+.header:focus-within .actions {
+  opacity: 1;
+  pointer-events: auto;
+}

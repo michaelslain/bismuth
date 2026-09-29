@@ -4,7 +4,11 @@
 // need real front/back/due columns, which `_baseFixtures`' curated dataset doesn't carry, so
 // this story mints its own small deck (real FileMeta shape).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { spyApi } from './_apiSpy'
+import { toasts, ToastHost } from '../Toast'
+import { dismissToast } from '../toastStore'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -59,6 +63,10 @@ function cardRow(name: string, note: Record<string, unknown>): Row {
     }
 }
 
+/** How many times the host was told to refetch (`onReviewed`) — module state the stories reset in
+ *  `beforeEach`, because a story's `render` closes over nothing per-run. */
+const reviewed = { n: 0 }
+
 const today = todayISO()
 const DECK: Row[] = [
     cardRow('card-1', {
@@ -106,16 +114,16 @@ async function reviewAllFronts(canvasElement: HTMLElement): Promise<string[]> {
     // Bounded well past either queue length (3 normal / 4 cram) so a stuck queue fails the
     // length assertion below instead of hanging the play function.
     for (let i = 0; i < 8; i++) {
-        const front = canvasElement.querySelector('.flip-front') as HTMLElement | null
+        const front = canvasElement.querySelector('[data-face="front"]') as HTMLElement | null
         if (!front) break
         const shown = front.textContent ?? ''
         seen.push(shown)
         await userEvent.click(front)
         await userEvent.keyboard('3') // the "easy" grade key (GRADE_KEYS) — advances the queue
         await waitFor(() => {
-            const next = canvasElement.querySelector('.flip-front') as HTMLElement | null
+            const next = canvasElement.querySelector('[data-face="front"]') as HTMLElement | null
             const nextText = next ? next.textContent ?? '' : null
-            // Either the deck finished (no more `.flip-front`) or a DIFFERENT card is now shown —
+            // Either the deck finished (no more `[data-face=front]`) or a DIFFERENT card is now shown —
             // never the same text twice in a row, which is what a stuck grade would look like.
             expect(nextText === null || nextText !== shown).toBe(true)
         })
@@ -128,15 +136,24 @@ async function reviewAllFronts(canvasElement: HTMLElement): Promise<string[]> {
  *  future-dated card is EXCLUDED, that one asserts it is included. Neither is meaningful alone;
  *  together they are what "cram ignores due dates" means. */
 export const Default: Story = {
+    beforeEach: () => {
+        reviewed.n = 0
+    },
     render: () => (
         <Pane w="1100px">
-            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                onReviewed={() => reviewed.n++}
+            />
         </Pane>
     ),
     play: async ({ canvasElement }) => {
         const seen = await reviewAllFronts(canvasElement)
         expect(seen).toHaveLength(3)
         expect(seen.some(t => t.includes('Iceland'))).toBe(false)
+        // Every normal-mode grade tells the host to refetch — once per graded card.
+        expect(reviewed.n).toBe(3)
     },
 }
 
@@ -164,13 +181,16 @@ saveSession(CRAM_BASE_PATH, {
  *  deck: cram ignores due dates, so walking it visits the future-dated "Iceland" card that
  *  `Default`'s walk never reaches. */
 export const CramMode: Story = {
+    beforeEach: () => {
+        reviewed.n = 0
+    },
     render: () => (
         <Pane w="1100px">
             <FlashcardsView
                 rows={DECK}
                 config={config}
                 basePath={CRAM_BASE_PATH}
-                onReviewed={() => {}}
+                onReviewed={() => reviewed.n++}
             />
         </Pane>
     ),
@@ -178,6 +198,8 @@ export const CramMode: Story = {
         const seen = await reviewAllFronts(canvasElement)
         expect(seen).toHaveLength(4)
         expect(seen.some(t => t.includes('Iceland'))).toBe(true)
+        // Cram is practice, not review: it writes no scheduling and never asks for a refetch.
+        expect(reviewed.n).toBe(0)
     },
 }
 
@@ -286,8 +308,8 @@ export const MeterShrinksNarrow: Story = {
  *  spanning a grade catches too). A 3D
  *  rotateY projects the card's near edge LARGER than the card under perspective, and ANY ancestor
  *  whose overflow is auto can turn that into a scrollbar, so the whole chain is checked, not only
- *  the faces. `.flip-front` is a bare literal class (see FlashcardsView.tsx); everything else is
- *  reached through the DOM from it, never by a hashed module class. */
+ *  the faces. `[data-face=front]` is a `data-` runtime hook (FlipCard.tsx); everything else is reached
+ *  through the DOM from it, never by a hashed module class. */
 async function sampleFlip(
     front: HTMLElement,
     start: () => Promise<unknown>,
@@ -362,17 +384,13 @@ export const Revealed: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        // Not a Portal case (confirmed by probing: both hits report `inCanvas: true`). The
-        // flip-card keeps BOTH faces mounted at once for the CSS 3D flip transform — the front's
-        // `.card-md` prompt AND the back's `.qcaption` (which deliberately echoes the same prompt
-        // as a caption, per this file's `<For>` comment above) both hold the literal text
-        // "capital of France" simultaneously, so a canvas-wide query is genuinely ambiguous
-        // between two real elements. Scope to `.flip-front` — a bare, un-hashed literal class
-        // (FlashcardsView.tsx keeps it that way on purpose) — to click the face a real user can
-        // actually see and hit before the reveal, rather than the back face sitting behind it.
-        const front = canvasElement.querySelector('.flip-front') as HTMLElement
-        // `.flip-front` is a direct child of `.flip-inner`, the element `data-flipping` +
-        // the `animationend` listener live on (FlashcardsView.tsx) — reach it via the DOM
+        // Both faces stay mounted for the CSS 3D flip, and the back's caption echoes the prompt, so
+        // a canvas-wide text query is ambiguous between two real elements. Scope to the front face
+        // (`data-face`, the runtime hook FlipCard.tsx sets) — the one a user can actually see and
+        // hit before the reveal.
+        const front = canvasElement.querySelector('[data-face="front"]') as HTMLElement
+        // `[data-face=front]` is a direct child of `.flip-inner`, the element `data-flipping` +
+        // the `animationend` listener live on (FlipCard.tsx) — reach it via the DOM
         // parent, not a class query, since `.flip-inner` is a hashed module local.
         const flipInner = front.parentElement as HTMLElement
         // Flip scrollbars, sampled on EVERY frame of the flip (see `sampleFlip`): no element in
@@ -415,12 +433,12 @@ export const Revealed: Story = {
     },
 }
 
-/** The hidden face must be inert. Both faces stay mounted for the CSS 3D flip (see
- *  FlashcardsView.module.css's .flip-inner), and `backface-visibility: hidden` hides the back
- *  VISUALLY without removing it from the tab order — so the Edit/Delete buttons `cardActions()`
- *  renders on both faces used to give a keyboard user two invisible tab stops, and a screen
- *  reader four buttons where there are two. `inert` removes exactly that, and (unlike
- *  `display:none`) does not disturb the transform the flip animates. */
+/** The hidden face must be inert, and the card's actions must not sit inside its reveal button.
+ *  Both faces stay mounted for the CSS 3D flip (see FlipCard.module.css's .flip-inner), and
+ *  `backface-visibility: hidden` hides the back VISUALLY without removing it from the tab order —
+ *  `inert` removes exactly that, and (unlike `display:none`) does not disturb the transform the flip
+ *  animates. The actions (edit / reset / delete) are ONE set outside the card button: a control
+ *  inside another control is not valid, and a click on one must never flip the card. */
 const INERT_BASE_PATH = 'stories/flashcards-inert-demo.md'
 
 export const HiddenFaceIsInert: Story = {
@@ -435,29 +453,90 @@ export const HiddenFaceIsInert: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        // `.flip-front` is a bare, un-hashed literal class kept that way on purpose — see
-        // FlashcardsView.module.css's header and the Revealed story's note. `.flip-back` IS a
-        // module local, so match it by prefix rather than by the hashed name.
-        const front = canvasElement.querySelector('.flip-front') as HTMLElement
-        await expect(front).not.toBeNull()
-        const back = canvasElement.querySelector(
-            '[class*="flip-back"]',
+        const front = canvasElement.querySelector(
+            '[data-face="front"]',
         ) as HTMLElement
+        const back = canvasElement.querySelector(
+            '[data-face="back"]',
+        ) as HTMLElement
+        await expect(front).not.toBeNull()
         await expect(back).not.toBeNull()
 
         // Not revealed: the front is live, the back is inert.
         await expect(front.hasAttribute('inert')).toBe(false)
         await expect(back.hasAttribute('inert')).toBe(true)
 
-        // Exactly one REACHABLE "Edit this card". Both faces still render one — that is
-        // deliberate, so the buttons flip with the card (FlashcardsView.tsx's cardActions
-        // comment) — but only the visible face's may be reachable. CardEditModalOpen's own
-        // comment documents the ambiguity this removes.
-        const liveEdits = [
-            ...canvasElement.querySelectorAll('[aria-label="Edit this card"]'),
-        ].filter(el => !el.closest('[inert]'))
-        await expect(liveEdits.length).toBe(1)
-        await expect(front.contains(liveEdits[0]!)).toBe(true)
+        // Exactly one "Edit this card", reachable, and not nested inside the reveal button.
+        const edits = canvasElement.querySelectorAll('[aria-label="Edit this card"]')
+        await expect(edits.length).toBe(1)
+        await expect(edits[0].closest('[inert]')).toBeNull()
+        await expect(edits[0].parentElement?.closest('button')).toBeNull()
+
+        // A click on an action must not reveal the card.
+        const card = front.closest('button') as HTMLElement
+        await expect(card.getAttribute('aria-pressed')).toBe('false')
+    },
+}
+
+/** Acceptance 5: the flip card is a real button — Tab-reachable, and Enter reveals it. Space is
+ *  the deck's own rebindable `flashcard-flip` key (KeyboardDefaultsRevealAndGrade below), so Enter
+ *  is what proves the native button semantics. No focus ring is drawn. */
+export const FlipCardRevealsOnEnter: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector(
+            'button[aria-pressed]',
+        ) as HTMLElement
+        await expect(card).not.toBeNull()
+        await userEvent.tab()
+        await expect(document.activeElement).toBe(card)
+        await expect(card.getAttribute('aria-pressed')).toBe('false')
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() =>
+            expect(card.getAttribute('aria-pressed')).toBe('true'),
+        )
+        await expect(getComputedStyle(card).outlineStyle).toBe('none')
+        await expect(
+            canvasElement
+                .querySelector('[data-face="back"]')!
+                .hasAttribute('inert'),
+        ).toBe(false)
+    },
+}
+
+/** Space on a focused action button activates THAT button. The global flip key must not swallow it:
+ *  Edit opens the single-card modal and the card stays face-down. */
+export const SpaceActivatesFocusedActionButton: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={CARD_EDIT_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const card = canvasElement.querySelector(
+            'button[aria-pressed]',
+        ) as HTMLElement
+        const edit = (await within(canvasElement).findByLabelText(
+            'Edit this card',
+        )) as HTMLElement
+        edit.focus()
+        await expect(document.activeElement).toBe(edit)
+        await userEvent.keyboard(' ')
+        await waitFor(() =>
+            expect(
+                within(document.body).getByPlaceholderText('Front / prompt…'),
+            ).toHaveValue('capital of France'),
+        )
+        await expect(card.getAttribute('aria-pressed')).toBe('false')
     },
 }
 
@@ -507,18 +586,16 @@ export const CardEditModalOpen: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        // Not a Portal case (confirmed by probing: both hits report `inCanvas: true`). Per
-        // FlashcardsView.tsx's own comment on `cardActions`, the edit/delete icons are
-        // deliberately rendered on BOTH flip-card faces "so they flip with the card" — both faces
-        // stay mounted at once for the CSS 3D transform, so two real `aria-label="Edit this
-        // card"` buttons exist in the DOM simultaneously and a canvas-wide query can't tell them
-        // apart. (The back face's copy is now `inert` — see HiddenFaceIsInert above — but `inert`
-        // only removes it from focus/pointer/the a11y tree, not from the DOM, so it is still a
-        // real match here.) Scope to `.flip-front` — a bare, un-hashed literal class kept that
-        // way on purpose in FlashcardsView.tsx — to click the copy on the face a real user can
-        // actually see and hit, not the one on the face turned away behind it.
-        const front = canvasElement.querySelector('.flip-front') as HTMLElement
-        await userEvent.click(await within(front).findByLabelText('Edit this card'))
+        // ONE set of card actions, outside the reveal button (see HiddenFaceIsInert), so the query
+        // is unambiguous. Clicking Edit opens the single-card modal seeded from the current card.
+        await userEvent.click(
+            await within(canvasElement).findByLabelText('Edit this card'),
+        )
+        await waitFor(() =>
+            expect(
+                within(document.body).getByPlaceholderText('Front / prompt…'),
+            ).toHaveValue('capital of France'),
+        )
     },
 }
 
@@ -526,7 +603,7 @@ export const CardEditModalOpen: Story = {
 // matched via matchesKeybinding against settings.keybindings — never a hardcoded key literal).
 // These two stories are the pair that actually proves it, not just that keys "work": the first
 // exercises the REAL keyboard path at the shipped defaults (every story above reveals by
-// clicking `.flip-front`, which never reaches onKey's flip branch at all), the second rebinds
+// clicking `[data-face=front]`, which never reaches onKey's flip branch at all), the second rebinds
 // both flip and grade-hard and proves the OLD combos go dead while the NEW ones take over — the
 // half that catches an onKey a rebind never reaches.
 
@@ -546,7 +623,7 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
         ).toBeNull()
 
         const before = canvasElement.querySelector(
-            '.flip-front',
+            '[data-face="front"]',
         ) as HTMLElement
         const shownBefore = before.textContent ?? ''
 
@@ -572,7 +649,7 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
         await userEvent.keyboard('1')
         await waitFor(() => {
             const next = canvasElement.querySelector(
-                '.flip-front',
+                '[data-face="front"]',
             ) as HTMLElement | null
             const nextText = next ? next.textContent ?? '' : null
             expect(nextText === null || nextText !== shownBefore).toBe(true)
@@ -592,7 +669,7 @@ export const GradedMidFlipStartsAtRest: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        const first = canvasElement.querySelector('.flip-front') as HTMLElement
+        const first = canvasElement.querySelector('[data-face="front"]') as HTMLElement
         const shownBefore = first.textContent ?? ''
         // Sampled across the aborted flip AND the next card's slide-in entrance, which shares
         // `.cardwrap` (the one ancestor that ever overflowed) with the card it replaces.
@@ -600,7 +677,7 @@ export const GradedMidFlipStartsAtRest: Story = {
         await expect(run.overflows).toEqual([])
         let next: HTMLElement | null = null
         await waitFor(() => {
-            next = canvasElement.querySelector('.flip-front') as HTMLElement | null
+            next = canvasElement.querySelector('[data-face="front"]') as HTMLElement | null
             expect(next).not.toBeNull()
             expect(next!.textContent).not.toBe(shownBefore)
         })
@@ -638,7 +715,7 @@ export const LongAnswerScrollsAfterFlip: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        const front = canvasElement.querySelector('[data-face="front"]') as HTMLElement
         const inner = front.parentElement as HTMLElement
         const back = front.nextElementSibling as HTMLElement
         const flip = await sampleFlip(front, () => userEvent.keyboard(' '))
@@ -690,7 +767,7 @@ export const RebindingKeysReplacesTheOldOnes: Story = {
 
             // The NEW flip combo ('f') reveals.
             const before = canvasElement.querySelector(
-                '.flip-front',
+                '[data-face="front"]',
             ) as HTMLElement
             const shownBefore = before.textContent ?? ''
             await userEvent.keyboard('f')
@@ -704,7 +781,7 @@ export const RebindingKeysReplacesTheOldOnes: Story = {
             await userEvent.keyboard('1')
             await new Promise(resolve => setTimeout(resolve, 200))
             const stillFront = canvasElement.querySelector(
-                '.flip-front',
+                '[data-face="front"]',
             ) as HTMLElement
             expect(stillFront.textContent ?? '').toBe(shownBefore)
 
@@ -712,7 +789,7 @@ export const RebindingKeysReplacesTheOldOnes: Story = {
             await userEvent.keyboard('j')
             await waitFor(() => {
                 const next = canvasElement.querySelector(
-                    '.flip-front',
+                    '[data-face="front"]',
                 ) as HTMLElement | null
                 const nextText = next ? next.textContent ?? '' : null
                 expect(nextText === null || nextText !== shownBefore).toBe(
@@ -723,5 +800,194 @@ export const RebindingKeysReplacesTheOldOnes: Story = {
             setSettings('keybindings', 'flashcard-flip', restoreFlip)
             setSettings('keybindings', 'flashcard-hard', restoreHard)
         }
+    },
+}
+
+// ── Bidirectional ─────────────────────────────────────────────────────────────────────────────
+// A bidirectional deck queues a forward AND a reverse entry per row, each scheduled by its own
+// column triple (`due` / `dueBack`). The rows live in a signal and the `reviewCardRow` spy moves the
+// graded column into the future the way the server does, so grading really drops the entry from the
+// due queue and the NEXT entry shows — real state, asserted in play().
+const biConfig: BaseConfig = {
+    views: [{ type: 'flashcards', name: 'Vocabulary', bidirectional: true }],
+}
+const BI_BASE_PATH = 'stories/flashcards-bidirectional-demo.md'
+const [biRows, setBiRows] = createSignal<Row[]>(DECK)
+let biSpy: ReturnType<typeof spyApi> | undefined
+
+export const Bidirectional: Story = {
+    beforeEach: () => {
+        reviewed.n = 0
+        setBiRows(DECK)
+        biSpy = spyApi(['reviewCardRow'], {
+            reviewCardRow: (...args) => {
+                const [, index, , fields] = args as [
+                    string,
+                    number,
+                    string,
+                    { due: string },
+                ]
+                setBiRows(rows =>
+                    rows.map((r, i) =>
+                        i === index
+                            ? {
+                                  ...r,
+                                  note: {
+                                      ...r.note,
+                                      [fields.due]: addDaysISO(today, 3),
+                                  },
+                              }
+                            : r,
+                    ),
+                )
+            },
+        })
+        return biSpy.restore
+    },
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={biRows()}
+                config={biConfig}
+                basePath={BI_BASE_PATH}
+                onReviewed={() => reviewed.n++}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const shown = () =>
+            (
+                canvasElement.querySelector(
+                    '[data-face="front"]',
+                ) as HTMLElement | null
+            )?.textContent ?? ''
+        // Forward entry first: the prompt is the FRONT column.
+        expect(shown()).toContain('capital of France')
+        await userEvent.click(
+            canvasElement.querySelector('[data-face="front"]') as HTMLElement,
+        )
+        await userEvent.keyboard('3')
+        // The same row's reverse entry comes next: its prompt is the BACK column.
+        await waitFor(() => expect(shown()).toContain('Paris'))
+        await userEvent.click(
+            canvasElement.querySelector('[data-face="front"]') as HTMLElement,
+        )
+        await userEvent.keyboard('3')
+        await waitFor(() => expect(shown()).toContain('capital of Japan'))
+
+        // Each direction wrote its OWN schedule columns, for the same row, and the host was told
+        // twice.
+        const calls = biSpy!.named('reviewCardRow')
+        expect(calls).toHaveLength(2)
+        const cols = calls.map(c => (c.args[3] as { due: string }).due)
+        expect(cols).toEqual(['due', 'dueBack'])
+        expect(calls.map(c => c.args[1])).toEqual([0, 0])
+        expect(reviewed.n).toBe(2)
+    },
+}
+
+const FAILED_DELETE_BASE_PATH = 'stories/flashcards-failed-delete-demo.md'
+saveSession(FAILED_DELETE_BASE_PATH, { cram: true, pos: 0, good: 0, hard: 0, easy: 0, retired: [] })
+
+/** A rejected rowDelete leaves the session untouched: the same card stays on screen (the counters
+ *  that would have moved `pos` onto the next card never changed) and the base is not refetched. */
+export const FailedDeleteLeavesCounters: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={FAILED_DELETE_BASE_PATH}
+                onReviewed={() => reviewed.n++}
+            />
+        </Pane>
+    ),
+    beforeEach: () => {
+        reviewed.n = 0
+        const spy = spyApi(['rowDelete'], {
+            rowDelete: () => Promise.reject(new Error('disk full')),
+        })
+        return spy.restore
+    },
+    play: async ({ canvasElement }) => {
+        const front = () => canvasElement.querySelector('[data-face="front"]')?.textContent ?? ''
+        const before = await waitFor(() => {
+            const t = front()
+            expect(t).not.toBe('')
+            return t
+        })
+        await userEvent.click(await within(canvasElement).findByLabelText(/delete/i))
+        await waitFor(() =>
+            expect(toasts().some(t => t.message.includes('Could not delete the card'))).toBe(true),
+        )
+        expect(front()).toBe(before)
+        expect(reviewed.n).toBe(0)
+    },
+}
+
+const UNDO_DELETE_BASE_PATH = 'stories/flashcards-undo-delete-demo.md'
+saveSession(UNDO_DELETE_BASE_PATH, { cram: true, pos: 0, good: 0, hard: 0, easy: 0, retired: [] })
+// What the base file holds once the first card is deleted — undo re-counts rows from it.
+const AFTER_DELETE =
+    '---\ntype: base\n---\n\n| front | back |\n| --- | --- |\n| capital of Japan | Tokyo |\n| capital of Kenya | Nairobi |\n| capital of Iceland | Reykjavik |\n'
+
+/** Deleting the current card is immediate and raises `deleted card <front>` with `[undo]`; undo
+ *  writes the card back (a `rowCreate` of the same note, then a `rowReorder` to its old index) and
+ *  the same card is on screen again. The rows are a signal the fake writes edit, standing in for
+ *  the host's refetch. */
+let setUndoRows: (r: Row[]) => void = () => {}
+let undoSpy: ReturnType<typeof spyApi>
+
+export const DeleteWithUndo: Story = {
+    render: () => {
+        const [rows, setRows] = createSignal(DECK)
+        setUndoRows = setRows
+        return (
+            <>
+                <Pane w="1100px">
+                    <FlashcardsView
+                        rows={rows()}
+                        config={config}
+                        basePath={UNDO_DELETE_BASE_PATH}
+                        onReviewed={() => reviewed.n++}
+                    />
+                </Pane>
+                <ToastHost />
+            </>
+        )
+    },
+    beforeEach: () => {
+        reviewed.n = 0
+        for (const t of toasts()) dismissToast(t.id)
+        undoSpy = spyApi(['rowDelete', 'rowCreate', 'rowReorder', 'read'], {
+            rowDelete: () => setUndoRows(DECK.slice(1)),
+            rowCreate: () => {},
+            rowReorder: () => setUndoRows(DECK),
+            read: async () => AFTER_DELETE,
+        })
+        return undoSpy.restore
+    },
+    play: async ({ canvasElement }) => {
+        const spy = undoSpy
+        const front = () => canvasElement.querySelector('[data-face="front"]')?.textContent?.trim() ?? ''
+        const before = await waitFor(() => {
+            const t = front()
+            expect(t).not.toBe('')
+            return t
+        })
+        await userEvent.click(await within(canvasElement).findByLabelText(/delete this card/i))
+        await waitFor(() => expect(front()).not.toBe(before))
+        expect(spy.named('rowDelete')[0].args).toEqual([UNDO_DELETE_BASE_PATH, 0])
+        const toast = toasts().at(-1)!
+        expect(toast.message).toBe(`deleted card ${before}`)
+        expect(toast.action?.label).toBe('undo')
+
+        // Click the toast's own `[undo]` — the real affordance, not the store's callback.
+        await userEvent.click(await within(document.body).findByRole('button', { name: /undo/i }))
+        await waitFor(() => expect(front()).toBe(before))
+        expect(spy.named('rowCreate')).toHaveLength(1)
+        expect(spy.named('rowReorder')).toHaveLength(1)
+        expect(spy.named('rowCreate')[0].args[1]).toMatchObject({ front: before })
+        expect(spy.named('rowReorder')[0].args).toEqual([UNDO_DELETE_BASE_PATH, 3, 0])
     },
 }

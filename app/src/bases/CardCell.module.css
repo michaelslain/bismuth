@@ -1,0 +1,60 @@
+/* CardCell.module.css — one Front/Back cell of EditCardsModal's card list (bases/CardCell.tsx),
+   extracted from EditCardsModal.module.css. Its only importer is CardCell.tsx; the list row and the
+   draft row both compose the component.
+
+   The rendered .cell-md sits in normal flow and DRIVES the cell height (so it auto-grows with
+   content, with no fragile JS / font-load race); a transparent textarea overlays it and reveals the
+   raw monospace text on focus. Chrome matches the standard field idiom: transparent, a `--rule-soft`
+   underline at rest, `--rule` on focus — no fill, no box.
+
+   `.cell-ph` is interpolated into a raw innerHTML string by cardCellPlaceholder (a runtime string),
+   which is why it is passed in as `styles['cell-ph']` rather than written as a literal.
+
+   The back cell is told apart by `data-cell`, not a class: nothing hashes an attribute, and a story
+   can query it. */
+
+.cell {
+  --cell-img-max: 140px;
+  position: relative;
+}
+.cell-md {
+  min-height: var(--h-control); padding: var(--sp-2) 0; box-sizing: border-box; overflow: hidden;
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--fg);
+  border-bottom: var(--rule-soft);
+  white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
+}
+.cell:hover .cell-md { border-bottom-color: var(--border); }
+.cell[data-cell='back'] .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
+/* renderMarkdown wraps text in block elements whose default margins would push the text off the
+   cell's first line and leave dead space above the underline; blocks stack with one small gap. */
+.cell-md p, .cell-md ul, .cell-md ol, .cell-md pre, .cell-md blockquote { margin: 0; }
+.cell-md > * + * { margin-top: var(--sp-2); }
+.cell-md strong { color: var(--fg); font-weight: 600; }
+.cell-md em { font-style: italic; }
+.cell-md code { font-size: var(--fs-rel-code); background: color-mix(in srgb, var(--fg) 10%, transparent); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-0); }
+.cell-md img { max-width: 100%; max-height: var(--cell-img-max); object-fit: contain; border-radius: var(--r-0); display: block; }
+.cell-ph { color: var(--faint); }
+.cell textarea {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--lh-ui);
+  color: transparent; caret-color: transparent;
+  background: transparent; border: none; border-bottom: 1px solid transparent;
+  padding: var(--sp-2) 0; outline: none; box-sizing: border-box;
+}
+.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); border-bottom: var(--rule); box-shadow: none; }
+.cell:focus-within .cell-md { visibility: hidden; }
+.cell textarea::placeholder { color: transparent; }
+.cell:focus-within textarea::placeholder { color: var(--faint); }
+
+/* Draft cell: the same underline field, but a plain in-flow textarea — no markdown overlay. Doubled
+   (`.cell.draft`) so it out-ranks `.cell textarea` and `.cell:focus-within textarea` above.
+   `height: var(--h-control)` (not `auto`) is deliberate: TextInputProps types multiline's rest as
+   InputHTMLAttributes, which has no `rows`, so with `height: auto` the browser falls back to the
+   HTML default of 2 rows and doubles the row. A fixed height keeps the single-line size. */
+.cell.draft textarea {
+  position: relative; height: var(--h-control); min-height: var(--h-control); display: block; overflow: hidden;
+  color: var(--fg); caret-color: var(--accent); background: transparent; border: none;
+  border-bottom: var(--rule-soft); padding: var(--sp-2) 0;
+}
+.cell.draft textarea:focus { border-bottom: var(--rule); box-shadow: none; }
+.cell.draft textarea::placeholder { color: var(--faint); }

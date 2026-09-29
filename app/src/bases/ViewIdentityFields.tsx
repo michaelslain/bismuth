@@ -1,7 +1,7 @@
 import { Show, type Component } from 'solid-js'
 import type { ViewType } from '../../../core/src/bases/types'
-import { VIEW_TYPES } from '../../../core/src/bases/types'
 import Select from '../ui/Select'
+import { VIEW_KIND_OPTIONS } from './selectOptions'
 import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import SettingsGrid from '../ui/SettingsGrid'
@@ -18,8 +18,6 @@ export type ViewIdentityFieldsProps = {
     onMode: (mode: 'normal' | 'tasks') => void
     class?: string
 }
-
-const KIND_OPTS = VIEW_TYPES.map(v => ({ value: v, label: v }))
 
 /** What the view IS: its tab name, its kind (one of the 12 renderers), and whether every row
  *  is a task (`mode: tasks` — status box, status menu, field chips). */
@@ -38,7 +36,7 @@ const ViewIdentityFields: Component<ViewIdentityFieldsProps> = props => (
         >
             <Select
                 value={props.kind}
-                options={KIND_OPTS}
+                options={VIEW_KIND_OPTIONS}
                 onChange={v => props.onKind(v as ViewType)}
             />
         </SettingsField>

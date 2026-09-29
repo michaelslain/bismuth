@@ -3,20 +3,9 @@ import { currentDate, events, categories } from '../../state'
 import { EventStore } from '../../EventStore'
 import { TimeGrid } from './TimeGrid'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
-import type { PlacedTask } from '../../taskPlacement'
-import type { TaskComposeProps } from '../../taskCompose'
-import type { TaskRowRef } from '../../taskDrag'
+import type { TaskViewProps } from './MonthView'
 
-export function DayView(props: {
-    store: EventStore
-    placed?: Map<string, PlacedTask[]>
-    onToggleTask?: (row: PlacedTask['row']) => void
-    onOpenTask?: (row: PlacedTask['row']) => void
-    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
-    onRescheduleTask?: (ref: TaskRowRef, date: string) => void
-    compose?: TaskComposeProps
-    colorFor?: (task: PlacedTask) => string | undefined
-}) {
+export function DayView(props: { store: EventStore } & TaskViewProps) {
     return (
         <Show
             when={props.placed}
@@ -32,13 +21,8 @@ export function DayView(props: {
             {placed => (
                 <TaskAllDayStrip
                     dates={[currentDate.value]}
+                    {...props}
                     placed={placed()}
-                    onToggleTask={props.onToggleTask}
-                    onOpenTask={props.onOpenTask}
-                    onSetTaskStatus={props.onSetTaskStatus}
-                    onRescheduleTask={props.onRescheduleTask}
-                    compose={props.compose}
-                    colorFor={props.colorFor}
                 />
             )}
         </Show>

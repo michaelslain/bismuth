@@ -10,7 +10,7 @@
    bare class name (ChatView.stories.tsx, preview/PdfPages.stories.tsx, PreviewView.stories.tsx)
    now query `[data-testid="ui-empty-block"]`/`[data-testid="ui-empty"]` instead — the two
    `data-testid`s EmptyState.tsx adds for exactly this. See .claude/plans/ui-css-ownership.md. */
-.ui-empty { color: var(--text-muted); }
+.ui-empty { color: var(--text-muted); margin: 0; }
 .ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
 /* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
    and reverted: it replaced a heading element with a div — losing the document semantics a screen

@@ -34,6 +34,8 @@ export type TextProps = {
      *  `tone` alongside it; see Text.module.css for why eyebrow itself stays silent on
      *  tone/weight. */
     eyebrow?: boolean
+    /** `font-style: italic` — replaces a bare `<em>`. Weight stays its own prop. */
+    italic?: boolean
     /** 'chrome' (default) emits no class — the ambient --ui-font-stack applies as normal.
      *  'prose' adds `text--prose` (font-family: var(--prose-font)) and nothing else — size,
      *  tone and weight stay independent props. */
@@ -52,6 +54,7 @@ function textClass(props: TextProps): string {
         tone !== 'inherit' ? styles[`text--${tone}`] : '',
         weight !== 'inherit' ? styles[`text--${weight}`] : '',
         props.eyebrow ? styles['text--eyebrow'] : '',
+        props.italic ? styles['text--italic'] : '',
         props.register === 'prose' ? styles['text--prose'] : '',
         props.class,
     ]
@@ -74,6 +77,7 @@ const Text: Component<TextProps> = props => {
         'weight',
         'inherit',
         'eyebrow',
+        'italic',
         'register',
         'class',
         'children',

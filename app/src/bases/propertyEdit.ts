@@ -25,16 +25,8 @@ import type {
     BasePropertyType,
     NumberFormat,
 } from '../../../core/src/bases/types'
-
-// Duplicated (not imported) from renderValue.tsx's `bareName`, deliberately — that file is
-// a .tsx (JSX/Icon imports), and this module must stay importable from a plain `bun test`
-// .ts test without dragging in JSX (see columnLabel.ts for the same pattern/rationale).
-// Exported so kanbanMeta.ts (also a plain .ts) can share it rather than re-duplicating —
-// `metaVisible` needs the same registry-key lookup to detect a declared boolean property.
-export function bareName(id: string): string {
-    const dot = id.indexOf('.')
-    return (dot >= 0 ? id.slice(dot + 1) : id).toLowerCase()
-}
+import { bareName } from './columnKinds'
+import { numberEditValue, parseNumberEdit } from './numberFormat'
 
 export type PropertyEditKind =
     | { kind: 'text' }
@@ -231,4 +223,66 @@ export function selectOptionsWithCurrent(
 ): string[] {
     if (current === '' || options.includes(current)) return options
     return [current, ...options]
+}
+
+// ── PropertyValueEditor's draft/commit/readonly helpers ─────────────────────────────────
+// Pure, so they are testable without mounting Solid.
+
+/** The text an editor box opens with for `value`: a number in
+ *  EDIT space (percent ×100, see numberFormat.ts), anything else as its string. null → ''. */
+export function propertyDraft(kind: PropertyEditKind, value: unknown): string {
+    if (value == null) return ''
+    if (kind.kind === 'number') {
+        const n = typeof value === 'number' ? value : Number(value)
+        return Number.isFinite(n)
+            ? String(numberEditValue(n, kind.format))
+            : String(value)
+    }
+    return String(value)
+}
+
+/** What to commit for an editor's draft text: null when empty, the stored number for a `number`
+ *  kind (unparseable input keeps the raw string rather than silently dropping the edit — the
+ *  caller coerces through the declared type as a second pass), else the trimmed text. */
+export function draftCommitValue(kind: PropertyEditKind, draft: string): unknown {
+    const raw = draft.trim()
+    if (raw === '') return null
+    if (kind.kind === 'number') {
+        const n = parseNumberEdit(raw, kind.format)
+        return n === null ? raw : n
+    }
+    return raw
+}
+
+/** The display text of a value no editor can round-trip: a list joins with `, `, a link shows its
+ *  display then its path, any other object its JSON. */
+export function readonlyText(value: unknown): string {
+    const show = (v: unknown): string =>
+        v && typeof v === 'object'
+            ? String(
+                  (v as { display?: unknown }).display ??
+                      (v as { path?: unknown }).path ??
+                      JSON.stringify(v),
+              )
+            : String(v)
+    return value == null
+        ? ''
+        : Array.isArray(value)
+          ? value.map(show).join(', ')
+          : show(value)
+}
+
+/** The `Select` choices for a declared `select` property: `(clear)` first, then the options with
+ *  a stored value outside them kept as the current selection (see selectOptionsWithCurrent). */
+export function selectChoices(
+    options: string[],
+    current: string,
+): { value: string; label: string }[] {
+    return [
+        { value: '', label: '(clear)' },
+        ...selectOptionsWithCurrent(options, current).map(v => ({
+            value: v,
+            label: v,
+        })),
+    ]
 }

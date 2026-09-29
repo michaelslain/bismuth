@@ -1,0 +1,12 @@
+/* TableSummaryRow.tsx is the sole importer. */
+.cell {
+  padding: var(--sp-4) var(--sp-5);
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  border-top: 2px solid var(--border);
+}

@@ -1,11 +1,11 @@
-import { For, createEffect, createMemo, createSignal, on } from 'solid-js'
+import { For, Index, createEffect, createMemo, createSignal, on } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import {
     buildChartData,
     buildHeatmapWeeks,
     type Aggregate,
     type ChartData,
-    type HeatCell,
+    type HeatCell as HeatCellData,
 } from '../../../core/src/bases/chart'
 import { bucketReadout, formatValue, propName } from '../../../core/src/bases/chartText'
 import { binLabel, todayISO } from '../../../core/src/dates'
@@ -13,9 +13,9 @@ import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
 import ChartReadout from './ChartReadout'
 import ChartDrill from './ChartDrill'
+import HeatCell from './HeatCell'
 import HeatmapDayEditor from './HeatmapDayEditor'
 import {
-    LEVEL_CLASS,
     dayLabel,
     glyphOf,
     heatmapRange,
@@ -85,7 +85,7 @@ export function HeatmapView(props: HeatmapViewProps) {
 
     // Transpose the column-major week grid (buildHeatmapWeeks: weeks[week][Mon..Sun])
     // into 7 weekday ROWS spanning every week — the card reads Mon..Sun top-to-bottom.
-    const dowRows = createMemo<HeatCell[][]>(() => {
+    const dowRows = createMemo<HeatCellData[][]>(() => {
         const weeks = grid().weeks
         return DOW.map((_, dow) => weeks.map(week => week[dow]))
     })
@@ -108,10 +108,13 @@ export function HeatmapView(props: HeatmapViewProps) {
         return byDate().get(dateISO)?.value ?? null
     }
 
-    const level = (cell: HeatCell): number => {
+    const level = (cell: HeatCellData): number => {
         const { min, max } = data()
         return levelOf(effectiveValue(cell.date) ?? cell.value, min, max)
     }
+
+    // The grid wrapper the day editor is anchored inside — a ref, not a class-name `closest`.
+    let wrapRef: HTMLDivElement | undefined
 
     const [hovered, setHovered] = createSignal<string | null>(null)
     const [selected, setSelected] = createSignal<string | null>(null)
@@ -167,7 +170,7 @@ export function HeatmapView(props: HeatmapViewProps) {
 
     /** Right-click always opens (or closes) the drill list of the day's rows — independent of
      *  what a left-click does, and available even with no write seam. */
-    const onCellContextMenu = (cell: HeatCell, e: MouseEvent) => {
+    const onCellContextMenu = (cell: HeatCellData, e: MouseEvent) => {
         e.preventDefault()
         setEditing(null)
         setDrillNote(null)
@@ -188,7 +191,7 @@ export function HeatmapView(props: HeatmapViewProps) {
         void w.onSetDay(dateISO, value)
     }
 
-    const onCellClick = (cell: HeatCell, e: MouseEvent) => {
+    const onCellClick = (cell: HeatCellData, e: MouseEvent) => {
         const w = props.writes
         const bucket = byDate().get(cell.date)
         const rowCount = bucket?.rows.length ?? 0
@@ -220,7 +223,7 @@ export function HeatmapView(props: HeatmapViewProps) {
         if (action.kind === 'edit') {
             setSelected(null)
             const target = e.currentTarget as HTMLElement
-            const wrap = target.closest(`.${styles.heatmap}`) as HTMLElement | null
+            const wrap = wrapRef
             if (wrap) {
                 const wrapRect = wrap.getBoundingClientRect()
                 const cellRect = target.getBoundingClientRect()
@@ -241,7 +244,7 @@ export function HeatmapView(props: HeatmapViewProps) {
     return (
         <ChartFrame
             empty={!data().isDate || data().points.length === 0}
-            emptyMessage="No dated rows to chart. Set an x date column in view settings."
+            emptyHint="set an x date column in view settings"
             onGrid={g => setColumns(g.columns)}
             readout={
                 <ChartReadout parts={readoutParts()} active={hovered() !== null} />
@@ -272,7 +275,7 @@ export function HeatmapView(props: HeatmapViewProps) {
                 ) : undefined
             }
         >
-            <div class={styles.heatmap}>
+            <div class={styles.heatmap} ref={wrapRef}>
                 <div class={styles.heatMonths}>
                     <div class={styles.heatGutter} />
                     <For each={monthLabels(grid().weeks)}>
@@ -290,7 +293,7 @@ export function HeatmapView(props: HeatmapViewProps) {
                     </For>
                 </div>
                 <div class={styles.heatGrid}>
-                    <For each={dowRows()}>
+                    <Index each={dowRows()}>
                         {(weekRow, i) => (
                             <div class={styles.heatRow}>
                                 <Text
@@ -298,42 +301,29 @@ export function HeatmapView(props: HeatmapViewProps) {
                                     inherit
                                     class={styles.heatDow}
                                 >
-                                    {DOW[i()]}
+                                    {DOW[i]}
                                 </Text>
-                                <For each={weekRow}>
-                                    {cell => {
-                                        const lv = level(cell)
-                                        return (
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                data-bucket={cell.date}
-                                                class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]} ${
-                                                    selected() === cell.date
-                                                        ? styles.selected
-                                                        : ''
-                                                }`}
-                                                onPointerEnter={() =>
-                                                    setHovered(cell.date)
-                                                }
-                                                onPointerLeave={() =>
-                                                    setHovered(prev =>
-                                                        prev === cell.date ? null : prev,
-                                                    )
-                                                }
-                                                onClick={e => onCellClick(cell, e)}
-                                                onContextMenu={e =>
-                                                    onCellContextMenu(cell, e)
-                                                }
-                                            >
-                                                {glyphOf(lv)}
-                                            </Text>
-                                        )
-                                    }}
-                                </For>
+                                <Index each={weekRow()}>
+                                    {cell => (
+                                        <HeatCell
+                                            date={cell().date}
+                                            level={level(cell())}
+                                            glyph={glyphOf(level(cell()))}
+                                            selected={selected() === cell().date}
+                                            label={`${dayLabel(cell().date)}: ${formatValue(effectiveValue(cell().date) ?? 0)}`}
+                                            onHover={entered =>
+                                                setHovered(prev =>
+                                                    entered ? cell().date : prev === cell().date ? null : prev,
+                                                )
+                                            }
+                                            onClick={e => onCellClick(cell(), e)}
+                                            onContextMenu={e => onCellContextMenu(cell(), e)}
+                                        />
+                                    )}
+                                </Index>
                             </div>
                         )}
-                    </For>
+                    </Index>
                 </div>
                 {editing() ? (
                     <HeatmapDayEditor
@@ -348,13 +338,12 @@ export function HeatmapView(props: HeatmapViewProps) {
                     <For each={legendRanges(data().min, data().max)}>
                         {entry => (
                             <Text as="span" inherit class={styles.legendEntry}>
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={`${styles.legendGlyph} ${styles[entry.levelClass]}`}
-                                >
-                                    {entry.glyph}
-                                </Text>
+                                <HeatCell
+                                    static
+                                    level={entry.level}
+                                    glyph={entry.glyph}
+                                    class={styles.legendGlyph}
+                                />
                                 <Text as="span" inherit class={styles.legendRange}>
                                     {entry.range}
                                 </Text>

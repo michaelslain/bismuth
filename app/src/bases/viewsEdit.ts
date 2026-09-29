@@ -95,7 +95,9 @@ export function materializeViews(
     const type = typeof raw.view === 'string' ? raw.view : 'table'
     const view0: RawView = { type, name: capitalize(type) }
     const removedKeys: string[] = []
-    if (raw.view !== undefined) removedKeys.push('view')
+    if (raw.view !== undefined) {
+        removedKeys.push('view')
+    }
     for (const k of FLAT_VIEW_KEYS) {
         if (raw[k] !== undefined) {
             view0[k] = raw[k]
@@ -161,6 +163,18 @@ export function removeView(views: RawView[], i: number): RawView[] {
     if (views.length <= 1 || i < 0 || i >= views.length) return views
     const next = [...views]
     next.splice(i, 1)
+    return next
+}
+
+/** Put a deleted `view` back at index `i` of the CURRENT `views` (an undo), clamped to the end
+ *  when the array has since shrunk — so edits made after the delete survive the undo. */
+export function restoreView(
+    views: RawView[],
+    view: RawView,
+    i: number,
+): RawView[] {
+    const next = [...views]
+    next.splice(Math.min(Math.max(0, i), views.length), 0, view)
     return next
 }
 

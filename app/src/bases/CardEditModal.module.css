@@ -1,8 +1,8 @@
 /* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome (frame, header
    rule, footer rule) now comes from FormModal/ModalHeader/ModalFooter (modal-redesign Task 8);
    this file only holds what those shared components don't: the --kb-meta-* var bridge to
-   PropertyValueEditor, the DUE trigger's sizing, the Milkdown description surface and the
-   boolean toggle. The no-editable-properties message is `<EmptyState>` now (ds-bridges Task 4)
+   PropertyValueEditor and the Milkdown description surface. The DUE trigger, the boolean toggle
+   and the read-only line are PropertyControl's / PropertyValueEditor's now. The no-editable-properties message is `<EmptyState>` now (ds-bridges Task 4)
    — no local override needed, so this file no longer carries an `.empty` class. */
 
 /* Carries the --kb-meta-* custom properties PropertyValueEditor.module.css reads for its shared
@@ -28,30 +28,28 @@
   /* Acceptance: "every field control in the modal (title, status, due, tags add, priority) is
      the same height, --h-control." PropertyValueEditor.module.css reads this as its own
      `--kb-meta-height` override (same mechanism as the two vars above — a CSS custom property,
-     not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/`.kbMetaSelectTrigger`) and the
-     TAGS "+ add" trigger (`.kbMetaMultiselectAdd`); the card-face inline chip editor (KanbanCard)
-     sets nothing and keeps its own compact defaults. TITLE is now a plain SettingsField row (no
-     local override needed — TextInput/FormControl already sets --h-control) and DUE
-     (`.dueTrigger` below) is this file's own class and sets the same value directly. */
+     not a `:global()` reach) for STATUS/PRIORITY (`.kbMetaInput`/SelectValue's trigger) and the
+     TAGS field; the card-face inline chip editor (KanbanCard)
+     sets nothing and keeps its own compact defaults. TITLE is a plain SettingsField row (no
+     local override needed — TextInput/FormControl already sets --h-control) and DUE reads the
+     same var through PropertyValueEditor's `.kbMetaDate`. */
   --kb-meta-height: var(--h-control);
-}
-
-/* DUE's trigger (DateFieldEditor), pinned to the same --h-control every sibling control in this
-   modal shares (see --kb-meta-height above) rather than FormControl's full 32px input height. */
-.dueTrigger { height: var(--h-control); box-sizing: border-box; min-height: 0; padding: var(--sp-1) var(--sp-3); }
-
-.readonly {
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-body-lg);
-  color: var(--text-muted);
-  padding: var(--sp-3) 0;
+  /* The status select's text starts at the same x as TITLE/PRIORITY/DUE: the trigger's default
+     left inset (kanban + table selects keep it) is zeroed here. */
+  --kb-meta-select-inset: 0;
+  /* Likewise on the right: the trigger's chevron gutter is zeroed so the `▾` ends at the same x as
+     the DUE field's calendar icon (both sit flush at the field's right edge). */
+  --kb-meta-select-end: 0;
 }
 
 /* The rich Milkdown description surface — a neutral underline field, matching every other value
    control in the modal (modal-redesign: Acceptance 5, neutral focus — no fill, no accent ring). */
 .mdField {
+  /* Layout sizes, not spacing: the field's resting height and the cap on an embedded picture. */
+  --md-min-height: 96px;
+  --md-image-max-height: var(--md-image-max-height);
   box-sizing: border-box;
-  min-height: 96px;
+  min-height: var(--md-min-height);
   padding: var(--sp-2) 0;
   border: none;
   border-bottom: var(--rule-soft);
@@ -76,7 +74,7 @@
 .mdField :global(.bismuth-embed-image) { display: inline-block; max-width: 100%; vertical-align: top; }
 .mdField :global(.bismuth-embed-img) {
   max-width: 100%;
-  max-height: 260px;
+  max-height: var(--md-image-max-height);
   height: auto;
   border-radius: var(--r-0);
   object-fit: contain;
@@ -109,7 +107,7 @@
 .mdField :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
 .mdField :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
 .mdField :global(.bismuth-doc-milkdown ul),
-.mdField :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: 22px; }
+.mdField :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: var(--sp-7); }
 .mdField :global(.bismuth-doc-milkdown li) { margin: var(--sp-1) 0; }
 .mdField :global(.bismuth-doc-milkdown li > p) { margin: 0; }
 .mdField :global(.bismuth-doc-milkdown strong) { font-weight: 700; }
@@ -117,6 +115,7 @@
 .mdField :global(.bismuth-doc-milkdown code) {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--fs-rel-code);
+  /* 1px: an optical nudge so inline code sits level with the prose line, not a spacing step. */
   padding: 1px var(--sp-2);
   border-radius: var(--r-0);
   background: var(--surface-3, var(--surface-2));
@@ -135,12 +134,3 @@
   color: var(--faint);
   pointer-events: none;
 }
-
-/* Boolean toggle: the product's `[x]`/`[ ]` register (ui/BracketToggle), the SAME one every
-   other on/off control uses (ui/ToggleRow, calendar's all-day switch) — not a filled Chip.
-   Shrink-to-fit (see CardEditModal.tsx): `.field` is a column flex container with no
-   align-items, so a bare inline-flex button would otherwise blockify and stretch across the
-   row's ~420px width. */
-.boolToggle { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-3); height: var(--h-control); color: var(--faint); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
-.boolToggle:hover { color: var(--text-muted); }
-.boolToggle[aria-pressed="true"] { color: var(--fg); }

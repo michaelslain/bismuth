@@ -1,6 +1,6 @@
 // app/src/ui/widgetKeys.test.ts
 import { describe, it, expect, afterEach } from 'bun:test'
-import { isDismissKey, isConfirmKey } from './widgetKeys'
+import { isDismissKey, isConfirmKey, isActivateKey, isTabKey } from './widgetKeys'
 import { settings, setSettings } from '../settings'
 
 // Faithful synthetic KeyboardEvent — key AND code both set, matching what a real
@@ -73,5 +73,35 @@ describe('isConfirmKey', () => {
     it('empty setting means no confirm key at all', () => {
         setSettings('keybindings', 'ui-confirm', '')
         expect(isConfirmKey(ev('Enter'))).toBe(false)
+    })
+})
+
+describe('isActivateKey', () => {
+    const key = (k: string, mods: Partial<KeyboardEvent> = {}) =>
+        ({
+            key: k,
+            code: k === ' ' ? 'Space' : k,
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            ...mods,
+        }) as KeyboardEvent
+
+    it('Enter and Space activate', () => {
+        expect(isActivateKey(key('Enter'))).toBe(true)
+        expect(isActivateKey(key(' '))).toBe(true)
+    })
+    it('a modifier or another key does not', () => {
+        expect(isActivateKey(key('Enter', { shiftKey: true }))).toBe(false)
+        expect(isActivateKey(key('Enter', { metaKey: true }))).toBe(false)
+        expect(isActivateKey(key('a'))).toBe(false)
+    })
+})
+
+describe('isTabKey', () => {
+    it('Tab only', () => {
+        expect(isTabKey({ key: 'Tab' } as KeyboardEvent)).toBe(true)
+        expect(isTabKey({ key: 'a' } as KeyboardEvent)).toBe(false)
     })
 })

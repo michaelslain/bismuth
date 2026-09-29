@@ -25,11 +25,13 @@ export function groupColor(key: string): string {
     return STATUS_COLOR[key.trim().toLowerCase()] ?? 'var(--accent)'
 }
 
-/** Just the dot, in a given color (e.g. List/Kanban group headers). */
-function StatusDot(props: { color?: string; status?: string }) {
+/** Just the dot, in a given color (e.g. List/Kanban group headers). `size` is 'sm' (6px, default)
+ *  or 'md' (8px, a kanban column header). */
+function StatusDot(props: { color?: string; status?: string; size?: 'sm' | 'md' }) {
     return (
         <span
             class={styles['status-dot']}
+            data-size={props.size ?? 'sm'}
             style={{
                 background:
                     props.color ??

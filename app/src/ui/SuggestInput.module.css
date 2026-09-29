@@ -1,0 +1,7 @@
+/* app/src/ui/SuggestInput.module.css — SuggestInput.tsx is the sole importer. */
+.suggest-input { display: block; }
+.suggest-input > * { width: 100%; }
+/* AnchoredPopover's backdrop is a full-screen layer that would swallow the click that places the
+   caret in the field; outside-click dismissal is the popover's own window listener, so the layer
+   itself takes no pointer events. */
+.backdrop { pointer-events: none; }

@@ -101,6 +101,20 @@ export const Weights: Story = {
     ),
 }
 
+/** `italic` — `font-style: italic`, the primitive that replaces a bare `<em>`; combines with weight. */
+export const Italic: Story = {
+    render: () => (
+        <Row label="italic">
+            <Text as="span" italic>
+                Italic
+            </Text>
+            <Text as="span" italic weight="bold">
+                Italic bold
+            </Text>
+        </Row>
+    ),
+}
+
 /** The uppercase/tracked "section label" register — the pattern already hand-rolled as
  *  DaemonList.module.css's .daemon-section-head (micro + faint + regular) and ui.css's own
  *  .ui-empty-block h2 (ui + bold). eyebrow only adds the transform/tracking; tone and weight

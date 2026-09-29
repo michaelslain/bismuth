@@ -6,6 +6,7 @@
 // there is no additional per-tone story beyond the AllTones* pair below.
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import ChipToggle, { type ChipToggleTone } from './ChipToggle'
 import { Row } from './_storyKit'
 
@@ -87,4 +88,30 @@ export const LongLabel: Story = {
             </ChipToggle>
         </div>
     ),
+}
+
+/** `color` — any CSS colour for the SELECTED state (a per-value colour such as an event category),
+ *  overriding `tone`. Unselected stays muted. */
+export const CustomColor: Story = {
+    render: () => (
+        <Row label="color" gap="10px">
+            <ChipToggle selected>default</ChipToggle>
+            <ChipToggle selected color="var(--rose)">
+                rose
+            </ChipToggle>
+            <ChipToggle selected color="#c08a2e">
+                custom hex
+            </ChipToggle>
+            <ChipToggle color="var(--rose)">unselected</ChipToggle>
+        </Row>
+    ),
+    // Catches: `color` ignored (every selected chip painting the default accent).
+    play: async ({ canvasElement }) => {
+        const [def, rose, hex] = [...canvasElement.querySelectorAll('button')].map(
+            b => getComputedStyle(b).color,
+        )
+        expect(rose).not.toBe(def)
+        expect(hex).not.toBe(def)
+        expect(hex).not.toBe(rose)
+    },
 }

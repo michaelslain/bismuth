@@ -5,7 +5,7 @@
 // `late === 0` — it is NOT carried — and reads as ordinary text, same as any chip not yet due.
 //
 // Keyboard access: the root is a focusable `role="button"` whose keydown is entirely decided by
-// `taskChipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
+// `ui/chipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
 // that module for the key map. A reschedule or toggle rewrites the row, which re-renders this
 // chip as a NEW element (often in another cell), so `state.ts`'s `focusTaskKey`/`requestTaskFocus`
 // carry focus across that remount instead of it falling back to <body>.
@@ -15,9 +15,14 @@ import type { PlacedTask } from '../taskPlacement'
 import { isWritableTask, taskRowRef } from '../taskPlacement'
 import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
-import { chipKeyAction, taskKey } from '../taskChipKeys'
+import { taskKey } from '../taskChipKeys'
+import { chipKeyAction } from '../../ui/chipKeys'
 import { focusTaskKey, requestTaskFocus } from '../state'
 import Text from '../../ui/Text'
+import TaskCheck from '../../bases/TaskCheck'
+import type { TaskCheckStatus } from '../../bases/TaskCheck'
+import TaskText from '../../bases/TaskText'
+import CalendarChip from './CalendarChip'
 import styles from './TaskChip.module.css'
 
 export type TaskChipProps = {
@@ -55,7 +60,12 @@ function statusWord(char: string): string {
     return ''
 }
 
-const READ_ONLY_TITLE = "Can't toggle — this task has nowhere a write could land"
+function checkStatus(char: string): TaskCheckStatus {
+    if (char === 'x' || char === 'X') return 'done'
+    if (char === '-') return 'cancelled'
+    if (char === '/') return 'doing'
+    return 'todo'
+}
 
 // A focusable element that still holds focus (or contains the thing that does) means the user
 // deliberately went there — e.g. clicked into the EventModal that a reschedule opened — while
@@ -96,21 +106,21 @@ const TaskChip: Component<TaskChipProps> = props => {
             .join(', ')
 
     return (
-        <div
-            ref={root}
+        <CalendarChip
+            ref={el => (root = el)}
+            label={label()}
+            onOpen={() => props.onOpen()}
             class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
                 .filter(Boolean)
                 .join(' ')}
             draggable={writable()}
-            tabindex={0}
-            role="button"
-            aria-label={label()}
             aria-keyshortcuts={
                 writable()
                     ? 'Enter Space Shift+F10 Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown'
                     : 'Enter'
             }
             onKeyDown={e => {
+                if (e.target !== e.currentTarget) return
                 const action = chipKeyAction(e)
                 if (!action) return
                 e.preventDefault()
@@ -137,63 +147,31 @@ const TaskChip: Component<TaskChipProps> = props => {
                 e.dataTransfer.effectAllowed = 'move'
                 e.dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag(ref))
             }}
-            onClick={e => {
-                // The day cell this chip renders inside wires its OWN onClick to open the
-                // "create event" modal (MonthView.tsx). Without this stop, opening a task's
-                // note also pops that modal over it.
-                e.stopPropagation()
-                props.onOpen()
-            }}
         >
-            <Text
-                as="span"
-                inherit
-                class={[styles.marker, writable() ? '' : styles.readOnly]
-                    .filter(Boolean)
-                    .join(' ')}
-                style={props.color ? { color: props.color } : undefined}
-                title={
-                    writable()
-                        ? 'Toggle task — right-click to set status'
-                        : READ_ONLY_TITLE
-                }
-                aria-disabled={writable() ? undefined : 'true'}
-                data-testid="task-chip-marker"
-                // Stop all four. The day cell opens the create-event modal on `click` (see the
-                // root div above) and starts a drag on `mousedown` — NOT `pointerdown`, which
-                // this calendar does not use anywhere today (TimeGrid.tsx's drag handlers are
-                // mousedown-based). `pointerdown` is stopped anyway, at zero cost, because a
-                // future gutter (Task 14) may add pointer-based drag — do not trim this back to
-                // "the obvious two". Stopped unconditionally, whether or not the marker is
-                // writable: this is drag-source hygiene, not a toggle action.
-                onClick={e => {
-                    // NOT writable: do nothing special, and — critically — do NOT
-                    // stopPropagation either. The click falls through to the root div's own
-                    // onClick above and opens the note, exactly like clicking the title would.
-                    // A dimmed marker that swallows its click into nothing is a dead zone that
-                    // LOOKS clickable and silently isn't — the thing this is built to avoid.
-                    if (!writable()) return
+            <TaskCheck
+                class={styles.marker}
+                status={checkStatus(markerChar(props.task.row))}
+                color={props.color}
+                readOnly={!writable()}
+                label={String(props.task.row.note.description ?? '')}
+                onToggle={e => {
+                    // The day cell opens the composer on click and starts a drag on mousedown;
+                    // the mark toggles, it does not also open the note.
                     e.stopPropagation()
+                    requestTaskFocus(key())
                     props.onToggle()
                 }}
-                onMouseDown={e => e.stopPropagation()}
-                onPointerDown={e => e.stopPropagation()}
-                onDblClick={e => e.stopPropagation()}
-                onContextMenu={e => {
-                    // Same non-interception as onClick above: no custom menu, and no
-                    // preventDefault/stopPropagation either, so the browser's own context menu
-                    // (or nothing) behaves exactly as it would over any other plain text.
-                    if (!writable()) return
+                onSetStatus={e => {
                     e.preventDefault()
                     e.stopPropagation()
-                    const cur = markerChar(props.task.row)
-                    openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
-                        props.onSetStatus(char),
+                    openTaskStatusMenu(
+                        e.clientX,
+                        e.clientY,
+                        markerChar(props.task.row),
+                        char => props.onSetStatus(char),
                     )
                 }}
-            >
-                [{markerChar(props.task.row)}]
-            </Text>
+            />
             <Text
                 as="span"
                 inherit
@@ -205,7 +183,7 @@ const TaskChip: Component<TaskChipProps> = props => {
                     .join(' ')}
                 data-testid="task-chip-title"
             >
-                {String(props.task.row.note.description ?? '')}
+                <TaskText text={String(props.task.row.note.description ?? '')} />
             </Text>
             <Show when={props.task.late > 0}>
                 <Text
@@ -216,7 +194,7 @@ const TaskChip: Component<TaskChipProps> = props => {
                     {props.task.late}d late
                 </Text>
             </Show>
-        </div>
+        </CalendarChip>
     )
 }
 

@@ -6,7 +6,10 @@
 // MonthView.module.css (2026-09-13) — nothing here imports Calendar.module.css.
 import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { settings } from '../../state'
+import { encodeTaskDrag, TASK_DRAG_MIME } from '../../taskDrag'
+import type { JSX } from 'solid-js'
 import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import CalendarFrame from '../CalendarFrame'
@@ -658,5 +661,69 @@ export const ComposerBelowChips: Story = {
             '[data-testid="task-cell-composer-marker"]',
         )!
         expect(marker.style.color).toBe('var(--blue)')
+    },
+}
+
+function WithWeekStart(props: { monday: boolean; children: JSX.Element }) {
+    const prev = settings.value
+    settings.value = { ...prev, weekStartsOnMonday: props.monday }
+    onCleanup(() => {
+        settings.value = prev
+    })
+    return <>{props.children}</>
+}
+
+/** `calendar.weekStartsOnMonday` reorders the weekday header AND shifts the grid, so a month
+ *  that starts on a Tuesday leads with one spill day, not two. */
+export const WeekStartsOnMonday: Story = {
+    render: () => {
+        seedCalendarState({ date: new Date(2026, 8, 15), events: [] })
+        return (
+            <WithWeekStart monday>
+                <div style={{ height: '520px' }}>
+                    <CalendarFrame>
+                        <MonthView store={new EventStore(new MemoryBackend())} />
+                    </CalendarFrame>
+                </div>
+            </WithWeekStart>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const names = within(canvasElement).getAllByTestId('month-day-name').map(n => n.textContent)
+        expect(names[0]).toBe('Mon')
+        expect(names[6]).toBe('Sun')
+        // 1 Sept 2026 is a Tuesday: exactly one leading spill day on a Monday-first grid
+        const cells = within(canvasElement).getAllByTestId('month-cell')
+        expect(cells[1].textContent).toContain('1')
+        expect(cells.length % 7).toBe(0)
+    },
+}
+
+/** Dropping a task chip's drag payload on a day cell reschedules it to THAT day: the view hands
+ *  the parsed payload and the cell's date to `onRescheduleTask`. State is a real signal. */
+export const DropReschedulesToTheCellDay: Story = {
+    render: () => {
+        seedCalendarState({ date: new Date(2026, 8, 15), events: [] })
+        const [moved, setMoved] = createSignal('nothing')
+        return (
+            <div style={{ height: '520px' }}>
+                <CalendarFrame>
+                    <MonthView
+                        store={new EventStore(new MemoryBackend())}
+                        placed={new Map()}
+                        onRescheduleTask={(ref, date) => setMoved(`${ref.path}:${ref.line}->${date}`)}
+                    />
+                </CalendarFrame>
+                <output data-testid="moved">{moved()}</output>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const cell = c.getAllByTestId('month-cell').find(el => el.textContent?.trim() === '20')!
+        const dataTransfer = new DataTransfer()
+        dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag({ path: 'todo.md', line: 4, field: 'due' }))
+        cell.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }))
+        await waitFor(() => expect(c.getByTestId('moved').textContent).toBe('todo.md:4->2026-09-20'))
     },
 }

@@ -16,7 +16,8 @@ import { calendarSlots, Toolbar, type CalendarSlotsCtx } from './Toolbar'
 import ViewBar, { Crumb } from '../../ui/ViewBar'
 import IconButton from '../../ui/IconButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
-import { currentView, currentDate, showCategoryPanel } from '../state'
+import { currentView, currentDate, showCategoryPanel, settings } from '../state'
+import { rangeLabel } from '../dates'
 import { ViewType } from '../types'
 
 const meta = {
@@ -439,5 +440,34 @@ export const TasksRegisterHasNoActionButton: Story = {
                 Node.DOCUMENT_POSITION_FOLLOWING
             ),
         ).toBe(true)
+    },
+}
+
+/** The week-start setting decides which seven days the week label names. 2026-01-14 is a Wednesday:
+ *  a Sunday-first week reads 11 to 17, a Monday-first one 12 to 18. Both variants assert the label
+ *  the bar really renders, and the two differ. */
+function WeekStartCase(props: { monday: boolean }) {
+    settings.value = { ...settings.value, weekStartsOnMonday: props.monday }
+    setState(new Date(2026, 0, 14), 'week', false)
+    return <InBaseBar width={1100} />
+}
+
+export const WeekStartsSunday: Story = {
+    render: () => <WeekStartCase monday={false} />,
+    play: async () => {
+        const label = rangeLabel(new Date(2026, 0, 14), 'week', false).long
+        expect(document.body.textContent).toContain(label)
+        expect(label).not.toBe(rangeLabel(new Date(2026, 0, 14), 'week', true).long)
+    },
+}
+
+export const WeekStartsMonday: Story = {
+    render: () => <WeekStartCase monday />,
+    play: async () => {
+        const label = rangeLabel(new Date(2026, 0, 14), 'week', true).long
+        expect(document.body.textContent).toContain(label)
+        expect(document.body.textContent).not.toContain(
+            rangeLabel(new Date(2026, 0, 14), 'week', false).long,
+        )
     },
 }
