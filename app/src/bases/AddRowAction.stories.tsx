@@ -18,7 +18,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const VIEW = { type: 'table' as const, name: 'Table' }
+const VIEW = { type: 'table' as const }
 
 /** A basePath is set and the view is a row view in normal mode — the button renders. */
 export const Default: Story = {
@@ -27,7 +27,6 @@ export const Default: Story = {
             basePath="boards/books.md"
             config={sampleBaseConfig()}
             view={VIEW}
-            viewIndex={0}
             ownsRows={false}
             mode="normal"
             onAdded={() => {}}
@@ -50,7 +49,6 @@ export const NoBasePath: Story = {
             <AddRowAction
                 config={sampleBaseConfig()}
                 view={VIEW}
-                viewIndex={0}
                 ownsRows={false}
                 mode="normal"
                 onAdded={() => {}}
@@ -74,7 +72,6 @@ export const TasksModeHidden: Story = {
                 basePath="boards/books.md"
                 config={sampleBaseConfig()}
                 view={VIEW}
-                viewIndex={0}
                 ownsRows={false}
                 mode="tasks"
                 onAdded={() => {}}
@@ -89,7 +86,7 @@ export const TasksModeHidden: Story = {
 const NOTES_PATH = 'boards/reading.md'
 // `source: notes` is declared, so the base does NOT own its rows: a new row is a fresh note.
 const NOTES_BODY =
-    '---\ntype: base\nsource:\n  kind: notes\nviews:\n  - type: table\n---\n'
+    '---\ntype: base\nsource:\n  kind: notes\nview: table\n---\n'
 
 // Notes living beside the base: the fake vault files a fresh note in the base's own folder, so
 // only rows in that folder can pick it up on the next resolve.

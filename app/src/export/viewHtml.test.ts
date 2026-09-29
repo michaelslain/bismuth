@@ -9,7 +9,7 @@ import type {
     ViewResult,
 } from '../../../core/src/bases/types'
 
-const cfg: BaseConfig = { views: [] }
+const cfg: BaseConfig = { view: { type: 'cards' } }
 const DARK = paletteFor('dark')
 
 function row(name: string, note: Record<string, unknown>): Row {

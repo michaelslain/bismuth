@@ -58,7 +58,6 @@ const change = (
 ): ServerChange => ({ version: 1, paths, dirty })
 const fileOnlyDeps = (rowPaths: string[]): ViewDeps => ({
     baseFilters: { and: ['file.inFolder("tasks")', 'file.hasTag("tasks")'] },
-    viewFilters: [undefined],
     spec: { kind: 'notes' },
     relevantPaths: new Set(rowPaths),
 })
@@ -114,7 +113,6 @@ describe('changeAffectsView', () => {
     test('property-filtered base revalidates on ANY content-only edit (correctness over the skip)', () => {
         const deps: ViewDeps = {
             baseFilters: "note.status == 'active'",
-            viewFilters: [undefined],
             spec: { kind: 'notes' },
             relevantPaths: new Set(['a.md']),
         }
@@ -127,7 +125,6 @@ describe('changeAffectsView', () => {
     })
     test('scoped (from:) and composed (base ref:) sources revalidate on content-only edits', () => {
         const scoped: ViewDeps = {
-            viewFilters: [],
             spec: { kind: 'tasks', from: '[[Scope]]' },
             relevantPaths: new Set(['a.md']),
         }
@@ -138,7 +135,6 @@ describe('changeAffectsView', () => {
             ),
         ).toBe(true)
         const composed: ViewDeps = {
-            viewFilters: [],
             spec: { kind: 'base', ref: '[[Other Base]]' },
             relevantPaths: new Set(['a.md']),
         }
@@ -151,7 +147,6 @@ describe('changeAffectsView', () => {
     })
     test('a `where` with property refs revalidates; a file-only `where` keeps the skip', () => {
         const propWhere: ViewDeps = {
-            viewFilters: [],
             spec: { kind: 'notes', where: 'rating > 3' },
             relevantPaths: new Set(['a.md']),
         }
@@ -162,7 +157,6 @@ describe('changeAffectsView', () => {
             ),
         ).toBe(true)
         const fileWhere: ViewDeps = {
-            viewFilters: [],
             spec: { kind: 'notes', where: 'file.hasTag("x")' },
             relevantPaths: new Set(['a.md']),
         }

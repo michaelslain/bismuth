@@ -1,6 +1,7 @@
 import { parse as parseYaml } from 'yaml'
 import type {
     BaseConfig,
+    FilterNode,
     ViewConfig,
     SortSpec,
     ParsedBase,
@@ -10,6 +11,7 @@ import { isValidType } from './types'
 import { parseBasePropertyType } from './properties'
 import { parseRows } from './rows'
 import { normalizeSource } from './sourceSpec'
+import { combineFilters } from './filters'
 
 const AGGREGATE_VALUES: readonly string[] = [
     'sum',
@@ -20,10 +22,6 @@ const AGGREGATE_VALUES: readonly string[] = [
 ]
 const BIN_VALUES: readonly string[] = ['day', 'week', 'month']
 
-function asArray<T>(v: unknown): T[] {
-    if (Array.isArray(v)) return v as T[]
-    return []
-}
 function strOrUndef(v: unknown): string | undefined {
     return typeof v === 'string' ? v : undefined
 }
@@ -221,8 +219,6 @@ function normalizeView(raw: unknown): ViewConfig {
         Array.isArray(x) ? x.map(String) : undefined
 
     const type = isValidType(o.type) ? o.type : 'table'
-    const name =
-        typeof o.name === 'string' && o.name.length ? o.name : 'Untitled view'
     const limit = typeof o.limit === 'number' ? o.limit : undefined
     const order = strArr(o.order)
     const summaries =
@@ -272,9 +268,7 @@ function normalizeView(raw: unknown): ViewConfig {
 
     return {
         type,
-        name,
         limit,
-        filters: o.filters as ViewConfig['filters'],
         order,
         sort: normalizeSort(o.sort),
         groupBy: normalizeGroupBy(o.groupBy),
@@ -292,7 +286,6 @@ function normalizeView(raw: unknown): ViewConfig {
         lng,
         zoom,
         center,
-        source: normalizeSource(o.source, o),
         // calendar field bindings
         dateField: strOrUndef(o.dateField),
         startTimeField: strOrUndef(o.startTimeField),
@@ -331,23 +324,55 @@ function normalizeView(raw: unknown): ViewConfig {
     }
 }
 
-const EMPTY_BASE: BaseConfig = { views: [{ type: 'table', name: 'Table' }] }
+const EMPTY_BASE: BaseConfig = { view: { type: 'table' } }
+
+/** Top-level frontmatter keys that belong to the BASE (or to the note itself), never to its
+ *  one view. Every other top-level key is read as a view key — the flat spelling is the only
+ *  one Bismuth writes. */
+const BASE_LEVEL_KEYS = new Set([
+    'type',
+    'view',
+    'views',
+    'name',
+    'filters',
+    'source',
+    'from',
+    'where',
+    'ref',
+    'formulas',
+    'properties',
+    'schema',
+    'categories',
+])
+
+/** The first entry of a legacy `views:` list, when there is one. A base has exactly ONE view:
+ *  a file written before that still reads, through its first entry only. Any further entries
+ *  are ignored here and reported by `bismuth base validate`; the first write to the file
+ *  flattens it (core/src/frontmatter.ts's `flattenBaseViews`). */
+export function legacyView(
+    o: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+    const first = Array.isArray(o.views) ? o.views[0] : undefined
+    return first && typeof first === 'object'
+        ? (first as Record<string, unknown>)
+        : undefined
+}
 
 function parseBaseObject(o: Record<string, unknown>): BaseConfig {
-    const rawViews = asArray<unknown>(o.views)
-    const views: ViewConfig[] = rawViews.map(normalizeView)
-    if (views.length === 0) views.push({ type: 'table', name: 'Table' })
-
-    // A top-level `columnWidths` (how the table view persists resizes via a flat
-    // setProperty) configures the default view — unless that view already declared
-    // its own. This mirrors the top-level order/sort/group handling in parseBaseFile.
-    const topWidths = normalizeColumnWidths(o.columnWidths)
-    if (topWidths && !views[0].columnWidths) views[0].columnWidths = topWidths
-
-    // A top-level `groupColors` (how the kanban view persists per-column colors via a flat
-    // setProperty) configures the default view — unless it already declared its own.
-    const topColors = normalizeGroupColors(o.groupColors)
-    if (topColors && !views[0].groupColors) views[0].groupColors = topColors
+    const legacy = legacyView(o) ?? {}
+    const flat = Object.fromEntries(
+        Object.entries(o).filter(([k]) => !BASE_LEVEL_KEYS.has(k)),
+    )
+    // The kind: a legacy list's own `type:` keeps the precedence it always had over the
+    // `view:` shorthand; a flat file only has `view:`.
+    const type = isValidType(legacy.type)
+        ? legacy.type
+        : isValidType(o.view)
+          ? o.view
+          : 'table'
+    // Flat top-level keys win over a legacy entry's — the same override the flat
+    // persistence path has always had.
+    const view = normalizeView({ ...legacy, ...flat, type })
 
     const { properties, declaredProperties } = normalizeProperties(o.properties)
 
@@ -361,13 +386,23 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
             : undefined
 
     return {
-        filters: o.filters as BaseConfig['filters'],
+        // A legacy entry's own `filters:` narrowed the base's; the two AND together.
+        filters: combineFilters(
+            o.filters as FilterNode | undefined,
+            legacy.filters as FilterNode | undefined,
+        ),
         formulas,
         properties,
         declaredProperties,
-        views,
-        source: normalizeSource(o.source, o),
-        schema: o.schema as BaseConfig['schema'],
+        view,
+        // A legacy entry's own `source:` overrode the base's.
+        source:
+            normalizeSource(legacy.source, legacy) ??
+            normalizeSource(o.source, o),
+        schema:
+            o.schema && typeof o.schema === 'object'
+                ? (o.schema as BaseConfig['schema'])
+                : undefined,
         // Same tolerance as core/src/calendar.ts's categoriesOf: an array, or nothing — no
         // per-entry validation, matching what that reader already accepts.
         categories: Array.isArray(o.categories)
@@ -393,7 +428,7 @@ export const FRONTMATTER_RE = /^(---\r?\n([\s\S]*?)\r?\n---\r?\n?)([\s\S]*)$/
 
 /**
  * Parse a `type: base` markdown file: YAML frontmatter (config) + optional GFM table (rows).
- * `view: <type>` is shorthand for a single default view. Reuses parseBase() for the config.
+ * The base's one view is spelled flat — `view: <kind>` plus top-level view keys.
  */
 export function parseBaseFile(
     text: string,
@@ -403,104 +438,7 @@ export function parseBaseFile(
     const fmText = m ? m[2] : ''
     const body = m ? m[3] : text
     const raw = fmText ? safeYaml(fmText) : null
-    const config = raw ? parseBaseObject(raw) : { views: [] as ViewConfig[] }
-
-    // `view: <type>` shorthand wins only when no explicit `views:` array was given.
-    if (raw && isValidType(raw.view) && !Array.isArray(raw.views)) {
-        config.views = [{ type: raw.view, name: capitalize(raw.view) }]
-    }
-    if (!config.views || config.views.length === 0) {
-        config.views = [{ type: 'table', name: 'Table' }]
-    }
-    if (raw?.schema && typeof raw.schema === 'object') {
-        config.schema = raw.schema as BaseConfig['schema']
-    }
-    // Top-level field-binding keys configure the default view (so the settings UI can
-    // persist them with a flat `setProperty`, no nested `views:` editing needed).
-    if (raw && config.views[0]) {
-        const FIELD_KEYS = [
-            'frontField',
-            'backField',
-            'dueField',
-            'easeField',
-            'intervalField',
-            'dateField',
-            'startTimeField',
-            'endTimeField',
-            'recurrenceField',
-            'categoryField',
-            'googleCalendarId',
-            'x',
-            'y',
-            'image',
-            'descriptionField',
-            'taskFile',
-            'defaultCategory',
-        ] as const
-        for (const k of FIELD_KEYS) {
-            if (typeof raw[k] === 'string')
-                (config.views[0] as unknown as Record<string, unknown>)[k] =
-                    raw[k]
-        }
-        // Top-level view shaping (visible columns / sort / group / group-order) configures the default view too.
-        if (Array.isArray(raw.order))
-            config.views[0].order = (raw.order as unknown[]).map(String)
-        if (Array.isArray(raw.columns))
-            config.views[0].groupOrder = (raw.columns as unknown[]).map(String)
-        // Kanban per-column colors (flat persistence via top-level `groupColors`).
-        const gc = normalizeGroupColors(raw.groupColors)
-        if (gc) config.views[0].groupColors = gc
-        // Kanban: top-level `hideLabels` configures the default view (flat persistence, #105).
-        if (typeof raw.hideLabels === 'boolean')
-            config.views[0].hideLabels = raw.hideLabels
-        const s = normalizeSort(raw.sort)
-        if (s) config.views[0].sort = s
-        const g = normalizeGroupBy(raw.groupBy)
-        if (g) config.views[0].groupBy = g
-        const widths = normalizeColumnWidths(raw.columnWidths)
-        if (widths) config.views[0].columnWidths = widths
-        // cards view: `cardContent: body` renders each note's body as an interactive todo
-        // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
-        // nested `views:` block.
-        if (
-            raw.cardContent === 'body' ||
-            raw.cardContent === 'tasks' ||
-            raw.cardContent === 'properties'
-        )
-            config.views[0].cardContent = raw.cardContent
-        // calendar view: `calendarContent: tasks` draws the tasks register instead of events.
-        // Top-level so a tasks calendar needs no nested `views:` block. Mirrors cardContent.
-        // SUPERSEDED by `mode:` below for new base files; still parsed for back-compat.
-        if (raw.calendarContent === 'tasks' || raw.calendarContent === 'events')
-            config.views[0].calendarContent = raw.calendarContent
-        // `mode: tasks` at the top level configures the default view, so a tasks base needs no
-        // nested `views:` block — the same flat-persistence shape as `cardContent`/`dateField`.
-        if (raw.mode === 'tasks' || raw.mode === 'normal')
-            config.views[0].mode = raw.mode
-        // cards view: image-cover keys (flat persistence — `image` is a string in FIELD_KEYS above).
-        if (raw.imageFit === 'cover' || raw.imageFit === 'contain')
-            config.views[0].imageFit = raw.imageFit
-        const ar = numOrUndef(raw.imageAspectRatio)
-        if (ar !== undefined) config.views[0].imageAspectRatio = ar
-        // chart axis/aggregation keys (flat persistence for chart views)
-        if (AGGREGATE_VALUES.includes(raw.aggregate as string))
-            config.views[0].aggregate = raw.aggregate as ViewConfig['aggregate']
-        if (BIN_VALUES.includes(raw.bin as string))
-            config.views[0].bin = raw.bin as ViewConfig['bin']
-        // flashcards: top-level `bidirectional` configures the default view (flat persistence).
-        if (typeof raw.bidirectional === 'boolean')
-            config.views[0].bidirectional = raw.bidirectional
-        // per-calendar Google Calendar sync: top-level `googleCalendarSync` toggle (the `googleCalendarId`
-        // string is folded via FIELD_KEYS above), so the calendar settings UI persists both with a flat
-        // setProperty — no nested `views:` editing.
-        if (typeof raw.googleCalendarSync === 'boolean')
-            config.views[0].googleCalendarSync = raw.googleCalendarSync
-    }
-
+    const config = raw ? parseBaseObject(raw) : { view: { type: 'table' as const } }
     const rows = parseRows(body, meta)
     return { config, rows }
-}
-
-function capitalize(s: string): string {
-    return s.length ? s[0].toUpperCase() + s.slice(1) : s
 }

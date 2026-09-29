@@ -42,12 +42,8 @@ export interface CalendarSlotsCtx {
  * one below. Three REGIONS, not one block:
  *
  *   locus   — DateNav (Today · prev · the date, which also jumps to today · next) followed by the period
- *             switcher.
- *             The switcher is here rather than in `facet` on purpose: "which span of time is on
- *             screen" is the same question prev/next/range answer, and in a calendar base with two
- *             or more views the base's OWN view tabs hold `facet`. Two segmented toggles of
- *             different scope in one bar have to be told apart by position, since they cannot be
- *             told apart by weight.
+ *             switcher. "Which span of time is on screen" is one question, so prev/next/range
+ *             and the period switcher share a region.
  *   config  — Categories, which governs what this session shows rather than doing anything.
  *   actions — the bar's one primary action: `+ Event` in the events register, nothing at all in
  *             the tasks register (a grid cell IS the create action there now).

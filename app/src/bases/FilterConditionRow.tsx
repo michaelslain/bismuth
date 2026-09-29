@@ -50,7 +50,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
         if (c && !ids.includes(c.prop)) ids.push(c.prop)
         return ids.map(id => ({
             value: id,
-            label: columnLabel(id, props.config ?? { views: [] }),
+            label: columnLabel(id, props.config ?? { view: { type: 'table' } }),
         }))
     })
 

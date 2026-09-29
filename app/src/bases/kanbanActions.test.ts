@@ -91,7 +91,6 @@ function harness(
         (colOrder() ?? groups.map(g => g.key)).filter(k => !removed().has(k))
     const actions = createKanbanActions({
         basePath,
-        viewIndex: () => 0,
         config: () => config,
         result: () => result,
         ownsRows: () => false,
@@ -148,7 +147,6 @@ test('renameColumn writes columns, then moves every card in one batch', async ()
         path: '/set-property',
         body: {
             path: 'b.md',
-            viewIndex: 0,
             key: 'columns',
             value: ['Backlog', 'Done'],
         },
@@ -204,7 +202,6 @@ test('setColColor(null) clears the override, a value writes it', async () => {
         path: '/set-property',
         body: {
             path: 'b.md',
-            viewIndex: 0,
             key: 'groupColors',
             value: { Todo: 'var(--graph-1)', Done: 'var(--graph-2)' },
         },
@@ -314,7 +311,6 @@ test('addColumn appends the key to columns and shows it before the refetch', asy
         path: '/set-property',
         body: {
             path: 'b.md',
-            viewIndex: 0,
             key: 'columns',
             value: ['Todo', 'Done', 'Review'],
         },
@@ -359,7 +355,6 @@ test('undoing deleteColumn un-hides the column at its old index and rewrites col
     const restore = calls.filter(c => c.path === '/set-property')[1]!
     expect(restore.body).toEqual({
         path: 'b.md',
-        viewIndex: 0,
         key: 'columns',
         value: ['Todo', 'Done'],
     })

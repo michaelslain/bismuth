@@ -7,13 +7,11 @@ A character-grid bar chart — one full-width row of monospace `#` fill per buck
 ```yaml
 ---
 type: base
-views:
-  - type: bar
-    name: Glasses of Water
-    x: date
-    y: glasses
-    aggregate: sum
-    bin: week
+view: bar
+x: date
+y: glasses
+aggregate: sum
+bin: week
 ---
 ```
 

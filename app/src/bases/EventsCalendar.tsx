@@ -23,7 +23,11 @@ import { CategoryPanel } from '../calendar/components/CategoryPanel'
 import { CalendarSettings } from '../calendar/components/CalendarSettings'
 import { BaseBackend } from './calendarBase'
 
-export type EventsCalendarProps = { basePath?: string; onChange?: () => void }
+export type EventsCalendarProps = {
+    basePath?: string
+    onChange?: () => void
+    onOpenBaseSettings?: () => void
+}
 
 /**
  * Events register — the pre-existing calendar UI (month/week/3day/day + drag + modals +
@@ -120,6 +124,7 @@ const EventsCalendar: Component<EventsCalendarProps> = props => {
                 <CalendarSettings
                     basePath={props.basePath!}
                     onChange={props.onChange}
+                    onOpenBaseSettings={props.onOpenBaseSettings}
                 />
             </Show>
         </>

@@ -24,8 +24,10 @@ export function CalendarView(props: {
     result?: ViewResult
     config?: BaseConfig
     ownsRows?: boolean
-    viewIndex?: number
     onChange?: () => void
+    /** Opens the base's generic settings panel (kind, filters, source) — reachable from the
+     *  calendar's own settings modal, whose gear the bar routes here instead. */
+    onOpenBaseSettings?: () => void
 }) {
     // `props.result` only exists for the tasks register (BaseView's `result()` memo
     // skips computing it for an events calendar — see fullPane() there).
@@ -50,12 +52,18 @@ export function CalendarView(props: {
                     <Show
                         when={props.basePath}
                         keyed
-                        fallback={<EventsCalendar onChange={props.onChange} />}
+                        fallback={
+                            <EventsCalendar
+                                onChange={props.onChange}
+                                onOpenBaseSettings={props.onOpenBaseSettings}
+                            />
+                        }
                     >
                         {basePath => (
                             <EventsCalendar
                                 basePath={basePath}
                                 onChange={props.onChange}
+                                onOpenBaseSettings={props.onOpenBaseSettings}
                             />
                         )}
                     </Show>
@@ -66,7 +74,7 @@ export function CalendarView(props: {
                     config={props.config}
                     basePath={props.basePath}
                     ownsRows={props.ownsRows ?? false}
-                    viewIndex={props.viewIndex ?? 0}
+                    onOpenBaseSettings={props.onOpenBaseSettings}
                     onChange={props.onChange}
                 />
             </Show>

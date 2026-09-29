@@ -56,8 +56,8 @@ export type TasksCalendarProps = {
     config?: BaseConfig
     basePath?: string
     ownsRows: boolean
-    viewIndex: number
     onChange?: () => void
+    onOpenBaseSettings?: () => void
 }
 
 /**
@@ -86,8 +86,8 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
     )
     // The active view's own config, already resolved server-side into `result.view` — the
     // same object `placed` below already reads `.dateField` off, so `dateField`/
-    // `categoryField`/`taskFile`/`defaultCategory` all come from here rather than indexing
-    // `props.config.views[props.viewIndex]` a second time.
+    // `categoryField`/`taskFile`/`defaultCategory` all come from here rather than reading
+    // `props.config.view` a second time.
     const view = () => props.result?.view
 
     const placed = createMemo<Map<string, PlacedTask[]>>(prev =>
@@ -184,7 +184,7 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
                     note,
                     0,
                 )
-                if (!newTaskVisible(props.config, vc, prospective))
+                if (!newTaskVisible(props.config, prospective))
                     pushToast(
                         `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
                     )
@@ -217,7 +217,7 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
         // Feed the scope check the path the write RETURNED, not a client-side guess.
         if (props.config && vc) {
             const prospective = prospectiveLineTaskRow(dest, body)
-            if (prospective && !newTaskVisible(props.config, vc, prospective))
+            if (prospective && !newTaskVisible(props.config, prospective))
                 pushToast(
                     `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
                 )
@@ -264,14 +264,8 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
         // "Not set" REMOVES the key — storing `''` leaves a dead field in the user's
         // frontmatter, and an empty categoryField would name a column with no name.
         if (value === '')
-            void api.deleteViewProperty(props.basePath, props.viewIndex, key)
-        else
-            void api.setViewProperty(
-                props.basePath,
-                props.viewIndex,
-                key,
-                value,
-            )
+            void api.deleteProperty(props.basePath, key)
+        else void api.setProperty(props.basePath, key, value)
     }
     // Rewrites the base's WHOLE `categories:` array — preserving every category already
     // declared and adding the picked one only when it is not there yet.
@@ -430,6 +424,7 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
                     colors={colors()}
                     onPickColor={onPickColor}
                     onSetField={onSetField}
+                    onOpenBaseSettings={props.onOpenBaseSettings}
                     onClose={() => (showCalendarSettings.value = false)}
                 />
             </Show>

@@ -7,7 +7,7 @@ import ChartConfigBar from './ChartConfigBar'
 const COLUMNS = ['due', 'priority', 'status', 'points']
 
 /** A controlled wrapper holding real ViewConfig state — changing a picker writes back through
- *  `onSet` exactly like BaseView does (setViewProperty on a value, deleteViewProperty on
+ *  `onSet` exactly like BaseView does (setProperty on a value, deleteProperty on
  *  `undefined`), then re-renders the bar from the updated view, so a story exercises the real
  *  read-after-write loop rather than a static snapshot. */
 function Controlled(props: { view: ViewConfig }): JSX.Element {
@@ -44,7 +44,7 @@ type Story = StoryObj<typeof meta>
 /** Bar/line/heatmap shape: x, y, agg, bin all live. Picking a new y updates the shown value. */
 export const Default: Story = {
     render: () => (
-        <Controlled view={{ type: 'bar', name: 'Bar', x: 'due', y: 'priority', aggregate: 'sum', bin: 'week' }} />
+        <Controlled view={{ type: 'bar', x: 'due', y: 'priority', aggregate: 'sum', bin: 'week' }} />
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -60,7 +60,7 @@ export const Default: Story = {
 /** Heatmap: no bin picker at all. */
 export const Heatmap: Story = {
     render: () => (
-        <Controlled view={{ type: 'heatmap', name: 'Heatmap', x: 'due' }} />
+        <Controlled view={{ type: 'heatmap', x: 'due' }} />
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -74,7 +74,6 @@ export const StatWithMetrics: Story = {
         <Controlled
             view={{
                 type: 'stat',
-                name: 'Stat',
                 x: 'due',
                 bin: 'month',
                 stats: [{ label: 'total priority', value: 'sum(priority)' }],
@@ -92,7 +91,7 @@ export const StatWithMetrics: Story = {
 /** Choosing "(count rows)" for y clears y and forces aggregate to count in one gesture. */
 export const CountRows: Story = {
     render: () => (
-        <Controlled view={{ type: 'bar', name: 'Bar', x: 'due', y: 'priority', aggregate: 'sum' }} />
+        <Controlled view={{ type: 'bar', x: 'due', y: 'priority', aggregate: 'sum' }} />
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)

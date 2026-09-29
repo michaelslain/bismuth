@@ -7,13 +7,11 @@ An ASCII line plot on a character grid (`/ - \ o` glyphs in a `<pre>` block, `ap
 ```yaml
 ---
 type: base
-views:
-  - type: line
-    name: Weight Over Time
-    x: date
-    y: weight
-    aggregate: avg
-    bin: week
+view: line
+x: date
+y: weight
+aggregate: avg
+bin: week
 ---
 ```
 

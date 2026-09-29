@@ -41,7 +41,7 @@ const BIN_OPTIONS: SelectOption[] = [
 /**
  * The ViewBar `config` slot for a chart kind (bar/line/stat/heatmap) — four pickers (x, y,
  * aggregate, bin) written straight back to the base file via `props.onSet`, which the caller
- * (BaseView) turns into `api.setViewProperty`/`deleteViewProperty` + a refetch — the same shape
+ * (BaseView) turns into `api.setProperty`/`deleteProperty` + a refetch — the same shape
  * as the table's columnWidths write. Only rendered when the base has a write target
  * (`basePath` — see Review Focus #5 in the chart-views plan): an inline ```query block with no
  * base file gets no pickers at all, decided by the caller, not here.
@@ -52,7 +52,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
 
     // No BaseConfig in these props (see the plan's Interfaces) — labels fall back to the bare
     // property id, without a `properties[].displayName` override.
-    const NO_CONFIG: BaseConfig = { views: [] }
+    const NO_CONFIG: BaseConfig = { view: { type: 'table' } }
     const columnOptions = createMemo<SelectOption[]>(() =>
         props.columns.map(c => ({ value: c, label: columnLabel(c, NO_CONFIG) })),
     )

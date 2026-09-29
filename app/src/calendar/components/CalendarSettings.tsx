@@ -3,6 +3,7 @@ import {
     createMemo,
     createResource,
     createEffect,
+    Show,
 } from 'solid-js'
 import {
     FIELDS,
@@ -25,6 +26,8 @@ import { GcalSyncPanel } from './GcalSyncPanel'
 export function CalendarSettings(props: {
     basePath: string
     onChange?: () => void
+    /** Closes this modal and opens the base's generic settings panel. */
+    onOpenBaseSettings?: () => void
 }) {
     const close = () => (showCalendarSettings.value = false)
     const [parsed] = createResource(
@@ -37,8 +40,9 @@ export function CalendarSettings(props: {
     const [map, setMap] = createSignal<Record<string, string>>({})
 
     createEffect(() => {
-        const view = parsed()?.config.views[0] as
-            Record<string, unknown> | undefined
+        const view = parsed()?.config.view as
+            | Record<string, unknown>
+            | undefined
         if (!view) return
         setMap(seedColumnMap(view))
     })
@@ -64,6 +68,11 @@ export function CalendarSettings(props: {
         if (ok) close()
     }
 
+    const openBaseSettings = () => {
+        close()
+        props.onOpenBaseSettings?.()
+    }
+
     return (
         <FormModal onClose={close} label="calendar settings">
             <ModalHeader title="calendar settings" onClose={close} />
@@ -80,12 +89,19 @@ export function CalendarSettings(props: {
 
             <ModalFooter
                 leading={
-                    <IconTextButton
-                        icon="rotate-ccw"
-                        onClick={reset}
-                    >
-                        reset
-                    </IconTextButton>
+                    <>
+                        <IconTextButton
+                            icon="rotate-ccw"
+                            onClick={reset}
+                        >
+                            reset
+                        </IconTextButton>
+                        <Show when={props.onOpenBaseSettings}>
+                            <TextButton onClick={openBaseSettings}>
+                                base settings
+                            </TextButton>
+                        </Show>
+                    </>
                 }
             >
                 <TextButton onClick={close}>

@@ -1,6 +1,6 @@
 # Calendar Subsystem Overview
 
-Calendar is a **Bases view kind**, rendered when a `type: base` markdown file declares `views: [{ type: calendar }]`, not a standalone page. This page covers the event and category data model, event storage and serialization, the recurrence rule engine, category-to-color mapping, reactive global state, view components, and user-facing settings. For configuring a calendar base file and wiring up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
+Calendar is a **Bases view kind**, rendered when a `type: base` markdown file declares `view: calendar`, not a standalone page. This page covers the event and category data model, event storage and serialization, the recurrence rule engine, category-to-color mapping, reactive global state, view components, and user-facing settings. For configuring a calendar base file and wiring up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
 
 There are **two write paths** to the same on-disk calendar file:
 
@@ -114,7 +114,7 @@ Ephemeral in-process store. Used in tests and as the fallback when `CalendarView
 
 Backs the calendar with a `type: base` markdown file on disk. Lifecycle:
 
-1. **`init()`** — called once on mount; reads the file via `api.read`, passes the text through `parseCalendarFile`, and captures the full frontmatter object so subsequent saves can preserve all non-calendar frontmatter keys (e.g. `views:`, `source:`, custom fields).
+1. **`init()`** — called once on mount; reads the file via `api.read`, passes the text through `parseCalendarFile`, and captures the full frontmatter object so subsequent saves can preserve all non-calendar frontmatter keys (e.g. `view:`, `source:`, custom fields).
 2. **`load()`** — returns the last-parsed snapshot synchronously (always available after `init`).
 3. **`save(data)`** — updates the snapshot, merges categories back into the frontmatter under `categories:`, then fires-and-forgets `api.write` with the re-serialized file. The version poll or SSE event will reflect the disk change on the next read.
 
@@ -223,7 +223,7 @@ interface ParsedCalendar {
 | `serializeCalendarFile` | `(frontmatter, events) => string` | `stringifyYaml` on the FULL frontmatter (all original keys preserved) + `serializeRows` on the events; emits `---\n<fm>\n---\n\n<body>\n`, or a bare frontmatter block when there are no events |
 | `categoriesOf` | `(frontmatter) => Category[]` | Reads the `categories` frontmatter key (array of `{name, color}`), else `[]` |
 | `rowToEvent` | `(row: Row, i: number) => CalendarEvent` | Row→event mapping mirroring `calendarSerialize.ts`; `recurrence`/`categories` are JSON-decoded from their string cells (malformed → `undefined`/single-element); missing `id` → `row-<i>` |
-| `isCalendarBase` | `(frontmatter) => boolean` | Is this frontmatter a calendar base? Mirrors `parseBaseFile`: an explicit `views:` array wins (calendar iff some view object has `type: calendar`); the `view: calendar` shorthand applies only when no `views:` array is present. Drives `bismuth calendar bases` discovery |
+| `isCalendarBase` | `(frontmatter) => boolean` | Is this frontmatter a calendar base? Mirrors `parseBaseFile`: a base has one view, so it is a calendar iff `view: calendar` — or, in a file still carrying a legacy `views:` list, iff that list's first entry has a valid `type` of `calendar` (which beats `view:`). Drives `bismuth calendar bases` discovery |
 | `emptyCalendarFile` | `(opts?: {title?, categories?}) => string` | A fresh, empty calendar base file (`type: base` + `view: calendar` frontmatter, no events). Drives `bismuth calendar create` |
 
 The row↔event mapping is JSON-string-based for the compound fields: `recurrence` is `JSON.stringify`d into its column, and `categories` (when non-empty) is likewise JSON-encoded; the single-valued `category` field stays a plain string.
@@ -589,7 +589,7 @@ view kind reached through `BaseView`).
 | `actions` | Do a thing. (the primary action is last) |
 
 A control's region is decided by **the question it answers, not its shape** — two segmented toggles
-can land in different regions (the calendar's period switcher is `locus`; a base's own view tabs are
+can land in different regions (the calendar's period switcher is `locus`; a projection toggle is
 `facet`) because they answer different questions, even though both are `SegmentedToggle`s. `ViewBar`
 lays the six out as two flex groups — `identity`/`locus`/`facet` leading, `readouts`/`config`/`actions`
 trailing — pushed apart by `justify-content: space-between`; the leading group (`.vb-lead`) is the

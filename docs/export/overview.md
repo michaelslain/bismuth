@@ -21,7 +21,6 @@ The pane is a two-column layout: a live **preview** on the left (an `<iframe src
 
 - **Input path** — which vault-relative file to export. Defaults to the file the tab was opened for, re-pointable by typing a path or (in the desktop app) the `BROWSE` button (`pickFile`, filtered to `md`/`sheet`/`draw`). The committed `srcPath` (which drives the preview resource) is kept separate from the live `srcDraft` text so typing doesn't refetch on every keystroke and drop input focus mid-word; the draft commits on blur/Enter.
 - **Output path** — the destination folder. Empty = the browser/OS Downloads dir. A chosen folder (desktop only, via `pickFolder`) is remembered in `localStorage` under `bismuth.export.destFolder`.
-- **View** (bases with >1 view) — a chip per base view, picking `viewIndex`.
 - **Content** (bases only) — the `Visual` / `Data` `RenderMode` toggle.
 - **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `bismuth.export.calSpan`.
 - **Frontmatter** (plain `.md` only, not a base) — an "Include frontmatter" toggle, default ON. See "Include/exclude frontmatter" below.
@@ -34,9 +33,9 @@ The pane is a two-column layout: a live **preview** on the left (an `<iframe src
 
 ### Source detection: is it a base?
 
-On every source change, a `createResource` keyed on `srcPath` reads the file and checks `parseFrontmatter(text).data?.type === "base"`. If so it parses the file (`parseBaseFile`) and exposes its `config.views`; otherwise it resolves to `null` and **none** of the base controls render. A base is therefore detected by frontmatter, not by extension — there is no `.base` extension; a base is just a `.md` (mirrored by `isBaseText()` in `exporters.ts`).
+On every source change, a `createResource` keyed on `srcPath` reads the file and checks `parseFrontmatter(text).data?.type === "base"`. If so it parses the file (`parseBaseFile`) and exposes its single view kind (`config.view.type`); otherwise it resolves to `null` and **none** of the base controls render. A base is therefore detected by frontmatter, not by extension — there is no `.base` extension; a base is just a `.md` (mirrored by `isBaseText()` in `exporters.ts`).
 
-When the source changes, `viewIndex` resets to 0 and `userSetMode` clears, so the mode default re-derives from the new file's first view kind.
+When the source changes, `userSetMode` clears, so the mode default re-derives from the new file's view kind.
 
 ## Targets × formats
 
@@ -108,7 +107,7 @@ Week/3day/day all render a column-per-day time grid (`timeGrid`): a left hour gu
 
 ## Include/exclude frontmatter
 
-`ExportOptions.includeFrontmatter` (default `true`, preserving the historical behavior) controls whether a plain (non-base) note's leading YAML frontmatter block shows up in the exported output. It's ignored for a base (a base's frontmatter is its config — filters/formulas/views — never rendered as content in the first place, regardless of the toggle) and for sheets/drawings (no frontmatter concept).
+`ExportOptions.includeFrontmatter` (default `true`, preserving the historical behavior) controls whether a plain (non-base) note's leading YAML frontmatter block shows up in the exported output. It's ignored for a base (a base's frontmatter is its config — filters/formulas/view settings — never rendered as content in the first place, regardless of the toggle) and for sheets/drawings (no frontmatter concept).
 
 - **`md`** — `true` passes the raw file through unchanged (frontmatter and all); `false` strips the leading `---\n…\n---` block before writing.
 - **`html` / `pdf` / `png`** — the same strip applies to the markdown BEFORE `renderMarkdown`. With the block left in (the default), `marked` parses it as plain prose — the opening `---` becomes a thematic break (`<hr>`), and because YAML frontmatter always has a *second* `---` immediately after a paragraph of key/value lines, that second fence is parsed as a **Setext heading underline**, turning the frontmatter into a heading. Turning the toggle off avoids this entirely.
@@ -469,7 +468,7 @@ Because `renderDocToPdf` doesn't stack while the app's PDF path does, a multi-pa
 
 ```text
 bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
-  [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]
+  [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]
   [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]
 ```
 
@@ -485,7 +484,7 @@ Flow:
    - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
    - `docFontCss` → `cli/src/docFontCss.ts`'s `docFontInlineCss` (see "Font embedding" above) — without it the headless Chrome rasterizing a CLI PDF/PNG would have no prose serif or Monaspace Xenon to paint prose with
    - `options.palette` → `buildPaletteOverride(vault, theme)`, read from the vault's own `.settings` (see "Note prose carries the app's typography" above)
-4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter`/`--markdown-syntax` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above; `--markdown-syntax` sets `showMarkdownSyntax: true`, see "Markdown syntax markers" above). There is no CLI flag for `pdfFontSize` — a headless PDF always renders at the 12pt default.
+4. `optionsFrom(args)` maps `--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter`/`--markdown-syntax` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above; `--markdown-syntax` sets `showMarkdownSyntax: true`, see "Markdown syntax markers" above). There is no CLI flag for `pdfFontSize` — a headless PDF always renders at the 12pt default.
 5. Bytes are written to `--out` (or `res.filename`) — **except** a page-broken PNG note (`res.files.length > 1`, see "Page breaks" above), which writes every file to its own computed name instead (`--out` doesn't apply to a multi-file result). This path is live: a multi-page note exported as PNG renders each `<!-- pagebreak -->` section through `htmlToPngHeadless` in its own headless-Chrome call and writes one file per page.
 
 So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format pdf`, `bismuth export Calendar.md --mode visual --cal-span week --format html`, `bismuth export Essay.md --format md --no-frontmatter`, and now `bismuth export note.md --format pdf` (or `png`) all work headlessly — the last two by way of a real headless Chrome the command launches for that one call, and only fail if that Chrome binary isn't present on the machine (see "Headless vs browser-only paths" above).

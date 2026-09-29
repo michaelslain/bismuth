@@ -135,7 +135,7 @@ const SAMPLE_DECLARED = ['status', 'priority', 'done', 'due', 'tags']
 const DEFAULT_CONFIG: BaseConfig = {
     properties: SAMPLE_PROPERTIES,
     declaredProperties: SAMPLE_DECLARED,
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 
 /** A minimal empty row a caller's `Partial<Row>` merges onto — used only when `rows` is passed
@@ -155,8 +155,8 @@ function mergeRow(i: number, partial: Partial<Row>): Row {
 }
 
 /** Shallow-merge a caller's config over the default: `properties` merges additively (so a
- *  story can add one property without repeating the other four); `views` replaces wholesale
- *  when given (set `views[0].groupBy` for a grouped/kanban story). Exported so a story can
+ *  story can add one property without repeating the other four); `view` replaces wholesale
+ *  when given (set `view.groupBy` for a grouped/kanban story). Exported so a story can
  *  build a `config` prop that matches exactly what `sampleViewResult` fed to `runView`. */
 export function sampleBaseConfig(config?: Partial<BaseConfig>): BaseConfig {
     return {
@@ -171,8 +171,7 @@ export function sampleBaseConfig(config?: Partial<BaseConfig>): BaseConfig {
 
 /**
  * Build a ViewResult for a Bases view story by running the REAL query engine
- * (core/src/bases/query.ts `runView`) over sample rows + a sample BaseConfig. Always resolves
- * `config.views[0]` — a config with multiple views only ever renders the first.
+ * (core/src/bases/query.ts `runView`) over sample rows + a sample BaseConfig's one view.
  *
  * - No `rows`: the curated 6-row `SAMPLE_ROWS` dataset.
  * - `rows` given: each partial is merged onto a minimal empty row (NOT onto `SAMPLE_ROWS`) —
@@ -185,5 +184,5 @@ export function sampleViewResult(
     config?: Partial<BaseConfig>,
 ): ViewResult {
     const builtRows = rows ? rows.map((r, i) => mergeRow(i, r)) : SAMPLE_ROWS
-    return runView(sampleBaseConfig(config), builtRows, 0)
+    return runView(sampleBaseConfig(config), builtRows)
 }

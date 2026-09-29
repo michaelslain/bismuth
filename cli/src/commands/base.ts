@@ -44,7 +44,6 @@ import {
     isValidType,
     type SourceSpec,
     type FilterNode,
-    type Row,
 } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 import {
@@ -285,7 +284,7 @@ function collectExprErrors(
 
 /** Best-effort raw YAML frontmatter object, for checks that need to see what was
  *  ACTUALLY written before `parseBaseFile`'s malformed-tolerant normalizer silently
- *  downgrades a bad value — e.g. an unrecognized `views[].type` becomes "table"
+ *  downgrades a bad value — e.g. an unrecognized `view:` kind becomes "table"
  *  (parse.ts's `normalizeView`), which would hide exactly the mistake `base validate`
  *  exists to catch. `{}` when there's no frontmatter block or it isn't valid YAML
  *  (parseFrontmatter's own malformed-YAML tolerance — see frontmatter.ts). */
@@ -356,8 +355,8 @@ function sourceRefTarget(spec: SourceSpec): string | undefined {
 
 export const commands: CommandMap = {
     'base create': {
-        summary: 'Create a new type:base note with a single view',
-        usage: '<path> --view <kind> [--source <spec>] [--title <t>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]',
+        summary: 'Create a new type:base note (a base has exactly one view)',
+        usage: '<path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]',
         run: async args => {
             const vault = requireVault(args)
             const [path] = positionals(args)
@@ -375,27 +374,23 @@ export const commands: CommandMap = {
                 )
 
             const source = flag(args, 'source') ?? 'notes'
-            const title = flag(args, 'title') ?? fileBasename(rel)
 
             // Some view kinds render nothing (or a hint message) without their key config —
             // rather than silently omit it, write the key with a blank value AND report it
             // as `missing` in the result, so an agent creating a base sees exactly what it
             // still has to fill in.
-            const viewConfig: Record<string, unknown> = {
-                type: view,
-                name: title,
-            }
+            const viewKeys: Record<string, unknown> = {}
             const missing: string[] = []
 
             if (view === 'kanban') {
                 const groupBy = flag(args, 'group-by')
-                viewConfig.groupBy = { property: groupBy ?? '' }
+                viewKeys.groupBy = { property: groupBy ?? '' }
                 if (!groupBy) missing.push('groupBy')
             } else if (view === 'map') {
                 const lat = flag(args, 'lat')
                 const lng = flag(args, 'lng')
-                viewConfig.lat = lat ?? ''
-                viewConfig.lng = lng ?? ''
+                viewKeys.lat = lat ?? ''
+                viewKeys.lng = lng ?? ''
                 if (!lat) missing.push('lat')
                 if (!lng) missing.push('lng')
             } else if (
@@ -405,15 +400,17 @@ export const commands: CommandMap = {
                 view === 'heatmap'
             ) {
                 const x = flag(args, 'x')
-                viewConfig.x = x ?? ''
+                viewKeys.x = x ?? ''
                 if (!x) missing.push('x')
             }
 
             // Build the frontmatter via the same yaml-preserving helper `prop set`/`row add`
             // use, one key at a time, rather than hand-rolling YAML serialization here.
             let text = setFrontmatterKey('', 'type', 'base')
+            text = setFrontmatterKey(text, 'view', view)
             text = setFrontmatterKey(text, 'source', source)
-            text = setFrontmatterKey(text, 'views', [viewConfig])
+            for (const [key, value] of Object.entries(viewKeys))
+                text = setFrontmatterKey(text, key, value)
 
             // Reserve the path first (throws EEXIST if a file is already there — no clobbering
             // an existing note), then write the real config.
@@ -425,7 +422,6 @@ export const commands: CommandMap = {
                 path: rel,
                 view,
                 source,
-                title,
             }
             if (missing.length) {
                 result.missing = missing
@@ -459,24 +455,28 @@ export const commands: CommandMap = {
             const { text, name } = await readBase(vault, path)
             const errors: string[] = []
 
-            // 1. Unknown view types. `parseBaseFile`'s normalizer is malformed-YAML-tolerant —
-            // an invalid `views[i].type` (or the `view: <type>` shorthand) silently downgrades
-            // to "table" instead of throwing (parse.ts's normalizeView), which is exactly the
+            // 1. The view. `parseBaseFile`'s normalizer is malformed-YAML-tolerant — an
+            // invalid `view:` kind (or a legacy `views[0].type`) silently downgrades to
+            // "table" instead of throwing (parse.ts's normalizeView), which is exactly the
             // mistake this command exists to surface. Read the raw YAML directly to see what
-            // was actually written, before that normalizing happens.
+            // was actually written, before that normalizing happens. A base has ONE view; a
+            // legacy `views:` list is read (first entry) but more than one entry is an error.
             const raw = rawFrontmatter(text)
             if (Array.isArray(raw.views)) {
-                raw.views.forEach((v, i) => {
-                    const t =
-                        v && typeof v === 'object'
-                            ? (v as Record<string, unknown>).type
-                            : undefined
-                    if (t !== undefined && !isValidType(t)) {
-                        errors.push(
-                            `views[${i}].type: ${JSON.stringify(t)} is not a valid view type — must be one of: ${VIEW_TYPES.join(', ')}`,
-                        )
-                    }
-                })
+                if (raw.views.length > 1)
+                    errors.push(
+                        `views: this base lists ${raw.views.length} views, but a base has one view — move each extra view into its own base file with \`source: base\` and \`ref: "[[${name}]]"\``,
+                    )
+                const first = raw.views[0]
+                const t =
+                    first && typeof first === 'object'
+                        ? (first as Record<string, unknown>).type
+                        : undefined
+                if (t !== undefined && !isValidType(t)) {
+                    errors.push(
+                        `view: ${JSON.stringify(t)} is not a valid view type — must be one of: ${VIEW_TYPES.join(', ')}`,
+                    )
+                }
             } else if (typeof raw.view === 'string' && !isValidType(raw.view)) {
                 errors.push(
                     `view: ${JSON.stringify(raw.view)} is not a valid view type — must be one of: ${VIEW_TYPES.join(', ')}`,
@@ -535,7 +535,7 @@ export const commands: CommandMap = {
                 }
             }
 
-            // 3. Sources (base-level default + any per-view override) that name a base/note
+            // 3. The source, if it names a base/note
             // which doesn't exist, or a `where` expression that fails to parse. resolveSource/
             // resolveBaseRows are deliberately tolerant here (an unresolvable ref just resolves
             // to zero rows, no throw — see source.ts) — validate exists to surface exactly the
@@ -543,13 +543,6 @@ export const commands: CommandMap = {
             const sourcesToCheck: { label: string; spec: SourceSpec }[] = []
             if (config.source)
                 sourcesToCheck.push({ label: 'source', spec: config.source })
-            config.views.forEach((v, i) => {
-                if (v.source)
-                    sourcesToCheck.push({
-                        label: `views[${i}].source`,
-                        spec: v.source,
-                    })
-            })
             for (const { label, spec } of sourcesToCheck) {
                 const ref = sourceRefTarget(spec)
                 if (ref) {
@@ -579,59 +572,43 @@ export const commands: CommandMap = {
             // A `where:` filter can strand a new task the same way and is NOT checked here —
             // a filter cannot be inverted in general. That case is caught at creation time,
             // where the concrete new row exists and can just be evaluated.
-            //
-            // Memoized by the resolved `from` path: several task-mode views sharing one
-            // `from:` is the ordinary shape, not a corner case, and each resolution can
-            // bottom out in a full vault scan (buildVaultRows) when the referenced base's
-            // own source is `kind: notes` — without this an N-view base costs N full scans.
-            // The PROMISE is cached, not the resolved array, so two views naming the same
-            // base share one in-flight resolution instead of racing two scans.
-            const scopeCache = new Map<string, Promise<Row[]>>()
-            const resolveScope = (fromRef: string): Promise<Row[]> => {
-                const fromPath = refToPath(fromRef)
-                let p = scopeCache.get(fromPath)
-                if (!p) {
-                    p = resolveBaseRows(fromPath, { root: vault, today: today() })
-                    scopeCache.set(fromPath, p)
-                }
-                return p
-            }
-            for (const [i, v] of config.views.entries()) {
-                const spec = v.source ?? config.source
-                if (!spec || spec.kind !== 'tasks' || !spec.from) continue
-                if (!v.taskFile) continue
-                const dest = refToPath(v.taskFile)
-                const scoped = await resolveScope(spec.from)
+            const spec = config.source
+            if (
+                spec &&
+                spec.kind === 'tasks' &&
+                spec.from &&
+                config.view.taskFile
+            ) {
+                const dest = refToPath(config.view.taskFile)
+                const scoped = await resolveBaseRows(refToPath(spec.from), {
+                    root: vault,
+                    today: today(),
+                })
                 const paths = new Set(scoped.map(r => r.file.path))
                 if (!paths.has(dest))
                     errors.push(
-                        `views[${i}].taskFile: "${v.taskFile}" is outside this view's source scope (from: "${spec.from}") — a task created here is written to ${dest}, which "from" does not select, so it never appears in the view. Point taskFile at a note inside that scope, or drop "from" if new tasks should reach every file the base can see.`,
+                        `taskFile: "${config.view.taskFile}" is outside this base's source scope (from: "${spec.from}") — a task created here is written to ${dest}, which "from" does not select, so it never appears in the view. Point taskFile at a note inside that scope, or drop "from" if new tasks should reach every file the base can see.`,
                     )
             }
 
-            // Bonus: global + per-view filters, and every formula (including a declared
+            // Bonus: the filters, and every formula (including a declared
             // `{type: formula}` property's `expr`) that fails to parse — passesFilter/
             // computeFormulas (query.ts) both swallow a parse error silently instead of
             // surfacing it.
             collectExprErrors(config.filters, 'filters', errors)
-            config.views.forEach((v, i) =>
-                collectExprErrors(v.filters, `views[${i}].filters`, errors),
-            )
             // Stat view metrics (`stats[].value`) are metric expressions, not filter
             // expressions, but the same "does it even parse" check applies before anything
             // tries to evaluate them (metricResults nulls a bad metric at render time rather
             // than throwing, so validate is the only place this surfaces as an error).
-            config.views.forEach((v, i) =>
-                (v.stats ?? []).forEach((stat, j) => {
-                    try {
-                        parseExpr(stat.value)
-                    } catch (e) {
-                        errors.push(
-                            `views[${i}].stats[${j}].value: "${stat.value}" failed to parse — ${e instanceof Error ? e.message : String(e)}`,
-                        )
-                    }
-                }),
-            )
+            ;(config.view.stats ?? []).forEach((stat, j) => {
+                try {
+                    parseExpr(stat.value)
+                } catch (e) {
+                    errors.push(
+                        `stats[${j}].value: "${stat.value}" failed to parse — ${e instanceof Error ? e.message : String(e)}`,
+                    )
+                }
+            })
             const formulas = { ...declaredFormulas(config), ...config.formulas }
             for (const [formulaName, src] of Object.entries(formulas)) {
                 try {
@@ -656,25 +633,14 @@ export const commands: CommandMap = {
     'base render': {
         summary:
             "Resolve a base's rows and run a view's grouping/sorting/summary pipeline (chart views return a computed series instead of raw rows)",
-        usage: '<path> [--view <n>]',
+        usage: '<path>',
         run: async args => {
             const vault = requireVault(args)
             const [path] = positionals(args)
             if (!path) fail('<path> required')
 
-            const viewFlag = flag(args, 'view')
-            const viewIndex = viewFlag === undefined ? 0 : Number(viewFlag)
-            if (!Number.isInteger(viewIndex) || viewIndex < 0)
-                fail('--view must be a non-negative integer')
-
             const { text, name } = await readBase(vault, path)
-            const { config } = parseBaseFile(text, { name, path })
-            if (viewIndex >= config.views.length) {
-                fail(
-                    `--view ${viewIndex} out of range — this base has ${config.views.length} view(s): 0-${config.views.length - 1}`,
-                )
-            }
-
+            
             // Same resolution the app uses to open THIS base file: its own inline table when it
             // declares no source, otherwise the source it declares (following composition) —
             // resolveBaseRows, not a spec built from `bismuth rows`' generic --of/--where/--tasks
@@ -683,7 +649,7 @@ export const commands: CommandMap = {
                 root: vault,
                 today: today(),
             })
-            const result = runView(config, rows, viewIndex)
+            const result = runView(parseBaseFile(text, { name, path }).config, rows)
 
             if (CHART_KINDS.has(result.view.type)) {
                 // Chart kinds (bar/line/stat/heatmap) compute an aggregated series over the view's

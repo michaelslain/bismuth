@@ -287,14 +287,18 @@ describe('per-occurrence override of a recurring event', () => {
 })
 
 describe('calendar-base discovery + creation', () => {
-    test('isCalendarBase matches the view: shorthand and the views: array', () => {
+    test('isCalendarBase reads the one view: view:, or a legacy views: first entry', () => {
         expect(isCalendarBase({ type: 'base', view: 'calendar' })).toBe(true)
+        expect(
+            isCalendarBase({ type: 'base', views: [{ type: 'calendar' }] }),
+        ).toBe(true)
+        // A base has one view: a legacy list's later entries are not its view.
         expect(
             isCalendarBase({
                 type: 'base',
                 views: [{ type: 'table' }, { type: 'calendar' }],
             }),
-        ).toBe(true)
+        ).toBe(false)
         expect(
             isCalendarBase({ type: 'base', views: [{ type: 'table' }] }),
         ).toBe(false)

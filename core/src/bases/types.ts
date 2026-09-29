@@ -44,9 +44,7 @@ export type SourceSpec =
 
 export interface ViewConfig {
     type: ViewType
-    name: string
     limit?: number
-    filters?: FilterNode
     order?: string[] // property ids to display, e.g. "file.name", "note.age", "formula.ppu"
     sort?: SortSpec[] // sort keys, applied in order
     groupBy?: { property: string; direction?: 'ASC' | 'DESC' }
@@ -87,8 +85,6 @@ export interface ViewConfig {
     lng?: string
     zoom?: number
     center?: { lat: number; lng: number }
-    // Per-view source override (falls back to BaseConfig.source, then { kind: "base" }).
-    source?: SourceSpec
     // Calendar view: which columns carry the date/time/recurrence/category fields.
     dateField?: string // default "date"
     startTimeField?: string // default "startTime"
@@ -255,7 +251,7 @@ export interface BasePropertyDef {
 }
 
 export interface BaseConfig {
-    filters?: FilterNode // global, ANDed with each view's filters
+    filters?: FilterNode
     formulas?: Record<string, string> // name -> expression string
     // Per-property metadata/definitions, keyed by property name. `hidden: true` omits the
     // property from auto-derived columns (table/cards/list/kanban default columns). A view's
@@ -267,9 +263,10 @@ export interface BaseConfig {
     // new cards seed each declared `default`. Absent (map form / no properties) keeps the
     // classic behavior: note-reading bases keep reflecting the notes' own frontmatter.
     declaredProperties?: string[]
-    views: ViewConfig[]
-    // Unified additions:
-    source?: SourceSpec // base-level default source for all views
+    // A base has exactly ONE view. Another view of the same rows is another base file whose
+    // `source: base` + `ref: [[This Base]]` queries this one.
+    view: ViewConfig
+    source?: SourceSpec // where the rows come from; absent = the base's own inline rows
     schema?: Record<string, string> // column -> type ("text"|"date"|"time"|"number"|"checkbox"|"list"|"link")
     // Declared calendar categories, straight off frontmatter `categories: [{name, color}]` —
     // the same list the events register already writes (core/src/calendar.ts's Category /

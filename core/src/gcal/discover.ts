@@ -39,7 +39,7 @@ export async function listGcalSyncTargets(
             name: rel.split('/').pop() ?? rel,
             path: rel,
         })
-        const cfg = resolveGcalConfig(config.views[0], rel, legacy)
+        const cfg = resolveGcalConfig(config.view, rel, legacy)
         if (cfg.enabled)
             targets.push({ basePath: rel, calendarId: cfg.calendarId })
     }

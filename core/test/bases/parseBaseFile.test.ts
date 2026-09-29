@@ -18,7 +18,7 @@ test('parseBaseFile splits frontmatter config from table rows', () => {
         name: 'Calendar',
         path: 'Calendar.md',
     })
-    expect(config.views[0].type).toBe('calendar')
+    expect(config.view.type).toBe('calendar')
     expect(config.schema).toEqual({ title: 'text', date: 'date' })
     expect(rows.length).toBe(1)
     expect(rows[0].note.title).toBe('Dentist')
@@ -40,8 +40,7 @@ test('parseBaseFile tolerates a file with no table (notes-source base)', () => {
     })
     expect(rows).toEqual([])
     expect(config.source).toEqual({ kind: 'notes', where: '#book' })
-    expect(config.views[0].type).toBe('table')
-    expect(config.views[0].name).toBe('Books')
+    expect(config.view.type).toBe('table')
 })
 
 test('parseBaseFile honors explicit views: array with calendar type', () => {
@@ -54,7 +53,7 @@ test('parseBaseFile honors explicit views: array with calendar type', () => {
         '---',
     ].join('\n')
     const { config } = parseBaseFile(f, { name: 'Cal', path: 'Cal.md' })
-    expect(config.views[0].type).toBe('calendar')
+    expect(config.view.type).toBe('calendar')
 })
 
 test('parseBaseFile handles a file with no frontmatter', () => {
@@ -63,7 +62,7 @@ test('parseBaseFile handles a file with no frontmatter', () => {
         path: 'N.md',
     })
     expect(rows[0].note.a).toBe(1)
-    expect(config.views.length).toBeGreaterThanOrEqual(1)
+    expect(config.view.type).toBe('table')
 })
 
 test('top-level cardContent: body folds into the default view', () => {
@@ -71,8 +70,8 @@ test('top-level cardContent: body folds into the default view', () => {
         '---\ntype: base\nview: cards\ncardContent: body\n---\n',
         { name: 'Keep', path: 'Keep.md' },
     )
-    expect(config.views[0].type).toBe('cards')
-    expect(config.views[0].cardContent).toBe('body')
+    expect(config.view.type).toBe('cards')
+    expect(config.view.cardContent).toBe('body')
 })
 
 test('top-level columns folds into the default view (explicit group order)', () => {
@@ -80,7 +79,7 @@ test('top-level columns folds into the default view (explicit group order)', () 
         '---\ntype: base\nview: list\ngroupBy: { property: formula.urgency }\ncolumns: [Overdue, This week, Later]\n---\n',
         { name: 'DoNow', path: 'DoNow.md' },
     )
-    expect(config.views[0].groupOrder).toEqual([
+    expect(config.view.groupOrder).toEqual([
         'Overdue',
         'This week',
         'Later',
@@ -101,9 +100,9 @@ test('top-level groupColors + descriptionField fold into the default kanban view
         ].join('\n'),
         { name: 'Board', path: 'Board.md' },
     )
-    expect(config.views[0].type).toBe('kanban')
-    expect(config.views[0].descriptionField).toBe('notes')
-    expect(config.views[0].groupColors).toEqual({
+    expect(config.view.type).toBe('kanban')
+    expect(config.view.descriptionField).toBe('notes')
+    expect(config.view.groupColors).toEqual({
         Todo: 'var(--blue)',
         Done: '#2ecc71',
     })
@@ -123,7 +122,7 @@ test('groupColors also parse inside an explicit views: entry, dropping empty val
         ].join('\n'),
         { name: 'Board', path: 'Board.md' },
     )
-    expect(config.views[0].groupColors).toEqual({
+    expect(config.view.groupColors).toEqual({
         A: 'var(--teal)',
         C: 'var(--rose)',
     })
@@ -141,7 +140,7 @@ test('top-level hideLabels folds into the default kanban view (#105)', () => {
         ].join('\n'),
         { name: 'Board', path: 'Board.md' },
     )
-    expect(config.views[0].hideLabels).toBe(true)
+    expect(config.view.hideLabels).toBe(true)
 })
 
 test('hideLabels defaults to unset (falsy) when omitted or malformed', () => {
@@ -149,7 +148,7 @@ test('hideLabels defaults to unset (falsy) when omitted or malformed', () => {
         ['---', 'type: base', 'view: kanban', '---'].join('\n'),
         { name: 'Board', path: 'Board.md' },
     )
-    expect(omitted.config.views[0].hideLabels).toBeUndefined()
+    expect(omitted.config.view.hideLabels).toBeUndefined()
 
     const malformed = parseBaseFile(
         ['---', 'type: base', 'view: kanban', 'hideLabels: yes', '---'].join(
@@ -158,7 +157,7 @@ test('hideLabels defaults to unset (falsy) when omitted or malformed', () => {
         { name: 'Board', path: 'Board.md' },
     )
     // "yes" is a YAML string here (not boolean true), so it's tolerated as unset.
-    expect(malformed.config.views[0].hideLabels).toBeUndefined()
+    expect(malformed.config.view.hideLabels).toBeUndefined()
 })
 
 test('hideLabels also parses inside an explicit views: entry', () => {
@@ -175,7 +174,7 @@ test('hideLabels also parses inside an explicit views: entry', () => {
         ].join('\n'),
         { name: 'Board', path: 'Board.md' },
     )
-    expect(config.views[0].hideLabels).toBe(true)
+    expect(config.view.hideLabels).toBe(true)
 })
 
 test('top-level mode: tasks folds into the default view', () => {
@@ -183,8 +182,8 @@ test('top-level mode: tasks folds into the default view', () => {
         '---\ntype: base\nview: cards\nmode: tasks\n---\n',
         { name: 'Keep', path: 'Keep.md' },
     )
-    expect(config.views[0].type).toBe('cards')
-    expect(config.views[0].mode).toBe('tasks')
+    expect(config.view.type).toBe('cards')
+    expect(config.view.mode).toBe('tasks')
 })
 
 test('a per-view source: string shorthand resolves inside an explicit views: entry', () => {
@@ -200,7 +199,7 @@ test('a per-view source: string shorthand resolves inside an explicit views: ent
         ].join('\n'),
         { name: 'Books', path: 'Books.md' },
     )
-    expect(config.views[0].source).toEqual({
+    expect(config.source).toEqual({
         kind: 'notes',
         where: 'folder == "Keep"',
     })

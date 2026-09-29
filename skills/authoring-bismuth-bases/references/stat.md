@@ -7,17 +7,15 @@ One tile per **declared metric** (`stats:`) — or, with no `stats:` declared, o
 ```yaml
 ---
 type: base
-views:
-  - type: stat
-    name: Reading Stats
-    x: date
-    bin: week
-    stats:
-      - label: total pages
-        value: sum(pages)
-      - label: books
-        value: count()
-      - value: sum(pages) / sum(minutes)   # bare string: label defaults to the expression itself
+view: stat
+x: date
+bin: week
+stats:
+  - label: total pages
+    value: sum(pages)
+  - label: books
+    value: count()
+  - value: sum(pages) / sum(minutes)   # bare string: label defaults to the expression itself
 ---
 ```
 

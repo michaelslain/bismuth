@@ -1834,7 +1834,7 @@ test('GET /base returns config + rows for a type:base file', async () => {
         const res = await fetch(`${base}/base?file=Cal.md`)
         expect(res.status).toBe(200)
         const data = await res.json()
-        expect(data.config.views[0].type).toBe('calendar')
+        expect(data.config.view.type).toBe('calendar')
         expect(data.rows[0].note.title).toBe('X')
         const missing = await fetch(`${base}/base?file=Nope.md`)
         expect(missing.status).toBe(404)

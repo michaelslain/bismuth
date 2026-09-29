@@ -1,16 +1,17 @@
 # Bases: Overview
 
-A **base** in Bismuth is an ordinary markdown note whose YAML frontmatter contains `type: base`. There is **no `.base` file extension** — a base is just a `.md` file. Its frontmatter declares a *source* (where rows come from), optional *filters*, *formulas*, per-property metadata, and one or more *views* (table, cards, kanban, calendar, …). At render time, [`FileView`](../../app/src/FileView.tsx) detects `type: base` and routes the file to [`BaseView`](../../app/src/bases/BaseView.tsx) instead of the text editor; `BaseView` resolves the source to a uniform list of rows and renders the active view.
+A **base** in Bismuth is an ordinary markdown note whose YAML frontmatter contains `type: base`. There is **no `.base` file extension** — a base is just a `.md` file. Its frontmatter declares a *source* (where rows come from), optional *filters*, *formulas*, per-property metadata, and exactly one *view* (table, cards, kanban, calendar, …). At render time, [`FileView`](../../app/src/FileView.tsx) detects `type: base` and routes the file to [`BaseView`](../../app/src/bases/BaseView.tsx) instead of the text editor; `BaseView` resolves the source to a uniform list of rows and renders the view.
 
-This covers what a base *is*, how it is detected and routed, the complete frontmatter shape, the views array, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
+This covers what a base *is*, how it is detected and routed, the complete frontmatter shape, the view's keys, how to get a second view of the same rows, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
 
 For the closely-related embedded ` ```query ` block (a *view into* a base inside a regular note), see the [query block doc](./query-block.md). For sources and composition, see the [sources doc](./sources.md).
 
 **In order:**
 
 - **What a base is**, and how `FileView`/`BaseView` route and resolve it — the routing/caching subsections are implementation detail; skip ahead if you just want to write one.
-- **The frontmatter reference** — `filters`, `formulas`, `properties`, `views`, `source`, `schema`.
-- **The views array** — common fields, then per-type fields (table/cards/map/calendar/flashcards/charts).
+- **The frontmatter reference** — `filters`, `formulas`, `properties`, `source`, `schema`.
+- **The view** — the one-view rule, the flat spelling, common fields, then per-type fields (table/cards/map/calendar/flashcards/charts).
+- **One view per base: composing** — how to get a second view of the same rows.
 - **Rows in the body** — how an own-rows base stores its data.
 - **The 12 view types** — one row per type, linking out to its own doc.
 - A **worked example**, then a **gotchas** cheat sheet.
@@ -20,9 +21,9 @@ For the closely-related embedded ` ```query ` block (a *view into* a base inside
 ## What a base IS
 
 - A base is a markdown file (`.md`) with `type: base` in its YAML frontmatter. **There is no `.base` extension** — the comment `parsed .base YAML` at the top of `core/src/bases/types.ts` is legacy nomenclature; the runtime detection is purely on the `type: base` frontmatter key (`FileView.tsx`, `isBase()`).
-- The frontmatter *is* the base config (`BaseConfig`). It declares the source, filters, formulas, property metadata, schema, and the `views` array.
+- The frontmatter *is* the base config (`BaseConfig`). It declares the source, filters, formulas, property metadata, schema, and the one view (`view:` plus its keys).
 - The markdown *body* (below the frontmatter `---`) is optional. When present it holds the base's **own rows** — either a canonical YAML list of row objects, or (back-compat) a GFM pipe table. See [Rows in the body](#rows-in-the-body).
-- Each base/view resolves a `SourceSpec` to a uniform `Row[]`. A row is one note (or one task, or one inline-table row), shaped as `{ file, note, formula }` (`Row` in `types.ts`).
+- Each base resolves a `SourceSpec` to a uniform `Row[]`. A row is one note (or one task, or one inline-table row), shaped as `{ file, note, formula }` (`Row` in `types.ts`).
 
 Minimal base (renders the whole vault as a table — the default view):
 
@@ -32,23 +33,23 @@ type: base
 ---
 ```
 
-That file alone parses to `{ views: [{ type: "table", name: "Table" }] }` and, because it has no body rows and no explicit `source`, defaults its source to `{ kind: "notes" }` (every vault note). See [Default source resolution](#default-source-resolution).
+That file alone parses to `{ view: { type: "table" } }` and, because it has no body rows and no explicit `source`, defaults its source to `{ kind: "notes" }` (every vault note). See [Default source resolution](#default-source-resolution).
 
 ---
 
 ## Three axes: kind, mode, and origin
 
-A view is the product of three independent choices, and confusing any two of
+A base's view is the product of three independent choices, and confusing any two of
 them is the most common way to misread a base file:
 
 | Axis | Answers | Values | Key |
 | --- | --- | --- | --- |
-| **Kind** | What does this LOOK like? | `table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap` | `type:` |
+| **Kind** | What does this LOOK like? | `table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap` | `view:` |
 | **Mode** | What ARE the rows? | `normal` (anything) or `tasks` (every row is a task) | `mode:` |
 | **Origin** | Where do the rows COME FROM? | a query (`notes`/`tasks`/another base), or the base's own stored rows | `source:` (absent + body rows = stored) |
 
 **Kind** is the renderer — `BaseView` picks `KanbanView`/`CalendarView`/etc.
-purely off `type:`. **Mode** (`viewMode(view)`, `core/src/bases/types.ts`) says
+purely off `view:`. **Mode** (`viewMode(view)`, `core/src/bases/types.ts`) says
 whether every row IS a task and should render task affordances — a checkbox,
 the status menu, field chips, overdue styling — regardless of which renderer
 is drawing them. It supersedes the calendar-only `calendarContent: events |
@@ -60,9 +61,8 @@ row is a *note*), and stays independent of `mode` in either direction. See
 [list & bullets](./views/list-bullets.md#tasks-mode-rendering-shared-by-both-views),
 [cards](./views/cards.md), and [calendar](./views/calendar.md#tasks-register)
 for the per-kind rendering `mode: tasks` adds. **Origin** is the existing
-`source:` mechanism (see [sources & composition](./sources.md)), and it now
-resolves **per view** — see [row resolution & caching](#row-resolution--caching)
-below — so two views of one base can draw from two different places.
+`source:` mechanism (see [sources & composition](./sources.md)); see
+[row resolution & caching](#row-resolution--caching) below.
 
 These three axes are independent: any kind can be in either mode, and any
 mode can draw from either origin. Two worked examples, the same kind and
@@ -77,12 +77,10 @@ adds to a kanban card face:
 ---
 type: base
 source: tasks where not resolved
-views:
-  - type: kanban
-    name: Board
-    mode: tasks
-    groupBy:
-      property: note.status
+view: kanban
+mode: tasks
+groupBy:
+  property: note.status
 ---
 ```
 
@@ -133,31 +131,30 @@ source checkbox line; ticking one in the second rewrites the stored row.
 
 `BaseView` is a unified host that can render from three different inputs, checked in this priority order (`loadDocument()` in `BaseView.tsx`):
 
-1. **`props.view`** — a parsed flat ` ```query ` block (`QueryBlock`). A synthetic single-view config is built from `view.as` / `view.where` / `view.sort` / `view.group` / `view.limit` / `view.source`. See [query block doc](./query-block.md).
+1. **`props.view`** — a parsed flat ` ```query ` block (`QueryBlock`). A synthetic config is built from `view.as` / `view.where` / `view.sort` / `view.group` / `view.limit` / `view.source`. See [query block doc](./query-block.md).
 2. **`props.path`** — a `type: base` md file (this is the FileView path). The body is parsed with `parseBaseFile(text, {name, path})` into `{ config, rows }`.
 3. **`props.source`** — inline ` ```query ` YAML parsed via `parseBase(source)`.
 
-This step resolves the **document** only — the file read plus its parsed config and own rows — and deliberately does not look at which view tab is active, so switching view tabs never re-triggers a file read. Which source actually FEEDS the active view is a separate, per-view step:
+This step resolves the **document** only — the file read plus its parsed config and own rows. Which source actually FEEDS the view is a separate step:
 
 ```ts
 // activeSpec() in BaseView.tsx
-const declared = activeViewConfig()?.source ?? d.config.source;
-if (declared) return declared;
+if (d.config.source) return d.config.source;
 if (props.view) return undefined;       // a query block with neither of:/tasks: → empty state
 return d.rows.length ? { kind: "base" } : { kind: "notes" };
 ```
 
-- A **per-view** `source:` (`ViewConfig.source`) wins over the base-level `source:`, which wins over the default.
+- The base's `source:` wins over the default.
 - With no declared source anywhere: a `type: base` file with body rows defaults to `{ kind: "base" }` (its own rows); one with none defaults to `{ kind: "notes" }` (a "query base" over the whole vault — so it "just works" instead of rendering empty). A flat ` ```query ` block with neither `of:` nor `tasks:` gets no rows at all (a deliberate empty state, not a vault-wide fallback).
 
-Because the source is resolved **per view**, two views of one base can draw from two different places — one over `source: tasks`, another over the base's own stored rows, say — and switching between them re-fetches only when the resolved spec actually differs (see [sources & composition](./sources.md#frontend-resolution-baseview--row-cache) for the resolve step itself).
+A source edit re-fetches rows only when the resolved spec actually differs (see [sources & composition](./sources.md#frontend-resolution-baseview--row-cache) for the resolve step itself).
 
 ### Row resolution & caching
 
-Two `createResource`s, kept deliberately separate so a view-tab click can never re-read the file:
+Two `createResource`s, kept deliberately separate so a source change never re-reads the file:
 
 - **The document** (`fetchedDoc`) — keyed on `sig()` = `JSON.stringify({ p: path, s: source, v: view })`, cached in a module-level `docCache`. Reading + parsing the file is the one HTTP round-trip a base needs; this is it.
-- **The active view's rows** (`fetchedRows`) — keyed on `sig()` **plus** the JSON-serialized active `SourceSpec`, so a tab switch to a view with an equal-but-distinct spec object still re-keys correctly:
+- **The rows** (`fetchedRows`) — keyed on `sig()` **plus** the JSON-serialized `SourceSpec`, so an equal-but-distinct spec object still re-keys correctly:
 
   ```ts
   const rows = spec?.kind === "base" && !spec.ref
@@ -167,13 +164,13 @@ Two `createResource`s, kept deliberately separate so a view-tab click can never 
 
   Own rows (`{ kind: "base" }` with no `ref`) are read straight off the already-parsed document. Everything else — notes / tasks / a real base-ref composition — is resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`), which follows base composition and scoped tasks. No per-kind logic is duplicated on the client.
 
-- Both caches are module-level `RowCache` instances (`bases/rowCache.ts`), invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base, or switching back to a previously-active view, paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (a spec resolves server-side, so the client can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
+- Both caches are module-level `RowCache` instances (`bases/rowCache.ts`), invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base, paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (a spec resolves server-side, so the client can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
 - Both also carry **token-based race protection**: before an async fetch starts, `BaseView` claims a token via `docCache.begin(key)` / `rowCache.begin(key)` (an incrementing per-key counter), then passes it to the matching `set(key, value, version, token)`. A `set()` whose token is no longer the latest one `begin()` issued for that key is dropped — and returns `false` — rather than overwriting fresher data; this is what stops a slow fetch that started before a newer one already settled from clobbering it. A caller that omits the token keeps the old unconditional-write behavior.
-- An SSE version bump (a note feeding this base changed, even in another pane) re-resolves both the document and the active view's rows, filtered through `changeAffectsView` below.
+- An SSE version bump (a note feeding this base changed, even in another pane) re-resolves both the document and the rows, filtered through `changeAffectsView` below.
 
 #### Skipping irrelevant re-resolves (`changeRelevance.ts`)
 
-Not every SSE change should re-resolve a view — a busy vault (e.g. the `@bismuth/daemon` rewriting a vault file) would otherwise re-resolve *every* open base continuously and peg CPU. `changeAffectsView(c, deps)` (pure, unit-tested) decides whether a change can affect *this* view's membership, given the current resolution's `deps` (base/view filters, `spec`, and the `relevantPaths` set — its resolved row notes + base file + host note). The branch order is conservative-but-cheap:
+Not every SSE change should re-resolve a view — a busy vault (e.g. the `@bismuth/daemon` rewriting a vault file) would otherwise re-resolve *every* open base continuously and peg CPU. `changeAffectsView(c, deps)` (pure, unit-tested) decides whether a change can affect *this* view's membership, given the current resolution's `deps` (the base's filters, `spec`, and the `relevantPaths` set — its resolved row notes + base file + host note). The branch order is conservative-but-cheap:
 
 - No `dirty` (poll catch-up, unknown extent) → **affects** (be safe).
 - `dirty.tree` (a new/renamed/removed/icon note may newly match) → **affects**.
@@ -191,29 +188,29 @@ Every revalidation re-runs `/rows` + `runView`, producing brand-new group and ro
 - `rowsEqual(a, b)` compares only what a view renders — a `fileIdentity` of `name`/`path`/`folder`/`ext`/`tags`/`links` plus the full `note` and `formula` objects. The volatile stat fields (`mtime`/`ctime`/`size`) are **deliberately excluded**: a body-only edit (ticking a task inside a card) bumps `mtime` but changes nothing the view shows except the body, which `BodyCard` re-reads in place — including `mtime` would remount the card on every keystroke-driven save. (Trade-off: a view surfacing `file.mtime` as a column shows a slightly stale timestamp until the row changes structurally.) `note.line` is likewise excluded from the comparison (it's positional, not rendered content, and just as volatile as the key above) — a task that only moved lines still compares equal and keeps its DOM; on reuse, `reconcileRows` patches the volatile `note.line` and `Row.index` handles onto the kept object in place, since callers still address a row by one of those (task toggles write `note.line`; `rowUpdate`/`rowDelete` write `Row.index`) and a stale handle would target the wrong row/line once a sibling sinks or shifts.
 - `reconcileRows(prev, next)` returns the previous array reference verbatim when nothing changed (same length, order, every row reused), so the enclosing group object is reused too.
 
-The active view is picked via the `ViewTabs` strip (shown when there is more than one view, or the base is editable — see [Managing views](#managing-views)); `runView(config, rows, idx, hostMeta)` (from `core/src/bases/query.ts`) computes the `ViewResult` for the active table/cards/kanban/etc. view. **Full-pane views** bypass `runView` and render directly from `data().rows`: `fullPane()` (`BaseView.tsx`) is `true` for `flashcards`, and for `calendar` **except** when its mode is `tasks` (`activeType() === 'flashcards' || (activeType() === 'calendar' && activeMode() !== 'tasks')`) — a calendar view in `mode: tasks` (or the legacy `calendarContent: tasks`) is not full-pane and goes through `runView` like table/cards/list.
+`runView(config, rows, hostMeta)` (from `core/src/bases/query.ts`) computes the `ViewResult` for a table/cards/kanban/etc. view. **Full-pane views** bypass `runView` and render directly from `data().rows`: `fullPane()` (`BaseView.tsx`) is `true` for `flashcards`, and for `calendar` **except** when its mode is `tasks` (`activeType() === 'flashcards' || (activeType() === 'calendar' && activeMode() !== 'tasks')`) — a calendar view in `mode: tasks` (or the legacy `calendarContent: tasks`) is not full-pane and goes through `runView` like table/cards/list.
 
 ---
 
 ## The base frontmatter shape (`BaseConfig`)
 
-The frontmatter parses to `BaseConfig` (`core/src/bases/types.ts`) via `parseBaseObject` (`core/src/bases/parse.ts`). Every field is optional except that a `views` array is always synthesized (defaulting to one table view) if absent or empty.
+The frontmatter parses to `BaseConfig` (`core/src/bases/types.ts`) via `parseBaseObject` (`core/src/bases/parse.ts`). Every field is optional except that `view` is always present after parse (defaulting to a table view).
 
 ```ts
 interface BaseConfig {
-  filters?: FilterNode;                    // global, ANDed with each view's filters
+  filters?: FilterNode;                    // the base's filters (the view has none of its own)
   formulas?: Record<string, string>;       // name -> expression string
   properties?: Record<string, BasePropertyDef>;  // { displayName?, hidden?, type?, default? }
   declaredProperties?: string[];           // set ONLY by the list-form `properties:` (see properties doc)
-  views: ViewConfig[];                     // always present after parse (>=1)
-  source?: SourceSpec;                     // base-level default source for all views
+  view: ViewConfig;                        // the base's one view; always present after parse
+  source?: SourceSpec;                     // where the rows come from
   schema?: Record<string, string>;         // column -> type
 }
 ```
 
-### `filters` — global filter (`FilterNode`)
+### `filters` — the base's filter (`FilterNode`)
 
-A boolean expression tree, ANDed with each view's own `filters`. The type:
+A boolean expression tree; the base's only filter. The type:
 
 ```ts
 type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
@@ -250,7 +247,7 @@ Two forms — full detail in the [per-base properties doc](./properties.md):
 **Map form** (metadata over auto-derived properties): `Record<string, BasePropertyDef>` keyed by property id.
 
 - `displayName` — a custom header label for the column (a string; otherwise undefined).
-- `hidden: true` — omits the property from **auto-derived** columns (the default columns of table/cards/list/kanban). A view's explicit `order: [...]` still wins (that's the per-view opt-in).
+- `hidden: true` — omits the property from **auto-derived** columns (the default columns of table/cards/list/kanban). The view's explicit `order: [...]` still wins.
 - `type` / `default` — tolerated as metadata (`type` limited to the `PROPERTY_TYPES` vocabulary).
 
 Normalization (`normalizePropertyDef`): only `hidden === true` is kept as `true`; anything else (missing / `false` / non-bool) is normalized to `undefined`. `displayName` is kept only if it's a string.
@@ -263,7 +260,7 @@ properties:
     hidden: true
 ```
 
-**List form** (the base declares its OWN property set): each entry a bare name or `{name, type?, default?, displayName?, hidden?}`. Sets `BaseConfig.declaredProperties` (names in order); views without an explicit `order:` then show exactly the declared properties instead of unioning row frontmatter, and kanban's add-card seeds each declared `default`. Bases that read existing pages simply don't declare — they keep reflecting the notes' own frontmatter.
+**List form** (the base declares its OWN property set): each entry a bare name or `{name, type?, default?, displayName?, hidden?}`. Sets `BaseConfig.declaredProperties` (names in order); the view without an explicit `order:` then shows exactly the declared properties instead of unioning row frontmatter, and kanban's add-card seeds each declared `default`. Bases that read existing pages simply don't declare — they keep reflecting the notes' own frontmatter.
 
 ```yaml
 properties:
@@ -273,13 +270,13 @@ properties:
     default: 1
 ```
 
-### `views` — the views array
+### `view` and the view keys
 
-`ViewConfig[]`. Always at least one entry after parse. Full shape documented under [the views array](#the-views-array) below. Each view declares its `type` (one of the 12 `ViewType`s), `name`, and view-specific options.
+`view: <kind>` names the base's one view (one of the 12 `ViewType`s); every view option is a plain top-level key beside it. Full shape under [the view](#the-view) below.
 
-### `source` — base-level default source (`SourceSpec`)
+### `source` (`SourceSpec`)
 
-Coerced by `normalizeSource(raw, fm)` (`core/src/bases/sourceSpec.ts`), which accepts both a string and an object form. The base-level `source` is the default for all views; an individual view can override it with its own `source`. Resolution order (`ViewConfig.source` → `BaseConfig.source` → `{ kind: "base" }`).
+Coerced by `normalizeSource(raw, fm)` (`core/src/bases/sourceSpec.ts`), which accepts both a string and an object form. Resolution order: `BaseConfig.source` → own body rows (`{ kind: "base" }`) → `{ kind: "notes" }`.
 
 `SourceSpec` is one of:
 
@@ -324,25 +321,45 @@ The schema is read both from `parseBaseObject` (`o.schema`) and re-applied at th
 
 ---
 
-## The views array
+## The view
 
-`views: ViewConfig[]`. The full `ViewConfig` shape (`core/src/bases/types.ts`), grouped by concern. Every field is optional except `type` and `name` (both defaulted).
+A base has **exactly one view**. It is spelled flat: `view: <kind>` names the kind, and every view option sits at the top level of the frontmatter beside the base keys (`filters`, `source`, `formulas`, `properties`). The full `ViewConfig` shape is in `core/src/bases/types.ts`; the tables below group it by concern. There is no view name, and no per-view `filters` or `source` — those belong to the base.
 
-### Common fields (all view types)
+```yaml
+---
+type: base
+view: kanban
+source: tasks where not resolved
+mode: tasks
+groupBy: status
+columns: [todo, doing, done]
+---
+```
+
+`type` is always `base` at the top level; the kind key is `view`, never `type`.
+
+Top-level keys that are **never** view keys: `type`, `view`, `views`, `name`, `filters`, `source`, `from`, `where`, `ref`, `formulas`, `properties`, `schema`, `categories`. Every other top-level key is read as a view key.
+
+### Legacy `views:` lists
+
+Files written before the one-view rule carry `views: [ { type, name, ... } ]`. They still read, through the **first entry only**: its `type` is the kind (beating a top-level `view:`), its `filters` AND onto the base's, its `source` overrides the base's, and flat top-level keys beat the entry's keys. Further entries are ignored on read.
+
+The first write from the app (`POST /set-property` and friends) flattens the file: `type` becomes `view`, `name` is dropped, the entry's keys move to the top level, and `views:` is removed. A list with more than one entry cannot be flattened, so writes fail with `BASE_VIEWS_FORMAT_ERROR` and `bismuth base validate` reports it. Fix it by giving each extra view its own base (see [One view per base: composing](#one-view-per-base-composing)).
+
+### Common fields (all view kinds)
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `type` | `ViewType` | One of the 12 kinds; defaults to `"table"` if missing/invalid (`isValidType`). |
-| `name` | `string` | Tab label. Defaults to `"Untitled view"` if missing/empty. |
+| `view` | `ViewType` | One of the 12 kinds; defaults to `"table"` if missing/invalid (`isValidType`). |
 | `limit` | `number` | Max rows to show. |
-| `filters` | `FilterNode` | Per-view filter, ANDed with the base-level `filters`. Stored verbatim. |
 | `order` | `string[]` | Property ids to display, in order — e.g. `["file.name", "note.age", "formula.ppu"]`. An explicit `order` opts a `hidden` property back in. |
 | `sort` | `SortSpec[]` | Sort keys applied in order. Each `{ property, direction?: "ASC" \| "DESC" }`. A bare string or `{column}` is normalized to `{property, direction: "ASC"}`. |
 | `groupBy` | `{ property; direction?: "ASC" \| "DESC" }` | Group rows by a property. A bare string is normalized to `{property, direction: "ASC"}`. |
 | `summaries` | `Record<string,string>` | propertyId → summary name (e.g. `"Average"`). Footer aggregates. |
-| `columns` | `string[]` | Explicit group order for a grouped view. Listed groups appear first in this order; data-only keys append after. **Kanban** additionally shows every listed key as a column even when empty (so a column doesn't vanish when its last card is dragged out); other view types only show declared groups that have rows. |
-| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`) — the **origin** axis, resolved per view. See [three axes](#three-axes-kind-mode-and-origin) and [sources & composition](./sources.md). |
-| `mode` | `"normal" \| "tasks"` | The **mode** axis: whether every row IS a task, independent of `type`. Read through `viewMode(view)` (`core/src/bases/types.ts`), never `view.mode` directly — it also folds in the legacy `calendarContent: tasks` spelling. Any other value → undefined (falls back to `"normal"`). See [three axes](#three-axes-kind-mode-and-origin). |
+| `columns` | `string[]` | Explicit group order for a grouped view. Listed groups appear first in this order; data-only keys append after. **Kanban** additionally shows every listed key as a column even when empty (so a column doesn't vanish when its last card is dragged out); other kinds only show declared groups that have rows. |
+| `mode` | `"normal" \| "tasks"` | The **mode** axis: whether every row IS a task, independent of the kind. Read through `viewMode(view)` (`core/src/bases/types.ts`), never `view.mode` directly — it also folds in the legacy `calendarContent: tasks` spelling. Any other value → undefined (falls back to `"normal"`). See [three axes](#three-axes-kind-mode-and-origin). |
+
+The **origin** axis is the base's own `source:` — see [sources & composition](./sources.md).
 
 ### Table-specific
 
@@ -404,43 +421,28 @@ Which columns carry the calendar's date/time/recurrence/category fields. Each is
 | `aggregate` | `"sum" \| "avg" \| "count" \| "min" \| "max"` | Aggregation. Invalid values (e.g. `median`) → undefined. |
 | `bin` | `"day" \| "week" \| "month"` | Time bucket. Invalid values (e.g. `quarter`) → undefined. |
 
-### View defaulting & normalization rules
+### Defaulting & normalization rules
 
 From `normalizeView` / `parseBaseObject` / `parseBaseFile`:
 
-- An unknown `type` falls back to `"table"`. Missing/empty `name` → `"Untitled view"`.
-- An empty/absent `views:` array synthesizes `[{ type: "table", name: "Table" }]`.
-- A single `{}` view parses to `{ type: "table", name: "Untitled view" }`.
+- An unknown `view:` kind falls back to `"table"`.
+- An empty or malformed base parses to `{ view: { type: "table" } }`.
 - Enum fields reject unknown values (cardContent, calendarContent, mode, imageFit, aggregate, bin) → undefined rather than the raw value.
-- A top-level `columnWidths` configures the **default** (first) view unless that view already declared its own.
 
-### `view:` shorthand (single default view)
+### The flat spelling
 
-In a `type: base` **file** (`parseBaseFile`), `view: <type>` is shorthand for one default view — but **only when no explicit `views:` array is present**. It synthesizes `[{ type: <type>, name: Capitalize(<type>) }]`.
-
-```markdown
----
-type: base
-view: calendar
-schema: { title: text, date: date }
----
-```
-parses to `config.views[0].type === "calendar"`.
-
-### Top-level (flat) view keys
-
-So the settings UI can persist view fields with a flat `setProperty` (no nested `views:` editing), `parseBaseFile` folds these **top-level** frontmatter keys into the default (first) view:
+Because every view key is a plain top-level key, the settings panel persists a view field with a single `setProperty(path, key, value)`; there is no nested block to edit. The keys, by group:
 
 - Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `googleCalendarId`, `x`, `y`, `image`, `taskFile` (any string).
 - Per-calendar Google sync: `googleCalendarSync` (boolean).
-- View shaping: `order` (array), `columns` (array), `sort`, `groupBy`, `columnWidths`.
-- Mode: `mode` (`normal`/`tasks`) — so a tasks base needs no nested `views:` block, the same flat-persistence shape as `cardContent`/`dateField`.
+- View shaping: `order` (array), `columns` (array), `sort`, `groupBy`, `columnWidths`, `limit`, `summaries`.
+- Mode: `mode` (`normal`/`tasks`).
 - Cards: `cardContent` (`body`/`properties`/`tasks`), `imageFit` (`cover`/`contain`), `imageAspectRatio`.
 - Calendar: `calendarContent` (`events`/`tasks`) — superseded by `mode`, still parsed.
 - Charts: `aggregate`, `bin`.
 - Flashcards: `bidirectional` (boolean).
 
-Example (flat persistence for a chart base):
+Example (a chart base):
 
 ```markdown
 ---
@@ -452,7 +454,7 @@ aggregate: sum
 bin: month
 ---
 ```
-folds into `views[0] = { type: "bar", x: "day", y: "count", aggregate: "sum", bin: "month" }`.
+parses to `view = { type: "bar", x: "day", y: "count", aggregate: "sum", bin: "month" }`.
 
 Another (list grouped by a formula with explicit group order):
 
@@ -465,48 +467,55 @@ columns: [Overdue, This week, Later]
 ---
 ```
 
+In the app, the kind and mode are changed in the base's settings panel, which writes `view:` and `mode:`.
+
 ---
 
-## Managing views
+## One view per base: composing
 
-Everything above describes the `views:` YAML shape; none of it requires hand-editing the file
-any more. The tab strip above the base ([`ViewTabs`](../../app/src/bases/ViewTabs.tsx), owned
-by [`BaseView`](../../app/src/bases/BaseView.tsx)) is a full editor for a base's `views:`
-array — for any real `type: base` **file** (an embedded ` ```query ` block, which has no file
-of its own to rewrite, still gets the same-looking tabs with none of this wired):
+A base cannot hold a second view. If you want another view of the same rows, make a new base file that queries the first: `source: base` with `ref: "[[That Base]]"`, plus its own `view:` and view keys.
 
-- **Add a view** — the trailing `[+]` opens a menu of the 12 view kinds; picking one appends a
-  new view named after the kind ("Kanban"), de-duplicated against existing names ("Table 2" if
-  a "Table" already exists) — same naming rule **duplicate** uses.
-- **Rename** — double-click a tab, or right-click → *rename*, to edit its label inline.
-- **Duplicate** — right-click → *duplicate* clones the view (including its filters/sort/
-  columns/field bindings) and inserts the copy right after the original, selecting it.
-- **Reorder** — right-click → *move left* / *move right* swaps a view with its neighbor.
-- **Change kind** — right-click → *change kind ▸* re-renders the SAME view (its filters,
-  source, columns, etc. all stay) as a different `type:` — switching a table to a kanban board
-  without losing its configuration.
-- **Toggle tasks mode** — right-click → *turn on/off tasks mode* flips the view's `mode:`
-  (normal ⇄ tasks — see [the mode axis](#three-axes-kind-mode-and-origin)) and drops the legacy
-  `calendarContent:` spelling if the view still carried it.
-- **View settings** — right-click → *view settings* opens the same generic
-  [`BaseSettings`](../../app/src/bases/BaseSettings.tsx) panel **for every view kind,
-  including calendar** — filters, source, and field bindings are all reachable there even for
-  a calendar view, which the bar's own gear icon still routes to the calendar's own settings
-  modal instead (both open the same underlying data; the gear is calendar-specific chrome, the
-  tab menu is the generic path that always works).
-- **Delete** — right-click → *delete* opens a nested *confirm delete* item (no `confirm()`
-  dialog) — refused when it's the base's only view, since a base always needs at least one.
-- **Keyboard** — a focused tab opens its menu with Shift+F10 or the dedicated ContextMenu key,
-  the same vocabulary as a task checkbox's status menu.
+Worked example: a kanban board of tasks, and a table of the same tasks.
 
-Every structural edit reads the file's raw frontmatter fresh, applies the edit
-(`app/src/bases/viewsEdit.ts`, pure and unit-tested), and writes the whole `views:` array back
-with `api.setProperty(path, 'views', …)`. A base still using the `view: <kind>` shorthand
-and/or [flat top-level view keys](#top-level-flat-view-keys) — i.e. one with no explicit
-`views:` array yet — is **materialized** on its first structural edit: a `views:` array is
-synthesized whose first (only) entry carries `view:`'s kind plus every flat key that was set,
-and those top-level keys (including `view:` itself) are deleted, so nothing the user already
-configured silently moves to a different view or gets duplicated in two places.
+`Board.md`:
+
+```markdown
+---
+type: base
+source: notes where #task
+filters: 'note.status != "archived"'
+view: kanban
+groupBy: status
+columns: [todo, doing, done]
+---
+```
+
+`Task table.md`:
+
+```markdown
+---
+type: base
+source: base
+ref: "[[Board]]"
+filters: 'note.status != "archived"'
+view: table
+order: [file.name, note.status, note.due]
+sort:
+  - { property: note.due, direction: ASC }
+---
+```
+
+### Exactly what carries over
+
+The referencing base receives the referenced base's **rows only**:
+
+- If the referenced base declares no `source`, its rows are its own inline body rows.
+- Otherwise its rows are the rows of its own `source`, resolved recursively.
+- Its `filters`, `formulas`, `properties`, `sort`, `groupBy`, `limit`, `columns` and every other view key are **not** applied. Those are applied by the referenced base's own view only, when you open it.
+- The referencing base must therefore restate any filter it wants (`Task table` repeats the `archived` filter above), declare its own `formulas` and `properties`, and choose its own sort and grouping.
+- A cycle (A refs B refs A) resolves to zero rows.
+
+`Task table` above reads the rows of `notes where #task`, exactly what `Board` reads, and then applies its own filter and view. See [sources & composition](./sources.md) for the resolver, scoped tasks and `from: [[Base]]`.
 
 ---
 
@@ -558,7 +567,7 @@ interface Row {
 
 ## The 12 view types
 
-`ViewType` (single source of truth: `VIEW_TYPES` in `types.ts`) spans 12 string kinds. `BaseView` picks the renderer per the active view's `type`. Each has its own detailed doc:
+`ViewType` (single source of truth: `VIEW_TYPES` in `types.ts`) spans 12 string kinds. `BaseView` picks the renderer per the `view:` kind. Each has its own detailed doc:
 
 | `type` | Renderer | What it shows | Doc |
 | --- | --- | --- | --- |
@@ -595,23 +604,18 @@ formulas:
 properties:
   ppu:
     displayName: $/yr
-views:
-  - type: table
-    name: Books
-    order: [file.name, note.author, formula.ppu]
-    sort:
-      - { property: file.name, direction: ASC }
-    summaries:
-      formula.ppu: Average
-  - type: cards
-    name: Covers
-    cardContent: properties
-    image: cover
-    imageFit: cover
+view: table
+order: [file.name, note.author, formula.ppu]
+sort:
+  - { property: file.name, direction: ASC }
+summaries:
+  formula.ppu: Average
 ---
 ```
 
-This base has two views (Table + Cards), a notes source scoped to `#book`, a global `not archived` filter, a `ppu` formula displayed as `$/yr`, and a footer average. When opened it routes through `FileView` → `BaseView`, resolves rows via `POST /rows {kind:"notes", where:"#book"}`, and renders the active view (defaulting to the first, "Books").
+This base has one Table view, a notes source scoped to `#book`, a `not archived` filter, a `ppu` formula displayed as `$/yr`, and a footer average. When opened it routes through `FileView` → `BaseView`, resolves rows via `POST /rows {kind:"notes", where:"#book"}`, and renders the table.
+
+A cover-grid view of the same books is a second base file: `source: base`, `ref: "[[Books]]"`, `view: cards`, `cardContent: properties`, `image: cover`, plus the `not archived` filter restated. See [One view per base: composing](#one-view-per-base-composing).
 
 ---
 
@@ -621,13 +625,14 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - **A base with no source and no body rows defaults to `{ kind: "notes" }`** (the whole vault) — not empty. If you don't want the whole vault, set an explicit `source:`.
 - **A base with body rows but no explicit source renders its OWN rows** (`{ kind: "base" }`), not vault notes.
 - **Unquoted `[[X]]` in `from`/`ref`** parses as a YAML nested array; it's reconstructed back to a string, but quoting (`from: "[[X]]"`) is safer.
-- **`properties.<x>.hidden` only hides from auto-derived columns** — an explicit view `order` listing that property still shows it.
+- **`properties.<x>.hidden` only hides from auto-derived columns** — an explicit `order` listing that property still shows it.
 - **`properties:` written as a LIST declares the base's own property set** (columns come from the declaration, not the rows — see [properties doc](./properties.md)); the MAP form stays metadata-only.
-- **Malformed YAML is tolerant**: `parseBase` returns a safe empty base (`{ views: [{ type: "table", name: "Table" }] }`) rather than throwing.
-- **Enum fields reject unknowns** (cardContent, calendarContent, mode, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
+- **Malformed YAML is tolerant**: `parseBase` returns a safe empty base (`{ view: { type: "table" } }`) rather than throwing.
+- **Enum fields reject unknowns** (cardContent, calendarContent, mode, imageFit, aggregate, bin, view kind) — they fall back to undefined / `"table"`, never the raw bad value.
 - **Full-pane views (calendar/flashcards) ignore `runView`** — column/sort/summary config from the table pipeline doesn't apply to them; they use their own field bindings.
 - **`mode: tasks` and `cardContent: tasks` are different axes, not two spellings of one thing** — `mode: tasks` means every row IS a task (any view kind); `cardContent: tasks` means a cards-view card shows a note's body filtered to its checklist. A cards view can combine both, independently, or neither. See [three axes](#three-axes-kind-mode-and-origin).
-- **A per-view `source:` now genuinely resolves** — it is not merely parsed-and-ignored. Two views of one base can draw from two different origins; see [row resolution & caching](#row-resolution--caching).
+- **A base has one view.** A second view of the same rows is a second base with `source: base` + `ref:`; the referenced base contributes rows only, so restate its filters. See [composing](#one-view-per-base-composing).
+- **A legacy `views:` list reads first-entry-only**, is flattened on the first write, and blocks writes (`BASE_VIEWS_FORMAT_ERROR`) when it has more than one entry.
 
 ---
 
@@ -638,4 +643,4 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - [Embedded query block](./query-block.md) — the ` ```query ` block (a view into a base inside a note).
 - [View docs](./views/) — one doc per `ViewType`.
 
-Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`, `app/src/FileView.tsx`, `app/src/noteCache.ts`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/rows.test.ts`
+Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/flattenViews.ts`, `core/src/bases/source.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`, `app/src/FileView.tsx`, `app/src/noteCache.ts`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/rows.test.ts`

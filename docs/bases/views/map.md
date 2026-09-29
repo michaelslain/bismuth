@@ -4,20 +4,18 @@ The map view renders base rows as geographic markers on an interactive world map
 
 ## Configuring a Map View
 
-Set `type: map` in a view entry inside a `type: base` file. The only required fields are `lat` and `lng` (or rows that have bare `lat`/`lng` frontmatter keys, which are the defaults).
+Set `view: map` in a `type: base` file's frontmatter. The only required fields are `lat` and `lng` (or rows that have bare `lat`/`lng` frontmatter keys, which are the defaults).
 
 ```yaml
 ---
 type: base
-views:
-  - type: map
-    name: Atlas
+view: map
 ---
 ```
 
 ## View Config Fields
 
-All map-specific fields live on the `ViewConfig` object alongside the standard fields (`name`, `limit`, `filters`, `sort`, `source`, etc.). See [bases overview](../overview.md) for shared fields.
+All map-specific fields live on the `ViewConfig` object alongside the standard fields (`limit`, `sort`, and the base's `filters`, `source`, etc.). See [bases overview](../overview.md) for shared fields.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -27,13 +25,11 @@ All map-specific fields live on the `ViewConfig` object alongside the standard f
 | `center` | object, optional | — | Seed map center for the initial framing. Must be `{ lat: <number>, lng: <number> }`. Only active when `zoom` is also provided. Together, `center` + `zoom` bypass the auto-fit logic entirely. |
 
 ```yaml
-views:
-  - type: map
-    name: Atlas
-    lat: latitude
-    lng: longitude
-    zoom: 6
-    center: { lat: 40.7, lng: -74 }
+view: map
+lat: latitude
+lng: longitude
+zoom: 6
+center: { lat: 40.7, lng: -74 }
 ```
 
 ## Marker Rendering
@@ -57,7 +53,7 @@ The view chooses an initial center and zoom according to the following priority:
 3. **Exactly one marker** — centers on that marker at zoom 10.
 4. **Multiple markers** — computes the bounding box of all marker coordinates, picks the highest zoom from 14 down to 1 at which the bounding box fits within an 800×600 reference viewport at 80% padding. Falls back to `graph.mapDefaultZoom` if nothing fits (i.e., all zoom levels have too-large a bbox).
 
-The view re-runs this framing only when the VIEW changes (switching views, or its configured `center`/`zoom`) and once when the first markers arrive on a map the user has not yet panned, zoomed or armed — never merely because a marker moved (`shouldReframe` in `app/src/bases/mapCoords.ts`). Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down, and placing the FIRST pin on an all-unplaced map used to snap to zoom 10 on it. Arming placement never touches the framing either. The **fit to pins** button still re-fits on demand.
+The view re-runs this framing only when the view's configured `center`/`zoom` change and once when the first markers arrive on a map the user has not yet panned, zoomed or armed — never merely because a marker moved (`shouldReframe` in `app/src/bases/mapCoords.ts`). Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down, and placing the FIRST pin on an all-unplaced map used to snap to zoom 10 on it. Arming placement never touches the framing either. The **fit to pins** button still re-fits on demand.
 
 ## Interaction
 
@@ -104,7 +100,7 @@ Right-clicking a pin (or pressing `Shift+F10` — or the `ContextMenu` key — w
 
 ## Settings Integration
 
-The `lat`, `lng`, `zoom` and `center` fields above are set per-view, in the view's own entry inside the base file's frontmatter — the base's own **settings panel** (opened from the view's config affordance) exposes fields for all four, so a map view's coordinate source and initial framing no longer require hand-editing the base file's YAML.
+The `lat`, `lng`, `zoom` and `center` fields above are top-level keys in the base file's frontmatter — the base's own **settings panel** (opened from the view's config affordance) exposes fields for all four, so a map view's coordinate source and initial framing no longer require hand-editing the base file's YAML.
 
 Two `.settings` entries additionally affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
 
@@ -141,9 +137,7 @@ The map respects these theme CSS variables for colors:
 ---
 type: base
 source: notes where #location
-views:
-  - type: map
-    name: Places
+view: map
 ---
 ```
 
@@ -154,13 +148,11 @@ Notes tagged `#location` with `lat` and `lng` in their frontmatter will appear a
 ```yaml
 ---
 type: base
-views:
-  - type: map
-    name: Atlas
-    lat: latitude
-    lng: longitude
-    zoom: 6
-    center: { lat: 40.7, lng: -74 }
+view: map
+lat: latitude
+lng: longitude
+zoom: 6
+center: { lat: 40.7, lng: -74 }
 ---
 ```
 
@@ -174,11 +166,9 @@ type: base
 formulas:
   computed_lat: "note.geo_lat * 1"
   computed_lng: "note.geo_lng * 1"
-views:
-  - type: map
-    name: Atlas
-    lat: formula.computed_lat
-    lng: formula.computed_lng
+view: map
+lat: formula.computed_lat
+lng: formula.computed_lng
 ---
 ```
 
@@ -187,7 +177,7 @@ views:
 - **Both `center` and `zoom` must be present** to use fixed framing. Providing only one silently falls through to auto-fit behavior.
 - **Latitude is clamped to ±85**, not ±90, because Web Mercator cannot represent the poles. Rows with `lat` outside `[-85, 85]` are dropped.
 - **String coordinates work**: the `lat`/`lng` values may be stored as strings in frontmatter — the renderer calls `Number()` on them. A value like `"40.7"` is accepted; `"40.7N"` is not (produces `NaN`).
-- **The title chip uses the first resolved column**, not necessarily `file.name`. If a view declares `order: [status, file.name]`, markers will be labeled with `status` values.
+- **The title chip uses the first resolved column**, not necessarily `file.name`. If the base declares `order: [status, file.name]`, markers will be labeled with `status` values.
 - **No tile network dependency**: the basemap is entirely self-contained vector geometry hardcoded in the component. Markers will render correctly in air-gapped environments.
 - **ResizeObserver drives the map size**: the component observes its container and re-projects on resize. Initial SSR/static size assumptions (800×600) are replaced once the element mounts.
 - **A `formula.*`, `file.*` or `this.*` `lat`/`lng` makes the map read-only**: there is no frontmatter key to write those back to, so the right-click menu offers no `place …` items and a pin's context menu drops "move pin"/"remove pin" down to "edit" only.

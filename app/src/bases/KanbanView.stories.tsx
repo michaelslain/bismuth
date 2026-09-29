@@ -17,7 +17,7 @@ import {
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
-import { kanbanViews } from '../ui/_kanbanProbes'
+import { kanbanView } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 
 const meta = {
@@ -59,11 +59,11 @@ async function expectNoPhantomScroll(canvasElement: HTMLElement) {
  *  nothing it could write to), matching an embedded ```query kanban. */
 export const Default: Story = {
     render: () => {
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 onChange={noop}
             />
         )
@@ -78,13 +78,13 @@ export const Default: Story = {
  *  no cards here but stays on the board. */
 export const EditableWithPinnedColumns: Story = {
     render: () => {
-        const views = kanbanViews({
+        const view = kanbanView({
             groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
         })
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -102,12 +102,10 @@ const TRY_PATH = 'stories/kanban-try.md'
 const TRY_BODY = [
     '---',
     'type: base',
-    'views:',
-    '  - type: kanban',
-    '    name: Kanban',
-    '    groupBy: status',
-    '    order: [priority, tags]',
-    '    columns: [Todo, Doing, Blocked, Done]',
+    'view: kanban',
+    'groupBy: status',
+    'order: [priority, tags]',
+    'columns: [Todo, Doing, Blocked, Done]',
     '---',
     '',
 ].join('\n')
@@ -197,16 +195,11 @@ export const HeaderActionsOnHover: Story = {
  *  is the real `Callout` component (its module class) and not a bare div. */
 export const NoGroupBy: Story = {
     render: () => {
-        const views = [
-            {
-                type: 'kanban' as const,
-                name: 'Kanban',
-            },
-        ]
+        const view = { type: 'kanban' as const }
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 onChange={noop}
             />
         )
@@ -232,12 +225,12 @@ let colorPickerPickAndDismissCalls: { path: string; body: unknown }[] = []
  *  baseline shot IS the open panel. Picking and dismissing is ColorPickerPickAndDismiss below. */
 export const ColorPickerOpen: Story = {
     render: () => {
-        const views = kanbanViews()
+        const view = kanbanView()
         setTransport(fakeTransport())
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -271,20 +264,20 @@ export const ColorPickerOpen: Story = {
 }
 
 /** Same board as ColorPickerOpen, but its play() carries the picker through to closed: picking
- *  a swatch calls the real column-colour setter (`api.setViewProperty` → POST `/set-property`,
+ *  a swatch calls the real column-colour setter (`api.setProperty` → POST `/set-property`,
  *  `groupColors`) and closes the popover, then reopening and pressing Escape dismisses it too
  *  (AnchoredPopover's own window keydown listener, not a handler KanbanView owns). Its baseline
  *  shot shows no picker — that is the point of this story, as opposed to ColorPickerOpen's. */
 export const ColorPickerPickAndDismiss: Story = {
     render: () => {
-        const views = kanbanViews()
+        const view = kanbanView()
         const { transport, calls } = spiedTransport()
         colorPickerPickAndDismissCalls = calls
         setTransport(transport)
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -308,7 +301,6 @@ export const ColorPickerPickAndDismiss: Story = {
             path: '/set-property',
             body: {
                 path: 'stories/kanban-demo.md',
-                viewIndex: 0,
                 key: 'groupColors',
                 value: { Doing: 'var(--graph-1)' },
             },
@@ -333,11 +325,11 @@ export const ColorPickerPickAndDismiss: Story = {
  *  "selected" either — that color didn't come from this palette. */
 export const ColorPickerOpenThirdColumn: Story = {
     render: () => {
-        const views = kanbanViews({ groupOrder: ['Todo', 'Doing', 'Done'] })
+        const view = kanbanView({ groupOrder: ['Todo', 'Doing', 'Done'] })
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -369,7 +361,7 @@ const MANY_CARDS_ROWS = Array.from({ length: 12 }, () => ({
  *  trailing drop placeholder caused (round-2 item 8), not on real overflow. */
 export const ManyCardsInOneColumn: Story = {
     render: () => {
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <div
                 style={{
@@ -379,8 +371,8 @@ export const ManyCardsInOneColumn: Story = {
                 }}
             >
                 <KanbanView
-                    result={sampleViewResult(MANY_CARDS_ROWS, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(MANY_CARDS_ROWS, { view })}
+                    config={sampleBaseConfig({ view })}
                     onChange={noop}
                 />
             </div>

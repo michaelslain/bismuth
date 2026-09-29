@@ -27,7 +27,7 @@ Bismuth has two card models. They share the SM-2 scheduler but store content and
 | Feature | Markdown cards | Row cards |
 |---|---|---|
 | Content lives in | Any `.md` note body (special syntax) | Rows of a `type: base` file (frontmatter columns) |
-| Tag required | Yes — note must carry `#flashcards` (or sub-deck) | No — any base with `views: [{type: flashcards}]` |
+| Tag required | Yes — note must carry `#flashcards` (or sub-deck) | No — any base with `view: flashcards` |
 | Scheduling stored | Inline `<!--SR:...-->` HTML comment in the note | `due`/`ease`/`interval` frontmatter columns on the row |
 | Card ID | `"notePath::cardIndex::subIndex"` string | `{file, index}` pair (row index in the `.md` base) |
 | Review endpoint | `POST /cards/review` with `id` | `POST /cards/review` with `file` + `index` |
@@ -314,19 +314,18 @@ By default:
 - `ease` — ease factor (integer; 250 default)
 - `interval` — interval in days (integer)
 
-These defaults are configurable per-view (see [Bidirectional Cards](#bidirectional-cards) for the full set of view config fields).
+These defaults are configurable on the base (see [Bidirectional Cards](#bidirectional-cards) for the full set of view config fields).
 
 ### View config fields (in the base frontmatter)
 
 ```yaml
-views:
-  - type: flashcards
-    frontField: front         # column for prompt (default: "front")
-    backField: back           # column for answer (default: "back")
-    dueField: due             # scheduling due column (default: "due")
-    easeField: ease           # scheduling ease column (default: "ease")
-    intervalField: interval   # scheduling interval column (default: "interval")
-    bidirectional: false      # enable reverse direction (default: false)
+view: flashcards
+frontField: front         # column for prompt (default: "front")
+backField: back           # column for answer (default: "back")
+dueField: due             # scheduling due column (default: "due")
+easeField: ease           # scheduling ease column (default: "ease")
+intervalField: interval   # scheduling interval column (default: "interval")
+bidirectional: false      # enable reverse direction (default: false)
 ```
 
 ### `applyReviewToRow`

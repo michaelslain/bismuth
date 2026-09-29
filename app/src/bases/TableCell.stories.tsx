@@ -190,7 +190,7 @@ const TYPED: BaseConfig = {
         },
         due: { type: { kind: 'date' } },
     },
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 
 /** A value no in-cell editor can round-trip (a list of numbers) is shown, never opened: the

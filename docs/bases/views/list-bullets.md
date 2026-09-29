@@ -4,7 +4,7 @@ Two Bases view kinds: **`list`** and **`bullets`**. Both render rows as a vertic
 
 ---
 
-## List View (`type: list`)
+## List View (`view: list`)
 
 ### What It Is
 
@@ -18,18 +18,16 @@ This is the **default view type for `tasks:` query blocks** in embedded `\`\`\`q
 ---
 type: base
 source: notes where #book
-views:
-  - type: list
-    name: My Books
-    groupBy:
-      property: note.status
-    sort:
-      - property: note.title
-        direction: ASC
+view: list
+groupBy:
+  property: note.status
+sort:
+  - property: note.title
+    direction: ASC
 ---
 ```
 
-Minimal shorthand (top-level `view:` folds into the default `views[0]`):
+Minimal:
 
 ```yaml
 ---
@@ -69,12 +67,11 @@ The header's text color comes from `groupColor(key)` — this resolves the known
 
 ```yaml
 # Explicit group order
-views:
-  - type: list
-    groupBy:
-      property: note.bucket
-    columns: [Overdue, This week, Later]
-    # "Mystery" bucket (not declared) will be appended after "Later"
+view: list
+groupBy:
+  property: note.bucket
+columns: [Overdue, This week, Later]
+# "Mystery" bucket (not declared) will be appended after "Later"
 ```
 
 When `groupBy` is absent, `result.groups` has a single group with `key: ""` and the group header is not rendered.
@@ -170,12 +167,10 @@ type: base
 source: tasks
 formulas:
   urgency: 'if(!due, "No date", if(date(due) < today(), "Overdue", if(date(due) <= today() + "7d", "This week", "Later")))'
-views:
-  - type: list
-    name: Do Now
-    groupBy:
-      property: formula.urgency
-    columns: [Overdue, This week, Later, No date]
+view: list
+groupBy:
+  property: formula.urgency
+columns: [Overdue, This week, Later, No date]
 ---
 ```
 
@@ -191,7 +186,7 @@ This produces four sections (Overdue in red-ish accent, This week and Later in a
 
 ---
 
-## Bullets View (`type: bullets`)
+## Bullets View (`view: bullets`)
 
 ### What It Is
 
@@ -203,18 +198,16 @@ This produces four sections (Overdue in red-ish accent, This week and Later in a
 ---
 type: base
 source: notes where #quote
-views:
-  - type: bullets
-    name: Reading Quotes
-    groupBy:
-      property: note.author
-    sort:
-      - property: note.author
-        direction: ASC
+view: bullets
+groupBy:
+  property: note.author
+sort:
+  - property: note.author
+    direction: ASC
 ---
 ```
 
-Minimal (top-level shorthand):
+Minimal:
 
 ```yaml
 ---
@@ -309,19 +302,16 @@ view: list
 
 ## Common `ViewConfig` Fields (applicable to both)
 
-Both `list` and `bullets` are valid `ViewConfig.type` values and support the standard `ViewConfig` fields:
+Both `list` and `bullets` are valid `view:` kinds and support the standard `ViewConfig` fields (the base's `filters` and `source` apply as for every kind, see [origin](../overview.md#three-axes-kind-mode-and-origin)):
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | `"list"` \| `"bullets"` | Required |
-| `name` | `string` | View tab label |
+| `view` | `"list"` \| `"bullets"` | Required |
 | `limit` | `number` | Max rows (applied before grouping) |
-| `filters` | `FilterNode` | Per-view filter, ANDed with base-level `filters` |
 | `sort` | `SortSpec[]` | Sort keys applied in order |
 | `groupBy` | `{ property: string; direction?: "ASC" \| "DESC" }` | Groups rows into labeled sections |
 | `columns` | `string[]` | For `list`: controls group ORDER (not displayed columns). For `bullets`: ignored (only `columns[0]` from the resolved query columns is used). |
-| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`) — see [origin](../overview.md#three-axes-kind-mode-and-origin). |
-| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `type`/`source` — see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views) and [the mode axis](../overview.md#three-axes-kind-mode-and-origin). Default `"normal"`. |
+| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `view`/`source` — see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views) and [the mode axis](../overview.md#three-axes-kind-mode-and-origin). Default `"normal"`. |
 | `order` | `string[]` | Property ids to display — the query engine resolves these into `result.columns` |
 
 Note: `columns` on a `ViewConfig` for non-kanban views like `list` and `bullets` controls **group ordering**, not which data columns appear. To control which data properties are shown and in what order, use `order`.

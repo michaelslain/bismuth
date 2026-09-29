@@ -68,11 +68,11 @@ function baseRow(i: number, iso: string, basePath: string, words?: number): Row 
  *  due dates, plus the streak footer line. */
 export const Default: Story = {
     render: () => {
-        const views = [{ type: 'heatmap' as const, name: 'Activity', x: 'due' }]
+        const view = { type: 'heatmap' as const, x: 'due' }
         return (
             <HeatmapView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -82,9 +82,7 @@ export const Default: Story = {
  *  footer shows a real multi-day run instead of isolated single days. */
 export const DenseActivity: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const rows: Row[] = Array.from({ length: 18 }, (_, i) => {
             const iso = addDaysISO(today, i - 17)
@@ -92,8 +90,8 @@ export const DenseActivity: Story = {
         })
         return (
             <HeatmapView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -103,9 +101,7 @@ export const DenseActivity: Story = {
  *  grid spans the whole pane and month labels don't collide. */
 export const YearOfData: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Year', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const rows: Row[] = []
         for (let i = 0; i < 365; i += 3) {
@@ -114,8 +110,8 @@ export const YearOfData: Story = {
         }
         return (
             <HeatmapView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -128,11 +124,11 @@ export const NonDateX: Story = {
         expect(canvasElement.textContent).toContain('set an x date column')
     },
     render: () => {
-        const views = [{ type: 'heatmap' as const, name: 'Activity', x: 'status' }]
+        const view = { type: 'heatmap' as const, x: 'status' }
         return (
             <HeatmapView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -142,14 +138,12 @@ export const NonDateX: Story = {
  *  keyboard user sees what a pointer user does. */
 export const KeyboardReach: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const rows: Row[] = [entryRow(0, todayISO(), 400)]
         return (
             <HeatmapView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -190,9 +184,7 @@ export const KeyboardReach: Story = {
  *  of notes behind that day, and clicking again (or `[ clear ]`) closes it. */
 export const HoverAndDrill: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const rows: Row[] = [
             entryRow(0, today, 400),
@@ -200,8 +192,8 @@ export const HoverAndDrill: Story = {
         ]
         return (
             <HeatmapView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -237,9 +229,7 @@ export const HoverAndDrill: Story = {
  *  reads as a year of ITS history rather than mostly-empty recent weeks. */
 export const OldDataOnly: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Old journal', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const base = addDaysISO(today, -365)
         const rows: Row[] = Array.from({ length: 5 }, (_, i) =>
@@ -247,8 +237,8 @@ export const OldDataOnly: Story = {
         )
         return (
             <HeatmapView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -257,9 +247,7 @@ export const OldDataOnly: Story = {
 /** A ~300px pane — the grid still renders without horizontal overflow (columns floor at 20). */
 export const Narrow: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const rows: Row[] = Array.from({ length: 10 }, (_, i) =>
             entryRow(i, addDaysISO(today, i - 9), 100 + i * 20),
@@ -267,8 +255,8 @@ export const Narrow: Story = {
         return (
             <div style={{ width: '300px' }}>
                 <HeatmapView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -281,9 +269,7 @@ export const Narrow: Story = {
  *  callback would look identical to a broken one here. */
 export const EditableValues: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Journal', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const basePath = 'Journal.md'
         const today = todayISO()
         const [rows, setRows] = createSignal<Row[]>(
@@ -292,7 +278,7 @@ export const EditableValues: Story = {
             ),
         )
         const result = createMemo(() =>
-            runView(sampleBaseConfig({ views }), rows(), 0),
+            runView(sampleBaseConfig({ view }), rows()),
         )
         const writes: HeatmapWriteSeam = {
             origin: 'base',
@@ -316,7 +302,7 @@ export const EditableValues: Story = {
         return (
             <HeatmapView
                 result={result()}
-                config={sampleBaseConfig({ views })}
+                config={sampleBaseConfig({ view })}
                 writes={writes}
             />
         )
@@ -364,14 +350,14 @@ export const EditableValues: Story = {
  *  on (creates a row) or off (deletes every row on that day) rather than opening a number field. */
 export const ToggleDays: Story = {
     render: () => {
-        const views = [{ type: 'heatmap' as const, name: 'Habit', x: 'date' }]
+        const view = { type: 'heatmap' as const, x: 'date' }
         const basePath = 'Habit.md'
         const today = todayISO()
         const [rows, setRows] = createSignal<Row[]>(
             [0, -1, -2].map((offset, i) => baseRow(i, addDaysISO(today, offset), basePath)),
         )
         const result = createMemo(() =>
-            runView(sampleBaseConfig({ views }), rows(), 0),
+            runView(sampleBaseConfig({ view }), rows()),
         )
         const writes: HeatmapWriteSeam = {
             origin: 'base',
@@ -390,7 +376,7 @@ export const ToggleDays: Story = {
         return (
             <HeatmapView
                 result={result()}
-                config={sampleBaseConfig({ views })}
+                config={sampleBaseConfig({ view })}
                 writes={writes}
             />
         )
@@ -432,15 +418,13 @@ export const ToggleDays: Story = {
  *  nowhere to write, so a click only surfaces why, via the readout/drill message. */
 export const QuerySource: Story = {
     render: () => {
-        const views = [
-            { type: 'heatmap' as const, name: 'Writing streak', x: 'date', y: 'words' },
-        ]
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
         const today = todayISO()
         const [rows, setRows] = createSignal<Row[]>([
             entryRow(0, today, 180),
         ])
         const result = createMemo(() =>
-            runView(sampleBaseConfig({ views }), rows(), 0),
+            runView(sampleBaseConfig({ view }), rows()),
         )
         const writes: HeatmapWriteSeam = {
             origin: 'query',
@@ -458,7 +442,7 @@ export const QuerySource: Story = {
         return (
             <HeatmapView
                 result={result()}
-                config={sampleBaseConfig({ views })}
+                config={sampleBaseConfig({ view })}
                 writes={writes}
             />
         )

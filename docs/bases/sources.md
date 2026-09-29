@@ -1,6 +1,6 @@
 # Bases: Sources & Row Resolution
 
-Every Bismuth base and every view resolves a **`SourceSpec`** — `base`, `notes`,
+Every Bismuth base resolves a **`SourceSpec`** — `base`, `notes`,
 or `tasks` — into a uniform `Row[]`. `core/src/bases/source.ts` reads vault
 notes, extracts checkbox tasks, or recursively renders another base
 (composition). Covers the `SourceSpec` shape, `normalizeSource` (the
@@ -40,14 +40,10 @@ are pruned away by `normalizeSource` if present (see below).
 A `SourceSpec` is produced in three places, all converging on the same resolver:
 
 1. **A `type: base` md file's frontmatter `source:`** — parsed by
-   `normalizeSource` into `BaseConfig.source` (the base-level default for all its
-   views). A per-view `source:` (`ViewConfig.source`) overrides it and
-   **genuinely resolves** — `BaseView` fetches each view's own rows from its
-   own spec (see [Frontend resolution](#frontend-resolution-baseview--row-cache)
-   below), so two views of one base can draw from two different places. A
-   view with no `source:` declared anywhere (neither its own nor the base's)
-   and an inline row table in the base's body owns those rows outright
-   (`{ kind: "base" }`) — see [bases overview](./overview.md#three-axes-kind-mode-and-origin)
+   `normalizeSource` into `BaseConfig.source`; `BaseView` fetches the base's
+   rows from that spec (see [Frontend resolution](#frontend-resolution-baseview--row-cache)
+   below). A base with no `source:` and an inline row table in its body owns
+   those rows outright (`{ kind: "base" }`) — see [bases overview](./overview.md#three-axes-kind-mode-and-origin)
    for how this "origin" axis sits alongside kind and mode.
 2. **A flat ` ```query ` block** — `of: [[Base]]` → `{kind:"base"}`,
    `tasks:` → `{kind:"tasks"}`, with optional `from:` (see
@@ -493,36 +489,6 @@ This shows only the tasks in the notes the `Keep` base selects — not the whole
 vault. (The CLAUDE.md "scoped-tasks example" describes exactly this: a `Do Now`
 base with `source: tasks` + `from: "[[Google Keep]]"`.)
 
-### A per-view `source:` does not inherit the base's `from:`
-
-`from` is read off the object the source is declared **on**, not off the
-frontmatter root. `core/src/bases/parse.ts` calls `normalizeSource(o.source, o)`
-twice: once in `parseBaseObject`, where `o` is the base's own frontmatter (so
-the base-level string form above picks up a sibling top-level `from:`), and
-once in `normalizeView`, where `o` is that view's own object (so a per-view
-`source: tasks` only sees a `from:` written **inside that same view**, not one
-at the frontmatter root).
-
-```yaml
-# WRONG — the view's tasks are NOT scoped to Keep
-from: "[[Keep]]"
-views:
-  - type: list
-    source: tasks
-
-# RIGHT — from: lives on the view itself
-views:
-  - type: list
-    source:
-      kind: tasks
-      from: "[[Keep]]"
-```
-
-This is consistent with how the object form has always behaved —
-`normalizeSource` reads `from`/`ref`/`where` from whichever object it was
-called with — but a top-level `from:` reads like a default for the whole base,
-and it is easy to assume a per-view `source:` inherits it. It does not.
-
 ## Row body parsing (`core/src/bases/rows.ts`)
 
 An own-rows base's body is parsed into `Row[]` by `parseRows(body, meta)` where
@@ -736,38 +702,35 @@ the historical behavior — every call site except `BaseView.tsx`'s revalidation
 path (`app/src/bases/BaseView.tsx`), which stamps the call with `serverVersion()`.
 
 `BaseView` splits this into two steps, on purpose: parsing the file (the
-DOCUMENT) is one HTTP round-trip that must not repeat on every view-tab
-click, while which spec actually feeds the ACTIVE view can change per tab.
+DOCUMENT) is one HTTP round-trip that must not repeat when only the source
+changes, while the spec that feeds the view is a separate step.
 
 **Step 1 — `loadDocument()`** produces `{ config, rows, basePath }`, keyed only
-on the base's own identity (`path`/`source`/`view`), never on which view tab
-is active:
+on the base's own identity (`path`/`source`/`view`):
 
 - **`props.view`** (a flat ` ```query ` block): `config` is a synthetic
-  single-view config carrying the block's own `source` (`v.source`); `rows =
+  config carrying the block's own `source` (`v.source`); `rows =
   []` (a query block has no inline table of its own to fall back to).
 - **`props.path`** (a `type: base` md file): parse the file via
   `parseBaseFile` into `{ config, rows }`.
 - **`props.source`** (raw inline config string): parse it via `parseBase`;
   `rows = []`.
 
-**Step 2 — `activeSpec()`** resolves the spec for whichever view is active
-right now, falling back in this order:
+**Step 2 — `activeSpec()`** resolves the base's spec, falling back in this order:
 
 ```ts
-const declared = activeViewConfig()?.source ?? d.config.source;
-if (declared) return declared;
+if (d.config.source) return d.config.source;
 if (props.view) return undefined;          // no of:/tasks: → deliberate empty state
 return d.rows.length ? { kind: "base" } : { kind: "notes" };
 ```
 
-A per-view `source:` wins over the base-level one; with neither, a
+The base's `source:` wins; without one, a
 `type: base` file with inline rows renders those (`{ kind: "base" }`), and
 one with none defaults to `{ kind: "notes" }` (whole vault). Only a flat
 query block with no `of:`/`tasks:` gets `undefined` — an intentional empty
 state, not "all notes".
 
-**Step 3 — resolving rows for the active spec:**
+**Step 3 — resolving rows for the spec:**
 
 ```ts
 const rows =
@@ -779,18 +742,12 @@ const rows =
 An own-rows base (`{kind:"base"}` with no `ref`) paints straight from the
 document's already-parsed `rows` — no `/rows` round-trip. Everything else
 (notes / tasks / a real base-ref composition) goes server-side via `/rows`,
-which follows composition + scoped tasks. A view with no spec at all → `[]`
+which follows composition + scoped tasks. No spec at all → `[]`
 (empty state).
 
 Rows are cached and re-fetched keyed on **the document's identity plus the
-JSON-serialized active spec**, so switching to a view whose spec differs
-triggers a fresh resolve, and switching between two views that happen to
-share a spec does not. This is the fix for a gap the per-view `source:` field
-used to have: it was parsed and typed from the start, but nothing ever
-actually consulted it when deciding what to fetch — every view resolved off
-the base-level source only. Two views of one base drawing from two different
-origins (a `source: tasks` query in one tab, the base's own stored rows in
-another) now works because of this split.
+JSON-serialized spec**, so a source edit triggers a fresh resolve and an
+unchanged source does not.
 
 ### Client SWR cache (`RowCache`)
 
@@ -824,7 +781,7 @@ keeps returning `false` — the cache is stuck on its pre-race value until the n
 `invalidate()` lets a fresh `begin()`/`set()` pair revalidate it.
 
 In `BaseView`: an effect calls `rowCache.invalidate(serverVersion())` on every
-version bump; the resource re-runs on view-change **or** version bump; on a fresh
+version bump; the resource re-runs on a source change **or** version bump; on a fresh
 cache hit it returns the cached rows without calling `/rows`; otherwise it claims a
 token via `rowCache.begin(key)` before resolving, then `rowCache.set(key, result,
 version, token)`. Solid keeps the previous value painted while revalidating, so
@@ -833,7 +790,7 @@ reopening a base or opening it in a split paints instantly from the last resolut
 
 ## Editing the source in the settings panel
 
-The view settings modal's **source** section (`app/src/bases/SourceFields.tsx`, logic in `sourceForm.ts`) sets where rows come from without YAML:
+The base settings modal's **source** section (`app/src/bases/SourceFields.tsx`, logic in `sourceForm.ts`) sets where rows come from without YAML:
 
 | "rows from" | Writes |
 |---|---|
@@ -842,7 +799,7 @@ The view settings modal's **source** section (`app/src/bases/SourceFields.tsx`, 
 | vault tasks | `source: { kind: tasks, where?, from? }` |
 | another base | `source: { kind: base, ref: "[[Other]]" }` |
 
-`where` is built with the filter-condition editor (see [filters](./filters.md#editing-filters-in-the-settings-panel)); a legacy Tasks-DSL `where` shows as one expression row and is kept verbatim. "Limit to base" is `from`; the base pickers list every note as `[[name]]`. The panel always writes the **object form** — it needs no sibling keys and YAML quotes the expression, so a `#` inside it can't be eaten as a comment — and removes the now-dead top-level `where`/`from`/`ref` a string-form source read. An untouched section writes nothing. When the active view has its **own** `source:`, the section edits that override (and says so); otherwise it edits the base-level source shared by every view.
+`where` is built with the filter-condition editor (see [filters](./filters.md#editing-filters-in-the-settings-panel)); a legacy Tasks-DSL `where` shows as one expression row and is kept verbatim. "Limit to base" is `from`; the base pickers list every note as `[[name]]`. The panel always writes the **object form** — it needs no sibling keys and YAML quotes the expression, so a `#` inside it can't be eaten as a comment — and removes the now-dead top-level `where`/`from`/`ref` a string-form source read. An untouched section writes nothing.
 
 ## Edge cases & gotchas (summary)
 
@@ -854,6 +811,11 @@ The view settings modal's **source** section (`app/src/bases/SourceFields.tsx`, 
   error.
 - **Composition follows the referenced base's OWN source**, not its static rows.
   `{kind:"base", ref:"[[Keep]]"}` runs Keep's `source: notes/tasks/base` query.
+- **Composition carries ROWS ONLY.** The referenced base's `filters`,
+  `formulas`, `properties`, and view keys (sort, groupBy, limit, ...) are not
+  applied to the referencing base; restate any filter you need. This is how a
+  second view of the same rows is made — see
+  [One view per base: composing](./overview.md#one-view-per-base-composing).
 - **Cycles return `[]`, not an error** — and symlink cycles are caught via
   real-path resolution in `seen`.
 - **Missing / unreadable base files return `[]`** (no throw).

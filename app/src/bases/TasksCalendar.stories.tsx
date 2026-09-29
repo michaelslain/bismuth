@@ -22,8 +22,8 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const VIEW: ViewConfig = { type: 'calendar', name: 'Calendar', mode: 'tasks' }
-const CONFIG: BaseConfig = { source: { kind: 'tasks' }, views: [VIEW] }
+const VIEW: ViewConfig = { type: 'calendar', mode: 'tasks' }
+const CONFIG: BaseConfig = { source: { kind: 'tasks' }, view: VIEW }
 const today = todayISO()
 const result = (): ViewResult => ({
     view: VIEW,
@@ -47,7 +47,7 @@ const Mount = () => {
     currentDate.value = new Date()
     return (
         <CalendarFrame>
-            <TasksCalendar result={result()} config={CONFIG} ownsRows={false} viewIndex={0} />
+            <TasksCalendar result={result()} config={CONFIG} ownsRows={false} />
         </CalendarFrame>
     )
 }

@@ -222,9 +222,7 @@ Prose body with an \`inline code span\` inside it, and enough words to run the m
 
 \`\`\`yaml
 type: base
-views:
-  - type: table
-    name: Cards
+view: table
 \`\`\`
 
 | a | b |

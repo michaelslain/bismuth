@@ -36,7 +36,7 @@ export const Default: Story = {
 // A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
 const STORED_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status'],
-    views: [{ type: 'bullets', name: 'Bullets' }],
+    view: { type: 'bullets' },
 }
 const STORED_ROWS: Row[] = [
     {
@@ -52,7 +52,7 @@ const STORED_ROWS: Row[] = [
 export const EditableOwnedRow: Story = {
     render: () => (
         <BulletsView
-            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            result={runView(STORED_CONFIG, STORED_ROWS)}
             config={STORED_CONFIG}
             basePath="boards/stored-bullets.md"
         />
@@ -93,17 +93,14 @@ export const EditableNoteRow: Story = {
  *  kanban/table use, rendered here as sub-headed bullet lists instead of columns/rows. */
 export const Grouped: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bullets' as const,
-                name: 'Bullets',
                 groupBy: { property: 'status' },
-            },
-        ]
+            }
         return (
             <BulletsView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -112,17 +109,14 @@ export const Grouped: Story = {
 /** Grouped: play asserts the `// N` count the GroupHeader renders. */
 export const GroupedCount: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bullets' as const,
-                name: 'Bullets',
                 groupBy: { property: 'status' },
-            },
-        ]
+            }
         return (
             <BulletsView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -171,7 +165,7 @@ function taskRowOf(description: string, line: number, status = 'todo'): Row {
  *  list re-renders with it. */
 export const TasksMode: Story = {
     render: () => {
-        const view = { type: 'bullets' as const, name: 'Bullets' }
+        const view = { type: 'bullets' as const }
         const [rows, setRows] = createSignal<Row[]>([
             taskRowOf('write the parser', 1),
             taskRowOf('ship it', 2),
@@ -185,7 +179,7 @@ export const TasksMode: Story = {
         return (
             <BulletsView
                 result={result()}
-                config={{ source: { kind: 'tasks' }, views: [view] }}
+                config={{ source: { kind: 'tasks' }, view }}
                 mode="tasks"
                 onToggle={row =>
                     setRows(rs =>

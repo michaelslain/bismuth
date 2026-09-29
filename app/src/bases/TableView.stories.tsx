@@ -69,17 +69,14 @@ export const Default: Story = {
 /** Same dataset grouped by `status` — the ResultGroup shape a grouped table (or kanban) needs. */
 export const Grouped: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'table' as const,
-                name: 'Table',
                 groupBy: { property: 'status' },
-            },
-        ]
+            }
         return (
             <TableView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -99,7 +96,7 @@ export const Grouped: Story = {
 // builds the rows + config directly and runs them through the real `runView`.
 const STORED_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status'],
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 
 const STORED_ROWS: Row[] = [
@@ -124,7 +121,7 @@ const STORED_ROWS: Row[] = [
 export const StoredRows: Story = {
     render: () => (
         <TableView
-            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            result={runView(STORED_CONFIG, STORED_ROWS)}
             config={STORED_CONFIG}
         />
     ),
@@ -145,7 +142,7 @@ export const StoredRows: Story = {
 export const EditableOwnedRow: Story = {
     render: () => (
         <TableView
-            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            result={runView(STORED_CONFIG, STORED_ROWS)}
             config={STORED_CONFIG}
             basePath="boards/stored-table.md"
         />
@@ -214,7 +211,7 @@ const EDIT_CONFIG: BaseConfig = {
             type: { kind: 'select', options: ['Todo', 'Doing', 'Done'] },
         },
     },
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 let editRows: Row[] = [
     {
@@ -257,7 +254,7 @@ export const EditableBooleanAndSelect: Story = {
 
         function Table() {
             const [result, setResult] = createSignal(
-                runView(EDIT_CONFIG, editRows, 0),
+                runView(EDIT_CONFIG, editRows),
             )
             return (
                 <TableView
@@ -265,7 +262,7 @@ export const EditableBooleanAndSelect: Story = {
                     config={EDIT_CONFIG}
                     basePath={EDIT_PATH}
                     onChange={() =>
-                        setResult(runView(EDIT_CONFIG, editRows, 0))
+                        setResult(runView(EDIT_CONFIG, editRows))
                     }
                 />
             )
@@ -324,7 +321,7 @@ export const EditableBooleanAndSelect: Story = {
 // on a title edit, and let `delete` trash it instead of the one task line.
 const TASK_LINE_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status'],
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 const TASK_LINE_ROWS: Row[] = [
     {
@@ -346,7 +343,7 @@ const TASK_LINE_ROWS: Row[] = [
 const TAGS_PATH = 'boards/tags-table.md'
 const TAGS_CONFIG: BaseConfig = {
     declaredProperties: ['tags'],
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 const TAGS_ROWS: Row[] = [
     {
@@ -366,7 +363,7 @@ const TAGS_ROWS: Row[] = [
 export const TagsColumnListsWholeBoard: Story = {
     render: () => (
         <TableView
-            result={runView(TAGS_CONFIG, TAGS_ROWS, 0)}
+            result={runView(TAGS_CONFIG, TAGS_ROWS)}
             config={TAGS_CONFIG}
             basePath={TAGS_PATH}
         />
@@ -400,7 +397,7 @@ export const TagsColumnListsWholeBoard: Story = {
 const PICK_PATH = 'boards/tags-picker.md'
 const PICK_CONFIG: BaseConfig = {
     declaredProperties: ['tags'],
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 const pickSeed = (): Row[] => [
     {
@@ -442,7 +439,7 @@ export const TagsTypeAcceptCommit: Story = {
         })
         function Table() {
             const [result, setResult] = createSignal(
-                runView(PICK_CONFIG, pickRows, 0),
+                runView(PICK_CONFIG, pickRows),
             )
             return (
                 <TableView
@@ -451,7 +448,7 @@ export const TagsTypeAcceptCommit: Story = {
                     basePath={PICK_PATH}
                     onChange={() => {
                         pickResolves++
-                        setResult(runView(PICK_CONFIG, pickRows, 0))
+                        setResult(runView(PICK_CONFIG, pickRows))
                     }}
                 />
             )
@@ -504,7 +501,7 @@ export const TagsTypeAcceptCommit: Story = {
 export const TaskLineRowContextMenu: Story = {
     render: () => (
         <TableView
-            result={runView(TASK_LINE_CONFIG, TASK_LINE_ROWS, 0)}
+            result={runView(TASK_LINE_CONFIG, TASK_LINE_ROWS)}
             config={TASK_LINE_CONFIG}
             basePath="boards/tasks.md"
         />
@@ -529,7 +526,7 @@ export const TaskLineRowContextMenu: Story = {
 export const RightClickOpensRowEditor: Story = {
     render: () => (
         <TableView
-            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            result={runView(STORED_CONFIG, STORED_ROWS)}
             config={STORED_CONFIG}
             basePath="boards/stored-table.md"
         />
@@ -557,7 +554,7 @@ export const RightClickOpensRowEditor: Story = {
 export const Empty: Story = {
     render: () => (
         <TableView
-            result={runView(STORED_CONFIG, [], 0)}
+            result={runView(STORED_CONFIG, [])}
             config={STORED_CONFIG}
         />
     ),
@@ -579,7 +576,7 @@ export const Empty: Story = {
 // result is re-resolved from it, the way BaseView re-resolves after a task write.
 const TASKS_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status', 'due'],
-    views: [{ type: 'table', name: 'Table' }],
+    view: { type: 'table' },
 }
 const taskRow = (line: number, description: string, status: string, due: string): Row => ({
     file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
@@ -606,7 +603,7 @@ export const TasksMode: Story = {
         return (
             <TableView
                 mode="tasks"
-                result={runView(TASKS_CONFIG, rows(), 0)}
+                result={runView(TASKS_CONFIG, rows())}
                 config={TASKS_CONFIG}
                 onToggle={row =>
                     setStatus(row, row.note.status === 'done' ? 'todo' : 'done')

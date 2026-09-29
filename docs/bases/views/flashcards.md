@@ -10,21 +10,19 @@ For the SM-2 scheduling algorithm and the markdown-card (`?`/`??`) code path see
 
 ## View Configuration
 
-Add a flashcards view to a `type: base` file by setting `type: flashcards` in the `views` array:
+Make a `type: base` file a flashcards deck by setting `view: flashcards`; the view keys sit at the top level of the frontmatter:
 
 ```yaml
 ---
 type: base
 source: notes where #vocab
-views:
-  - type: flashcards
-    name: Vocabulary
-    frontField: front
-    backField: back
-    dueField: due
-    easeField: ease
-    intervalField: interval
-    bidirectional: false
+view: flashcards
+frontField: front
+backField: back
+dueField: due
+easeField: ease
+intervalField: interval
+bidirectional: false
 ---
 ```
 

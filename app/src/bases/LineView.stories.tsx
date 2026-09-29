@@ -24,11 +24,11 @@ type Story = StoryObj<typeof meta>
 /** Auto-detected date x-axis (`due`) + numeric y-axis (`priority`, summed). */
 export const Default: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -39,18 +39,15 @@ export const Default: Story = {
  *  weekly bin here, so no trend line/math — see `TwoPoints` for that case made explicit. */
 export const WeeklyAverage: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'line' as const,
-                name: 'Weekly avg priority',
                 bin: 'week' as const,
                 aggregate: 'avg' as const,
-            },
-        ]
+            }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -71,15 +68,12 @@ const FORMULA_ROWS: Partial<Row>[] = [
  *  gains a `\text{ppu} = \frac{\text{price}}{\text{units}}` line after the base definition. */
 export const FormulaY: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'line' as const,
-                name: 'Price per unit',
                 x: 'due',
                 y: 'formula.ppu',
-            },
-        ]
-        const config = { views, formulas: { ppu: 'price / units' } }
+            }
+        const config = { view, formulas: { ppu: 'price / units' } }
         return (
             <LineView
                 result={sampleViewResult(FORMULA_ROWS, config)}
@@ -101,11 +95,11 @@ export const FormulaY: Story = {
  *  the drill list (with `[ clear ]`), clicking the same column again closes it. */
 export const HoverAndDrill: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -149,15 +143,15 @@ export const HoverAndDrill: Story = {
  *  definition line renders). */
 export const TwoPoints: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart', x: 'due', y: 'priority' }]
+        const view = { type: 'line' as const, x: 'due', y: 'priority' }
         const rows: Partial<Row>[] = [
             { note: { due: '2026-08-01', priority: 2 } },
             { note: { due: '2026-08-08', priority: 5 } },
         ]
         return (
             <LineView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -167,7 +161,7 @@ export const TwoPoints: Story = {
  *  `// last K of 400`. */
 export const FourHundredDays: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart', x: 'due', y: 'priority' }]
+        const view = { type: 'line' as const, x: 'due', y: 'priority' }
         const rows: Partial<Row>[] = Array.from({ length: 400 }, (_, i) => {
             const d = new Date(2025, 0, 1 + i)
             const iso = d.toISOString().slice(0, 10)
@@ -175,8 +169,8 @@ export const FourHundredDays: Story = {
         })
         return (
             <LineView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -192,7 +186,7 @@ export const FourHundredDays: Story = {
  *  than at the bottom row. */
 export const NegativeValues: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart', x: 'due', y: 'delta' }]
+        const view = { type: 'line' as const, x: 'due', y: 'delta' }
         const rows: Partial<Row>[] = [
             { note: { due: '2026-08-01', delta: -10 } },
             { note: { due: '2026-08-08', delta: 8 } },
@@ -201,8 +195,8 @@ export const NegativeValues: Story = {
         ]
         return (
             <LineView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -211,12 +205,12 @@ export const NegativeValues: Story = {
 /** A ~300px pane — columns floor at 20; the plot still renders with no horizontal overflow. */
 export const Narrow: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         return (
             <div style={{ width: '300px' }}>
                 <LineView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -226,11 +220,11 @@ export const Narrow: Story = {
 /** No rows: the one shared empty state, not a blank plot. */
 export const Empty: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart', x: 'due', y: 'priority' }]
+        const view = { type: 'line' as const, x: 'due', y: 'priority' }
         return (
             <LineView
-                result={sampleViewResult([], { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult([], { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -244,9 +238,7 @@ export const Empty: Story = {
  *  by real calendar distance (Jan 1 to Mar 1 is two slots, Mar 1 to Jul 1 four). */
 export const MonthBin: Story = {
     render: () => {
-        const views = [
-            { type: 'line' as const, name: 'Monthly', x: 'due', y: 'amount', bin: 'month' as const },
-        ]
+        const view = { type: 'line' as const, x: 'due', y: 'amount', bin: 'month' as const }
         const rows: Partial<Row>[] = [
             { note: { due: '2026-01-05', amount: 4 } },
             { note: { due: '2026-01-20', amount: 3 } },
@@ -255,8 +247,8 @@ export const MonthBin: Story = {
         ]
         return (
             <LineView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -269,16 +261,14 @@ export const MonthBin: Story = {
 /** `bin: "day"` over a fortnight of daily rows — one point per day, day labels on the axis. */
 export const DayBin: Story = {
     render: () => {
-        const views = [
-            { type: 'line' as const, name: 'Daily', x: 'due', y: 'amount', bin: 'day' as const },
-        ]
+        const view = { type: 'line' as const, x: 'due', y: 'amount', bin: 'day' as const }
         const rows: Partial<Row>[] = Array.from({ length: 14 }, (_, i) => ({
             note: { due: `2026-08-${String(i + 1).padStart(2, '0')}`, amount: (i * 5) % 9 },
         }))
         return (
             <LineView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -288,13 +278,11 @@ export const DayBin: Story = {
  *  line, and the axis labels are the category names. */
 export const CategoricalX: Story = {
     render: () => {
-        const views = [
-            { type: 'line' as const, name: 'By status', x: 'status', y: 'priority', aggregate: 'sum' as const },
-        ]
+        const view = { type: 'line' as const, x: 'status', y: 'priority', aggregate: 'sum' as const }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -310,7 +298,7 @@ export const CategoricalX: Story = {
  *  captured into state and shown, so the click is proven rather than assumed. */
 export const OnOpenWired: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         const [opened, setOpened] = createSignal<string>('nothing yet')
         const onOpenEvent = (e: Event) => setOpened((e as CustomEvent<string>).detail)
         window.addEventListener('bismuth-open', onOpenEvent)
@@ -318,8 +306,8 @@ export const OnOpenWired: Story = {
         return (
             <div>
                 <LineView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
                 <div data-testid="opened">opened: {opened()}</div>
@@ -349,11 +337,11 @@ export const OnOpenWired: Story = {
  *  No pointer event is dispatched. */
 export const KeyboardReach: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 onOpen={() => {}}
             />
         )
@@ -386,11 +374,11 @@ export const KeyboardReach: Story = {
 /** Space on the focused plot with no hover column is swallowed — the page must not scroll. */
 export const SpaceWithoutHoverDoesNotScroll: Story = {
     render: () => {
-        const views = [{ type: 'line' as const, name: 'Chart' }]
+        const view = { type: 'line' as const }
         return (
             <LineView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
