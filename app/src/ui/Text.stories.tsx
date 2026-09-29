@@ -119,7 +119,7 @@ export const Eyebrow: Story = {
 }
 
 /** `register` — 'chrome' (default) leaves the ambient --ui-font-stack, 'prose' switches ONLY
- *  the font-family to --prose-font (Lora); size/tone/weight stay independent props. See
+ *  the font-family to --prose-font (IBM Plex Serif by default); size/tone/weight stay independent props. See
  *  DESIGN.md's register rule: prose is what a person WROTE, mechanism/data stays mono. */
 export const Registers: Story = {
     render: () => (
@@ -129,7 +129,7 @@ export const Registers: Story = {
                     chrome — the ambient interface font
                 </Text>
                 <Text size="body" register="prose">
-                    prose — Lora, what a person wrote
+                    prose — the serif, what a person wrote
                 </Text>
             </Row>
             <Row label="lead">
@@ -137,7 +137,7 @@ export const Registers: Story = {
                     chrome — the ambient interface font
                 </Text>
                 <Text size="lead" register="prose">
-                    prose — Lora, what a person wrote
+                    prose — the serif, what a person wrote
                 </Text>
             </Row>
         </Stack>

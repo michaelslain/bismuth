@@ -2,7 +2,7 @@
 // Story-only assertion helpers: "this element renders in the note PROSE face" and "…in the
 // UI/mono face, at the code size".
 //
-// Note prose, chat message bodies and note tables paint in --prose-font (Lora), the ONE
+// Note prose, chat message bodies and note tables paint in --prose-font (the prose serif), the ONE
 // proportional exception to the app's single mono family — see CLAUDE.md's Typography note and
 // global.css. Everything pulled back out of prose (code, frontmatter, #tags) paints in
 // --ui-font-stack at --code-font-size. Several story files (Editor, ChatView, …) each had a
@@ -10,7 +10,7 @@
 // added more surfaces, which is what made this a shared module.
 //
 // Asserted against the LIVE tokens, never a literal family name or pixel size: hardcoding
-// "Lora Variable" or 13.5 would keep passing if the token were repointed or the user changed
+// a family name like "IBM Plex Serif" or 13.5 would keep passing if the token were repointed or the user changed
 // appearance.editorFontSize (range 11-28), and that is the regression worth catching.
 import { expect } from 'storybook/test'
 

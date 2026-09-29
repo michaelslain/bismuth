@@ -1,5 +1,11 @@
 import { test, expect } from 'bun:test'
-import { loadSettings, DEFAULTS } from '../src/settings'
+import {
+    loadSettings,
+    DEFAULTS,
+    FONT_STACKS,
+    PROSE_SCALES,
+} from '../src/settings'
+import { DEFAULT_PROSE_FONT, PROSE_SCALE } from '../src/export/exportTheme'
 
 test('loadSettings returns defaults for null / malformed / non-object input', () => {
     expect(loadSettings(null)).toEqual(DEFAULTS)
@@ -22,7 +28,7 @@ test('loadSettings overlays stored values and keeps defaults for missing keys', 
     const s = loadSettings(raw)
     expect(s.appearance.theme).toBe('rose-gold') // taken from storage
     expect(s.appearance.uiFont).toBe('Monaspace Xenon') // default kept
-    expect(s.appearance.proseFont).toBe('Lora') // default kept
+    expect(s.appearance.proseFont).toBe('IBM Plex Serif') // default kept
     expect(s.graph.spin).toBe(false) // taken from storage
     expect(s.appearance.editorFontSize).toBe(13.5) // default kept
 })
@@ -36,4 +42,12 @@ test('loadSettings ignores wrong-typed and unknown keys', () => {
     expect(s.appearance.editorFontSize).toBe(13.5) // wrong type rejected → default
     expect(s.appearance.bogus).toBeUndefined() // unknown key dropped
     expect(s.editor.autoSaveDelay).toBe(1500) // valid override applied
+})
+
+test("the headless export's prose mirrors match the default prose face", () => {
+    // exportTheme.ts cannot import settings.ts (the cli binary compiles it), so it carries
+    // literals — pinned here to their sources.
+    const face = DEFAULTS.appearance.proseFont
+    expect(DEFAULT_PROSE_FONT).toBe(FONT_STACKS[face]!)
+    expect(PROSE_SCALE).toBe(PROSE_SCALES[face]!)
 })

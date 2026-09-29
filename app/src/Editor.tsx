@@ -249,9 +249,10 @@ const editorTheme = EditorView.theme({
 //
 // THE SIZE RESET IS THE POINT AND WAS MISSING. This theme used to override only the family and the
 // line-height, so a config buffer kept editorTheme's `--prose-font-size` — which is
-// `--editor-font-size * --prose-scale`, and --prose-scale (1.04) is an OPTICAL COMPENSATION FOR THE
-// SERIF: Lora needs ~4% more nominal px to read the same size as the mono. Applied to
-// Monaspace it is not a compensation, it is just 4% too big, so `.settings` rendered at 14.04px
+// `--editor-font-size * --prose-scale`, and --prose-scale is an OPTICAL COMPENSATION FOR THE
+// SERIF (per face: Lora needs ~4% more nominal px to read the same size as the mono — 1.04 —
+// IBM Plex Serif none). Applied to Monaspace it is not a compensation, it is just too big, so
+// under Lora `.settings` rendered at 14.04px
 // (17.28px under the previous 1.28 scale) against 13.5px mono everywhere else in the app. A
 // pull-back has to move the size with the family or it only half-lands.
 //

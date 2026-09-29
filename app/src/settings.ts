@@ -220,16 +220,18 @@ export const MONO_FONTS = [
     'Monaspace Radon',
 ] as const
 
-// The valid values for `proseFont` — Lora (the default proportional face) plus the same five
-// Monaspace variants, for an all-mono editor.
-export const PROSE_FONTS = ['Lora', ...MONO_FONTS] as const
+// The valid values for `proseFont` — the two proportional serifs, IBM Plex Serif (the default) and
+// Lora, plus the same five Monaspace variants, for an all-mono editor.
+export const PROSE_FONTS = ['IBM Plex Serif', 'Lora', ...MONO_FONTS] as const
 
-// Font choices → full CSS font stacks. Lora is the proportional face for note prose + chat
-// bodies; the five Monaspace variants cover both `uiFont` (chrome + in-note mono) and, as an
-// alternative, `proseFont` (an all-mono editor). 'Lora Variable' is the family
-// @fontsource-variable/lora actually declares — NOT 'Lora' (that resolves nothing and falls
-// silently through to Georgia; see tokens.css's own warning on the same trap with CMU).
+// Font choices → full CSS font stacks. The serifs are the proportional faces for note prose +
+// chat bodies; the five Monaspace variants cover both `uiFont` (chrome + in-note mono) and, as an
+// alternative, `proseFont` (an all-mono editor). Each stack leads with the EXACT family its
+// @fontsource package declares — 'Lora Variable' for @fontsource-variable/lora, NOT 'Lora' (that
+// resolves nothing and falls silently through to Georgia; see tokens.css's own warning on the
+// same trap with CMU).
 export const FONT_STACKS: Record<string, string> = {
+    'IBM Plex Serif': "'IBM Plex Serif', Georgia, serif",
     Lora: "'Lora Variable', Lora, Georgia, serif",
     'Monaspace Xenon': "'Monaspace Xenon', ui-monospace, monospace",
     'Monaspace Neon': "'Monaspace Neon', ui-monospace, monospace",
@@ -237,6 +239,20 @@ export const FONT_STACKS: Record<string, string> = {
     'Monaspace Krypton': "'Monaspace Krypton', ui-monospace, monospace",
     'Monaspace Radon': "'Monaspace Radon', ui-monospace, monospace",
 }
+
+// Optical-size compensation per prose face → --prose-scale (see its comment in global.css's
+// tokens section). A serif and the mono chrome at the same NOMINAL px do not read at the same
+// size, so prose is set at editorFontSize × this, the face's x-height parity with Monaspace
+// Xenon. Measured, never guessed — the ratio differs per face:
+//   IBM Plex Serif 1.00 — x-height 531.25 vs mono 531.25 at a 1000px em (canvas, the real files)
+//   Lora           1.04 — x-height 50.00 vs mono 51.75 at a 100px em (in-browser)
+// A face absent here (the Monaspace variants, as an all-mono prose choice) keeps 1.04, the value
+// every face shared before the scale became per-face.
+export const PROSE_SCALES: Record<string, number> = {
+    'IBM Plex Serif': 1,
+    Lora: 1.04,
+}
+export const DEFAULT_PROSE_SCALE = 1.04
 
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
 // swatches, terminal ANSI) normally derive from the selected theme's accentPalette

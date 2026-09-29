@@ -6,15 +6,15 @@ import { unlink } from 'node:fs/promises'
 import { renderExport, renderPreview } from './exporters'
 import { defaultExportOptions } from './options'
 import { THEMES } from '../themes'
-import { DOC_FACES, faceCss } from './fontFaceCss'
+import { DOC_FACES, faceCss, proseFacesFor } from './fontFaceCss'
 import type { ExportDeps, ExportOptions } from './types'
 
-// The real Lora Variable file bytes, off disk — via Bun's `with { type: 'file' }` import
+// The real IBM Plex Serif (400 normal) file bytes, off disk — via Bun's `with { type: 'file' }` import
 // attribute (the SAME mechanism cli/src/docFontCss.ts uses for its headless build; the app's own
 // docFontCss.ts instead relies on Vite's `?inline`, a browser-only transform bun test can't run,
 // which is why the task 6 embedding test below builds its own docFontCss dep rather than
 // importing app/src/export/docFontCss.ts directly).
-import loraNormalPath from '@fontsource-variable/lora/files/lora-latin-wght-normal.woff2' with { type: 'file' }
+import plexNormalPath from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-400-normal.woff2' with { type: 'file' }
 
 const opts = (o: Partial<ExportOptions>): ExportOptions => ({
     ...defaultExportOptions(),
@@ -642,7 +642,8 @@ describe('preview shows page separation (sheet per section)', () => {
     })
 })
 
-// Task 6: the export pipeline embeds Lora Variable (replacing the earlier static serif). docFontCss.ts's own
+// Task 6: the export pipeline embeds the prose serif — IBM Plex Serif, the default face, since
+// 2026-09-28 (Lora Variable before it, a static serif before that). docFontCss.ts's own
 // header comment records the exact shape of the bug this guards against — the export NAMED a
 // prose family in its font stack but shipped no file for it, so every export silently fell
 // through the stack to Georgia. A test that only checks the `@font-face` STRING is present would
@@ -661,12 +662,15 @@ describe('preview shows page separation (sheet per section)', () => {
 // was told not to `bun install`), the measurement runs in a short-lived subprocess whose script
 // lives OUTSIDE every workspace (a tmp file) — the one place Bun's resolver reaches the
 // already-installed package without a workspace declaration.
-describe('the embedded Lora Variable face actually resolves (task 6)', () => {
+describe('the embedded IBM Plex Serif face actually resolves (task 6)', () => {
     test('a prose run measures a different width through the real embedded face than through Georgia alone', async () => {
-        const loraFace = DOC_FACES.find(
-            f => f.family === 'Lora Variable' && f.style === 'normal',
+        const plexFace = DOC_FACES.find(
+            f =>
+                f.family === 'IBM Plex Serif' &&
+                f.style === 'normal' &&
+                f.weight === 400,
         )
-        expect(loraFace).toBeDefined()
+        expect(plexFace).toBeDefined()
 
         // Build the SAME kind of docFontCss the headless (cli) export path builds for real —
         // real file bytes off disk, base64-inlined via the shared faceCss() — since the app's own
@@ -674,23 +678,29 @@ describe('the embedded Lora Variable face actually resolves (task 6)', () => {
         // cannot exercise (confirmed: under plain `bun test` that import resolves to a bare cache
         // file PATH string, not inlined base64, so calling it directly here would silently embed
         // garbage and pass anyway).
-        const bytes = await Bun.file(loraNormalPath).arrayBuffer()
+        const bytes = await Bun.file(plexNormalPath).arrayBuffer()
         const src = `data:font/woff2;base64,${Buffer.from(bytes).toString('base64')}`
-        const docFontCss = async () => faceCss([{ ...loraFace!, src }])
+        let askedFor = ''
+        const docFontCss = async (proseStack: string) => {
+            askedFor = proseStack
+            return faceCss([{ ...plexFace!, src }])
+        }
 
         const r = await renderExport('a/note.md', 'html', deps({ docFontCss }))
         const html = enc.decode(r.bytes)
 
-        // Acceptance: a real @font-face block for Lora Variable carrying a data: URI, and the
+        // The embedder is asked for the document's OWN prose stack, so it can ship that serif only.
+        expect(askedFor).toBe("'IBM Plex Serif', Georgia, serif")
+        // Acceptance: a real @font-face block for IBM Plex Serif carrying a data: URI, and the
         // prose stack naming it FIRST (a browser only ever reaches Georgia if this entry misses).
-        expect(html).toContain("@font-face{font-family:'Lora Variable'")
+        expect(html).toContain("@font-face{font-family:'IBM Plex Serif'")
         expect(html).toMatch(/src:url\(data:font\/woff2;base64,/)
-        expect(html).toContain("'Lora Variable', Lora, Georgia, serif")
+        expect(html).toContain("'IBM Plex Serif', Georgia, serif")
 
         // Pull the bytes back out of the RENDERED document (not the ones handed in above) so the
         // measurement proves the whole pipeline, not just the fixture.
         const m =
-            /@font-face\{font-family:'Lora Variable';font-style:normal;font-weight:[^;]+;font-display:swap;src:url\((data:font\/woff2;base64,[^)]+)\)/.exec(
+            /@font-face\{font-family:'IBM Plex Serif';font-style:normal;font-weight:[^;]+;font-display:swap;src:url\((data:font\/woff2;base64,[^)]+)\)/.exec(
                 html,
             )
         expect(m).not.toBeNull()
@@ -702,14 +712,14 @@ describe('the embedded Lora Variable face actually resolves (task 6)', () => {
         expect(embeddedBytes.length).toBeGreaterThan(1000) // a real font file, not a stub
 
         const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        const fontFile = join(tmpdir(), `task6-lora-${stamp}.woff2`)
+        const fontFile = join(tmpdir(), `task6-plex-${stamp}.woff2`)
         const scriptFile = join(tmpdir(), `task6-measure-${stamp}.ts`)
         await Bun.write(fontFile, embeddedBytes)
         // The full stack, exactly as the export names it, so the fallback semantics (does the
         // renderer actually try the NEXT entry when the first is unregistered?) are exercised the
         // same way a real browser's font matching would, not just a bare family name in
         // isolation. Registers under the SAME family name the export declares, then measures
-        // once before and once after — before registering, 'Lora Variable' genuinely doesn't
+        // once before and once after — before registering, 'IBM Plex Serif' genuinely doesn't
         // exist, so the stack must fall through to Georgia and measure IDENTICALLY to it. That is
         // the original bug's exact shape, reproduced on purpose as a sanity check the real
         // assertion depends on.
@@ -717,7 +727,7 @@ describe('the embedded Lora Variable face actually resolves (task 6)', () => {
             scriptFile,
             `import { createCanvas, GlobalFonts } from '@napi-rs/canvas'
 const PANGRAM = 'The quick brown fox jumps over the lazy dog 0123456789'
-const stack = "16px 'Lora Variable', Lora, Georgia, serif"
+const stack = "16px 'IBM Plex Serif', Georgia, serif"
 const canvas = createCanvas(10, 10)
 const ctx = canvas.getContext('2d')
 ctx.font = stack
@@ -725,10 +735,10 @@ const beforeRegistering = ctx.measureText(PANGRAM).width
 ctx.font = '16px Georgia'
 const georgiaWidth = ctx.measureText(PANGRAM).width
 const bytes = await Bun.file(process.argv[2]).arrayBuffer()
-const key = GlobalFonts.register(Buffer.from(bytes), 'Lora Variable')
+const key = GlobalFonts.register(Buffer.from(bytes), 'IBM Plex Serif')
 ctx.font = stack
-const loraWidth = ctx.measureText(PANGRAM).width
-console.log(JSON.stringify({ beforeRegistering, georgiaWidth, loraWidth, registered: key !== null }))
+const plexWidth = ctx.measureText(PANGRAM).width
+console.log(JSON.stringify({ beforeRegistering, georgiaWidth, plexWidth, registered: key !== null }))
 `,
         )
         try {
@@ -749,7 +759,7 @@ console.log(JSON.stringify({ beforeRegistering, georgiaWidth, loraWidth, registe
             const result = JSON.parse(stdout) as {
                 beforeRegistering: number
                 georgiaWidth: number
-                loraWidth: number
+                plexWidth: number
                 registered: boolean
             }
 
@@ -759,13 +769,41 @@ console.log(JSON.stringify({ beforeRegistering, georgiaWidth, loraWidth, registe
             expect(result.beforeRegistering).toBe(result.georgiaWidth)
             // The proof: registering the REAL bytes this export embeds changes the measured
             // width of the export's own font stack, and it no longer collapses onto Georgia's.
-            expect(result.loraWidth).toBeGreaterThan(0)
-            expect(result.loraWidth).not.toBe(result.georgiaWidth)
+            expect(result.plexWidth).toBeGreaterThan(0)
+            expect(result.plexWidth).not.toBe(result.georgiaWidth)
         } finally {
             await Promise.all([
                 unlink(fontFile).catch(() => {}),
                 unlink(scriptFile).catch(() => {}),
             ])
         }
+    })
+})
+
+describe('proseFacesFor embeds only the serif the prose stack names', () => {
+    const families = (stack: string) => [
+        ...new Set(proseFacesFor(DOC_FACES, stack).map(f => f.family)),
+    ]
+    test('the default Plex stack ships Plex + the mono, never Lora', () => {
+        expect(families("'IBM Plex Serif', Georgia, serif")).toEqual([
+            'IBM Plex Serif',
+            'Monaspace Xenon',
+        ])
+    })
+    test('the Lora stack ships Lora + the mono, never Plex', () => {
+        expect(families("'Lora Variable', Lora, Georgia, serif")).toEqual([
+            'Lora Variable',
+            'Monaspace Xenon',
+        ])
+    })
+    test('a stack read back off the DOM with double quotes still matches', () => {
+        expect(families('"IBM Plex Serif", Georgia, serif')).toContain(
+            'IBM Plex Serif',
+        )
+    })
+    test('an all-mono prose stack ships no serif at all', () => {
+        expect(
+            families("'Monaspace Neon', ui-monospace, monospace"),
+        ).toEqual(['Monaspace Xenon'])
     })
 })

@@ -344,7 +344,7 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | Setting | CSS var | Default |
 |---|---|---|
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
-| `appearance.proseFont` | `--prose-font` | `'Lora Variable', Lora, Georgia, serif` |
+| `appearance.proseFont` | `--prose-font`, `--prose-scale` | `'IBM Plex Serif', Georgia, serif`, `1` |
 | `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
@@ -392,8 +392,9 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `global.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
 in `Editor.tsx`. Default `1.25` → **22.5px**: prose renders in the proportional serif face
-(`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the measured `--prose-scale`
-(`1.04`) ≈ 14.04px, where 22.5px of leading is a 1.60 ratio — the normal range for serif body text.
+(`--prose-font`, IBM Plex Serif by default) at `--prose-font-size` = 13.5px × the face's measured
+`--prose-scale` (`1.00` for Plex) = 13.5px, where 22.5px of leading is a 1.67 ratio — open, which suits
+Plex's large x-height (Lora, at 1.04 → 14.04px, sits at 1.60).
 The old default of `1.5` (27px) was tuned for the earlier CMU Serif measurement (`--prose-scale`
 1.28, ~17.28px prose) and was never re-derived when the scale dropped to 1.04. `1.25` is still a
 **rational multiple of the row unit** on purpose rather than tuned tight to the font size: four
@@ -433,26 +434,26 @@ The interface is **one monospace family throughout**, with exactly one proportio
 
 ### The prose face (`--prose-font`)
 
-Note prose (the CodeMirror surface), note headings, note tables, chat message bodies and the chat composer render in a **proportional serif** rather than the mono stack. It **is** a setting — `appearance.proseFont`, an enum of `Lora` (the default) plus the same five Monaspace variants (for an all-mono editor) — projected by `settingsCssVars.ts` into three CSS tokens:
+Note prose (the CodeMirror surface), note headings, note tables, chat message bodies and the chat composer render in a **proportional serif** rather than the mono stack. It **is** a setting — `appearance.proseFont`, an enum of `IBM Plex Serif` (the default), `Lora`, plus the same five Monaspace variants (for an all-mono editor) — projected by `settingsCssVars.ts` into the tokens below (`--prose-font` and `--prose-scale` directly; the sizes derive from them):
 
 | Token | Value | Meaning |
 |---|---|---|
-| `--prose-font` | `'Lora Variable', Lora, Georgia, serif` (default) | Resolved from `appearance.proseFont` via `FONT_STACKS`. `'Lora Variable'` is the family `@fontsource-variable/lora` actually declares — plain `'Lora'` resolves nothing and falls silently through to `Georgia`. |
-| `--prose-scale` | `1.04` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height (Lora Variable 50.00 vs. Monaspace Xenon 51.75 at 100px em) — it is not a constant that survives a face swap. |
+| `--prose-font` | `'IBM Plex Serif', Georgia, serif` (default) | Resolved from `appearance.proseFont` via `FONT_STACKS`. Each stack leads with the exact family its package declares — for Lora that is `'Lora Variable'` (from `@fontsource-variable/lora`); plain `'Lora'` resolves nothing and falls silently through to `Georgia`. |
+| `--prose-scale` | `1` (Plex) / `1.04` (Lora) | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Per face, from `PROSE_SCALES` in `app/src/settings.ts`, re-derived from measured x-height against Monaspace Xenon: IBM Plex Serif 531.25 vs 531.25 at a 1000px em → 1.00; Lora Variable 50.00 vs 51.75 at a 100px em → 1.04. A face with no entry (an all-mono prose choice) keeps 1.04. |
 | `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
-| `--code-scale` | `0.89` | Code-to-prose ratio. At `--prose-scale`'s x-height parity Monaspace Xenon is 24% wider and carries 16% more ink than Lora, so code read bigger than the sentence around it; 12.5px mono against 14.04px Lora is ink parity. Re-derive if either face changes. |
+| `--code-scale` | `0.89` | Code-to-prose ratio. At `--prose-scale`'s x-height parity Monaspace Xenon is 24% wider and carries 16% more ink than Lora, so code read bigger than the sentence around it; 12.5px mono against 14.04px Lora is ink parity. Re-checked for IBM Plex Serif: code/prose ink is 1.10 (12.0px mono against 13.5px Plex) vs Lora's 1.11, so the ratio carries over. Re-derive if either face changes. |
 | `--code-font-size` | `calc(var(--prose-font-size) * var(--code-scale) * var(--mono-scale, 1))` | **The one size for mono inside prose**: code blocks and both fence rows, frontmatter, `#tags`, task checkboxes/fields, list + syntax marks, raw table source, math source, chat code blocks. |
 | `--fs-rel-code` | `calc(1em * var(--code-scale) * var(--mono-scale, 1))` | Inline `code` — the same ratio off `1em`, so it scales inside a heading or table cell. |
 
 The scope is deliberately narrow: prose bodies, headings and tables. Code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` — in the editor by `global.css`'s family- and size-reset lists (the size list is the ONE place mono-in-prose is sized, at `--code-font-size`; `livePreview.ts` sets no size on those classes), in chat by `chat/ChatTextBubble.module.css`. KaTeX output is not code and keeps its own size.
 
-The five Monaspace families are declared via `@fontsource` imports in `app/src/index.tsx`; Lora is declared via the `@fontsource-variable/lora` package. There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
+The five Monaspace families and IBM Plex Serif (static 400/500/600/700 + italics) are declared via `@fontsource` imports in `app/src/index.tsx`; Lora is declared via the `@fontsource-variable/lora` package. An export embeds only the prose serif its stack names (`proseFacesFor` in `app/src/export/fontFaceCss.ts`). There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
 
-The family string in `--prose-font` must match what the chosen package actually declares. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere — this is the exact trap that let the old CMU-era stack go unnoticed for weeks. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face and carries the same string — it lies rather than fails if the two drift apart.
+The family string in `--prose-font` must match what the chosen package actually declares. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere — this is the exact trap that let the old CMU-era stack go unnoticed for weeks. `app/src/ui/gallery/FontSpecimen.tsx` is a Lora specimen story carrying Lora's string — it lies rather than fails if the two drift apart.
 
 The `--mono-scale` var (default `1`, `appearance.monoScale`) is a personal multiplier on top of `--code-font-size` / `--fs-rel-code`: every mono-in-prose size goes through it, so it tunes code, frontmatter, tags and inline code together. It no longer carries a `0.85` fallback — `--code-scale` is the designed ratio.
 
-**Adding a new font**: add it to `MONO_FONTS` (extends both `uiFont` and, via `PROSE_FONTS = ['Lora', ...MONO_FONTS]`, `proseFont`) or to `PROSE_FONTS` directly for a prose-only face, in both `settingsSchema.ts` and `settings.ts`, AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
+**Adding a new font**: add it to `MONO_FONTS` (extends both `uiFont` and, via `PROSE_FONTS = ['IBM Plex Serif', 'Lora', ...MONO_FONTS]`, `proseFont`) or to `PROSE_FONTS` directly for a prose-only face, in both `settingsSchema.ts` and `settings.ts`, AND to `FONT_STACKS` in `settings.ts`. A prose serif also needs its measured `PROSE_SCALES` entry, its `@fontsource` imports in `index.tsx` + `.storybook/preview.ts`, and its files in `DOC_FACES` + both `docFontCss.ts` embedders so an export can ship it. The schema enum, autocomplete, and lint all pick it up automatically.
 
 ---
 

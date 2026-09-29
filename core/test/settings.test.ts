@@ -443,7 +443,7 @@ test('reconcile leaves a new-scheme .settings file untouched', async () => {
     const { data: before1 } = (await readSettings(vault))!
     expect((before1.appearance as any).theme).toBe('ink')
     expect((before1.appearance as any).uiFont).toBe('Monaspace Xenon')
-    expect((before1.appearance as any).proseFont).toBe('Lora')
+    expect((before1.appearance as any).proseFont).toBe('IBM Plex Serif')
 
     await reconcileSettings(vault) // already fully current-era → no legacy trigger, no missing keys
     const after = readFileSync(join(vault, '.settings'), 'utf8')
