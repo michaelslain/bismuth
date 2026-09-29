@@ -354,6 +354,9 @@ export function CardEditModal(props: {
                                         e.preventDefault()
                                         e.currentTarget.blur()
                                     } else if (isDismissKey(e)) {
+                                        // Consume Escape so the host Modal stays open: the first
+                                        // Escape cancels this field, a second closes the card.
+                                        e.preventDefault()
                                         setTitleDraft(
                                             titleOf(props.row, props.titleCol),
                                         )
