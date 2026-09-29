@@ -8,11 +8,8 @@
 // Row -> event mapping reuses calendarSerialize.rowToEvent (the exact mapping the live
 // calendar uses), and recurrence/date math reuses the headless core helpers, so an
 // exported calendar agrees with what's on screen.
-import {
-    expandRecurrence,
-    toDateStr,
-    addDays,
-} from '../../../core/src/bases/recurrence'
+import { expandRecurrence, addDays } from '../../../core/src/bases/recurrence'
+import { todayISO } from '../../../core/src/dates'
 import {
     formatGutterHour,
     monthGrid as monthCells,
@@ -47,6 +44,8 @@ interface CalCtx {
 
 // ---- date helpers ----------------------------------------------------------------------
 
+// Not the shared formatTime (calendar/dates.ts): this one appends an AM/PM suffix, shows the hour
+// unpadded in 24h mode, and tolerates a non-numeric or minute-less time; formatTime returns bare h:mm.
 function fmtTime(t: string, military: boolean): string {
     const [h, m] = t.split(':').map(Number)
     if (Number.isNaN(h)) return t
@@ -131,7 +130,7 @@ function monthGrid(
     const y = anchor.getFullYear()
     const m = anchor.getMonth()
     const cells = monthCells(y, m, mondayFirst)
-    const todayStr = toDateStr(new Date())
+    const todayStr = todayISO(new Date())
 
     const names = (mondayFirst ? WEEKDAYS_MON : WEEKDAYS_SUN)
         .map(d => `<div class="exp-cal-dayname">${d}</div>`)
@@ -139,7 +138,7 @@ function monthGrid(
 
     let cellsHtml = ''
     for (const { date, inMonth } of cells) {
-        const dateStr = toDateStr(date)
+        const dateStr = todayISO(date)
         const isToday = dateStr === todayStr
         const chips = onDay(occ, dateStr)
             .map(o => chipHtml(o, ctx))
@@ -204,7 +203,7 @@ function timedBlocks(events: Occurrence[], ctx: CalCtx): string {
 }
 
 function timeGrid(occ: Occurrence[], days: Date[], ctx: CalCtx): string {
-    const todayStr = toDateStr(new Date())
+    const todayStr = todayISO(new Date())
     const hours = Array.from(
         { length: 24 },
         (_, h) =>
@@ -213,7 +212,7 @@ function timeGrid(occ: Occurrence[], days: Date[], ctx: CalCtx): string {
 
     let anyAllDay = false
     const cols = days.map(date => {
-        const dateStr = toDateStr(date)
+        const dateStr = todayISO(date)
         const dayEvents = onDay(occ, dateStr)
         const allDay = dayEvents.filter(e => minutesOf(e.startTime) === null)
         if (allDay.length) anyAllDay = true
@@ -283,8 +282,8 @@ export function calendarHtml(
         const y = anchor.getFullYear(),
             m = anchor.getMonth()
         const cells = monthCells(y, m, mondayFirst)
-        const rangeStart = toDateStr(cells[0].date)
-        const rangeEnd = toDateStr(cells[cells.length - 1].date)
+        const rangeStart = todayISO(cells[0].date)
+        const rangeEnd = todayISO(cells[cells.length - 1].date)
         body = monthGrid(
             occurrencesIn(events, rangeStart, rangeEnd),
             anchor,
@@ -301,8 +300,8 @@ export function calendarHtml(
         } else {
             days = [anchor]
         }
-        const rangeStart = toDateStr(days[0])
-        const rangeEnd = toDateStr(days[days.length - 1])
+        const rangeStart = todayISO(days[0])
+        const rangeEnd = todayISO(days[days.length - 1])
         body = timeGrid(occurrencesIn(events, rangeStart, rangeEnd), days, ctx)
     }
 

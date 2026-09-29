@@ -1,7 +1,8 @@
 import { For, Index } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
-import { toDateStr, formatGutterHour } from '../../dates'
+import { formatGutterHour } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import { showEventModal, dragState, settings, recurrenceAction } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
@@ -30,7 +31,7 @@ interface Props {
 }
 
 export function TimeGrid(props: Props) {
-    const today = toDateStr(new Date())
+    const today = todayISO(new Date())
     const colRefs: Record<string, HTMLDivElement | undefined> = {}
 
     function getMinutesFromEvent(e: MouseEvent, ds: string): number {
@@ -242,7 +243,7 @@ export function TimeGrid(props: Props) {
                         </DayGutter>
                         <For each={props.dates}>
                             {d => {
-                                const ds = toDateStr(d)
+                                const ds = todayISO(d)
                                 return (
                                     <TimeGridDayColumn
                                         date={ds}

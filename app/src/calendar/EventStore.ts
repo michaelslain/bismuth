@@ -1,11 +1,12 @@
 import { CalendarEvent, Category, EventsFile } from './types'
-import { toDateStr, addDays } from './dates'
+import { addDays } from './dates'
+import { todayISO } from '../../../core/src/dates'
 import { expandRecurrence } from '../../../core/src/bases/recurrence'
 
 export const uuid = () => crypto.randomUUID()
 
 function dayBefore(isoDate: string): string {
-    return toDateStr(addDays(new Date(isoDate + 'T00:00:00'), -1))
+    return todayISO(addDays(new Date(isoDate + 'T00:00:00'), -1))
 }
 
 export interface CalendarStorage {
@@ -144,7 +145,7 @@ export class EventStore {
         occurrenceDate: string,
     ): Promise<void> {
         const { seriesId, endDate: originalEndDate } = master.recurrence!
-        const dayAfterDate = toDateStr(
+        const dayAfterDate = todayISO(
             addDays(new Date(occurrenceDate + 'T00:00:00'), 1),
         )
         // The FIRST occurrence has no head segment to keep, so drop the master entirely rather than

@@ -1,5 +1,5 @@
 import { For, Show, type Component } from 'solid-js'
-import { toDateStr } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import DayGutter from './DayGutter'
 import DayNumber from '../DayNumber'
 import Text from '../../../ui/Text'
@@ -23,7 +23,7 @@ const DayHeaderRow: Component<DayHeaderRowProps> = props => (
         <Show when={props.gutter !== false}><DayGutter /></Show>
         <For each={props.dates}>
             {d => {
-                const ds = toDateStr(d)
+                const ds = todayISO(d)
                 const isToday = () => ds === props.today
                 return (
                     <div
