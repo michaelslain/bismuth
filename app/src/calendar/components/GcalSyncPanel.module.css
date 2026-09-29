@@ -13,7 +13,7 @@
    not copied — nor is `.gcal-actions .sp` (a spacer-div hook no GcalSyncPanel markup ever used;
    `bench/moduleClassCheck.ts` flags it as unread the moment it is isolated in its own module).
    `.set-col`/`.evm-toggle`/`.on`/`.off` are gone too — the sync-toggle row is now a <ToggleRow>
-   inside a <ToggleList>, which own that styling themselves. `.gcal-connect` moved to
+   inside a <RowList>, which own that styling themselves. `.gcal-connect` moved to
    GcalConnectPrompt.module.css and `.gcal-status`/`.gcal-acct` to GcalStatusRow.module.css. */
 .gcal-toggle-group { display: flex; flex-direction: column; gap: var(--sp-4); }
 .gcal-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); }

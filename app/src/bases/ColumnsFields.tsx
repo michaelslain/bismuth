@@ -1,5 +1,5 @@
 import { Index, type Component } from 'solid-js'
-import ToggleList from '../ui/ToggleList'
+import RowList from '../ui/RowList'
 import ToggleRow from '../ui/ToggleRow'
 import SettingsHint from '../ui/SettingsHint'
 import { columnLabel } from './columnLabel'
@@ -21,7 +21,7 @@ const ColumnsFields: Component<ColumnsFieldsProps> = props => {
                 toggle to show or hide. drag the column headers in the table to
                 reorder.
             </SettingsHint>
-            <ToggleList>
+            <RowList maxHeight="var(--list-max-h)">
                 {/* <Index>: a toggle replaces the row object, and <For> would remount the
                     focused row and drop focus to <body>. */}
                 <Index each={props.columns}>
@@ -44,7 +44,7 @@ const ColumnsFields: Component<ColumnsFieldsProps> = props => {
                         )
                     }}
                 </Index>
-            </ToggleList>
+            </RowList>
         </>
     )
 }

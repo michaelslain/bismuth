@@ -1,4 +1,3 @@
-/* PropertiesFields.module.css — the declared-property list: one bordered surface (like
-   `ToggleList`) of PropertyRowEditor rows, then the add button. */
-.list { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
-.add { margin-top: var(--sp-1); }
+/* PropertiesFields.module.css — the declared-property list is a RowList of PropertyRowEditor rows;
+   this file only spaces the add button under it. */
+.addProperty { margin-top: var(--sp-1); }

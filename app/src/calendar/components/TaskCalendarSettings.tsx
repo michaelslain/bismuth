@@ -28,7 +28,10 @@ import SettingsHint from '../../ui/SettingsHint'
 import { TextButton } from '../../ui/TextButton'
 import Label from '../../ui/Label'
 import ColorChip from '../../ui/ColorChip'
-import styles from './TaskCalendarSettings.module.css'
+import StatusDot from '../../ui/StatusDot'
+import { resolvePaletteColor } from '../../ui/palette'
+import RowList from '../../ui/RowList'
+import ListRow from '../../ui/ListRow'
 
 export type TaskCalendarSettingsProps = {
     /** True when the base owns its rows (no `source:`) — picks which "New tasks" field shows. */
@@ -159,28 +162,41 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                     </SettingsGrid>
                 </Show>
                 <Show when={props.names.length}>
-                    <div class={styles['catgroup']}>
+                    <RowList>
                         <For each={props.names}>
                             {name => (
-                                <div class={styles['catrow']}>
-                                    <ColorChip
-                                        color={props.colors.get(name) ?? ''}
-                                        open={openPicker() === name}
-                                        onToggle={() =>
-                                            setOpenPicker(p =>
-                                                p === name ? null : name,
-                                            )
-                                        }
-                                        onPick={token => {
-                                            props.onPickColor(name, token)
-                                            setOpenPicker(null)
-                                        }}
-                                    />
+                                <ListRow
+                                    leading={
+                                        <ColorChip
+                                            color={props.colors.get(name) ?? ''}
+                                            trigger={
+                                                <StatusDot
+                                                    size="md"
+                                                    color={
+                                                        resolvePaletteColor(
+                                                            props.colors.get(name) ?? '',
+                                                        ) || 'var(--accent)'
+                                                    }
+                                                />
+                                            }
+                                            open={openPicker() === name}
+                                            onToggle={() =>
+                                                setOpenPicker(p =>
+                                                    p === name ? null : name,
+                                                )
+                                            }
+                                            onPick={token => {
+                                                props.onPickColor(name, token)
+                                                setOpenPicker(null)
+                                            }}
+                                        />
+                                    }
+                                >
                                     <Label fill>{name}</Label>
-                                </div>
+                                </ListRow>
                             )}
                         </For>
-                    </div>
+                    </RowList>
                 </Show>
             </ModalBody>
 

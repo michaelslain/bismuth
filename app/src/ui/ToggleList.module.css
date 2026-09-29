@@ -1,2 +1,0 @@
-/* ToggleList.module.css — was `.evm-modal .set-cols` */
-.list { display: flex; flex-direction: column; background: var(--surface-2); border: var(--rule-soft); border-radius: var(--r-0); overflow: hidden auto; max-height: var(--list-max-h); }

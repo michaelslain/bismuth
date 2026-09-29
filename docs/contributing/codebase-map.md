@@ -1383,7 +1383,8 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `SettingsField.tsx` | One labelled control in a settings form — label line (with optional icon + required/optional badge), the control, then an optional `SettingsHint` |
 | `SettingsHint.tsx` | Micro faint helper text under a settings field; usable standalone too |
 | `BracketToggle.tsx` | Presentational `[ ]`/`[x]` glyph — the row or label around it owns the click and the ARIA |
-| `ToggleList.tsx` | Bordered, scrolling surface (max-height 320px) grouping a stack of `ToggleRow`s |
+| `RowList.tsx` | The list container for rows in a modal: no fill, a `--rule-soft` hairline between rows, optional `maxHeight` scroll |
+| `ListRow.tsx` | One modal-list row: leading / main / trailing slots at `--h-control`, `--fs-ui` |
 | `ToggleRow.tsx` | One on/off row in a settings form; a real switch (`role="switch"`, focusable, Enter/Space toggles), with `muted`/`locked`/`wrap`/`title` props |
 | `Text.tsx` | Body/prose text primitive (`as: 'p'\|'span'\|'div'`, `size`/`tone`/`weight`/`eyebrow` props) — pages should never write a raw `<p>`/`<span>`/`<div>` standing in for prose |
 | `Heading.tsx` | Section-title primitive; `level: 1..6` picks both the tag and the size/weight step off the app's one heading ramp, never shipped as separate `Heading1`..`Heading6` files |

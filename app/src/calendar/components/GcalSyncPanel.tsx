@@ -15,7 +15,7 @@ import InlineCode from '../../ui/InlineCode'
 import SettingsSection from '../../ui/SettingsSection'
 import SettingsField from '../../ui/SettingsField'
 import SettingsHint from '../../ui/SettingsHint'
-import ToggleList from '../../ui/ToggleList'
+import RowList from '../../ui/RowList'
 import ToggleRow from '../../ui/ToggleRow'
 import { pushToast } from '../../Toast'
 import { withBusy } from '../withBusy'
@@ -115,7 +115,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 />
 
                 <div class={styles['gcal-toggle-group']}>
-                    <ToggleList>
+                    <RowList maxHeight="var(--list-max-h)">
                         <ToggleRow
                             label="sync this calendar with google"
                             checked={syncedHere()}
@@ -123,7 +123,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                             locked={busy()}
                             onToggle={toggle}
                         />
-                    </ToggleList>
+                    </RowList>
                     <SettingsHint>
                         two-way every {gc().syncIntervalMinutes} min, and
                         whenever you hit sync now.

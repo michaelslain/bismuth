@@ -7,7 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import ToggleRow from './ToggleRow'
-import ToggleList from './ToggleList'
+import RowList from './RowList'
 
 const meta = {
     title: 'UI/ToggleRow',
@@ -63,7 +63,7 @@ export const Wrap: Story = {
 const WRAP_LABEL =
     'This is a fairly long settings label describing a boolean option that should wrap across multiple lines instead of truncating'
 
-/** The real composition: a ToggleList holding three rows — plain, locked, and a wrapping
+/** The real composition: a RowList holding three rows — plain, locked, and a wrapping
  *  sentence-length label — each driven by its own signal. `play` proves the three behaviors
  *  that make this a real switch rather than a styled `div`: keyboard (Space) toggles it, the
  *  glyph the CSS paints actually flips, a locked row ignores a click, and the wrap row is
@@ -75,7 +75,7 @@ export const Interactive: Story = {
         const [c, setC] = createSignal(false)
         return (
             <div style={{ width: '280px' }}>
-                <ToggleList>
+                <RowList>
                     <ToggleRow
                         label="Show completed"
                         checked={a()}
@@ -93,7 +93,7 @@ export const Interactive: Story = {
                         onToggle={() => setC(v => !v)}
                         wrap
                     />
-                </ToggleList>
+                </RowList>
             </div>
         )
     },

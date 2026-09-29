@@ -1,13 +1,21 @@
 // The category rows: colour chip, name (click, or Enter/Space on it, to rename inline) and a
-// delete button. Presentational — every change is handed back through props, so the panel owns the
+// delete button that shows on hover. Presentational — every change is handed back through props, so the panel owns the
 // store and this only holds which popover / which rename is open.
-import { createSignal, For, type Component } from 'solid-js'
+//
+// A RowList of ListRows (DESIGN.md, Overlays: lists in a modal). `composer` is rendered as the
+// list's LAST row, so the new-category row continues the same columns and hairline as the rows
+// above it instead of sitting in a card of its own.
+import { createSignal, For, type Component, type JSX } from 'solid-js'
 import type { Category } from '../types'
 import ColorChip from '../../ui/ColorChip'
+import StatusDot from '../../ui/StatusDot'
+import { resolvePaletteColor } from '../../ui/palette'
 import PlainButton from '../../ui/PlainButton'
 import Text from '../../ui/Text'
 import InlineTextInput from '../../ui/InlineTextInput'
 import RemoveRowButton from '../../ui/RemoveRowButton'
+import RowList from '../../ui/RowList'
+import ListRow from '../../ui/ListRow'
 import styles from './CategoryList.module.css'
 
 export type CategoryListProps = {
@@ -15,6 +23,8 @@ export type CategoryListProps = {
     onRename: (name: string, next: string) => void
     onRecolor: (name: string, color: string) => void
     onDelete: (name: string) => void
+    /** A trailing row inside the same list — the panel's NewCategoryForm. */
+    composer?: JSX.Element
     class?: string
 }
 
@@ -24,24 +34,40 @@ const CategoryList: Component<CategoryListProps> = props => {
     const [editing, setEditing] = createSignal<string | null>(null)
 
     return (
-        <div
-            class={[styles.group, props.class ?? ''].filter(Boolean).join(' ')}
-            data-testid="category-list"
-        >
+        <RowList class={props.class}>
             <For each={props.categories}>
                 {c => (
-                    <div class={styles.row}>
-                        <ColorChip
-                            color={c.color}
-                            open={picker() === c.name}
-                            onToggle={() =>
-                                setPicker(p => (p === c.name ? null : c.name))
-                            }
-                            onPick={col => {
-                                props.onRecolor(c.name, col)
-                                setPicker(null)
-                            }}
-                        />
+                    <ListRow
+                        reveal
+                        leading={
+                            <ColorChip
+                                color={c.color}
+                                trigger={
+                                    <StatusDot
+                                        size="md"
+                                        color={resolvePaletteColor(c.color) || 'var(--accent)'}
+                                    />
+                                }
+                                open={picker() === c.name}
+                                onToggle={() =>
+                                    setPicker(p => (p === c.name ? null : c.name))
+                                }
+                                onPick={col => {
+                                    props.onRecolor(c.name, col)
+                                    setPicker(null)
+                                }}
+                            />
+                        }
+                        trailing={
+                            <RemoveRowButton
+                                label={'Delete ' + c.name}
+                                onClick={() => {
+                                    setPicker(null)
+                                    props.onDelete(c.name)
+                                }}
+                            />
+                        }
+                    >
                         {editing() === c.name ? (
                             <InlineTextInput
                                 class={styles.nameedit}
@@ -67,17 +93,11 @@ const CategoryList: Component<CategoryListProps> = props => {
                                 </Text>
                             </PlainButton>
                         )}
-                        <RemoveRowButton
-                            label={'Delete ' + c.name}
-                            onClick={() => {
-                                setPicker(null)
-                                props.onDelete(c.name)
-                            }}
-                        />
-                    </div>
+                    </ListRow>
                 )}
             </For>
-        </div>
+            {props.composer}
+        </RowList>
     )
 }
 

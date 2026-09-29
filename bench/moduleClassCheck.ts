@@ -110,6 +110,7 @@ const ALLOW = new Set<string>([
     // visibly paints. Not dead code; a static-analysis blind spot in this exact indirection.
     'ui/Button.module.css:btn',
     'ui/Button.module.css:btn--danger',
+    'ui/Button.module.css:btn--danger-hover',
     'ui/Button.module.css:btn--icon',
     'ui/Button.module.css:btn--lg',
     'ui/Button.module.css:btn--normal',
