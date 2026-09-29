@@ -103,7 +103,9 @@ test('buildQueryOptions keeps the bismuth MCP vault-targeted under inheritance',
         undefined,
         { persona: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
     )
-    const servers = o.mcpServers as unknown as { bismuth: { env: Record<string, string> } }
+    const servers = o.mcpServers as unknown as {
+        bismuth: { env: Record<string, string> }
+    }
     expect(servers.bismuth.env.BISMUTH_VAULT).toBe('/vault')
     expect(servers.bismuth.env.BISMUTH_MCP_CHANNEL).toBe('daemon')
     expect(servers.bismuth.env.BISMUTH_AGENT_CHANNEL).toBe('daemon')
@@ -156,13 +158,9 @@ test('buildQueryOptions exports BISMUTH_CLI only when the CLI binary is present'
 // It's now derived from the deny list: a restricted vault fails closed, an unrestricted one is
 // unaffected (the whole sandbox block stays omitted, same as before this fix).
 test('buildQueryOptions: sandbox.failIfUnavailable is true when the vault restricts notes', () => {
-    const o = buildQueryOptions(
-        ctx,
-        undefined,
-        undefined,
-        { persona: 'x' },
-        [{ rel: 'secret.md', abs: '/vault/secret.md' }],
-    )
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [
+        { rel: 'secret.md', abs: '/vault/secret.md' },
+    ])
     expect(
         (o.sandbox as { failIfUnavailable?: boolean } | undefined)
             ?.failIfUnavailable,
@@ -170,13 +168,7 @@ test('buildQueryOptions: sandbox.failIfUnavailable is true when the vault restri
 })
 
 test('buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailable:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support', () => {
-    const o = buildQueryOptions(
-        ctx,
-        undefined,
-        undefined,
-        { persona: 'x' },
-        [],
-    )
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [])
     expect(o.sandbox).toBeUndefined()
     expect(o.managedSettings).toBeUndefined()
 })
@@ -192,13 +184,9 @@ test('buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailab
 // here — the negative case (unrestricted vault → sandbox omitted entirely) is already covered by the
 // test directly above.
 test('buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vault restricts notes', () => {
-    const o = buildQueryOptions(
-        ctx,
-        undefined,
-        undefined,
-        { persona: 'x' },
-        [{ rel: 'secret.md', abs: '/vault/secret.md' }],
-    )
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [
+        { rel: 'secret.md', abs: '/vault/secret.md' },
+    ])
     expect(
         (o.sandbox as { allowUnsandboxedCommands?: boolean } | undefined)
             ?.allowUnsandboxedCommands,
@@ -211,13 +199,9 @@ test('buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vaul
 // can read that file can present X-Bismuth-Token to GET /file and read back every note this sandbox
 // exists to hide, which makes a deny list that omits it self-defeating.
 test('buildQueryOptions: sandbox.filesystem.denyRead covers the owner-token run record', () => {
-    const o = buildQueryOptions(
-        ctx,
-        undefined,
-        undefined,
-        { persona: 'x' },
-        [{ rel: 'secret.md', abs: '/vault/secret.md' }],
-    )
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [
+        { rel: 'secret.md', abs: '/vault/secret.md' },
+    ])
     const denyRead =
         (o.sandbox as { filesystem?: { denyRead?: string[] } } | undefined)
             ?.filesystem?.denyRead ?? []
@@ -229,8 +213,7 @@ test('buildQueryOptions: sandbox.filesystem.denyRead covers the owner-token run 
 
 test('buildQueryOptions resumes an existing session unless newSession is set', () => {
     expect(
-        buildQueryOptions(ctx, undefined, 'sess-1', { persona: 'x' })
-            .resume,
+        buildQueryOptions(ctx, undefined, 'sess-1', { persona: 'x' }).resume,
     ).toBe('sess-1')
     expect(
         buildQueryOptions(ctx, { newSession: true }, 'sess-1', {
@@ -338,8 +321,7 @@ test('buildQueryOptions maps low/medium effort onto `effort` too, and omits it e
     ).toBe('medium')
     // No effort configured → the key is absent, so the SDK keeps its own default.
     expect(
-        buildQueryOptions(ctx, undefined, undefined, { persona: 'x' })
-            .effort,
+        buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }).effort,
     ).toBeUndefined()
 })
 

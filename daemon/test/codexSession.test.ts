@@ -13,7 +13,9 @@ test('developer_instructions rides a new call and a resume call', () => {
             threadId,
             developerInstructions: persona,
         })
-        const i = args.indexOf(`developer_instructions=${JSON.stringify(persona)}`)
+        const i = args.indexOf(
+            `developer_instructions=${JSON.stringify(persona)}`,
+        )
         expect(i).toBeGreaterThan(0)
         expect(args[i - 1]).toBe('--config')
         if (threadId) expect(args.slice(-2)).toEqual(['resume', threadId])
@@ -26,6 +28,17 @@ test('the persona is a valid TOML basic string for a quote, a backslash and a ne
     const v = flagValue(args)!.slice('developer_instructions='.length)
     expect(v).toBe('"say \\"hi\\"\\\\path\\nnext"')
     expect(JSON.parse(v)).toBe(persona)
+})
+
+test('DEL is escaped and a lone surrogate becomes U+FFFD so the value stays valid TOML', () => {
+    const args = buildCodexExecArgs({
+        ...base,
+        developerInstructions: 'a\x7fb\ud800c',
+    })
+    const v = flagValue(args)!.slice('developer_instructions='.length)
+    expect(v).toBe('"a\\u007fb\ufffdc"')
+    expect(v).not.toContain('\x7f')
+    expect(v).not.toMatch(/\\ud[89a-f]/i)
 })
 
 test('no developer_instructions flag without a persona', () => {

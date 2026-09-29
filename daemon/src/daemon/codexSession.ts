@@ -193,10 +193,15 @@ interface CodexExecArgsInput {
     developerInstructions?: string
 }
 
+const tomlBasicString = (s: string) =>
+    JSON.stringify(s.toWellFormed()).replace(/\x7f/g, '\\u007f')
+
 /** Mirrors core/src/chatProviders/codex/driver.ts's buildCodexExecArgs exactly (same rationale —
  *  see that file's header for why this exact flag order/shape is trusted, not guessed), plus
  *  `developer_instructions` (confirmed a string key in Codex's config reference). The value is a TOML
- *  basic string: a JSON string literal is one for any text (escapes `"`, `\` and control chars). */
+ *  basic string. `JSON.stringify` covers `"`, `\` and the C0 control chars, but not U+007F (DEL, which
+ *  TOML requires escaped) nor a lone surrogate (emitted as `\udXXX`, which TOML rejects, and codex's
+ *  `-c` parser then silently falls back to a raw string) — `tomlBasicString` handles both. */
 export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     const args: string[] = ['exec', a.jsonFlag]
     if (a.model) args.push('--model', a.model)
@@ -208,7 +213,7 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     if (a.developerInstructions)
         args.push(
             '--config',
-            `developer_instructions=${JSON.stringify(a.developerInstructions)}`,
+            `developer_instructions=${tomlBasicString(a.developerInstructions)}`,
         )
     if (a.threadId) args.push('resume', a.threadId)
     return args
