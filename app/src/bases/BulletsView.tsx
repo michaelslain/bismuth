@@ -67,11 +67,13 @@ export function BulletsView(props: {
                     {group => (
                         <div class={styles.bulletGroup}>
                             <Show when={group().key !== ''}>
-                                <GroupHeader
-                                    class={styles.bulletGroupHead}
-                                    label={group().key}
-                                    count={group().rows.length}
-                                />
+                                <div class={styles.bulletGroupHeadRow}>
+                                    <GroupHeader
+                                        class={styles.bulletGroupHead}
+                                        label={group().key}
+                                        count={group().rows.length}
+                                    />
+                                </div>
                             </Show>
                             <ul class={styles.bulletList}>
                                 <For each={group().rows}>
