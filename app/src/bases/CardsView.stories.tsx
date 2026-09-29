@@ -332,3 +332,54 @@ export const LinkEnterInEditableCard: Story = {
         }
     },
 }
+
+/** Clicking a note link inside an editable card follows the link — it does not open the row editor. */
+export const LinkClickInEditableCard: Story = {
+    render: () => {
+        const views = [
+            {
+                type: 'cards' as const,
+                name: 'Linked',
+                order: ['file.name', 'note.author', 'note.related'],
+            },
+        ]
+        const rows: Partial<Row>[] = [
+            {
+                ...bookRow('Piranesi', {
+                    author: 'Susanna Clarke',
+                    related: {
+                        __link: true,
+                        path: 'reading/Jonathan Strange.md',
+                        display: 'Jonathan Strange',
+                    },
+                }),
+                index: 0,
+            },
+        ]
+        return (
+            <CardsView
+                result={sampleViewResult(rows, { views })}
+                config={sampleBaseConfig({ views })}
+                basePath="projects/tasks.md"
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        let opened = 0
+        const onOpen = () => {
+            opened++
+        }
+        window.addEventListener('bismuth-open', onOpen)
+        try {
+            const link = canvasElement.querySelector<HTMLElement>(
+                '[role="button"] a',
+            )
+            expect(link).toBeTruthy()
+            await userEvent.click(link!)
+            await waitFor(() => expect(opened).toBeGreaterThan(0))
+            expect(document.querySelector('[role="dialog"]')).toBeNull()
+        } finally {
+            window.removeEventListener('bismuth-open', onOpen)
+        }
+    },
+}

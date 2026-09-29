@@ -8,10 +8,9 @@
 // branch here.
 //
 // Commits on blur or Enter (markdown: Enter inserts a newline like any textarea — only
-// blur/Escape leave it); Escape reverts the draft to the ORIGINAL value first, then
-// blurs — so the no-op comparison in the caller's commit handler (KanbanCard's
-// `commitMeta`) skips the write, matching the title/description editors' idiom above it
-// in the same file. `multiselect`/`tags` commit once too — the parsed list, on Enter or blur.
+// blur/Escape leave it); Escape reverts the draft, marks the edit cancelled and blurs — the
+// blur then skips the commit and calls `onCancel` instead, so a cancelled edit writes nothing
+// and the host closes the editor. `multiselect`/`tags` commit once too — the parsed list, on Enter or blur.
 //
 // A `date` kind uses DateFieldEditor (the same picker the card modal uses), not a native date input.
 //
@@ -69,6 +68,8 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
     const [draft, setDraft] = createSignal(toDraft())
     const commit = (): void =>
         props.onCommit(draftCommitValue(props.kind, draft()))
+    // Escape sets this before blurring, so the blur handler cancels instead of committing.
+    let cancelled = false
     // `multiselect` and `tags` share one editor (ListValue) and commit shape.
     const listKind = () => narrow(props.kind, 'multiselect') ?? narrow(props.kind, 'tags')
 
@@ -88,7 +89,14 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
                         })
                     }
                     onInput={setDraft}
-                    onBlur={commit}
+                    onBlur={() => {
+                        if (cancelled) {
+                            cancelled = false
+                            props.onCancel()
+                            return
+                        }
+                        commit()
+                    }}
                     onKeyDown={e => {
                         if (isConfirmKey(e)) {
                             e.preventDefault()
@@ -98,6 +106,7 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
                             // modal's own Escape listener (ui/Modal.tsx) sees it too and closes
                             // the whole card, not just this field.
                             setDraft(toDraft())
+                            cancelled = true
                             e.currentTarget.blur()
                         }
                     }}

@@ -4,7 +4,7 @@
 // suggests the column's values then the vault's; any other list suggests its own column's values;
 // a declared `multiselect` suggests only its options — a typed value outside them is still kept
 // (legacy tolerance). Commits once, the parsed list, on Enter or blur.
-import { createSignal, onMount, type Component } from 'solid-js'
+import { createEffect, createSignal, type Component } from 'solid-js'
 import TagsField from '../ui/TagsField'
 import { api } from '../api'
 import type { PropertyEditKind } from './propertyEdit'
@@ -42,11 +42,24 @@ const ListValue: Component<ListValueProps> = props => {
     // this row's own values (`kind.options`).
     const [vault, setVault] = createSignal(vaultTags.last())
     const wantsVault = () => props.kind.kind === 'tags' && props.kind.tag
-    onMount(() => {
-        if (!wantsVault()) return
-        vaultTags.load().then(setVault, () => {
-            // offline / no graph yet — the column's own values still stand
-        })
+    // Load once per false->true transition of `wantsVault()`; a result landing after it has gone
+    // false again is ignored.
+    let loading = false
+    createEffect(() => {
+        if (!wantsVault()) {
+            loading = false
+            return
+        }
+        if (loading) return
+        loading = true
+        vaultTags.load().then(
+            tags => {
+                if (wantsVault()) setVault(tags)
+            },
+            () => {
+                // offline / no graph yet — the column's own values still stand
+            },
+        )
     })
     const options = (): string[] =>
         props.kind.kind === 'tags'

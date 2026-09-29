@@ -318,7 +318,7 @@ export function TableView(props: {
     }
 
     return (
-        <>
+        <div class={styles.frame}>
             <table class={styles.table} style={tableStyle()}>
                 <Show when={fixed()}>
                     <colgroup>
@@ -475,6 +475,6 @@ export function TableView(props: {
                     nothing in this view matches its filters
                 </EmptyState>
             </Show>
-        </>
+        </div>
     )
 }

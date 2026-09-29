@@ -568,6 +568,10 @@ export const Empty: Story = {
         expect(empty.textContent).toContain('no rows')
         expect(empty.textContent).toContain('nothing in this view matches its filters')
         expect(canvasElement.querySelectorAll('tbody tr').length).toBe(0)
+        // The table and its empty state share ONE root element.
+        const table = canvasElement.querySelector('table')!
+        expect(table.parentElement).toBe(empty.parentElement)
+        expect(table.parentElement!.children.length).toBe(2)
     },
 }
 
