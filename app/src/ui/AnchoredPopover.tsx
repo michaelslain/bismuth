@@ -22,6 +22,12 @@ export type AnchoredPopoverProps = {
     /** The element to anchor under (or above) — a getter so the caller can hand back
      *  `undefined` before its trigger ref is mounted. */
     anchor: () => HTMLElement | undefined
+    /** The trigger itself, when `anchor` is a larger element (a whole header). A press inside
+     *  its rect is the trigger's own press — the backdrop covers it, so the test is geometric. */
+    toggleEl?: () => HTMLElement | undefined
+    /** Fired instead of `onDismiss` when the press lands on the trigger, so a caller can close
+     *  without treating it as a cancel. */
+    onAnchorPress?: () => void
     open: boolean
     /** Fired on Escape or an outside pointerdown — never on a click inside the panel. */
     onDismiss: () => void
@@ -75,9 +81,14 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
         if (!props.open) return
         const target = e.target as Node | null
         if (panelEl && target && panelEl.contains(target)) return
-        // The trigger's own click toggles the popover — dismissing here too would close it on
-        // pointerdown and let that click reopen it (or double-fire the caller's cancel).
-        if (target && props.anchor?.()?.contains(target)) return
+        // The backdrop sits over the trigger, so `e.target` is never the trigger: test the press
+        // point against the trigger's rect instead.
+        const r = (props.toggleEl ?? props.anchor)?.()?.getBoundingClientRect()
+        if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            if (props.onAnchorPress) props.onAnchorPress()
+            else props.onDismiss()
+            return
+        }
         props.onDismiss()
     }
     // Capture phase: runs before any bubble-phase window listener (a host Modal's) whatever the

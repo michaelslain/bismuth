@@ -78,6 +78,7 @@ const ColorChip: Component<ColorChipProps> = props => {
             </Show>
             <AnchoredPopover
                 anchor={() => props.anchor?.() ?? wrapEl}
+                toggleEl={() => wrapEl}
                 placement={props.placement}
                 open={props.open}
                 onDismiss={props.onToggle}
