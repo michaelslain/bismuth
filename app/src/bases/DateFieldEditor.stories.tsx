@@ -117,11 +117,25 @@ export const TriggerClickClosesWithoutCancelling: Story = {
         const trigger = canvas.getByTestId('date-field-trigger')
         await userEvent.click(trigger)
         await waitFor(() => body.getByTestId('date-field-popover'))
-        // A real press fires pointerdown (window capture) then click; drive both.
-        await userEvent.pointer({ keys: '[MouseLeft]', target: trigger })
+        // The backdrop covers the trigger, so a real press lands on IT, not the trigger: press
+        // at whatever element is under the trigger's centre.
+        const r = trigger.getBoundingClientRect()
+        const under = canvasElement.ownerDocument.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+        ) as HTMLElement
+        await expect(under).not.toBe(trigger)
+        await userEvent.pointer({
+            keys: '[MouseLeft]',
+            target: under,
+            coords: { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 },
+        })
         await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
         await expect(canvas.getByTestId('dismissed')).toHaveTextContent('false')
         await expect(canvas.getByTestId('raw')).toHaveTextContent('"2026-09-14"')
+        // The click that follows the press must not reopen it.
+        await new Promise(r => setTimeout(r, 150))
+        await expect(body.queryByTestId('date-field-popover')).toBeNull()
     },
 }
 

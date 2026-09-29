@@ -37,6 +37,9 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
     let triggerRef: HTMLButtonElement | undefined
     let lastDate = ''
     let lastTime = ''
+    // Set by a press on the trigger while open (which closes it); the click that follows the
+    // press must not reopen it.
+    let pressClosed = false
     const options = dateFieldPresets()
 
     const kind = (): DatePickerKind => (props.time ? 'datetime' : 'date')
@@ -76,7 +79,17 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                 aria-expanded={open()}
                 data-testid="date-field-trigger"
                 class={`${styles.trigger}${props.className ? ` ${props.className}` : ''}`}
-                onClick={() => (open() ? close() : openPicker())}
+                // A fresh press clears a stale flag (the click after a press on the backdrop may
+                // never reach the trigger).
+                onPointerDown={() => (pressClosed = false)}
+                onClick={() => {
+                    if (pressClosed) {
+                        pressClosed = false
+                        return
+                    }
+                    if (open()) close()
+                    else openPicker()
+                }}
             >
                 <Text
                     as="span"
@@ -89,6 +102,10 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
             </FormControl>
             <AnchoredPopover
                 anchor={() => triggerRef}
+                onAnchorPress={() => {
+                    pressClosed = true
+                    close()
+                }}
                 open={open()}
                 onDismiss={() => {
                     close()
