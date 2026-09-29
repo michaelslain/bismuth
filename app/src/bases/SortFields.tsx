@@ -3,7 +3,7 @@ import type { SortSpec } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
 import { withCurrent } from './selectOptions'
 import SettingsField from '../ui/SettingsField'
-import { IconButton } from '../ui/IconButton'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import styles from './SortFields.module.css'
 
@@ -82,12 +82,7 @@ const SortFields: Component<SortFieldsProps> = props => {
                                         })
                                     }
                                 />
-                                <IconButton
-                                    icon="x"
-                                    label="Remove sort key"
-                                    danger
-                                    onClick={() => remove(i)}
-                                />
+                                <RemoveRowButton label="Remove sort key" onClick={() => remove(i)} />
                             </div>
                         </SettingsField>
                     )}

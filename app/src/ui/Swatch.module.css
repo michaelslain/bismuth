@@ -10,6 +10,7 @@
    stylesheet the bundler happens to emit second. `.sm`/`.selected`/`.static` stay ordinary
    compound selectors, so they still override the base exactly as before. */
 :where(.swatch) { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, box-shadow .12s; }
+.swatch:focus, .swatch:focus-visible { outline: none; }
 .swatch:hover { transform: translateY(-1px); }
 .swatch.sm { width: 20px; height: 20px; border: var(--rule-soft, 1px solid var(--border-soft)); transition: filter .12s, box-shadow .12s; }
 .swatch.sm:hover { filter: brightness(1.1); }

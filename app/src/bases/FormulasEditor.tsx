@@ -1,6 +1,6 @@
 import { Index, Show, createMemo, type Component } from 'solid-js'
 import { TextInput } from '../ui/TextInput'
-import { IconButton } from '../ui/IconButton'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import SettingsHint from '../ui/SettingsHint'
 import {
@@ -57,10 +57,8 @@ const FormulasEditor: Component<FormulasEditorProps> = props => {
                                                 update(i, { expr })
                                             }
                                         />
-                                        <IconButton
-                                            icon="x"
+                                        <RemoveRowButton
                                             label="Delete formula"
-                                            danger
                                             onClick={() =>
                                                 props.onChange(
                                                     removeFormula(props.rows, i),
