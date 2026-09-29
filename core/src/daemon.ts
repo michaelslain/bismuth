@@ -785,9 +785,10 @@ export function setOwner(deviceId: string): Owner {
 // daemonGraph.ts). The `home` param these accessors take is the vault's `.daemon` dir
 // (vaultDaemonDir(vault)) — callers (routes/CLI) resolve it from the active vault. The
 // daemon keys both crons and processes by their FILE basename (`<name>.md`) — its loader
-// reads `<dir>/<name>.md` and its `requestCronRun` drops a trigger file named by that
-// basename. The graph node's label, though, is `frontmatter.name ?? basename` (see
-// daemonGraph.buildDaemonGraph), so we resolve the backing file by matching either.
+// reads `<dir>/<name>.md`, and its trigger port (cron.ts `processTriggers`) consumes trigger
+// files named by that basename, which `runCron` below drops. The graph node's label, though,
+// is `frontmatter.name ?? basename` (see daemonGraph.buildDaemonGraph), so we resolve the
+// backing file by matching either.
 
 /**
  * Resolve which `<dir>/<*.md>` file backs a cron/process referred to by `name`
