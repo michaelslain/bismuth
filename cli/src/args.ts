@@ -16,7 +16,7 @@ export function bool(args: string[], name: string): boolean {
 
 /** Flags read with `bool()` — they never take a value, so they must not swallow the next
  *  positional. `status` is deliberately absent: it is also a valued flag (`flag(args, 'status')`)
- *  elsewhere, so the one command that reads it as a boolean passes its own list. */
+ *  elsewhere. A command that reads `--status` as a boolean AND calls positionals() must pass its own list (`install` reads it but never calls positionals()). */
 export const BOOLEAN_FLAGS: readonly string[] = [
     'off',
     'dry-run',
