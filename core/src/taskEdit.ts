@@ -85,7 +85,7 @@ export function updateTaskLineFields(line: string, patch: TaskPatch): string {
     return `${indent}- [${statusChar}] ${newBody}${cr}`
 }
 
-function leadingWidth(line: string): number {
+export function leadingWidth(line: string): number {
     const m = /^[ \t]*/.exec(line)
     return m ? m[0].length : 0
 }

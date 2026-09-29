@@ -7,7 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { spyApi } from './_apiSpy'
-import { toasts } from '../Toast'
+import { toasts, ToastHost } from '../Toast'
 import { dismissToast } from '../toastStore'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
@@ -943,14 +943,17 @@ export const DeleteWithUndo: Story = {
         const [rows, setRows] = createSignal(DECK)
         setUndoRows = setRows
         return (
-            <Pane w="1100px">
-                <FlashcardsView
-                    rows={rows()}
-                    config={config}
-                    basePath={UNDO_DELETE_BASE_PATH}
-                    onReviewed={() => reviewed.n++}
-                />
-            </Pane>
+            <>
+                <Pane w="1100px">
+                    <FlashcardsView
+                        rows={rows()}
+                        config={config}
+                        basePath={UNDO_DELETE_BASE_PATH}
+                        onReviewed={() => reviewed.n++}
+                    />
+                </Pane>
+                <ToastHost />
+            </>
         )
     },
     beforeEach: () => {
@@ -979,8 +982,11 @@ export const DeleteWithUndo: Story = {
         expect(toast.message).toBe(`deleted card ${before}`)
         expect(toast.action?.label).toBe('undo')
 
-        toast.action!.onClick()
+        // Click the toast's own `[undo]` — the real affordance, not the store's callback.
+        await userEvent.click(await within(document.body).findByRole('button', { name: /undo/i }))
         await waitFor(() => expect(front()).toBe(before))
+        expect(spy.named('rowCreate')).toHaveLength(1)
+        expect(spy.named('rowReorder')).toHaveLength(1)
         expect(spy.named('rowCreate')[0].args[1]).toMatchObject({ front: before })
         expect(spy.named('rowReorder')[0].args).toEqual([UNDO_DELETE_BASE_PATH, 3, 0])
     },

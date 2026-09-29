@@ -124,7 +124,7 @@ export async function commitMeta(
 export async function commitDelete(
     row: Row,
     onChanged?: () => void,
-    /** Names a STORED row in the toast (`Deleted "<title>"`); default `Deleted row`. */
+    /** Names a STORED row in the toast (`deleted <title>`); default `deleted row`. */
     title?: string,
 ): Promise<() => Promise<void>> {
     const path = row.file.path
@@ -146,7 +146,7 @@ export async function commitDelete(
             await restoreRowAt(path, note, index)
             onChanged?.()
         }
-        message = title === undefined ? 'Deleted row' : `Deleted "${title}"`
+        message = title === undefined ? 'deleted row' : `deleted ${title}`
     } else {
         const name = row.file.name
         let trashPath: string
@@ -163,7 +163,7 @@ export async function commitDelete(
             await api.restore(trashPath, path)
             onChanged?.()
         }
-        message = `Deleted "${name}"`
+        message = `deleted ${name}`
     }
     onChanged?.()
     pushUndoToast(message, undo)

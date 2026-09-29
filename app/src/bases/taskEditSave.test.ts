@@ -234,6 +234,13 @@ describe('deleteTaskUndoable', () => {
         await undo()
         expect(files[file.path]).toBe('# Plan\n- [ ] last\n')
     })
+    test('undo lands after the original anchor line even when lines were inserted above', async () => {
+        files[file.path] = noteText
+        const undo = await deleteTaskUndoable(at(6))
+        files[file.path] = 'new top\n' + files[file.path]
+        await undo()
+        expect(files[file.path]).toBe('new top\n' + noteText)
+    })
     test('a stored row returns at its original index', async () => {
         const rows = (t: string) =>
             parseBaseFile(t, baseMeta).rows.map(r => r.note.name)
@@ -274,6 +281,41 @@ describe('reinsertTaskBlock anchor', () => {
     })
     test('no anchor (index 0) inserts at the index', () => {
         expect(reinsertTaskBlock('c\n', ['b'], 0, undefined)).toBe('b\nc\n')
+    })
+    test('the anchor gained indented children since the delete: block lands after them', () => {
+        expect(
+            reinsertTaskBlock(
+                '- p\n    - new one\n    - new two\n- c\n',
+                ['- b'],
+                1,
+                '- p',
+            ),
+        ).toBe('- p\n    - new one\n    - new two\n- b\n- c\n')
+    })
+    test('the same skip applies when the anchor moved and is found elsewhere', () => {
+        expect(
+            reinsertTaskBlock(
+                'top\n- p\n    - new\n- c\n',
+                ['- b'],
+                1,
+                '- p',
+            ),
+        ).toBe('top\n- p\n    - new\n- b\n- c\n')
+    })
+    test('the block was the anchor first child: it lands before the later children', () => {
+        expect(
+            reinsertTaskBlock(
+                '- p\n    - later\n- c\n',
+                ['    - first'],
+                1,
+                '- p',
+            ),
+        ).toBe('- p\n    - first\n    - later\n- c\n')
+    })
+    test('a blank line stops the skip', () => {
+        expect(
+            reinsertTaskBlock('- p\n\n    - far\n', ['- b'], 1, '- p'),
+        ).toBe('- p\n- b\n\n    - far\n')
     })
 })
 
