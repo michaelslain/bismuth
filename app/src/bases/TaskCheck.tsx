@@ -1,5 +1,5 @@
 import { type Component } from 'solid-js'
-import { chipKeyAction } from '../calendar/taskChipKeys'
+import { chipKeyAction } from '../ui/chipKeys'
 import Text from '../ui/Text'
 import styles from './TaskCheck.module.css'
 
@@ -29,6 +29,11 @@ export type TaskCheckProps = {
      *  it) must supply the task's own text here — otherwise a screen reader announces only
      *  "checkbox, not checked" with no indication of which task. */
     label?: string
+    /** CSS colour for the glyph (TaskChip's category colour). Wins over the status colours. */
+    color?: string
+    /** Display only: dimmed, no toggle, no status menu, and not focusable — for a mark inside a
+     *  surface that owns the click (a calendar chip). Pointer events bubble to that surface. */
+    readOnly?: boolean
 }
 
 const MARK: Record<TaskCheckStatus, string> = {
@@ -55,7 +60,7 @@ const MARK: Record<TaskCheckStatus, string> = {
  * this: it opens from inside <KanbanCard>, which tasks mode does not render.)
  *
  * KEYBOARD. `role="checkbox"` promises a keyboard path, so the mark is in the tab order and the
- * key mapping is `calendar/taskChipKeys.ts`'s pure `chipKeyAction` — the calendar chip's own
+ * key mapping is `ui/chipKeys.ts`'s pure `chipKeyAction` — the calendar chip's own
  * vocabulary: Space toggles, Shift+F10 / ContextMenu opens the status menu, Ctrl/Meta combos
  * pass through. The chip's `open` (Enter) has nothing to open here, so Enter toggles too, as a
  * native checkbox-in-a-form user would expect; the chip's Alt+arrow reschedule is ignored.
@@ -66,7 +71,12 @@ const TaskCheck: Component<TaskCheckProps> = props => (
         inherit
         class={`${styles.taskCheck} ${props.variant === 'cell' ? styles.cell : ''} ${props.class ?? ''}`}
         data-status={props.status}
-        title="Toggle task — right-click to set status"
+        data-colored={props.color ? '' : undefined}
+        data-readonly={props.readOnly ? '' : undefined}
+        style={props.color ? { '--task-check-color': props.color } : undefined}
+        title={
+            props.readOnly ? undefined : 'Toggle task — right-click to set status'
+        }
         role="checkbox"
         aria-label={props.label}
         aria-checked={
@@ -76,10 +86,14 @@ const TaskCheck: Component<TaskCheckProps> = props => (
                   ? 'true'
                   : 'false'
         }
-        tabIndex={0}
-        aria-keyshortcuts="Space Enter Shift+F10"
-        onClick={e => props.onToggle(e)}
+        aria-readonly={props.readOnly ? 'true' : undefined}
+        tabIndex={props.readOnly ? undefined : 0}
+        aria-keyshortcuts={props.readOnly ? undefined : 'Space Enter Shift+F10'}
+        onClick={e => {
+            if (!props.readOnly) props.onToggle(e)
+        }}
         onKeyDown={e => {
+            if (props.readOnly) return
             const action = chipKeyAction(e)
             if (!action || action.kind === 'reschedule') return
             e.preventDefault()
@@ -96,9 +110,15 @@ const TaskCheck: Component<TaskCheckProps> = props => (
             }
             props.onToggle(e)
         }}
-        onContextMenu={e => props.onSetStatus(e)}
-        onPointerDown={e => e.stopPropagation()}
-        onPointerUp={e => e.stopPropagation()}
+        onContextMenu={e => {
+            if (!props.readOnly) props.onSetStatus(e)
+        }}
+        onPointerDown={e => {
+            if (!props.readOnly) e.stopPropagation()
+        }}
+        onPointerUp={e => {
+            if (!props.readOnly) e.stopPropagation()
+        }}
     >
         {MARK[props.status]}
     </Text>

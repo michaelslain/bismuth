@@ -35,3 +35,31 @@ export function overlayOrigin(
             inset.contentHeight / 2,
     }
 }
+
+/** The computed-style fields `inputInset` reads (a `CSSStyleDeclaration` subset, so a test can pass
+ *  a plain object). Values are CSS lengths like `12px`. */
+export type InsetStyle = {
+    paddingLeft: string
+    paddingTop: string
+    paddingBottom: string
+    borderLeftWidth: string
+    borderTopWidth: string
+    borderBottomWidth: string
+}
+
+/** An input's `InputInset` from its computed style and its border-box height: text starts after
+ *  padding + border on the left and top, and the content box is what is left of the height once
+ *  the top and bottom padding + border are taken off. */
+export function inputInset(
+    cs: InsetStyle,
+    borderBoxHeight: number,
+): InputInset {
+    const px = (v: string) => parseFloat(v) || 0
+    const top = px(cs.paddingTop) + px(cs.borderTopWidth)
+    const bottom = px(cs.paddingBottom) + px(cs.borderBottomWidth)
+    return {
+        left: px(cs.paddingLeft) + px(cs.borderLeftWidth),
+        top,
+        contentHeight: borderBoxHeight - top - bottom,
+    }
+}

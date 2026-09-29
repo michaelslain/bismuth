@@ -35,16 +35,23 @@ type Story = StoryObj<typeof meta>
 export const WithContent: Story = {
     args: {
         empty: false,
-        emptyMessage: 'No data to chart.',
         children: <div>chart content goes here</div>,
     },
 }
 
-/** Empty: `emptyMessage` renders centered instead of `children`. */
+/** Empty: the one `no data to chart` state renders instead of `children`. */
 export const Empty: Story = {
     args: {
         empty: true,
-        emptyMessage: 'No data to chart.',
+        children: <div>chart content goes here</div>,
+    },
+}
+
+/** Empty with a hint: the same title, plus the view's own remedy underneath (the heatmap's). */
+export const EmptyWithHint: Story = {
+    args: {
+        empty: true,
+        emptyHint: 'set an x date column in view settings',
         children: <div>chart content goes here</div>,
     },
 }
@@ -53,7 +60,6 @@ export const Empty: Story = {
 export const WithReadoutFooterDrill: Story = {
     args: {
         empty: false,
-        emptyMessage: 'No data to chart.',
         readout: <ChartReadout parts={['Jul 20', '3', '2 notes']} active />,
         children: <div>chart content goes here</div>,
         footer: <div>y(t) = ...</div>,
@@ -72,7 +78,6 @@ export const WithReadoutFooterDrill: Story = {
 export const Narrow300px: Story = {
     args: {
         empty: false,
-        emptyMessage: 'No data to chart.',
         readout: <ChartReadout parts={['sum of priority by week of due', 'peak 3 (Jul 1)']} />,
         children: <div>chart content goes here</div>,
     },

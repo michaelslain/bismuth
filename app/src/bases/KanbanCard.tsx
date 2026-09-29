@@ -1,32 +1,35 @@
+import { openNote } from '../ui/openNote'
 import {
     createSignal,
     createEffect,
     untrack,
     For,
     Show,
-    type JSX,
 } from 'solid-js'
 import type { Row, BaseConfig } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
-import {
-    propertyType,
-    coercePropertyValue,
-} from '../../../core/src/bases/properties'
-import { renderMarkdown } from './markdown'
-import { renderCell, isTagColumn } from './renderValue'
-import { formatNumberDisplay } from './numberFormat'
+import { propertyType } from '../../../core/src/bases/properties'
+import { isTagColumn } from './columnKinds'
 import { columnLabel } from './columnLabel'
 import { metaVisible, titleOf, writableKey } from './kanbanMeta'
 import { canWriteStoredRow } from './taskWrite'
-import { propertyEditKind, multiselectValues } from './propertyEdit'
+import { propertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
-import { isConfirmKey } from '../ui/widgetKeys'
+import { isActivateKey } from '../ui/widgetKeys'
 import { CardEditModal } from './CardEditModal'
 import ChipToggle from '../ui/ChipToggle'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import styles from './KanbanCard.module.css'
-import EmptyValue from '../ui/EmptyValue'
+import PropertyDisplay from './PropertyDisplay'
+import {
+    applyOverrides,
+    bareKey,
+    coerceMeta,
+    reconcileOverrides,
+    withOverride,
+    type Overrides,
+} from './kanbanOverrides'
 
 /**
  * The face of a kanban card: a read-only title + the view's remaining `order:` properties
@@ -87,40 +90,18 @@ export function KanbanCard(props: {
     // Optimistic echo of just-committed meta values so the card face shows the new value instantly
     // rather than waiting for the write's refetch. Same idiom as `title` above, generalized to a map
     // since any of several meta properties may be edited (via the modal).
-    const [overrides, setOverrides] = createSignal<Record<string, unknown>>({})
+    const [overrides, setOverrides] = createSignal<Overrides>({})
     createEffect(() => {
         const row = props.row // track: re-run when a fresh row lands (refetch)
         untrack(() => {
             const cur = overrides()
-            const ids = Object.keys(cur)
-            if (ids.length === 0) return
-            let changed = false
-            const next = { ...cur }
-            for (const id of ids) {
-                const bare = id.startsWith('note.') ? id.slice(5) : id
-                const live = (row.note as Record<string, unknown>)[bare] ?? null
-                if (JSON.stringify(live) === JSON.stringify(cur[id] ?? null)) {
-                    delete next[id]
-                    changed = true
-                }
-            }
-            if (changed) setOverrides(next)
+            const next = reconcileOverrides(cur, row)
+            if (next !== cur) setOverrides(next)
         })
     })
     // The row as it should currently DISPLAY: `props.row` with any not-yet-confirmed meta
-    // overrides applied. `resolveProperty`'s bare/`note.`-namespaced lookups both read
-    // `row.note`, so patching that object covers every id shape a meta column can use.
-    const displayRow = (): Row => {
-        const ov = overrides()
-        const ids = Object.keys(ov)
-        if (ids.length === 0) return props.row
-        const note = { ...props.row.note } as Record<string, unknown>
-        for (const id of ids) {
-            const bare = id.startsWith('note.') ? id.slice(5) : id
-            note[bare] = ov[id]
-        }
-        return { ...props.row, note }
-    }
+    // overrides applied.
+    const displayRow = (): Row => applyOverrides(props.row, overrides())
 
     // Meta columns that actually have a value on THIS row — empties render nothing at all on the
     // compact card face (the MODAL lists every declared property, empty or not), EXCEPT a
@@ -168,13 +149,11 @@ export function KanbanCard(props: {
      *  clears the key. When the base declares the property's type, coerce through it first (#100). */
     function commitMeta(id: string, value: unknown): void {
         if (writableKey(id) === null) return
-        const bare = id.startsWith('note.') ? id.slice(5) : id
         const current =
-            (props.row.note as Record<string, unknown>)[bare] ?? null
-        const t = propertyType(props.config, id)
-        const next = (t ? coercePropertyValue(t, value) : value) ?? null
+            (props.row.note as Record<string, unknown>)[bareKey(id)] ?? null
+        const next = coerceMeta(props.config, id, value)
         if (JSON.stringify(next) === JSON.stringify(current)) return // unchanged — no write
-        setOverrides(prev => ({ ...prev, [id]: next }))
+        setOverrides(prev => withOverride(prev, id, next))
         props.onSetMeta(id, next)
     }
 
@@ -198,16 +177,14 @@ export function KanbanCard(props: {
         ) as HTMLElement | null
         openEdit(el?.dataset.editTarget)
     }
-    // Keyboard path for the same whole-card open — ui-confirm (rebindable, default Enter) plus a
-    // hardcoded Space, the card face's own activation gesture under the WAI-ARIA button pattern
-    // (role="button"), same treatment as daemon/DaemonRow.tsx. Acts like a bare-body tap (no
-    // `data-edit-target` under a pointer to resolve), so it opens the modal on the first field,
-    // same as `openEdit()` with no argument. Left entirely separate from `onDown`/`onUp` so the
-    // pointer-based drag-vs-tap threshold logic above is untouched.
+    // Keyboard path for the same whole-card open — Enter/Space (`isActivateKey`), the card face's
+    // own activation gesture under the WAI-ARIA button pattern (role="button"). Acts like a
+    // bare-body tap (no `data-edit-target` to resolve), so it opens the modal on the first field.
+    // Separate from `onDown`/`onUp` so the pointer drag-vs-tap threshold logic is untouched.
     const onKeyDown = (e: KeyboardEvent) => {
         if (e.target !== e.currentTarget) return
         if (!props.editable) return
-        if (!isConfirmKey(e) && e.key !== ' ') return
+        if (!isActivateKey(e)) return
         e.preventDefault()
         openEdit()
     }
@@ -235,7 +212,9 @@ export function KanbanCard(props: {
             onKeyDown={onKeyDown}
             onContextMenu={onContextMenu}
         >
-            <div
+            <Text
+                as="div"
+                inherit
                 class={styles.kbCardTitle}
                 classList={{ [styles.kbEditable]: props.editable }}
                 data-edit-target={props.titleCol}
@@ -244,15 +223,17 @@ export function KanbanCard(props: {
                 <Text as="span" inherit register="prose">
                     {title()}
                 </Text>
-            </div>
+            </Text>
 
             <Show when={visibleMeta().length > 0}>
                 {/* Suppress native anchor drag on meta links — it would hijack the card's pointer-drag
             (a native link-drag fires pointercancel, tearing the card drag down mid-gesture). */}
-                <div
+                <Text
+                    as="div"
+                    inherit
                     class={styles.kbMeta}
                     classList={{ [styles.kbMetaHideLabels]: props.hideLabels }}
-                    onDragStart={e => e.preventDefault()}
+                    onDragStart={(e: DragEvent) => e.preventDefault()}
                 >
                     <For each={visibleMeta()}>
                         {id => {
@@ -268,88 +249,36 @@ export function KanbanCard(props: {
                                     props.siblingValues(id),
                                     declType(),
                                 )
-                            // Type-aware read-only display (#100): a declared `markdown` property renders as
-                            // block markdown; a declared `number` through its format; a `multiselect`/`boolean`
-                            // as chips. Everything else keeps the heuristic renderCell (status dots, tags, …).
-                            const display = (): JSX.Element => {
-                                const k = kind()
-                                if (k.kind === 'markdown') {
-                                    const v = value()
-                                    return (
-                                        <Text
-                                            as="div"
-                                            register="prose"
-                                            size="body"
-                                            tone="muted"
-                                            class={styles.kbMetaMarkdown}
-                                            innerHTML={renderMarkdown(
-                                                v == null ? '' : String(v),
-                                            )}
-                                        />
-                                    )
-                                }
-                                if (k.kind === 'number') {
-                                    const v = value()
-                                    if (typeof v === 'number')
-                                        return (
-                                            <Text
-                                                as="span"
-                                                inherit
-                                            >
-                                                {formatNumberDisplay(
-                                                    v,
-                                                    k.format,
-                                                    k.unit,
-                                                )}
-                                            </Text>
-                                        )
-                                }
-                                if (k.kind === 'boolean') {
-                                    const on = value() === true
-                                    return (
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles.kbMetaBoolChip}
-                                        >
-                                            <ChipToggle selected={on}>
-                                                <Icon
-                                                    value={on ? 'Check' : 'Square'}
-                                                />
-                                                {on ? 'Yes' : 'No'}
-                                            </ChipToggle>
-                                        </Text>
-                                    )
-                                }
-                                if (k.kind === 'multiselect') {
-                                    const vals = multiselectValues(value())
-                                    if (vals.length === 0)
-                                        return (
-                                            <EmptyValue />
-                                        )
-                                    return (
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={
-                                                styles.kbMetaMultiselectDisplay
+                            // The boolean stays a ChipToggle (its own control look); every other
+                            // read-only value is the shared, type-aware PropertyDisplay (#100).
+                            const display = () =>
+                                kind().kind === 'boolean' ? (
+                                    <ChipToggle selected={value() === true}>
+                                        <Icon
+                                            value={
+                                                value() === true ? 'Check' : 'Square'
                                             }
-                                        >
-                                            <For each={vals}>
-                                                {t => <ChipToggle selected>{t}</ChipToggle>}
-                                            </For>
-                                        </Text>
-                                    )
-                                }
-                                return renderCell(id, displayRow(), true)
-                            }
+                                        />
+                                        {value() === true ? 'Yes' : 'No'}
+                                    </ChipToggle>
+                                ) : (
+                                    <PropertyDisplay
+                                        {...{ id }}
+                                        row={displayRow()}
+                                        config={props.config}
+                                        markdown={kind().kind === 'markdown'}
+                                        dense
+                                    />
+                                )
                             // A row with no key spans the full grid width (acceptance 7-9):
                             // tags (self-describing) and a markdown body always; every OTHER
                             // row once `hideLabels` (#105) drops the key column too.
                             const noKey = () =>
                                 isTagColumn(id) || kind().kind === 'markdown'
                             return (
-                                <div
+                                <Text
+                                    as="div"
+                                    inherit
                                     class={styles.kbMetaItem}
                                     data-edit-target={id}
                                 >
@@ -382,11 +311,11 @@ export function KanbanCard(props: {
                                     >
                                         {display()}
                                     </Text>
-                                </div>
+                                </Text>
                             )
                         }}
                     </For>
-                </div>
+                </Text>
             </Show>
 
             <Show when={edit()}>
@@ -408,11 +337,7 @@ export function KanbanCard(props: {
                                 ? undefined
                                 : () =>
                                       void notePath.then(path =>
-                                          window.dispatchEvent(
-                                              new CustomEvent('bismuth-open', {
-                                                  detail: { path },
-                                              }),
-                                          ),
+                                          openNote(path),
                                       )
                         }
                     />

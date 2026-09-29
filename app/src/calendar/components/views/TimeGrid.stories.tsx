@@ -5,11 +5,12 @@
 // signals for the props, so the fixture data isn't duplicated. See
 // app/src/ui/_calendarFixtures.ts for the full gotcha writeup.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { onCleanup, type JSX } from 'solid-js'
+import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { TimeGrid } from './TimeGrid'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
-import { events, categories, showEventModal } from '../../state'
+import { events, categories, showEventModal, settings } from '../../state'
 import { addDays, toDateStr } from '../../dates'
 import CalendarFrame from '../CalendarFrame'
 
@@ -194,5 +195,83 @@ export const DragCreatesEndTime: Story = {
         if (!modal) throw new Error('drag did not open the create-event modal')
         await expect(modal.startTime).toBeDefined()
         await expect(modal.endTime).toBeDefined()
+    },
+}
+
+
+/** Flips the calendar's own settings for one story and restores them on cleanup. */
+function WithSettings(props: { militaryTime: boolean; children: JSX.Element }) {
+    const prev = settings.value
+    settings.value = { ...prev, militaryTime: props.militaryTime }
+    onCleanup(() => {
+        settings.value = prev
+    })
+    return <>{props.children}</>
+}
+
+/** `calendar.militaryTime` switches the hour gutter to 24h labels ("13:00", no AM/PM). */
+export const MilitaryTimeGutter: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor })
+        return (
+            <WithSettings militaryTime>
+                <div style={{ height: STORY_H }}>
+                    <CalendarFrame>
+                        <TimeGrid
+                            dates={[anchor]}
+                            events={events.value}
+                            categories={categories.value}
+                            store={new EventStore(new MemoryBackend())}
+                        />
+                    </CalendarFrame>
+                </div>
+            </WithSettings>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        expect(c.getByText('13:00')).toBeInTheDocument()
+        expect(c.queryByText('1 PM')).toBeNull()
+    },
+}
+
+const dragStore = new EventStore(new MemoryBackend())
+
+/** Dragging an event chip down two hours retimes it: the press arms on the slot, the window
+ *  carries the move, and the release persists through the store and refreshes the grid. Real
+ *  state end to end — the play() reads the new start time back out of the events signal. */
+export const DragRetimesAnEvent: Story = {
+    render: () => {
+        seedCalendarState({ date: anchor, events: [], categories: [{ name: 'Work', color: 'blue' }] })
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <TimeGrid
+                        dates={[anchor]}
+                        events={events.value}
+                        categories={categories.value}
+                        store={dragStore}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await dragStore.load()
+        const created = await dragStore.addEvent({ title: 'Drag me', date: toDateStr(anchor), startTime: '09:00', endTime: '10:00', category: 'Work' })
+        events.value = [created]
+        const slot = await c.findByTestId('time-grid-event')
+        const col = c.getByTestId('time-grid-day-col')
+        slot.scrollIntoView({ block: 'center' })
+        const r = slot.getBoundingClientRect()
+        const hourPx = col.getBoundingClientRect().height / 24
+        const x = r.left + r.width / 2
+        const y = r.top + 6
+        await fireEvent.mouseDown(slot, { clientX: x, clientY: y, button: 0 })
+        await fireEvent.mouseMove(window, { clientX: x, clientY: y + hourPx * 2 })
+        await fireEvent.mouseUp(window, { clientX: x, clientY: y + hourPx * 2 })
+        await waitFor(() => expect(events.value[0]?.startTime).toBe('11:00'))
+        expect(events.value[0].endTime).toBe('12:00')
     },
 }

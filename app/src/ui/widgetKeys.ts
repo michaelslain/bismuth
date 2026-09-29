@@ -27,7 +27,21 @@ export function isConfirmKey(e: KeyboardEvent): boolean {
 
 /** Does this event mean "open the context menu from the keyboard"? The platform's own
  *  convention — the dedicated ContextMenu key or Shift+F10 — not a rebindable command, the
- *  same pair calendar/taskChipKeys.ts reads for a task chip. */
+ *  same pair ui/chipKeys.ts reads for a task chip. */
 export function isMenuKey(e: KeyboardEvent): boolean {
     return e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)
+}
+
+/** Does this event mean "activate the focused thing" — the native button pair, Enter or Space
+ *  with no modifiers? For a non-button element made keyboard-reachable (tabindex + role); not
+ *  rebindable, because it mirrors what a real `<button>` does. */
+export function isActivateKey(e: KeyboardEvent): boolean {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false
+    return e.key === 'Enter' || e.key === ' '
+}
+
+/** Is this the Tab key? The platform's focus key, not a rebindable command — for a widget that
+ *  accepts a suggestion as focus leaves it (SuggestInput). */
+export function isTabKey(e: KeyboardEvent): boolean {
+    return e.key === 'Tab'
 }

@@ -1,12 +1,14 @@
 // A small numeric field anchored over a clicked heatmap square — HeatmapView's only editable
 // write surface. Composes ui/InlineTextInput rather than reinventing the confirm/dismiss/blur
 // contract: Enter or blur commits (InlineTextInput's own behaviour), Escape cancels. This
-// component only PARSES the committed text into a number (or clears it) and hands that up —
+// component only hands up the committed text parsed by `parseDayValue` (a number, or a clear;
+// non-numeric text cancels instead) —
 // deciding what a number DOES (create/update/delete a row, or set a note property) is
 // heatmapWrites.ts's job, not this component's.
 import type { Component } from 'solid-js'
 import InlineTextInput from '../ui/InlineTextInput'
 import Text from '../ui/Text'
+import { parseDayValue } from './heatmapDayParse'
 import styles from './HeatmapDayEditor.module.css'
 
 export type HeatmapDayEditorProps = {
@@ -33,13 +35,10 @@ const HeatmapDayEditor: Component<HeatmapDayEditorProps> = props => {
                 label={`Value for ${props.dateLabel}`}
                 class={styles.input}
                 onCommit={text => {
-                    const trimmed = text.trim()
-                    if (trimmed === '') {
-                        props.onSave(undefined)
-                        return
-                    }
-                    const n = Number(trimmed)
-                    props.onSave(Number.isFinite(n) ? n : undefined)
+                    const parsed = parseDayValue(text)
+                    // not a number: leave the stored value untouched rather than clearing it
+                    if (parsed === null) props.onCancel()
+                    else props.onSave(parsed)
                 }}
                 onCancel={() => props.onCancel()}
             />

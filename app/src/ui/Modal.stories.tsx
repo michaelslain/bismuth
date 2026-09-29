@@ -187,3 +187,81 @@ export const Interactive: Story = {
         )
     },
 }
+
+const pressKey = (key: string, init: KeyboardEventInit = {}) => {
+    const e = new KeyboardEvent('keydown', {
+        key,
+        code: key,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+    })
+    document.body.dispatchEvent(e)
+    return e
+}
+const dialogs = () => document.querySelectorAll('[role="dialog"]')
+
+/** Two modals portaled as SIBLINGS (the second is opened from the first's body, but Portal mounts
+ *  both under <body>). Only the topmost owns Escape and the Tab trap: Escape closes the second and
+ *  leaves the first, a second Escape closes the first, and Tab wraps inside the top modal. */
+export const StackedEscape: Story = {
+    render: () => {
+        const [outer, setOuter] = createSignal(true)
+        const [inner, setInner] = createSignal(false)
+        return (
+            <>
+                {outer() && (
+                    <Modal label="outer" onClose={() => setOuter(false)}>
+                        <DialogPanel>
+                            <Button
+                                kind="text"
+                                data-testid="open-inner"
+                                onClick={() => setInner(true)}
+                            >
+                                open second
+                            </Button>
+                        </DialogPanel>
+                    </Modal>
+                )}
+                {inner() && (
+                    <Modal label="inner" onClose={() => setInner(false)}>
+                        <DialogPanel>
+                            <Button kind="text" data-testid="inner-a">
+                                first
+                            </Button>
+                            <Button kind="text" data-testid="inner-b">
+                                last
+                            </Button>
+                        </DialogPanel>
+                    </Modal>
+                )}
+            </>
+        )
+    },
+    play: async () => {
+        await waitFor(() => expect(dialogs().length).toBe(1))
+        const open = document.querySelector(
+            '[data-testid="open-inner"]',
+        ) as HTMLElement
+        open.click()
+        await waitFor(() => expect(dialogs().length).toBe(2))
+        // Tab trap belongs to the TOP modal: from its last stop, Tab wraps to its first stop.
+        const stops = [
+            ...dialogs()[1]!.querySelectorAll('button'),
+        ] as HTMLElement[]
+        const first = stops[0]!
+        stops[stops.length - 1]!.focus()
+        pressKey('Tab')
+        await waitFor(() => expect(document.activeElement).toBe(first))
+        await expect(dialogs()[1]!.contains(document.activeElement)).toBe(true)
+        // Escape closes only the top modal.
+        pressKey('Escape')
+        await waitFor(() => expect(dialogs().length).toBe(1))
+        await expect(
+            document.querySelector('[data-testid="open-inner"]'),
+        ).not.toBeNull()
+        // A second Escape closes the one underneath.
+        pressKey('Escape')
+        await waitFor(() => expect(dialogs().length).toBe(0))
+    },
+}

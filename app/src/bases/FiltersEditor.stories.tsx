@@ -92,3 +92,34 @@ export const NestedTreeKept: Story = {
 export const RawExpression: Story = {
     render: () => <Harness initial="done == true || this is not valid )(" />,
 }
+
+/** A fresh condition has no value yet: it says so, and is left out of the saved filter. */
+export const IncompleteHint: Story = {
+    render: () => <Harness />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByText('add condition'))
+        await expect(c.getByText(/incomplete \/\/ not saved/)).toBeInTheDocument()
+        await expect(c.getByTestId('filters-out').textContent).toBe('null')
+        await userEvent.type(c.getByPlaceholderText('value'), 'x')
+        await expect(c.queryByText(/incomplete \/\/ not saved/)).not.toBeInTheDocument()
+    },
+}
+
+/** Add, toggle "match any" and remove — each asserted on the filter the form would save. */
+export const AddToggleRemove: Story = {
+    render: () => (
+        <Harness initial={{ and: ['status == "Todo"', 'priority > 1'] }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const out = () => JSON.parse(c.getByTestId('filters-out').textContent!)
+        await expect(c.getAllByLabelText('Remove condition')).toHaveLength(2)
+        await userEvent.click(c.getByText('add condition'))
+        await expect(c.getAllByLabelText('Remove condition')).toHaveLength(3)
+        await userEvent.click(c.getByText('any'))
+        await expect(out()).toEqual({ or: ['status == "Todo"', 'priority > 1'] })
+        await userEvent.click(c.getAllByLabelText('Remove condition')[0])
+        await expect(out()).toBe('priority > 1')
+    },
+}

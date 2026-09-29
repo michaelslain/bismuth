@@ -126,14 +126,75 @@ export const HoverAndDrill: Story = {
             { timeout: 5000 },
         )
 
-        // Clicking clear closes it — no buttons left in the chart.
+        // Clicking clear closes it — the `[ clear ]` button is gone (the bar rows stay: they are
+        // buttons themselves).
         await userEvent.click(clearButton)
         await waitFor(
             () => {
-                expect(canvasElement.querySelector('button')).toBeNull()
+                const left = Array.from(canvasElement.querySelectorAll('button')).find(b =>
+                    b.textContent?.toLowerCase().includes('clear'),
+                )
+                expect(left).toBeUndefined()
             },
             { timeout: 5000 },
         )
+    },
+}
+
+/** Keyboard only: Tab reaches a bar row (a real button), focus alone shows its readout, Enter
+ *  opens the drill and Space closes it again. No pointer event is dispatched. */
+export const KeyboardReach: Story = {
+    render: () => {
+        const views = [
+            { type: 'bar' as const, name: 'By status', x: 'status', aggregate: 'count' as const },
+        ]
+        return (
+            <div style={{ width: '900px' }}>
+                <BarView
+                    result={sampleViewResult(undefined, { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const first = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-bucket]')
+            if (!el) throw new Error('no bar row mounted yet')
+            return el
+        })
+        const key = first.dataset.bucket!
+        const row = () => canvasElement.querySelector<HTMLElement>(`[data-bucket="${key}"]`)!
+        expect(first.tagName).toBe('BUTTON')
+        await userEvent.tab()
+        expect(document.activeElement).toBe(first)
+        await waitFor(() => expect(canvasElement.textContent).toContain(`${key} // `))
+        await userEvent.keyboard('{Enter}')
+        await waitFor(() => expect(row().getAttribute('aria-pressed')).toBe('true'))
+        // Opening the drill must not cost the keyboard user their place.
+        expect(document.activeElement).toBe(row())
+        await userEvent.keyboard(' ')
+        await waitFor(() => expect(row().getAttribute('aria-pressed')).toBe('false'))
+    },
+}
+
+/** No rows at all: the one shared empty state, not a blank pane. */
+export const Empty: Story = {
+    render: () => {
+        const views = [{ type: 'bar' as const, name: 'Chart' }]
+        return (
+            <div style={{ width: '900px' }}>
+                <BarView
+                    result={sampleViewResult([], { views })}
+                    config={sampleBaseConfig({ views })}
+                    onOpen={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('no data to chart'))
     },
 }
 

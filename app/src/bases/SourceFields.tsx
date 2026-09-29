@@ -3,6 +3,7 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
+import { withCurrent } from './selectOptions'
 import FiltersEditor from './FiltersEditor'
 import {
     SOURCE_CHOICES,
@@ -26,14 +27,7 @@ export type SourceFieldsProps = {
     class?: string
 }
 
-/** Options with the current value kept even when the picker's list lacks it. */
-function withCurrent(options: SelectOption[], current: string): SelectOption[] {
-    if (!current || options.some(o => o.value === current)) return options
-    return [
-        ...options,
-        { value: current, label: current.replace(/^\[\[|\]\]$/g, '') },
-    ]
-}
+const stripLink = (v: string) => v.replace(/^\[\[|\]\]$/g, '')
 
 /**
  * Where a view's rows come from: this base's own body rows, vault notes, vault tasks, or
@@ -48,10 +42,11 @@ const SourceFields: Component<SourceFieldsProps> = props => {
         withCurrent(
             [{ value: '', label: 'the whole vault' }, ...props.bases],
             props.value.from,
+            stripLink,
         ),
     )
     const refOptions = createMemo(() =>
-        withCurrent(props.bases, props.value.ref),
+        withCurrent(props.bases, props.value.ref, stripLink),
     )
     const scoped = () =>
         props.value.kind === 'notes' || props.value.kind === 'tasks'

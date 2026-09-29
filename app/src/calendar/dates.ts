@@ -171,3 +171,44 @@ function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
     }
     return false
 }
+
+/** One cell of a month grid: a real date, and whether it belongs to the shown month (the
+ *  leading/trailing days that spill in from the neighbours are `inMonth: false`). */
+export type MonthGridCell = { date: Date; inMonth: boolean }
+
+/** The whole-week grid for `month` (0-based) of `year`: 5 or 6 rows of 7. Pure. */
+export function monthGrid(
+    year: number,
+    month: number,
+    mondayFirst: boolean,
+): MonthGridCell[] {
+    const firstOfMonth = new Date(year, month, 1)
+    const weekStart = startOfWeek(firstOfMonth, mondayFirst)
+    const lead = Math.round(
+        (firstOfMonth.getTime() - weekStart.getTime()) / 86400000,
+    )
+    const inMonthDays = daysInMonth(firstOfMonth)
+    const total = Math.ceil((lead + inMonthDays) / 7) * 7
+    const cells: MonthGridCell[] = []
+    for (let i = 0; i < total; i++) {
+        const offset = i - lead
+        cells.push({
+            date: new Date(year, month, 1 + offset),
+            inMonth: offset >= 0 && offset < inMonthDays,
+        })
+    }
+    return cells
+}
+
+/** The seven short weekday names in display order, localized. 2023-01-01 is a Sunday. */
+export function weekdayNames(
+    weekStartsOnMonday: boolean,
+    locale?: string,
+): string[] {
+    const first = weekStartsOnMonday ? 2 : 1
+    return Array.from({ length: 7 }, (_, i) =>
+        new Date(2023, 0, first + i).toLocaleString(locale, {
+            weekday: 'short',
+        }),
+    )
+}

@@ -48,6 +48,7 @@ import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import styles from './FileTree.module.css'
 import { treePrefix } from './ui/ascii/treePrefix'
 import Text from './ui/Text'
+import { openNote } from './ui/openNote'
 
 import { buildTree, reconcileTree, type TreeNode } from './fileTreeModel'
 
@@ -599,11 +600,7 @@ export function FileTree(props: {
                 await trackPending(() =>
                     api.write(path, baseTemplate(view ?? 'table')),
                 )
-                window.dispatchEvent(
-                    new CustomEvent('bismuth-open', {
-                        detail: { path },
-                    }),
-                )
+                openNote(path)
             } catch (e) {
                 optimisticRemove(path)
                 await refetch()

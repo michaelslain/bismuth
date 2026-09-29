@@ -1,0 +1,47 @@
+/* StatTile.tsx ONLY — one stat tile. The grid that lays tiles out is StatTiles.module.css. */
+.statTile { display: flex; flex-direction: column; }
+.statValue {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-display);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.statValue.accent { color: var(--accent); }
+.statValue.faint { color: var(--faint); }
+.statLabel {
+  font-size: var(--fs-ui);
+  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  margin-top: var(--sp-2);
+}
+.statDelta {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
+  margin-top: var(--sp-1);
+}
+.statPeriod {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  margin-top: var(--sp-1);
+}
+.statSpark {
+  font-size: var(--fs-ui);
+  color: var(--accent);
+  font-family: var(--ui-font-stack);
+  margin-top: var(--sp-1);
+  letter-spacing: 0.05em;
+}
+.statTex {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  margin-top: var(--sp-1);
+}
+.statError {
+  font-size: var(--fs-micro);
+  color: var(--danger);
+  font-family: var(--ui-font-stack);
+  margin-top: var(--sp-1);
+}

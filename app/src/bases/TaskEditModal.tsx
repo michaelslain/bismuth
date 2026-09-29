@@ -7,25 +7,23 @@
 // Presentational-ish but not pure: unlike TaskCalendarSettings (which never touches `api`),
 // this owns its own save/delete because the write shape differs by task origin (line vs
 // stored row) in a way the opener shouldn't have to know — `taskEdit.ts`'s isEditableTask/
-// updateTask/deleteTask/moveTask already encapsulate that split, this just calls them.
-import { createSignal, onMount, For, Show, type Component } from 'solid-js'
+// updateTask/deleteTask/moveTask already encapsulate that split, the save/delete branching itself lives in taskEditSave.ts.
+import { createSignal, onMount, Show, type Component } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
-import type { TaskStatus } from '../../../core/src/tasks'
-import { statusFromChar, statusToChar } from '../../../core/src/taskReorder'
-import { todayISO } from '../../../core/src/dates'
-import { baseOf } from '../../../core/src/linkTarget'
 import { api } from '../api'
 import { pushToast } from '../toastStore'
+import { pushUndoToast } from '../undoToast'
 import { isConfirmKey } from '../ui/widgetKeys'
+import { openNote as openNoteEvent } from '../ui/openNote'
 import { TASK_STATUS_OPTIONS } from '../taskStatusMenu'
-import { setStoredTaskStatus } from './taskWrite'
+import type { TaskPriority } from './taskEdit'
 import {
-    updateTask,
-    deleteTask,
-    moveTask,
-    type TaskPatch,
-    type TaskPriority,
-} from './taskEdit'
+    initialTaskFields,
+    saveTaskEdit,
+    deleteTaskUndoable,
+    TASK_PRIORITIES,
+} from './taskEditSave'
+import { destinationOptions } from './selectOptions'
 import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
 import ModalBody from '../ui/ModalBody'
@@ -33,6 +31,7 @@ import ModalFooter from '../ui/ModalFooter'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
 import Select, { type SelectOption } from '../ui/Select'
+import SuggestInput from '../ui/SuggestInput'
 import TextInput from '../ui/TextInput'
 import DateFieldEditor from './DateFieldEditor'
 import { TextButton } from '../ui/TextButton'
@@ -41,31 +40,13 @@ import styles from './TaskEditModal.module.css'
 
 const PRIORITY_OPTIONS: SelectOption[] = [
     { value: '', label: 'none' },
-    { value: 'highest', label: 'highest' },
-    { value: 'high', label: 'high' },
-    { value: 'medium', label: 'medium' },
-    { value: 'low', label: 'low' },
-    { value: 'lowest', label: 'lowest' },
+    ...TASK_PRIORITIES.map(p => ({ value: p, label: p })),
 ]
 
 const STATUS_OPTIONS: SelectOption[] = TASK_STATUS_OPTIONS.map(o => ({
     value: o.char,
     label: o.label,
 }))
-
-function normPriority(v: unknown): TaskPriority | null {
-    const s = typeof v === 'string' ? v : ''
-    return s && s !== 'none' ? (s as TaskPriority) : null
-}
-
-function noteOptions(notes: string[]): SelectOption[] {
-    const ids = notes.map(n => n.replace(/\.md$/, ''))
-    return ids.map((id, i) => ({
-        value: notes[i],
-        label: baseOf(id),
-        detail: notes[i],
-    }))
-}
 
 export type TaskEditModalProps = {
     row: Row
@@ -78,30 +59,21 @@ export type TaskEditModalProps = {
 
 const TaskEditModal: Component<TaskEditModalProps> = props => {
     const isLine = () => typeof props.row.note.line === 'number'
-    const initialStatusChar = isLine()
-        ? String(props.row.note.statusChar ?? ' ')
-        : statusToChar(String(props.row.note.status ?? 'todo') as TaskStatus)
-    const initialDescription = String(props.row.note.description ?? '')
-    const initialDue = (props.row.note.due as string) || null
-    const initialScheduled = (props.row.note.scheduled as string) || null
-    const initialPriority = normPriority(props.row.note.priority)
     const categoryField = () => props.categoryField ?? 'category'
-    const initialCategory = (props.row.note[categoryField()] as string) || null
-    const initialDest = props.row.file.path
+    const initial = initialTaskFields(props.row, categoryField())
 
-    const [description, setDescription] = createSignal(initialDescription)
-    const [statusChar, setStatusChar] = createSignal(initialStatusChar)
-    const [due, setDue] = createSignal<string | null>(initialDue)
+    const [description, setDescription] = createSignal(initial.description)
+    const [statusChar, setStatusChar] = createSignal(initial.statusChar)
+    const [due, setDue] = createSignal<string | null>(initial.due)
     const [scheduled, setScheduled] = createSignal<string | null>(
-        initialScheduled,
+        initial.scheduled,
     )
     const [priority, setPriority] = createSignal<TaskPriority | null>(
-        initialPriority,
+        initial.priority,
     )
-    const [category, setCategory] = createSignal(initialCategory ?? '')
-    const [destPath, setDestPath] = createSignal(initialDest)
+    const [category, setCategory] = createSignal(initial.category)
+    const [destPath, setDestPath] = createSignal(initial.destPath)
     const [notes, setNotes] = createSignal<string[]>([])
-    const [deleteArmed, setDeleteArmed] = createSignal(false)
     const [busy, setBusy] = createSignal(false)
 
     onMount(() => {
@@ -123,51 +95,28 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
     })
 
     const destOptions = (): SelectOption[] =>
-        props.destinations
-            ? props.destinations.map(d => ({ value: d.path, label: d.label }))
-            : noteOptions(notes())
-
-    async function writeStatusIfChanged(): Promise<void> {
-        if (statusChar() === initialStatusChar) return
-        if (isLine()) {
-            await api.toggleTask(
-                props.row.file.path,
-                props.row.note.line as number,
-                statusChar(),
-            )
-            return
-        }
-        const write = setStoredTaskStatus(
-            props.row,
-            statusFromChar(statusChar()),
-            todayISO(),
+        destinationOptions(
+            props.destinations ?? notes().map(path => ({ path })),
         )
-        await api.rowUpdate(props.row.file.path, props.row.index!, write.note)
-        if (write.next) await api.rowCreate(props.row.file.path, write.next)
-    }
 
     async function save(): Promise<void> {
         if (busy()) return
         setBusy(true)
         try {
-            await writeStatusIfChanged()
-
-            const patch: TaskPatch = {}
-            if (description() !== initialDescription)
-                patch.description = description()
-            if (due() !== initialDue) patch.due = due()
-            if (scheduled() !== initialScheduled) patch.scheduled = scheduled()
-            if (priority() !== initialPriority) patch.priority = priority()
-            if (!isLine() && (category() || null) !== initialCategory)
-                patch.category = category() || null
-            if (Object.keys(patch).length)
-                await updateTask(props.row, patch, {
-                    categoryField: categoryField(),
-                })
-
-            if (isLine() && destPath() !== initialDest)
-                await moveTask(props.row, destPath())
-
+            await saveTaskEdit(
+                props.row,
+                initial,
+                {
+                    description: description(),
+                    statusChar: statusChar(),
+                    due: due(),
+                    scheduled: scheduled(),
+                    priority: priority(),
+                    category: category(),
+                    destPath: destPath(),
+                },
+                { categoryField: categoryField() },
+            )
             props.onChanged?.()
             props.onClose()
         } catch (err) {
@@ -179,11 +128,17 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
         }
     }
 
-    async function commitDelete(): Promise<void> {
+    /** Deletes at once; the toast's undo puts the task back. */
+    async function remove(): Promise<void> {
         if (busy()) return
         setBusy(true)
         try {
-            await deleteTask(props.row)
+            const restore = await deleteTaskUndoable(props.row)
+            const title = initial.description || props.row.file.name
+            pushUndoToast(`deleted ${title}`, async () => {
+                await restore()
+                props.onChanged?.()
+            })
             props.onChanged?.()
             props.onClose()
         } catch (err) {
@@ -195,9 +150,7 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
     }
 
     function openNote(): void {
-        window.dispatchEvent(
-            new CustomEvent('bismuth-open', { detail: props.row.file.path }),
-        )
+        openNoteEvent(props.row.file.path)
         props.onClose()
     }
 
@@ -268,17 +221,14 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
                             }
                         >
                             <SettingsField label="category" span>
-                                <TextInput
+                                <SuggestInput
                                     value={category()}
                                     placeholder="not set"
-                                    list="task-edit-modal-category-names"
+                                    options={(props.categories ?? []).map(
+                                        name => ({ value: name }),
+                                    )}
                                     onInput={setCategory}
                                 />
-                                <datalist id="task-edit-modal-category-names">
-                                    <For each={props.categories ?? []}>
-                                        {name => <option value={name} />}
-                                    </For>
-                                </datalist>
                             </SettingsField>
                         </Show>
                     </SettingsGrid>
@@ -287,31 +237,13 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
 
             <ModalFooter
                 leading={
-                    <Show
-                        when={deleteArmed()}
-                        fallback={
-                            <TextButton
-                                danger
-                                onClick={() => setDeleteArmed(true)}
-                            >
-                                delete
-                            </TextButton>
-                        }
+                    <TextButton
+                        danger
+                        disabled={busy()}
+                        onClick={() => void remove()}
                     >
-                        <TextButton
-                            danger
-                            disabled={busy()}
-                            onClick={() => void commitDelete()}
-                        >
-                            {busy() ? '…' : 'confirm delete'}
-                        </TextButton>
-                        <TextButton
-                            disabled={busy()}
-                            onClick={() => setDeleteArmed(false)}
-                        >
-                            keep
-                        </TextButton>
-                    </Show>
+                        delete
+                    </TextButton>
                 }
             >
                 <IconTextButton icon="ExternalLink" onClick={openNote}>

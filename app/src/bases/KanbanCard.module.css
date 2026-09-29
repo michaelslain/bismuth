@@ -25,8 +25,8 @@
    label + value spans become direct grid children of `.kbMeta` — two cells in the SAME row —
    rather than a nested box the grid can't see into. */
 .kbMeta {
-  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px;
-  font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
+  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px; /* 1px optical nudge under the title */
+  font-size: var(--fs-ui); color: var(--fg); line-height: 1.35; overflow-wrap: anywhere;
 }
 /* `hideLabels` (#105): no key column at all — every value starts flush left in one column. */
 .kbMetaHideLabels { grid-template-columns: 1fr; }
@@ -43,39 +43,10 @@
 
 .kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; align-self: baseline; }
 .kbMetaClickable {
-  cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px;
+  cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: calc(-0.5 * var(--sp-1)) calc(-1 * var(--sp-2)); /* -1px (half --sp-1; tokenLint rejects a bare px): optical nudge so the chip text sits on the row baseline */
   transition: background 120ms ease, color 120ms ease;
 }
 .kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
-/* A declared `markdown` property (#100): rendered block-markdown display + a multiline
-   editor, both sized to the meta row's smaller type than the card-level description. Prose
-   register (acceptance 9) — font-family + size/tone come from Text's `register="prose"` +
-   `size="body"` + `tone="muted"` props (KanbanCard.tsx); line-height 1.45 is spec'd narrower
-   than Text's own --lh-prose (1.6), so it's pinned here with an element+class selector to
-   out-specificity Text.module.css's `.text--body` regardless of CSS import order. */
-.kbMetaMarkdown { display: block; width: 100%; cursor: text; }
-div.kbMetaMarkdown { line-height: 1.45; }
-.kbMetaMarkdown :global(p) { margin: 0 0 var(--sp-2); }
-.kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
-.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: var(--sp-1) 0; padding-left: var(--sp-6); }
-/* An image embedded in a card's description (drag an image onto the card / its description) —
-   renderMarkdown emits a real <img>. Fit it to the card: full width, aspect preserved, capped so
-   a tall photo can't turn one card into a whole column. */
-.kbMetaMarkdown :global(.bismuth-embed-img) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  max-height: 180px;
-  object-fit: contain;
-  border-radius: var(--r-0);
-  margin: var(--sp-2) 0;
-}
 /* A boolean meta property is always a ChipToggle (display AND editor in one) — ChipToggle
    composes ui/Button and owns its own size/padding/chrome now (one-button), so this file no
    longer overrides any of it. */
-
-/* A declared `multiselect` property (#101), READ-ONLY display: a chip per selected value.
-   The editable version (add/remove + "+ Add") is PropertyValueEditor's own `.kbMetaMultiselect`
-   — each ChipToggle renders at its own default size now, so there is nothing left for either
-   file to own beyond its own layout wrapper. */
-.kbMetaMultiselectDisplay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }

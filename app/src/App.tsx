@@ -1256,7 +1256,7 @@ export default function App() {
         try {
             updateToast(id, summarizeSync(await api.gcalSync()), 4000)
         } catch (e) {
-            updateToast(id, `Sync failed: ${(e as Error).message}`, 6000)
+            updateToast(id, `sync failed: ${(e as Error).message}`, 6000)
         }
     }
     // Direct "Disconnect Google Calendar" command (revoke + wipe stored tokens).

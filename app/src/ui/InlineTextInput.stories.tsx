@@ -2,8 +2,9 @@
 // The inline-rename input shared by the file tree (EditableLabel) and the PDF bookmarks panel.
 import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import InlineTextInput from './InlineTextInput'
+import { Modal } from './Modal'
 import Text from './Text'
 import { settings, setSettings } from '../settings'
 
@@ -168,5 +169,59 @@ export const RebindableKeys: Story = {
             setSettings('keybindings', 'ui-confirm', savedConfirm)
             setSettings('keybindings', 'ui-dismiss', savedDismiss)
         }
+    },
+}
+
+/** An InlineTextInput inside a Modal: Escape cancels the rename and leaves the Modal open (the
+ *  input marks the key consumed with `preventDefault`); Escape from outside the input then
+ *  closes the Modal. */
+export const EscapeInsideModal: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => {
+        commits = []
+        cancels = 0
+        const [modalOpen, setModalOpen] = createSignal(true)
+        const [editing, setEditing] = createSignal(true)
+        return (
+            <>
+                <span data-testid="modal-state">{modalOpen() ? 'open' : 'closed'}</span>
+                {modalOpen() && (
+                    <Modal label="Rename host" onClose={() => setModalOpen(false)}>
+                        <div style={{ padding: '24px', background: 'var(--surface-1)', width: '260px' }}>
+                            <Show when={editing()} fallback={<span data-testid="cancelled">cancelled</span>}>
+                                <InlineTextInput
+                                    value="Chapter 2"
+                                    label="Name"
+                                    onCommit={v => {
+                                        commits.push(v)
+                                        setEditing(false)
+                                    }}
+                                    onCancel={() => {
+                                        cancels++
+                                        setEditing(false)
+                                    }}
+                                />
+                            </Show>
+                        </div>
+                    </Modal>
+                )}
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = canvasElement.ownerDocument.body
+        const state = () => body.querySelector('[data-testid="modal-state"]')!
+        const el = await waitFor(() => {
+            const i = body.querySelector('input[aria-label="Name"]') as HTMLInputElement
+            expect(i).not.toBeNull()
+            return i
+        })
+        await waitFor(() => expect(document.activeElement).toBe(el))
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(cancels).toBe(1))
+        await expect(state().textContent).toBe('open')
+        await expect(body.querySelector('[data-testid="cancelled"]')).not.toBeNull()
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(state().textContent).toBe('closed'))
     },
 }

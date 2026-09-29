@@ -7,7 +7,8 @@ import { parseExpr } from '../../../core/src/bases/parser'
 import { formatValue } from '../../../core/src/bases/chartText'
 import { todayISO } from '../../../core/src/dates'
 import ChartFrame from './ChartFrame'
-import StatTiles, { type StatTile } from './StatTiles'
+import StatTiles from './StatTiles'
+import type { StatTileProps } from './StatTile'
 import type { ChartViewProps } from './chartViewProps'
 
 // `3 this week // 1 last week` — day bins read as `today`/`yesterday` instead of the generic
@@ -41,7 +42,7 @@ export function StatView(props: ChartViewProps) {
         metricResults(rows(), props.result.view, todayISO()),
     )
 
-    const tiles = createMemo<StatTile[]>(() =>
+    const tiles = createMemo<StatTileProps[]>(() =>
         metrics().map((m, i) => ({
             label: m.label,
             value: m.value === null ? '—' : formatValue(m.value),
@@ -56,10 +57,7 @@ export function StatView(props: ChartViewProps) {
     )
 
     return (
-        <ChartFrame
-            empty={rows().length === 0}
-            emptyMessage="No data to chart."
-        >
+        <ChartFrame empty={rows().length === 0}>
             <StatTiles tiles={tiles()} />
         </ChartFrame>
     )

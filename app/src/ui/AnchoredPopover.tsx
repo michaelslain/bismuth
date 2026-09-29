@@ -22,6 +22,12 @@ export type AnchoredPopoverProps = {
     /** The element to anchor under (or above) — a getter so the caller can hand back
      *  `undefined` before its trigger ref is mounted. */
     anchor: () => HTMLElement | undefined
+    /** The trigger itself, when `anchor` is a larger element (a whole header). A press inside
+     *  its rect is the trigger's own press — the backdrop covers it, so the test is geometric. */
+    toggleEl?: () => HTMLElement | undefined
+    /** Fired instead of `onDismiss` when the press lands on the trigger, so a caller can close
+     *  without treating it as a cancel. */
+    onAnchorPress?: () => void
     open: boolean
     /** Fired on Escape or an outside pointerdown — never on a click inside the panel. */
     onDismiss: () => void
@@ -75,27 +81,36 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
         if (!props.open) return
         const target = e.target as Node | null
         if (panelEl && target && panelEl.contains(target)) return
+        // The backdrop sits over the trigger, so `e.target` is never the trigger: test the press
+        // point against the trigger's rect instead.
+        const r = (props.toggleEl ?? props.anchor)?.()?.getBoundingClientRect()
+        if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            if (props.onAnchorPress) props.onAnchorPress()
+            else props.onDismiss()
+            return
+        }
         props.onDismiss()
     }
-    // Bubble phase, not capture: a caller that already owns its own Escape handling (Select's
-    // trigger stops propagation on its keydown when open, routing Escape through its keyboard
-    // nav instead) still wins, since stopPropagation there keeps the event from ever reaching
-    // window. A caller with no such handling (DateFieldEditor — focus stays on its trigger
-    // button, never moving into the portaled panel) gets Escape-to-dismiss for free.
+    // Capture phase: runs before any bubble-phase window listener (a host Modal's) whatever the
+    // mount order, so `preventDefault()` reliably tells them the dismiss key was consumed here.
+    // Because this runs first, a trigger that also handles Escape while open (Select's) finds
+    // the popover already closed by the time its own handler runs, so it never double-fires.
     function onWindowKeyDown(e: KeyboardEvent): void {
         if (!props.open) return
-        if (isDismissKey(e)) props.onDismiss()
+        if (!isDismissKey(e)) return
+        e.preventDefault()
+        props.onDismiss()
     }
 
     window.addEventListener('resize', reposition)
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('pointerdown', onWindowPointerDown, true)
-    window.addEventListener('keydown', onWindowKeyDown)
+    window.addEventListener('keydown', onWindowKeyDown, true)
     onCleanup(() => {
         window.removeEventListener('resize', reposition)
         window.removeEventListener('scroll', reposition, true)
         window.removeEventListener('pointerdown', onWindowPointerDown, true)
-        window.removeEventListener('keydown', onWindowKeyDown)
+        window.removeEventListener('keydown', onWindowKeyDown, true)
     })
 
     return (

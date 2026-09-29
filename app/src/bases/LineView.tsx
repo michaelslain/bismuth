@@ -1,41 +1,27 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
-import type { Bin } from '../../../core/src/dates'
 import { buildChartData } from '../../../core/src/bases/chart'
 import { fitTrend, trendAt, type TrendFit } from '../../../core/src/bases/trend'
 import { chartDefinitionLatex, trendLatex } from '../../../core/src/bases/chartLatex'
 import { chartCaption, bucketReadout, formatValue } from '../../../core/src/bases/chartText'
-import { buildLinePlot } from './asciiLine'
+import {
+    arrowDirection,
+    buildLinePlot,
+    columnAt,
+    nearestIndex,
+    stepIndex,
+    timeOffsets,
+} from './asciiLine'
+import CodeBlock from '../ui/CodeBlock'
 import Text from '../ui/Text'
 import Tex from '../ui/Tex'
+import { isActivateKey } from '../ui/widgetKeys'
 import ChartFrame from './ChartFrame'
 import ChartReadout from './ChartReadout'
 import ChartDrill from './ChartDrill'
 import type { ChartGrid } from './chartColumns'
 import type { ChartViewProps } from './chartViewProps'
 import styles from './LineView.module.css'
-
-// Duplicated from core/src/bases/trend.ts's private tFor/dayDiff/monthDiff (not exported —
-// trend.ts is Task 2's file, out of scope here) so the trend LINE can be evaluated at any
-// fractional point index, not just the whole-index `t`s `fitTrend` itself computed.
-function dayDiff(a: string, b: string): number {
-    const da = new Date(a.slice(0, 10) + 'T00:00:00')
-    const db = new Date(b.slice(0, 10) + 'T00:00:00')
-    return Math.round((db.getTime() - da.getTime()) / 86400000)
-}
-function monthDiff(a: string, b: string): number {
-    const da = new Date(a.slice(0, 10) + 'T00:00:00')
-    const db = new Date(b.slice(0, 10) + 'T00:00:00')
-    return (
-        (db.getFullYear() - da.getFullYear()) * 12 +
-        (db.getMonth() - da.getMonth())
-    )
-}
-function tFor(origin: string, key: string, bin: Bin): number {
-    if (bin === 'month') return monthDiff(origin, key)
-    if (bin === 'week') return dayDiff(origin, key) / 7
-    return dayDiff(origin, key)
-}
 
 type DisplaySegment = { text: string; cls: string }
 type DisplayRow = { tick: string; segments: DisplaySegment[] }
@@ -63,13 +49,9 @@ export function LineView(props: ChartViewProps) {
         return trendAt(f, t)
     }
 
-    const xs = createMemo<number[] | undefined>(() => {
-        if (!data().isDate) return undefined
-        const pts = data().points
-        if (pts.length === 0) return undefined
-        const origin = pts[0].key
-        return pts.map(p => tFor(origin, p.key, data().bin))
-    })
+    const xs = createMemo<number[] | undefined>(() =>
+        data().isDate ? timeOffsets(data().points.map(p => p.key), data().bin) : undefined,
+    )
 
     const plot = createMemo(() =>
         buildLinePlot(data().points, {
@@ -116,43 +98,37 @@ export function LineView(props: ChartViewProps) {
 
     let preRef: HTMLPreElement | undefined
 
-    const localColAt = (clientX: number): number | null => {
+    const indexAtX = (clientX: number): number | null => {
         if (!preRef) return null
-        const cellW = grid().cellWidth
-        if (!cellW) return null
-        const rect = preRef.getBoundingClientRect()
-        return Math.round((clientX - rect.left) / cellW)
+        const col = columnAt(clientX, preRef.getBoundingClientRect().left, grid().cellWidth)
+        if (col === null) return null
+        return nearestIndex(plot().colOf, visiblePoints().length, col)
     }
 
-    const nearestVisibleIndex = (col: number): number | null => {
-        const p = plot()
-        const n = visiblePoints().length
-        if (n === 0) return null
-        let best = 0
-        let bestDist = Infinity
-        for (let i = 0; i < n; i++) {
-            const d = Math.abs(p.colOf(i) - col)
-            if (d < bestDist) {
-                bestDist = d
-                best = i
-            }
-        }
-        return best
-    }
-
-    const onMove = (e: PointerEvent) => {
-        const col = localColAt(e.clientX)
-        setHoverIdx(col === null ? null : nearestVisibleIndex(col))
-    }
-    const onLeave = () => setHoverIdx(null)
-    const onClickPlot = (e: MouseEvent) => {
-        const col = localColAt(e.clientX)
-        if (col === null) return
-        const idx = nearestVisibleIndex(col)
+    const toggleDrillAt = (idx: number | null) => {
         if (idx === null) return
         const p = visiblePoints()[idx]
         if (!p) return
         setDrillKey(k => (k === p.key ? null : p.key))
+    }
+
+    const onMove = (e: PointerEvent) => setHoverIdx(indexAtX(e.clientX))
+    const onLeave = () => setHoverIdx(null)
+    const onClickPlot = (e: MouseEvent) => toggleDrillAt(indexAtX(e.clientX))
+
+    // Keyboard path: the arrows / Home / End move the hover column, Enter or Space drills into it.
+    const onKeyDown = (e: KeyboardEvent) => {
+        if (isActivateKey(e)) {
+            // No hover column: swallow the key so Space does not scroll the page.
+            e.preventDefault()
+            if (hoverIdx() === null) return
+            toggleDrillAt(hoverIdx())
+            return
+        }
+        const dir = arrowDirection(e)
+        if (!dir) return
+        e.preventDefault()
+        setHoverIdx(stepIndex(hoverIdx(), dir, visiblePoints().length))
     }
 
     const displayRows = createMemo<DisplayRow[]>(() => {
@@ -182,7 +158,6 @@ export function LineView(props: ChartViewProps) {
     return (
         <ChartFrame
             empty={data().points.length === 0}
-            emptyMessage="No data to chart."
             onGrid={setGrid}
             readout={
                 <ChartReadout parts={readoutParts()} active={hoverIdx() !== null} />
@@ -216,12 +191,17 @@ export function LineView(props: ChartViewProps) {
                 </Show>
             }
         >
-            <pre
+            <CodeBlock
                 class={styles.linePlot}
                 ref={preRef}
+                tabIndex={0}
+                role="group"
+                aria-label="line chart: arrow keys move between points, Enter opens the notes behind one"
                 onPointerMove={onMove}
                 onPointerLeave={onLeave}
+                onBlur={onLeave}
                 onClick={onClickPlot}
+                onKeyDown={onKeyDown}
             >
                 <For each={displayRows()}>
                     {row => (
@@ -239,7 +219,7 @@ export function LineView(props: ChartViewProps) {
                 </For>
                 <div>{plot().axisRule}</div>
                 <div>{plot().axisLabels}</div>
-            </pre>
+            </CodeBlock>
         </ChartFrame>
     )
 }

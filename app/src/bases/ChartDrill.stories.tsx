@@ -5,7 +5,7 @@
 // directly — the stories below listen for that event to prove the click really fires.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor } from 'storybook/test'
-import { createSignal, Show } from 'solid-js'
+import { createSignal, onCleanup, Show } from 'solid-js'
 import ChartDrill from './ChartDrill'
 import { EMPTY_FILE, type Row } from '../../../core/src/bases/types'
 
@@ -29,43 +29,51 @@ function fileRow(name: string): Row {
 const THREE_ROWS = [fileRow('Morning pages'), fileRow('Standup notes'), fileRow('Retro')]
 const THIRTY_ROWS = Array.from({ length: 30 }, (_, i) => fileRow(`Note ${i + 1}`))
 
-/** Real state: clicking `[ clear ]` sets `open` false and the drill disappears. `onOpen` here is
- *  only a presence check (has a write target?) — the click itself fires the app-wide
- *  `bismuth-open` event via `NoteLink`, which the play() below listens for. */
+/** Real state on both seams: clicking `[ clear ]` sets `open` false and the drill disappears;
+ *  clicking a row's note link fires the app-wide `bismuth-open` event (see NoteLink.tsx), which
+ *  this harness captures into `opened` and prints. `onOpen` itself is only a presence check
+ *  (has a write target?) — the link, not the callback, opens the note. */
 function WithOpenerHarness() {
     const [open, setOpen] = createSignal(true)
+    const [opened, setOpened] = createSignal('nothing yet')
+    const onOpenEvent = (e: Event) => setOpened((e as CustomEvent<string>).detail)
+    window.addEventListener('bismuth-open', onOpenEvent)
+    onCleanup(() => window.removeEventListener('bismuth-open', onOpenEvent))
     return (
-        <Show
-            when={open()}
-            fallback={<div>drill cleared — click a bucket again to reopen</div>}
-        >
-            <ChartDrill
-                title="Jul 20"
-                rows={THREE_ROWS}
-                onOpen={() => {}}
-                onClear={() => setOpen(false)}
-            />
-        </Show>
+        <div>
+            <Show
+                when={open()}
+                fallback={<div>drill cleared — click a bucket again to reopen</div>}
+            >
+                <ChartDrill
+                    title="Jul 20"
+                    rows={THREE_ROWS}
+                    onOpen={() => {}}
+                    onClear={() => setOpen(false)}
+                />
+            </Show>
+            <div data-testid="opened">opened: {opened()}</div>
+        </div>
     )
 }
 
 export const WithOpener: Story = {
     render: () => <WithOpenerHarness />,
     play: async ({ canvasElement }) => {
-        const opened: string[] = []
-        const onOpen = (e: Event) => opened.push((e as CustomEvent<string>).detail)
-        window.addEventListener('bismuth-open', onOpen)
-        try {
-            const link = await waitFor(() => {
-                const el = canvasElement.querySelector<HTMLElement>('a')
-                if (!el) throw new Error('no note link mounted yet')
-                return el
-            })
-            await userEvent.click(link)
-            await waitFor(() => expect(opened).toContain('Morning pages.md'))
-        } finally {
-            window.removeEventListener('bismuth-open', onOpen)
-        }
+        const link = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('a')
+            if (!el) throw new Error('no note link mounted yet')
+            return el
+        })
+        await userEvent.click(link)
+        await waitFor(() => expect(canvasElement.textContent).toContain('opened: Morning pages.md'))
+
+        const clear = Array.from(canvasElement.querySelectorAll('button')).find(b =>
+            b.textContent?.includes('clear'),
+        )
+        if (!clear) throw new Error('no clear button')
+        await userEvent.click(clear)
+        await waitFor(() => expect(canvasElement.textContent).toContain('drill cleared'))
     },
 }
 

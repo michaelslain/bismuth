@@ -28,6 +28,7 @@ import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { currentView } from '../calendar/state'
 import { taskRow } from '../ui/_calendarAssertions'
 import { start as startServerVersion } from '../serverVersion'
+import type { Transport } from '../api'
 
 const meta = {
     title: 'Bases/BaseView',
@@ -1135,20 +1136,181 @@ export const TaskShapedRowsInNormalMode: Story = {
         return <BaseView path={path} body={body} />
     },
     play: async ({ canvasElement }) => {
-        // The cards renderer, untouched: a cover per row and a click-to-open card…
+        // The cards renderer, untouched: a cover per row…
         await waitFor(() => {
             expect(
                 canvasElement.querySelectorAll('[data-testid="card-cover"]')
                     .length,
             ).toBe(2)
         })
+        // …but NOT click-to-open: a task-LINE row's `file` is the note it sits in, so the shared
+        // row editor would rename or trash that whole note. Task-line rows never open it
+        // (`useRowEditor.editable`), so their cards carry no button role.
         expect(
             canvasElement.querySelectorAll('[role="button"][tabindex]').length,
-        ).toBe(2)
+        ).toBe(0)
         // …and NOT a task line, which carries neither.
         expect(
             canvasElement.querySelectorAll(`.${taskRowStyles.taskItem}`).length,
         ).toBe(0)
+    },
+}
+
+/** Waits until the loading skeleton is gone and the view has painted something. */
+async function painted(canvasElement: HTMLElement): Promise<void> {
+    await waitFor(() => {
+        expect(canvasElement.querySelector('[data-skeleton]')).toBeNull()
+        expect((canvasElement.textContent ?? '').trim().length).toBeGreaterThan(0)
+    })
+}
+
+/** The list renderer, resolved end to end from an inline source. */
+export const List: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: list\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(within(canvasElement).getByText('Draft the roadmap')).toBeInTheDocument(),
+        )
+    },
+}
+
+/** The bullets renderer. */
+export const Bullets: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: bullets\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(within(canvasElement).getByText('Draft the roadmap')).toBeInTheDocument(),
+        )
+    },
+}
+
+/** The map renderer (the sample rows carry no location, so it paints its own empty surface). */
+export const MapView: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: map\n'} />
+    },
+    play: async ({ canvasElement }) => painted(canvasElement),
+}
+
+/** The calendar in its tasks register — resolved rows placed on their due dates. */
+export const CalendarTasks: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: calendar\n    mode: tasks\n'} />
+    },
+    play: async ({ canvasElement }) => painted(canvasElement),
+}
+
+/** The four chart kinds route to their own renderer, not the table fallback. */
+export const BarChart: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: bar\n    x: status\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+export const LineChart: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: line\n    x: due\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+export const StatTiles: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: stat\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+export const HeatmapChart: Story = {
+    render: () => {
+        seedRows()
+        return <BaseView source={'views:\n  - type: heatmap\n    x: due\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+/** A `/rows` that never answers: the pane keeps the shaped skeleton instead of a blank. */
+export const Loading: Story = {
+    render: () => {
+        const inner = fakeTransport({ rows: SAMPLE_ROWS })
+        const hang = (path: string) => path === '/rows'
+        setTransport({
+            ...inner,
+            post: (path: string, body: unknown) =>
+                hang(path) ? new Promise<never>(() => {}) : inner.post(path, body),
+            postJson: <T,>(path: string, body: unknown): Promise<T> =>
+                hang(path) ? new Promise<never>(() => {}) : inner.postJson<T>(path, body),
+        } as Transport)
+        return <BaseView source={'views:\n  - type: table\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(canvasElement.querySelector('[data-skeleton="table"]')).toBeTruthy(),
+        )
+    },
+}
+
+/** A `/rows` that rejects, with nothing cached: a legible error, never the skeleton forever. */
+export const LoadError: Story = {
+    render: () => {
+        const inner = fakeTransport({ rows: SAMPLE_ROWS })
+        const boom = (path: string) => path === '/rows'
+        setTransport({
+            ...inner,
+            post: (path: string, body: unknown) =>
+                boom(path) ? Promise.reject(new Error('vault unreachable')) : inner.post(path, body),
+            postJson: <T,>(path: string, body: unknown): Promise<T> =>
+                boom(path)
+                    ? Promise.reject(new Error('vault unreachable'))
+                    : inner.postJson<T>(path, body),
+        } as Transport)
+        return <BaseView source={'views:\n  - type: table\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            const c = within(canvasElement)
+            expect(c.getByText("couldn't load this base")).toBeInTheDocument()
+            expect(c.getByText('vault unreachable')).toBeInTheDocument()
+        })
+        expect(canvasElement.querySelector('[data-skeleton]')).toBeNull()
+    },
+}
+
+/** An empty vault: nothing resolves, and the pane is a settled view, not a skeleton. */
+export const EmptyVault: Story = {
+    render: () => {
+        setTransport(fakeTransport({ rows: [] }))
+        return <BaseView source={'views:\n  - type: table\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-skeleton]')).toBeNull()
+            expect(canvasElement.querySelector('tbody tr')).toBeNull()
+        })
     },
 }
 
@@ -1551,7 +1713,7 @@ export const CalendarTasksToggleKeepsPane: Story = {
         observer.observe(canvasElement, { childList: true, subtree: true })
 
         const marker = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="task-chip-marker"]',
+            '[role="checkbox"]',
         )
         expect(marker).toBeTruthy()
         await userEvent.click(marker!)

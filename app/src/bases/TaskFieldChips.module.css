@@ -1,0 +1,10 @@
+/* Unboxed inline muted text, matching TaskChip's field register: no border, no chip frame.
+   Fields flow after the description and wrap as whole units via `white-space: nowrap`. */
+.field {
+    margin-left: var(--sp-2);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.overdue {
+    color: var(--danger);
+}

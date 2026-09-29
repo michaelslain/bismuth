@@ -32,6 +32,7 @@ import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
 import type { Expr } from '../../../core/src/bases/ast'
 import type { SortSpec, ViewType } from '../../../core/src/bases/types'
 import { VIEW_TYPES } from '../../../core/src/bases/types'
+import { VALUELESS } from './filterOps'
 
 // ---------------------------------------------------------------------------------------
 // Types
@@ -225,11 +226,21 @@ export function compileNotesRow(row: NotesRow): string {
     }
 }
 
+/** A half-filled row: a valued operator with no value, or a raw row with no text. Twin of
+ *  `filterForm.isIncomplete` (which takes a FilterRow, not a NotesRow) — keep the rule in step. */
+function notesRowIncomplete(row: NotesRow): boolean {
+    if (row.op === 'raw') return row.val.trim() === ''
+    return !VALUELESS.has(row.op) && row.val.trim() === ''
+}
+
 /** Compile the notes filter rows (+ connective) to a single `where` expression, or "" if none.
- *  A `rawWhere` overrides the rows entirely (the un-reversible advanced field wins). */
+ *  Incomplete rows are dropped, not emitted as `x == ""`. A `rawWhere` overrides the rows
+ *  entirely (the un-reversible advanced field wins). */
 export function compileNotesWhere(notes: BuilderState['notes']): string {
     if (notes.rawWhere && notes.rawWhere.trim()) return notes.rawWhere.trim()
-    const leaves = notes.rows.map(compileNotesRow).filter(l => l.trim() !== '')
+    const leaves = notes.rows
+        .filter(r => !notesRowIncomplete(r))
+        .map(compileNotesRow).filter(l => l.trim() !== '')
     if (leaves.length === 0) return ''
     if (leaves.length === 1) return leaves[0]
     const join = notes.connective === 'or' ? ' || ' : ' && '

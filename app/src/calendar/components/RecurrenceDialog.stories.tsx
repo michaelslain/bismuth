@@ -13,7 +13,11 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { RecurrenceDialog } from './RecurrenceDialog'
 import { EventStore, MemoryBackend } from '../EventStore'
-import { recurrenceAction, events } from '../state'
+import { recurrenceAction, events, currentDate } from '../state'
+import { refreshEvents } from '../refresh'
+import { ToastHost } from '../../Toast'
+import { toasts, dismissToast } from '../../toastStore'
+import { seedCalendarState } from '../../ui/_calendarFixtures'
 import type { CalendarEvent } from '../types'
 
 const meta = {
@@ -98,11 +102,57 @@ export const Interactive: Story = {
     },
     play: async () => {
         const body = within(document.body)
+        // The dialog is found by its role + accessible name, which FormModal really renders; a
+        // class-name hook here matched nothing, so the "gone" check below could never fail.
+        const dialog = () =>
+            document.querySelector(
+                '[role="dialog"][aria-label="delete recurring event"]',
+            )
+        expect(dialog()).not.toBeNull()
         const thisEvent = body.getByText('this event')
         await userEvent.click(thisEvent)
-        await waitFor(() =>
-            expect(document.querySelector('.recurrence-dialog')).toBeNull(),
-        )
+        await waitFor(() => expect(dialog()).toBeNull())
         expect(recurrenceAction.value).toBeNull()
+    },
+}
+
+const standups = () =>
+    events.value.filter(e => e.title === 'Standup' && e.date === '2026-08-19')
+
+/** Deleting one occurrence goes through deleteEventWithUndo: the occurrence is gone at once,
+ *  `deleted Standup` appears with an `undo`, and undo brings the occurrence back. Real
+ *  MemoryBackend store, refreshed for real. */
+export const DeleteOneWithUndo: Story = {
+    render: () => {
+        toasts().forEach(t => dismissToast(t.id))
+        seedCalendarState({ date: new Date(2026, 7, 19), events: [] })
+        recurrenceAction.value = null
+        const store = new EventStore(new MemoryBackend())
+        const { id: _id, ...rest } = MASTER
+        store.addEvent(rest).then(async master => {
+            await refreshEvents(store)
+            recurrenceAction.value = {
+                type: 'delete',
+                masterId: master.id,
+                occurrenceDate: '2026-08-19',
+            }
+        })
+        return (
+            <>
+                <RecurrenceDialog {...{ store }} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await waitFor(() => expect(standups()).toHaveLength(1))
+        await userEvent.click(await body.findByText('this event'))
+        await waitFor(() => expect(standups()).toHaveLength(0))
+        expect(recurrenceAction.value).toBeNull()
+        expect(await body.findByText('deleted Standup')).toBeTruthy()
+        await userEvent.click(await body.findByRole('button', { name: 'undo' }))
+        await waitFor(() => expect(standups()).toHaveLength(1))
+        expect(currentDate.value.getMonth()).toBe(7)
     },
 }

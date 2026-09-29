@@ -28,6 +28,12 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+/** What the last confirm handed back — the builder's real output, asserted in play(). */
+let confirmed: string | undefined
+const capture = (body: string) => {
+    confirmed = body
+}
+
 /** Property discovery + the Base-source picker both need real data — seed a transport with
  *  SAMPLE_ROWS answering /rows, and its paths answering /tree. */
 function seedPopulated(): void {
@@ -146,8 +152,20 @@ export const TasksSource: Story = {
                 sortReverse: false,
             },
         }
+        confirmed = undefined
         return (
-            <QueryBuilder initial={initial} onConfirm={noop} onClose={noop} />
+            <QueryBuilder
+                initial={initial}
+                onConfirm={capture}
+                onClose={noop}
+            />
+        )
+    },
+    play: async () => {
+        await pick('Ascending', 'Descending')
+        await userEvent.click(within(document.body).getByText('save'))
+        await expect(confirmed).toBe(
+            'tasks: |-\n  not done AND priority is high AND due before in 7 days\n  sort by due reverse\nview: bullets',
         )
     },
 }
@@ -181,26 +199,118 @@ export const SwitchSource: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        await expect(canvas.getByText('add filter')).toBeInTheDocument()
+        await expect(canvas.getByText('add condition')).toBeInTheDocument()
         await userEvent.click(canvas.getByText('tasks'))
-        await expect(canvas.queryByText('add filter')).not.toBeInTheDocument()
+        await expect(canvas.queryByText('add condition')).not.toBeInTheDocument()
     },
 }
 
-/** Interactive: add a Notes filter row via "Add filter" — proves the row mutator wires a real
- *  property/operator/value editor into the DOM rather than a story hand-building one.
- *  Same Portal caveat as SwitchSource above — <Modal> mounts to document.body, so this queries
- *  document.body/document, not canvasElement. */
+/** Choose `option` in the ui/Select whose trigger currently reads `current`. The popover
+ *  portals to document.body, so both lookups go through it. */
+async function pick(current: string, option: string) {
+    const body = within(document.body)
+    await userEvent.click(body.getByText(current))
+    await userEvent.click(await body.findByText(option))
+}
+
+/** Interactive: add a Notes filter row via "add condition" (the shared FiltersEditor) and
+ *  insert — the fresh row has no value yet, so it is incomplete and `onConfirm` receives the
+ *  block with no `where`. */
 export const AddFilterRow: Story = {
     render: () => {
         seedPopulated()
-        return <QueryBuilder onConfirm={noop} onClose={noop} />
+        confirmed = undefined
+        return <QueryBuilder onConfirm={capture} onClose={noop} />
     },
     play: async () => {
         const canvas = within(document.body)
-        await userEvent.click(canvas.getByText('add filter'))
+        await userEvent.click(await canvas.findByText('add condition'))
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
-        const pre = document.querySelector('[data-testid="qb-preview"] code')
-        await expect(pre?.textContent ?? '').not.toBe('')
+        await userEvent.click(canvas.getByText('insert'))
+        await expect(confirmed).toBe(
+            'source: notes\nviews:\n  - type: table\n    name: Table',
+        )
+    },
+}
+
+/** A `where` the builder could not reverse into rows is one advanced field, kept verbatim —
+ *  and what insert hands back is exactly that expression. */
+export const NotesRawWhere: Story = {
+    render: () => {
+        seedPopulated()
+        const initial: BuilderState = {
+            ...defaultBuilderState(),
+            notes: {
+                connective: 'and',
+                rows: [],
+                rawWhere: 'priority > 1 && (status == "Todo" || done)',
+            },
+        }
+        confirmed = undefined
+        return (
+            <QueryBuilder initial={initial} onConfirm={capture} onClose={noop} />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await expect(
+            await body.findByDisplayValue(
+                'priority > 1 && (status == "Todo" || done)',
+            ),
+        ).toBeInTheDocument()
+        await expect(body.queryByText('add condition')).not.toBeInTheDocument()
+        await userEvent.click(body.getByText('save'))
+        await expect(confirmed).toBe(
+            'source: notes where priority > 1 && (status == "Todo" || done)\nviews:\n  - type: table\n    name: Table',
+        )
+    },
+}
+
+/** Folder op, `date_within`, a tag, joined by "any", sorted by priority: flipping the sort
+ *  direction rewrites the block's `direction:` and nothing else. */
+export const NotesFiltersAndSort: Story = {
+    render: () => {
+        seedPopulated()
+        const initial: BuilderState = {
+            ...defaultBuilderState(),
+            view: 'cards',
+            sort: [{ property: 'priority', direction: 'DESC' }],
+            group: 'status',
+            limit: 5,
+            notes: {
+                connective: 'or',
+                rows: [
+                    {
+                        prop: 'file.folder',
+                        op: 'in_folder',
+                        val: 'projects',
+                        type: 'string',
+                    },
+                    { prop: 'due', op: 'date_within', val: '7', type: 'date' },
+                    {
+                        prop: 'tags',
+                        op: 'has_tag',
+                        val: 'planning',
+                        type: 'tag',
+                    },
+                ],
+            },
+        }
+        confirmed = undefined
+        return (
+            <QueryBuilder initial={initial} onConfirm={capture} onClose={noop} />
+        )
+    },
+    play: async () => {
+        const preview = () =>
+            document.querySelector('[data-testid="qb-preview"] code')
+                ?.textContent ?? ''
+        await waitFor(() => expect(preview()).toContain('direction: DESC'))
+        await pick('descending', 'ascending')
+        await waitFor(() => expect(preview()).toContain('direction: ASC'))
+        await userEvent.click(within(document.body).getByText('save'))
+        await expect(confirmed).toBe(
+            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nviews:\n  - type: cards\n    name: Cards\n    sort:\n      - property: priority\n        direction: ASC\n    groupBy:\n      property: status\n    limit: 5',
+        )
     },
 }

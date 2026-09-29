@@ -1,0 +1,25 @@
+/* FlashcardsSummary.module.css — what the deck's stage shows in place of a card
+   (bases/FlashcardsSummary.tsx), split out of FlashcardsView.module.css: the end-of-session recap
+   and the empty-deck hint.
+
+   Done state (deck/cram complete): a layout wrapper only — the title + message render through
+   <EmptyState>, and its `h2`/`p` pick up the italic prose styling below via `titleClass`/
+   `bodyClass`. The emphasised numbers are `<Text weight="bold">`, not `<b>`.
+
+   Empty/all-done states: faint mono italic, matching the card prose tone (not the default mono
+   EmptyState). Doubled (`.fc-empty-title.fc-empty-title` etc.): EmptyState.module.css's remaining
+   `:global(.ui-empty-block) h2`/`:global(.ui-empty)` bridge rules (kept for DaemonPanel) are a
+   DESCENDANT selector off a foreign root class — (0,1,1)/(0,1,0) — which otherwise silently wins the
+   italic/color/weight fight over a plain single-class prop rule. `.fc-empty-title` deliberately does
+   NOT set `text-transform`/`letter-spacing` — those fall through from the bridge's own
+   `uppercase`/`var(--ls-eyebrow)` (the pre-existing eyebrow-style heading look). */
+
+.done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-6); text-align: center; margin: auto; }
+.good-text { color: var(--blue); }
+
+.fc-empty.fc-empty { gap: var(--sp-2); }
+.fc-empty-title.fc-empty-title { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
+.fc-empty-body.fc-empty-body { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--text-muted); }
+.fc-empty-body.fc-empty-body .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 var(--sp-1); }
+.fc-empty-body.fc-empty-body code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }
+.inline-bolt { display: inline-flex; }

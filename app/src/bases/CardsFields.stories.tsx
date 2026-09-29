@@ -48,3 +48,23 @@ export const BodyCards: Story = {
         />
     ),
 }
+
+/** `cardContent: tasks` — the checklist-only card. */
+export const TasksCards: Story = {
+    render: () => (
+        <Harness
+            initial={{ cardContent: 'tasks', imageFit: '', aspect: '' }}
+            hasImage={false}
+        />
+    ),
+}
+
+/** A ratio outside the preset list is kept and offered as its own option. */
+export const CustomAspect: Story = {
+    render: () => (
+        <Harness
+            initial={{ cardContent: '', imageFit: 'contain', aspect: '2.2' }}
+            hasImage
+        />
+    ),
+}

@@ -86,7 +86,9 @@ function Select(props: {
                 onClick={() => (open() ? close() : openMenu())}
                 onKeyDown={e => {
                     if (open()) {
-                        // Keep Enter/Escape/arrows from reaching the modal's own handlers.
+                        // The open menu's keys are stopped from bubbling AND its Escape is
+                        // defaultPrevented (createMenuNav) — the latter is what a window-level
+                        // Modal listener checks, so Escape closes only this menu.
                         e.stopPropagation()
                         nav.onKeyDown(e)
                     } else if (

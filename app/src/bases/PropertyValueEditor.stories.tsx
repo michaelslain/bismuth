@@ -12,6 +12,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { PropertyValueEditor, resetVaultTagsCache } from './PropertyValueEditor'
 import type { PropertyEditKind } from './propertyEdit'
 import { setTransport } from '../api'
+import { dateFieldPresets } from './dateFieldPresets'
 import { fakeTransport } from '../ui/_fakeTransport'
 import {
     completionLabels,
@@ -50,7 +51,12 @@ function Frame(props: { children: unknown }) {
 /** A live harness that holds what got committed (or cancelled), for the plays to read — the component itself
  *  is uncontrolled-on-commit (calls back once and the caller decides what happens), so this
  *  mirrors what KanbanCard's `commitMeta` does: apply the value and re-render. */
-function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
+function Harness(props: {
+    kind: PropertyEditKind
+    initial: unknown
+    inline?: boolean
+    autofocus?: boolean
+}) {
     const [value, setValue] = createSignal<unknown>(props.initial)
     const [status, setStatus] = createSignal<
         'editing' | 'committed' | 'cancelled'
@@ -60,6 +66,8 @@ function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
             <PropertyValueEditor
                 kind={props.kind}
                 value={value()}
+                inline={props.inline}
+                autofocus={props.autofocus}
                 onCommit={v => {
                     setValue(v)
                     setStatus('committed')
@@ -119,12 +127,42 @@ export const NumberCurrency: Story = {
     ),
 }
 
-/** Date-only input. */
+/** Date-only: the shared DateFieldEditor trigger (the card modal's picker), not a native input. */
 export const DateOnly: Story = {
     render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
 }
 
-/** Date + time — renders a `datetime-local` input. */
+/** Escape on the open date popover cancels the whole edit — a cell editor must not stay stuck open. */
+export const DateEscapeCancels: Story = {
+    render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+    },
+}
+
+/** A cell editor mounts on a CLOSED-looking trigger: with autofocus the popover must open itself, so a
+ *  click away dismisses (cancels) the edit instead of leaving the cell stuck in edit mode. */
+export const DateOpensOnMountClickAwayCancels: Story = {
+    render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+        await userEvent.click(canvasElement.ownerDocument.body)
+        await waitFor(() => expect(canvas.getByTestId('status')).toHaveTextContent('cancelled'))
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+    },
+}
+
+/** Date + time — the same trigger, showing `date time`. */
 export const DateTime: Story = {
     render: () => (
         <Harness
@@ -203,16 +241,9 @@ export const TextEnterCommits: Story = {
     },
 }
 
-/** Interactive: edit the text, then press Escape — reverts the draft to the ORIGINAL value
- *  first, THEN blurs (PropertyValueEditor.tsx's onKeyDown: `setDraft(toDraft()); blur()`),
- *  and blur fires `onCommit`, not `onCancel` (its file-level comment: "Escape reverts the
- *  draft to the ORIGINAL value first, then blurs — so the no-op comparison in the caller's
- *  commit handler skips the write"). The real caller (KanbanCard.tsx's `commitMeta`)
- *  JSON-compares the incoming value against the current one and returns early when they
- *  match — the same idiom `commitRename` uses right above it — so in production this commit
- *  is a no-op write. This Harness has no such guard, so it visibly applies the callback:
- *  the edit is discarded (the committed value is the untouched original), just delivered via
- *  onCommit rather than onCancel. */
+/** Interactive: edit the text, then press Escape — reverts the draft to the ORIGINAL value, then
+ *  blurs, and the blur calls `onCancel` (not `onCommit`): a cancelled edit writes nothing
+ *  (PropertyValueEditor.tsx's `cancelled` flag). */
 export const EscapeReverts: Story = {
     render: () => <Harness kind={{ kind: 'text' }} initial="Original" />,
     play: async ({ canvasElement }) => {
@@ -220,17 +251,18 @@ export const EscapeReverts: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByTestId('committed')).toHaveTextContent(
-            '"Original"',
-        )
+        await expect(canvas.getByTestId('status')).toHaveTextContent('cancelled')
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+        await expect(input).toHaveValue('Original')
     },
 }
 
-/** Interactive: Escape must reach `window` from a plain field (so the card modal's own
- *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
- *  NOT reach `window` while a list field's completion popup is open (that Escape belongs to the
- *  popup: it closes it and stops there, as in the note editor). */
-export const EscapeBubbles: Story = {
+/** Interactive: a plain field CONSUMES Escape — it still reaches `window`, but with
+ *  `defaultPrevented` set, so a host `ui/Modal.tsx` ignores it and stays open (the first Escape
+ *  cancels the field, a second closes the card). A list field's Escape, while its completion popup
+ *  is open, must NOT reach `window` at all (it closes the popup and stops there, as in the note
+ *  editor). */
+export const EscapeConsumed: Story = {
     render: () => (
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
             <Harness kind={{ kind: 'text' }} initial="Original" />
@@ -242,9 +274,9 @@ export const EscapeBubbles: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const windowEscapes: string[] = []
+        const windowEscapes: boolean[] = []
         const onWindowKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') windowEscapes.push('window')
+            if (e.key === 'Escape') windowEscapes.push(e.defaultPrevented)
         }
         window.addEventListener('keydown', onWindowKeyDown)
 
@@ -256,14 +288,13 @@ export const EscapeBubbles: Story = {
         await waitFor(() => expect(completionLabels()).toEqual([]))
         await expect(windowEscapes).toEqual([])
 
-        // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
+        // Plain text field: Escape reverts the draft, THEN the keydown reaches window already consumed.
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getAllByTestId('committed')[0]).toHaveTextContent(
-            '"Original"',
-        )
-        await expect(windowEscapes).toEqual(['window'])
+        await expect(canvas.getAllByTestId('status')[0]).toHaveTextContent('cancelled')
+        await expect(input).toHaveValue('Original')
+        await expect(windowEscapes).toEqual([true])
 
         window.removeEventListener('keydown', onWindowKeyDown)
     },
@@ -389,5 +420,133 @@ export const ReadonlyList: Story = {
         expect(canvas.getByText('1, 2, 3')).toBeInTheDocument()
         expect(canvasElement.querySelector('[data-testid="tags-field"]')).toBeNull()
         expect(canvasElement.querySelector('input, textarea')).toBeNull()
+    },
+}
+
+const committed = (canvas: ReturnType<typeof within>) => canvas.getByTestId('committed')
+
+/** `inline` (a table cell): the tags field drops its chrome and takes the host's font. Committing
+ *  still writes the parsed list. */
+export const InlineTags: Story = {
+    render: () => (
+        <Harness
+            inline
+            kind={{ kind: 'tags', options: ['frontend', 'bug'], tag: true }}
+            initial={['bug']}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const view = await tagsFieldView(canvasElement)
+        typeInto(view, 'brand-new')
+        await waitFor(() => expect(completionLabels()).toEqual([]))
+        pressKey(view, 'Enter')
+        await expect(committed(canvas)).toHaveTextContent('["bug","brand-new"]')
+    },
+}
+
+/** `autofocus={false}` (a form of several editors): mounting must not steal focus. */
+export const NoAutofocus: Story = {
+    render: () => <Harness autofocus={false} kind={{ kind: 'text' }} initial="Quiet" />,
+    play: async ({ canvasElement }) => {
+        const input = within(canvasElement).getByDisplayValue('Quiet')
+        await new Promise(r => requestAnimationFrame(() => r(null)))
+        await expect(document.activeElement).not.toBe(input)
+    },
+}
+
+/** Markdown: Enter adds a line (no commit); blur commits the whole draft. */
+export const MarkdownCommitsOnBlur: Story = {
+    render: () => <Harness kind={{ kind: 'markdown' }} initial="one" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const area = canvas.getByDisplayValue('one') as HTMLTextAreaElement
+        await waitFor(() => expect(document.activeElement).toBe(area))
+        await userEvent.type(area, '{Enter}two')
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+        area.blur()
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent('"one\\ntwo"'))
+    },
+}
+
+/** Select: picking an option commits it; `(clear)` commits null. */
+export const SelectCommits: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'select', options: ['Todo', 'Doing', 'Done'] }}
+            initial="Doing"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(canvasElement.querySelector<HTMLElement>('[data-select-trigger]')!)
+        await userEvent.click(await body.findByText('Done'))
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent('"Done"'))
+        await userEvent.click(canvasElement.querySelector<HTMLElement>('[data-select-trigger]')!)
+        await userEvent.click(await body.findByText('(clear)'))
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent('null'))
+    },
+}
+
+/** Percent: the box shows the EDIT-space 42; typing 55 commits the stored fraction 0.55. */
+export const NumberPercentCommits: Story = {
+    render: () => <Harness kind={{ kind: 'number', format: 'percent' }} initial={0.42} />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const input = canvas.getByDisplayValue('42')
+        await userEvent.clear(input)
+        await userEvent.type(input, '55{Enter}')
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent('0.55'))
+    },
+}
+
+/** Currency: a typed amount commits the plain stored number. */
+export const NumberCurrencyCommits: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'number', format: 'currency', unit: 'USD' }}
+            initial={1200}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const input = canvas.getByDisplayValue('1200')
+        await userEvent.clear(input)
+        await userEvent.type(input, '1500{Enter}')
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent('1500'))
+    },
+}
+
+/** Date: picking a preset in the popover commits the ISO date. */
+export const DateCommits: Story = {
+    render: () => <Harness kind={{ kind: 'date' }} initial="2026-08-10" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        const popover = await waitFor(() => body.getByTestId('date-field-popover'))
+        await userEvent.pointer({
+            keys: '[MouseLeft>]',
+            target: within(popover).getByText('Today'),
+        })
+        const today = dateFieldPresets()[0].date
+        await waitFor(() => expect(committed(canvas)).toHaveTextContent(`"${today}"`))
+    },
+}
+
+/** Readonly with an object value (a link): its display text, no editor, nothing committed. */
+export const ReadonlyObject: Story = {
+    render: () => (
+        <Harness
+            kind={{ kind: 'readonly' }}
+            initial={{ path: 'People/Jane.md', display: 'Jane' }}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Jane')).toBeInTheDocument()
+        await expect(canvasElement.querySelector('input, textarea, button')).toBeNull()
+        await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
     },
 }

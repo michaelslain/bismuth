@@ -135,7 +135,7 @@ export function GcalConnectModal(props: {
         try {
             pushToast(summarizeSync(await api.gcalSync(props.basePath)))
         } catch (e) {
-            pushToast(`Sync failed: ${(e as Error).message}`)
+            pushToast(`sync failed: ${(e as Error).message}`)
         } finally {
             setBusy(false)
         }

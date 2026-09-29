@@ -47,6 +47,9 @@ export function createMenuNav(opts: {
     const onKeyDown = (e: KeyboardEvent) => {
         switch (e.key) {
             case 'Escape':
+                // Consumed: a window-level Modal listener checks defaultPrevented, so a menu
+                // opened inside a dialog closes alone instead of taking the dialog with it.
+                e.preventDefault()
                 opts.onEscape?.()
                 break
             case 'ArrowDown':

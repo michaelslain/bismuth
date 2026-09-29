@@ -7,7 +7,10 @@
 import type { Schema, SchemaEntry, PropertyType } from './types'
 import { COMMAND_IDS } from '../commands'
 import { KEYBINDING_CATALOG } from '../keybindings'
-import { THEME_NAMES as THEME_NAME_TUPLE } from '../theme/tokens'
+import {
+    CATEGORY_SWATCHES,
+    THEME_NAMES as THEME_NAME_TUPLE,
+} from '../theme/tokens'
 import {
     BACKEND_IDS,
     BACKEND_LIST,
@@ -388,7 +391,7 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         defaultCategoryColor: {
             type: 'string',
-            default: '#4a90e2',
+            default: CATEGORY_SWATCHES.blue,
             doc: 'Default color for a newly created event category (hex).',
         },
     }),

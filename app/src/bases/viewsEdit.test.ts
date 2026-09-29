@@ -8,6 +8,7 @@ import {
     readViews,
     removeView,
     renameView,
+    restoreView,
     toggleViewMode,
     type RawView,
 } from './viewsEdit'
@@ -77,6 +78,31 @@ describe('removeView', () => {
     test('out-of-range index is a no-op', () => {
         const views = [table('A'), table('B')]
         expect(removeView(views, 5)).toBe(views)
+    })
+})
+
+describe('restoreView', () => {
+    test('re-inserts at the old index, keeping later edits', () => {
+        const cur = [table('A'), table('C')]
+        expect(restoreView(cur, table('B'), 1).map(v => v.name)).toEqual([
+            'A',
+            'B',
+            'C',
+        ])
+    })
+
+    test('clamps a stale index to the end', () => {
+        const cur = [table('A')]
+        expect(restoreView(cur, table('Z'), 9).map(v => v.name)).toEqual([
+            'A',
+            'Z',
+        ])
+    })
+
+    test('does not mutate the input array', () => {
+        const cur = [table('A')]
+        restoreView(cur, table('B'), 0)
+        expect(cur).toHaveLength(1)
     })
 })
 

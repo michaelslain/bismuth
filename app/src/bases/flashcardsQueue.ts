@@ -171,6 +171,25 @@ export function reindexRetiredAfterDelete(
 }
 
 /**
+ * The inverse of `reindexRetiredAfterDelete`, for undoing a delete: a row is put
+ * back at `insertedIndex`, so every key at or above it shifts UP by one to keep
+ * naming the same card. Keys keep their `:dir` suffix. Returns a fresh array.
+ */
+export function reindexRetiredAfterInsert(
+    retired: Iterable<string>,
+    insertedIndex: number,
+): string[] {
+    const out: string[] = []
+    for (const key of retired) {
+        const sep = key.lastIndexOf(':')
+        const idx = Number(key.slice(0, sep))
+        const dir = key.slice(sep + 1)
+        out.push(idx >= insertedIndex ? `${idx + 1}:${dir}` : key)
+    }
+    return out
+}
+
+/**
  * Whether a grade action may fire right now — the single-advance lock.
  *
  * A grade is valid only when the answer is REVEALED and no prior grade is still

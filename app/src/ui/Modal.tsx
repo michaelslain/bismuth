@@ -43,6 +43,10 @@ const FOCUSABLE =
  *  focus once the dialog has visibly settled. */
 const LATE_MOUNT_MS = 2000
 
+/** Open modals, bottom to top. Every Modal listens on `window`, so with two open (portaled as
+ *  siblings, not nested) each hears every key — this names the one that owns it. */
+const modalStack: symbol[] = []
+
 /**
  * Shared overlay shell: a Portal-mounted backdrop that closes on the dismiss key
  * (settings.keybindings['ui-dismiss'], Escape by default — see ui/widgetKeys.ts's
@@ -88,8 +92,18 @@ function Modal(props: ModalProps) {
               )
             : []
 
+    const token = Symbol('modal')
+
     const handleKey = (e: KeyboardEvent) => {
+        // Only the topmost modal acts: Escape and the Tab trap belong to it alone. Without this,
+        // the outer of two sibling-portaled modals (listener registered first) handled Escape
+        // first and closed itself under the inner one.
+        if (modalStack[modalStack.length - 1] !== token) return
+        // A widget inside (or above) us that already consumed the dismiss key — a popover, an
+        // inline input — calls preventDefault; closing on top of that would leak its Escape.
+        if (e.defaultPrevented) return
         if (isDismissKey(e)) {
+            e.preventDefault()
             e.stopPropagation()
             props.onClose()
             return
@@ -129,6 +143,7 @@ function Modal(props: ModalProps) {
 
     onMount(() => {
         opener = document.activeElement as HTMLElement | null
+        modalStack.push(token)
         window.addEventListener('keydown', handleKey)
         // Initial focus: the first focusable inside the body (`[data-modal-body]`), in DOM order,
         // else the first non-close focusable in the panel (a footer action — e.g. daemon setup,
@@ -227,6 +242,9 @@ function Modal(props: ModalProps) {
         disposed = true
         stopWatching()
         window.removeEventListener('keydown', handleKey)
+        // By identity, not pop: unmount order is not guaranteed.
+        const at = modalStack.indexOf(token)
+        if (at >= 0) modalStack.splice(at, 1)
         // Only restore if the opener is still in the document; a modal that deleted the thing it
         // was opened from would otherwise throw focus into a detached node.
         if (opener?.isConnected) opener.focus()

@@ -12,9 +12,12 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { EventModal } from './EventModal'
+import { ToastHost } from '../../Toast'
+import { toasts, dismissToast } from '../../toastStore'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { showEventModal, events, currentDate } from '../state'
 import { seedCalendarState } from '../../ui/_calendarFixtures'
+import type { CalendarEvent } from '../types'
 
 const meta = {
     title: 'Calendar/EventModal',
@@ -128,7 +131,7 @@ export const Interactive: Story = {
         await userEvent.type(titleInput, 'Plan the offsite')
 
         // All-day defaults on (no startTime seeded); flip it off to reveal the time row.
-        const allDayToggle = body.getByText('all day')
+        const allDayToggle = body.getByRole('switch', { name: 'all day' })
         await userEvent.click(allDayToggle)
         await waitFor(() =>
             expect(
@@ -136,8 +139,7 @@ export const Interactive: Story = {
             ).not.toBeNull(),
         )
 
-        const catChip = body.getByText('Work')
-        await userEvent.click(catChip)
+        await userEvent.click(body.getByRole('button', { name: /Work/ }))
 
         const createBtn = body.getByText('create event')
         await userEvent.click(createBtn)
@@ -180,7 +182,7 @@ export const KeyboardToggles: Story = {
     play: async () => {
         const body = within(document.body)
 
-        const workBtn = body.getByRole('button', { name: /work/i })
+        const workBtn = body.getByRole('button', { name: /^work/i })
         expect(workBtn).toHaveAttribute('aria-pressed', 'false')
         workBtn.focus()
         await userEvent.keyboard(' ')
@@ -205,15 +207,173 @@ export const KeyboardToggles: Story = {
         await userEvent.keyboard('{Backspace}')
         expect(document.querySelector('[role="dialog"]')).not.toBeNull()
 
-        const allDayBtn = body.getByText('all day').closest('button') as HTMLElement
-        expect(allDayBtn).toHaveAttribute('aria-pressed', 'true')
+        const allDayBtn = body.getByRole('switch', { name: 'all day' })
+        expect(allDayBtn).toHaveAttribute('aria-checked', 'true')
         allDayBtn.focus()
         await userEvent.keyboard(' ')
-        expect(allDayBtn).toHaveAttribute('aria-pressed', 'false')
+        expect(allDayBtn).toHaveAttribute('aria-checked', 'false')
         await waitFor(() =>
             expect(
                 document.querySelector('[data-testid="event-modal-times"]'),
             ).not.toBeNull(),
         )
+    },
+}
+
+/** Regression: Backspace with focus on the modal body used to DELETE the event (a window listener).
+ *  There is no Backspace delete; the event and the dialog must survive. */
+export const BackspaceDoesNotDelete: Story = {
+    render: () => {
+        const editing = {
+            id: 'evt-bs',
+            title: 'Keep me',
+            date: '2026-08-20',
+            startTime: '10:00',
+            endTime: '11:00',
+        }
+        seedCalendarState({ date: ANCHOR, events: [editing] })
+        showEventModal.value = { event: editing }
+        return <Host store={new EventStore(new MemoryBackend())} />
+    },
+    play: async () => {
+        const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+        dialog.tabIndex = -1
+        dialog.focus()
+        await userEvent.keyboard('{Backspace}')
+        await new Promise(r => setTimeout(r, 100))
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+        expect(events.value.some(e => e.id === 'evt-bs')).toBe(true)
+    },
+}
+
+/** A store that really holds `event` (addEvent pushes synchronously), so delete / duplicate act on
+ *  a row that exists. Returns the stored master, which carries the store's id. */
+function storeWith(event: Omit<CalendarEvent, 'id'>) {
+    const store = new EventStore(new MemoryBackend())
+    void store.addEvent(event)
+    const editing = (store as unknown as { data: { events: CalendarEvent[] } }).data
+        .events[0]
+    seedCalendarState({ date: ANCHOR, events: [editing] })
+    showEventModal.value = { event: editing }
+    return { store, editing }
+}
+
+const clearToasts = () => toasts().forEach(t => dismissToast(t.id))
+
+/** Delete is immediate: the dialog closes, `deleted <title>` appears with an undo, and undo puts
+ *  the event back. */
+export const DeleteWithUndo: Story = {
+    render: () => {
+        clearToasts()
+        const { store } = storeWith({
+            title: 'Dentist',
+            date: '2026-08-20',
+            startTime: '10:00',
+            endTime: '11:00',
+        })
+        return (
+            <>
+                <Host {...{ store }} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.click(body.getByRole('button', { name: 'delete' }))
+        await waitFor(() =>
+            expect(document.querySelector('[role="dialog"]')).toBeNull(),
+        )
+        expect(events.value.some(e => e.title === 'Dentist')).toBe(false)
+        expect(body.getByText('deleted Dentist')).toBeTruthy()
+        await userEvent.click(await body.findByRole('button', { name: 'undo' }))
+        await waitFor(() =>
+            expect(events.value.some(e => e.title === 'Dentist')).toBe(true),
+        )
+    },
+}
+
+/** Duplicate of an untouched event adds a second copy and closes. */
+export const Duplicate: Story = {
+    render: () => {
+        const { store } = storeWith({
+            title: 'Retro',
+            date: '2026-08-20',
+            startTime: '15:00',
+            endTime: '16:00',
+        })
+        return <Host {...{ store }} />
+    },
+    play: async () => {
+        await userEvent.click(
+            within(document.body).getByRole('button', { name: 'duplicate' }),
+        )
+        await waitFor(() =>
+            expect(events.value.filter(e => e.title === 'Retro')).toHaveLength(2),
+        )
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
+    },
+}
+
+class FailingStore extends EventStore {
+    async addEvent(): Promise<never> {
+        throw new Error('disk full')
+    }
+}
+
+/** A failing write toasts and leaves the modal open (nothing is lost), instead of an unhandled
+ *  rejection with a dialog that looks frozen. */
+export const SaveError: Story = {
+    render: () => {
+        clearToasts()
+        seedCalendarState({ date: ANCHOR, events: [] })
+        showEventModal.value = { date: '2026-08-20' }
+        return (
+            <>
+                <Host store={new FailingStore(new MemoryBackend())} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.type(
+            document.querySelector('[data-testid="event-modal-title"]') as HTMLElement,
+            'Will fail',
+        )
+        await userEvent.click(body.getByRole('button', { name: 'create event' }))
+        expect(
+            await body.findByText('Could not save the event: disk full'),
+        ).toBeTruthy()
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    },
+}
+
+/** Repeat: biweekly keeps the weekday chips; switching to monthly drops them; `ends` stays. */
+export const BiweeklyToMonthly: Story = {
+    render: () => {
+        const editing = {
+            id: 'evt-bw',
+            title: 'Payroll',
+            date: '2026-08-21',
+            recurrence: {
+                type: 'biweekly' as const,
+                daysOfWeek: [5],
+                startDate: '2026-08-21',
+                endDate: '2026-12-31',
+                seriesId: 'series-bw',
+            },
+        }
+        seedCalendarState({ date: ANCHOR, events: [editing] })
+        showEventModal.value = { event: editing }
+        return <Host store={new EventStore(new MemoryBackend())} />
+    },
+    play: async () => {
+        const body = within(document.body)
+        expect(body.getByTestId('recurrence-days')).toBeTruthy()
+        expect(body.getByText('ends')).toBeTruthy()
+        await userEvent.click(body.getByRole('button', { name: 'monthly' }))
+        expect(body.queryByTestId('recurrence-days')).toBeNull()
+        expect(body.getByText('ends')).toBeTruthy()
     },
 }

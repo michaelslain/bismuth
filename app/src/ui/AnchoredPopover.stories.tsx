@@ -11,6 +11,7 @@ import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import AnchoredPopover from './AnchoredPopover'
 import Button from './Button'
+import { Modal } from './Modal'
 
 const meta = {
     title: 'UI/AnchoredPopover',
@@ -99,5 +100,54 @@ export const FlippedAbove: Story = {
         const triggerTop = trigger.getBoundingClientRect().top
         const panelTop = panel.getBoundingClientRect().top
         await expect(panelTop).toBeLessThan(triggerTop)
+    },
+}
+
+/** A popover inside a Modal: Escape closes the popover only. AnchoredPopover consumes the key
+ *  (`preventDefault`, capture phase) and Modal ignores a `defaultPrevented` dismiss, so the
+ *  Modal stays open; a second Escape then closes the Modal. */
+export const EscapeInsideModal: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => {
+        const [modalOpen, setModalOpen] = createSignal(true)
+        const [open, setOpen] = createSignal(false)
+        let anchorRef: HTMLButtonElement | undefined
+        return (
+            <>
+                <span data-testid="modal-state">{modalOpen() ? 'open' : 'closed'}</span>
+                {modalOpen() && (
+                    <Modal label="Popover host" onClose={() => setModalOpen(false)}>
+                        <div style={{ padding: '24px', background: 'var(--surface-1)' }}>
+                            <Button
+                                ref={anchorRef}
+                                onClick={() => setOpen(v => !v)}
+                                data-testid="anchor-trigger"
+                            >
+                                Open
+                            </Button>
+                            <AnchoredPopover
+                                anchor={() => anchorRef}
+                                open={open()}
+                                onDismiss={() => setOpen(false)}
+                            >
+                                <Content label="Popover content" />
+                            </AnchoredPopover>
+                        </div>
+                    </Modal>
+                )}
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const state = () => body.getByTestId('modal-state')
+        await userEvent.click(await waitFor(() => body.getByTestId('anchor-trigger')))
+        await waitFor(() => body.getByTestId('anchored-popover-content'))
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(body.queryByTestId('anchored-popover-content')).toBeNull())
+        await expect(state()).toHaveTextContent('open')
+        await expect(body.queryByTestId('anchor-trigger')).not.toBeNull()
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(state()).toHaveTextContent('closed'))
     },
 }

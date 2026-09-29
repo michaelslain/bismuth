@@ -1,13 +1,19 @@
-import { createSignal, onMount, onCleanup, Show } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
-import { showEventModal, settings, events, recurrenceAction } from '../state'
+import { showEventModal, settings, recurrenceAction } from '../state'
+import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
+import { openableHref } from '../openableUrl'
+import CalendarChip from './CalendarChip'
+import { useOverflowHide } from './useOverflowHide'
+import { pushToast } from '../../toastStore'
 import { formatTime } from '../dates'
 import { eventCategoryColors, categoryFill } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
 import Text from '../../ui/Text'
+import { gestureStops } from '../../ui/stopGestures'
 import styles from './EventChip.module.css'
 
 interface Props {
@@ -51,49 +57,38 @@ export function EventChip(props: Props) {
                 occurrenceDate: props.occurrenceDate,
             }
         } else {
-            await props.store.deleteEvent(props.event.id)
-            events.value = events.value.filter(e => e.id !== props.event.id)
+            try {
+                await deleteEventWithUndo(props.store, props.event)
+            } catch (e) {
+                pushToast(`Could not delete: ${(e as Error).message}`)
+            }
         }
     }
 
-    onMount(() => {
-        const chip = chipRef
-        const meta = metaRef
-        if (!chip || !meta) return
-        let decided = false
-        const check = (): void => {
-            if (decided) return
-            const metaBottom = meta.offsetTop + meta.offsetHeight
-            if (metaBottom > chip.clientHeight + 1) {
-                decided = true
-                setMetaVisible(false)
-            }
-        }
-        const obs = new ResizeObserver(check)
-        obs.observe(chip)
-        obs.observe(meta)
-        const timer = setTimeout(check, 50)
-        onCleanup(() => {
-            obs.disconnect()
-            clearTimeout(timer)
-        })
-    })
+    async function handleDuplicate(): Promise<void> {
+        await duplicateEvent(props.store, props.event)
+    }
+
+    const label = () =>
+        [props.event.title, props.event.startTime, props.event.location]
+            .filter(Boolean)
+            .join(', ')
+
+    useOverflowHide(
+        () => chipRef,
+        () => metaRef,
+        () => setMetaVisible(false),
+    )
 
     return (
-        <div
-            ref={chipRef}
+        <CalendarChip
+            ref={el => (chipRef = el)}
+            label={label()}
+            onOpen={openEdit}
+            onMenu={(x, y) => setMenu({ x, y })}
             data-testid="event-chip"
             class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}${props.inGrid ? ` ${styles['in-grid']}` : ''}`}
             style={chipBg() ? { background: chipBg() } : undefined}
-            onClick={e => {
-                e.stopPropagation()
-                openEdit()
-            }}
-            onContextMenu={e => {
-                e.preventDefault()
-                e.stopPropagation()
-                setMenu({ x: e.clientX, y: e.clientY })
-            }}
         >
             <Show when={props.event.startTime}>
                 <Text as="span" inherit class={styles['event-chip-time']}>
@@ -131,9 +126,12 @@ export function EventChip(props: Props) {
                             icon="Link"
                             label="Open link"
                             class={styles['event-chip-link']}
+                            {...gestureStops}
                             onClick={e => {
                                 e.stopPropagation()
-                                window.open(props.event.link!, '_blank')
+                                // Only http(s)/mailto open (a bare host gets https://); any other scheme is inert.
+                                const href = openableHref(props.event.link)
+                                if (href) window.open(href, '_blank', 'noopener')
                             }}
                         />
                     </Show>
@@ -155,6 +153,11 @@ export function EventChip(props: Props) {
                                         onSelect: openEdit,
                                     },
                                     {
+                                        label: 'Duplicate',
+                                        icon: 'Copy',
+                                        onSelect: handleDuplicate,
+                                    },
+                                    {
                                         label: 'Delete',
                                         icon: 'Trash2',
                                         danger: true,
@@ -168,6 +171,6 @@ export function EventChip(props: Props) {
                     )
                 }}
             </Show>
-        </div>
+        </CalendarChip>
     )
 }

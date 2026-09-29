@@ -1,0 +1,6 @@
+/* The tasks register's "add a task" button, quiet at rest. TaskDayCell renders as a fragment (its
+   chips and composer are direct children of the cell), so the button anchors to the CELL that
+   holds this — a month cell, an all-day cell — which reveals it on hover/focus-within through a
+   `[data-add-task]` selector. IconButton's own `.btn--icon.btn--normal` (0,2,0) sets
+   `opacity: 1`; `.add[data-add-task]` matches that specificity, and loads after it, to win. */
+.add[data-add-task] { position: absolute; top: var(--sp-2); right: var(--sp-2); opacity: 0; transition: opacity var(--dur) var(--ease); }

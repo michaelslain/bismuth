@@ -313,3 +313,73 @@ describe('form text → values', () => {
         expect(m.orUndefined('body')).toBe('body')
     })
 })
+
+describe('settings plan — kinds, field bindings, column options', () => {
+    test('record and chart kinds', async () => {
+        const m = await import('./baseSettingsPlan')
+        expect(m.isRecordKind('table')).toBe(true)
+        expect(m.isRecordKind('bar')).toBe(false)
+        expect(m.isChartKind('heatmap')).toBe(true)
+        expect(m.isChartKind('kanban')).toBe(false)
+        expect(m.showsColumns('table')).toBe(true)
+        expect(m.showsColumns('kanban')).toBe(false)
+        expect(m.showsMode('calendar')).toBe(true)
+        expect(m.showsMode('bar')).toBe(false)
+    })
+
+    test('field bindings per kind, and the shared union', async () => {
+        const m = await import('./baseSettingsPlan')
+        expect(m.fieldsFor('flashcards').map(f => f.key)).toEqual([
+            'frontField',
+            'backField',
+            'dueField',
+            'easeField',
+            'intervalField',
+        ])
+        expect(m.fieldsFor('table')).toEqual([])
+        expect(m.fieldsFor('bar')).toBe(m.fieldsFor('line'))
+        // x/y are shared by four chart kinds but listed once
+        const keys = m.ALL_FIELDS.map(f => f.key)
+        expect(keys.filter(k => k === 'x')).toHaveLength(1)
+        expect(keys).toContain('image')
+    })
+
+    test('column options union the current value + default, optional gets none', async () => {
+        const m = await import('./baseSettingsPlan')
+        const image = m.fieldsFor('cards')[0]
+        const opts = m.columnBindingOptions(image, 'cover', ['status'])
+        expect(opts.map(o => o.value)).toEqual(['', 'status', 'cover'])
+        expect(opts[0].label).toBe('text cover')
+        const front = m.fieldsFor('flashcards')[0]
+        expect(
+            m.columnBindingOptions(front, 'status', ['status']).map(o => o.value),
+        ).toEqual(['status', 'front'])
+    })
+
+    test('view keys follow the kind', async () => {
+        const m = await import('./baseSettingsPlan')
+        const t = m.viewKeysFor('table', 'base')
+        expect(t).toContain('summaries')
+        expect(t).toContain('order')
+        expect(t).not.toContain('source')
+        expect(m.viewKeysFor('kanban', 'view')).toEqual(
+            expect.arrayContaining(['source', 'hideLabels']),
+        )
+        expect(m.viewKeysFor('kanban', 'view')).not.toContain('order')
+        const h = m.viewKeysFor('heatmap', 'base')
+        expect(h).toContain('aggregate')
+        expect(h).not.toContain('bin')
+    })
+
+    test('the open property row follows its content through remove and move', async () => {
+        const m = await import('./baseSettingsPlan')
+        expect(m.indexAfterRemove(null, 1)).toBeNull()
+        expect(m.indexAfterRemove(1, 1)).toBeNull()
+        expect(m.indexAfterRemove(3, 1)).toBe(2)
+        expect(m.indexAfterRemove(0, 1)).toBe(0)
+        expect(m.indexAfterMove(2, 2, 3)).toBe(3)
+        expect(m.indexAfterMove(3, 2, 3)).toBe(2)
+        expect(m.indexAfterMove(0, 2, 3)).toBe(0)
+        expect(m.indexAfterMove(null, 2, 3)).toBeNull()
+    })
+})

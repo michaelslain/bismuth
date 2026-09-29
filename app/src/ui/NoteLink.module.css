@@ -19,4 +19,7 @@
 /* Underline on hover only: in a dense table an always-underlined link turns every row into a
    ruled line, which is exactly the noise the UA default was creating. */
 .noteLink:hover { text-decoration: underline; }
-.noteLink:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+.noteLink[data-tone='title'] { color: var(--fg); }
+.noteLink[data-tone='title']:hover { color: var(--accent); text-decoration: underline; }
+/* No focus ring by design decision: inside a chip or dense row a 1px box reads as clutter. */
+.noteLink:focus-visible { outline: none; }

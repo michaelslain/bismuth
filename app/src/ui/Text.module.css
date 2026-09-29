@@ -41,6 +41,9 @@
 .text--medium { font-weight: var(--fw-medium); }
 .text--bold { font-weight: var(--fw-bold); }
 
+/* ── italic — replaces a bare <em>; weight stays its own prop ── */
+.text--italic { font-style: italic; }
+
 /* ── eyebrow — the uppercase, tracked "section label" register already hand-rolled per call
    site as DaemonList.module.css's .daemon-section-head and GraphView.module.css's
    .graph-card-h. Structural only: it does not imply a tone or weight, because the two existing
