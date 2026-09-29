@@ -239,6 +239,7 @@ export function CardsView(props: {
                                                                                 )}
                                                                             >
                                                                                 <NoteLink
+                                                                                    tone="title"
                                                                                     path={
                                                                                         row
                                                                                             .file

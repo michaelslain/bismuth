@@ -1,3 +1,4 @@
+import { openNote } from '../ui/openNote'
 import {
     createSignal,
     createEffect,
@@ -336,11 +337,7 @@ export function KanbanCard(props: {
                                 ? undefined
                                 : () =>
                                       void notePath.then(path =>
-                                          window.dispatchEvent(
-                                              new CustomEvent('bismuth-open', {
-                                                  detail: { path },
-                                              }),
-                                          ),
+                                          openNote(path),
                                       )
                         }
                     />
