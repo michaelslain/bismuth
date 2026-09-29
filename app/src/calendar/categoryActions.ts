@@ -11,6 +11,7 @@ import type { CalendarEvent, Category } from './types'
 import { EventStore } from './EventStore'
 import { categories } from './state'
 import { pushUndoToast } from '../undoToast'
+import { pushToast } from '../toastStore'
 
 const inFlight = new Set<string>()
 
@@ -24,12 +25,19 @@ const sync = (store: EventStore): void => {
 const taken = (store: EventStore, name: string): boolean =>
     store.getCategories().some(c => c.name === name) || inFlight.has(name)
 
+/** `taken`, and says so: a refused duplicate would otherwise be a silent no-op. */
+const refuseTaken = (store: EventStore, name: string): boolean => {
+    if (!taken(store, name)) return false
+    pushToast(`a category named ${name} already exists`)
+    return true
+}
+
 export async function addCategory(
     store: EventStore,
     category: Category,
 ): Promise<boolean> {
     const name = category.name.trim()
-    if (!name || taken(store, name)) return false
+    if (!name || refuseTaken(store, name)) return false
     inFlight.add(name)
     try {
         await store.addCategory({ ...category, name })
@@ -46,7 +54,7 @@ export async function renameCategory(
     raw: string,
 ): Promise<boolean> {
     const name = raw.trim()
-    if (!name || name === oldName || taken(store, name)) return false
+    if (!name || name === oldName || refuseTaken(store, name)) return false
     await store.updateCategory(oldName, { name })
     sync(store)
     return true

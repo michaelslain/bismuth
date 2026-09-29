@@ -256,6 +256,27 @@ test('reinsertTaskBlock puts a block back at an index', () => {
     expect(reinsertTaskBlock('a\nc\n', ['b'], 1)).toBe('a\nb\nc\n')
 })
 
+describe('reinsertTaskBlock anchor', () => {
+    test('an edit above the task shifts lines down: block returns next to the anchor', () => {
+        expect(reinsertTaskBlock('new\nh\na\nc\n', ['b'], 2, 'a')).toBe(
+            'new\nh\na\nb\nc\n',
+        )
+    })
+    test('an edit below the task (no shift) still returns it at the index', () => {
+        expect(reinsertTaskBlock('a\nc\nmore\n', ['b'], 1, 'a')).toBe(
+            'a\nb\nc\nmore\n',
+        )
+    })
+    test('a duplicated anchor falls back to the index', () => {
+        expect(reinsertTaskBlock('x\na\ny\na\nc\n', ['b'], 1, 'a')).toBe(
+            'x\nb\na\ny\na\nc\n',
+        )
+    })
+    test('no anchor (index 0) inserts at the index', () => {
+        expect(reinsertTaskBlock('c\n', ['b'], 0, undefined)).toBe('b\nc\n')
+    })
+})
+
 test('TASK_PRIORITIES lists the union in order', () => {
     expect(TASK_PRIORITIES).toEqual([
         'highest',

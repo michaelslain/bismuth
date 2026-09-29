@@ -225,6 +225,26 @@ export const LinkOpensOnlySafeSchemes: Story = {
     },
 }
 
+/** A scheme-less link (`example.com/a`) opens with `https://` in front. */
+export const SchemelessLinkGetsHttps: Story = {
+    render: () => (
+        <div style={{ width: '220px' }}>
+            <EventChip event={LINKED('example.com/a')} categories={CATEGORIES} store={store} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const calls: unknown[][] = []
+        const real = window.open
+        window.open = ((...a: unknown[]) => (calls.push(a), null)) as typeof window.open
+        try {
+            await fireEvent.click(within(canvasElement).getByRole('button', { name: 'Open link' }))
+            expect(calls).toEqual([['https://example.com/a', '_blank', 'noopener']])
+        } finally {
+            window.open = real
+        }
+    },
+}
+
 /** Delete from the context menu removes the event at once and toasts `deleted <name>` with an
  *  `undo` action that restores it. The store is a real MemoryBackend one, refreshed for real. */
 export const DeleteIsImmediateWithUndo: Story = {

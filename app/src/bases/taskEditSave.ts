@@ -107,13 +107,16 @@ export async function saveTaskEdit(
         await moveTask(row, next.destPath)
 }
 
-/** Put a removed task block back into `content` at line `index`, verbatim. `index` is clamped to
- *  the note's current length (before a trailing newline's empty tail), so a note that shrank
- *  since the delete still gets the block back rather than an error. Pure. */
+/** Put a removed task block back into `content`, verbatim. `anchor` is the line that sat directly
+ *  above the block at delete time: if it is still above `index` the block goes at `index`; if the
+ *  note shifted and the anchor occurs exactly once, the block goes right after it; otherwise
+ *  `index`, clamped to the note's current length (before a trailing newline's empty tail), so a
+ *  note that shrank since the delete still gets the block back rather than an error. Pure. */
 export function reinsertTaskBlock(
     content: string,
     block: string[],
     index: number,
+    anchor?: string,
 ): string {
     const eol = content.includes('\r\n') ? '\r\n' : '\n'
     const lines = content.split(/\r?\n/)
@@ -121,7 +124,12 @@ export function reinsertTaskBlock(
         lines.length > 1 && lines[lines.length - 1] === ''
             ? lines.length - 1
             : lines.length
-    lines.splice(Math.max(0, Math.min(index, max)), 0, ...block)
+    let at = Math.max(0, Math.min(index, max))
+    if (anchor !== undefined && lines[index - 1] !== anchor) {
+        const first = lines.indexOf(anchor)
+        if (first !== -1 && first === lines.lastIndexOf(anchor)) at = first + 1
+    }
+    lines.splice(at, 0, ...block)
     return lines.join(eol)
 }
 
@@ -136,11 +144,13 @@ export async function deleteTaskUndoable(
     let restore: () => Promise<void>
     if (isLine(row)) {
         const line = row.note.line as number
-        const { removed } = removeTaskItem(await api.read(path), line)
+        const before = await api.read(path)
+        const { removed } = removeTaskItem(before, line)
+        const anchor = before.split(/\r?\n/)[line - 1]
         restore = async () => {
             await api.write(
                 path,
-                reinsertTaskBlock(await api.read(path), removed, line),
+                reinsertTaskBlock(await api.read(path), removed, line, anchor),
             )
         }
     } else {
