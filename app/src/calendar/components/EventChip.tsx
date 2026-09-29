@@ -3,7 +3,7 @@ import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
 import { showEventModal, settings, recurrenceAction } from '../state'
 import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
-import { isOpenableUrl } from '../openableUrl'
+import { openableHref } from '../openableUrl'
 import CalendarChip from './CalendarChip'
 import { useOverflowHide } from './useOverflowHide'
 import { pushToast } from '../../toastStore'
@@ -129,9 +129,9 @@ export function EventChip(props: Props) {
                             {...gestureStops}
                             onClick={e => {
                                 e.stopPropagation()
-                                // Only http(s)/mailto open; any other scheme is inert.
-                                if (isOpenableUrl(props.event.link))
-                                    window.open(props.event.link, '_blank', 'noopener')
+                                // Only http(s)/mailto open (a bare host gets https://); any other scheme is inert.
+                                const href = openableHref(props.event.link)
+                                if (href) window.open(href, '_blank', 'noopener')
                             }}
                         />
                     </Show>

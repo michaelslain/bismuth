@@ -74,3 +74,25 @@ test('undoing a category delete restores its original position', async () => {
     expect(names(s)).toEqual(['Work', 'Home', 'Gym'])
     cleanup()
 })
+
+test('a taken name toasts on add and on rename, empty and unchanged stay silent', async () => {
+    const s = await freshStore()
+    cleanup()
+    await addCategory(s, { name: 'A', color: 'blue' })
+    await addCategory(s, { name: 'B', color: 'rose' })
+    expect(toasts()).toHaveLength(0)
+    await addCategory(s, { name: 'A', color: 'rose' })
+    expect(toasts().map(t => t.message)).toEqual([
+        'a category named A already exists',
+    ])
+    cleanup()
+    await renameCategory(s, 'A', 'B')
+    expect(toasts().map(t => t.message)).toEqual([
+        'a category named B already exists',
+    ])
+    cleanup()
+    await addCategory(s, { name: '  ', color: 'blue' })
+    await renameCategory(s, 'A', 'A')
+    await renameCategory(s, 'A', '')
+    expect(toasts()).toHaveLength(0)
+})

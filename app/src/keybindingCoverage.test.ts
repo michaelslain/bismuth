@@ -111,14 +111,6 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'PENDING SWEEP — a local field\'s own Enter-to-commit, never brought under the ui-confirm migration this plan ran over chat/bases/intro/note-title surfaces (see task-12 report)',
     },
     {
-        file: 'calendar/components/EventModal.tsx',
-        reason: 'PENDING SWEEP — the same local Enter-to-commit / Backspace-to-delete pattern, not yet migrated (see task-12 report)',
-    },
-    {
-        file: 'calendar/components/CategoryPanel.tsx',
-        reason: 'PENDING SWEEP — local Enter-to-commit / Escape-to-cancel on inline category fields, not yet migrated (see task-12 report)',
-    },
-    {
         file: 'chat/ChatQuestionCard.tsx',
         reason: 'PENDING SWEEP — a local Enter-to-submit on an inline answer field, not yet migrated (see task-12 report)',
     },

@@ -32,12 +32,24 @@ export function CategoryPanel(props: { store: EventStore }) {
                     >
                         <CategoryList
                             categories={categories.value}
-                            onRename={(name, next) =>
-                                void renameCategory(props.store, name, next)
-                            }
-                            onRecolor={(name, color) =>
-                                void recolorCategory(props.store, name, color)
-                            }
+                            onRename={async (name, next) => {
+                                try {
+                                    await renameCategory(props.store, name, next)
+                                } catch (e) {
+                                    pushToast(
+                                        `Could not rename: ${(e as Error).message}`,
+                                    )
+                                }
+                            }}
+                            onRecolor={async (name, color) => {
+                                try {
+                                    await recolorCategory(props.store, name, color)
+                                } catch (e) {
+                                    pushToast(
+                                        `Could not recolor: ${(e as Error).message}`,
+                                    )
+                                }
+                            }}
                             onDelete={async name => {
                                 try {
                                     await deleteCategoryWithUndo(

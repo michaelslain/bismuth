@@ -37,32 +37,39 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                 recurrenceAction.value = null
             }
             return
-        } else if (type === 'edit' && updates) {
-            if (scope === 'one') {
-                await props.store.editOccurrence(
-                    masterId,
-                    occurrenceDate,
-                    updates,
-                )
-            } else if (scope === 'all') {
-                const master = events.value.find(e => e.id === masterId)
-                if (master?.recurrence)
-                    await props.store.editSeries(
-                        master.recurrence.seriesId,
-                        updates,
-                    )
-            } else {
-                await props.store.editFollowing(
-                    masterId,
-                    occurrenceDate,
-                    updates,
-                )
-            }
         }
 
-        await props.store.load()
-        await refreshEvents(props.store)
-        recurrenceAction.value = null
+        try {
+            if (type === 'edit' && updates) {
+                if (scope === 'one') {
+                    await props.store.editOccurrence(
+                        masterId,
+                        occurrenceDate,
+                        updates,
+                    )
+                } else if (scope === 'all') {
+                    const master = events.value.find(e => e.id === masterId)
+                    if (master?.recurrence)
+                        await props.store.editSeries(
+                            master.recurrence.seriesId,
+                            updates,
+                        )
+                } else {
+                    await props.store.editFollowing(
+                        masterId,
+                        occurrenceDate,
+                        updates,
+                    )
+                }
+            }
+
+            await props.store.load()
+            await refreshEvents(props.store)
+        } catch (e) {
+            pushToast(`Could not save: ${(e as Error).message}`)
+        } finally {
+            recurrenceAction.value = null
+        }
     }
 
     const close = () => (recurrenceAction.value = null)
