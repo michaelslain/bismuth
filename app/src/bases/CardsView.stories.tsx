@@ -365,6 +365,9 @@ export const LinkClickInEditableCard: Story = {
         )
     },
     play: async ({ canvasElement }) => {
+        // The row editor mounts through a dynamic import — load it first, so a wrongly opened
+        // dialog would already be one frame away and the "no dialog" check below can fail.
+        await import('./openRowEditor')
         let opened = 0
         const onOpen = () => {
             opened++
@@ -377,7 +380,17 @@ export const LinkClickInEditableCard: Story = {
             expect(link).toBeTruthy()
             await userEvent.click(link!)
             await waitFor(() => expect(opened).toBeGreaterThan(0))
+            await new Promise(requestAnimationFrame)
             expect(document.querySelector('[role="dialog"]')).toBeNull()
+            // Positive control: a click on the card itself DOES open the editor, so the absence
+            // above means something.
+            await userEvent.click(
+                canvasElement.querySelector<HTMLElement>('[role="button"]')!,
+            )
+            await waitFor(() =>
+                expect(document.querySelector('[role="dialog"]')).not.toBeNull(),
+            )
+            await userEvent.keyboard('{Escape}')
         } finally {
             window.removeEventListener('bismuth-open', onOpen)
         }
