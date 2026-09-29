@@ -13,10 +13,6 @@ export interface Recurrence {
     seriesId: string
 }
 
-// Same y/m/d-local formatting as `todayISO`; kept as its own name because `calendar.ts`
-// re-exports it as part of that module's public surface.
-export const toDateStr = todayISO
-
 export function addDays(d: Date, n: number): Date {
     const result = new Date(d)
     result.setDate(result.getDate() + n)
@@ -70,7 +66,7 @@ export function expandRecurrence(
     // age. Biweekly parity is measured from `start` inside matchesRecurrence, so it is unaffected.
     let cursor = new Date(Math.max(start.getTime(), rStart.getTime()))
     while (cursor <= end && cursor <= rEnd) {
-        const dateStr = toDateStr(cursor)
+        const dateStr = todayISO(cursor)
         if (matchesRecurrence(recurrence, dateStr)) dates.push(dateStr)
         cursor = addDays(cursor, 1)
     }
