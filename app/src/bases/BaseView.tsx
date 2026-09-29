@@ -58,6 +58,7 @@ import {
     addView,
     duplicateView,
     removeView,
+    restoreView,
     renameView,
     moveView,
     changeViewType,
@@ -522,13 +523,13 @@ export function BaseView(props: {
         const path = editPath()
         if (!path) return null
         const text = await api.read(path)
-        const { views, removedKeys, removedValues } = readViews(text)
+        const { views, removedKeys } = readViews(text)
         const next = edit(views)
         await api.setProperty(path, 'views', next)
         for (const key of removedKeys) await api.deleteProperty(path, key)
         setActiveView(pickActive(next))
         await refetchAll()
-        return { views, removedKeys, removedValues }
+        return { views, removedKeys }
     }
 
     const handleAddView = (type: string) =>
@@ -555,14 +556,11 @@ export function BaseView(props: {
                 const path = editPath()
                 if (!path) return
                 pushUndoToast(`deleted view ${name}`, async () => {
-                    // A shorthand base (no `views:` key) goes back to its flat keys, not to a
-                    // `views:` array sitting beside them.
-                    if (prev.removedKeys.length > 0) {
-                        await api.deleteProperty(path, 'views')
-                        for (const key of prev.removedKeys)
-                            await api.setProperty(path, key, prev.removedValues[key])
-                    } else await api.setProperty(path, 'views', prev.views)
-                    setActiveView(i)
+                    // No shorthand branch: a shorthand base has one view and delete is disabled
+                    // at `views.length <= 1`, so a delete can never have happened on one.
+                    const cur = readViews(await api.read(path)).views
+                    await api.setProperty(path, 'views', restoreView(cur, gone, i))
+                    setActiveView(Math.min(i, cur.length))
                     await refetchAll()
                 })
             })
