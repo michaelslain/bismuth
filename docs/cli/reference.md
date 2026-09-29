@@ -52,7 +52,7 @@ Any of these prints the usage banner plus an alphabetically sorted table of ever
 
 ## Global Flags & Environment
 
-Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flags are simple `--name <value>` (string) or `--name` (boolean) tokens; positionals are everything else.
+Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flags are simple `--name <value>` or `--name=value` (string; both spellings accepted) or `--name` (boolean) tokens; positionals are everything else.
 
 | Flag / env | Meaning |
 |---|---|
@@ -79,8 +79,8 @@ Every command that reaches a running server (`api`, `update status`/`update appl
 
 From `cli/src/args.ts`:
 
-- `flag(args, "name")` returns the token immediately after `--name`, or `undefined` if `--name` is absent or last.
-- `bool(args, "name")` is `true` iff `--name` appears anywhere.
+- `flag(args, "name")` returns the token immediately after `--name`, or the text after the first `=` in `--name=value` (`--q=a=b` gives `a=b`, `--name=` gives an empty string), or `undefined` if the flag is absent or a bare `--name` is last. If both spellings appear, the first occurrence in `args` wins.
+- `bool(args, "name")` is `true` iff the exact token `--name` appears anywhere. A boolean flag takes no value, so `--pretty=1` is NOT true (`positionals()` skips it).
 - `positionals(args)` returns non-flag tokens in order. **It treats the token after a `--flag` as that flag's value and skips it — unless that next token itself starts with `--`.** So a flag whose value happens to follow a positional, or a value-less boolean flag, is handled correctly, but a positional that looks like it follows a value-taking flag can be consumed. Put boolean flags (`--pretty`, `--regex`, `--off`, `--clear`) where they won't swallow a positional, or pass them last.
 - Values are NOT type-coerced by the parser; individual commands do their own coercion (see `prop set`, `settings set`, `row` commands which `JSON.parse` values).
 
