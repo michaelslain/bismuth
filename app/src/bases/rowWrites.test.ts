@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import type { Row } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { apiBase, httpTransport, setTransport, type Transport } from '../api'
+import { toasts } from '../toastStore'
 import { commitDelete, safeFilename } from './rowWrites'
 
 const originalBase = apiBase()
@@ -60,6 +61,7 @@ test('commitDelete of a note row trashes it and returns an undo that restores it
     const undo = await commitDelete(noteRow, () => void changed++)
     expect(calls).toEqual([{ verb: 'postJson', path: '/delete', body: { path: 'notes/a.md' } }])
     expect(changed).toBe(1)
+    expect(toasts().at(-1)!.message).toBe('deleted a')
     await undo()
     expect(calls[1]).toEqual({
         verb: 'post',
@@ -81,6 +83,7 @@ test('commitDelete of a stored row deletes by index and its undo re-creates the 
     }
     const undo = await commitDelete(stored)
     expect(calls[0]).toEqual({ verb: 'post', path: '/row/delete', body: { file: 'tasks.md', index: 1 } })
+    expect(toasts().at(-1)!.message).toBe('deleted row')
     await undo()
     expect(calls[1]).toEqual({
         verb: 'post',
@@ -92,4 +95,17 @@ test('commitDelete of a stored row deletes by index and its undo re-creates the 
         path: '/row/reorder',
         body: { file: 'tasks.md', from: 3, to: 1 },
     })
+})
+
+test('commitDelete of a stored row names it in the toast when given a title', async () => {
+    install([])
+    baseText = '---\ntype: base\n---\n\n| title |\n| --- |\n| a |\n| b |\n| c |\n'
+    const stored: Row = {
+        file: placeholderFile('', 'tasks.md'),
+        note: { title: 'x' },
+        formula: {},
+        index: 1,
+    }
+    await commitDelete(stored, undefined, 'x')
+    expect(toasts().at(-1)!.message).toBe('deleted x')
 })
