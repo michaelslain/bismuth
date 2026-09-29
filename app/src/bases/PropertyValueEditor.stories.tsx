@@ -241,16 +241,9 @@ export const TextEnterCommits: Story = {
     },
 }
 
-/** Interactive: edit the text, then press Escape — reverts the draft to the ORIGINAL value
- *  first, THEN blurs (PropertyValueEditor.tsx's onKeyDown: `setDraft(toDraft()); blur()`),
- *  and blur fires `onCommit`, not `onCancel` (its file-level comment: "Escape reverts the
- *  draft to the ORIGINAL value first, then blurs — so the no-op comparison in the caller's
- *  commit handler skips the write"). The real caller (KanbanCard.tsx's `commitMeta`)
- *  JSON-compares the incoming value against the current one and returns early when they
- *  match — the same idiom `commitRename` uses right above it — so in production this commit
- *  is a no-op write. This Harness has no such guard, so it visibly applies the callback:
- *  the edit is discarded (the committed value is the untouched original), just delivered via
- *  onCommit rather than onCancel. */
+/** Interactive: edit the text, then press Escape — reverts the draft to the ORIGINAL value, then
+ *  blurs, and the blur calls `onCancel` (not `onCommit`): a cancelled edit writes nothing
+ *  (PropertyValueEditor.tsx's `cancelled` flag). */
 export const EscapeReverts: Story = {
     render: () => <Harness kind={{ kind: 'text' }} initial="Original" />,
     play: async ({ canvasElement }) => {
@@ -258,17 +251,18 @@ export const EscapeReverts: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByTestId('committed')).toHaveTextContent(
-            '"Original"',
-        )
+        await expect(canvas.getByTestId('status')).toHaveTextContent('cancelled')
+        await expect(canvas.getByTestId('committed')).toHaveTextContent('')
+        await expect(input).toHaveValue('Original')
     },
 }
 
-/** Interactive: Escape must reach `window` from a plain field (so the card modal's own
- *  Escape listener — `ui/Modal.tsx` — closes the whole card, not just this field), but must
- *  NOT reach `window` while a list field's completion popup is open (that Escape belongs to the
- *  popup: it closes it and stops there, as in the note editor). */
-export const EscapeBubbles: Story = {
+/** Interactive: a plain field CONSUMES Escape — it still reaches `window`, but with
+ *  `defaultPrevented` set, so a host `ui/Modal.tsx` ignores it and stays open (the first Escape
+ *  cancels the field, a second closes the card). A list field's Escape, while its completion popup
+ *  is open, must NOT reach `window` at all (it closes the popup and stops there, as in the note
+ *  editor). */
+export const EscapeConsumed: Story = {
     render: () => (
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
             <Harness kind={{ kind: 'text' }} initial="Original" />
@@ -280,9 +274,9 @@ export const EscapeBubbles: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const windowEscapes: string[] = []
+        const windowEscapes: boolean[] = []
         const onWindowKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') windowEscapes.push('window')
+            if (e.key === 'Escape') windowEscapes.push(e.defaultPrevented)
         }
         window.addEventListener('keydown', onWindowKeyDown)
 
@@ -294,14 +288,13 @@ export const EscapeBubbles: Story = {
         await waitFor(() => expect(completionLabels()).toEqual([]))
         await expect(windowEscapes).toEqual([])
 
-        // Plain text field: Escape reverts the draft, THEN the keydown bubbles to window.
+        // Plain text field: Escape reverts the draft, THEN the keydown reaches window already consumed.
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getAllByTestId('committed')[0]).toHaveTextContent(
-            '"Original"',
-        )
-        await expect(windowEscapes).toEqual(['window'])
+        await expect(canvas.getAllByTestId('status')[0]).toHaveTextContent('cancelled')
+        await expect(input).toHaveValue('Original')
+        await expect(windowEscapes).toEqual([true])
 
         window.removeEventListener('keydown', onWindowKeyDown)
     },

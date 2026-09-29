@@ -102,9 +102,11 @@ export const PropertyValueEditor: Component<PropertyValueEditorProps> = props =>
                             e.preventDefault()
                             e.currentTarget.blur()
                         } else if (isDismissKey(e)) {
-                            // No dropdown of our own — revert and let the keydown BUBBLE, so the
-                            // modal's own Escape listener (ui/Modal.tsx) sees it too and closes
-                            // the whole card, not just this field.
+                            // No dropdown of our own — revert and CONSUME the key
+                            // (`defaultPrevented`), so a host ui/Modal.tsx ignores it and stays
+                            // open: the first Escape cancels this field, a second closes the card.
+                            // Not stopPropagation — other listeners may still observe the key.
+                            e.preventDefault()
                             setDraft(toDraft())
                             cancelled = true
                             e.currentTarget.blur()
