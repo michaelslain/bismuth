@@ -604,14 +604,15 @@ export const SETTINGS_SCHEMA: Schema = {
     }),
     // OpenAI Codex-specific opt-ins (core/src/agentBackends/agentsMd.ts + codexHooks.ts). Codex has no
     // system-prompt flag and no PATH-shim hook mechanism — AGENTS.md and a project-scoped
-    // .codex/hooks.json are its OWN designed channels for memory + session telemetry, but both mean
+    // .codex/hooks.json are its OWN designed channels for memory + session telemetry (the daemon's
+    // persona travels separately, via `developer_instructions`), but both mean
     // writing into files the user may hand-edit, so — same precedent as mcp.registerWith — both
     // default off and are opt-in.
     codex: object({
         writeAgentsMd: {
             type: 'boolean',
             default: false,
-            doc: "Let Bismuth write/refresh a managed block in this vault's AGENTS.md with a short persona/memory note for the Codex CLI (its chat + daemon sessions have no system-prompt flag — AGENTS.md is Codex's own designed channel for this, and Cursor/Amp/Droid share the same convention). The block is delimited by markers and never touches surrounding prose; off by default because writing into a file you may hand-edit is opt-in.",
+            doc: "Let Bismuth write/refresh a managed block in this vault's AGENTS.md with a short persona/memory note for the Codex CLI (`codex exec` has no system-prompt flag — AGENTS.md is Codex's own designed channel for this, and Cursor/Amp/Droid share the same convention). Optional: the daemon's persona reaches a Codex brain regardless, through `developer_instructions`. The block is delimited by markers and never touches surrounding prose; off by default because writing into a file you may hand-edit is opt-in.",
         },
         installRelayHooks: {
             type: 'boolean',

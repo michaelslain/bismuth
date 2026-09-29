@@ -57,7 +57,7 @@ could not express.
 | 1 | **Chat** | A non-interactive turn with machine-readable streaming output, a resumable session id, cwd control |
 | 2 | **Terminal** | An interactive TUI that survives in a plain PTY |
 | 3 | **Relay reporting** | Session-lifecycle telemetry — hooks, a plugin API, or a wrapper that reports |
-| 4 | **Daemon** | Headless unattended turns, per-call cwd/env, a resumable session, a persona override |
+| 4 | **Daemon** | Headless unattended turns, per-call cwd/env, a resumable session, a persona channel (system-prompt append, or Codex's `developer_instructions`) |
 | 5 | **MCP injection** | A way to register Bismuth's MCP server — ideally per session, else a config file |
 | 6 | **Memory injection** | A system-prompt flag, a context-file convention, a pre-prompt hook, or MCP tools |
 
@@ -218,6 +218,14 @@ No other CLI has that triple. So for a vault with **any** hidden note, only the 
 run the brain. `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) is the pure chokepoint that
 enforces this, and every backend selection must pass through it. It degrades to Claude with a logged
 reason rather than throwing, because the daemon is always-on and its crons must keep firing.
+
+**The persona is a per-backend channel too.** Every daemon backend gets the same persona text
+(`You are <name>.` + the vault's `identity.md` body, plus the advisory deny-list appendix when notes
+are hidden) through its own channel, declared in `DAEMON_PERSONA_CHANNELS`
+(`daemon/src/daemon/persona.ts`): Claude appends it via `systemPrompt: { type: 'preset', preset:
+'claude_code', append }`; Codex gets `--config developer_instructions=<persona>` on every `codex exec`
+call. A backend with no declared channel cannot run as a daemon — `sendMessage` refuses it. The
+AGENTS.md block (`settings.codex.writeAgentsMd`) is optional and not the daemon's persona channel.
 
 ## The visibility gate is a per-channel capability, not a flag
 
