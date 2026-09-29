@@ -162,8 +162,8 @@ for `cli/src/commands/calendar.ts` is unchanged:
 
 ```typescript
 // core/src/calendar.ts
-import { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
-export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+import { expandRecurrence } from './bases/recurrence'
+export { addDays, expandRecurrence } from './bases/recurrence'
 export type { Recurrence, RecurrenceType } from './bases/recurrence'
 ```
 
@@ -239,7 +239,7 @@ The row↔event mapping is JSON-string-based for the compound fields: `recurrenc
 | `eventsInWindow` | `(events, from?, to?) => CalendarEvent[]` | RAW stored events (masters **not** expanded — real ids, so a caller can pick an id to edit) intersecting `[from, to]`: singles by `date`, masters by series-window `[startDate, endDate ?? ∞]` intersection. Both bounds optional (missing = open-ended) |
 | `searchEvents` | `(events, query) => CalendarEvent[]` | Case-insensitive substring search over `title` / `description` / `location` / `category` / `categories`. Works on raw events or expanded instances (the caller picks the input) |
 
-The date helpers (`toDateStr`, `addDays`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
+The date helpers (`addDays`, `todayISO` from `core/src/dates.ts`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
 
 ### Mutations (pure transforms; caller re-serializes + writes)
 
@@ -339,7 +339,7 @@ This is the single copy — the app's `EventStore` imports it (there is no app-s
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `todayISO` | `(d?: Date) => string` | From `core/src/dates.ts` (the one formatter; `toDateStr` was removed from `dates.ts`). Produces `"YYYY-MM-DD"` in **local** time (not UTC) |
+| `todayISO` | `(d?: Date) => string` | From `core/src/dates.ts` (the one formatter; `toDateStr` was folded into it). Produces `"YYYY-MM-DD"` in **local** time (not UTC) |
 | `addDays` | `(d: Date, n: number) => Date` | Returns a new `Date`; `n` may be negative |
 | `startOfWeek` | `(d: Date, mondayFirst: boolean) => Date` | Returns Monday (ISO) or Sunday (US) of the containing week |
 | `weekRange` | `(d: Date, mondayFirst: boolean) => [string, string]` | `[weekStart, weekStart+6]` as ISO strings |
@@ -366,7 +366,7 @@ ends already agree on (month, year) rather than concatenating two ISO dates:
 | `week` spanning a month boundary | `2026-01-29 – 2026-02-04` | `"29 Jan – 4 Feb 2026"` | `"29 Jan – 4 Feb"` |
 | `week` spanning a year boundary | `2025-12-29 – 2026-01-04` | `"29 Dec 2025 – 4 Jan 2026"` | `"29 Dec – 4 Jan"` |
 
-Before this existed the breadcrumb was built from `todayISO`, so week and 3-day read as raw ISO
+Before this existed the breadcrumb was built from `toDateStr`, so week and 3-day read as raw ISO
 ranges (`"2026-01-12 — 2026-01-18"`, 23 characters) and were the one reason the label routinely
 ellipsized at an ordinary split-pane width, while month read `"January 2026"` — two different
 vocabularies in the same slot.

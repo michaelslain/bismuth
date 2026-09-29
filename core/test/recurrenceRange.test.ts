@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test'
+import { todayISO } from '../src/dates'
 import {
     expandRecurrence,
     matchesRecurrence,
-    toDateStr,
     addDays,
     type Recurrence,
 } from '../src/bases/recurrence'
@@ -22,8 +22,8 @@ function expandFromSeriesStart(
     const rEnd = new Date(rangeEnd + 'T00:00:00')
     let cursor = new Date(start)
     while (cursor <= end && cursor <= rEnd) {
-        if (cursor >= rStart && matchesRecurrence(r, toDateStr(cursor)))
-            out.push(toDateStr(cursor))
+        if (cursor >= rStart && matchesRecurrence(r, todayISO(cursor)))
+            out.push(todayISO(cursor))
         cursor = addDays(cursor, 1)
     }
     return out

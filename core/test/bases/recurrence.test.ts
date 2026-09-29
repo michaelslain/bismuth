@@ -1,15 +1,15 @@
 import { test, expect } from 'bun:test'
+import { todayISO } from '../../src/dates'
 import {
-    toDateStr,
     addDays,
     expandRecurrence,
     splitRecurrence,
     matchesRecurrence,
 } from '../../src/bases/recurrence'
 
-test('toDateStr / addDays', () => {
-    expect(toDateStr(new Date('2026-05-27T00:00:00'))).toBe('2026-05-27')
-    expect(toDateStr(addDays(new Date('2026-05-27T00:00:00'), 5))).toBe(
+test('todayISO / addDays', () => {
+    expect(todayISO(new Date('2026-05-27T00:00:00'))).toBe('2026-05-27')
+    expect(todayISO(addDays(new Date('2026-05-27T00:00:00'), 5))).toBe(
         '2026-06-01',
     )
 })
