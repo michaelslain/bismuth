@@ -16,10 +16,22 @@ const ctx = {
     memoryDir: '/vault/.daemon/memory',
 } as unknown as VaultContext
 
+test('buildQueryOptions delivers the persona through the SDK preset append, not a dead key', () => {
+    const o = buildQueryOptions(ctx, undefined, undefined, {
+        persona: 'You are Atlas.',
+    })
+    expect(o.systemPrompt).toEqual({
+        type: 'preset',
+        preset: 'claude_code',
+        append: 'You are Atlas.',
+    })
+    expect('appendSystemPrompt' in o).toBe(false)
+})
+
 test('buildQueryOptions wires mcpServers.bismuth with vault-scoped env when the mcp binary exists', () => {
     const o = buildQueryOptions(ctx, undefined, undefined, {
         claudeBin: '/usr/local/bin/claude',
-        systemPrompt: 'You are Atlas.',
+        persona: 'You are Atlas.',
         mcp: '/home/me/.bismuth/bin/bismuth-mcp',
         cli: '/home/me/.bismuth/bin/bismuth',
         docs: '/home/me/.bismuth/docs',
@@ -50,7 +62,7 @@ test('buildQueryOptions wires mcpServers.bismuth with vault-scoped env when the 
 // not a spread of process.env).
 test('buildQueryOptions stamps BISMUTH_AGENT_CHANNEL=daemon on the base session env', () => {
     const o = buildQueryOptions(ctx, undefined, undefined, {
-        systemPrompt: 'x',
+        persona: 'x',
     })
     expect((o.env as Record<string, string>).BISMUTH_AGENT_CHANNEL).toBe(
         'daemon',
@@ -59,7 +71,7 @@ test('buildQueryOptions stamps BISMUTH_AGENT_CHANNEL=daemon on the base session 
 
 test('buildQueryOptions omits the MCP block entirely when the mcp binary is absent (graceful degrade)', () => {
     const o = buildQueryOptions(ctx, undefined, undefined, {
-        systemPrompt: 'You are Atlas.',
+        persona: 'You are Atlas.',
     })
     expect(o.mcpServers).toBeUndefined()
     expect(o.settingSources).toEqual([])
@@ -77,7 +89,7 @@ test('buildQueryOptions inherits user-scope MCP only when inheritUserMcp is on',
         { ...ctx, inheritUserMcp: true },
         undefined,
         undefined,
-        { systemPrompt: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
+        { persona: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
     )
     expect(o.settingSources).toEqual(['user'])
 })
@@ -89,7 +101,7 @@ test('buildQueryOptions keeps the bismuth MCP vault-targeted under inheritance',
         { ...ctx, inheritUserMcp: true },
         undefined,
         undefined,
-        { systemPrompt: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
+        { persona: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
     )
     const servers = o.mcpServers as unknown as { bismuth: { env: Record<string, string> } }
     expect(servers.bismuth.env.BISMUTH_VAULT).toBe('/vault')
@@ -101,7 +113,7 @@ test('buildQueryOptions keeps the bismuth MCP vault-targeted under inheritance',
 // default. A machine with no bundled MCP silently inherited everything, the exact inverse of the
 // intended posture.
 test('buildQueryOptions pins settingSources even when the mcp binary is absent', () => {
-    const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: 'x' })
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' })
     expect(o.mcpServers).toBeUndefined()
     expect(o.settingSources).toEqual([])
 })
@@ -111,7 +123,7 @@ test('buildQueryOptions pins settingSources even when the mcp binary is absent',
 // install dirs no matter the ambient PATH.
 test('buildQueryOptions augments the child env PATH with the CLI install dirs', () => {
     const o = buildQueryOptions(ctx, undefined, undefined, {
-        systemPrompt: 'x',
+        persona: 'x',
     })
     const path = (o.env as Record<string, string>).PATH
     expect(path).toContain('/usr/local/bin')
@@ -123,14 +135,14 @@ test('buildQueryOptions augments the child env PATH with the CLI install dirs', 
 // prefer "$BISMUTH_CLI" over a bare-name PATH lookup. Absent → not set (graceful degrade).
 test('buildQueryOptions exports BISMUTH_CLI only when the CLI binary is present', () => {
     const withCli = buildQueryOptions(ctx, undefined, undefined, {
-        systemPrompt: 'x',
+        persona: 'x',
         cli: '/home/me/.bismuth/bin/bismuth',
     })
     expect((withCli.env as Record<string, string>).BISMUTH_CLI).toBe(
         '/home/me/.bismuth/bin/bismuth',
     )
     const withoutCli = buildQueryOptions(ctx, undefined, undefined, {
-        systemPrompt: 'x',
+        persona: 'x',
     })
     expect(
         (withoutCli.env as Record<string, string>).BISMUTH_CLI,
@@ -148,7 +160,7 @@ test('buildQueryOptions: sandbox.failIfUnavailable is true when the vault restri
         ctx,
         undefined,
         undefined,
-        { systemPrompt: 'x' },
+        { persona: 'x' },
         [{ rel: 'secret.md', abs: '/vault/secret.md' }],
     )
     expect(
@@ -162,7 +174,7 @@ test('buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailab
         ctx,
         undefined,
         undefined,
-        { systemPrompt: 'x' },
+        { persona: 'x' },
         [],
     )
     expect(o.sandbox).toBeUndefined()
@@ -184,7 +196,7 @@ test('buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vaul
         ctx,
         undefined,
         undefined,
-        { systemPrompt: 'x' },
+        { persona: 'x' },
         [{ rel: 'secret.md', abs: '/vault/secret.md' }],
     )
     expect(
@@ -203,7 +215,7 @@ test('buildQueryOptions: sandbox.filesystem.denyRead covers the owner-token run 
         ctx,
         undefined,
         undefined,
-        { systemPrompt: 'x' },
+        { persona: 'x' },
         [{ rel: 'secret.md', abs: '/vault/secret.md' }],
     )
     const denyRead =
@@ -217,12 +229,12 @@ test('buildQueryOptions: sandbox.filesystem.denyRead covers the owner-token run 
 
 test('buildQueryOptions resumes an existing session unless newSession is set', () => {
     expect(
-        buildQueryOptions(ctx, undefined, 'sess-1', { systemPrompt: 'x' })
+        buildQueryOptions(ctx, undefined, 'sess-1', { persona: 'x' })
             .resume,
     ).toBe('sess-1')
     expect(
         buildQueryOptions(ctx, { newSession: true }, 'sess-1', {
-            systemPrompt: 'x',
+            persona: 'x',
         }).resume,
     ).toBeUndefined()
 })
@@ -307,7 +319,7 @@ test('codex is refused for a vault with hidden notes — the ONE path that must 
 // pin the real field name, which is the only part a typo can break.
 test("buildQueryOptions passes reasoning effort as `effort` (the SDK's real field), not thinkingBudget", () => {
     const o = buildQueryOptions(ctx, { effort: 'high' }, undefined, {
-        systemPrompt: 'x',
+        persona: 'x',
     })
     expect(o.effort).toBe('high')
     expect((o as Record<string, unknown>).thinkingBudget).toBeUndefined()
@@ -316,17 +328,17 @@ test("buildQueryOptions passes reasoning effort as `effort` (the SDK's real fiel
 test('buildQueryOptions maps low/medium effort onto `effort` too, and omits it entirely when unset', () => {
     expect(
         buildQueryOptions(ctx, { effort: 'low' }, undefined, {
-            systemPrompt: 'x',
+            persona: 'x',
         }).effort,
     ).toBe('low')
     expect(
         buildQueryOptions(ctx, { effort: 'medium' }, undefined, {
-            systemPrompt: 'x',
+            persona: 'x',
         }).effort,
     ).toBe('medium')
     // No effort configured → the key is absent, so the SDK keeps its own default.
     expect(
-        buildQueryOptions(ctx, undefined, undefined, { systemPrompt: 'x' })
+        buildQueryOptions(ctx, undefined, undefined, { persona: 'x' })
             .effort,
     ).toBeUndefined()
 })

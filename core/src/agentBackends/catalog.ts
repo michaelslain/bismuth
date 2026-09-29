@@ -382,7 +382,7 @@ const OPENCODE: BackendDescriptor = {
         // verified as a genuine per-call override by the SDK's own request shape. "systemPrompt" is the
         // closest existing enum value (a system-prompt-flag injection) — note it's actually PER-TURN
         // here, strictly better than the "once per session" the enum's own doc comment describes for
-        // the daemon's spawn-fixed appendSystemPrompt. Run mode still has no such hook and stays
+        // the daemon's spawn-fixed system-prompt append. Run mode still has no such hook and stays
         // MCP-tool-only for memory.
         memory: 'systemPrompt',
     },
@@ -440,9 +440,11 @@ const OPENCODE: BackendDescriptor = {
  *    Claude's managedSettings/sandbox/disallowedTools triple.
  *  - mcp: "cli" — `codex mcp add` already exists (agentBackends/mcpRegistrars.ts, pre-existing —
  *    not duplicated here).
- *  - memory: "agentsMd" — no system-prompt flag exists on `codex exec`; a managed block in the
- *    vault's AGENTS.md is Codex's designed channel for this (agentBackends/agentsMd.ts, shared with
- *    any future AGENTS.md-convention backend), opt-in via `settings.codex.writeAgentsMd`.
+ *  - memory: "agentsMd" — `codex exec` has no system-prompt flag; a managed block in the vault's
+ *    AGENTS.md is Codex's designed channel for memory guidance (agentBackends/agentsMd.ts, shared with
+ *    any future AGENTS.md-convention backend), opt-in via `settings.codex.writeAgentsMd`. The DAEMON's
+ *    persona does not depend on it: it rides `--config developer_instructions=<persona>` on every
+ *    `codex exec` call (daemon/src/daemon/codexSession.ts), by default.
  */
 const CODEX: BackendDescriptor = {
     id: 'codex',
@@ -509,7 +511,7 @@ const CODEX: BackendDescriptor = {
  *    the honest default until a specific agent is verified to emit it.
  *  - computerUse: false — no `--chrome`-equivalent capability exists in the verified ACP surface.
  *  - relayReporting/subagents/daemon: false — Surface 3/4 dead ends (no session-lifecycle telemetry, no
- *    systemPrompt field for the daemon's persona injection).
+ *    declared daemon persona channel — see DAEMON_PERSONA_CHANNELS in daemon/src/daemon/persona.ts).
  *  - visibilityGate: {chat:"none", daemon:"none"} for EVERY agent sharing this profile. None
  *    exposes Claude Code's own managedSettings/sandbox/disallowedTools trio, and none has been
  *    proven wrappable: cline/gemini/goose are not installed on the machine this catalog was

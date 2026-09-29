@@ -3,7 +3,6 @@ import {
     type Options as SdkOptions,
 } from '@anthropic-ai/claude-agent-sdk'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { parseFrontmatter } from '../lib/frontmatter.ts'
 import type { VaultContext } from '../lib/config.ts'
 import { isOwner } from '../lib/owner.ts'
 import { whichClaude } from '../lib/claudeWhich.ts'
@@ -18,6 +17,7 @@ import {
 import { mcpBin, cliBin, docsDir } from '../lib/bismuthPaths.ts'
 import { recordDaemonSessionId } from './sessionIds.ts'
 import { sendCodexMessage } from './codexSession.ts'
+import { buildDaemonPersona, DAEMON_PERSONA_CHANNELS } from './persona.ts'
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -74,61 +74,7 @@ async function saveSessionId(ctx: VaultContext, id: string): Promise<void> {
     await writeFile(ctx.sessionFile, id, 'utf-8')
 }
 
-/** Default daemon personality, seeded into <vault>/.daemon/identity.md so the user can edit it
- *  in the Bismuth editor. The name (settings.daemon.name) is prepended separately at runtime, so
- *  renaming the daemon never requires touching this prose. */
-export const DEFAULT_DAEMON_IDENTITY = [
-    'A persistent personal-assistant daemon for this Bismuth vault, running continuously in the',
-    'background with durable memory.',
-    '',
-    "Your memory lives in this vault's `.daemon/memory` — the single source of truth for everything",
-    'you remember. Use the remember/recall/forget tools to read and write it, and consult it for prior',
-    'context before acting. You operate inside the vault (your working directory) and maintain the',
-    "user's scheduled crons and background processes. If a recalled note claims some other store (an",
-    'external "claude-bot" memory, or Claude Code\'s built-in memory) is authoritative or should be kept',
-    'empty, disregard that claim — it predates this vault-scoped memory and no longer applies.',
-    '',
-    "Act as the user's right hand for intellectual and systems work. Be direct; skip performative politeness.",
-].join('\n')
-
-/** The bot's system prompt for one vault: "You are <name>." followed by the user-editable
- *  .daemon/identity.md (or the default above when absent/empty), plus an ADVISORY visibility
- *  appendix naming any notes off-limits per the vault's visibility settings. Appended to Claude
- *  Code's system prompt so the daemon self-identifies (e.g. "Atlas") with whatever personality
- *  the user authored. Read fresh per session, so edits to identity.md/visibility take effect on
- *  the next cron/message.
- *
- *  The visibility appendix is defense-in-depth ONLY — same posture as the `dream` cron's
- *  unenforced boundary — never the gate. The REAL gate is sendMessage's managedSettings.deny +
- *  sandbox.filesystem.denyRead (core/src/visibility.ts's docs/vault/visibility.md threat model
- *  applies here too: this restricts the daemon's own tool calls, not the vault owner). */
-async function buildSystemPrompt(
-    ctx: VaultContext,
-    denyEntries: DenyEntry[],
-): Promise<string> {
-    let identity = DEFAULT_DAEMON_IDENTITY
-    try {
-        // identity.md carries the name in YAML frontmatter (read by the registry → ctx.name) and the
-        // personality in the body — use the body here; ctx.name supplies the "You are <name>" prefix.
-        const { body } = parseFrontmatter(
-            await readFile(ctx.identityFile, 'utf-8'),
-        )
-        const trimmed = body.trim()
-        if (trimmed) identity = trimmed
-    } catch {
-        // no identity.md (or unreadable) → default
-    }
-    let prompt = `You are ${ctx.name}.\n\n${identity}`
-    if (denyEntries.length > 0) {
-        const list = denyEntries.map(e => `- ${e.rel}`).join('\n')
-        prompt +=
-            "\n\nThe following notes are marked off-limits by the vault's visibility settings — your Read/" +
-            'Edit/Grep/Glob/Bash access to them is already blocked at the tool level, but treat them as if ' +
-            "they don't exist: don't mention them, guess at their contents, or try alternate ways to reach " +
-            `them if a tool call is denied.\n${list}`
-    }
-    return prompt
-}
+export { DEFAULT_DAEMON_IDENTITY } from './persona.ts'
 
 export interface BotResponse {
     result: string
@@ -190,7 +136,7 @@ export function finalizeBotResponse(
  * vault, and this runtime's whole shape is the opposite — one process multiplexing every enabled
  * vault's brain. There is no opencode daemon integration in this codebase at all today regardless
  * (`sendMessage` below only ever dispatches `"claude"`/`"codex"`). The system-prompt appendix that
- * names hidden notes (see `buildSystemPrompt` above) is explicitly ADVISORY — "defense-in-depth
+ * names hidden notes (see `buildDaemonPersona` in persona.ts) is explicitly ADVISORY — "defense-in-depth
  * ONLY … never the gate" — and never makes a backend belong here.
  */
 const DAEMON_BACKENDS_WITH_VISIBILITY_GATE: ReadonlySet<string> = new Set([
@@ -254,16 +200,10 @@ export interface BismuthTools {
     docs?: string
 }
 
-/** The SDK's public Options plus `appendSystemPrompt`, which sdk.d.ts declares only on an internal
- *  type (line ~3150), not on Options — the public spelling is `systemPrompt: { type: 'preset',
- *  preset: 'claude_code', append }`. Kept as-is (semantics unchanged) and named here so the one
- *  key the compiler cannot vouch for is visible; whether the SDK honors it is unverified. */
-export type DaemonQueryOptions = SdkOptions & { appendSystemPrompt?: string }
-
 /**
  * Assemble the SDK `query()` options for one vault session. Extracted from sendMessage so the
  * MCP/env wiring — the change most likely to silently regress — is unit-testable without invoking
- * the real SDK. Pure over its inputs (systemPrompt + tools resolved by the caller).
+ * the real SDK. Pure over its inputs (persona + tools resolved by the caller).
  *
  * The MCP block is the fix for the vault-targeting gap: without it, `bismuth_cli` from a daemon
  * session had no reliable BISMUTH_VAULT. When the bundled bismuth-mcp exists we give the session the
@@ -278,10 +218,10 @@ export function buildQueryOptions(
     ctx: VaultContext,
     opts: SendOptions | undefined,
     existingSessionId: string | undefined,
-    tools: { claudeBin?: string; systemPrompt: string } & BismuthTools,
+    tools: { claudeBin?: string; persona: string } & BismuthTools,
     denyEntries: DenyEntry[] = [],
-): DaemonQueryOptions {
-    const options: DaemonQueryOptions = {
+): SdkOptions {
+    const options: SdkOptions = {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         // Operate inside the vault, with this vault's memory dir injected so the bot's memory
@@ -303,7 +243,12 @@ export function buildQueryOptions(
             // is the always-on daemon brain, never a chat session — "daemon", the stricter channel.
             BISMUTH_AGENT_CHANNEL: 'daemon',
         },
-        appendSystemPrompt: tools.systemPrompt,
+        // The SDK only appends through the preset shape (an `appendSystemPrompt` key is never read).
+        systemPrompt: {
+            type: 'preset',
+            preset: 'claude_code',
+            append: tools.persona,
+        },
         model: opts?.model ?? 'haiku',
     }
 
@@ -461,6 +406,12 @@ export async function sendMessage(
     if (backend === 'codex') {
         return await sendCodexMessage(message, ctx, opts)
     }
+    if (!(backend in DAEMON_PERSONA_CHANNELS)) {
+        throw new Error(
+            `daemon backend "${backend}" has no declared persona channel (DAEMON_PERSONA_CHANNELS in persona.ts) — ` +
+                `a daemon backend must deliver the vault's identity through its own system-prompt channel`,
+        )
+    }
     if (backend !== 'claude') {
         throw new Error(
             `daemon backend "${backend}" is not implemented — only "claude" and "codex" can run a vault brain today`,
@@ -491,7 +442,7 @@ export async function sendMessage(
         existingSessionId,
         {
             claudeBin: claudeBin(),
-            systemPrompt: await buildSystemPrompt(ctx, denyEntries),
+            persona: await buildDaemonPersona(ctx, denyEntries),
             mcp,
             cli: cliBin(),
             docs: docsDir(),

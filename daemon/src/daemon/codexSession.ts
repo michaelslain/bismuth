@@ -5,6 +5,7 @@ import { whichBinary } from '../lib/claudeWhich.ts'
 import { augmentPath } from '../lib/childEnv.ts'
 import { writeAgentsMdBlock } from '../lib/agentsMd.ts'
 import { parseFrontmatter } from '../lib/frontmatter.ts'
+import { buildDaemonPersona } from './persona.ts'
 import type { BotResponse, SendOptions } from './session.ts'
 
 /**
@@ -37,13 +38,11 @@ import type { BotResponse, SendOptions } from './session.ts'
  *    from CODEX_HOME's documented purpose (config/session root), not a live smoke test (no `codex`
  *    binary is installed in this sandbox). Verify this actually isolates auth/session state per
  *    vault before relying on it in production.
- *  - Persona/system-prompt equivalent: `codex exec` has no system-prompt flag (confirmed absent
- *    from the CLI's own config reference) — AGENTS.md is its designed channel instead (see
- *    docs/chat/backends.md's Surface 6). refreshIdentityAgentsMd below refreshes a managed block
- *    in the vault's AGENTS.md with the SAME identity.md-derived text buildSystemPrompt would have
- *    appended for Claude, gated on settings.codex.writeAgentsMd (VaultContext.codexWriteAgentsMd)
- *    — off means the Codex brain runs with NO persona/memory context at all, which is an honest
- *    degrade, not a silent one (logged once per send).
+ *  - Persona: `--config developer_instructions=<persona>` on EVERY `codex exec` call (new and
+ *    `resume`), built by persona.ts's buildDaemonPersona — the SAME text the Claude path appends to
+ *    its system prompt, so a Codex brain has an identity by default. The AGENTS.md managed block
+ *    (refreshIdentityAgentsMd below, gated on settings.codex.writeAgentsMd) is an optional extra on
+ *    top of that, not the persona's only channel.
  *  - Headless: `--sandbox workspace-write` + approval_policy "never" — `codex exec` has no TTY to
  *    prompt on regardless, but this is explicit for determinism, matching the chat driver's
  *    identical posture.
@@ -123,20 +122,12 @@ async function saveCodexThreadId(ctx: VaultContext, id: string): Promise<void> {
     }
 }
 
-/** Best-effort refresh of the vault's AGENTS.md managed block with this vault's identity — the
- *  closest honest equivalent to buildSystemPrompt's appendSystemPrompt for a backend with no
- *  system-prompt field. Gated by ctx.codexWriteAgentsMd (settings.codex.writeAgentsMd); logs once
- *  when off rather than failing silently, since a user who set daemon.backend:"codex" expecting a
- *  persona and forgot this second opt-in would otherwise get an unexplained blank slate. */
+/** Best-effort refresh of the vault's AGENTS.md managed block with this vault's identity + memory
+ *  guidance — an OPTIONAL extra (Cursor/Amp/Droid read the same file); the persona itself already
+ *  reaches Codex through `developer_instructions` (see buildCodexExecArgs). Gated by
+ *  ctx.codexWriteAgentsMd (settings.codex.writeAgentsMd); a no-op when off. */
 async function refreshIdentityAgentsMd(ctx: VaultContext): Promise<void> {
-    if (!ctx.codexWriteAgentsMd) {
-        console.error(
-            `[codexSession:${ctx.name}] settings.codex.writeAgentsMd is off — running with no persona/memory context ` +
-                `(Codex has no system-prompt flag; AGENTS.md is its only channel for this). Enable it to give this vault's ` +
-                `Codex brain an identity.`,
-        )
-        return
-    }
+    if (!ctx.codexWriteAgentsMd) return
     let identity = DEFAULT_DAEMON_IDENTITY_FALLBACK
     try {
         const { body } = parseFrontmatter(
@@ -198,11 +189,15 @@ interface CodexExecArgsInput {
     model?: string
     effort?: ModelReasoningEffort
     threadId?: string
+    /** The daemon persona, passed as `developer_instructions` on every call (new and resume). */
+    developerInstructions?: string
 }
 
 /** Mirrors core/src/chatProviders/codex/driver.ts's buildCodexExecArgs exactly (same rationale —
- *  see that file's header for why this exact flag order/shape is trusted, not guessed). */
-function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
+ *  see that file's header for why this exact flag order/shape is trusted, not guessed), plus
+ *  `developer_instructions` (confirmed a string key in Codex's config reference). The value is a TOML
+ *  basic string: a JSON string literal is one for any text (escapes `"`, `\` and control chars). */
+export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     const args: string[] = ['exec', a.jsonFlag]
     if (a.model) args.push('--model', a.model)
     args.push('--sandbox', 'workspace-write')
@@ -210,6 +205,11 @@ function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     args.push('--skip-git-repo-check')
     if (a.effort) args.push('--config', `model_reasoning_effort="${a.effort}"`)
     args.push('--config', 'approval_policy="never"')
+    if (a.developerInstructions)
+        args.push(
+            '--config',
+            `developer_instructions=${JSON.stringify(a.developerInstructions)}`,
+        )
     if (a.threadId) args.push('resume', a.threadId)
     return args
 }
@@ -318,6 +318,9 @@ export async function sendCodexMessage(
     }
 
     await refreshIdentityAgentsMd(ctx)
+    // A Codex daemon only ever runs on a vault with no denied notes (resolveDaemonBackend refuses
+    // it otherwise), so there is no deny-list appendix to carry.
+    const developerInstructions = await buildDaemonPersona(ctx, [])
 
     const existingThreadId = opts?.newSession
         ? undefined
@@ -354,6 +357,7 @@ export async function sendCodexMessage(
             model: opts?.model,
             effort: asEffort(opts?.effort),
             threadId: existingThreadId,
+            developerInstructions,
         })
         let result = await runCodexExec(
             bin,
@@ -381,6 +385,7 @@ export async function sendCodexMessage(
                 model: opts?.model,
                 effort: asEffort(opts?.effort),
                 threadId: existingThreadId,
+                developerInstructions,
             })
             const retryResult = await runCodexExec(
                 bin,
