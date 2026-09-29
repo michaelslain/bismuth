@@ -128,7 +128,7 @@ This discovers nearly every `*.test.ts` file in the repo. Not because `core` nam
 Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
 match against every file's relative path (see "Filter by filename pattern" below for the full
 mechanism), and it happens to match every file under `core/test/` (the path prefix) plus one
-`app/src/` file whose own name contains it (`app/src/icons/registry-core.test.ts`) — 159 files
+`app/src/` file whose own name contains it (`app/src/icons/registryCore.test.ts`) — 159 files
 total, confirmed by exact count. Output (counts are illustrative and grow per commit — expect a
 green `0 fail`; measured 2026-09-03):
 

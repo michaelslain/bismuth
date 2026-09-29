@@ -1,10 +1,10 @@
-// app/src/icons/registry-core.test.ts
+// app/src/icons/registryCore.test.ts
 import { test, expect } from 'bun:test'
 import {
     createIconRegistry,
     normalizeIconKey,
     looksLikeIconName,
-} from './registry-core'
+} from './registryCore'
 
 // A fake manifest standing in for the real one (PascalCase -> art).
 // Values are sentinel strings so we can assert which icon resolved.

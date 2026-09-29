@@ -96,11 +96,11 @@ const IMG_SRC_RE = /<img\b[^>]*?\bsrc\s*=\s*("([^"]*)"|'([^']*)')/i
 
 function decodeHtmlEntities(s: string): string {
     return s
-        .replace(/&amp;/g, '&')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
 }
 
 /** The first `<img src="…">`/`'…'` in a fragment of clipboard HTML, HTML-entity-decoded. Only

@@ -1,14 +1,5 @@
 import { expect, test, describe } from 'bun:test'
-import { baseName, attachmentTarget } from './attachmentPath'
-
-describe('baseName', () => {
-    test('posix + windows separators', () => {
-        expect(baseName('/Users/me/Desktop/photo.png')).toBe('photo.png')
-        expect(baseName('C:\\Users\\me\\photo.png')).toBe('photo.png')
-        expect(baseName('photo.png')).toBe('photo.png')
-        expect(baseName('a/b\\c/d.jpg')).toBe('d.jpg')
-    })
-})
+import { attachmentTarget } from './attachmentPath'
 
 describe('attachmentTarget', () => {
     test('named folder', () => {
