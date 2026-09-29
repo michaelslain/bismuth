@@ -6,7 +6,7 @@
 import { test, expect } from 'bun:test'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { augmentPath, extraBinDirs } from './childEnv.ts'
+import { augmentPath, extraBinDirMap, extraBinDirs } from './childEnv.ts'
 
 // The exact bare PATH launchd hands a Finder-launched GUI app (which then gets baked into the plist
 // and inherited by every cron worker) — the starting point Bug #105 must recover from.
@@ -67,5 +67,29 @@ test('extraBinDirs includes exactly the expected fallback dirs in priority order
         join(FAKE_HOME, '.bismuth', 'bin'),
         join(FAKE_HOME, '.bun', 'bin'),
         join(FAKE_HOME, '.local', 'bin'),
+    ])
+})
+
+test('augmentPath defaults the base to the POSIX dirs when the parent PATH is empty', () => {
+    const out = augmentPath('', FAKE_HOME).split(':')
+    expect(out.slice(0, 4)).toEqual(['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    expect(out).toContain('/usr/local/bin')
+})
+
+test('extraBinDirMap names each dir and extraBinDirs is its values in priority order', () => {
+    const m = extraBinDirMap(FAKE_HOME)
+    expect(m).toEqual({
+        usrLocal: '/usr/local/bin',
+        homebrew: '/opt/homebrew/bin',
+        bismuth: join(FAKE_HOME, '.bismuth', 'bin'),
+        bun: join(FAKE_HOME, '.bun', 'bin'),
+        local: join(FAKE_HOME, '.local', 'bin'),
+    })
+    expect(extraBinDirs(FAKE_HOME)).toEqual([
+        m.usrLocal,
+        m.homebrew,
+        m.bismuth,
+        m.bun,
+        m.local,
     ])
 })

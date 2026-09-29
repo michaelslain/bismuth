@@ -118,6 +118,15 @@ describe('imageSrcFromHtml', () => {
         expect(imageSrcFromHtml(html)).toBe('https://example.com/img?a=1&b=2')
     })
 
+    test('decodes &amp; last so an escaped entity is not double-decoded', () => {
+        expect(imageSrcFromHtml('<img src="https://example.com/i?q=&amp;quot;">')).toBe(
+            'https://example.com/i?q=&quot;',
+        )
+        expect(imageSrcFromHtml('<img src="https://example.com/i?q=&amp;lt;">')).toBe(
+            'https://example.com/i?q=&lt;',
+        )
+    })
+
     test('single-quoted src is matched too', () => {
         expect(imageSrcFromHtml("<img class='x' src='https://example.com/a.png'>")).toBe(
             'https://example.com/a.png',

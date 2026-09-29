@@ -6,7 +6,7 @@
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join, resolve, relative, sep, basename } from 'node:path'
-import { resolveWithin } from './skills'
+import { resolveWithin } from './paths'
 
 export interface DocHit {
     path: string

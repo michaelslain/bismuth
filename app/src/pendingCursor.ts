@@ -21,8 +21,3 @@ export function setPendingCursor(path: string, offset: number): void {
 export function takePendingCursor(path: string): number | undefined {
     return cursorChannel.take(path)
 }
-
-/** Forget a buffer's pending cursor without consuming it (e.g. a create that failed). */
-export function clearPendingCursor(path: string): void {
-    cursorChannel.clear(path)
-}

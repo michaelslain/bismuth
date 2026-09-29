@@ -17,7 +17,8 @@
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, writeFileSync, renameSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { writeFileAtomicSync } from './atomicWrite'
 
 /** One remembered choice: the model (a picker value, e.g. "opus[1m]") a session was last set to. */
 export interface ChatModelEntry {
@@ -88,9 +89,8 @@ function writeAll(list: ChatModelEntry[]): void {
     try {
         const dir = chatStateDir()
         mkdirSync(dir, { recursive: true })
-        const tmp = join(dir, `.models.${process.pid}.tmp`)
-        writeFileSync(tmp, JSON.stringify(list))
-        renameSync(tmp, modelsFile()) // atomic on POSIX — a concurrent reader never sees a torn file
+        // atomic — a concurrent reader never sees a torn file
+        writeFileAtomicSync(modelsFile(), JSON.stringify(list))
     } catch {
         /* best-effort — a failed persist just means this choice won't survive a restart */
     }

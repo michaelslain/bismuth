@@ -241,7 +241,7 @@ ${headingRules}
      table cell, which stays mono — kept here too. */
   pre, pre code, code,
   .fmatter, .fmatter-key,
-  .bismuth-tag, .bismuth-task-field,
+  .bismuth-tag,
   .bismuth-cell-list .bismuth-tag {
     font-family: ${p.monoFont};
     font-size: ${editorPx}px;

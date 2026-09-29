@@ -161,7 +161,7 @@ interface Recurrence {
 
 ### Recurrence expansion
 
-`expandRecurrence(recurrence, rangeStart, rangeEnd)` (in `calendar/dates.ts`) iterates day-by-day from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? '2100-01-01', rangeEnd)` and calls `matchesRecurrence` on each day. Only matching days are returned.
+`expandRecurrence(recurrence, rangeStart, rangeEnd)` (in `core/src/bases/recurrence.ts`) iterates day-by-day from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? '2100-01-01', rangeEnd)` and calls `matchesRecurrence` on each day. Only matching days are returned.
 
 ### Editing and deleting recurring events
 

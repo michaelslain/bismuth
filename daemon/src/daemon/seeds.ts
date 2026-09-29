@@ -19,7 +19,7 @@ import { writeFile, mkdir, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { VaultContext } from '../lib/config.ts'
-import { DEFAULT_DAEMON_IDENTITY } from './session.ts'
+import { DEFAULT_DAEMON_IDENTITY } from './persona.ts'
 import { DEFAULT_CRONS } from './defaultCrons.ts'
 import { PAGES_GUIDE } from './pagesGuide.ts'
 

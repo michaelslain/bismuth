@@ -3,12 +3,6 @@
 // attachment in the same place for the same settings.attachments.folder + note path. No framework
 // or settings imports — callers pass the resolved folder string in.
 
-/** The basename of a path, tolerant of both `/` and `\` separators (native OS paths are `\` on
- *  Windows). Returns the input unchanged when it has no separator. */
-export function baseName(path: string): string {
-    return path.split(/[\\/]/).pop() ?? path
-}
-
 /** Vault-relative destination for a new attachment, honoring settings.attachments.folder:
  *  "" = vault root, "." = the note's own folder, else a named subfolder. Leading/trailing slashes
  *  on the folder are stripped so a stray `folder: /attachments` still resolves vault-relative (the

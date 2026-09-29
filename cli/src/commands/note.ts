@@ -9,6 +9,7 @@ import {
     readNote,
     writeNote,
 } from '../../../core/src/files'
+import { noteStem } from '../../../core/src/pathUtils'
 import { expandTemplate } from '../../../core/src/templates'
 import {
     dailyNotePath,
@@ -16,12 +17,6 @@ import {
     type DailyNoteConfig,
 } from '../../../core/src/dailyNote'
 import { readDailyNotes, loadAppConfig } from '../../../core/src/settings'
-
-/** Title (filename without dir + `.md`) for a vault-relative note path. */
-function titleFromPath(path: string): string {
-    const base = path.split('/').pop() ?? path
-    return base.endsWith('.md') ? base.slice(0, -3) : base
-}
 
 /** Read `templatePath`, expand it (now + title derived from `rel`), and write the result to
  *  `rel`. Shared by `note new`'s explicit `--template` branch and its vault-default
@@ -34,7 +29,7 @@ async function writeFromTemplate(
     const raw = await readNote(vault, templatePath)
     const { text } = expandTemplate(raw, {
         now: new Date(),
-        title: titleFromPath(rel),
+        title: noteStem(rel),
     })
     await writeNote(vault, rel, text)
 }

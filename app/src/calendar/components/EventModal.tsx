@@ -2,7 +2,8 @@ import { createSignal, Show } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
 import { showEventModal, recurrenceAction } from '../state'
 import { EventStore, uuid } from '../EventStore'
-import { toDateStr, prettyDate } from '../dates'
+import { prettyDate } from '../dates'
+import { todayISO } from '../../../../core/src/dates'
 import { refreshEvents } from '../refresh'
 import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
 import {
@@ -34,7 +35,7 @@ export function EventModal(props: { store: EventStore }) {
     if (!modal) return null
     const editing = modal.event
 
-    const opened = initialEventForm(editing, modal, toDateStr(new Date()))
+    const opened = initialEventForm(editing, modal, todayISO(new Date()))
     const [form, setForm] = createStore<EventFormState>(structuredClone(opened))
     const [busy, setBusy] = createSignal(false)
     const snapshot = (): EventFormState =>

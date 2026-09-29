@@ -29,6 +29,7 @@ import { renderMath, onMathReady } from '../editor/katexLoader'
 import { sanitizeHtml } from '../sanitizeHtml'
 import { specForWikiEmbed } from '../editor/embedSpec'
 import { api } from '../api'
+import { parseWikilink } from '../editor/wikilink'
 
 // ---------------------------------------------------------------------------------------
 // Generic atom factory
@@ -265,12 +266,11 @@ const wikilink = makeAtom({
     pattern: WIKILINK_RE,
     dom: m => {
         const inner = m[1] ?? ''
-        const display = wikilinkDisplay(inner)
+        const { display, target, heading } = wikilinkChipParts(inner)
         const span = chip('bismuth-wikilink', display)
-        span.setAttribute('data-href', wikilinkTarget(inner))
+        span.setAttribute('data-href', target)
         // Carry the `#heading` anchor via data-heading alongside data-href, mirroring the
         // reader engine's wikilink chips (bases/markdown.ts).
-        const heading = wikilinkHeading(inner)
         if (heading) span.setAttribute('data-heading', heading)
         span.title = inner
         return span
@@ -426,44 +426,13 @@ export const inlineAtoms: MilkdownPlugin[] = [
     ...bareUrl,
 ]
 
-// ---------------------------------------------------------------------------------------
-// Display helpers (pure — shared with the chip renderers + tests)
-// ---------------------------------------------------------------------------------------
-
-/** The visible label for a `[[inner]]` wikilink: alias if present, else the target basename.
- *  Mirrors editor/wikilink.ts parseWikilink display logic. */
-export function wikilinkDisplay(inner: string): string {
-    const pipe = inner.indexOf('|')
-    if (pipe !== -1) return inner.slice(pipe + 1).trim()
-    const hash = inner.indexOf('#')
-    const target = (hash === -1 ? inner : inner.slice(0, hash)).trim()
-    const basename = target.slice(target.lastIndexOf('/') + 1)
-    return basename || target
-}
-
-/** The link target (path/basename, before `#`/`|`) of a `[[inner]]` wikilink. */
-export function wikilinkTarget(inner: string): string {
-    const pipe = inner.indexOf('|')
-    const beforeAlias = pipe === -1 ? inner : inner.slice(0, pipe)
-    const hash = beforeAlias.indexOf('#')
-    return (hash === -1 ? beforeAlias : beforeAlias.slice(0, hash)).trim()
-}
-
-/** The heading anchor (`#section`, before any `|alias`) of a `[[inner]]` wikilink, or "" when
- *  none. The chip carries this as `data-heading` so a click navigates to that heading. */
-export function wikilinkHeading(inner: string): string {
-    const pipe = inner.indexOf('|')
-    const beforeAlias = pipe === -1 ? inner : inner.slice(0, pipe)
-    const hash = beforeAlias.indexOf('#')
-    return hash === -1 ? '' : beforeAlias.slice(hash + 1).trim()
-}
-
-// Re-export the patterns so the round-trip test + the editor host can reuse the exact regexes.
-export const INLINE_PATTERNS = {
-    wikilink: WIKILINK_RE,
-    embedWiki: EMBED_WIKI_RE,
-    embedImg: EMBED_IMG_RE,
-    tag: TAG_RE,
-    math: MATH_RE,
-    bareUrl: BARE_URL_RE,
+/** The chip's parts for a `[[inner]]` wikilink, straight from the shared parser so the chip
+ *  shows exactly what the CodeMirror live preview does (`[[Note|]]` displays `Note`). */
+export function wikilinkChipParts(inner: string): {
+    display: string
+    target: string
+    heading: string
+} {
+    const { display, target, heading } = parseWikilink(inner)
+    return { display, target, heading: heading ?? '' }
 }

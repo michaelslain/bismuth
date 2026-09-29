@@ -532,7 +532,7 @@ describe('mono scoping and embedded faces', () => {
             true,
         )
 
-    test('code, frontmatter, tags and task fields take the mono face at the editor size', () => {
+    test('code, frontmatter and tags take the mono face at the editor size', () => {
         const css = emit()
         // The rule must PARSE, not merely appear: an earlier draft's comment contained a
         // star-slash (the cm-math classes written as one glob), which closed the comment early
@@ -541,7 +541,6 @@ describe('mono scoping and embedded faces', () => {
         const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
         expect(rule).toContain('.fmatter')
         expect(rule).toContain('.bismuth-tag')
-        expect(rule).toContain('.bismuth-task-field')
         expect(rule).toMatch(/font-family:\s*'Monaspace Xenon'/)
         // The mono SIZE too: prose is --prose-scale x the editor size and mono does not take that
         // optical compensation, so inheriting the scaled size would render code too large.

@@ -194,8 +194,8 @@ const allFiles = (dir: string, acc: string[] = []): string[] => {
 }
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 /** Names inside `:global(...)` are NOT hashed, so they are not this tool's business — and counting
- *  them would attribute a global class to a module. Paren-matched, because the codebase writes
- *  `:global(li:has(> .bismuth-task-box))` and a lazy `\([^)]*\)` cuts that in half. */
+ *  them would attribute a global class to a module. Paren-matched, because a selector such as
+ *  `:global(li:has(> .cm-tag))` needs it and a lazy `\([^)]*\)` cuts that in half. */
 function stripGlobal(css: string): string {
     let o = '',
         i = 0

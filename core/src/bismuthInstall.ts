@@ -482,15 +482,6 @@ export async function registerAdditionalMcp(
     return io.registerAdditionalMcp(ids)
 }
 
-/** Detected/registered status for every OTHER agent CLI registrar — the "which CLIs are detected
- *  and which are registered" listing `bismuth install --status` surfaces. */
-export async function getAdditionalMcpStatus(
-    io: InstallIO = defaultIO,
-): Promise<Record<string, AdditionalMcpStatus>> {
-    if (!io.additionalMcpStatus) return {}
-    return io.additionalMcpStatus()
-}
-
 /**
  * Version-gated, idempotent ensure. `src` = the install source dir (bin/ + docs/), normally
  * BISMUTH_INSTALL_SRC. No-op when the bundled-binary hash matches the stored marker AND

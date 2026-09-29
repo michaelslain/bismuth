@@ -16,26 +16,35 @@ import { join } from 'node:path'
 // (core/src/bismuthInstall.ts); Homebrew lives in `/opt/homebrew/bin` (Apple Silicon) or
 // `/usr/local/bin` (Intel). Cross-machine — resolved from `os.homedir()`, never a hardcoded user.
 // Pure over `home` for testability (accepts an override).
-export function extraBinDirs(home: string = homedir()): string[] {
-    return [
-        '/usr/local/bin',
-        '/opt/homebrew/bin',
-        join(home, '.bismuth', 'bin'),
-        join(home, '.bun', 'bin'),
-        join(home, '.local', 'bin'),
-    ]
+export function extraBinDirMap(home: string = homedir()) {
+    return {
+        usrLocal: '/usr/local/bin',
+        homebrew: '/opt/homebrew/bin',
+        bismuth: join(home, '.bismuth', 'bin'),
+        bun: join(home, '.bun', 'bin'),
+        local: join(home, '.local', 'bin'),
+    }
 }
 
-// Return `parentPath` with every extraBinDir appended that isn't already present, de-duplicated,
+// The same dirs as a priority-ordered list (usrLocal, homebrew, bismuth, bun, local).
+export function extraBinDirs(home: string = homedir()): string[] {
+    const { usrLocal, homebrew, bismuth, bun, local } = extraBinDirMap(home)
+    return [usrLocal, homebrew, bismuth, bun, local]
+}
+
+// The bare PATH launchd/systemd hand a daemon — the base when the parent has none.
+export const POSIX_PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+
+// Return `parentPath` (default: this process's PATH, else POSIX_PATH) with every extraBinDir appended that isn't already present, de-duplicated,
 // PARENT ENTRIES FIRST — an explicitly-set PATH keeps its precedence; the daemon-critical install
 // dirs are only ever ADDED as fallbacks, never allowed to shadow the parent. Pure: no fs existence
 // checks, so a bare parent PATH ALWAYS yields a PATH containing the three critical install dirs —
 // the property the daemon relies on at both the spawn layer (child env) and the plist layer.
 export function augmentPath(
-    parentPath: string | undefined,
+    parentPath: string | undefined = process.env.PATH,
     home: string = homedir(),
 ): string {
-    const parts = (parentPath ?? '').split(':').filter(Boolean)
+    const parts = (parentPath || POSIX_PATH).split(':').filter(Boolean)
     const seen = new Set(parts)
     for (const dir of extraBinDirs(home)) {
         if (!seen.has(dir)) {

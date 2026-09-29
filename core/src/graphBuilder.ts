@@ -1,5 +1,6 @@
 import type { GraphNode, GraphEdge } from './graph'
 import { getFileAccess } from './fileAccess'
+import { readAllNotes } from './readAllNotes'
 import { noteId } from './pathUtils'
 import { preferId } from './linkTarget'
 
@@ -27,15 +28,16 @@ export async function buildGraphFromNotes(
     byBase: Map<string, string>
     byPath: Map<string, string>
 }> {
-    const { listMarkdown, readNote } = await getFileAccess()
-    const rels = await listMarkdown(root)
+    const { listMarkdown } = await getFileAccess()
+    // A note that vanished since the listing is skipped entirely (no node, no edges).
+    const notes = await readAllNotes(root, await listMarkdown(root))
     const nodes: GraphNode[] = []
     const byBase = new Map<string, string>()
     const byPath = new Map<string, string>()
 
     // Build nodes in a first pass to establish index maps
     const nodeMap = new Map<string, GraphNode>()
-    for (const rel of rels) {
+    for (const { rel } of notes) {
         const node = nodeBuilder(rel)
         nodes.push(node)
         nodeMap.set(rel, node)
@@ -54,20 +56,11 @@ export async function buildGraphFromNotes(
         byPath.set(pathKey, node.id)
     }
 
-    // Read all contents in parallel
-    const contents = new Map<string, string>(
-        await Promise.all(
-            rels.map(async rel => [rel, await readNote(root, rel)] as const),
-        ),
-    )
-
     // Extract edges in a single pass, with access to index maps for link resolution
     const edges: GraphEdge[] = []
-    for (const rel of rels) {
+    for (const { rel, content } of notes) {
         const node = nodeMap.get(rel)!
-        const content = contents.get(rel)!
-        const extractedEdges = edgeExtractor(node.id, content, byBase, byPath)
-        edges.push(...extractedEdges)
+        edges.push(...edgeExtractor(node.id, content, byBase, byPath))
     }
 
     return { nodes, edges, byBase, byPath }

@@ -248,7 +248,7 @@ Two forms — full detail in the [per-base properties doc](./properties.md):
 
 - `displayName` — a custom header label for the column (a string; otherwise undefined).
 - `hidden: true` — omits the property from **auto-derived** columns (the default columns of table/cards/list/kanban). The view's explicit `order: [...]` still wins.
-- `type` / `default` — tolerated as metadata (`type` limited to the `PROPERTY_TYPES` vocabulary).
+- `type` / `default` — tolerated as metadata (`type` limited to the legacy `PropertyType` vocabulary).
 
 Normalization (`normalizePropertyDef`): only `hidden === true` is kept as `true`; anything else (missing / `false` / non-bool) is normalized to `undefined`. `displayName` is kept only if it's a string.
 

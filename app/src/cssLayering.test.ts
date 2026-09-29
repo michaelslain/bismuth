@@ -6,8 +6,8 @@
 // slightly wrong to a human who happens to open it.
 //
 // The sanctioned exception is `:global(...)`: names inside it are NOT hashed, which is exactly why
-// bases/BaseView.module.css and bases/CardEditModal.module.css already style `.bismuth-task-box`
-// and `.cm-editor` from inside modules and are correct to do so. This file allows that form and
+// a module may style a plain-DOM class such as `.cm-editor` from inside itself and be correct
+// to do so. This file allows that form and
 // only that form, so the check has real work to do against the code as it stands rather than
 // passing vacuously.
 //
@@ -64,8 +64,8 @@ const allFiles = (dir: string, acc: string[] = []): string[] => {
 const stripComments = (css: string): string =>
     css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** Strip `:global(...)` regions, matching parens so nested ones survive — the codebase really does
- *  write `:global(li:has(> .bismuth-task-box))`, which a lazy `\([^)]*\)` would cut in half and
+/** Strip `:global(...)` regions, matching parens so nested ones survive — a selector such as
+ *  `:global(li:has(> .cm-tag))`, which a lazy `\([^)]*\)` would cut in half and
  *  then flag the tail of. */
 function stripGlobal(css: string): string {
     let out = ''
@@ -151,7 +151,7 @@ describe('css layering — runtime classes stay out of CSS Modules', () => {
         // green code proves nothing about what it would do on red code.
         expect(
             runtimeClassesDefinedIn(
-                '.card :global(.bismuth-task-box) { color: red; }',
+                '.card :global(.cm-editor) { color: red; }',
             ),
         ).toEqual([])
         expect(

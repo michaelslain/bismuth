@@ -12,7 +12,6 @@ import {
     emptySession,
     loadSession,
     saveSession,
-    clearSession,
     type QueueItem,
     type SessionState,
 } from './flashcardsQueue'
@@ -133,7 +132,6 @@ test('loadSession returns a fresh session for an unseen or undefined key', () =>
 
 test('saveSession then loadSession resumes the exact position and tally', () => {
     const key = 'reading/Spanish.md'
-    clearSession(key)
     const mid: SessionState = {
         cram: true,
         pos: 3,
@@ -150,7 +148,6 @@ test('saveSession then loadSession resumes the exact position and tally', () => 
 
 test("loadSession returns a COPY so signal writes don't mutate the stored record", () => {
     const key = 'deck-copy.md'
-    clearSession(key)
     saveSession(key, {
         cram: false,
         pos: 2,
@@ -169,20 +166,6 @@ test("loadSession returns a COPY so signal writes don't mutate the stored record
 test('saveSession(undefined) is a no-op (nothing to resume for an unsaved deck)', () => {
     expect(() => saveSession(undefined, emptySession())).not.toThrow()
     expect(loadSession(undefined)).toEqual(emptySession())
-})
-
-test("clearSession drops a saved deck's resume state", () => {
-    const key = 'deck-clear.md'
-    saveSession(key, {
-        cram: true,
-        pos: 7,
-        good: 3,
-        hard: 1,
-        easy: 2,
-        retired: ['3:fwd'],
-    })
-    clearSession(key)
-    expect(loadSession(key)).toEqual(emptySession())
 })
 
 // ── progressTotal: the frozen progress denominator (the count-drift fix) ────
@@ -317,7 +300,6 @@ test('session persistence is unchanged (SessionState carries no frozen total)', 
     // The frozen denominator lives only in a view signal and is re-anchored on
     // remount from the restored tally + remaining queue, so SessionState is untouched.
     const key = 'deck-total-freeze.md'
-    clearSession(key)
     const mid: SessionState = {
         cram: false,
         pos: 2,

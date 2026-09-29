@@ -30,8 +30,7 @@ import { parseBaseFile } from './bases/parse'
 import { flattenBaseViews } from './bases/flattenViews'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
-import { collectVaultTasks, toggleTaskLine } from './tasks'
-import { reorderTaskBlocks } from './taskReorder'
+import { collectVaultTasks, applyTaskToggle } from './tasks'
 import {
     collectDecks,
     dueCards,
@@ -222,9 +221,13 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     byPath.set(w.path, list)
                 }
                 const written: string[] = []
+                const skipped: string[] = []
                 for (const [path, ops] of byPath) {
                     const raw = await readOrNull(path)
-                    if (raw === null) continue // skip a note that vanished; don't fail the batch
+                    if (raw === null) {
+                        skipped.push(path) // vanished: reported, not fatal to the batch
+                        continue
+                    }
                     let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
@@ -232,7 +235,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     written.push(path)
                 }
                 emit(written)
-                return 'ok'
+                return { skipped }
             }
             case 'POST /delete-property': {
                 const raw = await readOrNull(b.path)
@@ -361,14 +364,10 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const content = await readOrNull(b.path)
                 if (content === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                const lines = content.split('\n')
-                if (b.line < 0 || b.line >= lines.length)
-                    throw new AppError('EINVAL', 'line out of range', 400)
-                lines[b.line] = toggleTaskLine(lines[b.line], todayISO())
                 await access.writeNote(
                     vault,
                     b.path,
-                    reorderTaskBlocks(lines.join('\n')),
+                    applyTaskToggle(content, b.line, b.status, todayISO()),
                 )
                 emit([b.path])
                 return 'ok'

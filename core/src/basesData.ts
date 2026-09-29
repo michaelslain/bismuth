@@ -1,4 +1,6 @@
 import { getFileAccess, type FileStat } from './fileAccess'
+import { readAllNotes } from './readAllNotes'
+import { mapWithConcurrency } from './concurrency'
 import { parseFrontmatter } from './frontmatter'
 import { extractTags } from './tags'
 import { extractWikilinks } from './wikilinks'
@@ -48,21 +50,16 @@ function rowFor(rel: string, raw: string, st: FileStat | null): Row {
 }
 
 export async function buildVaultRows(root: string): Promise<Row[]> {
-    const { listMarkdown, readNote, statNote } = await getFileAccess()
+    const { listMarkdown, statNote } = await getFileAccess()
     const files = await listMarkdown(root)
-    // Read body and stat each file concurrently (one Promise.all over both async calls)
-    // instead of a synchronous statSync per file in the build loop. statNote() resolves to
-    // null on failure (file deleted since list) — matching the old try/catch-to-zero behavior.
-    const contents = await Promise.all(
-        files.map(async rel => {
-            const [raw, st] = await Promise.all([
-                readNote(root, rel),
-                statNote(root, rel),
-            ])
-            return { rel, raw, st }
-        }),
+    // Read bodies through the bounded pool (a note deleted since the listing is skipped),
+    // then stat each one the same way. statNote() resolves to null on failure (file deleted
+    // since list) — matching the old try/catch-to-zero behavior.
+    const notes = await readAllNotes(root, files)
+    const stats = await mapWithConcurrency(notes, 32, ({ rel }) =>
+        statNote(root, rel),
     )
-    return contents.map(({ rel, raw, st }) => rowFor(rel, raw, st))
+    return notes.map(({ rel, content }, i) => rowFor(rel, content, stats[i]))
 }
 
 /**

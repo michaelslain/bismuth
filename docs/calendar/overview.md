@@ -162,8 +162,8 @@ for `cli/src/commands/calendar.ts` is unchanged:
 
 ```typescript
 // core/src/calendar.ts
-import { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
-export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+import { expandRecurrence } from './bases/recurrence'
+export { addDays, expandRecurrence } from './bases/recurrence'
 export type { Recurrence, RecurrenceType } from './bases/recurrence'
 ```
 
@@ -232,14 +232,14 @@ The row↔event mapping is JSON-string-based for the compound fields: `recurrenc
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `startDate` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. Same rule semantics as the app's `dates.ts` (see [Recurrence Engine](#recurrence-engine-datests)) |
+| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `max(startDate, rangeStart)` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. The one engine: the app's `EventStore` and the export import it too (see [Recurrence Engine](#recurrence-engine-recurrencets)) |
 | `eventsForRange` | `(events, rangeStart, rangeEnd) => CalendarEvent[]` | Concrete instances in `[rangeStart, rangeEnd]`; each recurring master is expanded to one `{...event, date}` per matching date; sorted by `date` then `startTime` |
 | `eventsForDay` | `(events, date) => CalendarEvent[]` | `eventsForRange(events, date, date)` |
 | `detectOverlaps` | `(dayEvents) => OverlapPair[]` | Pairs of timed events (`startTime` + `endTime` both set) whose half-open `[start, end)` intervals intersect; all-day events don't participate; `"HH:MM"` strings compare lexicographically. `OverlapPair = { a: CalendarEvent; b: CalendarEvent }` |
 | `eventsInWindow` | `(events, from?, to?) => CalendarEvent[]` | RAW stored events (masters **not** expanded — real ids, so a caller can pick an id to edit) intersecting `[from, to]`: singles by `date`, masters by series-window `[startDate, endDate ?? ∞]` intersection. Both bounds optional (missing = open-ended) |
 | `searchEvents` | `(events, query) => CalendarEvent[]` | Case-insensitive substring search over `title` / `description` / `location` / `category` / `categories`. Works on raw events or expanded instances (the caller picks the input) |
 
-The date helpers (`toDateStr`, `addDays`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
+The date helpers (`addDays`, `todayISO` from `core/src/dates.ts`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
 
 ### Mutations (pure transforms; caller re-serializes + writes)
 
@@ -316,11 +316,11 @@ Vault is resolved by `requireVault` (`--vault` / `BISMUTH_VAULT`); output honors
 
 ---
 
-## Recurrence Engine (`dates.ts`)
+## Recurrence Engine (`core/src/bases/recurrence.ts`)
 
 `expandRecurrence(recurrence, rangeStart, rangeEnd): string[]`
 
-Given a `Recurrence` and a query window (ISO date strings, inclusive on both ends), returns every date in `[rangeStart, rangeEnd]` that matches the rule. The function iterates one day at a time from `max(recurrence.startDate, ...)` to `min(recurrence.endDate ?? "2100-01-01", rangeEnd)`, calling `matchesRecurrence` on each.
+This is the single copy — the app's `EventStore` imports it (there is no app-side duplicate in `dates.ts`). Given a `Recurrence` and a query window (ISO date strings, inclusive on both ends), returns every date in `[rangeStart, rangeEnd]` that matches the rule. The function iterates one day at a time from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? "2100-01-01", rangeEnd)`, calling `matchesRecurrence` on each.
 
 ### Rule semantics
 
@@ -339,7 +339,7 @@ Given a `Recurrence` and a query window (ISO date strings, inclusive on both end
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `toDateStr` | `(d: Date) => string` | Produces `"YYYY-MM-DD"` in **local** time (not UTC) |
+| `todayISO` | `(d?: Date) => string` | From `core/src/dates.ts` (the one formatter; `toDateStr` was folded into it). Produces `"YYYY-MM-DD"` in **local** time (not UTC) |
 | `addDays` | `(d: Date, n: number) => Date` | Returns a new `Date`; `n` may be negative |
 | `startOfWeek` | `(d: Date, mondayFirst: boolean) => Date` | Returns Monday (ISO) or Sunday (US) of the containing week |
 | `weekRange` | `(d: Date, mondayFirst: boolean) => [string, string]` | `[weekStart, weekStart+6]` as ISO strings |
@@ -348,7 +348,7 @@ Given a `Recurrence` and a query window (ISO date strings, inclusive on both end
 | `stepDate` | `(d: Date, view: ViewType, dir: -1 \| 1) => Date` | Moves `d` one step in `view`'s own unit — a month for `month`, else `VIEW_STEP_DAYS[view]` days (`week` 7, `3day` 3, `day` 1). Powers `DateNav`'s prev/next chevrons |
 | `rangeLabel` | `(d: Date, view: ViewType, mondayFirst: boolean) => RangeLabel` | The toolbar's date breadcrumb — see below |
 
-`toDateStr` constructs via `getFullYear`/`getMonth`/`getDate` — always local, never UTC. Avoid passing `new Date("2026-05-10")` (UTC midnight) without a time zone suffix; prefer `new Date("2026-05-10T00:00:00")` to stay in local time.
+`todayISO` constructs via `getFullYear`/`getMonth`/`getDate` — always local, never UTC. Avoid passing `new Date("2026-05-10")` (UTC midnight) without a time zone suffix; prefer `new Date("2026-05-10T00:00:00")` to stay in local time.
 
 ### `rangeLabel` for the date breadcrumb
 
@@ -605,7 +605,7 @@ used to strand the calendar's controls mid-bar can no longer be expressed.
 - **`config`** — the **Categories** button (`IconTextButton` with `icon="Tag"`, label `categories`),
   toggling `showCategoryPanel`.
 - **`actions`** — the **+ Event** button (`IconTextButton` with `icon="Plus"`, label `event`, `primary`),
-  opening `EventModal` seeded with `date: toDateStr(currentDate.value)`.
+  opening `EventModal` seeded with `date: todayISO(currentDate.value)`.
 
 The **Settings** gear that opens `CalendarSettings` is not part of `calendarSlots()` — `BaseView.tsx`
 renders it itself in the trailing `actions` group for every base type (calendar included), routing to
@@ -732,7 +732,7 @@ bun test calendar   # run calendar tests — NOT `bun test core -- calendar`, wh
 Key test files:
 
 - `app/src/calendar/EventStore.test.ts` — covers add/delete/edit for non-recurring events, daily recurrence expansion, `deleteOccurrence`, `editSeries`, `editFollowing` (including rule-type changes), and category delete reassignment.
-- `app/src/calendar/dates.test.ts` — covers `toDateStr`, `addDays`, `formatTime`, `expandRecurrence` for all four rule types, `endDate` truncation, monthly edge cases (31st → Feb 28/29, 30-day months), `startOfWeek` (both Sunday-first and Monday-first, including "on the boundary day" cases), and `weekRange`.
+- `app/src/calendar/dates.test.ts` — covers `addDays`, `formatTime`, `expandRecurrence` for all four rule types, `endDate` truncation, monthly edge cases (31st → Feb 28/29, 30-day months), `startOfWeek` (both Sunday-first and Monday-first, including "on the boundary day" cases), and `weekRange`.
 - `app/src/calendar/state.defaultView.test.ts` — covers `reconcileDefaultView` pure logic.
 - `app/src/calendar/state.settings.test.ts` — covers the unified-settings adapter.
 
@@ -741,7 +741,7 @@ Key test files:
 ## Gotchas and Edge Cases
 
 - **Global signals, one calendar at a time**: `currentView`, `currentDate`, `events`, `categories`, and `showEventModal` are module-level singletons. Opening two calendar panes simultaneously would race on shared state. In practice the UI routes one calendar at a time.
-- **`toDateStr` is local time**: always suffix `"T00:00:00"` when constructing `new Date` from ISO strings to avoid UTC-midnight/timezone-offset mismatches. The internal `EventStore.ts` and `dates.ts` do this consistently.
+- **`todayISO` is local time**: always suffix `"T00:00:00"` when constructing `new Date` from ISO strings to avoid UTC-midnight/timezone-offset mismatches. The internal `EventStore.ts` and `dates.ts` do this consistently.
 - **Recurring events are expanded at read time**: `getEventsForRange` iterates the master segments and calls `expandRecurrence`. There is no pre-expanded table. Each `EventChip` for a recurring occurrence carries its master's `id` as `masterId` and the specific occurrence date as `occurrenceDate`.
 - **`getCategories()` always returns a new array**: required because Solid signals skip updates when the reference is unchanged. The `categories.value = store.getCategories()` assignment after every mutation propagates reactivity.
 - **`save()` in `BaseBackend` is fire-and-forget**: a slow or failed write will not surface an error to the user. The next server version poll will show the last successfully-written state.

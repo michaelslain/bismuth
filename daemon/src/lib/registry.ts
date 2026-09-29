@@ -1,7 +1,8 @@
-import { readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parse } from 'yaml'
 import { parseFrontmatter } from './frontmatter.ts'
+import { atomicWriteJson } from './atomicJson.ts'
+import { readVaultSettingsDoc } from './vaultSettings.ts'
 import {
     VAULTS_FILE,
     VAULTS_SEEN_FILE,
@@ -61,38 +62,21 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     let backend = 'claude'
     let codexWriteAgentsMd = false
     let inheritUserMcp = false
-    // Settings live in the single `.settings` file. The daemon is a separate process that may read a
-    // vault BEFORE core migrates it, so fall back to the interim `.settings/settings.yaml` and the
-    // legacy root `settings.yaml` — first readable wins. (Reading a dir, e.g. an interim `.settings/`,
-    // throws → we just try the next shape.)
-    for (const rel of [
-        '.settings',
-        join('.settings', 'settings.yaml'),
-        'settings.yaml',
-    ]) {
-        try {
-            const doc = parse(await readFile(join(root, rel), 'utf-8')) as {
-                daemon?: {
-                    enabled?: unknown
-                    backend?: unknown
-                    inheritUserMcp?: unknown
-                }
-                codex?: { writeAgentsMd?: unknown }
-            } | null
-            if (doc !== null) {
-                enabled = doc.daemon?.enabled === true
-                if (
-                    typeof doc.daemon?.backend === 'string' &&
-                    doc.daemon.backend.trim()
-                )
-                    backend = doc.daemon.backend.trim()
-                codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
-                inheritUserMcp = doc.daemon?.inheritUserMcp === true
-                break
-            }
-        } catch {
-            // unreadable/missing/dir → try the next shape
+    // Settings live in the single `.settings` file; readVaultSettingsDoc walks the fallback shapes.
+    const doc = (await readVaultSettingsDoc(root)) as {
+        daemon?: {
+            enabled?: unknown
+            backend?: unknown
+            inheritUserMcp?: unknown
         }
+        codex?: { writeAgentsMd?: unknown }
+    } | null
+    if (doc !== null) {
+        enabled = doc.daemon?.enabled === true
+        if (typeof doc.daemon?.backend === 'string' && doc.daemon.backend.trim())
+            backend = doc.daemon.backend.trim()
+        codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
+        inheritUserMcp = doc.daemon?.inheritUserMcp === true
     }
 
     let name = ''
@@ -207,9 +191,7 @@ export async function refreshVaultsSeen(
             new Date(nowMs).toISOString(),
         )
         if (!changed) return
-        const tmp = `${file}.${process.pid}.tmp`
-        await writeFile(tmp, JSON.stringify(seen, null, 2))
-        await rename(tmp, file)
+        await atomicWriteJson(file, seen)
     } catch {
         // absent/malformed/unwritable — core owns this file's existence; we only ever refresh it
     }

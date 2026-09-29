@@ -1,20 +1,17 @@
 // The daemon-inbox execution runtime: fires the ONE approved action for a daemon-authored page
 // (core/src/daemonPages.ts writes the page + its dynamic sidecar, .daemon/pages/.state/<slug>.json)
 // once the user presses an "approve" button. Structurally identical to processTriggers (cron.ts) —
-// readdir the trigger dir, dotfilter, owner-gate, unlink-before-process — but a page fires a
+// listTriggers/consumeTrigger (dotfilter, owner-gate, unlink-before-process) — but a page fires a
 // one-shot ISOLATED session (never the persistent vault thread, never resumed), and completion is
 // written HERE, deterministically, once the session settles — the LLM's own output is never
 // trusted as a status signal (core writes "working" before triggering; this module writes
 // "done"/"failed" after, never anything else).
 import { join } from 'node:path'
-import {
-    readdir,
-    readFile,
-    unlink,
-} from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { sendMessage, composeBackendRefusalNote } from './session'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
+import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import type { VaultContext } from '../lib/config.ts'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 
@@ -74,31 +71,10 @@ function summarize(text: string): string {
  * interval.
  */
 export async function processPageTriggers(ctx: VaultContext): Promise<void> {
-    let files: string[]
-    try {
-        files = await readdir(ctx.pageTriggerDir)
-    } catch {
-        return
-    }
-
-    const triggers = files.filter(f => !f.startsWith('.'))
-    if (triggers.length === 0) return
-
-    // Not the owner device: idle. Consume the trigger files so they don't pile up, but don't
-    // fire — same semantics as processTriggers (cron.ts:693).
-    if (!(await isOwner())) {
-        for (const slug of triggers) {
-            try {
-                await unlink(join(ctx.pageTriggerDir, slug))
-            } catch {}
-        }
-        return
-    }
+    const triggers = await listTriggers(ctx.pageTriggerDir, isOwner)
 
     for (const slug of triggers) {
-        try {
-            await unlink(join(ctx.pageTriggerDir, slug))
-        } catch {}
+        await consumeTrigger(ctx.pageTriggerDir, slug)
 
         const key = pageKey(ctx, slug)
         if (runningPages.has(key)) continue // already mid-run — trigger consumed, nothing more to do

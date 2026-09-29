@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js'
-import { toDateStr } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import { readTaskDrop } from '../../taskDrag'
 import DayHeaderRow from './DayHeaderRow'
 import AllDayRow from './AllDayRow'
@@ -23,7 +23,7 @@ export type TaskAllDayStripProps = {
  * labels with, so the empty gutter spacer column TimeGrid needs is just dead space here.
  */
 export const TaskAllDayStrip: Component<TaskAllDayStripProps> = props => {
-    const today = toDateStr(new Date())
+    const today = todayISO(new Date())
     return (
         <div class={styles.strip}>
             <DayHeaderRow class={styles.head} dates={props.dates} today={today} gutter={false} />

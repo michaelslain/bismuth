@@ -54,6 +54,7 @@
 // WebView.
 import { commitVault, trackedPaths } from './backup'
 import { getFileAccess } from './fileAccess'
+import { readAllNotes } from './readAllNotes'
 import { hasLegacySignifier } from './taskLegacy'
 import { migrateContent } from './taskMigrate'
 
@@ -177,24 +178,19 @@ export async function runTaskMigration(
     // Reads run together (the same shape collectVaultTasks uses) and each one carries its own
     // failure, so a single unreadable file is skipped and reported rather than aborting the
     // run and leaving the vault half migrated. Order is preserved, so `files` is stable.
-    const scanned = await Promise.all(
-        rels.map(async rel => {
-            try {
-                return { rel, text: await readNote(root, rel), error: '' }
-            } catch (err) {
-                return { rel, text: null, error: message(err) }
-            }
-        }),
-    )
-
     const skipped: SkippedFile[] = []
     const pending: Pending[] = []
-    for (const { rel, text, error } of scanned) {
-        if (text === null) {
-            warn(`could not read ${rel}`, error)
-            skipped.push({ file: rel, reason: 'unreadable', error })
-            continue
-        }
+    const readErrors = new Map<string, string>()
+    const scanned = await readAllNotes(root, rels, (rel, err) =>
+        readErrors.set(rel, message(err)),
+    )
+    for (const rel of rels) {
+        const error = readErrors.get(rel)
+        if (error === undefined) continue
+        warn(`could not read ${rel}`, error)
+        skipped.push({ file: rel, reason: 'unreadable', error })
+    }
+    for (const { rel, content: text } of scanned) {
         opts?.onScanned?.(rel, text)
         // Cheap whole-file pre-filter: most notes hold no signifier at all and never reach
         // the per-line work. migrateContent gates AGAIN per line, which is what stops a note
