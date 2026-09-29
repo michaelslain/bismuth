@@ -554,3 +554,53 @@ export const CustomHeadingEmptyColumns: Story = {
         await expect(document.body.textContent).not.toContain('this board declares')
     },
 }
+
+/** The two-step Escape: the first Escape in a field cancels the FIELD only (the draft reverts and
+ *  the keydown is consumed, `defaultPrevented`), so the modal stays open; the second Escape closes
+ *  it. The seam is the harness log — `close` appears only once `onClose` ran. */
+export const EscapeTwoStep: Story = {
+    render: () => <Live />,
+    play: async () => {
+        const priority = document.querySelector<HTMLInputElement>('input[type="number"]')!
+        const original = priority.value
+        priority.focus()
+        await userEvent.type(priority, '99')
+        expect(priority.value).toBe(`${original}99`)
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(priority.value).toBe(original))
+        // Still open: the field consumed the key.
+        expect(document.querySelector('input[placeholder="Untitled"]')).not.toBeNull()
+        expect(logText()).not.toContain('close')
+        // Second Escape, no field editing: the modal closes.
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(logText()).toContain('close'))
+    },
+}
+
+/** The status select lines up with its neighbours: its `▾` ends where the due field's calendar
+ *  icon ends (right edge), and its value text starts where the priority input's text starts
+ *  (left edge), each within 1px. Elements are found by tag / `data-*`, never a module class. */
+export const StatusChevronAligned: Story = {
+    render: () => <Live />,
+    play: async () => {
+        const status = trigger()
+        const caret = status.querySelector<HTMLElement>('[data-select-caret]')!
+        const dueIcon = document
+            .querySelector<HTMLElement>('[data-testid="date-field-trigger"]')!
+            .querySelector('svg')!
+        const priority = document.querySelector<HTMLInputElement>('input[type="number"]')!
+        const valueSpan = status.querySelector('span')!
+        const textNode = [...valueSpan.childNodes].find(n => n.nodeType === Node.TEXT_NODE)!
+        const range = document.createRange()
+        range.selectNodeContents(textNode)
+        const statusTextLeft = range.getBoundingClientRect().left
+        const priorityTextLeft =
+            priority.getBoundingClientRect().left +
+            parseFloat(getComputedStyle(priority).paddingLeft) +
+            priority.clientLeft
+        const caretRight = caret.getBoundingClientRect().right
+        const iconRight = dueIcon.getBoundingClientRect().right
+        expect(Math.abs(caretRight - iconRight)).toBeLessThanOrEqual(1)
+        expect(Math.abs(statusTextLeft - priorityTextLeft)).toBeLessThanOrEqual(1)
+    },
+}

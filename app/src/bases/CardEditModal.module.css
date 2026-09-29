@@ -37,6 +37,9 @@
   /* The status select's text starts at the same x as TITLE/PRIORITY/DUE: the trigger's default
      left inset (kanban + table selects keep it) is zeroed here. */
   --kb-meta-select-inset: 0;
+  /* Likewise on the right: the trigger's chevron gutter is zeroed so the `▾` ends at the same x as
+     the DUE field's calendar icon (both sit flush at the field's right edge). */
+  --kb-meta-select-end: 0;
 }
 
 /* The rich Milkdown description surface — a neutral underline field, matching every other value

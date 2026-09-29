@@ -1,7 +1,8 @@
 /* SelectValue — sizing only; chrome comes from ui/Select. The --kb-meta-* vars are the bridge a
    host (CardEditModal) sets on an ancestor: a CSS custom property, not a :global() reach into a
    hashed class. The card-face inline chip editor (KanbanCard) sets nothing and keeps the defaults.
-   --kb-meta-select-gutter is the room the trigger keeps on the right for its chevron. */
+   --kb-meta-select-gutter is the room the trigger keeps on the right for its chevron; --kb-meta-select-end overrides it (CardEditModal
+   sets 0 so the chevron's right edge lines up with the due field's calendar icon). */
 .select {
     --kb-meta-select-gutter: 22px;
     display: inline-flex;
@@ -11,7 +12,7 @@
     height: var(--kb-meta-height, auto);
     min-height: 0;
     box-sizing: border-box;
-    padding: var(--sp-1) var(--kb-meta-select-gutter) var(--sp-1) var(--kb-meta-select-inset, var(--sp-3));
+    padding: var(--sp-1) var(--kb-meta-select-end, var(--kb-meta-select-gutter)) var(--sp-1) var(--kb-meta-select-inset, var(--sp-3));
     font-size: var(--fs-ui);
     border-radius: var(--r-0);
 }
