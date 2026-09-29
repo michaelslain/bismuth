@@ -61,12 +61,10 @@ export function tabMenuItems(
             label: 'delete',
             icon: 'Trash2',
             danger: true,
-            // Never offers to drop the last view. A nested "confirm delete" row is the
-            // confirmation (the same submenu mechanic as "change kind"), never confirm().
+            // Never offers to drop the last view. Deleting is immediate: BaseView answers it with
+            // an undo toast rather than a confirm step (no submenu, never confirm()).
             disabled: views.length <= 1,
-            submenu: [
-                { label: 'confirm delete', danger: true, onSelect: () => h.onDelete(i) },
-            ],
+            onSelect: () => h.onDelete(i),
         },
     ]
 }

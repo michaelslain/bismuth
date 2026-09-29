@@ -48,12 +48,13 @@ describe('tabMenuItems', () => {
         kinds.find(k => k.label === 'Cards')!.onSelect!()
         expect(calls.at(-1)).toBe('type 0 cards')
     })
-    test('delete is disabled for the last view and needs the nested confirm', () => {
+    test('delete is one flat danger row, disabled for the last view', () => {
         expect(byLabel(tabMenuItems(VIEWS, 0, handlers), 'delete').disabled).toBe(false)
         expect(byLabel(tabMenuItems([VIEWS[0]], 0, handlers), 'delete').disabled).toBe(true)
         const del = byLabel(tabMenuItems(VIEWS, 2, handlers), 'delete')
-        expect(del.onSelect).toBeUndefined()
-        del.submenu![0].onSelect!()
+        expect(del.submenu).toBeUndefined()
+        expect(del.danger).toBe(true)
+        del.onSelect!()
         expect(calls.at(-1)).toBe('delete 2')
     })
     test('plain rows call their handler with the tab index', () => {

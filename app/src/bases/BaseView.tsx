@@ -16,7 +16,7 @@ import { changeAffectsView, type ViewDeps } from './changeRelevance'
 import { reconcileViewResult } from './reconcileRows'
 import { RowCache } from './rowCache'
 import { BaseSkeleton } from './BaseSkeleton'
-import { parseBase, parseBaseFile } from '../../../core/src/bases/parse'
+import { parseBase, parseBaseFile, FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import { runView } from '../../../core/src/bases/query'
 import { refToPath } from '../../../core/src/bases/sourceSpec'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
@@ -37,6 +37,8 @@ import { appendTaskLine } from './taskCreate'
 import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../toastStore'
+import { pushUndoToast } from '../undoToast'
+import { parse as parseYaml } from 'yaml'
 import {
     planSetValue,
     planToggle,
@@ -519,14 +521,27 @@ export function BaseView(props: {
         pickActive: (views: RawView[]) => number,
     ) => {
         const path = editPath()
-        if (!path) return
+        if (!path) return null
         const text = await api.read(path)
         const { views, removedKeys } = readViews(text)
+        // The old value of every top-level key this edit deletes, read from the same text, so an
+        // undo can put it back.
+        let raw: Record<string, unknown> = {}
+        try {
+            const parsed = parseYaml(text.match(FRONTMATTER_RE)?.[2] ?? '')
+            if (parsed && typeof parsed === 'object')
+                raw = parsed as Record<string, unknown>
+        } catch {
+            // Malformed frontmatter reads as empty, as in readViews.
+        }
+        const values: Record<string, unknown> = {}
+        for (const key of removedKeys) values[key] = raw[key]
         const next = edit(views)
         await api.setProperty(path, 'views', next)
         for (const key of removedKeys) await api.deleteProperty(path, key)
         setActiveView(pickActive(next))
         await refetchAll()
+        return { views, removedKeys, values }
     }
 
     const handleAddView = (type: string) =>
@@ -545,7 +560,22 @@ export function BaseView(props: {
         void editViews(
             views => removeView(views, i),
             next => Math.min(Math.max(0, i - 1), next.length - 1),
-        ).catch(writeFailed('delete the view'))
+        )
+            .then(prev => {
+                if (!prev) return
+                const gone = prev.views[i]
+                const name = String(gone?.name ?? gone?.type ?? 'view')
+                const path = editPath()
+                if (!path) return
+                pushUndoToast(`deleted view ${name}`, async () => {
+                    await api.setProperty(path, 'views', prev.views)
+                    for (const key of prev.removedKeys)
+                        await api.setProperty(path, key, prev.values[key])
+                    setActiveView(i)
+                    await refetchAll()
+                })
+            })
+            .catch(writeFailed('delete the view'))
 
     const handleRenameView = (i: number, name: string) =>
         void editViews(

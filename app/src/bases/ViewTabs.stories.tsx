@@ -12,6 +12,8 @@ import type { ViewType } from '../../../core/src/bases/types'
 import { BASE_VIEW_KINDS } from '../baseViews'
 import ViewTabs, { type ViewTabInfo, type ViewTabsProps } from './ViewTabs'
 import { VIEW_KIND_OPTIONS } from './selectOptions'
+import { pushUndoToast } from '../undoToast'
+import { ToastHost } from '../Toast'
 
 const meta = {
     title: 'Bases/ViewTabs',
@@ -130,8 +132,13 @@ function LiveTabs(props: {
             }}
             onDelete={i => {
                 if (views().length <= 1) return
+                const gone = views()[i]
                 setViews(vs => vs.filter((_, j) => j !== i))
                 setActive(Math.max(0, i - 1))
+                pushUndoToast(`deleted view ${gone.name}`, () => {
+                    setViews(vs => [...vs.slice(0, i), gone, ...vs.slice(i)])
+                    setActive(i)
+                })
             }}
             onMove={(i, dir) => {
                 const j = i + dir
@@ -359,18 +366,35 @@ export const ToggleMode: Story = {
     },
 }
 
-/** Delete is a nested confirm — the row opens "confirm delete", and only that removes the tab. */
-export const DeleteNeedsConfirm: Story = {
+/** Delete is one flat row — no submenu, no confirm. Choosing it removes the tab at once and
+ *  raises the undo toast. */
+export const DeleteIsImmediate: Story = {
     args: tabArgs(THREE_VIEWS, 0, true),
-    render: () => <LiveTabs initial={THREE_VIEWS} active={0} />,
+    render: () => (
+        <div>
+            <LiveTabs initial={THREE_VIEWS} active={0} />
+            <ToastHost />
+        </div>
+    ),
     play: async ({ canvasElement }) => {
         await openMenu(canvasElement, 'Board')
-        await userEvent.hover(menuRow('delete')!)
-        await waitFor(() => expect(menuRow('confirm delete')).toBeTruthy())
-        expect(tabLabels(canvasElement)).toHaveLength(3)
-        await userEvent.click(menuRow('confirm delete')!)
+        expect(menuRow('confirm delete')).toBeUndefined()
+        await userEvent.click(menuRow('delete')!)
         await waitFor(() =>
             expect(tabLabels(canvasElement)).toEqual(['Table', 'Calendar']),
+        )
+        // The toast's action reads `[undo]` — the brackets are the button's styling.
+        const toast = await within(canvasElement).findByText('deleted view Board')
+        const undo = within(toast.parentElement!).getByRole('button', {
+            name: 'undo',
+        })
+        await userEvent.click(undo)
+        await waitFor(() =>
+            expect(tabLabels(canvasElement)).toEqual([
+                'Table',
+                'Board',
+                'Calendar',
+            ]),
         )
     },
 }

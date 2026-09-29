@@ -214,7 +214,8 @@ async function pick(current: string, option: string) {
 }
 
 /** Interactive: add a Notes filter row via "add condition" (the shared FiltersEditor) and
- *  insert — `onConfirm` receives the real generated block for a row on the first column. */
+ *  insert — the fresh row has no value yet, so it is incomplete and `onConfirm` receives the
+ *  block with no `where`. */
 export const AddFilterRow: Story = {
     render: () => {
         seedPopulated()
@@ -227,7 +228,7 @@ export const AddFilterRow: Story = {
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
         await userEvent.click(canvas.getByText('insert'))
         await expect(confirmed).toBe(
-            'source: notes where file.name == ""\nviews:\n  - type: table\n    name: Table',
+            'source: notes\nviews:\n  - type: table\n    name: Table',
         )
     },
 }
