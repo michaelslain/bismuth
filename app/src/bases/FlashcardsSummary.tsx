@@ -20,12 +20,6 @@ export type FlashcardsSummaryProps = {
     onRestart?: () => void
 }
 
-const Bold: Component<{ children: string | number }> = props => (
-    <Text as="span" inherit weight="bold" tone="default">
-        {props.children}
-    </Text>
-)
-
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
 /** What the stage shows in place of a card: the end-of-session recap, or the empty-deck hint. */
@@ -68,7 +62,14 @@ const FlashcardsSummary: Component<FlashcardsSummaryProps> = props => (
                     when={props.cram}
                     fallback={
                         <>
-                            You reviewed <Bold>{props.reviewed}</Bold>{' '}
+                            You reviewed <Text
+                                as="span"
+                                inherit
+                                weight="bold"
+                                tone="default"
+                            >
+                                {props.reviewed}
+                            </Text>{' '}
                             {plural(props.reviewed, 'card', 'cards')}
                             <Show when={props.good > 0}>
                                 {' '}
@@ -90,9 +91,23 @@ const FlashcardsSummary: Component<FlashcardsSummaryProps> = props => (
                     <Text as="span" inherit class={styles['good-text']}>
                         easy
                     </Text>{' '}
-                    — you mastered <Bold>{props.total}</Bold>{' '}
+                    — you mastered <Text
+                        as="span"
+                        inherit
+                        weight="bold"
+                        tone="default"
+                    >
+                        {props.total}
+                    </Text>{' '}
                     {plural(props.total, 'card', 'cards')} in{' '}
-                    <Bold>{props.reviewed}</Bold>{' '}
+                    <Text
+                        as="span"
+                        inherit
+                        weight="bold"
+                        tone="default"
+                    >
+                        {props.reviewed}
+                    </Text>{' '}
                     {plural(props.reviewed, 'review', 'reviews')}.
                 </Show>
             </EmptyState>

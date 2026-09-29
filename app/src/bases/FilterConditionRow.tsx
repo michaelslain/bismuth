@@ -3,6 +3,7 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { IconButton } from '../ui/IconButton'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { columnLabel } from './columnLabel'
 import {
     DATE_PRESETS,
@@ -128,12 +129,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                         placeholder="expression, e.g. price > 5 && !done"
                         onInput={text => props.onPatch({ text })}
                     />
-                    <IconButton
-                        icon="x"
-                        label="Remove condition"
-                        danger
-                        onClick={() => props.onRemove()}
-                    />
+                    <RemoveRowButton label="Remove condition" onClick={() => props.onRemove()} />
                 </div>
             }
         >
@@ -158,12 +154,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                                 onClick={() => props.onToRaw?.()}
                             />
                         </Show>
-                        <IconButton
-                            icon="x"
-                            label="Remove condition"
-                            danger
-                            onClick={() => props.onRemove()}
-                        />
+                        <RemoveRowButton label="Remove condition" onClick={() => props.onRemove()} />
                     </div>
                 </div>
             )}

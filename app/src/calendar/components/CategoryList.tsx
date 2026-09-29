@@ -7,7 +7,7 @@ import ColorChip from '../../ui/ColorChip'
 import PlainButton from '../../ui/PlainButton'
 import Text from '../../ui/Text'
 import InlineTextInput from '../../ui/InlineTextInput'
-import { IconButton } from '../../ui/IconButton'
+import RemoveRowButton from '../../ui/RemoveRowButton'
 import styles from './CategoryList.module.css'
 
 export type CategoryListProps = {
@@ -67,10 +67,8 @@ const CategoryList: Component<CategoryListProps> = props => {
                                 </Text>
                             </PlainButton>
                         )}
-                        <IconButton
-                            icon="x"
+                        <RemoveRowButton
                             label={'Delete ' + c.name}
-                            danger
                             onClick={() => {
                                 setPicker(null)
                                 props.onDelete(c.name)
