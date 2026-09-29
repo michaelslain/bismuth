@@ -66,13 +66,12 @@ export function expandRecurrence(
         : new Date('2100-01-01')
     const rStart = new Date(rangeStart + 'T00:00:00')
     const rEnd = new Date(rangeEnd + 'T00:00:00')
-    let cursor = new Date(start)
+    // Start at the visible window, not the series start: cost tracks the range, not the series
+    // age. Biweekly parity is measured from `start` inside matchesRecurrence, so it is unaffected.
+    let cursor = new Date(Math.max(start.getTime(), rStart.getTime()))
     while (cursor <= end && cursor <= rEnd) {
-        if (
-            cursor >= rStart &&
-            matchesRecurrence(recurrence, toDateStr(cursor))
-        )
-            dates.push(toDateStr(cursor))
+        const dateStr = toDateStr(cursor)
+        if (matchesRecurrence(recurrence, dateStr)) dates.push(dateStr)
         cursor = addDays(cursor, 1)
     }
     return dates

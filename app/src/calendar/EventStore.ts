@@ -1,5 +1,6 @@
 import { CalendarEvent, Category, EventsFile } from './types'
-import { expandRecurrence, toDateStr, addDays } from './dates'
+import { toDateStr, addDays } from './dates'
+import { expandRecurrence } from '../../../core/src/bases/recurrence'
 
 export const uuid = () => crypto.randomUUID()
 
