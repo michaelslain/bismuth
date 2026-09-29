@@ -2,11 +2,18 @@
 // Pure and dependency-free so every command group imports a stable contract.
 import { todayISO } from '../../core/src/dates'
 
-/** Value of a `--name <value>` flag, or undefined if absent. */
+/** Value of a `--name <value>` or `--name=value` flag, or undefined if absent. The first
+ *  occurrence in `args` wins; `--name=` yields ''. A bare trailing `--name` has no value. */
 export function flag(args: string[], name: string): string | undefined {
-    const i = args.indexOf(`--${name}`)
-    if (i === -1 || i + 1 >= args.length) return undefined
-    return args[i + 1]
+    const bare = `--${name}`
+    const prefix = `${bare}=`
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i]
+        if (a === bare) {
+            if (i + 1 < args.length) return args[i + 1]
+        } else if (a.startsWith(prefix)) return a.slice(prefix.length)
+    }
+    return undefined
 }
 
 /** True if a boolean `--name` flag is present. */
