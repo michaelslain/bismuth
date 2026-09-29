@@ -240,7 +240,7 @@ export const TypeIntoPropertyName: Story = {
         const doneRow = await canvas.findByRole('button', { name: /^done/i })
         await userEvent.click(doneRow)
         const nameInput = (await canvas.findByPlaceholderText(
-            'Property name',
+            'property name',
         )) as HTMLInputElement
         nameInput.focus()
         await userEvent.clear(nameInput)
@@ -273,7 +273,7 @@ export const TypeOptions: Story = {
         const tagsRow = await canvas.findByRole('button', { name: /^tags/i })
         await userEvent.click(tagsRow)
         const optionsField = (await canvas.findByPlaceholderText(
-            /Options —/,
+            /options —/,
         )) as HTMLTextAreaElement
         optionsField.focus()
         await userEvent.clear(optionsField)
@@ -309,7 +309,7 @@ export const DuplicatePropertyName: Story = {
         })
         await userEvent.click(priorityRow)
         const nameInput = (await canvas.findByPlaceholderText(
-            'Property name',
+            'property name',
         )) as HTMLInputElement
         nameInput.focus()
         await userEvent.clear(nameInput)

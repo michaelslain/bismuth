@@ -1,6 +1,5 @@
 // Pure inline-markdown parser for a task description: wikilinks, [label](url) links, #tags,
-// **bold** and *italic*. Ported unchanged from TaskRow.tsx's INLINE_RE + renderTaskText (which
-// keeps its own copy until TaskText replaces it); rendering lives in TaskText.tsx.
+// **bold** and *italic*. Rendering lives in TaskText.tsx.
 export type TaskInlineSegment =
     | { kind: 'text'; text: string }
     | { kind: 'wikilink'; target: string; label: string }

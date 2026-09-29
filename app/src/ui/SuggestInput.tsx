@@ -95,6 +95,7 @@ const SuggestInput: Component<SuggestInputProps> = props => {
                         accept(nav.active())
                     } else if (isTabKey(e)) {
                         if (touched()) accept(nav.active())
+                        else setOpen(false)
                     } else if (e.key === ARROW_DOWN && !touched()) {
                         // First ArrowDown from the untouched state activates the option that is
                         // already highlighted (marks touched, does not move), so ArrowDown+Enter

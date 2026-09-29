@@ -1,5 +1,5 @@
 /* The grouped panel — see OptionList.tsx for why the rows stopped carrying this themselves.
-   Matched to `.cat-group` (calendar/components/CategoryPanel.module.css), `.propset-list`
+   Matched to `.cat-group` (calendar/components/CategoryList.module.css), `.propset-list`
    (bases/BaseSettings.module.css), and ToggleList's own list panel (ui/ToggleList.module.css,
    was `.set-cols`) — the three lists this one now sits beside: same surface, same hairline
    border, same radius, and `overflow: hidden` so a row's own top border cannot escape the

@@ -6,7 +6,7 @@
 .row + .row { border-top: 1px solid var(--border-soft); }
 
 /* collapsed line: chevron / name / muted type badge / eye toggle */
-.row .head { display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
+.row .head { width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
 .row .head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .row.open .head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .row .chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
@@ -21,10 +21,6 @@
    fill shows against the panel instead of reading as loose text. */
 .row .body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); background: var(--surface-1); }
 .row .fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
-/* The name field's own column — wraps its TextInput + the duplicate-name warning so the grid cell
-   grows with the warning instead of it overflowing into the kind Select's column. */
-.row .field { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
-.row .kindSelect { width: 100%; }
 .row .dupe { color: var(--danger); }
 .row .extra { width: 100%; }
 /* At least 4 visible lines, growing with the content up to 12 before the resize handle takes over. */

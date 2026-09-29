@@ -7,6 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { spyApi } from './_apiSpy'
+import { toasts } from '../Toast'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -881,5 +882,44 @@ export const Bidirectional: Story = {
         expect(cols).toEqual(['due', 'dueBack'])
         expect(calls.map(c => c.args[1])).toEqual([0, 0])
         expect(reviewed.n).toBe(2)
+    },
+}
+
+const FAILED_DELETE_BASE_PATH = 'stories/flashcards-failed-delete-demo.md'
+saveSession(FAILED_DELETE_BASE_PATH, { cram: true, pos: 0, good: 0, hard: 0, easy: 0, retired: [] })
+
+/** A rejected rowDelete leaves the session untouched: the same card stays on screen (the counters
+ *  that would have moved `pos` onto the next card never changed) and the base is not refetched. */
+export const FailedDeleteLeavesCounters: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={FAILED_DELETE_BASE_PATH}
+                onReviewed={() => reviewed.n++}
+            />
+        </Pane>
+    ),
+    beforeEach: () => {
+        reviewed.n = 0
+        const spy = spyApi(['rowDelete'], {
+            rowDelete: () => Promise.reject(new Error('disk full')),
+        })
+        return spy.restore
+    },
+    play: async ({ canvasElement }) => {
+        const front = () => canvasElement.querySelector('[data-face="front"]')?.textContent ?? ''
+        const before = await waitFor(() => {
+            const t = front()
+            expect(t).not.toBe('')
+            return t
+        })
+        await userEvent.click(await within(canvasElement).findByLabelText(/delete/i))
+        await waitFor(() =>
+            expect(toasts().some(t => t.message.includes('Could not delete the card'))).toBe(true),
+        )
+        expect(front()).toBe(before)
+        expect(reviewed.n).toBe(0)
     },
 }

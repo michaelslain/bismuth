@@ -9,6 +9,7 @@ import {
     For,
 } from 'solid-js'
 import { api } from '../api'
+import { pushToast } from '../Toast'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { TextInput } from '../ui/TextInput'
@@ -492,10 +493,19 @@ export function FlashcardsView(props: {
     // higher row, and our cram bookkeeping (the index-keyed `retired` pool, the
     // frozen deck-size total, and `pos`) would otherwise go stale — reading as a
     // premature "Cram complete" or resurfacing an already-mastered card. So we
-    // reconcile it against the post-delete deck BEFORE the refetch lands.
+    // reconcile it against the post-delete deck BEFORE the refetch lands (the delete itself has
+    // already succeeded by then, so a failure never touches the counters).
     const deleteCurrent = async () => {
         const c = current()
         if (!c || !props.basePath) return
+        // Delete first: the counters below only move once the row is really gone, so a failed
+        // delete leaves the session exactly as it was.
+        try {
+            await api.rowDelete(props.basePath, c.index)
+        } catch (e) {
+            pushToast(`Could not delete the card: ${(e as Error).message}`)
+            return
+        }
         setRevealed(false)
         if (cram()) {
             const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
@@ -524,7 +534,6 @@ export function FlashcardsView(props: {
                     : nextCramPos(newQueue, pos() - 1, newRetired)
             setPos(np === -1 ? newQueue.length : np)
         }
-        await api.rowDelete(props.basePath, c.index)
         props.onReviewed()
     }
 

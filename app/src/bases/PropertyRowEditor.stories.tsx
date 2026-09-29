@@ -116,7 +116,7 @@ export const Interactive: Story = {
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         const name = (await c.findByPlaceholderText(
-            'Property name',
+            'property name',
         )) as HTMLInputElement
         await userEvent.clear(name)
         await userEvent.type(name, 'abc')
@@ -129,6 +129,6 @@ export const Interactive: Story = {
             canvasElement.querySelector('[data-log]')!.textContent,
         ).toBe('move 1,remove')
         await userEvent.click(c.getByRole('button', { name: /^abc/ }))
-        await expect(c.queryByPlaceholderText('Property name')).toBeNull()
+        await expect(c.queryByPlaceholderText('property name')).toBeNull()
     },
 }
