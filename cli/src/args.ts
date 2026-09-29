@@ -14,12 +14,38 @@ export function bool(args: string[], name: string): boolean {
     return args.includes(`--${name}`)
 }
 
-/** Positional (non-flag) args, in order. Skips `--name value` pairs. */
-export function positionals(args: string[]): string[] {
+/** Flags read with `bool()` — they never take a value, so they must not swallow the next
+ *  positional. `status` is deliberately absent: it is also a valued flag (`flag(args, 'status')`)
+ *  elsewhere, so the one command that reads it as a boolean passes its own list. */
+export const BOOLEAN_FLAGS: readonly string[] = [
+    'off',
+    'dry-run',
+    'clear',
+    'word',
+    'regex',
+    'pretty',
+    'pdf',
+    'no-template',
+    'no-snapshot',
+    'no-frontmatter',
+    'no-commit',
+    'new-tab',
+    'markdown-syntax',
+    'installed',
+    'case',
+]
+
+/** Positional (non-flag) args, in order. Skips `--name value` pairs and `--name=value` tokens;
+ *  a name in `booleans` never consumes the token after it. */
+export function positionals(
+    args: string[],
+    booleans: readonly string[] = BOOLEAN_FLAGS,
+): string[] {
     const out: string[] = []
     for (let i = 0; i < args.length; i++) {
         const a = args[i]
         if (a.startsWith('--')) {
+            if (a.includes('=') || booleans.includes(a.slice(2))) continue
             // Treat the next token as this flag's value unless it's another flag.
             if (i + 1 < args.length && !args[i + 1].startsWith('--')) i++
             continue
