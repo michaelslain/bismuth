@@ -283,3 +283,28 @@ export const EscapeCancels: Story = {
         ).toBe('"Frank Herbert"')
     },
 }
+
+/** The ruled behaviour: Escape cancels the edit outright — the commit spy (the log) stays at
+ *  zero calls, not even the original value is re-committed, and the editor closes. */
+export const EscapeCancelsWithoutCommit: Story = {
+    render: () => (
+        <CommitCell col="author" value="Frank Herbert" config={sampleBaseConfig()} />
+    ),
+    play: async ({ canvasElement }) => {
+        await userEvent.click(cellButton(canvasElement))
+        await waitFor(() =>
+            expect(document.activeElement).toBe(
+                canvasElement.querySelector('input'),
+            ),
+        )
+        await userEvent.type(canvasElement.querySelector('input')!, 'x{Escape}')
+        await waitFor(() =>
+            expect(canvasElement.querySelector('input')).toBeNull(),
+        )
+        expect(commitLog(canvasElement)).toBe('[]')
+        expect(
+            canvasElement.querySelector('[data-testid="cell-value"]')!
+                .textContent,
+        ).toBe('"Frank Herbert"')
+    },
+}
