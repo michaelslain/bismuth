@@ -56,8 +56,14 @@ function InlineTextInput(props: InlineTextInputProps) {
             // stops click, mousedown, pointerdown and dblclick so a caret press is never a row gesture.
             {...gestureStops}
             onKeyDown={e => {
-                if (isConfirmKey(e)) commit()
-                else if (isDismissKey(e)) cancel()
+                // preventDefault marks the key consumed, so a host Modal does not also act on it.
+                if (isConfirmKey(e)) {
+                    e.preventDefault()
+                    commit()
+                } else if (isDismissKey(e)) {
+                    e.preventDefault()
+                    cancel()
+                }
             }}
             onBlur={commit}
         />

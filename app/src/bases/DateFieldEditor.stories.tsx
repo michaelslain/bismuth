@@ -97,6 +97,34 @@ export const OnDismissFires: Story = {
     },
 }
 
+/** Clicking the trigger while the popover is open closes it — and is NOT a dismiss. The host's
+ *  `onDismiss` (which cancels the edit in a real host) must not fire, and the value survives. */
+export const TriggerClickClosesWithoutCancelling: Story = {
+    render: () => {
+        const [dismissed, setDismissed] = createSignal(false)
+        return (
+            <>
+                <Harness initial="2026-09-14" onDismiss={() => setDismissed(true)} />
+                <span hidden data-testid="dismissed">
+                    {String(dismissed())}
+                </span>
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        const trigger = canvas.getByTestId('date-field-trigger')
+        await userEvent.click(trigger)
+        await waitFor(() => body.getByTestId('date-field-popover'))
+        // A real press fires pointerdown (window capture) then click; drive both.
+        await userEvent.pointer({ keys: '[MouseLeft]', target: trigger })
+        await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
+        await expect(canvas.getByTestId('dismissed')).toHaveTextContent('false')
+        await expect(canvas.getByTestId('raw')).toHaveTextContent('"2026-09-14"')
+    },
+}
+
 export const WithValue: Story = {
     render: () => <Harness initial="2026-09-14" />,
 }
