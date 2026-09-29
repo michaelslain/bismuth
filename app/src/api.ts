@@ -648,9 +648,10 @@ export const api = {
         post('/delete-property', { path, key }),
     // Batch many frontmatter writes (across notes) in ONE request → ONE invalidation → ONE refetch.
     // Used by the kanban drag-drop so a multi-card reorder doesn't storm the view with refetches.
+    // Resolves the paths that no longer existed (skipped, not written); the rest still landed.
     setProperties: (
         writes: Array<{ path: string; key: string; value: unknown }>,
-    ) => post('/set-properties', { writes }),
+    ) => postJson<{ skipped: string[] }>('/set-properties', { writes }),
     // Folders have no frontmatter — their icon override lives in .settings.
     // An empty icon clears the override (back to the default folder icon).
     setFolderIcon: (path: string, icon: string) =>

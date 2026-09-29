@@ -221,9 +221,13 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     byPath.set(w.path, list)
                 }
                 const written: string[] = []
+                const skipped: string[] = []
                 for (const [path, ops] of byPath) {
                     const raw = await readOrNull(path)
-                    if (raw === null) continue // skip a note that vanished; don't fail the batch
+                    if (raw === null) {
+                        skipped.push(path) // vanished: reported, not fatal to the batch
+                        continue
+                    }
                     let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
@@ -231,7 +235,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     written.push(path)
                 }
                 emit(written)
-                return 'ok'
+                return { skipped }
             }
             case 'POST /delete-property': {
                 const raw = await readOrNull(b.path)

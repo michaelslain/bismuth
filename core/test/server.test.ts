@@ -419,6 +419,10 @@ test('POST /set-properties applies batched frontmatter writes across notes in on
             }),
         })
         expect(ok2.status).toBe(200)
+        expect(await ok2.json()).toEqual({
+            skipped: ['nope-does-not-exist.md'],
+        })
+        expect(await res.json()).toEqual({ skipped: [] })
         const essay2 = (await (
             await fetch(`${base}/meta?path=essay.md`)
         ).json()) as Record<string, unknown>

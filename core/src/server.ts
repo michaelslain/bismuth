@@ -2543,15 +2543,19 @@ export function createServer(cfg: CoreConfig) {
                     list.push({ key: w.key, value: w.value })
                     byPath.set(w.path, list)
                 }
+                const skipped: string[] = []
                 for (const [path, ops] of byPath) {
                     const raw = await readNoteOrNull(cfg.vault, path)
-                    if (raw === null) continue // skip a note that vanished; don't fail the whole batch
+                    if (raw === null) {
+                        skipped.push(path) // a note that vanished: reported, not fatal to the batch
+                        continue
+                    }
                     let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
                     await writeNote(cfg.vault, path, next)
                 }
-                return ok()
+                return ok({ skipped })
             },
             b =>
                 Array.isArray(b.writes)

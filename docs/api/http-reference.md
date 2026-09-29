@@ -290,7 +290,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /daemon/logs`
 - **Params:** `?limit=<n>` (default 100, max 1000) `&kind=cron|process|daemon|session&name=<cron-or-process-name>&since=<ISO instant>` — all optional.
-- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`/`stopped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/snapshot`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/snapshot`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
 
 ### `GET /daemon/install`
 - **Params:** none.
@@ -522,7 +522,7 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 ### `POST /set-properties`
 - **Body:** `{ writes: Array<{ path: string, key: string, value: unknown }> }` — a BATCH of frontmatter writes across (possibly many) notes in one request.
 - **Action:** groups `writes` by `path` and folds each note's ops into a single read-modify-write (`setFrontmatterKey` applied in order, then one `writeNote`; each base is flattened first, as in `/set-property`) — so a kanban reorder that touches several cards fires ONE invalidation/SSE bump/view-refetch instead of a `/set-property` burst, each of which would otherwise re-resolve the base and remount the whole card grid (flicker). A note that's vanished mid-batch is skipped, not failed — the rest of the batch still writes.
-- **Response:** `"ok"`.
+- **Response:** `{ skipped: string[] }` — the paths that did not exist and were not written (empty array when every note existed). Callers that ignore it are unaffected; the calendar settings modal treats its own base appearing in `skipped` as a failed save.
 - **`pathOf`:** the deduped list of every `write.path` in the batch — a non-array `writes` makes it return `undefined`, and an empty/all-vanished batch returns `[]`; both collapse to zero paths, which `invalidate()` treats as a full invalidation the same as no `pathOf` at all.
 
 ### `POST /row/update`
