@@ -2,8 +2,9 @@ import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 
-// Pure helpers behind KanbanView's "only roll back what THIS call added" write paths — extracted
-// so the identity/grouping logic is unit-testable without a component. A whole-snapshot rollback
+// The pure rollback helpers behind KanbanView's "only roll back what THIS call added" write paths,
+// plus the one write helper (`writeStatus`, which calls `api`) they roll back — extracted so the
+// identity/grouping logic is unit-testable without a component. A whole-snapshot rollback
 // (restoring `prevOrder`/`prevRemoved`/`prevPending` wholesale) clobbers overlay entries another
 // concurrent action wrote during this call's await; these helpers instead undo exactly the keys
 // this call itself is responsible for, and only while they still hold the value this call wrote.
@@ -27,7 +28,8 @@ export function groupUpdatesByPath<T extends { path: string }>(
  * the no-value lane). Two write targets, split exactly as `dropCard` does it: STORED rows go one
  * `rowUpdateMany` per distinct file (a `source:` base's rows carry their own file, never the
  * board's), NOTE rows go `setProperties` (or one `deleteProperty` each when clearing). All
- * requests target distinct paths so they run concurrently; the first failure rejects. */
+ * requests target distinct paths so they run concurrently; every one settles before this returns,
+ * then the first failure (in `jobs` order) is rethrown. */
 export async function writeStatus(
     rows: Row[],
     statusKey: string,
@@ -66,7 +68,11 @@ export async function writeStatus(
                 ),
             )
     }
-    await Promise.all(jobs)
+    // Settle EVERY job before returning: a caller's rollback/refetch must never run while a sibling
+    // write is still in flight, or that write lands after it and overwrites the rollback.
+    const results = await Promise.allSettled(jobs)
+    const failed = results.find(r => r.status === 'rejected')
+    if (failed) throw failed.reason
 }
 
 /** `current` minus every key whose value is STILL the exact object this call wrote into

@@ -56,6 +56,33 @@ describe('writeStatus', () => {
         ])
         expect(calls.some(c => c[0] === 'set')).toBe(false)
     })
+
+    test('stored row cleared with undefined reaches rowUpdateMany without the key', async () => {
+        calls.length = 0
+        await writeStatus([stored('a.md', 0, { x: 1, status: 'a' })], 'status', undefined)
+        expect(calls).toEqual([['many', 'a.md', [{ index: 0, note: { x: 1 } }]]])
+    })
+
+    test('settles every write before rejecting with the first failure', async () => {
+        let slowDone = false
+        ;(api.rowUpdateMany as unknown as { mockImplementation: (f: unknown) => void }).mockImplementation(
+            async () => {
+                throw new Error('fast')
+            },
+        )
+        ;(api.setProperties as unknown as { mockImplementation: (f: unknown) => void }).mockImplementation(
+            async () => {
+                await new Promise(r => setTimeout(r, 30))
+                slowDone = true
+            },
+        )
+        const err = await writeStatus([stored('a.md', 0, {}), noteRow('n.md')], 'status', 'done').then(
+            () => null,
+            e => e as Error,
+        )
+        expect(err?.message).toBe('fast')
+        expect(slowDone).toBe(true)
+    })
 })
 
 describe('groupUpdatesByPath', () => {
