@@ -33,9 +33,9 @@ const MONO_FONTS = [
     'Monaspace Krypton',
     'Monaspace Radon',
 ]
-// proseFont's valid values: Lora (the proportional default) plus the same five Monaspace
-// variants, for a user who wants an all-mono editor.
-const PROSE_FONTS = ['Lora', ...MONO_FONTS]
+// proseFont's valid values: the two proportional serifs — IBM Plex Serif (the default) and Lora —
+// plus the same five Monaspace variants, for a user who wants an all-mono editor.
+const PROSE_FONTS = ['IBM Plex Serif', 'Lora', ...MONO_FONTS]
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE]
@@ -106,8 +106,8 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         proseFont: {
             type: enumType(PROSE_FONTS),
-            default: 'Lora',
-            doc: "PROSE font — the proportional face for everything that is the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. Lora // the five Monaspace variants. Set it to a Monaspace variant for an all-mono editor.",
+            default: 'IBM Plex Serif',
+            doc: "PROSE font — the proportional face for everything that is the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. IBM Plex Serif // Lora // the five Monaspace variants. Set it to a Monaspace variant for an all-mono editor.",
         },
         editorFontSize: {
             type: 'number',
@@ -297,11 +297,11 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         lineHeight: {
             type: 'number',
-            // 1.25 -> 22.5px at the 18px row unit. Prose is Lora now (--prose-font) at
-            // 13.5 * 1.04 = 14.04px, so 22.5px of leading is a 1.60 ratio — the normal range
-            // for serif body text. The old default of 1.5 (27px) was tuned for the previous
-            // CMU Serif measurement (--prose-scale 1.28, ~17.28px prose) and was never
-            // re-derived when the scale dropped to 1.04.
+            // 1.25 -> 22.5px at the 18px row unit. Prose is IBM Plex Serif (--prose-font) at
+            // 13.5 * --prose-scale 1.00 = 13.5px, so 22.5px of leading is a 1.67 ratio — open,
+            // which suits Plex's large x-height (Lora, the previous default, sat at 14.04px, a
+            // 1.60 ratio). The old default of 1.5 (27px) was tuned for the CMU Serif
+            // measurement before that (--prose-scale 1.28, ~17.28px prose).
             // Still a RATIONAL multiple of the row unit, deliberately: 1.25 means four prose
             // lines span exactly five 18px rows, so the "prose lands on the app's grid"
             // property this token exists to protect survives — it is now a 4:5 relationship
@@ -309,7 +309,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 1.25,
             min: 0.8,
             max: 1.8,
-            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — app/src/global.css :root), NOT of the font size. Default 1.25 -> 22.5px. Prose is Lora (--prose-font) at 14.04px (13.5 * --prose-scale 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows.",
+            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — app/src/global.css :root), NOT of the font size. Default 1.25 -> 22.5px. Prose is IBM Plex Serif (--prose-font) at 13.5px (13.5 * --prose-scale 1.00), where 22.5px of leading is a 1.67 ratio, an open measure that suits its large x-height. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows.",
         },
         mathMacros: {
             type: 'string',

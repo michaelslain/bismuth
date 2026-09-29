@@ -58,8 +58,8 @@ typography:
     lineHeight: 1.4
     letterSpacing: ".14em"
   prose:
-    fontFamily: "Lora Variable, Lora, Georgia, serif"
-    fontSize: "calc(var(--editor-font-size) * 1.04)"
+    fontFamily: "IBM Plex Serif, Georgia, serif"
+    fontSize: "calc(var(--editor-font-size) * var(--prose-scale))"
     fontWeight: 400
     lineHeight: 1.6
   code:
@@ -202,7 +202,7 @@ only theme that glows) and **Riso** (cream paper and indigo ink, print-flat). Th
 records Ink. `core/src/theme/tokens.ts` holds all four and is the only source of colour.
 
 **Key Characteristics:**
-- One monospace family (Monaspace, Xenon by default) for all chrome; one serif (Lora) for note prose.
+- One monospace family (Monaspace, Xenon by default) for all chrome; one serif (IBM Plex Serif by default, Lora selectable) for note prose.
 - An 18px row unit (`--row-h`); controls are 24px, bands are 36px.
 - Three ink steps: read (`--fg`), scan (`--text-muted`), structure (`--faint`).
 - One accent per view. The six-hue ramp means *category*, never decoration.
@@ -257,11 +257,12 @@ keeps byte-identical. A component stylesheet only ever reads `var(--…)`.
 
 **Chrome Font:** Monaspace Xenon (with `ui-monospace, monospace`); the user may pick any of the
 five metric-compatible Monaspace variants (`appearance.uiFont`), so the grid never reflows.
-**Prose Font:** Lora Variable (with `Lora, Georgia, serif`), via `appearance.proseFont`.
+**Prose Font:** IBM Plex Serif (with `Georgia, serif`), via `appearance.proseFont`; Lora Variable
+stays selectable.
 **Icon Font:** Symbols Nerd Font Mono, never user-selectable.
 
-**Character:** a slab mono doing the work of a terminal, and a warm book serif for the part a
-person actually wrote. The two never mix within one register.
+**Character:** a slab mono doing the work of a terminal, and an engineered, academic serif —
+Plex, drawn beside a mono — for the part a person actually wrote. The two never mix within one register.
 
 ### Hierarchy
 - **Hero** (40px `--fs-hero`, 48px `--fs-intro-title`): the vault intro and the wordmark only; never in app chrome.
@@ -273,13 +274,14 @@ person actually wrote. The two never mix within one register.
   and every `[text button]`.
 - **Label / Micro** (10.5px `--fs-micro`, uppercase, `.06em`–`.14em` tracking): eyebrows,
   status bar, legends. Nothing in the app is set smaller.
-- **Prose** (`--prose-font-size` = the user's editor size × 1.04): note body, note headings,
+- **Prose** (`--prose-font-size` = the user's editor size × the face's `--prose-scale`: 1.00 for Plex,
+  1.04 for Lora): note body, note headings,
   note tables, chat messages and the chat composer.
 - **Code** (`--code-font-size` = prose × `--code-scale` 0.89, × the user's `monoScale`): every mono
   run inside a note or a chat message — code blocks and both fence rows, frontmatter, inline code
   (`--fs-rel-code`, the same ratio off `1em`), `#tags`, task checkboxes and fields, list and syntax
   marks. One step below prose because Monaspace at prose x-height is 24% wider and carries 16% more
-  ink than Lora; 0.89 is ink parity. KaTeX output is not code and keeps its own size.
+  ink than Lora; 0.89 is ink parity, and holds for Plex too (code/prose ink 1.10 vs Lora's 1.11). KaTeX output is not code and keeps its own size.
 
 ### The content heading ramp
 Markdown headings in every surface read `--fs-h1` … `--fs-h6`. h1/h2 are never smaller than prose,

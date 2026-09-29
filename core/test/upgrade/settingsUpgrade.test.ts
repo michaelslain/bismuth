@@ -201,7 +201,7 @@ describe('upgrading an old-era settings file through reconcile', () => {
         // variant. uiFont/proseFont just resolve their own schema defaults, like any absent key.
         expect(appearance.editorFont).toBeUndefined()
         expect(appearance.uiFont).toBe('Monaspace Xenon')
-        expect(appearance.proseFont).toBe('Lora')
+        expect(appearance.proseFont).toBe('IBM Plex Serif')
         rmSync(vault, { recursive: true, force: true })
     })
 

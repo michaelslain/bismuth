@@ -122,11 +122,12 @@ test('uiFont enum carries the MONO_FONTS list', () => {
     expect(appearance.uiFont.default).toBe('Monaspace Xenon')
 })
 
-test('proseFont enum carries Lora plus the MONO_FONTS list', () => {
+test('proseFont enum carries the two serifs plus the MONO_FONTS list', () => {
     const appearance = objectFields(SETTINGS_SCHEMA.appearance)
     expect(appearance.proseFont.type).toEqual({
         kind: 'enum',
         values: [
+            'IBM Plex Serif',
             'Lora',
             'Monaspace Xenon',
             'Monaspace Neon',
@@ -135,7 +136,7 @@ test('proseFont enum carries Lora plus the MONO_FONTS list', () => {
             'Monaspace Radon',
         ],
     })
-    expect(appearance.proseFont.default).toBe('Lora')
+    expect(appearance.proseFont.default).toBe('IBM Plex Serif')
 })
 
 test('graph.repulsion is a number with the old slider bounds and default', () => {

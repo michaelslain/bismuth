@@ -58,6 +58,7 @@
     "type": {
       "kind": "enum",
       "values": [
+        "IBM Plex Serif",
         "Lora",
         "Monaspace Argon",
         "Monaspace Krypton",
@@ -66,7 +67,7 @@
         "Monaspace Xenon"
       ]
     },
-    "default": "Lora",
+    "default": "IBM Plex Serif",
     "min": null,
     "max": null,
     "required": false

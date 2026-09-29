@@ -27,14 +27,17 @@ const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 // Mirrors global.css's `styles/tokens.css` section (--prose-font, --prose-scale) and
 // editor.lineHeight's schema default. A headless (CLI) export has no DOM to probe, so these stand
 // in for the live values — same role DEFAULT_PALETTE plays for colour.
-const DEFAULT_PROSE_FONT = "'Lora Variable', Lora, Georgia, serif"
-// Mirrors global.css's `styles/tokens.css` section's --prose-scale for Lora and MUST be kept in
-// sync with it. Measured
-// (Task 1, canvas x-height at 100px em): Monaspace Xenon 51.75, Lora Variable 50.00 -> 1.04.
-// Advance-width parity gave 1.02 and disagreed; x-height governs apparent size at a glance, so it
-// wins. 1.04 replaces an earlier 1.28, which was CMU Serif's x-height ratio from before the swap
-// to Lora and does not describe this font pairing.
-export const PROSE_SCALE = 1.04
+// appearance.proseFont's default (IBM Plex Serif) as FONT_STACKS writes it. A literal rather than an
+// import: app/src/settings.ts drags the Solid store and the api client in, and this module must
+// stay bun-compilable for the cli binary. app/test/settings.test.ts pins both mirrors below to
+// their sources.
+export const DEFAULT_PROSE_FONT = "'IBM Plex Serif', Georgia, serif"
+// Mirrors settings.ts's PROSE_SCALES entry for the default face (global.css's --prose-scale
+// default). Measured (canvas x-height at a 1000px em): Monaspace Xenon 531.25, IBM Plex Serif
+// 531.25 -> 1.00. It was 1.04 while Lora was the default (50.00 vs 51.75), and 1.28 under CMU
+// Serif before that. A headless export of a vault on another prose face reads that face's own
+// scale out of PROSE_SCALES (cli/src/commands/export.ts); this constant is the fallback.
+export const PROSE_SCALE = 1
 // The app's defaults: --row-h 18px x editor.lineHeight 1.25 = 22.5px of leading on prose set at
 // editorFontSize 13.5 x --prose-scale PROSE_SCALE. 22.5 / (13.5 * PROSE_SCALE), "the normal range
 // for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured

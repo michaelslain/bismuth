@@ -218,6 +218,6 @@ export interface ExportDeps {
     // entry in the stack. Measured on a real export: prose painted at Georgia's width, not the
     // real prose face's width, while the maths rendered in a real embedded face because only
     // KaTeX was embedded. Optional so a caller that genuinely wants the viewer's own fonts can
-    // omit it.
-    docFontCss?: () => Promise<string>
+    // omit it. Takes the document's prose font stack, so only the serif it names is embedded.
+    docFontCss?: (proseStack: string) => Promise<string>
 }

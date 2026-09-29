@@ -152,7 +152,7 @@ async function wrapBody(
     // Document faces first: they are unconditional (every note has prose), where the maths faces
     // ride on whether the note actually rendered any.
     const docFonts = deps.docFontCss
-        ? `<style>${await deps.docFontCss()}</style>`
+        ? `<style>${await deps.docFontCss(palette.proseFont)}</style>`
         : ''
     const katex = body.includes('class="katex')
         ? `<style>${await deps.katexCss()}</style>`

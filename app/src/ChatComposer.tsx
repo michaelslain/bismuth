@@ -59,7 +59,7 @@ const composerTheme = EditorView.theme({
         // writing it and reading it back. Same optical-size compensation as every other prose
         // surface (see --prose-scale in the tokens section of global.css); at the mono size the serif reads
         // noticeably smaller.
-        fontFamily: "var(--prose-font, 'Lora Variable', Lora, Georgia, serif)",
+        fontFamily: "var(--prose-font, 'IBM Plex Serif', Georgia, serif)",
         fontSize: 'var(--prose-font-size, 14px)',
         lineHeight: '1.45',
         overflowY: 'auto',

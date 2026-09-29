@@ -125,8 +125,8 @@ const BASE_DEPS: Omit<ExportDeps, 'htmlToPdf'> = {
     // between them and must not land in the boot bundle. Without them a standalone export — and
     // the PDF rasterised from it — falls through to Georgia, since a saved document cannot resolve
     // the app's node_modules faces.
-    docFontCss: async () =>
-        (await import('./export/docFontCss')).docFontInlineCss(),
+    docFontCss: async proseStack =>
+        (await import('./export/docFontCss')).docFontInlineCss(proseStack),
 }
 
 const viewLabel = (v: ViewConfig, i: number): string =>
