@@ -38,5 +38,3 @@ export function createSseRegistry() {
         },
     }
 }
-
-export type SseRegistry = ReturnType<typeof createSseRegistry>

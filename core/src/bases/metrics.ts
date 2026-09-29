@@ -115,7 +115,7 @@ export function evaluateMetric(rows: Row[], source: string): number | null {
  *  view's own x/y/aggregate. `count()` when aggregate is count or no y resolved;
  *  otherwise `<agg>(<y>)` (y with any "note." prefix stripped), labelled
  *  "<agg> of <name>" ("average" for avg). */
-export function defaultMetric(_view: ViewConfig, data: ChartData): StatMetric {
+export function defaultMetric(data: ChartData): StatMetric {
     const agg: Aggregate = data.aggregate
     if (agg === 'count' || !data.y) return { label: 'notes', value: 'count()' }
     const name = data.y.replace(/^note\./, '')
@@ -155,7 +155,7 @@ export function metricResults(
     const metrics: StatMetric[] =
         view.stats && view.stats.length > 0
             ? view.stats
-            : [defaultMetric(view, buildChartData(rows, view))]
+            : [defaultMetric(buildChartData(rows, view))]
 
     // Bucket the rows by bin (count aggregate is irrelevant — only the buckets' `rows`
     // index lists are used) so current/previous/series can re-evaluate each metric over

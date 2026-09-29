@@ -117,7 +117,7 @@ describe('defaultMetric', () => {
     test('count() labelled notes when aggregate is count', () => {
         const rows = [row({ cat: 'a' }), row({ cat: 'b' })]
         const data = buildChartData(rows, view({ x: 'cat', aggregate: 'count' }))
-        expect(defaultMetric(view({ x: 'cat', aggregate: 'count' }), data)).toEqual({
+        expect(defaultMetric(data)).toEqual({
             label: 'notes',
             value: 'count()',
         })
@@ -126,7 +126,7 @@ describe('defaultMetric', () => {
     test('count() labelled notes when no y resolves', () => {
         const rows = [row({ cat: 'a' })]
         const data = buildChartData(rows, view({ x: 'cat' }))
-        expect(defaultMetric(view({ x: 'cat' }), data)).toEqual({
+        expect(defaultMetric(data)).toEqual({
             label: 'notes',
             value: 'count()',
         })
@@ -136,7 +136,7 @@ describe('defaultMetric', () => {
         const rows = [row({ date: '2026-05-01', priority: 3 })]
         const v = view({ x: 'date', y: 'priority', aggregate: 'sum' })
         const data = buildChartData(rows, v)
-        expect(defaultMetric(v, data)).toEqual({
+        expect(defaultMetric(data)).toEqual({
             label: 'sum of priority',
             value: 'sum(priority)',
         })
@@ -146,7 +146,7 @@ describe('defaultMetric', () => {
         const rows = [row({ date: '2026-05-01', priority: 3 })]
         const v = view({ x: 'date', y: 'priority', aggregate: 'avg' })
         const data = buildChartData(rows, v)
-        expect(defaultMetric(v, data)).toEqual({
+        expect(defaultMetric(data)).toEqual({
             label: 'average of priority',
             value: 'avg(priority)',
         })
