@@ -16,49 +16,29 @@ export type TextOrigin = { x: number; y: number }
 export const ghostOf = (root: Element) =>
     root.querySelector('[data-testid="kanban-add-column"]') as HTMLElement
 
-/** The resting "column" glyph box's top-left: a Range over the trigger's own text node, so
- *  line-box leading and button padding cannot hide a real shift. The trigger's label span now
- *  also holds a leading icon span (IconTextButton) ahead of the text, so the text node is found
- *  by node type rather than assumed to be the label's `firstChild` — that assumption silently
- *  measured the icon's glyph box instead once the icon was added, with no typecheck or test
- *  failure to catch it. */
-export function restTextOrigin(ghost: HTMLElement): TextOrigin {
-    const label = ghost.querySelector('button span') as HTMLElement
-    const node = Array.from(label.childNodes).find(
-        n => n.nodeType === Node.TEXT_NODE,
-    ) as Node
-    const range = document.createRange()
-    range.selectNodeContents(node)
-    const r = range.getBoundingClientRect()
-    return { x: r.left, y: r.top }
+/** The resting trigger's `+` glyph: its box's left edge and vertical CENTRE. The trigger is an
+ *  IconButton (icon `Plus`, no text node), so this reads the `svg` inside the button — the same
+ *  element KanbanAddColumn.placeOverlay measures. */
+export function restGlyphOrigin(ghost: HTMLElement): TextOrigin {
+    const r = (
+        ghost.querySelector('button svg') as SVGElement
+    ).getBoundingClientRect()
+    return { x: r.left, y: r.top + r.height / 2 }
 }
 
-/** Where an <input>'s text glyph box starts. A Range cannot reach an input's internal text, so
- *  this takes the content-box left, and for y centres a same-font mirror span's glyph box in
- *  the content box (a single-line input centres its text vertically) — the same glyph-box
- *  quantity restTextOrigin reads, so the two compare apples to apples. */
+/** Where an <input>'s text starts: the content-box left, and for y the content box's vertical
+ *  CENTRE (a single-line input centres its text vertically) — the same two quantities
+ *  restGlyphOrigin reads and that bases/kanbanAddColumnOverlay's overlayOrigin aligns on, so the
+ *  two compare apples to apples. */
 export function inputTextOrigin(input: HTMLInputElement): TextOrigin {
     const cs = getComputedStyle(input)
     const r = input.getBoundingClientRect()
-    // The mirror must stay INLINE: `position: absolute` on the span itself blockifies it, and a
-    // block's height is its line-height, not the glyph box — which would read the text as sitting
-    // (line-height - glyph) / 2 higher than it paints. So the out-of-flow part is a wrapper.
-    const wrap = document.createElement('div')
-    wrap.style.position = 'absolute'
-    wrap.style.visibility = 'hidden'
-    const mirror = document.createElement('span')
-    mirror.textContent = 'name'
-    mirror.style.font = cs.font
-    wrap.appendChild(mirror)
-    document.body.appendChild(wrap)
-    const glyphH = mirror.getBoundingClientRect().height
-    wrap.remove()
     const padT = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth)
     const padB = parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)
     const contentH = r.height - padT - padB
     return {
         x: r.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
-        y: r.top + padT + (contentH - glyphH) / 2,
+        y: r.top + padT + contentH / 2,
     }
 }
 

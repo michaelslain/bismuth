@@ -169,7 +169,7 @@ test('a failed rename rolls the overlay back and toasts', async () => {
     expect(toasts()[before]!.message).toContain('Rename column failed')
 })
 
-test('deleteColumn drops the key, clears the status off each card and offers Undo', async () => {
+test('deleteColumn drops the key, clears the status off each card and offers undo', async () => {
     const calls: Call[] = []
     install(calls)
     const h = harness()
@@ -177,7 +177,8 @@ test('deleteColumn drops the key, clears the status off each card and offers Und
     await h.actions.deleteColumn('Todo')
     expect(calls.filter(c => c.path === '/delete-property')).toHaveLength(2)
     expect(h.removed().has('Todo')).toBe(true)
-    expect(toasts()[before]!.action?.label).toBe('Undo')
+    expect(toasts()[before]!.message).toBe('deleted column Todo')
+    expect(toasts()[before]!.action?.label).toBe('undo')
 })
 
 test('renameCard to a taken name moves to the suffixed path instead of colliding', async () => {
@@ -349,7 +350,7 @@ test('undoing deleteColumn un-hides the column at its old index and rewrites col
     await h.actions.deleteColumn('Todo')
     expect(h.removed().has('Todo')).toBe(true)
     const t = toasts()[before]!
-    expect(t.action?.label).toBe('Undo')
+    expect(t.action?.label).toBe('undo')
     await t.action!.onClick()
     await until(() => !h.removed().has('Todo'))
     await until(

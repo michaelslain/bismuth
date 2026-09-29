@@ -22,7 +22,7 @@ import {
     fontsSettled,
     ghostOf,
     inputTextOrigin,
-    restTextOrigin,
+    restGlyphOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
 import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
 import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
@@ -84,9 +84,10 @@ export const AddColumn: Story = {
         const titleEl = within(firstColumn).getByText(firstColumnKey)
         const range = document.createRange()
         range.selectNodeContents(titleEl.firstChild as Node)
-        const titleTop = range.getBoundingClientRect().top
-        const restOrigin = restTextOrigin(ghost)
-        expect(Math.abs(restOrigin.y - titleTop)).toBeLessThanOrEqual(1)
+        const titleBox = range.getBoundingClientRect()
+        const titleMid = titleBox.top + titleBox.height / 2
+        const restOrigin = restGlyphOrigin(ghost)
+        expect(Math.abs(restOrigin.y - titleMid)).toBeLessThanOrEqual(1)
 
         // Every column's width (and the ghost's), not just the first — a reflow anywhere on the
         // board changes at least one.
@@ -644,8 +645,8 @@ export const DeleteColumnWithCards: Story = {
         expect(kanbanCalls.some(c => c.path === '/set-properties')).toBe(false)
 
         await waitFor(() => expect(toasts().length).toBe(before + 1))
-        expect(toasts()[before].message).toContain('Deleted column "Todo"')
-        expect(toasts()[before].action?.label).toBe('Undo')
+        expect(toasts()[before].message).toBe('deleted column Todo')
+        expect(toasts()[before].action?.label).toBe('undo')
     },
 }
 
@@ -868,15 +869,29 @@ export const RealDeleteUndoRestores: Story = {
         expect(column(canvasElement, 'Todo')).toBeNull()
         await waitFor(() => expect(toasts().length).toBeGreaterThan(before))
         const undo = toasts()[toasts().length - 1]!.action!
-        expect(undo.label).toBe('Undo')
+        expect(undo.label).toBe('undo')
         undo.onClick()
         await waitFor(() => {
             const sets = realCalls.filter(c => c.path === '/set-property')
             expect(sets.length).toBeGreaterThanOrEqual(2)
-            // Todo is back at its old index (first). The cleared cards' no-value lane ('') is in
-            // the visible keys at that moment, so it rides along at the end.
+            // Todo is back at its old index (first); the no-value lane is not written.
             const value = (sets[1]!.body as { value: string[] }).value
-            expect(value.slice(0, 3)).toEqual(['Todo', 'Doing', 'Done'])
+            expect(value).toEqual(['Todo', 'Doing', 'Done'])
+        }, WAIT)
+        // Each cleared card got its status back (one batched /set-properties write per card).
+        await waitFor(() => {
+            const restored = realCalls
+                .filter(c => c.path === '/set-properties')
+                .flatMap(
+                    c =>
+                        (
+                            c.body as {
+                                writes: { key: string; value: unknown }[]
+                            }
+                        ).writes,
+                )
+                .filter(w => w.key === 'status' && w.value === 'Todo')
+            expect(restored).toHaveLength(cards)
         }, WAIT)
         await waitFor(() =>
             expect(column(canvasElement, 'Todo')).not.toBeNull(),
