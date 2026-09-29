@@ -1,7 +1,7 @@
 // The daemon-inbox execution runtime: fires the ONE approved action for a daemon-authored page
 // (core/src/daemonPages.ts writes the page + its dynamic sidecar, .daemon/pages/.state/<slug>.json)
 // once the user presses an "approve" button. Structurally identical to processTriggers (cron.ts) —
-// drainTriggers (dotfilter, owner-gate, unlink-before-process) — but a page fires a
+// listTriggers/consumeTrigger (dotfilter, owner-gate, unlink-before-process) — but a page fires a
 // one-shot ISOLATED session (never the persistent vault thread, never resumed), and completion is
 // written HERE, deterministically, once the session settles — the LLM's own output is never
 // trusted as a status signal (core writes "working" before triggering; this module writes
@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import { sendMessage, composeBackendRefusalNote } from './session'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
-import { drainTriggers } from '../lib/drainTriggers'
+import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import type { VaultContext } from '../lib/config.ts'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 
@@ -71,9 +71,11 @@ function summarize(text: string): string {
  * interval.
  */
 export async function processPageTriggers(ctx: VaultContext): Promise<void> {
-    const triggers = await drainTriggers(ctx.pageTriggerDir, isOwner)
+    const triggers = await listTriggers(ctx.pageTriggerDir, isOwner)
 
     for (const slug of triggers) {
+        await consumeTrigger(ctx.pageTriggerDir, slug)
+
         const key = pageKey(ctx, slug)
         if (runningPages.has(key)) continue // already mid-run — trigger consumed, nothing more to do
 

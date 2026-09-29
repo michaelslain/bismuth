@@ -5,7 +5,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
 import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
-import { drainTriggers } from '../lib/drainTriggers'
+import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
     RESTART_BACKOFF_RESET_MS,
@@ -1023,9 +1023,11 @@ function isRunning(ctx: VaultContext, name: string): boolean {
  * the loop.
  */
 export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
-    const triggers = await drainTriggers(ctx.processTriggerDir, isOwner)
+    const triggers = await listTriggers(ctx.processTriggerDir, isOwner)
 
     for (const name of triggers) {
+        await consumeTrigger(ctx.processTriggerDir, name)
+
         // Defense-in-depth: the trigger filename addresses a .md file by basename,
         // so reject anything with path separators that could escape the dir.
         if (name.includes('/') || name.includes('\\')) {
