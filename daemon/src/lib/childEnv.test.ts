@@ -69,3 +69,9 @@ test('extraBinDirs includes exactly the expected fallback dirs in priority order
         join(FAKE_HOME, '.local', 'bin'),
     ])
 })
+
+test('augmentPath defaults the base to the POSIX dirs when the parent PATH is empty', () => {
+    const out = augmentPath('', FAKE_HOME).split(':')
+    expect(out.slice(0, 4)).toEqual(['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+    expect(out).toContain('/usr/local/bin')
+})

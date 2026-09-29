@@ -26,16 +26,19 @@ export function extraBinDirs(home: string = homedir()): string[] {
     ]
 }
 
-// Return `parentPath` with every extraBinDir appended that isn't already present, de-duplicated,
+// The bare PATH launchd/systemd hand a daemon — the base when the parent has none.
+export const POSIX_PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+
+// Return `parentPath` (default: this process's PATH, else POSIX_PATH) with every extraBinDir appended that isn't already present, de-duplicated,
 // PARENT ENTRIES FIRST — an explicitly-set PATH keeps its precedence; the daemon-critical install
 // dirs are only ever ADDED as fallbacks, never allowed to shadow the parent. Pure: no fs existence
 // checks, so a bare parent PATH ALWAYS yields a PATH containing the three critical install dirs —
 // the property the daemon relies on at both the spawn layer (child env) and the plist layer.
 export function augmentPath(
-    parentPath: string | undefined,
+    parentPath: string | undefined = process.env.PATH,
     home: string = homedir(),
 ): string {
-    const parts = (parentPath ?? '').split(':').filter(Boolean)
+    const parts = (parentPath || POSIX_PATH).split(':').filter(Boolean)
     const seen = new Set(parts)
     for (const dir of extraBinDirs(home)) {
         if (!seen.has(dir)) {
