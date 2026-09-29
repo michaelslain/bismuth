@@ -228,7 +228,7 @@
    The eyebrow, theme names, power-up rows, terminal panels and buttons all STAY mono —
    those are chrome, labels and terminal output, where the mono is doing real work. */
 .vi-title.vi-title {
-  font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
+  font-family: var(--prose-font, 'IBM Plex Serif', Georgia, serif);
   font-weight: 400;
   /* Fixed at var(--fs-intro-title) (48px), not the old fluid
      clamp(2rem, 1.4rem + 2.2vw, calc(var(--fs-hero) * 1.35)) — bench/invariants.ts's
@@ -247,7 +247,7 @@
   text-wrap: balance;
 }
 .vi-body {
-  font-family: var(--prose-font, 'Lora Variable', Lora, Georgia, serif);
+  font-family: var(--prose-font, 'IBM Plex Serif', Georgia, serif);
   /* var(--fs-intro-body) is now a fixed 19px, not the fluid
      clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem) it used to be — that clamp rendered 19.2px at the
      audited viewport, 0.2px off bench/invariants.ts's type scale (its own 19px step), and would

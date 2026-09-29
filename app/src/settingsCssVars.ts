@@ -4,7 +4,13 @@
 // widths, animation durations) live here as `--var` mappings; the CSS files
 // reference them via var(--name, <fallback>). Adding a CSS-driven setting means
 // adding one line to settingsToCssVars + one var() reference in the stylesheet.
-import { FONT_STACKS, DEFAULT_ACCENT_PALETTE, type Settings } from './settings'
+import {
+    FONT_STACKS,
+    PROSE_SCALES,
+    DEFAULT_PROSE_SCALE,
+    DEFAULT_ACCENT_PALETTE,
+    type Settings,
+} from './settings'
 import { resolveAppearance, semanticTokens, shadowTokens } from './themes'
 
 /** Pure: the full `{ "--var": "value" }` map for the given settings. DOM-free + testable.
@@ -198,7 +204,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--ui-font-stack':
             FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS['Monaspace Xenon'],
         '--prose-font':
-            FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['Lora'],
+            FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['IBM Plex Serif'],
+        '--prose-scale': String(
+            PROSE_SCALES[s.appearance.proseFont] ?? DEFAULT_PROSE_SCALE,
+        ),
         '--editor-font-size': s.appearance.editorFontSize + 'px',
         '--icon': s.appearance.iconSize + 'px',
         '--sidebar-width': s.appearance.sidebarWidth + 'px',

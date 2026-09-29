@@ -230,7 +230,7 @@ colours `resolvePalette` already resolved:
 
 | | source | where |
 |---|---|---|
-| face | `--prose-font` (the proportional note face, Lora Variable) | `:root`, `global.css` (tokens section) |
+| face | `--prose-font` (the proportional note face, IBM Plex Serif by default) | `:root`, `global.css` (tokens section) |
 | leading | the app's own `calc(var(--row-h) * var(--prose-line-height))`, read back as a **ratio of the type** | `--prose-line-height` = `editor.lineHeight` |
 | colours | `--bg`/`--fg`/`--accent`/the category tokens | probed — see "html2canvas and modern CSS colors" |
 
@@ -283,13 +283,13 @@ colour (and the prose scale itself, per the note above) stay fixed at `DEFAULT_P
 
 An exported document is standalone — no `<link>` to the app's own stylesheets, and (for a PDF/PNG
 rasterizer, browser or headless) no access to whatever fonts the app loaded from `node_modules` at
-runtime. Without embedding the actual font files, a note's prose face (`Lora Variable`) and mono face
+runtime. Without embedding the actual font files, a note's prose face (`IBM Plex Serif`, or `Lora Variable`) and mono face
 (`Monaspace Xenon`) simply aren't resolvable in the exported document, and every browser silently
 falls through the CSS font stack to its next entry — measured directly on a real export before this
 existed (under the prior CMU-Serif-based prose face): a prose run painted 737.1px wide, identical to
 Georgia's 737.1px and nothing like CMU Serif's 677.2px, while KaTeX's own faces (embedded separately,
 see `katexCss`) rendered as real Computer Modern — two different serifs a few pixels apart in the
-same document. The prose face is Lora Variable now, but the fallback trap the measurement exposed
+same document. The prose face is IBM Plex Serif now (Lora Variable before it), but the fallback trap the measurement exposed
 is unchanged: an unresolvable family name still falls silently through to Georgia.
 
 The fix is split across three files because the two callers obtain font bytes by incompatible,
@@ -298,15 +298,18 @@ non-interchangeable means:
 - **`app/src/export/fontFaceCss.ts`** — the shared, asset-import-free half: the `DocFace` type
   (`family`/`style`/`weight`/an already-inlined `src: data:` URI) and `faceCss(faces)`, which
   serializes a `DocFace[]` into `@font-face` rules. Neither embedder imports the other's module, so
-  this is the one place that fixes which weights get shipped and how they're written out.
-- **`app/src/export/docFontCss.ts`** — the browser embedder. It pulls the document faces (Lora Variable
-  regular/italic — two variable faces spanning weight range 400 700, replacing the four static CMU
-  Serif faces this used to ship — plus Monaspace Xenon regular/italic/bold) in as base64 through
-  Vite's `?inline` transform — the same mechanism `katexCss.ts` uses for KaTeX's glyphs — and calls
-  `faceCss()` to build the stylesheet, caching the result after the first build. `docFontInlineCss()`
-  is synchronous and is what `ExportView.tsx` wires into `ExportDeps.docFontCss`.
+  this is the one place that fixes which weights get shipped and how they're written out. Its
+  `proseFacesFor(faces, proseStack)` keeps every mono face but only the prose serif the document's
+  own `--prose-font` stack names, so an export never ships a serif it does not paint.
+- **`app/src/export/docFontCss.ts`** — the browser embedder. It pulls the document faces (IBM Plex Serif
+  400/500/600/700 in normal + italic; Lora Variable regular/italic — two variable faces spanning
+  weight range 400 700; plus Monaspace Xenon regular/italic/bold) in as base64 through Vite's
+  `?inline` transform — the same mechanism `katexCss.ts` uses for KaTeX's glyphs — and calls
+  `faceCss(proseFacesFor(…))` to build the stylesheet, caching it per prose stack.
+  `docFontInlineCss(proseStack)` is synchronous and is what `ExportView.tsx` wires into
+  `ExportDeps.docFontCss`, which `exporters.ts` calls with the palette's `proseFont`.
 - **`cli/src/docFontCss.ts`** — the headless twin, for a `bun build --compile` binary that has no
-  `node_modules` anywhere near it at run time. It imports the same seven font files via Bun's
+  `node_modules` anywhere near it at run time. It imports the same thirteen font files via Bun's
   `with { type: 'file' }` import attributes (resolved and inlined into the binary **at build time**,
   not looked up on disk at run time — the same reasoning `cli/src/katexCss.ts` documents for why
   `require.resolve()` would be wrong here), reads each one lazily through `Bun.file(path).arrayBuffer()`,
@@ -323,7 +326,7 @@ what differs between them is how the `src` gets filled in.
 `<style>` block **unconditionally** — a note has prose regardless of format, unlike the KaTeX
 stylesheet, which is inlined only when the body actually contains rendered math. This is what lets
 the headless Chrome that rasterizes a CLI PDF/PNG (see "Headless vs browser-only paths" below) paint
-real Lora Variable and Monaspace Xenon instead of falling through to Georgia, exactly as it lets the
+the real prose serif and Monaspace Xenon instead of falling through to Georgia, exactly as it lets the
 app's own `html2canvas` pass do the same.
 
 ## The renderer: `exporters.ts`
@@ -480,7 +483,7 @@ Flow:
    - `htmlToPdf` (its two-argument `(html, title)` shape — `title` unused headlessly) / `htmlToPng` → `htmlToPdfHeadless` / `htmlToPngHeadless` (`core/src/render/htmlRaster.ts`) — a real headless Chrome, launched and torn down per call; see "Headless vs browser-only paths" above for the Chrome-binary dependency this brings
    - `drawingToPng` → core `renderDocToPng`
    - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
-   - `docFontCss` → `cli/src/docFontCss.ts`'s `docFontInlineCss` (see "Font embedding" above) — without it the headless Chrome rasterizing a CLI PDF/PNG would have no Lora Variable or Monaspace Xenon to paint prose with
+   - `docFontCss` → `cli/src/docFontCss.ts`'s `docFontInlineCss` (see "Font embedding" above) — without it the headless Chrome rasterizing a CLI PDF/PNG would have no prose serif or Monaspace Xenon to paint prose with
    - `options.palette` → `buildPaletteOverride(vault, theme)`, read from the vault's own `.settings` (see "Note prose carries the app's typography" above)
 4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter`/`--markdown-syntax` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above; `--markdown-syntax` sets `showMarkdownSyntax: true`, see "Markdown syntax markers" above). There is no CLI flag for `pdfFontSize` — a headless PDF always renders at the 12pt default.
 5. Bytes are written to `--out` (or `res.filename`) — **except** a page-broken PNG note (`res.files.length > 1`, see "Page breaks" above), which writes every file to its own computed name instead (`--out` doesn't apply to a multi-file result). This path is live: a multi-page note exported as PNG renders each `<!-- pagebreak -->` section through `htmlToPngHeadless` in its own headless-Chrome call and writes one file per page.

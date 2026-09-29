@@ -44,6 +44,7 @@
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.43.0",
         "@fontsource-variable/lora": "^5.3.0",
+        "@fontsource/ibm-plex-serif": "^5.3.0",
         "@fontsource/monaspace-argon": "^5.3.0",
         "@fontsource/monaspace-krypton": "^5.3.0",
         "@fontsource/monaspace-neon": "^5.3.0",
@@ -111,6 +112,7 @@
       "dependencies": {
         "@bismuth/core": "workspace:*",
         "@fontsource-variable/lora": "^5.3.0",
+        "@fontsource/ibm-plex-serif": "^5.3.0",
         "@fontsource/monaspace-xenon": "^5.3.0",
         "katex": "^0.17.0",
       },
@@ -396,6 +398,8 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
     "@fontsource-variable/lora": ["@fontsource-variable/lora@5.3.0", "", {}, "sha512-2ph8KiZ8Bn141hWuC3ErtpJ+Ui8p2MJQn8TJNRSRmLmnCIOCtHfiBM9R7WLRPeUG/q6hXyHOxWQ8DvRSX+ixvQ=="],
+
+    "@fontsource/ibm-plex-serif": ["@fontsource/ibm-plex-serif@5.3.0", "", {}, "sha512-zwPfHB7EJbS5B8qnitPigJYzNdnt6PUeaoOA1gAAt//1pjpTVZN5sOU14NIAZ+C1xypL6GWsUG2VMYJW9bhJqQ=="],
 
     "@fontsource/monaspace-argon": ["@fontsource/monaspace-argon@5.3.0", "", {}, "sha512-sfP9wbeL7OLt/vxHCOtssa4AadPFjQAClYg1rl+PybqfJLw8yG86f8q3qtx4dCHpsN82x8Cb2z0BmP7y93QUNQ=="],
 

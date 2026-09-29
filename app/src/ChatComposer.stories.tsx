@@ -68,21 +68,27 @@ export const Drafting: Story = {
         // loaded — a stack that silently fell through to the Georgia fallback would still match
         // a family-name regex. expectProseFace follows the LIVE --prose-font token instead (so a
         // repointed token is honored rather than a literal being re-pinned), and
-        // expectFamilyReallyLoaded proves the Lora Variable face actually resolved —
+        // expectFamilyReallyLoaded proves the default IBM Plex Serif face actually resolved —
         // document.fonts.check cannot: it is true for a family that doesn't exist (the fallback
         // is usable) and false for a registered-but-not-yet-laid-out webface, so it stays green
-        // when Lora is absent and turns red the moment Lora is really present.
+        // when the face is absent and turns red the moment it is really present.
         expectProseFace(scroller as HTMLElement)
-        await expectFamilyReallyLoaded('Lora Variable')
-        // --prose-font-size is --editor-font-size * --prose-scale, so it must exceed the mono size
-        // rather than merely differ from it — a bare inequality would pass on a wrong-way change.
+        await expectFamilyReallyLoaded('IBM Plex Serif')
+        // The composer sits at --prose-font-size = --editor-font-size * --prose-scale, pinned
+        // exactly. It used to assert "bigger than the mono size", which only held while every
+        // prose face had a scale above 1 — IBM Plex Serif's is 1.00 (x-height parity with the
+        // mono), so the two sizes now legitimately coincide. getPropertyValue on
+        // --prose-font-size returns the unresolved calc() text, so multiply the two plain tokens.
         const root = getComputedStyle(document.documentElement)
         const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
-        // A fallback here would turn an unresolved token into 0, and toBeGreaterThan(0) passes
-        // for any positive number — a broken measurement quietly trivialized into a passing test.
-        // Fail loudly instead.
+        const proseScale = parseFloat(root.getPropertyValue('--prose-scale'))
+        // A fallback here would turn an unresolved token into 0 and trivialize the check into a
+        // passing test. Fail loudly instead.
         await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
-        await expect(parseFloat(cs.fontSize)).toBeGreaterThan(editorPx)
+        await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
+        await expect(parseFloat(cs.fontSize)).toBe(
+            Math.round(editorPx * proseScale * 100) / 100,
+        )
     },
 }
 

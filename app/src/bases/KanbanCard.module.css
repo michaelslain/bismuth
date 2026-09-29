@@ -5,7 +5,7 @@
 .kbFaceEditable:focus-visible { outline: none; }
 
 /* Card face: read-only title — DESIGN.md's register rule: what a person WROTE is prose
-   (--prose-font, Lora via Text's `register="prose"` prop in KanbanCard.tsx). Only the
+   (--prose-font, the prose serif via Text's `register="prose"` prop in KanbanCard.tsx). Only the
    font-SIZE lives here (never a font-family literal in this stylesheet); weight 500, not
    bold, so it reads as a heading without shouting. Clicking opens the modal. */
 .kbCardTitle {

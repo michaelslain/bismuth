@@ -26,7 +26,11 @@ import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
 import { DEFAULT_PALETTE, PROSE_SCALE } from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
-import { FONT_STACKS } from '../../../app/src/settings'
+import {
+    FONT_STACKS,
+    PROSE_SCALES,
+    DEFAULT_PROSE_SCALE,
+} from '../../../app/src/settings'
 import type {
     ExportFormat,
     ExportDeps,
@@ -65,12 +69,19 @@ async function buildPaletteOverride(
         appearance?: {
             editorFontSize?: number
             uiFont?: string
+            proseFont?: string
         }
     }
     const lineHeight = data.editor?.lineHeight ?? DEFAULT_LINE_HEIGHT
     const editorFontSize =
         data.appearance?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
-    const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
+    const proseFont = data.appearance?.proseFont
+    // The face's own optical scale, as settingsCssVars.ts projects it for the app; PROSE_SCALE
+    // (the default face's) when the vault leaves proseFont unset.
+    const proseScale = proseFont
+        ? (PROSE_SCALES[proseFont] ?? DEFAULT_PROSE_SCALE)
+        : PROSE_SCALE
+    const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * proseScale)
     // The vault's own FACES, resolved the same way settingsCssVars.ts resolves them for the app:
     // a name out of FONT_STACKS, or the raw string when the user named a face the map does not
     // carry. appearance.uiFont is the one mono face — both the chrome face a base/calendar
@@ -88,6 +99,7 @@ async function buildPaletteOverride(
             DEFAULT_PALETTE[theme].monoFont,
         ),
         font: stack(data.appearance?.uiFont, DEFAULT_PALETTE[theme].font),
+        proseFont: stack(proseFont, DEFAULT_PALETTE[theme].proseFont),
     }
 }
 
@@ -154,7 +166,7 @@ async function run(args: string[]): Promise<void> {
         // module's header for why require.resolve() cannot work here).
         katexCss: katexInlineCss,
         // The note faces themselves, inlined — without these the headless Chrome that rasterises
-        // the pdf has no Lora Variable or Monaspace and silently falls through to Georgia.
+        // the pdf has no prose serif or Monaspace and silently falls through to Georgia.
         docFontCss: docFontInlineCss,
         // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
         // transparent ground, for compositing over the exported page's own text; without it

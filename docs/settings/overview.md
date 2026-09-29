@@ -51,7 +51,7 @@ appearance:
   theme: ink
   icon: hopper-crystal
   uiFont: Monaspace Xenon
-  proseFont: Lora
+  proseFont: IBM Plex Serif
   editorFontSize: 13.5
   ...
 graph:
@@ -174,7 +174,7 @@ interface SchemaEntry {
 | `theme` | enum | `ink` | 4 values | Bismuth color theme; selects all colors in the app and graph. Values: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream+indigo, light). |
 | `icon` | enum | `hopper-crystal` | 14 values | App logo mark (favicon + sidebar). Values: `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings`. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND the mono constructs inside a note (code blocks, inline code, frontmatter, math, in-note tags). Config buffers (`.settings`, `*.yaml`) render entirely in it. |
-| `proseFont` | enum | `Lora` | `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for note body text, note headings, note tables, chat message bodies and the chat composer. Default `Lora` (family string `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
+| `proseFont` | enum | `IBM Plex Serif` | `IBM Plex Serif`, `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for note body text, note headings, note tables, chat message bodies and the chat composer. Default `IBM Plex Serif` (`Lora`'s family string is `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
 | `editorFontSize` | number | `13.5` | 11–28 | Note prose font size in px — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size. |
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
@@ -219,7 +219,7 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1.25` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.25` -> 22.5px. Prose is Lora (`--prose-font`) at 14.04px (13.5 × `--prose-scale` 1.04), where 22.5px of leading is a 1.60 ratio, the normal range for serif body text. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows. |
+| `lineHeight` | number | `1.25` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.25` -> 22.5px. Prose is IBM Plex Serif (`--prose-font`) at 13.5px (13.5 × `--prose-scale` 1.00), where 22.5px of leading is a 1.67 ratio, an open measure that suits its large x-height. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows. |
 | `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
 | `wrapSelectionChars` | list (string) | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes already wrap via auto-close, so they're omitted by default. |

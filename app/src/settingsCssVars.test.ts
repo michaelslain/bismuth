@@ -1,7 +1,7 @@
 // app/src/settingsCssVars.test.ts
 import { describe, expect, it } from 'bun:test'
 import { settingsToCssVars } from './settingsCssVars'
-import { DEFAULTS, FONT_STACKS } from './settings'
+import { DEFAULTS, FONT_STACKS, DEFAULT_PROSE_SCALE } from './settings'
 import { THEMES } from './themes'
 
 function withTheme(theme: string) {
@@ -28,8 +28,9 @@ describe('settingsToCssVars', () => {
         // the key at all, not just an empty/undefined value.
         expect('--editor-font' in vars).toBe(false)
         expect(vars['--prose-font']).toBe(
-            "'Lora Variable', Lora, Georgia, serif",
+            "'IBM Plex Serif', Georgia, serif",
         ) // resolved through FONT_STACKS, from appearance.proseFont
+        expect(vars['--prose-scale']).toBe('1') // PROSE_SCALES, the default face's x-height parity
     })
 
     it('derives the color tokens from the default theme (ink)', () => {
@@ -59,7 +60,20 @@ describe('settingsToCssVars', () => {
     it('falls back to the default prose stack when proseFont is not a known key', () => {
         const s = structuredClone(DEFAULTS)
         s.appearance.proseFont = 'Comic Sans'
-        expect(settingsToCssVars(s)['--prose-font']).toBe(FONT_STACKS['Lora'])
+        expect(settingsToCssVars(s)['--prose-font']).toBe(
+            FONT_STACKS['IBM Plex Serif'],
+        )
+    })
+
+    it('projects each prose face with its own --prose-scale', () => {
+        const s = structuredClone(DEFAULTS)
+        s.appearance.proseFont = 'Lora'
+        const vars = settingsToCssVars(s)
+        expect(vars['--prose-font']).toBe(FONT_STACKS['Lora'])
+        expect(vars['--prose-scale']).toBe('1.04')
+        // A face with no measured entry (an all-mono prose choice) keeps the shared fallback.
+        s.appearance.proseFont = 'Monaspace Neon'
+        expect(settingsToCssVars(s)['--prose-scale']).toBe(String(DEFAULT_PROSE_SCALE))
     })
 
     it('maps appearance/ui sizing to px vars and passes CSS lengths through', () => {

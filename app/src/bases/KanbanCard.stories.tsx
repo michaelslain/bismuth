@@ -28,7 +28,7 @@ function Card(props: Parameters<typeof KanbanCard>[0]) {
     )
 }
 
-/** Read-only face: title in the prose register (Lora), then a one-line-per-property meta
+/** Read-only face: title in the prose register (the prose serif), then a one-line-per-property meta
  *  grid — a date, a select and a number, mixed kinds, every value starting at the same x. */
 export const Default: Story = {
     render: () => (

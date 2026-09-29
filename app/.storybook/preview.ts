@@ -20,11 +20,19 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
-// Same reasoning as above, for the app entry's Lora import (visual-unification wave 0, §9.1 — the
-// prose serif for note bodies + chat messages). Without this line here too, FontSpecimen.stories.tsx
-// — the ONE place this font is judged before any real surface consumes it — would silently render
-// its "Lora Variable" declarations against the Georgia fallback, passing every visual check while
-// proving nothing.
+// Same reasoning as above, for the app entry's prose-serif imports (IBM Plex Serif, the default,
+// and Lora — visual-unification wave 0, §9.1 introduced the first). Without these lines here too,
+// every prose story — and FontSpecimen.stories.tsx, the one place a face is judged before any
+// real surface consumes it — would silently render against the Georgia fallback, passing every
+// visual check while proving nothing.
+import '@fontsource/ibm-plex-serif/400.css'
+import '@fontsource/ibm-plex-serif/400-italic.css'
+import '@fontsource/ibm-plex-serif/500.css'
+import '@fontsource/ibm-plex-serif/500-italic.css'
+import '@fontsource/ibm-plex-serif/600.css'
+import '@fontsource/ibm-plex-serif/600-italic.css'
+import '@fontsource/ibm-plex-serif/700.css'
+import '@fontsource/ibm-plex-serif/700-italic.css'
 import '@fontsource-variable/lora/wght.css'
 import '@fontsource-variable/lora/wght-italic.css'
 
