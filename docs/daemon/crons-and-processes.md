@@ -90,7 +90,7 @@ FileChangeCronJob {
 | `enabled` | `frontmatter.enabled !== "false"` | `true` (opt-out) |
 | `notify` | `frontmatter.notify === "true"` | `false` (opt-in) |
 | `model` | passthrough | `undefined` (session defaults `haiku`) |
-| `effort` | passthrough → `thinkingBudget` | `undefined` |
+| `effort` | passthrough → the SDK's `effort` option | `undefined` |
 | `timeout` | `parseTimeoutSecs` | `300` |
 | `waitFor` | passthrough — a `pgrep -f` pattern to wait on after the session ends | `undefined` |
 | `incremental` | `frontmatter.incremental === "true"` — opts into the pre-fire checkpoint-diff skip gate (see [Incremental crons](#incremental-crons)) | `false` (opt-in) |

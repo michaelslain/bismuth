@@ -125,7 +125,7 @@ interface SendOptions {
 | `systemPrompt` | `{ type: 'preset', preset: 'claude_code', append: buildDaemonPersona(ctx, denyEntries) }` (`persona.ts`) — `"You are <name>."` + `<vault>/.daemon/identity.md` body (or the default personality), read **fresh per session** so edits take effect next message |
 | `model` | `opts.model ?? "haiku"` |
 | `pathToClaudeCodeExecutable` | the resolved user `claude` binary (when found) |
-| `thinkingBudget` (from `effort`) | `"high"` → high, `"low"` → low, otherwise medium |
+| `effort` (from the session's `effort`) | passed as the SDK's `effort` option: `"high"` → `high`, `"low"` → `low`, anything else → `medium` |
 
 **Abort + timeout.** An `AbortController` is created if either `abortController` or `timeoutSecs` is given. When `timeoutSecs > 0`, a `setTimeout` calls `ac.abort()` and logs `[session:<name>] Timeout reached (Ns), aborting session`.
 

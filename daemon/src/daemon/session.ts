@@ -257,7 +257,7 @@ export function buildQueryOptions(
 
     if (opts?.effort) {
         // `effort`, NOT `thinkingBudget`: the latter is not a field of the SDK's Options in ANY version
-        // this repo installs (0.2.141 for daemon, 0.3.186 for core — grep both sdk.d.ts: zero hits), so
+        // this repo installs (0.3.186 for both daemon and core — grep sdk.d.ts: zero hits), so
         // the daemon's configured reasoning effort was being handed to the SDK under a key it ignores
         // and silently dropped on every call. `options` is typed Record<string, unknown> here, so the
         // compiler could not catch the typo. The real field is `effort?: 'low'|'medium'|'high'|'xhigh'
@@ -332,8 +332,8 @@ export function buildQueryOptions(
     // while asked to read a hidden note. Not an adversarial bypass — the app's own agent behaving
     // normally. `failIfUnavailable` only gates a sandbox that fails to START; it does nothing about a
     // sandbox the model itself asks to skip per-call. Per sdk.d.ts's `Settings.sandbox.
-    // allowUnsandboxedCommands` docstring (0.2.141, line 5011 — the only prose in the bundled types
-    // describing this field; `Options.sandbox`'s zod-derived `SandboxSettings` at line 2411 shares the
+    // allowUnsandboxedCommands` docstring (0.3.186, line 5659 — the only prose in the bundled types
+    // describing this field; `Options.sandbox`'s zod-derived `SandboxSettings` at line 2596 shares the
     // identical field/shape but carries no doc comment of its own at its declaration site — see
     // docs/vault/visibility.md for the full citation): "Allow commands to run outside the sandbox via
     // the dangerouslyDisableSandbox parameter. When false, the dangerouslyDisableSandbox parameter is

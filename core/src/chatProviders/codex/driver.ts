@@ -212,7 +212,7 @@ export const CODEX_AGENTS_MD_CONTENT = [
  * Best-effort, opt-in refresh of Codex's memory channel (AGENTS.md) + agents-graph hooks. Reads
  * `settings.codex.*` fresh on every session open (so a toggle takes effect on the NEXT new chat,
  * not a live one) and never throws or blocks a turn on failure — mirrors how chat.ts's
- * buildSystemPrompt / bismuthInstall.ts's registerMcp degrade.
+ * buildDaemonPersona / bismuthInstall.ts's registerMcp degrade.
  */
 async function applyCodexOptIns(cwd: string): Promise<void> {
     try {
