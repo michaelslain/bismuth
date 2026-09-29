@@ -532,7 +532,7 @@ describe('mono scoping and embedded faces', () => {
             true,
         )
 
-    test('code, frontmatter, tags and task fields take the mono face at the editor size', () => {
+    test('code, frontmatter and tags take the mono face at the editor size', () => {
         const css = emit()
         // The rule must PARSE, not merely appear: an earlier draft's comment contained a
         // star-slash (the cm-math classes written as one glob), which closed the comment early
