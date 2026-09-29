@@ -1,0 +1,2 @@
+.gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--ui-font-stack); font-size: var(--fs-body); }
+.gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
