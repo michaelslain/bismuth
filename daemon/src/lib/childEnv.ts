@@ -16,14 +16,20 @@ import { join } from 'node:path'
 // (core/src/bismuthInstall.ts); Homebrew lives in `/opt/homebrew/bin` (Apple Silicon) or
 // `/usr/local/bin` (Intel). Cross-machine — resolved from `os.homedir()`, never a hardcoded user.
 // Pure over `home` for testability (accepts an override).
+export function extraBinDirMap(home: string = homedir()) {
+    return {
+        usrLocal: '/usr/local/bin',
+        homebrew: '/opt/homebrew/bin',
+        bismuth: join(home, '.bismuth', 'bin'),
+        bun: join(home, '.bun', 'bin'),
+        local: join(home, '.local', 'bin'),
+    }
+}
+
+// The same dirs as a priority-ordered list (usrLocal, homebrew, bismuth, bun, local).
 export function extraBinDirs(home: string = homedir()): string[] {
-    return [
-        '/usr/local/bin',
-        '/opt/homebrew/bin',
-        join(home, '.bismuth', 'bin'),
-        join(home, '.bun', 'bin'),
-        join(home, '.local', 'bin'),
-    ]
+    const { usrLocal, homebrew, bismuth, bun, local } = extraBinDirMap(home)
+    return [usrLocal, homebrew, bismuth, bun, local]
 }
 
 // The bare PATH launchd/systemd hand a daemon — the base when the parent has none.

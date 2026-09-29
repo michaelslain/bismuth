@@ -997,8 +997,8 @@ export async function disableProcess(
 
 // ── Process trigger port ──────────────────────────────────────────────────────
 //
-// The symmetric counterpart of the cron trigger port (cron.ts: requestCronRun /
-// processTriggers). A generic on-disk control surface: an external program flips
+// The symmetric counterpart of the cron trigger port (cron.ts's processTriggers; the writing side
+// is core/src/daemon.ts's writeTrigger). A generic on-disk control surface: an external program flips
 // a process's frontmatter (enabled: true|false) and drops a trigger file named
 // by the process's FILE BASENAME; the daemon reconciles that one process's live
 // runtime to match its (already-updated) on-disk frontmatter, then deletes the
