@@ -47,12 +47,14 @@ export type TaskCalendarSettingsProps = {
     colors: Map<string, string>
     /** name → a PALETTE token to store. Caller persists. */
     onPickColor: (name: string, token: string) => void
-    /** One view-config key. Caller persists into views[viewIndex]. */
+    /** One view-config key. Caller persists it as a top-level key. */
     onSetField: (
         key: 'dateField' | 'categoryField' | 'taskFile' | 'defaultCategory',
         value: string,
     ) => void
     onClose: () => void
+    /** Closes this modal and opens the base's generic settings panel. */
+    onOpenBaseSettings?: () => void
 }
 
 const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
@@ -184,7 +186,20 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                 </Show>
             </ModalBody>
 
-            <ModalFooter>
+            <ModalFooter
+                leading={
+                    <Show when={props.onOpenBaseSettings}>
+                        <TextButton
+                            onClick={() => {
+                                props.onClose()
+                                props.onOpenBaseSettings?.()
+                            }}
+                        >
+                            base settings
+                        </TextButton>
+                    </Show>
+                }
+            >
                 <TextButton
                     primary
                     onClick={props.onClose}

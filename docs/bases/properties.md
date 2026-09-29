@@ -46,10 +46,8 @@ properties:
     default: 1
   - name: worktree
     displayName: Worktree
-views:
-  - type: kanban
-    name: Board
-    groupBy: status
+view: kanban
+groupBy: status
 ---
 ```
 
@@ -208,7 +206,7 @@ The parsed config carries the names in declaration order as `BaseConfig.declared
 1. **Columns / card fields.** A view without an explicit `order:` shows **exactly the declared properties, in declaration order** (canonicalized: `status` → `note.status`), instead of the row-frontmatter union — a stray extra key on one note no longer leaks a column/field onto every card. `file.name` is still seeded first when the rows are real notes (declare it yourself to reposition it; `hidden: true` drops any declared entry). An explicit view `order:` **always wins**, exactly as before.
 2. **Kanban card meta.** A kanban without an `order:` shows the declared properties (minus the title column and the `groupBy` property — the column a card sits in already conveys it) as each card's editable meta chips — previously only an explicit `order:` produced meta. `description` is not excluded (#103 removed its dedicated slot; it's just another declared property, typically `type: markdown`). Empty values are still dropped per `hasValue`.
 3. **New cards seed the declared defaults.** Kanban's add-card writes every declared writable property that has a `default` (via `declaredDefaults`), then the values shared by all existing sibling cards (`constProps` — so the new card keeps matching the base's filter), then the clicked column's status value. Only the status/`order` keys are never seeded from defaults.
-4. **Pickers offer declared fields.** The view-settings dropdowns (`BaseSettings`) union the declared names with the row-derived columns, so a declared-but-not-yet-populated field can be bound/sorted/grouped immediately.
+4. **Pickers offer declared fields.** The settings dropdowns (`BaseSettings`) union the declared names with the row-derived columns, so a declared-but-not-yet-populated field can be bound/sorted/grouped immediately.
 
 ## What it does NOT change
 
@@ -220,15 +218,15 @@ The parsed config carries the names in declaration order as `BaseConfig.declared
 
 ## Editing properties in the settings panel
 
-You don't have to hand-edit the `properties:` YAML — open the view's settings (the gear icon next to the view tabs, `BaseSettings.tsx`) for a **Properties** section that writes the same list-form `properties:` for you. It's shown for every view type, not just kanban.
+You don't have to hand-edit the `properties:` YAML — open the base's settings (the gear icon in the view bar, `BaseSettings.tsx`) for a **Properties** section that writes the same list-form `properties:` for you. It's shown for every view type, not just kanban.
 
 Each declared property collapses to a single name/type/visibility line; clicking it expands one editor at a time (name, type, type-specific extras — `options` for select/multiselect, `number`/`unit` for number, `expr` for formula — plus a default value, reorder up/down arrows, and delete). An "ADD PROPERTY" button appends a new blank entry. The eye icon toggles a property's `hidden` flag without opening the row. Reordering here is what drives declared card/table field order (the same `declaredProperties` order described above).
 
-The same panel also edits the base's **formulas** (`formulas:` — name/expression rows; a duplicate name blocks save, an unparsable expression is flagged under its row) and, per view, everything else a base reads — see [filters](./filters.md#editing-filters-in-the-settings-panel) and [sources](./sources.md#editing-the-source-in-the-settings-panel). Saving writes only changed keys: base-level keys (`source`, `filters`, `formulas`, `properties`) at the top level, view keys into the active view.
+The same panel also edits the base's **formulas** (`formulas:` — name/expression rows; a duplicate name blocks save, an unparsable expression is flagged under its row) and everything else a base reads — see [filters](./filters.md#editing-filters-in-the-settings-panel) and [sources](./sources.md#editing-the-source-in-the-settings-panel). Saving writes only changed keys, each as a plain top-level key (`source`, `filters`, `formulas`, `properties`, and the view's own keys).
 
 Map-form `properties:` (metadata only) are not shown in the list; adding a row there converts the key to list form, replacing the map.
 
-For kanban specifically, this Properties section **replaces** the old per-view "Columns" list — a kanban board's fields, their types, and their visibility all live in one place instead of two.
+For kanban specifically, this Properties section **replaces** the old "Columns" list — a kanban board's fields, their types, and their visibility all live in one place instead of two.
 
 ### Example: fields scoped to the board
 
@@ -245,10 +243,8 @@ properties:
     default: 1
   - name: due
     type: date
-views:
-  - type: kanban
-    name: Tracker
-    groupBy: status
+view: kanban
+groupBy: status
 ---
 ```
 

@@ -24,23 +24,20 @@ export function focusColumnHeaderButton(
     return col
 }
 
-/** The kanban `views` config literal — `type: 'kanban'`, `name: 'Kanban'`, grouped by `status`,
+/** The kanban `view` config literal — `type: 'kanban'`, grouped by `status`,
  *  ordered by `priority`/`tags` — retyped across ~20 stories. `overrides` replaces only the keys
  *  that vary for a given story (`order`, `groupOrder`, `groupColors`, …). An `undefined` value in
- *  `overrides` OMITS that key entirely rather than setting it to `undefined` — `kanbanViews({
+ *  `overrides` OMITS that key entirely rather than setting it to `undefined` — `kanbanView({
  *  order: undefined })` yields a literal with no `order` key at all, matching what a hand-written
  *  literal without `order` would look like. */
-export function kanbanViews(overrides?: Record<string, unknown>) {
+export function kanbanView(overrides?: Record<string, unknown>) {
     const clean = Object.fromEntries(
         Object.entries(overrides ?? {}).filter(([, v]) => v !== undefined),
     )
-    return [
-        {
-            type: 'kanban' as const,
-            name: 'Kanban',
-            groupBy: { property: 'status' },
-            order: ['priority', 'tags'],
-            ...clean,
-        },
-    ]
+    return {
+        type: 'kanban' as const,
+        groupBy: { property: 'status' },
+        order: ['priority', 'tags'],
+        ...clean,
+    }
 }

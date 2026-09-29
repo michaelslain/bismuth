@@ -55,7 +55,7 @@ function row(note: Record<string, unknown>): Row {
 function seedBase(view: Record<string, unknown>, rows: Row[]) {
     const inner = fakeTransport()
     const parsed: ParsedBase = {
-        config: { views: [{ type: 'calendar', name: 'Calendar', ...view }] },
+        config: { view: { type: 'calendar', ...view } },
         rows,
     } as unknown as ParsedBase
     const custom: Transport = {
@@ -158,5 +158,32 @@ export const Interactive: Story = {
                 ),
             ).toBeNull(),
         )
+    },
+}
+
+/** The way from the calendar's own modal to the generic base settings (kind, filters, source):
+ *  `base settings` closes this modal and hands off through `onOpenBaseSettings`. */
+export const BaseSettingsHandoff: Story = {
+    render: () => {
+        seedBase({}, [])
+        showCalendarSettings.value = true
+        return (
+            <CalendarSettings
+                basePath={BASE_PATH}
+                onOpenBaseSettings={() => {
+                    document.body.dataset.baseSettingsOpened = 'true'
+                }}
+            />
+        )
+    },
+    play: async () => {
+        delete document.body.dataset.baseSettingsOpened
+        const body = within(document.body)
+        await userEvent.click(await body.findByText('base settings'))
+        await waitFor(() => {
+            expect(showCalendarSettings.value).toBe(false)
+            expect(document.body.dataset.baseSettingsOpened).toBe('true')
+        })
+        delete document.body.dataset.baseSettingsOpened
     },
 }

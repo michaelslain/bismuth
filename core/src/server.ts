@@ -35,14 +35,13 @@ import {
     parseFrontmatter,
     setFrontmatterKey,
     deleteFrontmatterKey,
-    setFrontmatterViewKey,
-    deleteFrontmatterViewKey,
 } from './frontmatter'
 import { AppError } from './error'
 import { fetchRemoteAsset, extForContentType } from './assetFetch'
 import { buildVaultRows, patchVaultRows } from './basesData'
 import { buildTaskRows, patchTaskRows } from './bases/tasksData'
 import { parseBaseFile } from './bases/parse'
+import { flattenBaseViews } from './bases/flattenViews'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import type { GraphData, GraphNode, TreeEntry } from './graph'
@@ -2453,7 +2452,7 @@ export function createServer(cfg: CoreConfig) {
                         path: basePath,
                     })
                     const { calendarId } = resolveGcalConfig(
-                        config.views[0],
+                        config.view,
                         basePath,
                         legacy,
                     )
@@ -2483,15 +2482,13 @@ export function createServer(cfg: CoreConfig) {
 
         'POST /set-property': mutatingHandler(
             async req => {
-                // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
-                // `viewIndex` (optional) targets `views[viewIndex][key]` in a `type: base` note — how the
-                // kanban view persists per-view column order/colors without minting a duplicate top-level
-                // key. Omitted for the common case (a card note's own frontmatter, e.g. status/order).
-                const { path, key, value, viewIndex } = (await req.json()) as {
+                // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note. A
+                // `type: base` note still carrying a legacy `views:` list is flattened first, so a
+                // view key (column order, colours, sort…) always lands at the top level.
+                const { path, key, value } = (await req.json()) as {
                     path: string
                     key: string
                     value: unknown
-                    viewIndex?: number
                 }
                 // Refuse to write to a path that doesn't exist — silently creating notes
                 // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
@@ -2499,10 +2496,7 @@ export function createServer(cfg: CoreConfig) {
                 if (raw === null) {
                     return error('note not found', 404)
                 }
-                const next =
-                    typeof viewIndex === 'number'
-                        ? setFrontmatterViewKey(raw, viewIndex, key, value)
-                        : setFrontmatterKey(raw, key, value)
+                const next = setFrontmatterKey(flattenBaseViews(raw), key, value)
                 await writeNote(cfg.vault, path, next)
                 // A file's `visibility:` edit re-gates open chats — but ONLY that key: /set-property is
                 // also the Bases kanban drag-drop path, so invalidating on every property write would
@@ -2516,19 +2510,15 @@ export function createServer(cfg: CoreConfig) {
         'POST /delete-property': mutatingHandler(
             async req => {
                 // Remove a single frontmatter key (e.g. resetting a note's icon to default).
-                const { path, key, viewIndex } = (await req.json()) as {
+                const { path, key } = (await req.json()) as {
                     path: string
                     key: string
-                    viewIndex?: number
                 }
                 const raw = await readNoteOrNull(cfg.vault, path)
                 if (raw === null) {
                     return error('note not found', 404)
                 }
-                const next =
-                    typeof viewIndex === 'number'
-                        ? deleteFrontmatterViewKey(raw, viewIndex, key)
-                        : deleteFrontmatterKey(raw, key)
+                const next = deleteFrontmatterKey(flattenBaseViews(raw), key)
                 await writeNote(cfg.vault, path, next)
                 if (key === 'visibility') invalidateChatVisibility() // clearing visibility re-gates open chats
                 return ok()
@@ -2558,7 +2548,7 @@ export function createServer(cfg: CoreConfig) {
                 for (const [path, ops] of byPath) {
                     const raw = await readNoteOrNull(cfg.vault, path)
                     if (raw === null) continue // skip a note that vanished; don't fail the whole batch
-                    let next = raw
+                    let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
                     await writeNote(cfg.vault, path, next)

@@ -1,35 +1,33 @@
 # Table View
 
-The table view renders a base's rows as a spreadsheet-style HTML table with sortable, groupable, reorderable, and resizable columns. It is the default fallback view when no other view type matches — if `type: table` is declared in a view config or no explicit type is set by the Switch in `BaseView.tsx`, rows render as a table. Column widths are persisted per-view in the base file's frontmatter under `columnWidths`, and column order is written back to `order`. All interactive mutations (reorder, resize, settings) require a `basePath` (a saved `.md` base file); embedded `query` blocks are read-only for these interactions.
+The table view renders a base's rows as a spreadsheet-style HTML table with sortable, groupable, reorderable, and resizable columns. It is the default fallback view when no other view kind matches — if `view: table` is declared or no explicit kind is set, rows render as a table. Column widths are persisted in the base file's frontmatter under `columnWidths`, and column order is written back to `order`. All interactive mutations (reorder, resize, settings) require a `basePath` (a saved `.md` base file); embedded `query` blocks are read-only for these interactions.
 
 ---
 
-## View Frontmatter (`ViewConfig` fields for `type: table`)
+## View Frontmatter (`ViewConfig` fields for `view: table`)
 
-Declare a table view inside a `type: base` markdown file's `views:` array:
+A base has exactly one view. Declare a table with `view: table` and put the view keys at the top level of the `type: base` file's frontmatter:
 
 ```yaml
 ---
 type: base
-views:
-  - type: table
-    name: My Table
-    order: [file.name, note.status, note.rating, note.tags]
-    sort:
-      - property: note.rating
-        direction: DESC
-    groupBy:
-      property: note.status
-      direction: ASC
-    columns: [Todo, In Progress, Done]
-    summaries:
-      note.rating: Average
-    columnWidths:
-      file.name: 240
-      note.status: 120
-      note.rating: 80
-    limit: 50
-    filters: "#book"
+view: table
+order: [file.name, note.status, note.rating, note.tags]
+sort:
+  - property: note.rating
+    direction: DESC
+groupBy:
+  property: note.status
+  direction: ASC
+columns: [Todo, In Progress, Done]
+summaries:
+  note.rating: Average
+columnWidths:
+  file.name: 240
+  note.status: 120
+  note.rating: 80
+limit: 50
+filters: "#book"
 ---
 ```
 
@@ -37,8 +35,7 @@ views:
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | `"table"` | Selects the table renderer. Required. |
-| `name` | `string` | Tab label shown in the view bar when a base has multiple views. |
+| `view` | `"table"` | Selects the table renderer (the frontmatter key is `view`; top-level `type` is `base`). |
 | `order` | `string[]` | Explicit column list. Property ids, e.g. `file.name`, `note.price`, `formula.ppu`. When set, **only these columns are shown**; columns not listed here are hidden even if present in the data. When unset, all columns not marked `hidden: true` in `BaseConfig.properties` are auto-derived. An empty array (`order: []`) means "no preference → show all auto-derived columns" (NOT zero columns — see gotchas). |
 | `sort` | `SortSpec[]` | Sort keys applied in order (stable multi-key sort). Each entry: `{ property: string, direction?: "ASC" \| "DESC" }`. |
 | `groupBy` | `{ property: string; direction?: "ASC" \| "DESC" }` | Group rows by this property. Groups appear in type-aware order (numbers numerically, dates chronologically) honoring `direction`, unless overridden by `columns`. |
@@ -46,8 +43,8 @@ views:
 | `summaries` | `Record<string, string>` | Column footer aggregates. Key is a property id (bare or namespaced); value is a summary name: `"Sum"`, `"Average"`, `"Min"`, `"Max"`, `"Count"`, `"Empty"`, `"Filled"`, `"Unique"`. |
 | `columnWidths` | `Record<string, number>` | Per-column pixel widths, keyed by property id (e.g. `"file.name": 240`). Written automatically after drag-resize; safe to set manually. |
 | `limit` | `number` | Maximum rows per group (applied after sort/filter). |
-| `filters` | `FilterNode` | Per-view filter ANDed with the base-level `filters`. |
-| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `type`/`source` — the same [mode axis](../overview.md#three-axes-kind-mode-and-origin) `list`/`bullets`/`cards`/`kanban` read. Default `"normal"`. In `"tasks"` mode the table gets two affordances instead of becoming a task line (unlike every other row view — see [Cell Rendering in Tasks Mode](#cell-rendering-in-tasks-mode)): the `status` column renders a live `TaskCheck` checkbox and the `due` column paints overdue. |
+| `filters` | `FilterNode` | The base's filter. Filters live only on the base; there are no per-view filters. |
+| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `view`/`source` — the same [mode axis](../overview.md#three-axes-kind-mode-and-origin) `list`/`bullets`/`cards`/`kanban` read. Default `"normal"`. In `"tasks"` mode the table gets two affordances instead of becoming a task line (unlike every other row view — see [Cell Rendering in Tasks Mode](#cell-rendering-in-tasks-mode)): the `status` column renders a live `TaskCheck` checkbox and the `due` column paints overdue. |
 
 ---
 
@@ -304,13 +301,13 @@ On save, `order` is written as the array of toggled-on column ids in display ord
 
 **Save** writes only the keys that changed, then refetches.
 
-**Settings (full panel).** Beyond columns/sort/group the same modal sets everything a table reads: the view's **name**, **kind** and **rows are** records/tasks (`mode`); the base's **source**; **filters** for this view and for every view; a **row limit** (`limit`, per group when grouped); multi-key **sort** ("sort by" + any number of "then by"); **summaries** — one aggregation per visible column (`summaries:`, `Sum` `Average` `Min` `Max` `Count` `Empty` `Filled` `Unique`; a hidden column keeps its summary; an existing key's `note.`-prefixed spelling is reused); and the base's **formulas**, whose `formula.<name>` columns join the columns list. View keys go into `views[i]` of the active view (`setViewProperty`); a flat top-level copy of the same key — which would override `views[0]` — is removed when `views[0]` is written. The write planning lives in `app/src/bases/baseSettingsPlan.ts`.
+**Settings (full panel).** Beyond columns/sort/group the same modal sets everything a table reads: the **kind** and **rows are** records/tasks (`mode`); the base's **source**; the base's **filters**; a **row limit** (`limit`, per group when grouped); multi-key **sort** ("sort by" + any number of "then by"); **summaries** — one aggregation per visible column (`summaries:`, `Sum` `Average` `Min` `Max` `Count` `Empty` `Filled` `Unique`; a hidden column keeps its summary; an existing key's `note.`-prefixed spelling is reused); and the base's **formulas**, whose `formula.<name>` columns join the columns list. Every key is written as a plain top-level frontmatter key (`api.setProperty` / `api.deleteProperty`); the first write to a file that still carries a legacy `views:` list flattens it first (see [Bases overview](../overview.md)). The write planning lives in `app/src/bases/baseSettingsPlan.ts`.
 
 ---
 
 ## BaseConfig-Level `properties` for Table Columns
 
-In `BaseConfig` (the base file's frontmatter top level, outside `views:`):
+In `BaseConfig` (the base file's frontmatter top level):
 
 ```yaml
 ---
@@ -322,9 +319,8 @@ properties:
     hidden: true
   internal_id:          # bare form also works
     hidden: true
-views:
-  - type: table
-    order: [file.name, note.price]
+view: table
+order: [file.name, note.price]
 ---
 ```
 
@@ -361,34 +357,32 @@ properties:
     displayName: "Book Title"
 formulas:
   value_per_page: "note.rating / note.pages"
-views:
-  - type: table
-    name: Reading List
-    order:
-      - file.name
-      - note.title
-      - note.status
-      - note.rating
-      - note.pages
-      - formula.value_per_page
-    sort:
-      - property: note.rating
-        direction: DESC
-    groupBy:
-      property: note.status
-      direction: ASC
-    columns: [Reading, "To Read", Done]
-    summaries:
-      note.rating: Average
-      note.pages: Sum
-    columnWidths:
-      file.name: 220
-      note.title: 300
-      note.status: 110
-      note.rating: 90
-      note.pages: 80
-      formula.value_per_page: 120
-    limit: 200
+view: table
+order:
+  - file.name
+  - note.title
+  - note.status
+  - note.rating
+  - note.pages
+  - formula.value_per_page
+sort:
+  - property: note.rating
+    direction: DESC
+groupBy:
+  property: note.status
+  direction: ASC
+columns: [Reading, "To Read", Done]
+summaries:
+  note.rating: Average
+  note.pages: Sum
+columnWidths:
+  file.name: 220
+  note.title: 300
+  note.status: 110
+  note.rating: 90
+  note.pages: 80
+  formula.value_per_page: 120
+limit: 200
 ---
 ```
 

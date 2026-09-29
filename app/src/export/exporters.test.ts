@@ -27,7 +27,7 @@ const enc = new TextDecoder()
 // markdown note. Export detects a base by its frontmatter (not extension), parses the file
 // and runs the view (mirroring the live BaseView), so the fixture is a type:base md.
 const BASE_MD =
-    '---\ntype: base\nviews:\n  - type: table\n    order:\n      - file.name\n      - author\n---\n'
+    '---\ntype: base\nview: table\norder:\n  - file.name\n  - author\n---\n'
 
 function deps(over: Partial<ExportDeps> = {}): ExportDeps {
     return {
@@ -217,43 +217,14 @@ describe('renderPreview (no downloadable bytes for text formats; PDF now runs th
     })
 })
 
-// Fixtures for the export-options paths: a calendar base + a two-view base.
+// Fixtures for the export-options paths: a calendar base.
 const CAL_MD =
-    '---\ntype: base\nviews:\n  - type: calendar\n    name: Cal\n---\n'
-const TWOVIEW_MD =
-    '---\ntype: base\nviews:\n  - type: table\n    order:\n      - file.name\n  - type: table\n    order:\n      - author\n---\n'
-
+    '---\ntype: base\nview: calendar\n---\n'
 function optDeps(text: string, rows: any[]): ExportDeps {
     return deps({ read: async () => text, resolveRows: async () => rows })
 }
 
-describe('export options — view selection / data vs visual / csv', () => {
-    test("data mode + viewIndex selects which view's columns export", async () => {
-        const d = optDeps(TWOVIEW_MD, [
-            {
-                file: { name: 'Dune', path: 'Dune.md' } as any,
-                note: { author: 'Herbert' },
-                formula: {},
-            },
-        ])
-        const v0 = await renderExport(
-            'Two.md',
-            'md',
-            d,
-            'dark',
-            opts({ viewIndex: 0 }),
-        )
-        const v1 = await renderExport(
-            'Two.md',
-            'md',
-            d,
-            'dark',
-            opts({ viewIndex: 1 }),
-        )
-        expect(enc.decode(v0.bytes)).toContain('| name |')
-        expect(enc.decode(v1.bytes)).toContain('| author |')
-    })
-
+describe('export options — data vs visual / csv', () => {
     test('base -> csv builds a CSV from the resolved rows', async () => {
         const d = optDeps(BASE_MD, [
             {

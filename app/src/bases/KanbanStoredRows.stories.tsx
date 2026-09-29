@@ -16,7 +16,7 @@ import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type { Row } from '../../../core/src/bases/types'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
-import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
+import { focusColumnHeaderButton, kanbanView } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
 import { toasts } from '../toastStore'
@@ -57,11 +57,11 @@ const STORED_ROWS: Row[] = [
  */
 export const StoredRows: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         return (
             <KanbanView
-                result={runView(config, STORED_ROWS, 0)}
+                result={runView(config, STORED_ROWS)}
                 config={config}
                 basePath={STORED_PATH}
                 onChange={noop}
@@ -101,14 +101,14 @@ const STORED_ADD_ROWS: Row[] = [
  *  the row write and never a `/file` PUT. */
 export const StoredRowsAddCard: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
         return (
             <KanbanView
-                result={runView(config, STORED_ADD_ROWS, 0)}
+                result={runView(config, STORED_ADD_ROWS)}
                 config={config}
                 basePath={STORED_ADD_PATH}
                 ownsRows
@@ -156,11 +156,11 @@ const STORED_TITLE_ROWS: Row[] = [
  *  so `metaColumns` drops it from the chip list the same way it drops `file.name` normally). */
 export const StoredRowsTitles: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         return (
             <KanbanView
-                result={runView(config, STORED_TITLE_ROWS, 0)}
+                result={runView(config, STORED_TITLE_ROWS)}
                 config={config}
                 basePath={STORED_TITLE_PATH}
                 ownsRows
@@ -190,14 +190,14 @@ export const StoredRowsTitles: Story = {
  *  no longer hides either affordance for a stored row. */
 export const StoredRowsRenameDelete: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
         return (
             <KanbanView
-                result={runView(config, STORED_TITLE_ROWS, 0)}
+                result={runView(config, STORED_TITLE_ROWS)}
                 config={config}
                 basePath={STORED_TITLE_PATH}
                 ownsRows
@@ -283,8 +283,8 @@ let deleteShiftRefetch: () => Promise<void> = async () => {}
  *  any real store spliced anything, which is outside a Storybook story's reach. */
 export const StoredRowsDeleteShift: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         let liveRows = storedDeleteRows()
         const base = fakeTransport()
         const calls: { path: string; body: unknown }[] = []
@@ -311,11 +311,11 @@ export const StoredRowsDeleteShift: Story = {
 
         function Board() {
             const [result, setResult] = createSignal(
-                runView(config, storedDeleteRows(), 0),
+                runView(config, storedDeleteRows()),
             )
             deleteShiftRefetch = async () => {
                 const rows = await api.resolveRows({ kind: 'base' })
-                setResult(runView(config, rows, 0))
+                setResult(runView(config, rows))
             }
             return (
                 <KanbanView
@@ -373,8 +373,8 @@ export const StoredRowsDeleteShift: Story = {
  *  `Add card failed` toast rather than a card that silently vanishes with no explanation. */
 export const StoredAddFails: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         const base = fakeTransport()
         const transport: Transport = {
             ...base,
@@ -390,7 +390,7 @@ export const StoredAddFails: Story = {
         setTransport(transport)
         return (
             <KanbanView
-                result={runView(config, STORED_ADD_ROWS, 0)}
+                result={runView(config, STORED_ADD_ROWS)}
                 config={config}
                 basePath={STORED_ADD_PATH}
                 ownsRows
@@ -438,14 +438,14 @@ const SOURCE_DROP_ROWS: Row[] = [
  *  `resolveCardTarget`), then `pointerup`. */
 export const SourceBoardDropPerPath: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
         return (
             <KanbanView
-                result={runView(config, SOURCE_DROP_ROWS, 0)}
+                result={runView(config, SOURCE_DROP_ROWS)}
                 config={config}
                 basePath={SOURCE_DROP_BOARD_PATH}
                 onChange={noop}
@@ -533,14 +533,14 @@ export const StoredRowsRenameColumn: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews({
+        const view = kanbanView({
             order: ['description'],
             groupOrder: ['todo'],
         })
-        const config = sampleBaseConfig({ views })
+        const config = sampleBaseConfig({ view })
         return (
             <KanbanView
-                result={runView(config, STORED_RENAME_COL_ROWS, 0)}
+                result={runView(config, STORED_RENAME_COL_ROWS)}
                 config={config}
                 basePath={STORED_RENAME_COL_PATH}
                 ownsRows
@@ -623,8 +623,8 @@ export const StoredRowsRenameColumn: Story = {
  *  placeholder for the whole play(). */
 export const StoredAddPendingInert: Story = {
     render: () => {
-        const views = kanbanViews({ order: ['description'] })
-        const config = sampleBaseConfig({ views })
+        const view = kanbanView({ order: ['description'] })
+        const config = sampleBaseConfig({ view })
         const base = fakeTransport()
         const calls: { path: string; body: unknown }[] = []
         const gate = new Promise<void>(() => {}) // never resolves — the add stays pending forever
@@ -649,7 +649,7 @@ export const StoredAddPendingInert: Story = {
         setTransport(transport)
         return (
             <KanbanView
-                result={runView(config, STORED_ADD_ROWS, 0)}
+                result={runView(config, STORED_ADD_ROWS)}
                 config={config}
                 basePath={STORED_ADD_PATH}
                 ownsRows

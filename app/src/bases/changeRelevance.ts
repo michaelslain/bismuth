@@ -38,7 +38,6 @@ export function hasPropertyFilters(node: FilterNode | undefined): boolean {
 
 export interface ViewDeps {
     baseFilters?: FilterNode
-    viewFilters: (FilterNode | undefined)[]
     spec?: SourceSpec
     /** The note paths this view already depends on: its resolved row notes + base file + host note. */
     relevantPaths: Set<string>
@@ -73,8 +72,7 @@ export function changeAffectsView(
               : false
     if (
         scopedOrComposed ||
-        hasPropertyFilters(deps.baseFilters) ||
-        deps.viewFilters.some(hasPropertyFilters)
+        hasPropertyFilters(deps.baseFilters)
     ) {
         return true
     }

@@ -26,11 +26,9 @@ views:
       formula.ppu: Average
 `
     const base = parseBase(yaml)
-    expect(base.views).toHaveLength(1)
-    expect(base.views[0].type).toBe('table')
-    expect(base.views[0].name).toBe('My table')
-    expect(base.views[0].limit).toBe(10)
-    expect(base.views[0].order).toEqual(['file.name', 'formula.ppu'])
+    expect(base.view.type).toBe('table')
+    expect(base.view.limit).toBe(10)
+    expect(base.view.order).toEqual(['file.name', 'formula.ppu'])
     expect(base.formulas?.ppu).toBe('(price / age).toFixed(2)')
     expect(base.properties?.status?.displayName).toBe('Status')
     expect((base.filters as { or: unknown[] }).or).toHaveLength(2)
@@ -38,21 +36,19 @@ views:
 
 test('defaults a view name and type when missing', () => {
     const base = parseBase(`views:\n  - {}\n`)
-    expect(base.views[0].type).toBe('table')
-    expect(base.views[0].name).toBe('Untitled view')
+    expect(base.view.type).toBe('table')
 })
 
 test('synthesizes a default table view when views is absent', () => {
     const base = parseBase(`filters: 'file.hasTag(\"x\")'`)
-    expect(base.views).toHaveLength(1)
-    expect(base.views[0].type).toBe('table')
+    expect(base.view.type).toBe('table')
 })
 
 test('normalizes groupBy given as a bare string', () => {
     const base = parseBase(
         `views:\n  - type: table\n    name: V\n    groupBy: note.status\n`,
     )
-    expect(base.views[0].groupBy).toEqual({
+    expect(base.view.groupBy).toEqual({
         property: 'note.status',
         direction: 'ASC',
     })
@@ -60,21 +56,20 @@ test('normalizes groupBy given as a bare string', () => {
 
 test('returns a safe empty base on malformed yaml', () => {
     const base = parseBase(':\n::\n  - broken')
-    expect(base.views).toHaveLength(1)
-    expect(base.views[0].type).toBe('table')
+    expect(base.view.type).toBe('table')
 })
 
 test('kanban view type is preserved as-is', () => {
     const base = parseBase(`views:\n  - type: kanban\n    name: Board\n`)
-    expect(base.views[0].type).toBe('kanban')
+    expect(base.view.type).toBe('kanban')
 })
 
 test('kanban view with groupBy parses groupBy correctly', () => {
     const base = parseBase(
         `views:\n  - type: kanban\n    name: Board\n    groupBy: note.status\n`,
     )
-    expect(base.views[0].type).toBe('kanban')
-    expect(base.views[0].groupBy).toEqual({
+    expect(base.view.type).toBe('kanban')
+    expect(base.view.groupBy).toEqual({
         property: 'note.status',
         direction: 'ASC',
     })
@@ -84,54 +79,54 @@ test("cards view with cardContent: body parses to cardContent === 'body'", () =>
     const base = parseBase(
         `views:\n  - type: cards\n    name: Todos\n    cardContent: body\n`,
     )
-    expect(base.views[0].type).toBe('cards')
-    expect(base.views[0].cardContent).toBe('body')
+    expect(base.view.type).toBe('cards')
+    expect(base.view.cardContent).toBe('body')
 })
 
 test("cards view with cardContent: properties parses to cardContent === 'properties'", () => {
     const base = parseBase(
         `views:\n  - type: cards\n    name: Notes\n    cardContent: properties\n`,
     )
-    expect(base.views[0].cardContent).toBe('properties')
+    expect(base.view.cardContent).toBe('properties')
 })
 
 test('cards view without cardContent leaves it undefined', () => {
     const base = parseBase(`views:\n  - type: cards\n    name: Cards\n`)
-    expect(base.views[0].cardContent).toBeUndefined()
+    expect(base.view.cardContent).toBeUndefined()
 })
 
 test('cards view with unknown cardContent value leaves it undefined', () => {
     const base = parseBase(
         `views:\n  - type: cards\n    name: Cards\n    cardContent: something-else\n`,
     )
-    expect(base.views[0].cardContent).toBeUndefined()
+    expect(base.view.cardContent).toBeUndefined()
 })
 
 test("calendar view with calendarContent: tasks parses to calendarContent === 'tasks'", () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: Cal\n    calendarContent: tasks\n`,
     )
-    expect(base.views[0].type).toBe('calendar')
-    expect(base.views[0].calendarContent).toBe('tasks')
+    expect(base.view.type).toBe('calendar')
+    expect(base.view.calendarContent).toBe('tasks')
 })
 
 test("calendar view with calendarContent: events parses to calendarContent === 'events'", () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: Cal\n    calendarContent: events\n`,
     )
-    expect(base.views[0].calendarContent).toBe('events')
+    expect(base.view.calendarContent).toBe('events')
 })
 
 test('calendar view without calendarContent leaves it undefined', () => {
     const base = parseBase(`views:\n  - type: calendar\n    name: Cal\n`)
-    expect(base.views[0].calendarContent).toBeUndefined()
+    expect(base.view.calendarContent).toBeUndefined()
 })
 
 test('calendar view with unknown calendarContent value leaves it undefined', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: Cal\n    calendarContent: banana\n`,
     )
-    expect(base.views[0].calendarContent).toBeUndefined()
+    expect(base.view.calendarContent).toBeUndefined()
 })
 
 test('promotes top-level calendarContent into the default view (flat persistence)', () => {
@@ -139,21 +134,21 @@ test('promotes top-level calendarContent into the default view (flat persistence
         `---\ntype: base\nview: calendar\ncalendarContent: tasks\n---\n`,
         { name: 'T', path: 'T.md' },
     )
-    expect(config.views[0].calendarContent).toBe('tasks')
+    expect(config.view.calendarContent).toBe('tasks')
 })
 
 test('mode: tasks parses', () => {
     const base = parseBase(
         `views:\n  - type: kanban\n    name: K\n    mode: tasks\n`,
     )
-    expect(base.views[0].mode).toBe('tasks')
+    expect(base.view.mode).toBe('tasks')
 })
 
 test('an unknown mode is ignored', () => {
     const base = parseBase(
         `views:\n  - type: kanban\n    name: K\n    mode: banana\n`,
     )
-    expect(base.views[0].mode).toBeUndefined()
+    expect(base.view.mode).toBeUndefined()
 })
 
 test('top-level mode folds into the default view', () => {
@@ -161,43 +156,43 @@ test('top-level mode folds into the default view', () => {
         '---\ntype: base\nview: cards\nmode: tasks\n---\n',
         { name: 'T', path: 'T.md' },
     )
-    expect(config.views[0].mode).toBe('tasks')
+    expect(config.view.mode).toBe('tasks')
 })
 
 test('calendarContent: tasks still means tasks mode', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: C\n    calendarContent: tasks\n`,
     )
-    expect(viewMode(base.views[0])).toBe('tasks')
+    expect(viewMode(base.view)).toBe('tasks')
 })
 
 test('calendarContent: events still means normal mode', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: C\n    calendarContent: events\n`,
     )
-    expect(viewMode(base.views[0])).toBe('normal')
+    expect(viewMode(base.view)).toBe('normal')
 })
 
 test('an explicit mode wins over a legacy calendarContent', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: C\n    mode: normal\n    calendarContent: tasks\n`,
     )
-    expect(viewMode(base.views[0])).toBe('normal')
+    expect(viewMode(base.view)).toBe('normal')
 })
 
 test('cardContent is untouched by mode', () => {
     const base = parseBase(
         `views:\n  - type: cards\n    name: C\n    cardContent: tasks\n`,
     )
-    expect(base.views[0].cardContent).toBe('tasks')
-    expect(viewMode(base.views[0])).toBe('normal')
+    expect(base.view.cardContent).toBe('tasks')
+    expect(viewMode(base.view)).toBe('normal')
 })
 
-test('a per-view source: string shorthand resolves, not just the object form', () => {
+test('a legacy view entry source: string shorthand resolves onto the base', () => {
     const base = parseBase(
         `views:\n  - type: table\n    name: T\n    source: notes where folder == "Keep"\n`,
     )
-    expect(base.views[0].source).toEqual({
+    expect(base.source).toEqual({
         kind: 'notes',
         where: 'folder == "Keep"',
     })
@@ -207,7 +202,7 @@ test('calendar view with a nested taskFile reads it back', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: Cal\n    taskFile: inbox.md\n`,
     )
-    expect(base.views[0].taskFile).toBe('inbox.md')
+    expect(base.view.taskFile).toBe('inbox.md')
 })
 
 test('promotes top-level taskFile into the default view (flat persistence)', () => {
@@ -215,14 +210,14 @@ test('promotes top-level taskFile into the default view (flat persistence)', () 
         `---\ntype: base\ntaskFile: inbox.md\n---\n`,
         { name: 'T', path: 'T.md' },
     )
-    expect(config.views[0].taskFile).toBe('inbox.md')
+    expect(config.view.taskFile).toBe('inbox.md')
 })
 
 test('kanban view: columns: [...] parses into a string array', () => {
     const base = parseBase(
         `views:\n  - type: kanban\n    name: Board\n    groupBy: status\n    columns: [todo, reading, done]\n`,
     )
-    expect(base.views[0].groupOrder).toEqual(['todo', 'reading', 'done'])
+    expect(base.view.groupOrder).toEqual(['todo', 'reading', 'done'])
 })
 
 test('properties.hidden parses to a boolean flag', () => {
@@ -239,18 +234,18 @@ test('map view: type, lat/lng keys, zoom, center parse', () => {
     const base = parseBase(
         `views:\n  - type: map\n    name: Atlas\n    lat: latitude\n    lng: longitude\n    zoom: 6\n    center: { lat: 40.7, lng: -74 }\n`,
     )
-    expect(base.views[0].type).toBe('map')
-    expect(base.views[0].lat).toBe('latitude')
-    expect(base.views[0].lng).toBe('longitude')
-    expect(base.views[0].zoom).toBe(6)
-    expect(base.views[0].center).toEqual({ lat: 40.7, lng: -74 })
+    expect(base.view.type).toBe('map')
+    expect(base.view.lat).toBe('latitude')
+    expect(base.view.lng).toBe('longitude')
+    expect(base.view.zoom).toBe(6)
+    expect(base.view.center).toEqual({ lat: 40.7, lng: -74 })
 })
 
 test('parses chart view fields', () => {
     const cfg = parseBase(
         `views:\n  - type: heatmap\n    name: HM\n    x: date\n    y: glasses\n    aggregate: avg\n    bin: week\n`,
     )
-    const v = cfg.views[0]
+    const v = cfg.view
     expect(v.type).toBe('heatmap')
     expect(v.x).toBe('date')
     expect(v.y).toBe('glasses')
@@ -263,7 +258,7 @@ test('parses chart fields at top level of a type:base note (flat persistence)', 
         `---\ntype: base\nview: bar\nx: day\ny: count\naggregate: sum\nbin: month\n---\n`,
         { name: 'T', path: 'T.md' },
     )
-    const v = config.views[0]
+    const v = config.view
     expect(v.type).toBe('bar')
     expect(v.x).toBe('day')
     expect(v.y).toBe('count')
@@ -276,7 +271,7 @@ test('promotes top-level flashcards field bindings into the default view (flat p
         `---\ntype: base\nview: flashcards\nfrontField: term\nbackField: definition\ndueField: due\neaseField: ease\nintervalField: interval\n---\n`,
         { name: 'T', path: 'T.md' },
     )
-    const v = config.views[0]
+    const v = config.view
     expect(v.type).toBe('flashcards')
     expect(v.frontField).toBe('term')
     expect(v.backField).toBe('definition')
@@ -289,8 +284,8 @@ test('rejects invalid chart enum values', () => {
     const cfg = parseBase(
         `views:\n  - type: bar\n    name: B\n    aggregate: median\n    bin: quarter\n`,
     )
-    expect(cfg.views[0].aggregate).toBeUndefined()
-    expect(cfg.views[0].bin).toBeUndefined()
+    expect(cfg.view.aggregate).toBeUndefined()
+    expect(cfg.view.bin).toBeUndefined()
 })
 
 // ── Per-base declared properties (`properties:` in LIST form) ─────────────────────────
@@ -540,7 +535,7 @@ test('defaultCategory parses on a nested view', () => {
     const base = parseBase(
         `views:\n  - type: calendar\n    name: Cal\n    mode: tasks\n    defaultCategory: chores\n`,
     )
-    expect(base.views[0].defaultCategory).toBe('chores')
+    expect(base.view.defaultCategory).toBe('chores')
 })
 
 test('promotes top-level defaultCategory into the default view (flat persistence)', () => {
@@ -548,7 +543,7 @@ test('promotes top-level defaultCategory into the default view (flat persistence
         '---\ntype: base\nview: calendar\nmode: tasks\ndefaultCategory: chores\n---\n',
         { name: 'T', path: 'T.md' },
     )
-    expect(config.views[0].defaultCategory).toBe('chores')
+    expect(config.view.defaultCategory).toBe('chores')
 })
 
 test('a single-view base with defaultCategory only inside a nested views: block also works', () => {
@@ -556,5 +551,5 @@ test('a single-view base with defaultCategory only inside a nested views: block 
         '---\ntype: base\nviews:\n  - type: calendar\n    name: Cal\n    mode: tasks\n    defaultCategory: chores\n---\n',
         { name: 'T', path: 'T.md' },
     )
-    expect(config.views[0].defaultCategory).toBe('chores')
+    expect(config.view.defaultCategory).toBe('chores')
 })

@@ -289,22 +289,23 @@ bismuth base read "Bases/Reading.md" --vault ~/vault --pretty
 Check a `type: base` note for structural problems before an agent (or the app) renders it. Prints `{ ok, errors }` — **the process exits non-zero when `ok` is false**, so a broken base fails loudly in a script or through the MCP layer (a non-zero exit there maps to `isError`) instead of silently degrading to an empty table.
 
 Checks performed:
-- **Unknown view types** — `views[].type` (or the `view: <type>` shorthand) checked against `VIEW_TYPES`. Read from the raw frontmatter directly, because `parseBaseFile`'s normalizer is malformed-YAML-tolerant and silently downgrades an invalid type to `table` instead of throwing.
+- **Unknown view type** — the `view: <kind>` key checked against `VIEW_TYPES` (a legacy `views:` list's first entry `type` is checked the same way). Read from the raw frontmatter directly, because `parseBaseFile`'s normalizer is malformed-YAML-tolerant and silently downgrades an invalid type to `table` instead of throwing.
+- **A legacy `views:` list with more than one entry** — a base has exactly one view, so the extra entries are ignored on read and writes fail with `BASE_VIEWS_FORMAT_ERROR`. The diagnostic says to move each extra view into its own base with `source: base` and `ref: "[[This Base]]"`.
 - **Declared property defaults** — every `properties:` entry's `default` value validated against its declared `type` via `validatePropertyValue` (`core/src/bases/properties.ts` — present since #99/#104 but, per its own comment, "not yet wired into write paths" until this command).
-- **Unresolvable sources** — the base-level `source:` and any per-view `source:` override, when their `ref`/`from` names a base that isn't an actual file in the vault. `resolveSource`/`resolveBaseRows` are deliberately tolerant of this (an unresolvable ref just resolves to zero rows, no throw) — `base validate` surfaces the failure that path hides.
-- **Unparseable filter/formula expressions** — global + per-view `filters`, every source `where`, and every formula (including a declared `{type: formula}` property's `expr`) run through `parseExpr`; `passesFilter`/`computeFormulas` normally swallow a parse failure silently (treating it as `false`/`undefined`).
+- **Unresolvable source** — the base's `source:`, when its `ref`/`from` names a base that isn't an actual file in the vault. `resolveSource`/`resolveBaseRows` are deliberately tolerant of this (an unresolvable ref just resolves to zero rows, no throw) — `base validate` surfaces the failure that path hides.
+- **Unparseable filter/formula expressions** — the base's `filters`, the source `where`, and every formula (including a declared `{type: formula}` property's `expr`) run through `parseExpr`; `passesFilter`/`computeFormulas` normally swallow a parse failure silently (treating it as `false`/`undefined`).
 
 ```bash
 bismuth base validate "Bases/Board.md" --vault ~/vault --pretty
 # { "ok": true, "errors": [] }
 
 bismuth base validate "Bases/Broken.md" --vault ~/vault --pretty; echo "exit: $?"
-# { "ok": false, "errors": ["views[0].type: \"gantt\" is not a valid view type — must be one of: table, cards, list, ..."] }
+# { "ok": false, "errors": ["view: \"gantt\" is not a valid view type — must be one of: table, cards, list, ..."] }
 # exit: 1
 ```
 
-### `base render <path> [--view <n>]`
-Resolve a base's rows (`resolveBaseRows` — the same own-table-or-declared-source resolution the app uses to open this exact file) and run them through the pipeline a view actually applies at render time — `runView` (filter → sort → group → summaries), for `--view <n>` (default `0`; out of range fails naming the valid range). This is `bismuth rows` plus the grouping/sorting/summary logic `runView` (`core/src/bases/query.ts`) layers on top — `rows` alone can't show what a kanban board's columns or a table's sort order actually look like.
+### `base render <path>`
+Resolve a base's rows (`resolveBaseRows` — the same own-table-or-declared-source resolution the app uses to open this exact file) and run them through the pipeline a view actually applies at render time — `runView` (filter → sort → group → summaries) for the base's single view. This is `bismuth rows` plus the grouping/sorting/summary logic `runView` (`core/src/bases/query.ts`) layers on top — `rows` alone can't show what a kanban board's columns or a table's sort order actually look like.
 
 Non-chart view kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`) print the `ViewResult` verbatim: `{ view, columns, groups, summaries }`, where `groups` is `[{ key, rows }]` (a single `key: ""` group when the view has no `groupBy`).
 
@@ -314,7 +315,7 @@ Chart kinds (`bar`, `line`, `stat`, `heatmap`) route their view's filtered rows 
 bismuth base render "Bases/Board.md" --vault ~/vault --pretty
 # { "view": {...}, "columns": [...], "groups": [{ "key": "todo", "rows": [...] }, { "key": "done", "rows": [...] }], "summaries": {} }
 
-bismuth base render "Bases/Sales.md" --view 1 --vault ~/vault --pretty
+bismuth base render "Bases/Sales.md" --vault ~/vault --pretty
 # { "view": { "type": "stat", ... }, "chart": { "points": [{ "key": "A", "label": "A", "value": 30 }], "min": 30, "max": 30, "isDate": false, "valueLabel": "amount" } }
 ```
 
@@ -675,13 +676,12 @@ bismuth backup --vault ~/vault
 
 ## Universal export command (`commands/export.ts`)
 
-### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]`
+### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]`
 Export a note / base / sheet / drawing to `md | html | png | pdf | csv`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
 
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
 
 Base-specific options (`optionsFrom()`; no-ops for non-base files):
-- `--view N` — which of the base's `views` to export, by index (`o.viewIndex = Math.max(0, parseInt(N, 10) || 0)`); default `0`, the first view.
 - `--mode data|visual` — flat-table (`data`) vs the view rendered as its own kind — calendar grid / cards / kanban / list (`visual`).
 - `--cal-start YYYY-MM-DD` — calendar visual export only: the grid's anchor date.
 - `--cal-span month|week|3day|day` — calendar visual export only: the grid span.
@@ -703,8 +703,7 @@ Output path defaults to the exporter's chosen filename (or `<file>.<fmt>` for dr
 bismuth export "Notes/Essay.md" --format html --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --out essay.md --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --no-frontmatter --vault ~/vault   # body only, YAML stripped
-bismuth export "Bases/Reading.md" --format csv --vault ~/vault                # flat table, view 0
-bismuth export "Bases/Reading.md" --format csv --view 1 --vault ~/vault       # a different view's table
+bismuth export "Bases/Reading.md" --format csv --vault ~/vault                # flat table
 bismuth export "Bases/Team Cal" --format html --mode visual --cal-span week --cal-start 2026-07-06 --vault ~/vault
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
@@ -857,7 +856,7 @@ Edit a calendar base file **by API** instead of hand-editing raw YAML — the ap
 **Event-field flags (shared).** The mutating commands (`add`, `move`, `override`) build event fields from an optional `--json '{...}'` object first, then overlay convenience flags (**flags win**): `--title`, `--date` (→ `date`), `--start` (→ `startTime`), `--end` (→ `endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (→ `recurrence`). `--json` must be a valid JSON **object** (`--json is not valid JSON` / `--json must be a JSON object`). `--recurrence` must be valid JSON (`--recurrence is not valid JSON` / `--recurrence must be a JSON object`); if its `seriesId` is absent, a `crypto.randomUUID()` is filled in. The `Recurrence` JSON shape is `{"type": "daily"|"weekly"|"biweekly"|"monthly", "startDate": "YYYY-MM-DD", "endDate"?: "YYYY-MM-DD", "daysOfWeek"?: [0-6, Sunday=0], "seriesId"?: "..."}`. `calendar add` also accepts `--rrule` (an iCal RRULE) as a friendlier alternative — see below.
 
 ### `calendar bases`
-Discover the vault's calendar base files: every `.md` whose frontmatter is `type: base` with a calendar view (`view: calendar` shorthand, or a `views:` array containing `{type: calendar}`). Prints `[{ path, title, events, categories }]` (title falls back to the basename; `categories` is the name list). Use this to find the `<basePath>` the other commands take.
+Discover the vault's calendar base files: every `.md` whose frontmatter is `type: base` with a calendar view (`view: calendar`, or a legacy `views:` list whose first entry is `{type: calendar}`). Prints `[{ path, title, events, categories }]` (title falls back to the basename; `categories` is the name list). Use this to find the `<basePath>` the other commands take.
 ```bash
 bismuth calendar bases --vault ~/vault --pretty
 ```

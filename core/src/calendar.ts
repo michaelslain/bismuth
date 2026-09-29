@@ -9,6 +9,8 @@
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { parseRows, serializeRows } from './bases/rows'
 import type { Row } from './bases/types'
+import { isValidType } from './bases/types'
+import { legacyView } from './bases/parse'
 import { addDaysISO } from './dates'
 import { createError } from './error'
 import { parseRRule, firstOccurrence } from './gcal/recurrence'
@@ -158,21 +160,15 @@ export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
 }
 
 /**
- * Is this frontmatter a calendar base? Mirrors `parseBaseFile` (core/src/bases/parse.ts):
- * an explicit `views:` array wins (calendar iff some view object has `type: calendar`);
- * the `view: calendar` shorthand applies only when no `views:` array is present.
+ * Is this frontmatter a calendar base? Mirrors `parseBaseFile` (core/src/bases/parse.ts): a
+ * base has one view, whose kind is `view:` — or, in a file still carrying a legacy `views:`
+ * list, its first entry's valid `type:`, which always beat the shorthand.
  */
 export function isCalendarBase(frontmatter: Record<string, unknown>): boolean {
     if (frontmatter.type !== 'base') return false
-    if (Array.isArray(frontmatter.views)) {
-        return frontmatter.views.some(
-            v =>
-                !!v &&
-                typeof v === 'object' &&
-                (v as Record<string, unknown>).type === 'calendar',
-        )
-    }
-    return frontmatter.view === 'calendar'
+    const legacy = legacyView(frontmatter)
+    const kind = isValidType(legacy?.type) ? legacy.type : frontmatter.view
+    return kind === 'calendar'
 }
 
 /** A fresh, empty calendar base file (`type: base` + `view: calendar`). */

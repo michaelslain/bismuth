@@ -11,7 +11,7 @@
  * thing that touches the filesystem and this file can be asserted on directly.
  *
  * The content is chosen to exercise the features that are invisible on an empty vault: wikilinks and
- * backlinks, tags, YAML frontmatter of several types, a `type: base` note with two views, a tasks
+ * backlinks, tags, YAML frontmatter of several types, two `type: base` notes (one queries the other), a tasks
  * query, checkbox tasks with due dates, flashcards, and memory notes that link back to vault notes
  * (which is what makes "about" edges appear in the 3rd-brain graph). A vault of three empty notes
  * would boot but would show none of that.
@@ -70,30 +70,39 @@ Related: [[Knowledge Graph]]
 
     'reading/Reading List.md': `---
 type: base
-views:
-  - type: cards
-    name: Shelf
-    groupBy:
-      property: status
-    order:
-      - file.name
-      - author
-      - status
-  - type: table
-    name: All
-    order:
-      - file.name
-      - author
-      - status
-      - rating
+view: cards
+groupBy:
+  property: status
+order:
+  - file.name
+  - author
+  - status
 filters:
   and:
     - type == "book"
 ---
 # Reading List
 
-A **base**: frontmatter declares the query and the views. There is no \`.base\` extension — a base is
-an ordinary markdown note with \`type: base\`.
+A **base**: frontmatter declares the query and its one view. There is no \`.base\` extension — a base is
+an ordinary markdown note with \`type: base\`. Want the same books as a table? That is a second base
+that queries this one: [[Reading Table]].
+`,
+
+    'reading/Reading Table.md': `---
+type: base
+source: base
+ref: "[[Reading List]]"
+view: table
+order:
+  - file.name
+  - author
+  - status
+  - rating
+---
+# Reading Table
+
+Another view of [[Reading List]]: a base has exactly one view, so a different view of the same rows
+is a new base with \`source: base\` and a \`ref\` pointing at the first.
 `,
 
     'reading/The Book of Disquiet.md': `---

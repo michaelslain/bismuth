@@ -165,7 +165,7 @@ describe('buildQueryBlockBody — notes -> FULL INLINE CONFIG', () => {
         const body = buildQueryBlockBody(notesState([]))
         const cfg = yamlParse(body)
         expect(cfg.source).toBe('notes')
-        expect(cfg.views).toEqual([{ type: 'table', name: 'Table' }])
+        expect(cfg.view).toBe('table')
     })
     test('with filters, sort, group, limit', () => {
         const body = buildQueryBlockBody(
@@ -186,13 +186,10 @@ describe('buildQueryBlockBody — notes -> FULL INLINE CONFIG', () => {
         expect(cfg.source).toBe(
             `notes where (file.hasTag("book")) && (rating >= 4)`,
         )
-        expect(cfg.views[0]).toEqual({
-            type: 'cards',
-            name: 'Cards',
-            sort: [{ property: 'rating', direction: 'DESC' }],
-            groupBy: { property: 'status' },
-            limit: 10,
-        })
+        expect(cfg.view).toBe('cards')
+        expect(cfg.sort).toEqual([{ property: 'rating', direction: 'DESC' }])
+        expect(cfg.groupBy).toEqual({ property: 'status' })
+        expect(cfg.limit).toBe(10)
     })
 })
 
@@ -325,6 +322,18 @@ describe('parseQueryBlockBody — flat tasks/base', () => {
 })
 
 describe('parseQueryBlockBody — notes config', () => {
+    test('reads the flat view keys', () => {
+        const s = parseQueryBlockBody(
+            'source: notes\nview: cards\nsort:\n  - property: rating\n    direction: DESC\ngroupBy:\n  property: status\nlimit: 10',
+        )
+        expect(s.view).toBe('cards')
+        expect(s.sort).toEqual([{ property: 'rating', direction: 'DESC' }])
+        expect(s.group).toBe('status')
+        expect(s.limit).toBe(10)
+        expect(
+            isBuilderRepresentable('source: notes\nview: cards\nlimit: 10'),
+        ).toBe(true)
+    })
     test('reverses where into rows + reads view/sort/group/limit', () => {
         const s = parseQueryBlockBody(
             [
@@ -548,7 +557,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
     const body = (s: BuilderState) => buildQueryBlockBody(s)
 
     test('NotesFresh', () => {
-        expect(body(d())).toBe('source: notes\nviews:\n  - type: table\n    name: Table')
+        expect(body(d())).toBe('source: notes\nview: table')
     })
     test('NotesEditingExisting', () => {
         expect(
@@ -563,7 +572,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
                 },
             }),
         ).toBe(
-            'source: notes where status == "Doing"\nviews:\n  - type: kanban\n    name: Kanban\n    sort:\n      - property: priority\n        direction: ASC\n    groupBy:\n      property: status',
+            'source: notes where status == "Doing"\nview: kanban\nsort:\n  - property: priority\n    direction: ASC\ngroupBy:\n  property: status',
         )
     })
     test('TasksSource', () => {
@@ -597,7 +606,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
     })
     test('AddFilterRow -> insert (first column, empty value) is dropped as incomplete', () => {
         expect(body(notesState([row('file.name', 'equals', '')]))).toBe(
-            'source: notes\nviews:\n  - type: table\n    name: Table',
+            'source: notes\nview: table',
         )
     })
     test('one complete + one incomplete row emits only the complete one', () => {
@@ -611,7 +620,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
                 ]),
             ),
         ).toBe(
-            'source: notes where (status == "Doing") && (done)\nviews:\n  - type: table\n    name: Table',
+            'source: notes where (status == "Doing") && (done)\nview: table',
         )
     })
     test('rawWhere wins over rows', () => {
@@ -625,7 +634,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
                 },
             }),
         ).toBe(
-            'source: notes where priority > 1 && (status == "Todo" || done)\nviews:\n  - type: table\n    name: Table',
+            'source: notes where priority > 1 && (status == "Todo" || done)\nview: table',
         )
     })
     test('folder op + date_within + tag, any-connective, sort key + direction', () => {
@@ -646,7 +655,7 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
                 },
             }),
         ).toBe(
-            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nviews:\n  - type: cards\n    name: Cards\n    sort:\n      - property: priority\n        direction: DESC\n    groupBy:\n      property: status\n    limit: 5',
+            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nview: cards\nsort:\n  - property: priority\n    direction: DESC\ngroupBy:\n  property: status\nlimit: 5',
         )
     })
 })

@@ -19,14 +19,13 @@ type Story = StoryObj<typeof meta>
 const noop = () => {}
 
 function argsFor(view: ViewConfig): ViewRendererProps {
-    const config = sampleBaseConfig({ views: [view] })
+    const config = sampleBaseConfig({ view })
     return {
-        result: sampleViewResult(undefined, { views: [view] }),
+        result: sampleViewResult(undefined, { view }),
         config,
         basePath: 'boards/tasks.md',
         mode: 'normal',
         ownsRows: false,
-        viewIndex: 0,
         onChange: noop,
         onToggle: noop,
         onSetStatus: noop,
@@ -49,16 +48,16 @@ function kind(view: ViewConfig, present: string): Story {
     }
 }
 
-export const Table = kind({ type: 'table', name: 'Table' }, 'Draft the roadmap')
-export const Cards = kind({ type: 'cards', name: 'Cards' }, 'Ship storybook coverage')
-export const List = kind({ type: 'list', name: 'List' }, 'Draft the roadmap')
-export const Bullets = kind({ type: 'bullets', name: 'Bullets' }, 'Draft the roadmap')
+export const Table = kind({ type: 'table' }, 'Draft the roadmap')
+export const Cards = kind({ type: 'cards' }, 'Ship storybook coverage')
+export const List = kind({ type: 'list' }, 'Draft the roadmap')
+export const Bullets = kind({ type: 'bullets' }, 'Draft the roadmap')
 export const Kanban = kind(
-    { type: 'kanban', name: 'Board', groupBy: { property: 'status' } },
+    { type: 'kanban', groupBy: { property: 'status' } },
     'Doing',
 )
-export const Bar = kind({ type: 'bar', name: 'Bar', x: 'status' }, 'Todo')
-export const Line = kind({ type: 'line', name: 'Line', x: 'due' }, '')
-export const Stat = kind({ type: 'stat', name: 'Stat' }, '')
-export const Heatmap = kind({ type: 'heatmap', name: 'Heat', x: 'due' }, '')
-export const Map = kind({ type: 'map', name: 'Map' }, '')
+export const Bar = kind({ type: 'bar', x: 'status' }, 'Todo')
+export const Line = kind({ type: 'line', x: 'due' }, '')
+export const Stat = kind({ type: 'stat' }, '')
+export const Heatmap = kind({ type: 'heatmap', x: 'due' }, '')
+export const Map = kind({ type: 'map' }, '')

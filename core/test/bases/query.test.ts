@@ -30,74 +30,64 @@ const rows: Row[] = [
 
 const base: BaseConfig = {
     formulas: { ppu: '(price / age).toFixed(2)' },
-    views: [
-        {
+    filters: 'status != "done"',
+    view: {
             type: 'table',
-            name: 'V',
-            filters: 'status != "done"',
             order: ['file.name', 'note.price', 'formula.ppu'],
             sort: [{ property: 'note.price', direction: 'DESC' }],
             summaries: { 'note.price': 'Sum' },
         },
-    ],
 }
 
 test('filters, computes formulas, sorts, resolves columns', () => {
-    const res = runView(base, rows, 0)
+    const res = runView(base, rows)
     expect(res.columns).toEqual(['file.name', 'note.price', 'formula.ppu'])
     const flat = res.groups[0].rows
     expect(flat.map(r => r.file.name)).toEqual(['gamma', 'alpha']) // price DESC, 'done' filtered out
     expect(flat[0].formula.ppu).toBe('5.00') // 20/4
 })
 
-test('applies global + view filters with AND', () => {
+test('applies the base filters, ANDed', () => {
     const b: BaseConfig = {
-        filters: 'file.hasTag("book")',
-        views: [
-            {
+        filters: { and: ['file.hasTag("book")', 'status == "open"'] },
+        view: {
                 type: 'table',
-                name: 'V',
-                filters: 'status == "open"',
                 order: ['file.name'],
             },
-        ],
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.file.name)).toEqual(['alpha'])
 })
 
 test('groups rows by a property', () => {
     const b: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'table',
-                name: 'V',
                 order: ['file.name'],
                 groupBy: { property: 'note.status', direction: 'ASC' },
             },
-        ],
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     const keys = res.groups.map(g => g.key).sort()
     expect(keys).toEqual(['done', 'open'])
 })
 
 test('respects limit', () => {
     const b: BaseConfig = {
-        views: [{ type: 'table', name: 'V', order: ['file.name'], limit: 1 }],
+        view: { type: 'table',  order: ['file.name'], limit: 1 },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows).toHaveLength(1)
 })
 
 test('computes Sum/Average/Min/Max/Count summaries', () => {
-    const res = runView(base, rows, 0)
+    const res = runView(base, rows)
     expect(res.summaries['note.price']).toBe('30') // 10 + 20
 })
 
 test('auto-derives columns from frontmatter when order is absent', () => {
-    const b: BaseConfig = { views: [{ type: 'table', name: 'V' }] }
-    const res = runView(b, rows, 0)
+    const b: BaseConfig = { view: { type: 'table' } }
+    const res = runView(b, rows)
     expect(res.columns[0]).toBe('file.name')
     expect(res.columns).toContain('note.status')
 })
@@ -112,25 +102,22 @@ test('canonicalId normalizes bare frontmatter names to note.*', () => {
 test('bare-id summary aligns with auto-derived note.* columns', () => {
     // order omitted -> columns derived as note.*, summary written with a bare id
     const b: BaseConfig = {
-        views: [{ type: 'table', name: 'V', summaries: { price: 'Sum' } }],
+        view: { type: 'table',  summaries: { price: 'Sum' } },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toContain('note.price')
     expect(res.summaries['note.price']).toBe('34') // 10 + 4 + 20 (no filter)
 })
 
 test('kanban with fixed columns keeps empty columns in declared order', () => {
     const b: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'kanban',
-                name: 'Board',
                 groupBy: { property: 'note.status' },
                 groupOrder: ['todo', 'open', 'done', 'archived'],
             },
-        ],
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups.map(g => g.key)).toEqual([
         'todo',
         'open',
@@ -144,16 +131,13 @@ test('kanban with fixed columns keeps empty columns in declared order', () => {
 
 test('kanban with fixed columns surfaces unexpected data keys as extras', () => {
     const b: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'kanban',
-                name: 'Board',
                 groupBy: { property: 'note.status' },
                 groupOrder: ['todo'],
             },
-        ],
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     // 'todo' first (declared, empty), then the two data keys in alpha order.
     expect(res.groups.map(g => g.key)).toEqual(['todo', 'done', 'open'])
 })
@@ -162,9 +146,9 @@ test('properties.hidden drops the property from auto-derived columns', () => {
     // Bare-form hide.
     const b1: BaseConfig = {
         properties: { status: { hidden: true } },
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res1 = runView(b1, rows, 0)
+    const res1 = runView(b1, rows)
     expect(res1.columns).toContain('file.name')
     expect(res1.columns).toContain('note.price')
     expect(res1.columns).not.toContain('note.status')
@@ -172,9 +156,9 @@ test('properties.hidden drops the property from auto-derived columns', () => {
     // Namespaced-form hide reads the same way.
     const b2: BaseConfig = {
         properties: { 'note.price': { hidden: true } },
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res2 = runView(b2, rows, 0)
+    const res2 = runView(b2, rows)
     expect(res2.columns).not.toContain('note.price')
 })
 
@@ -183,15 +167,12 @@ test('properties.hidden is overridden by an explicit view.order', () => {
     // where they explicitly list status — that wins.
     const b: BaseConfig = {
         properties: { status: { hidden: true } },
-        views: [
-            {
+        view: {
                 type: 'table',
-                name: 'V',
                 order: ['file.name', 'note.price', 'note.status'],
             },
-        ],
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toEqual(['file.name', 'note.price', 'note.status'])
 })
 
@@ -199,17 +180,14 @@ test('hostThis flows into filters / formulas / groupBy as `this.*`', () => {
     // Embedded base: filter by `this.tier` from the host note's frontmatter.
     const b: BaseConfig = {
         formulas: { adj: 'price * this.markup' },
-        views: [
-            {
+        filters: 'price >= this.minPrice',
+        view: {
                 type: 'table',
-                name: 'V',
-                filters: 'price >= this.minPrice',
                 order: ['file.name', 'formula.adj'],
             },
-        ],
     }
     const host = { minPrice: 10, markup: 2, tier: 'open' }
-    const res = runView(b, rows, 0, host)
+    const res = runView(b, rows, host)
     // Only alpha (price=10) and gamma (price=20) clear minPrice=10.
     expect(res.groups[0].rows.map(r => r.file.name).sort()).toEqual([
         'alpha',
@@ -241,15 +219,12 @@ test('urgency buckets via a date formula + groupBy formula.*', () => {
             urgency:
                 'if(!due, "No date", if(date(due) < today(), "Overdue", if(date(due) <= today() + "7d", "This week", "Later")))',
         },
-        views: [
-            {
+        view: {
                 type: 'list',
-                name: 'DoNow',
                 groupBy: { property: 'formula.urgency' },
             },
-        ],
     }
-    const res = runView(cfg, taskRows, 0)
+    const res = runView(cfg, taskRows)
     const byKey = Object.fromEntries(
         res.groups.map(g => [g.key, g.rows.map(r => r.file.name)]),
     )
@@ -278,15 +253,12 @@ test('urgency buckets work with duration() too (composes with +)', () => {
             urgency:
                 'if(date(due) < today(), "Overdue", if(date(due) <= today() + duration("7d"), "This week", "Later"))',
         },
-        views: [
-            {
+        view: {
                 type: 'list',
-                name: 'DoNow',
                 groupBy: { property: 'formula.urgency' },
             },
-        ],
     }
-    const res = runView(cfg, taskRows, 0)
+    const res = runView(cfg, taskRows)
     const byKey = Object.fromEntries(
         res.groups.map(g => [g.key, g.rows.map(r => r.file.name)]),
     )
@@ -300,9 +272,9 @@ test('default group order is type-aware (numeric, not string-alphabetical)', () 
     const r10 = row('b', { n: 10 })
     const r1 = row('c', { n: 1 })
     const cfg: BaseConfig = {
-        views: [{ type: 'table', name: 'V', groupBy: { property: 'note.n' } }],
+        view: { type: 'table',  groupBy: { property: 'note.n' } },
     }
-    const res = runView(cfg, [r10, r2, r1], 0)
+    const res = runView(cfg, [r10, r2, r1])
     expect(res.groups.map(g => g.key)).toEqual(['1', '2', '10']) // numeric, not "1","10","2"
 })
 
@@ -314,16 +286,13 @@ test('explicit columns order groups in a non-kanban (list) view', () => {
         row('d', { bucket: 'Mystery' }), // not declared -> appended
     ]
     const cfg: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'list',
-                name: 'V',
                 groupBy: { property: 'note.bucket' },
                 groupOrder: ['Overdue', 'This week', 'Later'],
             },
-        ],
     }
-    const res = runView(cfg, rows2, 0)
+    const res = runView(cfg, rows2)
     expect(res.groups.map(g => g.key)).toEqual([
         'Overdue',
         'This week',
@@ -335,27 +304,21 @@ test('explicit columns order groups in a non-kanban (list) view', () => {
 test('non-kanban omits an empty declared group; kanban keeps it', () => {
     const rows3: Row[] = [row('a', { s: 'todo' })]
     const listCfg: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'list',
-                name: 'V',
                 groupBy: { property: 'note.s' },
                 groupOrder: ['todo', 'done'],
             },
-        ],
     }
-    expect(runView(listCfg, rows3, 0).groups.map(g => g.key)).toEqual(['todo']) // "done" empty -> omitted
+    expect(runView(listCfg, rows3).groups.map(g => g.key)).toEqual(['todo']) // "done" empty -> omitted
     const kanbanCfg: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'kanban',
-                name: 'V',
                 groupBy: { property: 'note.s' },
                 groupOrder: ['todo', 'done'],
             },
-        ],
     }
-    expect(runView(kanbanCfg, rows3, 0).groups.map(g => g.key)).toEqual([
+    expect(runView(kanbanCfg, rows3).groups.map(g => g.key)).toEqual([
         'todo',
         'done',
     ]) // "done" kept as drop target
@@ -367,9 +330,9 @@ test('declaredProperties drives auto-derived columns in declaration order', () =
     const b: BaseConfig = {
         properties: { status: {}, worktree: {} },
         declaredProperties: ['status', 'worktree'],
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     // file.name seeds first (note rows), then the declared names canonicalized —
     // note.price/note.age/note.tags exist on the rows but are NOT declared, so they don't leak in.
     expect(res.columns).toEqual(['file.name', 'note.status', 'note.worktree'])
@@ -380,9 +343,9 @@ test('declared columns keep namespaced ids and dedupe an explicitly declared fil
         properties: { 'file.name': {}, 'formula.ppu': {}, price: {} },
         declaredProperties: ['file.name', 'formula.ppu', 'price'],
         formulas: { ppu: '(price / age).toFixed(2)' },
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toEqual(['file.name', 'formula.ppu', 'note.price'])
 })
 
@@ -390,9 +353,9 @@ test('hidden still drops a declared property from the derived columns', () => {
     const b: BaseConfig = {
         properties: { status: {}, order: { hidden: true } },
         declaredProperties: ['status', 'order'],
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toEqual(['file.name', 'note.status'])
 })
 
@@ -400,20 +363,18 @@ test('an explicit view.order still beats the declared property set', () => {
     const b: BaseConfig = {
         properties: { status: {} },
         declaredProperties: ['status'],
-        views: [
-            { type: 'table', name: 'V', order: ['file.name', 'note.price'] },
-        ],
+        view: { type: 'table',  order: ['file.name', 'note.price'] },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toEqual(['file.name', 'note.price'])
 })
 
 test('without declaredProperties the classic row-frontmatter derivation is unchanged', () => {
     const b: BaseConfig = {
         properties: { status: { displayName: 'Status' } }, // map form: metadata only
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.columns).toContain('note.price')
     expect(res.columns).toContain('note.age')
     expect(res.columns).toContain('note.status')
@@ -434,7 +395,7 @@ const formulaBase: BaseConfig = {
         total: { type: { kind: 'formula', expr: 'price * qty' } },
     },
     declaredProperties: ['price', 'qty', 'total'],
-    views: [{ type: 'table', name: 'V' }],
+    view: { type: 'table' },
 }
 
 test('a declared formula-kind property computes per-row via the same evaluator as `formulas:`', () => {
@@ -442,7 +403,7 @@ test('a declared formula-kind property computes per-row via the same evaluator a
         row('a', { price: 3, qty: 4 }),
         row('b', { price: 5, qty: 2 }),
     ]
-    const res = runView(formulaBase, priced, 0)
+    const res = runView(formulaBase, priced)
     expect(res.columns).toEqual([
         'file.name',
         'note.price',
@@ -457,7 +418,7 @@ test('a declared formula-kind property computes per-row via the same evaluator a
 })
 
 test('a declared formula property resolves as formula.<name>, never note.<name> (read-only namespace)', () => {
-    const res = runView(formulaBase, [row('a', { price: 3, qty: 4 })], 0)
+    const res = runView(formulaBase, [row('a', { price: 3, qty: 4 })])
     expect(res.columns).toContain('formula.total')
     expect(res.columns).not.toContain('note.total')
     expect(res.groups[0].rows[0].note.total).toBeUndefined() // never written to frontmatter
@@ -471,9 +432,9 @@ test('declared formula property tolerates a missing referenced field (NaN, not a
             broken: { type: { kind: 'formula', expr: 'price * (' } }, // malformed syntax
         },
         declaredProperties: ['price', 'total', 'broken'],
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, [row('a', { price: 3 })], 0)
+    const res = runView(b, [row('a', { price: 3 })])
     const r = res.groups[0].rows[0]
     expect(Number.isNaN(r.formula.total)).toBe(true) // 3 * undefined -> NaN, no throw
     expect(r.formula.broken).toBeUndefined() // parse failure -> undefined, no throw
@@ -486,9 +447,9 @@ test('an explicit `formulas:` entry wins over a same-named declared formula prop
             total: { type: { kind: 'formula', expr: 'price * qty' } },
         },
         declaredProperties: ['total'],
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, [row('a', { price: 3, qty: 4 })], 0)
+    const res = runView(b, [row('a', { price: 3, qty: 4 })])
     expect(res.groups[0].rows[0].formula.total).toBe(999)
 })
 
@@ -499,20 +460,20 @@ test('hidden hides a declared formula property under its bare (or note.-prefixed
             total: { type: { kind: 'formula', expr: 'price' }, hidden: true },
         },
         declaredProperties: ['price', 'total'],
-        views: [{ type: 'table', name: 'V' }],
+        view: { type: 'table' },
     }
-    const res = runView(b, [row('a', { price: 3 })], 0)
+    const res = runView(b, [row('a', { price: 3 })])
     expect(res.columns).toEqual(['file.name', 'note.price'])
 })
 
 test('sort: note.priority ranks by urgency, not alphabetically', () => {
     const b: BaseConfig = {
-        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+        view: { type: 'table',  sort: [{ property: 'note.priority' }] },
     }
     const rows = ['low', 'highest', 'medium', 'none', 'high', 'lowest'].map(p =>
         row(p, { priority: p }),
     )
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([
         'highest',
         'high',
@@ -525,57 +486,48 @@ test('sort: note.priority ranks by urgency, not alphabetically', () => {
 
 test('DESC reverses the priority rank', () => {
     const b: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'table',
-                name: 'V',
                 sort: [{ property: 'note.priority', direction: 'DESC' }],
             },
-        ],
     }
     const rows = ['low', 'highest'].map(p => row(p, { priority: p }))
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual(['low', 'highest'])
 })
 
 test('a missing value sorts last regardless of direction', () => {
     for (const direction of ['ASC', 'DESC'] as const) {
         const b: BaseConfig = {
-            views: [
-                {
+            view: {
                     type: 'table',
-                    name: 'V',
                     sort: [{ property: 'note.due', direction }],
                 },
-            ],
         }
         const rows = [row('a', {}), row('b', { due: '2026-01-01' })]
-        const res = runView(b, rows, 0)
+        const res = runView(b, rows)
         expect(res.groups[0].rows[1].note.due).toBeUndefined()
     }
 })
 
 test('a numeric priority column sorts numerically, not forced into the task-vocabulary rank', () => {
     const b: BaseConfig = {
-        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+        view: { type: 'table',  sort: [{ property: 'note.priority' }] },
     }
     const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([1, 2, 3, 4, 5])
 })
 
 test('DESC reverses a numeric priority column too', () => {
     const b: BaseConfig = {
-        views: [
-            {
+        view: {
                 type: 'table',
-                name: 'V',
                 sort: [{ property: 'note.priority', direction: 'DESC' }],
             },
-        ],
     }
     const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([5, 4, 3, 2, 1])
 })
 
@@ -587,10 +539,10 @@ test('DESC reverses a numeric priority column too', () => {
 // not a new special case invented for priority.
 test('a mixed word/number pair falls through to the generic string comparison', () => {
     const b: BaseConfig = {
-        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+        view: { type: 'table',  sort: [{ property: 'note.priority' }] },
     }
     const rows = [row('a', { priority: 'high' }), row('b', { priority: 3 })]
-    const res = runView(b, rows, 0)
+    const res = runView(b, rows)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([3, 'high'])
 })
 
@@ -624,7 +576,7 @@ function syntheticRow(note: Record<string, unknown>): Row {
     }
 }
 
-const NO_ORDER: BaseConfig = { views: [{ type: 'table', name: 'T' }] }
+const NO_ORDER: BaseConfig = { view: { type: 'table' } }
 
 test('a key the normalizer FILLED IN does not become a column', () => {
     // The default shape of a tasks-mode base: no `order:`, no declared `properties:`, so the
@@ -649,7 +601,6 @@ test('a key the normalizer FILLED IN does not become a column', () => {
                 ['statusChar', 'priority', 'tags', 'resolved', 'placed', 'recurring'],
             ),
         ],
-        0,
     )
     expect(res.columns).toEqual(['note.description', 'note.status', 'note.due'])
 })
@@ -666,7 +617,6 @@ test('a STORED column of a derived name survives, because the record is per row'
                 ['statusChar'],
             ),
         ],
-        0,
     )
     // Both halves in one assertion: the stored `placed` survives, and the `statusChar` the
     // normalizer added in the same row does not.
@@ -675,7 +625,7 @@ test('a STORED column of a derived name survives, because the record is per row'
 
 test('a row with no derived record contributes every key, as before', () => {
     // Normal-mode rows never carry one, so this path must be untouched.
-    const res = runView(NO_ORDER, [syntheticRow({ a: 1, b: 2 })], 0)
+    const res = runView(NO_ORDER, [syntheticRow({ a: 1, b: 2 })])
     expect(res.columns).toEqual(['note.a', 'note.b'])
 })
 
@@ -698,15 +648,15 @@ test('tasks mode keeps a SUPPLIED status column, so the board can be ticked', ()
         ),
     ]
     const tasksView: BaseConfig = {
-        views: [{ type: 'table', name: 'T', mode: 'tasks' }],
+        view: { type: 'table',  mode: 'tasks' },
     }
-    expect(runView(tasksView, rows, 0).columns).toEqual([
+    expect(runView(tasksView, rows).columns).toEqual([
         'note.description',
         'note.due',
         'note.status',
     ])
     // …and ONLY status. The four genuinely computed keys stay out in tasks mode too.
-    expect(runView(NO_ORDER, rows, 0).columns).toEqual([
+    expect(runView(NO_ORDER, rows).columns).toEqual([
         'note.description',
         'note.due',
     ])
@@ -725,15 +675,15 @@ test('tasks mode keeps a SUPPLIED status column, so the board can be ticked', ()
 test('the SAME formula source string produces `===`-identical parsed ASTs across calls', () => {
     const b: BaseConfig = {
         formulas: { total: 'price * age' },
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.total'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.total'] },
     }
     const target = [row('x', { price: 3, age: 4 })]
     const evalSpy = spyOn(evaluateModule, 'evaluate')
     evalSpy.mockClear()
-    runView(b, target, 0)
+    runView(b, target)
     const firstAst = evalSpy.mock.calls[0]![0]
     evalSpy.mockClear()
-    runView(b, target, 0) // same base object, same source text -> should hit the cache
+    runView(b, target) // same base object, same source text -> should hit the cache
     const secondAst = evalSpy.mock.calls[0]![0]
     evalSpy.mockRestore()
     expect(secondAst).toBe(firstAst) // `===` identity, not just deep equality
@@ -745,19 +695,19 @@ test('a DIFFERENT BaseConfig instance with the identical formula source text sti
     // cached AST the second time.
     const b1: BaseConfig = {
         formulas: { pu: 'price * qty' },
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.pu'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.pu'] },
     }
     const b2: BaseConfig = {
         formulas: { pu: 'price * qty' }, // same text, different object
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.pu'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.pu'] },
     }
     const target = [row('x', { price: 3, qty: 4 })]
     const evalSpy = spyOn(evaluateModule, 'evaluate')
     evalSpy.mockClear()
-    runView(b1, target, 0)
+    runView(b1, target)
     const firstAst = evalSpy.mock.calls[0]![0]
     evalSpy.mockClear()
-    runView(b2, target, 0)
+    runView(b2, target)
     const secondAst = evalSpy.mock.calls[0]![0]
     evalSpy.mockRestore()
     expect(secondAst).toBe(firstAst)
@@ -766,15 +716,15 @@ test('a DIFFERENT BaseConfig instance with the identical formula source text sti
 test('a CHANGED formula source for the same formula name is freshly parsed, not a stale cache hit', () => {
     const bOld: BaseConfig = {
         formulas: { calc: 'price + 1' },
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.calc'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.calc'] },
     }
     const bNew: BaseConfig = {
         formulas: { calc: 'price + 2' }, // same name "calc", DIFFERENT source text
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.calc'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.calc'] },
     }
     const target = [row('x', { price: 10 })]
-    const resOld = runView(bOld, target, 0)
-    const resNew = runView(bNew, target, 0)
+    const resOld = runView(bOld, target)
+    const resNew = runView(bNew, target)
     expect(resOld.groups[0].rows[0].formula.calc).toBe(11) // 10 + 1
     expect(resNew.groups[0].rows[0].formula.calc).toBe(12) // 10 + 2, NOT a stale 11
 })
@@ -782,12 +732,12 @@ test('a CHANGED formula source for the same formula name is freshly parsed, not 
 test('a formula with a syntax error stays undefined on repeat calls without throwing (cached null)', () => {
     const b: BaseConfig = {
         formulas: { broken: 'price * (' }, // malformed, caught by parseExpr
-        views: [{ type: 'table', name: 'V', order: ['file.name', 'formula.broken'] }],
+        view: { type: 'table',  order: ['file.name', 'formula.broken'] },
     }
     const target = [row('x', { price: 10 })]
-    expect(() => runView(b, target, 0)).not.toThrow()
-    const res1 = runView(b, target, 0)
-    const res2 = runView(b, target, 0) // second call must hit the cached `null`, not re-throw
+    expect(() => runView(b, target)).not.toThrow()
+    const res1 = runView(b, target)
+    const res2 = runView(b, target) // second call must hit the cached `null`, not re-throw
     expect(res1.groups[0].rows[0].formula.broken).toBeUndefined()
     expect(res2.groups[0].rows[0].formula.broken).toBeUndefined()
 })
@@ -799,9 +749,9 @@ test('the legacy calendarContent spelling keeps the status column too', () => {
         storedRow({ description: 'x', status: 'todo' }, ['status']),
     ]
     const legacy: BaseConfig = {
-        views: [{ type: 'calendar', name: 'C', calendarContent: 'tasks' }],
+        view: { type: 'calendar',  calendarContent: 'tasks' },
     }
-    expect(runView(legacy, rows, 0).columns).toEqual([
+    expect(runView(legacy, rows).columns).toEqual([
         'note.description',
         'note.status',
     ])

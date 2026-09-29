@@ -5,9 +5,9 @@ The kanban view renders a base's rows as a Trello-style board of columns, one co
 Each card is a note. On a board backed by a real base file (`props.basePath` set — i.e. not an embedded ```` ```query ```` block), the board is fully editable:
 
 - **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
-- **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
+- **Drag column headers** to reorder columns — persists the new order to `columns` (`groupOrder`).
 - **Edit a card** — tapping anywhere on a card opens a focused **edit modal** (`CardEditModal`): its title field renames the note, and every meta property gets a control matched to its type (text/number/date/select/multiselect/tags, a `markdown` property in a rich Milkdown surface, a boolean as an instant Yes/No toggle). Delete lives inside that modal. See [Editable Cards](#editable-cards), and [properties](../properties.md) for how a property's type is determined. **This is `mode: normal` behavior only** — a board with [`mode: tasks`](#tasks-mode-mode-tasks) has no edit modal at all; see that section.
-- **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
+- **Recolor a column** — click its header dot to pick a color from the theme palette; persists to `groupColors`.
 - **Rename or delete a column** — hovering anywhere on a column (or focusing something inside its header) reveals `[✎]` (rename, inline — the same field as [Adding Cards](#adding-cards)' composer) and `[🗑]` (delete), just left of the card count; the no-value "(empty)" lane has no `[🗑]`. The bar is positioned over the header, so at rest the count sits flush right and revealing the bar never moves the title or the count; while a column is being renamed its bar is hidden. Renaming persists the new key to `columns` (`groupOrder`) and moves the column's cards' `groupBy` value in one batched write. Deleting removes the key from `columns` and any `groupColors` override, and — when the column still has cards — removes the `groupBy` property from each of them (they fall into the "(empty)" lane) and offers **Undo**, which puts the column back at its old position with its colour and gives back each card's value (re-reading the card as it is then, so an edit made in between survives; a card since given another value is left alone). A view with a `limit` refuses to delete a non-empty column, since the cards past the limit would be stranded.
 - **Add a card** — a bare `+` directly under each column's last card opens a composer that creates a note in the board's folder with that column's value set.
 
@@ -31,10 +31,9 @@ Minimal valid config in a `type: base` file:
 ---
 type: base
 source: notes where #book
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
+view: kanban
+groupBy:
+  property: note.status
 ---
 ```
 
@@ -42,7 +41,7 @@ views:
 
 ## View Config Fields
 
-All fields below are set inside a single view object under `views:` in a `type: base` markdown file. These are fields from `ViewConfig` in `core/src/bases/types.ts` that are relevant to kanban.
+All fields below are top-level frontmatter keys in a `type: base` markdown file, beside `view: kanban`. These are fields from `ViewConfig` in `core/src/bases/types.ts` that are relevant to kanban.
 
 ### `groupBy` (required)
 
@@ -58,11 +57,10 @@ The frontmatter property whose value determines which column a card belongs to. 
 Example:
 
 ```yaml
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
-      direction: ASC
+view: kanban
+groupBy:
+  property: note.status
+  direction: ASC
 ```
 
 ### `columns` (column order and empty column pinning)
@@ -71,7 +69,7 @@ views:
 groupOrder?: string[]
 ```
 
-Authors write this in YAML as `columns:`. During parsing (`core/src/bases/parse.ts`) the YAML `columns:` key is mapped onto the `ViewConfig.groupOrder` field (`strArr(o.columns)` → `groupOrder`; the top-level `columns:` shorthand likewise sets `config.views[0].groupOrder`). The query engine (`core/src/bases/query.ts`) then reads `view.groupOrder` — there is no `columns` field on `ViewConfig`. Keep using `columns:` in your YAML; just be aware the parsed field is named `groupOrder`.
+Authors write this in YAML as `columns:`. During parsing (`core/src/bases/parse.ts`) the YAML `columns:` key is mapped onto the `ViewConfig.groupOrder` field (`strArr(o.columns)` → `groupOrder`). The query engine (`core/src/bases/query.ts`) then reads `view.groupOrder` — there is no `columns` field on `ViewConfig`. Keep using `columns:` in your YAML; just be aware the parsed field is named `groupOrder`.
 
 `columns:` declares the display order of group keys. This field has special behavior in kanban vs other view types:
 
@@ -82,15 +80,14 @@ Authors write this in YAML as `columns:`. During parsing (`core/src/bases/parse.
 Example with pinned empty columns:
 
 ```yaml
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
-    columns:
-      - "to read"
-      - "reading"
-      - "finished"
-      - "abandoned"
+view: kanban
+groupBy:
+  property: note.status
+columns:
+  - "to read"
+  - "reading"
+  - "finished"
+  - "abandoned"
 ```
 
 With this config, "finished" and "abandoned" stay visible as columns even when no cards have those statuses.
@@ -101,16 +98,15 @@ With this config, "finished" and "abandoned" stay visible as columns even when n
 groupColors?: Record<string, string>   // group key -> CSS color
 ```
 
-Overrides the color of individual columns, keyed by the group value (the same strings as in `columns`). The value is any CSS color — a hex string (`"#e5484d"`) or a CSS variable (`"var(--graph-2)"`). Columns without an entry fall back to the automatic palette (see [Column Colors](#column-colors)). Set interactively by clicking a column header's dot; persisted to the view via `POST /set-property` with a `viewIndex` (so it lands nested inside `views[N]`, not as a duplicate top-level key).
+Overrides the color of individual columns, keyed by the group value (the same strings as in `columns`). The value is any CSS color — a hex string (`"#e5484d"`) or a CSS variable (`"var(--graph-2)"`). Columns without an entry fall back to the automatic palette (see [Column Colors](#column-colors)). Set interactively by clicking a column header's dot; persisted as a top-level `groupColors` key via `POST /set-property`.
 
 ```yaml
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
-    groupColors:
-      TODO: var(--graph-0)
-      Done: "#2ecc71"
+view: kanban
+groupBy:
+  property: note.status
+groupColors:
+  TODO: var(--graph-0)
+  Done: "#2ecc71"
 ```
 
 ### `descriptionField` (deprecated — no-op)
@@ -137,15 +133,14 @@ Properties that are empty on a given note render nothing on that card (no `—` 
 Without an `order:`, a base that **declares its own properties** (list-form `properties:` — see the [properties doc](../properties.md)) shows the declared set as the card meta instead (same title/empties exclusions, plus the `groupBy` property is dropped — the column already conveys it), and its add-card composer seeds each declared `default` onto the new note. A base with neither `order:` nor a declaration shows no meta, as before.
 
 ```yaml
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
-    order:
-      - file.name
-      - file.tags
-      - description   # a normal property — markdown by default, editable like any other
-      - worktree      # cards show the note's #tags, an editable markdown description, and its worktree value
+view: kanban
+groupBy:
+  property: note.status
+order:
+  - file.name
+  - file.tags
+  - description   # a normal property — markdown by default, editable like any other
+  - worktree      # cards show the note's #tags, an editable markdown description, and its worktree value
 ```
 
 ### `hideLabels`
@@ -154,14 +149,13 @@ views:
 hideLabels?: boolean   // default false
 ```
 
-When `true`, every card's meta section drops the key column and shows only property **values** (tag columns already have no key, and are unaffected). Default `false` (keys shown), so existing boards render unchanged. Set via the view's settings panel — a "Hide meta labels — show property values only" toggle, shown only for kanban views — or by hand:
+When `true`, every card's meta section drops the key column and shows only property **values** (tag columns already have no key, and are unaffected). Default `false` (keys shown), so existing boards render unchanged. Set via the base's settings panel — a "Hide meta labels — show property values only" toggle, shown only for kanban views — or by hand:
 
 ```yaml
-views:
-  - type: kanban
-    groupBy:
-      property: note.status
-    hideLabels: true
+view: kanban
+groupBy:
+  property: note.status
+hideLabels: true
 ```
 
 Normally (the default) each property is one line — its key, then its value, with every value on a card starting at the same x — see [Card Face](#card-face).
@@ -172,27 +166,23 @@ Normally (the default) each property is one line — its key, then its value, wi
 mode?: 'normal' | 'tasks'   // KanbanView.tsx, default 'normal'
 ```
 
-Declares that every row on the board IS a task, independent of `type`/`source` — the same `mode` axis `list`, `bullets`, and `cards` share (see [Bases: Overview](../overview.md#three-axes-kind-mode-and-origin)). `'tasks'` swaps every card's face from `KanbanCard` to the shared `TaskRow` component and removes the edit modal — see [Tasks Mode](#tasks-mode-mode-tasks) below for everything that changes. `KanbanView` reads only the declared `mode`, never a row's shape, so an existing `source: tasks` board keeps its ordinary `KanbanCard` faces until `mode: tasks` is added explicitly.
+Declares that every row on the board IS a task, independent of `view`/`source` — the same `mode` axis `list`, `bullets`, and `cards` share (see [Bases: Overview](../overview.md#three-axes-kind-mode-and-origin)). `'tasks'` swaps every card's face from `KanbanCard` to the shared `TaskRow` component and removes the edit modal — see [Tasks Mode](#tasks-mode-mode-tasks) below for everything that changes. `KanbanView` reads only the declared `mode`, never a row's shape, so an existing `source: tasks` board keeps its ordinary `KanbanCard` faces until `mode: tasks` is added explicitly.
 
 ```yaml
-views:
-  - type: kanban
-    mode: tasks
-    groupBy:
-      property: note.status
+view: kanban
+mode: tasks
+groupBy:
+  property: note.status
 ```
 
 ### Other standard `ViewConfig` fields
 
-The following standard fields apply to kanban as they do to other view types. See [bases overview](../overview.md) for full details.
+The following standard fields apply to kanban as they do to other view kinds (the base's `filters` and `source` apply too). See [bases overview](../overview.md) for full details.
 
 | Field | Effect |
 |---|---|
-| `filters` | Per-view filter, ANDed with the base-level `filters` |
 | `sort` | Sort order for rows within each group |
 | `limit` | Maximum total rows |
-| `name` | Tab label for this view |
-| `source` | Per-view source override |
 
 ---
 
@@ -288,7 +278,7 @@ Specifically:
 
 Column headers are draggable (on editable boards). Dragging a header and dropping it onto another column reorders the columns; the drop position (before/after the target) is decided by the pointer's x vs the target column's horizontal midpoint. Column drag is tracked separately from card drag (`colDrag` signal vs the `draggedPath`/`dragPath` card state) so the two never interfere — while a column drag is active, the column's dragover/drop act as a reorder target instead of a card drop zone.
 
-On drop, the full current column-key order (with the dragged key moved) is persisted to the view's `columns` (`groupOrder`) via `POST /set-property` with a `viewIndex`. Any previously "extra" (undeclared) columns become declared in the process, so they persist as pinned columns.
+On drop, the full current column-key order (with the dragged key moved) is persisted to `columns` (`groupOrder`) via `POST /set-property`. Any previously "extra" (undeclared) columns become declared in the process, so they persist as pinned columns.
 
 ---
 
@@ -377,26 +367,25 @@ If a card has no `order` frontmatter value (or a non-numeric one), it falls back
 
 ## Backend: `POST /set-property`
 
-The endpoint kanban per-property writes go to — card meta edits (`api.setProperty`), column reorder and column colors (`api.setViewProperty`). A card **drag-drop** instead batches its writes into the sibling `POST /set-properties` (`{ writes: [{ path, key, value }, …] }`, same per-write shape) so the whole move is one invalidation; both are mutating routes in `core/src/server.ts`. From `core/src/server.ts`:
+The endpoint kanban per-property writes go to — card meta edits (`api.setProperty`), column reorder and column colors (also `api.setProperty`). A card **drag-drop** instead batches its writes into the sibling `POST /set-properties` (`{ writes: [{ path, key, value }, …] }`, same per-write shape) so the whole move is one invalidation; both are mutating routes in `core/src/server.ts`. From `core/src/server.ts`:
 
 ```
 POST /set-property
-Body: { path: string, key: string, value: unknown, viewIndex?: number }
+Body: { path: string, key: string, value: unknown }
 ```
 
 - `path` — vault-relative path of the note to update (e.g. `reading/the-name.md`)
 - `key` — the frontmatter key to set (e.g. `status`, `order`)
 - `value` — the new value; for status this is the column key string, for order this is a number
-- `viewIndex` (optional) — when present, the key is written **inside** `views[viewIndex]` of a `type: base` note rather than at the top level. This is how kanban persists per-view settings (`columns`, `groupColors`) so they land where the base declares its views instead of a duplicate top-level key that would shadow the nested one.
 
 Returns `"ok"` (200) or `404` if the note does not exist. The note must already exist; the endpoint refuses to silently create notes.
 
-Internally this calls `setFrontmatterKey(raw, key, value)` — or `setFrontmatterViewKey(raw, viewIndex, key, value)` when `viewIndex` is given — from `core/src/frontmatter.ts`, then `writeNote`. The view-scoped helper writes into `views[viewIndex][key]` when the base has a `views:` sequence, and falls back to a top-level key otherwise (matching the flat single-view persistence style). `POST /delete-property` accepts the same optional `viewIndex`. It goes through `mutatingHandler`, which automatically:
+Internally this runs `flattenBaseViews(raw)` (a no-op unless the file still carries a legacy `views:` list, which it rewrites into the flat form), then `setFrontmatterKey(raw, key, value)` from `core/src/frontmatter.ts`, then `writeNote`. Every key, view keys like `columns` and `groupColors` included, is a plain top-level write. `POST /delete-property` does the same with `deleteFrontmatterKey`. It goes through `mutatingHandler`, which automatically:
 - Invalidates the graph/tree/rows/tasks caches
 - Bumps the server `version`
 - Broadcasts an SSE event to all connected clients
 
-This means a kanban reorder will trigger a re-fetch in all open views of the same vault.
+This means a kanban reorder will trigger a re-fetch in every open window of the same vault.
 
 ---
 
@@ -433,23 +422,21 @@ source: notes where #book
 properties:
   - name: description
     type: markdown
-views:
-  - type: kanban
-    name: By Status
-    groupBy:
-      property: note.status
-    columns:
-      - "to read"
-      - "reading"
-      - "finished"
-      - "abandoned"
-    order:
-      - note.title
-      - note.author
-      - description
-    sort:
-      - property: note.title
-        direction: ASC
+view: kanban
+groupBy:
+  property: note.status
+columns:
+  - "to read"
+  - "reading"
+  - "finished"
+  - "abandoned"
+order:
+  - note.title
+  - note.author
+  - description
+sort:
+  - property: note.title
+    direction: ASC
 ---
 ```
 
@@ -459,6 +446,24 @@ This board will:
 - Show each card as its title (the note's filename) over an editable meta section: `note.title` and `note.author` as ordinary chips, and `description` rendered as block markdown (declared `type: markdown` above) that opens a multiline editor on click — no dedicated slot, just the generic property path (drop it from `order:` and it stops appearing, same as any other listed property).
 - Allow dragging any card to a different column (writes `status` + `order`), dragging column headers to reorder, editing the title and any meta chip in place, and adding cards via the per-column composer.
 - Sort cards within each column alphabetically by title (from the `sort` config) until any manual drag reorder overrides the `order` field.
+
+---
+
+## Another View of the Same Board
+
+A base has exactly one view. To see a board's rows as a table, make a second base file that reads the first one's rows. `Board.md` is the kanban above; `Board Table.md`:
+
+```yaml
+---
+type: base
+source: base
+ref: "[[Board]]"
+view: table
+order: [file.name, note.status, note.author]
+---
+```
+
+The referenced base contributes its **rows only**: the rows of its own `source` (or its inline rows when it declares none). Its `filters`, `formulas`, `properties`, sort, group and limit are not applied, so restate any filter the second base needs. A reference cycle resolves to zero rows.
 
 ---
 

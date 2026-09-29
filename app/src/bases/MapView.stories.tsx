@@ -64,12 +64,12 @@ const PLACES: Partial<Row>[] = [
  *  five sample places (no explicit `zoom`/`center`, so MapView computes the framing itself). */
 export const Default: Story = {
     render: () => {
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const view = { type: 'map' as const }
         return (
             <div style={{ height: '480px' }}>
                 <MapView
-                    result={sampleViewResult(PLACES, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(PLACES, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -80,16 +80,13 @@ export const Default: Story = {
  *  (per map.md, both must be present together) to open pre-centered on one city. */
 export const CustomFieldsFixedFraming: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'map' as const,
-                name: 'Atlas',
                 lat: 'latitude',
                 lng: 'longitude',
                 center: { lat: 40.7128, lng: -74.006 },
                 zoom: 4,
-            },
-        ]
+            }
         const rows: Partial<Row>[] = [
             placeRow('New York', { latitude: 40.7128, longitude: -74.006 }),
             placeRow('Boston', { latitude: 42.3601, longitude: -71.0589 }),
@@ -101,8 +98,8 @@ export const CustomFieldsFixedFraming: Story = {
         return (
             <div style={{ height: '480px' }}>
                 <MapView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -115,7 +112,7 @@ export const CustomFieldsFixedFraming: Story = {
 export const MapRightClickMenu: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const view = { type: 'map' as const }
         const rows: Partial<Row>[] = [
             ...PLACES,
             placeRow('Unmapped Cafe', {}), // no lat/lng at all
@@ -124,8 +121,8 @@ export const MapRightClickMenu: Story = {
         return (
             <div style={{ height: '480px' }}>
                 <MapView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -150,12 +147,12 @@ export const MapRightClickMenu: Story = {
 export const PinMenuOpen: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const view = { type: 'map' as const }
         return (
             <div style={{ height: '480px' }}>
                 <MapView
-                    result={sampleViewResult(PLACES, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(PLACES, { view })}
+                    config={sampleBaseConfig({ view })}
                     basePath="stories/places.md"
                 />
             </div>
@@ -187,17 +184,17 @@ export const PinMenuOpen: Story = {
 function LiveMap(props: { rows: Partial<Row>[] }) {
     const rows = props.rows.map(r => ({ ...r, note: { ...r.note } }))
     setTransport(fakeTransport({ rows: rows as Row[] }))
-    const views = [{ type: 'map' as const, name: 'Atlas' }]
+    const view = { type: 'map' as const }
     const [tick, setTick] = createSignal(0)
     const result = createMemo(() => {
         tick()
-        return sampleViewResult(rows, { views })
+        return sampleViewResult(rows, { view })
     })
     return (
         <div style={{ height: '480px' }}>
             <MapView
                 result={result()}
-                config={sampleBaseConfig({ views })}
+                config={sampleBaseConfig({ view })}
                 basePath="places/Places.md"
                 onChange={() => setTick(t => t + 1)}
             />
@@ -244,12 +241,12 @@ export const PlaceUnplaced: Story = {
  *  title, and each pin is a note link that opens its note rather than the row editor. */
 export const ReadOnly: Story = {
     render: () => {
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const view = { type: 'map' as const }
         return (
             <div style={{ height: '480px' }}>
                 <MapView
-                    result={sampleViewResult(PLACES, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(PLACES, { view })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )
@@ -273,15 +270,15 @@ export const ReadOnly: Story = {
 /** No row has a valid location: the `no rows have a location` empty state over the bare basemap. */
 export const Empty: Story = {
     render: () => {
-        const views = [{ type: 'map' as const, name: 'Atlas' }]
+        const view = { type: 'map' as const }
         return (
             <div style={{ height: '480px' }}>
                 <MapView
                     result={sampleViewResult(
                         [placeRow('Unmapped Cafe', {})],
-                        { views },
+                        { view },
                     )}
-                    config={sampleBaseConfig({ views })}
+                    config={sampleBaseConfig({ view })}
                 />
             </div>
         )

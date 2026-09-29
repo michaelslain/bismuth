@@ -22,12 +22,12 @@ type Story = StoryObj<typeof meta>
  *  numeric column) summed on y — one bar per due date. */
 export const Default: Story = {
     render: () => {
-        const views = [{ type: 'bar' as const, name: 'Chart' }]
+        const view = { type: 'bar' as const }
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -39,19 +39,16 @@ export const Default: Story = {
  *  instead of summing a numeric column. */
 export const GroupedByStatusCount: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bar' as const,
-                name: 'By status',
                 x: 'status',
                 aggregate: 'count' as const,
-            },
-        ]
+            }
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -64,14 +61,12 @@ export const GroupedByStatusCount: Story = {
  *  rendered DOM, never a sleep. */
 export const HoverAndDrill: Story = {
     render: () => {
-        const views = [
-            { type: 'bar' as const, name: 'By status', x: 'status', aggregate: 'count' as const },
-        ]
+        const view = { type: 'bar' as const, x: 'status', aggregate: 'count' as const }
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -145,14 +140,12 @@ export const HoverAndDrill: Story = {
  *  opens the drill and Space closes it again. No pointer event is dispatched. */
 export const KeyboardReach: Story = {
     render: () => {
-        const views = [
-            { type: 'bar' as const, name: 'By status', x: 'status', aggregate: 'count' as const },
-        ]
+        const view = { type: 'bar' as const, x: 'status', aggregate: 'count' as const }
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -182,12 +175,12 @@ export const KeyboardReach: Story = {
 /** No rows at all: the one shared empty state, not a blank pane. */
 export const Empty: Story = {
     render: () => {
-        const views = [{ type: 'bar' as const, name: 'Chart' }]
+        const view = { type: 'bar' as const }
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult([], { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult([], { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -214,21 +207,18 @@ function labeledRows(labels: string[], values: number[]): Partial<Row>[] {
  *  label and value. */
 export const NegativeValues: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bar' as const,
-                name: 'Amounts',
                 x: 'category',
                 y: 'amount',
                 aggregate: 'sum' as const,
-            },
-        ]
+            }
         const rows = categoryRows([-4, 2, -1, 7, 0])
         return (
             <div style={{ width: '900px' }}>
                 <BarView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -240,21 +230,18 @@ export const NegativeValues: Story = {
  *  past legibility. */
 export const SixtyCategories: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bar' as const,
-                name: 'Categories',
                 x: 'category',
                 y: 'amount',
                 aggregate: 'sum' as const,
-            },
-        ]
+            }
         const rows = categoryRows(Array.from({ length: 60 }, (_, i) => (i % 7) + 1))
         return (
             <div style={{ width: '900px', height: '480px' }}>
                 <BarView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -266,15 +253,12 @@ export const SixtyCategories: Story = {
  *  bar/track widths never go negative (regression for the barWidth clamp). */
 export const LongLabelsNarrow: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'bar' as const,
-                name: 'Amounts',
                 x: 'category',
                 y: 'amount',
                 aggregate: 'sum' as const,
-            },
-        ]
+            }
         const rows = labeledRows(
             [
                 'Waiting on review from legal',
@@ -287,8 +271,8 @@ export const LongLabelsNarrow: Story = {
         return (
             <div style={{ width: '300px' }}>
                 <BarView
-                    result={sampleViewResult(rows, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(rows, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>
@@ -299,14 +283,12 @@ export const LongLabelsNarrow: Story = {
 /** A ~300px pane — columns floor at 20; rows still lay out without overflow. */
 export const Narrow: Story = {
     render: () => {
-        const views = [
-            { type: 'bar' as const, name: 'By status', x: 'status', aggregate: 'count' as const },
-        ]
+        const view = { type: 'bar' as const, x: 'status', aggregate: 'count' as const }
         return (
             <div style={{ width: '300px' }}>
                 <BarView
-                    result={sampleViewResult(undefined, { views })}
-                    config={sampleBaseConfig({ views })}
+                    result={sampleViewResult(undefined, { view })}
+                    config={sampleBaseConfig({ view })}
                     onOpen={() => {}}
                 />
             </div>

@@ -44,7 +44,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
     const [busy, setBusy] = createSignal(false)
 
     const view = (): GcalView =>
-        (parsed()?.config.views?.[0] as GcalView | undefined) ?? {}
+        (parsed()?.config.view as GcalView | undefined) ?? {}
     const syncedHere = () => Boolean(view().googleCalendarSync)
     const gc = () => settings.googleCalendar
 

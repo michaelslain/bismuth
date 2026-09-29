@@ -13,7 +13,6 @@ export type AddRowActionProps = {
     basePath?: string
     config: BaseConfig
     view: ViewConfig
-    viewIndex: number
     /** True when the base owns its rows (no `source:` — see BaseView's `ownsRows`): a new
      *  row is a row in the base file's own body, not a note. */
     ownsRows: boolean
@@ -31,7 +30,7 @@ async function addOwnedRow(props: AddRowActionProps): Promise<void> {
     try {
         const row = await createRow({ basePath, config: props.config, ownsRows: true })
         props.onAdded()
-        if (!newTaskVisible(props.config, props.view, { ...row, index: 0 }))
+        if (!newTaskVisible(props.config, { ...row, index: 0 }))
             pushToast(
                 `Added to ${basePath} — it does not match this view's filters, so it will not appear here`,
             )
@@ -47,7 +46,7 @@ async function addNoteRow(props: AddRowActionProps): Promise<void> {
     try {
         const row = await createRow({ basePath, config: props.config, ownsRows: false })
         props.onAdded()
-        if (!newTaskVisible(props.config, props.view, row))
+        if (!newTaskVisible(props.config, row))
             pushToast(
                 `Added ${row.file.path} — it does not match this view's filters, so it will not appear here`,
             )

@@ -75,7 +75,6 @@ export type PendingAdd = {
 
 export type KanbanActionsDeps = {
     basePath: Accessor<string | undefined>
-    viewIndex: Accessor<number>
     config: Accessor<BaseConfig>
     result: Accessor<ViewResult>
     ownsRows: Accessor<boolean>
@@ -322,7 +321,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         deps.drag().snapshotColRects()
         o.setPendingColOrder(keys)
         requestAnimationFrame(deps.drag().playColFlip)
-        await api.setViewProperty(basePath, deps.viewIndex(), 'columns', keys)
+        await api.setProperty(basePath, 'columns', keys)
     }
 
     // The exact declared name (as it appears in `properties:`) that `propertyType` matched for
@@ -394,10 +393,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         // column would stay invisible until the OLD removal's refetch happens to clear it.
         o.setPendingRemovedCols(prev => rollbackRemoved(prev, trimmedName))
         try {
-            await api.setViewProperty(
-                basePath,
-                deps.viewIndex(),
-                'columns',
+            await api.setProperty(basePath, 'columns',
                 keys,
             )
             columnsLanded = true
@@ -442,7 +438,6 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         const keys = renameColumnKey(deps.columnKeys(), from, to)
         if (keys === null) return
         const trimmed = to.trim()
-        const idx = deps.viewIndex()
 
         // Not writable (file./formula./this. groupBy) — bail before any optimistic state.
         // The header's `[✎]` rename action is gated on `canAdd()` (editable + writable groupBy),
@@ -503,7 +498,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         )
         o.setPending(prev => ({ ...prev, ...writtenPending }))
         try {
-            await api.setViewProperty(basePath, idx, 'columns', keys)
+            await api.setProperty(basePath, 'columns', keys)
             columnsLanded = true
 
             // Move a color override from the old key to the new one, if it had one. When there
@@ -525,7 +520,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
                 colorsChanged = true
             }
             if (colorsChanged)
-                await api.setViewProperty(basePath, idx, 'groupColors', next)
+                await api.setProperty(basePath, 'groupColors', next)
 
             // Declared select/multiselect option rename — mirrors addColumn's append.
             const t = gb ? propertyType(deps.config(), gb.property) : null
@@ -606,7 +601,6 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
     async function deleteColumn(key: string): Promise<void> {
         const basePath = deps.basePath()
         if (!basePath) return
-        const idx = deps.viewIndex()
         // Cards to clear, captured BEFORE the optimistic overlay below hides `key` — excluding
         // stored-row PLACEHOLDERS (an optimistic add not yet resolved to a real row), same
         // exclusion renameColumn applies to `movedRows`.
@@ -649,19 +643,16 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         if (cardRows.length > 0)
             o.setPending(prev => ({ ...prev, ...writtenPending }))
         try {
-            await api.setViewProperty(basePath, idx, 'columns', keys)
+            await api.setProperty(basePath, 'columns', keys)
             columnsLanded = true
             const colors = deps.groupColors()
             if (colors[key] !== undefined) {
                 const next = { ...colors }
                 delete next[key]
                 if (Object.keys(next).length === 0)
-                    await api.deleteViewProperty(basePath, idx, 'groupColors')
+                    await api.deleteProperty(basePath, 'groupColors')
                 else
-                    await api.setViewProperty(
-                        basePath,
-                        idx,
-                        'groupColors',
+                    await api.setProperty(basePath, 'groupColors',
                         next,
                     )
             }
@@ -734,7 +725,6 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
     ): Promise<void> {
         const basePath = deps.basePath()
         if (!basePath) return
-        const idx = deps.viewIndex()
         // The delete's own optimistic hide must not outlive the Undo (if the Undo lands before
         // the delete's refetch, the column would otherwise stay hidden until a remount).
         o.setPendingRemovedCols(prev => {
@@ -759,13 +749,13 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
                 .filter(k => k !== key && (k !== '' || prevKeys.includes('')))
             const at =
                 prevIndex < 0 ? cols.length : Math.min(prevIndex, cols.length)
-            await api.setViewProperty(basePath, idx, 'columns', [
+            await api.setProperty(basePath, 'columns', [
                 ...cols.slice(0, at),
                 key,
                 ...cols.slice(at),
             ])
             if (prevColor !== undefined)
-                await api.setViewProperty(basePath, idx, 'groupColors', {
+                await api.setProperty(basePath, 'groupColors', {
                     ...deps.groupColors(),
                     [key]: prevColor,
                 })
@@ -810,10 +800,9 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         const next = { ...deps.groupColors() }
         if (color === null) delete next[key]
         else next[key] = color
-        const idx = deps.viewIndex()
         if (Object.keys(next).length === 0)
-            await api.deleteViewProperty(basePath, idx, 'groupColors')
-        else await api.setViewProperty(basePath, idx, 'groupColors', next)
+            await api.deleteProperty(basePath, 'groupColors')
+        else await api.setProperty(basePath, 'groupColors', next)
         deps.onChange()
     }
 

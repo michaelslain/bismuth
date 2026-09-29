@@ -8,13 +8,11 @@ A Trello-style drag-drop board, one column per distinct `groupBy` value.
 ---
 type: base
 source: notes where "#book"
-views:
-  - type: kanban
-    name: By Status
-    groupBy:
-      property: note.status
-    columns: [to read, reading, finished, abandoned]
-    order: [note.title, note.author]
+view: kanban
+groupBy:
+  property: note.status
+columns: [to read, reading, finished, abandoned]
+order: [note.title, note.author]
 ---
 ```
 

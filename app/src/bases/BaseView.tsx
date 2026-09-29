@@ -37,7 +37,6 @@ import { appendTaskLine } from './taskCreate'
 import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../toastStore'
-import { pushUndoToast } from '../undoToast'
 import {
     planSetValue,
     planToggle,
@@ -51,20 +50,6 @@ import { calendarSlots } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
-import { capitalize } from './columnKinds'
-import ViewTabs from './ViewTabs'
-import {
-    readViews,
-    addView,
-    duplicateView,
-    removeView,
-    restoreView,
-    renameView,
-    moveView,
-    changeViewType,
-    toggleViewMode,
-    type RawView,
-} from './viewsEdit'
 import AddRowAction from './AddRowAction'
 import BaseSourceEditor from './BaseSourceEditor'
 import BaseViewActions from './BaseViewActions'
@@ -100,8 +85,7 @@ function hostFileMeta(path: string): FileMeta {
 
 /** The base's parsed document: its config plus whatever rows are intrinsic to the file
  *  itself. Reading + parsing the file is the one HTTP round-trip in resolving a base, so
- *  this stays keyed on the view's identity (path/source/view) alone — never on the active
- *  view index, or clicking a view tab would re-read the file on every click. */
+ *  this stays keyed on the base's identity (path/source/view) alone. */
 interface Doc {
     config: BaseConfig
     // The base's OWN inline rows — a `type: base` md file's own table body, parsed
@@ -111,10 +95,9 @@ interface Doc {
     basePath?: string
 }
 
-/** A fully resolved base for the ACTIVE view: the document plus the source spec that view
- *  resolves to (`views[activeView].source ?? config.source`, see `activeSpec` below) and
- *  the rows that spec produced — the document's own rows for an own-rows base, else a
- *  server-resolved `/rows` fetch. */
+/** A fully resolved base: the document plus the source spec it resolves to
+ *  (`config.source`, see `activeSpec` below) and the rows that spec produced — the
+ *  document's own rows for an own-rows base, else a server-resolved `/rows` fetch. */
 interface LoadedRows {
     config: BaseConfig
     spec?: SourceSpec // undefined for a view block with no of:/tasks: → empty state
@@ -127,9 +110,8 @@ interface LoadedRows {
  *  Keyed by the view signature (path/source/view) alone — see `Doc`. */
 const docCache = new RowCache<Doc>()
 
-/** Module-level SWR cache of resolved bases, keyed by (view signature, active source), so
- *  reopening a base OR switching back to a previously-active view paints instantly from
- *  the last resolution while it revalidates. Invalidated by the SSE server version — see
+/** Module-level SWR cache of resolved bases, keyed by (view signature, source), so
+ *  reopening a base paints instantly from the last resolution while it revalidates. Invalidated by the SSE server version — see
  *  `rowCache.ts`. */
 const rowCache = new RowCache<LoadedRows>()
 
@@ -183,25 +165,20 @@ export function BaseView(props: {
     )
 
     // Reads the file (or parses the inline/query-block config) into the DOCUMENT — the part
-    // of resolving a base that's an HTTP round-trip. Never reads the active view: a per-view
-    // `source:` is carried onto `config.views[i].source` instead of being resolved here, so
-    // switching view tabs can't accidentally re-trigger a file read. See `activeSpec` below
-    // for where the active view's source is actually consulted.
+    // of resolving a base that's an HTTP round-trip. The source is carried on `config.source`
+    // rather than resolved here; see `activeSpec` below for where it is actually consulted.
     async function loadDocument(): Promise<Doc> {
         if (props.view) {
             const v = props.view
             const config: BaseConfig = {
-                views: [
-                    {
-                        type: v.as,
-                        name: capitalize(v.as),
-                        filters: v.where,
-                        sort: v.sort,
-                        groupBy: v.group ? { property: v.group } : undefined,
-                        limit: v.limit,
-                        source: v.source,
-                    },
-                ],
+                view: {
+                    type: v.as,
+                    sort: v.sort,
+                    groupBy: v.group ? { property: v.group } : undefined,
+                    limit: v.limit,
+                },
+                filters: v.where,
+                source: v.source,
             }
             return {
                 config,
@@ -232,8 +209,6 @@ export function BaseView(props: {
         JSON.stringify({ p: props.path, s: props.source, v: props.view }),
     )
 
-    const [activeView, setActiveView] = createSignal(0)
-
     // Mark cached docs/rows stale whenever the backend version advances (a vault change) so
     // the next resolve revalidates. The cached values stay around for an instant paint.
     createEffect(() => {
@@ -243,7 +218,7 @@ export function BaseView(props: {
     })
 
     // The document resource's source is the *identity* key only (path/source/view) — NOT the
-    // active view index and NOT the server version. A key change is a genuinely different
+    // server version. A key change is a genuinely different
     // base, so it's fine to suspend (show a skeleton). See `fetchedRows` below for the part
     // that DOES vary per view, and the revalidation effect further down for version bumps.
     const [fetchedDoc, { refetch: refetchDoc }] = createResource(
@@ -263,7 +238,7 @@ export function BaseView(props: {
         },
     )
     // Effective document: the freshly fetched one when available, else the last cached parse
-    // for this view (stale-while-revalidate) so a reopen/split paints instantly instead of
+    // for this base (stale-while-revalidate) so a reopen/split paints instantly instead of
     // blanking while the file is re-read.
     const doc = createMemo<Doc | undefined>(
         () =>
@@ -271,34 +246,27 @@ export function BaseView(props: {
             docCache.peek(sig()),
     )
 
-    // The active view's own config object — read once here so activeType, fullPane and
-    // activeSpec (below) don't each re-derive the same min(activeView(), …) index lookup.
-    // Reads the DOCUMENT, not the resolved rows: `config.views` never depends on which
-    // source resolved, so this stays valid even while `fetchedRows` is still in flight.
-    const activeViewConfig = createMemo<ViewConfig | undefined>(() => {
-        const d = doc()
-        if (!d || d.config.views.length === 0) return undefined
-        return d.config.views[Math.min(activeView(), d.config.views.length - 1)]
-    })
+    // The base's one view config. Reads the DOCUMENT, not the resolved rows: `config.view`
+    // never depends on which source resolved, so this stays valid even while `fetchedRows`
+    // is still in flight.
+    const activeViewConfig = createMemo<ViewConfig | undefined>(
+        () => doc()?.config.view,
+    )
 
-    // The active view's resolved source: its own `source:` override, falling back to the
-    // base-level `source:`, falling back to "use this base's own rows" when it has any, else
-    // plain vault notes. This is the fix for the gap ViewConfig.source used to have: the
-    // per-view value was parsed and typed but only ever read for the calendar's ownsRows
-    // check, never actually used to fetch anything.
+    // The base's resolved source: its `source:`, falling back to "use this base's own rows"
+    // when it has any, else plain vault notes.
     const activeSpec = createMemo<SourceSpec | undefined>(() => {
         const d = doc()
         if (!d) return undefined
-        const declared = activeViewConfig()?.source ?? d.config.source
-        if (declared) return declared
+        if (d.config.source) return d.config.source
         // A flat ```query block with neither of:/tasks: declared is a deliberate empty state
         // (undefined spec → no rows) — it must not silently fall back to "all vault notes".
         if (props.view) return undefined
         return d.rows.length ? { kind: 'base' } : { kind: 'notes' }
     })
-    // Rows are keyed on the document's identity AND the active spec (JSON-compared, since two
-    // views can carry equal-but-distinct SourceSpec objects) — so a tab switch that lands on a
-    // different source refetches, and one that shares a source with the previous tab does not.
+    // Rows are keyed on the document's identity AND the active spec (JSON-compared, since
+    // two loads can carry equal-but-distinct SourceSpec objects) — so a source edit refetches
+    // and an unchanged source does not.
     const rowsKey = createMemo<string | undefined>(() => {
         const d = doc()
         return d ? `${sig()}::${JSON.stringify(activeSpec())}` : undefined
@@ -405,7 +373,6 @@ export function BaseView(props: {
                 const deps: ViewDeps | null = d
                     ? {
                           baseFilters: d.config.filters,
-                          viewFilters: d.config.views.map(v => v.filters),
                           spec: d.spec,
                           relevantPaths: new Set(
                               [
@@ -424,7 +391,7 @@ export function BaseView(props: {
     )
 
     // Effective data: the freshly fetched result when available, else the last cached
-    // resolution for this view (stale-while-revalidate) so a reopen/split paints instantly
+    // resolution for this base (stale-while-revalidate) so a reopen/split paints instantly
     // from cache instead of blanking to a spinner while /rows runs.
     const data = createMemo<LoadedRows | undefined>(() => {
         const key = rowsKey()
@@ -469,7 +436,6 @@ export function BaseView(props: {
     const result = createMemo<ViewResult | null>(prev => {
         const d = data()
         if (!d || fullPane()) return null
-        const idx = Math.min(activeView(), d.config.views.length - 1)
         // In tasks mode every row IS a task by declaration, so a row STORED in the base's own
         // body is given the fields a SCANNED row gets free from the parser (statusChar,
         // resolved, placed, recurring, plus the shape defaults) BEFORE anything sorts, groups
@@ -485,117 +451,23 @@ export function BaseView(props: {
             activeMode() === 'tasks'
                 ? d.rows.map(normalizeStoredTaskRow)
                 : d.rows
-        const next = runView(d.config, rows, idx, hostMeta())
+        const next = runView(d.config, rows, hostMeta())
         return reconcileViewResult(prev ?? undefined, next)
     }, null)
 
     const editPath = () => data()?.basePath
-    /** True when the active view resolves NO declared `source:` — neither view-level nor
-     *  base-level — which is `source.ts`'s own test for "this base owns its rows in its own
-     *  inline table". Hoisted out of `viewSlots()` because the "+ task" action needs the same
-     *  answer for every view KIND, not only the calendar. */
-    const ownsRows = () => !(activeViewConfig()?.source ?? data()?.config.source)
+    /** True when the base declares NO `source:`, which is `source.ts`'s own test for "this
+     *  base owns its rows in its own inline table". Hoisted out of `viewSlots()` because the
+     *  "+ task" action needs the same answer for every view KIND, not only the calendar. */
+    const ownsRows = () => !data()?.config.source
     const baseName = createMemo(() => {
         const p = editPath()
         return p ? noteLabel(p) : undefined
     })
 
-    // The active view's index, clamped to the DOCUMENT's view count (not the resolved rows') —
-    // shared by every call site that used to inline this same `Math.min(activeView(), …)`
-    // expression (the kanban/calendar viewIndex props, BaseSettings' viewIdx, and now the
-    // column-reorder/width writes below and ViewTabs' `active`).
-    const activeViewIdx = createMemo(() =>
-        Math.min(activeView(), Math.max(0, (doc()?.config.views.length ?? 1) - 1)),
-    )
-
-    /** Reads the base file's raw frontmatter, applies a pure `viewsEdit.ts` transform to its
-     *  `views:` array, and persists the result — materializing a `view:`-shorthand/flat-keys
-     *  base into an explicit `views:` array on first structural edit (see viewsEdit.ts's
-     *  module doc), so nothing the user already configured moves to a different view.
-     *  `pickActive` computes the tab to land on from the POST-edit array, so e.g. duplicating
-     *  view 0 lands on the new view 1, and deleting the active view lands on its left
-     *  neighbor. Read-only bases (no `editPath()`) can't reach here — ViewTabs never wires
-     *  these callbacks when `editable` is false. */
-    const editViews = async (
-        edit: (views: RawView[]) => RawView[],
-        pickActive: (views: RawView[]) => number,
-    ) => {
-        const path = editPath()
-        if (!path) return null
-        const text = await api.read(path)
-        const { views, removedKeys } = readViews(text)
-        const next = edit(views)
-        await api.setProperty(path, 'views', next)
-        for (const key of removedKeys) await api.deleteProperty(path, key)
-        setActiveView(pickActive(next))
-        await refetchAll()
-        return { views, removedKeys }
-    }
-
-    const handleAddView = (type: string) =>
-        void editViews(
-            views => addView(views, type),
-            next => next.length - 1,
-        ).catch(writeFailed('add the view'))
-
-    const handleDuplicateView = (i: number) =>
-        void editViews(
-            views => duplicateView(views, i),
-            () => i + 1,
-        ).catch(writeFailed('duplicate the view'))
-
-    const handleDeleteView = (i: number) =>
-        void editViews(
-            views => removeView(views, i),
-            next => Math.min(Math.max(0, i - 1), next.length - 1),
-        )
-            .then(prev => {
-                if (!prev) return
-                const gone = prev.views[i]
-                const name = String(gone?.name ?? gone?.type ?? 'view')
-                const path = editPath()
-                if (!path) return
-                pushUndoToast(`deleted view ${name}`, async () => {
-                    // No shorthand branch: a shorthand base has one view and delete is disabled
-                    // at `views.length <= 1`, so a delete can never have happened on one.
-                    const cur = readViews(await api.read(path)).views
-                    await api.setProperty(path, 'views', restoreView(cur, gone, i))
-                    setActiveView(Math.min(i, cur.length))
-                    await refetchAll()
-                })
-            })
-            .catch(writeFailed('delete the view'))
-
-    const handleRenameView = (i: number, name: string) =>
-        void editViews(
-            views => renameView(views, i, name),
-            () => i,
-        ).catch(writeFailed('rename the view'))
-
-    const handleMoveView = (i: number, dir: -1 | 1) =>
-        void editViews(
-            views => moveView(views, i, dir),
-            next => Math.min(Math.max(0, i + dir), next.length - 1),
-        ).catch(writeFailed('move the view'))
-
-    const handleChangeViewType = (i: number, type: string) =>
-        void editViews(
-            views => changeViewType(views, i, type),
-            () => i,
-        ).catch(writeFailed('change the view kind'))
-
-    const handleToggleViewMode = (i: number) =>
-        void editViews(
-            views => toggleViewMode(views, i),
-            () => i,
-        ).catch(writeFailed('change the view mode'))
-
-    /** "view settings" from the tab menu ALWAYS opens the generic BaseSettings panel, for
-     *  every view kind including calendar — unlike the bar's gear (BaseSettingsAction below),
-     *  which keeps routing a calendar view to its own settings modal. This is the fix for
-     *  calendar's settings being otherwise unreachable (filters/source/kind can't be edited). */
-    const handleOpenViewSettings = (i: number) => {
-        setActiveView(i)
+    /** Opens the generic BaseSettings panel. A calendar's bar gear opens the calendar's own
+     *  settings modal instead, which hands off here for kind, filters and source. */
+    const openBaseSettings = () => {
         setSettingsMode(true)
         setSourceMode(false)
     }
@@ -648,10 +520,8 @@ export function BaseView(props: {
             if (!path) return
             void (async () => {
                 for (const [key, value] of Object.entries(changes)) {
-                    if (value === undefined)
-                        await api.deleteViewProperty(path, activeViewIdx(), key)
-                    else
-                        await api.setViewProperty(path, activeViewIdx(), key, value)
+                    if (value === undefined) await api.deleteProperty(path, key)
+                    else await api.setProperty(path, key, value)
                 }
                 await refetchAll()
             })().catch(writeFailed('update the chart axes'))
@@ -791,13 +661,7 @@ export function BaseView(props: {
 
     return (
         <div class={styles.host}>
-            <Show
-                when={
-                    (data()?.config.views.length ?? 0) > 1 ||
-                    editPath() ||
-                    props.embeddedSource
-                }
-            >
+            <Show when={editPath() || props.embeddedSource}>
                 <ViewBar
                     class={props.embeddedSource ? styles.embeddedBar : ''}
                     identity={
@@ -821,34 +685,6 @@ export function BaseView(props: {
                         </>
                     }
                     locus={viewSlots()?.locus}
-                    facet={
-                        <Show
-                            when={
-                                (data()?.config.views.length ?? 0) > 1 ||
-                                !!editPath()
-                            }
-                        >
-                            <ViewTabs
-                                class={styles.tabs}
-                                views={(data()?.config.views ?? []).map(v => ({
-                                    name: v.name,
-                                    type: v.type,
-                                    mode: viewMode(v),
-                                }))}
-                                active={activeViewIdx()}
-                                onSelect={setActiveView}
-                                editable={!!editPath()}
-                                onAdd={handleAddView}
-                                onRename={handleRenameView}
-                                onDuplicate={handleDuplicateView}
-                                onDelete={handleDeleteView}
-                                onMove={handleMoveView}
-                                onChangeType={handleChangeViewType}
-                                onToggleMode={handleToggleViewMode}
-                                onOpenSettings={handleOpenViewSettings}
-                            />
-                        </Show>
-                    }
                     readouts={viewSlots()?.readouts}
                     config={viewSlots()?.config}
                     actions={
@@ -876,7 +712,6 @@ export function BaseView(props: {
                                         basePath={d().basePath}
                                         config={d().config}
                                         view={activeViewConfig()!}
-                                        viewIndex={activeViewIdx()}
                                         ownsRows={ownsRows()}
                                         mode={activeMode()}
                                         onAdded={refetchAll}
@@ -896,10 +731,7 @@ export function BaseView(props: {
                                     if (activeType() === 'calendar')
                                         showCalendarSettings.value =
                                             !showCalendarSettings.value
-                                    else {
-                                        setSettingsMode(true)
-                                        setSourceMode(false)
-                                    }
+                                    else openBaseSettings()
                                 }}
                             />
                             <BaseViewActions
@@ -978,7 +810,6 @@ export function BaseView(props: {
                                                 basePath={data()!.basePath}
                                                 mode={activeMode()}
                                                 ownsRows={ownsRows()}
-                                                viewIndex={activeViewIdx()}
                                                 onChange={refetchAll}
                                                 onToggle={toggleTaskRow}
                                                 onSetStatus={setTaskRowStatus}
@@ -988,9 +819,8 @@ export function BaseView(props: {
                                                     data()!.basePath
                                                         ? c => {
                                                               void api
-                                                                  .setViewProperty(
+                                                                  .setProperty(
                                                                       data()!.basePath!,
-                                                                      activeViewIdx(),
                                                                       'order',
                                                                       c,
                                                                   )
@@ -1001,9 +831,8 @@ export function BaseView(props: {
                                                 onWidthsChange={
                                                     data()!.basePath
                                                         ? cw => {
-                                                              void api.setViewProperty(
+                                                              void api.setProperty(
                                                                   data()!.basePath!,
-                                                                  activeViewIdx(),
                                                                   'columnWidths',
                                                                   cw,
                                                               )
@@ -1038,13 +867,7 @@ export function BaseView(props: {
                                     result={result() ?? undefined}
                                     config={data()!.config}
                                     ownsRows={ownsRows()}
-                                    viewIndex={Math.min(
-                                        activeView(),
-                                        Math.max(
-                                            0,
-                                            data()!.config.views.length - 1,
-                                        ),
-                                    )}
+                                    onOpenBaseSettings={openBaseSettings}
                                     // Deliberately the combined refetch: this callback fires for a
                                     // task-line write (another note) AND for a stored-row write
                                     // (the base file itself), and the callback does not say which.
@@ -1065,8 +888,6 @@ export function BaseView(props: {
                 <BaseSettings
                     type={activeType()}
                     config={data()!.config}
-                    viewIdx={activeViewIdx()}
-                    viewIndex={activeView()}
                     basePath={data()!.basePath}
                     rows={data()!.rows}
                     onClose={() => setSettingsMode(false)}

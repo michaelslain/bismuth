@@ -9,8 +9,8 @@
 // core/src/bases/queryBlock.ts + core/src/bases/sourceSpec.ts +
 // docs/bases/query-block.md):
 //
-//   - Notes  -> a FULL INLINE CONFIG: `source: notes where <Bases-expr>` plus a
-//               one-entry `views: [{ type, name, sort, groupBy, limit }]`. This is
+//   - Notes  -> a FULL INLINE CONFIG: `source: notes where <Bases-expr>` plus the
+//               flat view keys `view`, `sort`, `groupBy`, `limit`. This is
 //               the ONLY inline way to iterate notes-with-filters (a flat block
 //               cannot iterate notes — only `of:`/`tasks:` produce a source).
 //   - Tasks  -> a FLAT spec: `tasks: <Obsidian-Tasks DSL>` (+ optional `from:`,
@@ -32,6 +32,7 @@ import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
 import type { Expr } from '../../../core/src/bases/ast'
 import type { SortSpec, ViewType } from '../../../core/src/bases/types'
 import { VIEW_TYPES } from '../../../core/src/bases/types'
+import { legacyView } from '../../../core/src/bases/parse'
 import { VALUELESS } from './filterOps'
 
 // ---------------------------------------------------------------------------------------
@@ -145,9 +146,6 @@ export function looksLikeBaseConfig(body: string): boolean {
 // ---------------------------------------------------------------------------------------
 // Notes: compile one (prop, op, val) row -> a single Bases expression leaf
 // ---------------------------------------------------------------------------------------
-
-const capitalize = (s: string): string =>
-    s ? s[0].toUpperCase() + s.slice(1) : s
 
 /** A bare number literal if `v` parses as a finite number, else a JSON string literal. */
 function numOrStr(v: string): string {
@@ -308,17 +306,13 @@ function trimYaml(s: string): string {
 export function buildQueryBlockBody(state: BuilderState): string {
     if (state.source === 'notes') {
         const where = compileNotesWhere(state.notes)
-        const view: Record<string, unknown> = {
-            type: state.view,
-            name: capitalize(state.view),
-        }
-        if (state.sort && state.sort.length) view.sort = state.sort
-        if (state.group) view.groupBy = { property: state.group }
-        if (state.limit != null) view.limit = state.limit
         const config: Record<string, unknown> = {
             source: where ? `notes where ${where}` : 'notes',
-            views: [view],
+            view: state.view,
         }
+        if (state.sort && state.sort.length) config.sort = state.sort
+        if (state.group) config.groupBy = { property: state.group }
+        if (state.limit != null) config.limit = state.limit
         return trimYaml(yamlStringify(config))
     }
 
@@ -702,19 +696,17 @@ export function parseQueryBlockBody(body: string): BuilderState {
                         rawWhere: src.trim(),
                     }
             }
-            const views = Array.isArray(config.views)
-                ? (config.views as Record<string, unknown>[])
-                : []
-            const view = views[0]
-            if (view) {
-                state.view = asView(view.type, 'table')
-                if (Array.isArray(view.sort))
-                    state.sort = view.sort as SortSpec[]
-                const gb = view.groupBy as { property?: string } | undefined
-                if (gb && typeof gb.property === 'string')
-                    state.group = gb.property
-                if (typeof view.limit === 'number') state.limit = view.limit
-            }
+            // Flat keys, with a legacy `views:` list's first entry as the fallback.
+            const legacy = legacyView(config) ?? {}
+            const view: Record<string, unknown> = { ...legacy, ...config }
+            state.view = asView(
+                typeof config.view === 'string' ? config.view : legacy.type,
+                'table',
+            )
+            if (Array.isArray(view.sort)) state.sort = view.sort as SortSpec[]
+            const gb = view.groupBy as { property?: string } | undefined
+            if (gb && typeof gb.property === 'string') state.group = gb.property
+            if (typeof view.limit === 'number') state.limit = view.limit
         }
         return state
     }
@@ -754,10 +746,10 @@ export function parseQueryBlockBody(body: string): BuilderState {
 }
 
 /** Whether the no-code builder can edit `body` WITHOUT dropping anything on save. The builder models
- *  exactly: a flat tasks/base spec, OR a notes inline-config with a fully-reversible `where`, a single
- *  view, and only the view fields it knows (type/name/sort/groupBy/limit) — and NO top-level
- *  filters/formulas/properties/schema. A richer hand-authored config (extra views, formulas, a
- *  structured filters tree, a tasks/base config form) is NOT representable; callers should hide the
+ *  exactly: a flat tasks/base spec, OR a notes inline-config with a fully-reversible `where` and only
+ *  the view fields it knows (view/sort/groupBy/limit) — and NO top-level
+ *  filters/formulas/properties/schema. A richer hand-authored config (a multi-entry legacy `views:`
+ *  list, formulas, a structured filters tree, a tasks/base config form) is NOT representable; callers should hide the
  *  builder's edit affordance for it so the raw block is edited as source instead of being clobbered. */
 export function isBuilderRepresentable(body: string): boolean {
     const trimmed = body.trim()
@@ -770,10 +762,11 @@ export function isBuilderRepresentable(body: string): boolean {
         return false
     }
     if (!config || typeof config !== 'object') return false
-    // Only `source` + `views` are modeled — any other top-level key (filters/formulas/properties/schema)
-    // would be lost.
+    // Only `source`, the flat view keys and a legacy single-entry `views` are modeled — any other
+    // top-level key (filters/formulas/properties/schema) would be lost.
     for (const k of Object.keys(config))
-        if (k !== 'source' && k !== 'views') return false
+        if (!['source', 'view', 'sort', 'groupBy', 'limit', 'views'].includes(k))
+            return false
     const src = typeof config.source === 'string' ? config.source.trim() : ''
     const m = src.match(/^notes(?:\s+where\s+([\s\S]+))?$/i)
     if (!m) return false // tasks/base CONFIG form (builder emits those flat, so it can't round-trip a config one)

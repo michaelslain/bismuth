@@ -216,7 +216,6 @@ export const EventsRegisterRemountsPerBasePath: Story = {
 
 const TASKS_VIEW: ViewConfig = {
     type: 'calendar',
-    name: 'Calendar',
     calendarContent: 'tasks',
 }
 
@@ -226,7 +225,7 @@ function tasksResult(rows: Row[]): ViewResult {
 
 const TASKS_BASE_CONFIG: BaseConfig = {
     source: { kind: 'tasks' },
-    views: [TASKS_VIEW],
+    view: TASKS_VIEW,
 }
 
 /** 22 rows mirroring the repro vault: 12 unresolved + overdue ("carried" — rolled onto today

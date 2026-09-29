@@ -120,10 +120,7 @@ export function headingSizes(
 // Per-export choices layered on top of (path, format, theme). All fields are
 // BASE-ONLY except where noted; non-base files ignore them entirely.
 export interface ExportOptions {
-    // Which view of the base to export — index into BaseConfig.views. Default 0
-    // (the first view, the historical hardcoded behavior).
-    viewIndex: number
-    // Data table vs rendered view. Default is derived per view kind in the UI
+    // Data table vs rendered view. Default is derived from the base's view kind in the UI
     // (calendar/cards/kanban/list → "visual"; table/charts/etc → "data").
     mode: RenderMode
     // Calendar visual export only (mode === "visual" && view.type === "calendar").

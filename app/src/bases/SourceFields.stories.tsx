@@ -1,4 +1,4 @@
-// Visual spec for <SourceFields> — where a view's rows come from: this base's own body rows,
+// Visual spec for <SourceFields> — where a base's rows come from: this base's own body rows,
 // vault notes (+ a `where` filter and an optional "limit to base"), vault tasks, or another base.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
@@ -26,8 +26,6 @@ const PROPS = ['file.name', 'status', 'priority', 'done', 'due', 'tags']
 
 function Harness(p: {
     spec?: SourceSpec
-    scope?: 'base' | 'view'
-    views?: number
     bases?: typeof BASES
 }) {
     const [form, setForm] = createSignal(sourceToForm(p.spec))
@@ -37,8 +35,6 @@ function Harness(p: {
                 value={form()}
                 onChange={setForm}
                 bases={p.bases ?? BASES}
-                scope={p.scope ?? 'base'}
-                viewCount={p.views ?? 1}
                 properties={PROPS}
                 rows={SAMPLE_ROWS}
             />
@@ -52,7 +48,7 @@ function Harness(p: {
 /** No `source:` — the base owns its rows. */
 export const OwnRows: Story = { render: () => <Harness /> }
 
-/** Vault notes filtered by a `where` built from condition rows, shared by three views. */
+/** Vault notes filtered by a `where` built from condition rows. */
 export const NotesWhere: Story = {
     render: () => (
         <Harness
@@ -60,7 +56,6 @@ export const NotesWhere: Story = {
                 kind: 'notes',
                 where: 'file.hasTag("planning") && priority > 1',
             }}
-            views={3}
         />
     ),
 }
@@ -74,16 +69,14 @@ export const TasksFromBase: Story = {
     ),
 }
 
-/** Another base's rows (composition), as this view's own override. */
-export const AnotherBaseViewOverride: Story = {
-    render: () => (
-        <Harness spec={{ kind: 'base', ref: '[[Books]]' }} scope="view" />
-    ),
+/** Another base's rows (composition) — how a second view of the same rows is made. */
+export const AnotherBase: Story = {
+    render: () => <Harness spec={{ kind: 'base', ref: '[[Books]]' }} />,
 }
 
-/** A view with its own source and nothing set: the hint still says where rows come from. */
-export const ViewScopeOwnRows: Story = {
-    render: () => <Harness scope="view" />,
+/** Nothing set: the hint says where rows come from. */
+export const OwnRowsHint: Story = {
+    render: () => <Harness />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         await expect(c.getByText(/rows come from the table in this base/)).toBeInTheDocument()

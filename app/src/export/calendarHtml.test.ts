@@ -11,7 +11,7 @@ import type {
 } from '../../../core/src/bases/types'
 import type { ExportOptions } from './types'
 
-const cfg: BaseConfig = { views: [] }
+const cfg: BaseConfig = { view: { type: 'calendar' } }
 const DARK = paletteFor('dark')
 
 function row(note: Record<string, unknown>): Row {

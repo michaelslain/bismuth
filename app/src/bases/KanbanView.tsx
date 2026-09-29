@@ -61,7 +61,6 @@ export function KanbanView(props: {
     result: ViewResult
     config: BaseConfig
     basePath?: string
-    viewIndex?: number
     onChange: () => void
     // See ListView for why the mode and the write seam arrive as props. In tasks mode a
     // card's FACE is a <TaskRow> instead of <KanbanCard>'s title + meta chips; everything
@@ -370,7 +369,6 @@ export function KanbanView(props: {
 
     const actions = createKanbanActions({
         basePath: () => props.basePath,
-        viewIndex: () => props.viewIndex ?? 0,
         config: () => props.config,
         result: () => props.result,
         ownsRows: () => !!props.ownsRows,

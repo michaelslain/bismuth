@@ -103,13 +103,10 @@ async function buildPaletteOverride(
     }
 }
 
-// Base-export options from flags (no-ops for non-base files). `--view` picks which view,
-// `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
-// grid anchor + span.
+// Base-export options from flags (no-ops for non-base files). `--mode data|visual` is
+// flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar grid anchor + span.
 function optionsFrom(args: string[]): ExportOptions {
     const o = defaultExportOptions()
-    const view = flag(args, 'view')
-    if (view !== undefined) o.viewIndex = Math.max(0, parseInt(view, 10) || 0)
     const mode = flag(args, 'mode')
     if (mode === 'visual' || mode === 'data') o.mode = mode as RenderMode
     const start = flag(args, 'cal-start')
@@ -132,7 +129,7 @@ async function run(args: string[]): Promise<void> {
     const file = args.find(a => !a.startsWith('--'))
     if (!file)
         fail(
-            'usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]',
+            'usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]',
         )
     const fmt = (flag(args, 'format') ??
         (file.endsWith('.draw') ? 'png' : 'md')) as ExportFormat
@@ -200,7 +197,7 @@ export const commands: CommandMap = {
     export: {
         summary:
             'Export a note/base/sheet/drawing to md|html|png|pdf|csv',
-        usage: '<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]',
+        usage: '<file> [--format md|html|png|pdf|csv] [--out FILE] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]',
         run,
     },
 }

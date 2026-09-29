@@ -59,23 +59,21 @@ Body cards take their natural height; the CSS masonry keeps short notes short ra
 
 ## Config Fields
 
-All fields live inside a `views:` entry in the base's YAML frontmatter. Summary, then detail for each field below:
+All fields are top-level keys in the base's YAML frontmatter, beside `type: base`. Summary, then detail for each field below:
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `type` | `"cards"` | — (required) | Selects the cards renderer. |
+| `view` | `"cards"` | — (required) | Selects the cards renderer. |
 | `mode` | `normal` \| `tasks` | `normal` | The general mode axis (see [three axes](../overview.md#three-axes-kind-mode-and-origin)) — `tasks` renders one card per task via `<TaskRow>` instead of everything below. Independent of `cardContent`. |
 | `cardContent` | `properties` \| `body` \| `tasks` | `properties` | Which of the three [sub-modes](#two-sub-modes) to render, when `mode` is `normal` (or absent). |
 | `image` | string (property id) | — | Property whose value supplies the cover image, in properties mode. |
 | `imageFit` | `cover` \| `contain` | `cover` | Maps to the CSS `object-fit` of the cover `<img>`. |
 | `imageAspectRatio` | number | `0.667` | Width ÷ height ratio applied to the cover container's `aspect-ratio`. |
 
-### `type`
+### `view`
 
 ```yaml
-views:
-  - type: cards
-    name: My Cards
+view: cards
 ```
 
 Required. Selects the cards renderer.
@@ -226,7 +224,7 @@ The settings panel (opened via the gear icon on the view toolbar) for cards is t
 - **Columns section** — toggle individual columns visible/hidden. At least one column must remain visible (toggling the last visible column is blocked; the button shows "At least one column must stay visible").
 - **Sort & group section** — pick a sort property + direction (ASC/DESC) and a group-by property + direction.
 
-**Settings.** Cards also get an **image column** picker under *column mapping* (`image`; "text cover" = unset) and a **cards** section: *card shows* (`cardContent`: properties / body / tasks), and — once an image column is bound — *image fit* (`imageFit`: cover / contain) and *cover shape* (`imageAspectRatio`, presets 2:3 … 16:9; a hand-written ratio is kept as its own option). The panel writes these into this view (`views[i]`), not as flat top-level keys, so they never reconfigure another view.
+**Settings.** Cards also get an **image column** picker under *column mapping* (`image`; "text cover" = unset) and a **cards** section: *card shows* (`cardContent`: properties / body / tasks), and — once an image column is bound — *image fit* (`imageFit`: cover / contain) and *cover shape* (`imageAspectRatio`, presets 2:3 … 16:9; a hand-written ratio is kept as its own option). The panel writes them as plain top-level keys.
 
 ---
 
@@ -238,25 +236,23 @@ type: base
 source:
   kind: notes
   where: "#book"
-views:
-  - type: cards
-    name: Reading List
-    cardContent: properties
-    image: cover
-    imageFit: cover
-    imageAspectRatio: 0.667
-    order:
-      - file.name
-      - note.author
-      - note.status
-      - note.rating
-      - note.pages
-    groupBy:
-      property: note.status
-      direction: ASC
-    sort:
-      - property: note.rating
-        direction: DESC
+view: cards
+cardContent: properties
+image: cover
+imageFit: cover
+imageAspectRatio: 0.667
+order:
+  - file.name
+  - note.author
+  - note.status
+  - note.rating
+  - note.pages
+groupBy:
+  property: note.status
+  direction: ASC
+sort:
+  - property: note.rating
+    direction: DESC
 ---
 ```
 
@@ -276,12 +272,10 @@ type: base
 source:
   kind: notes
   where: "#todo"
-views:
-  - type: cards
-    name: Todo Notes
-    cardContent: body
-    order:
-      - file.name
+view: cards
+cardContent: body
+order:
+  - file.name
 ---
 ```
 
@@ -296,7 +290,7 @@ views:
 
 - **`image` accepts a property id, not a URL directly.** Setting `image: "https://example.com/cover.jpg"` would try to look up a property named `https://example.com/cover.jpg` on each row, which will always be null. Store the URL in a frontmatter property (e.g. `cover:`) and set `image: cover`.
 - **Object-valued image properties are skipped.** If the property resolves to a non-string value (e.g. an array or a Link object), the card silently falls back to the text cover.
-- **The grid's column count is not directly configurable, only its minimum width.** There is no `views:` field for column count — the grid is `repeat(auto-fill, minmax(var(--card-grid-min), 1fr))`, so the number of columns is however many fit at the current pane width above `settings.ui.cardGridMinWidth` (default 220px, range 150–360). `mode: tasks` cards use a separate fixed 180px minimum (`.taskCardGrid`) unaffected by that setting.
+- **The grid's column count is not directly configurable, only its minimum width.** There is no field for column count — the grid is `repeat(auto-fill, minmax(var(--card-grid-min), 1fr))`, so the number of columns is however many fit at the current pane width above `settings.ui.cardGridMinWidth` (default 220px, range 150–360). `mode: tasks` cards use a separate fixed 180px minimum (`.taskCardGrid`) unaffected by that setting.
 - **Body/tasks cards read files on mount.** `CardEditor` reads the note (via the shared `noteCache` — `peekNoteCache`/`readNoteCached`) when it mounts. Until a successful read it shows "Loading…". A read **failure** keeps it in "Loading…" deliberately — building an empty editor whose autosave fired would overwrite the note's frontmatter — and `onServerChange` retries via `reconcile()`.
 - **Editing the prefix/suffix externally is safe mid-edit.** Because `reconcile()` re-derives the hidden `prefix`/`suffix` from disk on every server change (even while you're typing in the body), an external edit to the frontmatter or the prose around a tasks checklist is merged into your next save rather than clobbered.
 - **A tasks card with no task lines edits the whole body.** `splitCard`'s `taskRegion` returns null, so the editor falls back to the full note body — letting you type the first task line.

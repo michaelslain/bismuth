@@ -38,7 +38,6 @@ import type {
 } from './export/types'
 import { parseFrontmatter } from '../../core/src/frontmatter'
 import { parseBaseFile } from '../../core/src/bases/parse'
-import type { ViewConfig } from '../../core/src/bases/types'
 import styles from './ExportView.module.css'
 
 // Defer jspdf + html2canvas (a few hundred KB) out of the entry/preview path: they
@@ -129,9 +128,6 @@ const BASE_DEPS: Omit<ExportDeps, 'htmlToPdf'> = {
         (await import('./export/docFontCss')).docFontInlineCss(proseStack),
 }
 
-const viewLabel = (v: ViewConfig, i: number): string =>
-    v.name || v.type || `View ${i + 1}`
-
 export function ExportView(props: {
     path: string
     // Storybook-only seam (mirrors PdfPages.load): lets a story feed a pre-built PDF instead of
@@ -160,9 +156,8 @@ export function ExportView(props: {
     const [destFolder, setDestFolder] = createSignal(loadLs(DEST_KEY))
 
     // Base-export options (ignored for non-base files). `mode` defaults per view kind but is
-    // user-overridable; `viewIndex` picks which of the base's views; the calendar controls
+    // user-overridable; the calendar controls
     // anchor + size the grid.
-    const [viewIndex, setViewIndex] = createSignal(0)
     const [mode, setMode] = createSignal<RenderMode>('data')
     const [userSetMode, setUserSetMode] = createSignal(false)
     const [calSpan, setCalSpan] = createSignal<CalSpan>(
@@ -188,8 +183,8 @@ export function ExportView(props: {
     // literally rendered "## Problem 1" as visible text).
     const [showMarkdownSyntax, setShowMarkdownSyntax] = createSignal(false)
 
-    // Read the source file once per path: if it's a `type: base` md, expose its views so we
-    // can offer a view picker + visual/data toggle. null for any non-base file (prose md /
+    // Read the source file once per path: if it's a `type: base` md, expose its view kind so we
+    // can offer the visual/data toggle. null for any non-base file (prose md /
     // sheet / draw) — none of the base controls render then.
     const [baseInfo] = createResource(srcPath, async p => {
         try {
@@ -199,17 +194,15 @@ export function ExportView(props: {
                 name: baseName(p),
                 path: p,
             })
-            return { views: config.views ?? [] }
+            return { viewType: config.view.type }
         } catch {
             return null
         }
     })
 
     const isBase = () => !!baseInfo()
-    const views = () => baseInfo()?.views ?? []
-    const selectedView = (): ViewConfig | undefined => views()[viewIndex()]
     const showCalendar = () =>
-        isBase() && mode() === 'visual' && selectedView()?.type === 'calendar'
+        isBase() && mode() === 'visual' && baseInfo()?.viewType === 'calendar'
 
     // How many `<!-- pagebreak -->`-delimited pages a plain note has — only meaningful for a
     // non-base `.md` file. A PNG export of a multi-page note writes ONE file per page (see
@@ -226,24 +219,22 @@ export function ExportView(props: {
         },
     )
 
-    // Reset per-file selections when the source changes (a different base may have fewer
-    // views, and the mode default should re-derive from the new file's view kind).
+    // Reset per-file selections when the source changes (the mode default should re-derive from
+    // the new file's view kind).
     createEffect(() => {
         srcPath()
-        setViewIndex(0)
         setUserSetMode(false)
     })
 
-    // Default the render mode from the selected view's kind (calendar/cards/kanban/list →
+    // Default the render mode from the base's view kind (calendar/cards/kanban/list →
     // "visual"), until the user manually picks a mode this session.
     createEffect(() => {
         const info = baseInfo()
         if (!info || userSetMode()) return
-        setMode(defaultModeForView(info.views[viewIndex()]?.type))
+        setMode(defaultModeForView(info.viewType))
     })
 
     const buildOptions = (): ExportOptions => ({
-        viewIndex: viewIndex(),
         mode: mode(),
         calSpan: calSpan(),
         calStart: calStart(),
@@ -279,7 +270,6 @@ export function ExportView(props: {
                 srcPath(),
                 format(),
                 theme(),
-                viewIndex(),
                 mode(),
                 calSpan(),
                 calStart(),
@@ -576,25 +566,6 @@ export function ExportView(props: {
                         </IconTextButton>
                     </div>
                 </div>
-
-                {/* Base-only: which view to export. */}
-                <Show when={isBase() && views().length > 1}>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>View</Label>
-                        <div class={styles.fopts}>
-                            <For each={views()}>
-                                {(v, i) => (
-                                    <ChipToggle
-                                        selected={viewIndex() === i()}
-                                        onToggle={() => setViewIndex(i())}
-                                    >
-                                        {viewLabel(v, i())}
-                                    </ChipToggle>
-                                )}
-                            </For>
-                        </div>
-                    </div>
-                </Show>
 
                 {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}
                 <Show when={isBase()}>

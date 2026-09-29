@@ -236,8 +236,7 @@ Per-calendar linkage, in a calendar base's own frontmatter:
 ```yaml
 ---
 type: base
-views:
-  - type: calendar
+view: calendar
 googleCalendarSync: true
 googleCalendarId: primary        # or another calendar's ID
 ---

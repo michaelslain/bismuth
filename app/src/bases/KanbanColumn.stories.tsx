@@ -7,13 +7,13 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import KanbanColumn, { type KanbanColumnProps } from './KanbanColumn'
 import { rowId } from './rowIdentity'
 import { sampleBaseConfig, sampleViewResult } from '../ui/_baseFixtures'
-import { kanbanViews } from '../ui/_kanbanProbes'
+import { kanbanView } from '../ui/_kanbanProbes'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 
-const views = kanbanViews()
-const result = sampleViewResult(undefined, { views })
-const config = sampleBaseConfig({ views })
+const view = kanbanView()
+const result = sampleViewResult(undefined, { view })
+const config = sampleBaseConfig({ view })
 const todo = result.groups.find(g => g.key === 'Todo')!
 const rowsById = new Map(todo.rows.map(r => [rowId(r), r]))
 

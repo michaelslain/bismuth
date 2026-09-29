@@ -144,7 +144,7 @@ export function createTaskWrites(deps: TaskWriteDeps): TaskWrites {
         }
         // The write happened; this only says where it went. A task that cannot match this
         // view's filters is invisible HERE, not lost — name the file it landed in.
-        if (cfg && view && prospective && !newTaskVisible(cfg, view, prospective))
+        if (cfg && prospective && !newTaskVisible(cfg, prospective))
             deps.toast(
                 `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
             )

@@ -7,12 +7,10 @@ A GitHub-style contribution grid (week columns, Mon–Sun) plus a one-line strea
 ```yaml
 ---
 type: base
-views:
-  - type: heatmap
-    name: Writing Activity
-    x: date
-    y: words
-    aggregate: sum
+view: heatmap
+x: date
+y: words
+aggregate: sum
 ---
 ```
 

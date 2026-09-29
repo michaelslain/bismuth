@@ -165,7 +165,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /base`
 - **Params:** `?file=<vault-relative path>` (required).
-- **Response:** `{ config, rows }` from `parseBaseFile(text, { name, path })`. `config.views` is the parsed views array (e.g. `config.views[0].type === "calendar"`); `rows` is `Row[]` with `rows[i].note` carrying that row's data (e.g. `rows[0].note.title === "X"`).
+- **Response:** `{ config, rows }` from `parseBaseFile(text, { name, path })`. `config.view` is the base's single parsed view (e.g. `config.view.type === "calendar"`); `rows` is `Row[]` with `rows[i].note` carrying that row's data (e.g. `rows[0].note.title === "X"`).
 - **Errors:** `404 "not found"` if the file is missing/unreadable (uses `readNote`, which rejects traversal and throws on a missing file — surfaced as 404 with no separate existence probe).
 - **Visibility:** gated — checked BEFORE the read (like `/file` below): `403 "forbidden"` if `file` is restricted for the requester's channel. See [Visibility gating](#visibility-gating).
 
@@ -507,21 +507,21 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 
 ### `POST /set-property`
 - **Body:** `{ path: string, key: string, value: unknown }`.
-- **Action:** flips a single frontmatter key on a note (used by Bases kanban drag-drop). Preserves other keys.
+- **Action:** flips a single frontmatter key on a note (used by Bases kanban drag-drop and the base settings panel). Preserves other keys. A base's view keys are plain top-level keys, so there is no per-view addressing; a `type: base` note still carrying a legacy `views:` list is flattened (`flattenBaseViews`) first, so the write lands at the top level and the file leaves the legacy form.
 - **Response:** `"ok"`.
-- **Errors:** `404 "note not found"` if the path doesn't exist — it does NOT silently create the note.
+- **Errors:** `404 "note not found"` if the path doesn't exist — it does NOT silently create the note. `400` `BASE_VIEWS_FORMAT_ERROR` when the base's legacy `views:` list has more than one entry (a base has one view; move each extra view into its own base with `source: base` + `ref:`); nothing is written.
 - **`pathOf`:** `path`.
 
 ### `POST /delete-property`
 - **Body:** `{ path: string, key: string }`.
-- **Action:** removes a single frontmatter key (e.g. resetting a note's icon). Sibling keys preserved. Removing the **last** frontmatter key drops the whole `---` block (no empty fence left).
+- **Action:** removes a single frontmatter key (e.g. resetting a note's icon). Sibling keys preserved; a legacy `views:` list is flattened first, exactly as in `/set-property` (same `BASE_VIEWS_FORMAT_ERROR` on a multi-entry list). Removing the **last** frontmatter key drops the whole `---` block (no empty fence left).
 - **Response:** `"ok"`.
 - **Errors:** `404 "note not found"` if the path doesn't exist.
 - **`pathOf`:** `path`.
 
 ### `POST /set-properties`
 - **Body:** `{ writes: Array<{ path: string, key: string, value: unknown }> }` — a BATCH of frontmatter writes across (possibly many) notes in one request.
-- **Action:** groups `writes` by `path` and folds each note's ops into a single read-modify-write (`setFrontmatterKey` applied in order, then one `writeNote`) — so a kanban reorder that touches several cards fires ONE invalidation/SSE bump/view-refetch instead of a `/set-property` burst, each of which would otherwise re-resolve the base and remount the whole card grid (flicker). A note that's vanished mid-batch is skipped, not failed — the rest of the batch still writes.
+- **Action:** groups `writes` by `path` and folds each note's ops into a single read-modify-write (`setFrontmatterKey` applied in order, then one `writeNote`; each base is flattened first, as in `/set-property`) — so a kanban reorder that touches several cards fires ONE invalidation/SSE bump/view-refetch instead of a `/set-property` burst, each of which would otherwise re-resolve the base and remount the whole card grid (flicker). A note that's vanished mid-batch is skipped, not failed — the rest of the batch still writes.
 - **Response:** `"ok"`.
 - **`pathOf`:** the deduped list of every `write.path` in the batch — a non-array `writes` makes it return `undefined`, and an empty/all-vanished batch returns `[]`; both collapse to zero paths, which `invalidate()` treats as a full invalidation the same as no `pathOf` at all.
 
@@ -645,7 +645,7 @@ Dual-mode SRS review.
 ### `POST /gcal/sync`
 > Unlike the other `/gcal/*` routes (read table, system actions), the actual two-way sync **rewrites the calendar base file**, so it IS a vault mutation and lives in `mutatingRoutes`.
 - **Body:** `{ basePath?: string }` (missing/non-JSON body tolerated → `{}`). Sync is **per-calendar**: `basePath` is the calendar base to sync (falls back to the legacy `googleCalendar.basePath`).
-- **Action:** reads that base's frontmatter and resolves its OWN target Google calendar via `resolveGcalConfig(config.views[0], basePath, legacy)` — `googleCalendarId` (default `"primary"`), honoring the legacy global `calendarId` for the base the old mapping named. Connection-level args come from `gcalConnectionArgs(appConfig)`: `policy` (`conflictPolicy`, default `"lastWriteWins"`), `timeZone`, and the appearance `theme`. Then `gcalSync(...)` reconciles that base against its Google calendar in **both directions**. A thrown sync error → `400` with the message.
+- **Action:** reads that base's frontmatter and resolves its OWN target Google calendar via `resolveGcalConfig(config.view, basePath, legacy)` — `googleCalendarId` (default `"primary"`), honoring the legacy global `calendarId` for the base the old mapping named. Connection-level args come from `gcalConnectionArgs(appConfig)`: `policy` (`conflictPolicy`, default `"lastWriteWins"`), `timeZone`, and the appearance `theme`. Then `gcalSync(...)` reconciles that base against its Google calendar in **both directions**. A thrown sync error → `400` with the message.
 - **Response:** the `gcalSync` result JSON.
 - **Errors:** `403` with a JSON `{ error }` naming `BISMUTH_GCAL_AUTOSYNC=1` unless `gcalAutoSyncEnabled()` (the installed app via `BISMUTH_APP_PATH`, or `BISMUTH_GCAL_AUTOSYNC=1`) — returned before the base is read, anything is marked self-written or any cache is invalidated, so a dev/test/agent core on a vault copy can never reach the user's real Google Calendar (see [gcal overview § Per-vault namespacing + auto-sync gating](../gcal/overview.md)); `404` when the targeted base file doesn't exist; `400 "no calendar base to sync — turn on Google sync in a calendar's settings first"` when neither the body nor the legacy `basePath` names a base.
 - **`pathOf`:** the resolved `basePath` (body override or `appConfig.googleCalendar?.basePath`) — invalidates the base file (graph/tree per `classifyVault` + SSE re-render of the open calendar).

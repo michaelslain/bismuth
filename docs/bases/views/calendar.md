@@ -1,6 +1,6 @@
 # Calendar View
 
-The calendar view is one Bases view kind with **two registers**: a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, category colors) that runs inside a `type: base` markdown file, and a **tasks register** that draws checkbox tasks on the same grid instead of events. There is no standalone calendar page and no separate file extension — any base becomes a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table still reads back-compat) — and categories as a YAML list under the `categories` frontmatter key. All calendar settings (default view, week-start, time format) live in `.settings` under `calendar`.
+The calendar view is one Bases view kind with **two registers**: a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, category colors) that runs inside a `type: base` markdown file, and a **tasks register** that draws checkbox tasks on the same grid instead of events. There is no standalone calendar page and no separate file extension — any base becomes a calendar by declaring `view: calendar` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table still reads back-compat) — and categories as a YAML list under the `categories` frontmatter key. All calendar settings (default view, week-start, time format) live in `.settings` under `calendar`.
 
 **In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → the [tasks register](#tasks-register) (`mode: tasks`) → gotchas.
 
@@ -19,18 +19,7 @@ view: calendar
 ---
 ```
 
-`view: calendar` is the shorthand form. It is equivalent to:
-
-```yaml
----
-type: base
-views:
-  - type: calendar
-    name: Calendar
----
-```
-
-Both forms are handled by `parseBaseFile` in `core/src/bases/parse.ts`. The shorthand `view:` key wins only when no explicit `views:` array is present. The resulting base is routed to `CalendarView` by `BaseView.tsx` whenever `activeType() === "calendar"`.
+`view: calendar` is the whole declaration: a base has exactly one view, and its kind is the `view:` key (top-level `type` stays `base`). The base is parsed by `parseBaseFile` in `core/src/bases/parse.ts` and routed to `CalendarView` by `BaseView.tsx` whenever `activeType() === "calendar"`. A file with a legacy `views:` list still reads (its first entry only) and is rewritten flat on the app's first write to it.
 
 ### With an explicit column schema
 
@@ -261,9 +250,7 @@ the **question it answers**, not its shape:
 - **`locus`** — `DateNav` (prev/next chevrons and the date itself, which doubles as the "jump to
   today" control — see [Navigation](#navigation) below) followed by the `[Month, Week, 3 Day, Day]`
   view-mode `SegmentedToggle`. It lives in `locus` rather
-  than `facet`: "which span of time is on screen" is the same question the date navigation answers,
-  and a calendar base's own `facet` slot is reserved for the base's OWN view tabs when it has more
-  than one view.
+  than `facet`: "which span of time is on screen" is the same question the date navigation answers.
 - **`config`** — the Categories button, toggling `showCategoryPanel`.
 - **`actions`** — the + Event button, opening `EventModal` seeded with the current anchor date.
 
@@ -423,7 +410,7 @@ reconcileDefaultView(savedDefault: ViewType, current: ViewType, switched: boolea
 
 ## Column Mapping (CalendarSettings Modal)
 
-The "Settings" button in the toolbar opens a field-mapping dialog (`CalendarSettings.tsx`) that controls which table columns the calendar reads for each role. This is persisted as top-level frontmatter keys on the base file (flat `setProperty` calls — no nested `views:` editing required).
+The "Settings" button in the toolbar opens a field-mapping dialog (`CalendarSettings.tsx`) that controls which table columns the calendar reads for each role. This is persisted as top-level frontmatter keys on the base file (plain `setProperty` calls).
 
 | Key | Default column | Required | Description |
 |---|---|---|---|
@@ -433,13 +420,13 @@ The "Settings" button in the toolbar opens a field-mapping dialog (`CalendarSett
 | `recurrenceField` | `recurrence` | No | Column holding the JSON repeat rule |
 | `categoryField` | `category` | No | Column driving the chip color |
 
-These keys configure the first view in the `views` array (via `parseBaseFile` in `parse.ts` — top-level field binding keys are automatically applied to `config.views[0]`). If a field mapping key is absent, the default column name is used.
+These keys configure the base's view (`parseBaseFile` in `parse.ts` reads them into `config.view`). If a field mapping key is absent, the default column name is used.
 
 The dropdown for each field lists: the standard columns (`date`, `startTime`, `endTime`, `recurrence`, `category`, `title`, `location`, `link`), plus any columns actually present in the existing event rows.
 
 ### Google Calendar sync (per-calendar)
 
-The same settings panel (`GcalSyncPanel.tsx`) also carries the **per-calendar** Google sync linkage, persisted as two more top-level frontmatter keys (folded into `config.views[0]` like the field bindings above):
+The same settings panel (`GcalSyncPanel.tsx`) also carries the **per-calendar** Google sync linkage, persisted as two more top-level frontmatter keys (read into `config.view` like the field bindings above):
 
 | Key | Default | Description |
 |---|---|---|
@@ -481,9 +468,8 @@ by the tasks register existing.
 ---
 type: base
 source: tasks
-views:
-  - type: calendar
-    mode: tasks
+view: calendar
+mode: tasks
 ---
 ```
 
@@ -805,17 +791,15 @@ picker (above) has something to offer and a commit always lands somewhere. With 
 pick from, committing opens [Task calendar settings](#task-calendar-settings) and toasts `Set a
 destination note for new tasks in this calendar’s settings first`, so the user can name one instead
 of the write silently going nowhere.
-`taskFile` is a top-level frontmatter key (`core/src/bases/parse.ts`'s `FIELD_KEYS`, same
-flat-persistence mechanism as `dateField`/`categoryField`), so it needs no nested `views:` block:
+`taskFile` is a top-level frontmatter key, persisted the same way as `dateField`/`categoryField`:
 
 ```yaml
 ---
 type: base
 source: tasks
-views:
-  - type: calendar
-    mode: tasks
-    taskFile: "[[Inbox]]"
+view: calendar
+mode: tasks
+taskFile: "[[Inbox]]"
 ---
 ```
 
@@ -844,13 +828,13 @@ active state) and did nothing.
 
 | Section | Field | Persists as |
 |---|---|---|
-| **Placement** | Date column — which column places a task when no fallback is wanted | `dateField`, via `api.setViewProperty(basePath, viewIndex, 'dateField', value)` |
-| **New tasks** | Destination note (sourced bases only) — which note the composer appends to | `taskFile`, same `setViewProperty` call, stored as a wikilink (`[[Name]]`, or a path-qualified form from `linkTargetFor` when the basename is ambiguous) |
-| **New tasks** | Default category (own-rows bases only) — the category value stamped on a composer-created row | `defaultCategory`, same `setViewProperty` call |
-| **Categories** | Category column (own-rows bases only) — which column `taskCategoryName` reads as `categoryField` | `categoryField`, same `setViewProperty` call |
+| **Placement** | Date column — which column places a task when no fallback is wanted | `dateField`, via `api.setProperty(basePath, 'dateField', value)` |
+| **New tasks** | Destination note (sourced bases only) — which note the composer appends to | `taskFile`, same `setProperty` call, stored as a wikilink (`[[Name]]`, or a path-qualified form from `linkTargetFor` when the basename is ambiguous) |
+| **New tasks** | Default category (own-rows bases only) — the category value stamped on a composer-created row | `defaultCategory`, same `setProperty` call |
+| **Categories** | Category column (own-rows bases only) — which column `taskCategoryName` reads as `categoryField` | `categoryField`, same `setProperty` call |
 | **Categories** | One swatch + name row per category currently in play | picking a colour calls `onPickColor(name, token)` → `api.setProperty(basePath, 'categories', next)` — rewriting the base's WHOLE `categories:` frontmatter array, updating the picked name's entry in place (or appending it, if it wasn't declared yet) and leaving every other declared category untouched |
 
-Picking **Not set** on any of these REMOVES the key from the view config (`api.deleteViewProperty`)
+Picking **Not set** on any of these REMOVES the key from the frontmatter (`api.deleteProperty`)
 rather than storing an empty string — an empty `categoryField` would otherwise name a column with
 no name.
 
@@ -933,7 +917,7 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - **Category color theme tokens**: storing `"teal"` (not `"#008080"`) means the color follows the app theme. When exporting or reading the file outside Bismuth, `teal` must be resolved manually.
 - **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event rows body are overwritten. A `schema:` key in frontmatter will not be lost.
 - **`userSwitchedView` is module-level, but reset on every mount**: `currentView.value` writes (e.g. the Toolbar's view buttons) flip the module-level `userSwitchedView` flag so `defaultView` hydration never clobbers a manual switch — see `applyDefaultView()`/`reconcileDefaultView()` above. Because the flag is module-level it would otherwise survive a `CalendarView` remount and permanently disable hydration for the rest of the session after a single click. `CalendarView.tsx`'s `onMount` calls `resetUserSwitchedView()` (`app/src/calendar/state.ts`) first, before `reconcileDefaultView`, precisely to undo that — so each fresh mount of the calendar (a new base opened, a pane split, etc.) honors the saved `defaultView` again regardless of what happened in a prior mount.
-- **`view: calendar` shorthand vs `views:`**: use `view: calendar` (singular) for a single-view calendar base. Adding a `views:` array overrides the shorthand.
+- **Legacy `views:` lists**: a calendar base written with a `views:` list still reads (first entry only; extra entries are ignored) and is flattened to `view: calendar` on the app's first write. A list with more than one entry makes writes fail with `BASE_VIEWS_FORMAT_ERROR` until each extra view is moved into its own base (`source: base`, `ref: "[[This Base]]"`).
 - **The tasks register never touches `EventStore`/`BaseBackend`** — it reads `props.result`'s
   resolved rows fresh on every render, the same pipeline table/cards/list use. There is nothing to
   re-initialise on remount and no stale-store risk the way the events register has to guard

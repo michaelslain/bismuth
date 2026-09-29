@@ -134,7 +134,7 @@ export function MapView(props: {
 
     const [center, setCenter] = createSignal(initialView().center)
     const [zoom, setZoom] = createSignal(initialView().zoom)
-    // Re-frame when the VIEW changes (switching views, or its configured center/zoom), and once
+    // Re-frame when the view's configured center/zoom changes, and once
     // when the first markers arrive on a map the user has not touched — never merely because a
     // marker moved (see `shouldReframe`). Placing or dragging a pin writes its note, the rows
     // refetch, and re-fitting on that jerked the whole map out from under the pin the user had
@@ -142,7 +142,7 @@ export function MapView(props: {
     // an all-unplaced map keeps the zoom the user chose instead of snapping to that pin.
     const frameKey = () => {
         const v = props.result.view
-        return `${v.name}|${v.type}|${v.center?.lat},${v.center?.lng}|${v.zoom}`
+        return `${v.type}|${v.center?.lat},${v.center?.lng}|${v.zoom}`
     }
     let framedKey: string | null = null
     let framedWithMarkers = false
@@ -369,7 +369,6 @@ export function MapView(props: {
             // Same filter check as the bar's `[+]` (AddRowAction): report, never prevent.
             const visible = newTaskVisible(
                 props.config,
-                props.result.view,
                 props.ownsRows ? { ...created, index: 0 } : created,
             )
             if (!visible) {

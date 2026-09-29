@@ -36,7 +36,7 @@ function deps(read: string, rows: Row[]): ExportDeps {
     }
 }
 
-// The core regression: a filters-style base (filters: + views:, NO source:) must
+// The core regression: a filters-style base (filters: + view:, NO source:) must
 // resolve to all notes and let runView apply the filters — the path that was broken
 // when export used a { kind:"base", ref } spec and got zero rows.
 describe('baseToTable — filters-style base', () => {
@@ -46,11 +46,10 @@ filters:
   and:
     - file.inFolder("reading/books")
     - status == "finished"
-views:
-  - type: table
-    order:
-      - file.name
-      - status
+view: table
+order:
+  - file.name
+  - status
 ---
 `
 
@@ -69,7 +68,7 @@ views:
         const t = await baseToTable(
             'x.md',
             deps(
-                '---\ntype: base\nviews:\n  - type: table\n    order: [file.name]\n---\n',
+                '---\ntype: base\nview: table\norder: [file.name]\n---\n',
                 [row('A', 'f', {}), row('B', 'f', {})],
             ),
         )
@@ -81,7 +80,7 @@ views:
 describe('viewResultToTable column labels', () => {
     test('strips file./note./this. prefixes, formula. prefix, honors displayName', () => {
         const config = parseBase(
-            'properties:\n  author:\n    displayName: Writer\nviews:\n  - type: table\n    order: [file.name, note.year, formula.score, author]\nformulas:\n  score: 1\n',
+            'properties:\n  author:\n    displayName: Writer\nview: table\norder: [file.name, note.year, formula.score, author]\nformulas:\n  score: 1\n',
         )
         const r = {
             file: {

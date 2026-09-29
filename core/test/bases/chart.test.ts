@@ -12,7 +12,6 @@ function row(note: Record<string, unknown>): Row {
 }
 const view = (v: Partial<ViewConfig>): ViewConfig => ({
     type: 'bar',
-    name: 'B',
     ...v,
 })
 

@@ -29,7 +29,7 @@ export const Default: Story = {
 // A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
 const STORED_CARDS_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status'],
-    views: [{ type: 'cards', name: 'Cards' }],
+    view: { type: 'cards' },
 }
 const STORED_CARDS_ROWS: Row[] = [
     {
@@ -46,7 +46,7 @@ const STORED_CARDS_ROWS: Row[] = [
 export const EditableOwnedRow: Story = {
     render: () => (
         <CardsView
-            result={runView(STORED_CARDS_CONFIG, STORED_CARDS_ROWS, 0)}
+            result={runView(STORED_CARDS_CONFIG, STORED_CARDS_ROWS)}
             config={STORED_CARDS_CONFIG}
             basePath="boards/stored-cards.md"
         />
@@ -116,10 +116,8 @@ function bookRow(name: string, note: Record<string, unknown>): Partial<Row> {
  *  visible at once. */
 export const WithCoverImages: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Reading List',
                 image: 'cover',
                 order: [
                     'file.name',
@@ -127,8 +125,7 @@ export const WithCoverImages: Story = {
                     'note.status',
                     'note.rating',
                 ],
-            },
-        ]
+            }
         const rows: Partial<Row>[] = [
             bookRow('The Fifth Season', {
                 author: 'N. K. Jemisin',
@@ -150,8 +147,8 @@ export const WithCoverImages: Story = {
         ]
         return (
             <CardsView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -160,17 +157,14 @@ export const WithCoverImages: Story = {
 /** `cardContent: body` — masonry BodyCards over each note's live body. */
 export const BodyContent: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Cards',
                 cardContent: 'body' as const,
-            },
-        ]
+            }
         return (
             <CardsView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -185,16 +179,13 @@ export const BodyContent: Story = {
  *  from the view config, not the defaults (cover, 0.667). */
 export const ImageFitAndAspect: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Reading List',
                 image: 'cover',
                 imageFit: 'contain' as const,
                 imageAspectRatio: 1,
                 order: ['file.name', 'note.author', 'note.status'],
-            },
-        ]
+            }
         const rows: Partial<Row>[] = [
             bookRow('Piranesi', {
                 author: 'Susanna Clarke',
@@ -204,8 +195,8 @@ export const ImageFitAndAspect: Story = {
         ]
         return (
             <CardsView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -221,17 +212,14 @@ export const ImageFitAndAspect: Story = {
 /** Grouped by `status`: every header reads `LABEL // N` through GroupHeader. */
 export const Grouped: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Cards',
                 groupBy: { property: 'status' },
-            },
-        ]
+            }
         return (
             <CardsView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -284,13 +272,10 @@ export const ReadOnlyClickOpensNothing: Story = {
 /** Enter on a focused link inside an editable card opens the note, not the row editor. */
 export const LinkEnterInEditableCard: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Linked',
                 order: ['file.name', 'note.author', 'note.related'],
-            },
-        ]
+            }
         const rows: Partial<Row>[] = [
             {
                 ...bookRow('Piranesi', {
@@ -306,8 +291,8 @@ export const LinkEnterInEditableCard: Story = {
         ]
         return (
             <CardsView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="projects/tasks.md"
             />
         )
@@ -336,13 +321,10 @@ export const LinkEnterInEditableCard: Story = {
 /** Clicking a note link inside an editable card follows the link — it does not open the row editor. */
 export const LinkClickInEditableCard: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'cards' as const,
-                name: 'Linked',
                 order: ['file.name', 'note.author', 'note.related'],
-            },
-        ]
+            }
         const rows: Partial<Row>[] = [
             {
                 ...bookRow('Piranesi', {
@@ -358,8 +340,8 @@ export const LinkClickInEditableCard: Story = {
         ]
         return (
             <CardsView
-                result={sampleViewResult(rows, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="projects/tasks.md"
             />
         )

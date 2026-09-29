@@ -8,14 +8,12 @@ A compact, clickable horizontal-strip list — title, optional dimmed secondary 
 ---
 type: base
 source: notes where "#book"
-views:
-  - type: list
-    name: My Books
-    groupBy:
-      property: note.status
-    sort:
-      - property: note.title
-        direction: ASC
+view: list
+groupBy:
+  property: note.status
+sort:
+  - property: note.title
+    direction: ASC
 ---
 ```
 

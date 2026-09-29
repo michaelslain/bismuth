@@ -590,11 +590,12 @@ Tests `runView()` with real `Row[]` data:
 ```ts
 const base: BaseConfig = {
   formulas: { ppu: "(price / age).toFixed(2)" },
-  views: [{ type: "table", name: "V", filters: 'status != "done"', order: [...], sort: [...], summaries: { "note.price": "Sum" } }],
+  filters: 'status != "done"',
+  view: { type: "table", order: [...], sort: [...], summaries: { "note.price": "Sum" } },
 };
 ```
 
-Covers filter application, formula evaluation, sort direction, global + view filter composition with AND, and row grouping.
+Covers filter application, formula evaluation, sort direction, base filter application, and row grouping.
 
 ### `core/test/srs/scheduler.test.ts`
 
