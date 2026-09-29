@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test'
+import { expandRecurrence } from '../../../core/src/bases/recurrence'
 import {
     toDateStr,
     addDays,
-    expandRecurrence,
     formatTime,
     startOfWeek,
     weekRange,

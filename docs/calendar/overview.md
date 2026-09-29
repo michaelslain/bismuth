@@ -232,7 +232,7 @@ The row↔event mapping is JSON-string-based for the compound fields: `recurrenc
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `startDate` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. Same rule semantics as the app's `dates.ts` (see [Recurrence Engine](#recurrence-engine-datests)) |
+| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `max(startDate, rangeStart)` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. The one engine: the app's `EventStore` and the export import it too (see [Recurrence Engine](#recurrence-engine-recurrencets)) |
 | `eventsForRange` | `(events, rangeStart, rangeEnd) => CalendarEvent[]` | Concrete instances in `[rangeStart, rangeEnd]`; each recurring master is expanded to one `{...event, date}` per matching date; sorted by `date` then `startTime` |
 | `eventsForDay` | `(events, date) => CalendarEvent[]` | `eventsForRange(events, date, date)` |
 | `detectOverlaps` | `(dayEvents) => OverlapPair[]` | Pairs of timed events (`startTime` + `endTime` both set) whose half-open `[start, end)` intervals intersect; all-day events don't participate; `"HH:MM"` strings compare lexicographically. `OverlapPair = { a: CalendarEvent; b: CalendarEvent }` |
@@ -316,11 +316,11 @@ Vault is resolved by `requireVault` (`--vault` / `BISMUTH_VAULT`); output honors
 
 ---
 
-## Recurrence Engine (`dates.ts`)
+## Recurrence Engine (`core/src/bases/recurrence.ts`)
 
 `expandRecurrence(recurrence, rangeStart, rangeEnd): string[]`
 
-Given a `Recurrence` and a query window (ISO date strings, inclusive on both ends), returns every date in `[rangeStart, rangeEnd]` that matches the rule. The function iterates one day at a time from `max(recurrence.startDate, ...)` to `min(recurrence.endDate ?? "2100-01-01", rangeEnd)`, calling `matchesRecurrence` on each.
+This is the single copy — the app's `EventStore` imports it (there is no app-side duplicate in `dates.ts`). Given a `Recurrence` and a query window (ISO date strings, inclusive on both ends), returns every date in `[rangeStart, rangeEnd]` that matches the rule. The function iterates one day at a time from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? "2100-01-01", rangeEnd)`, calling `matchesRecurrence` on each.
 
 ### Rule semantics
 
