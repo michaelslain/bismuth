@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { enqueueWrite } from '../lib/writeQueue'
-import { drainTriggers } from '../lib/drainTriggers'
+import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import { heartbeatDevice, isOwner } from '../lib/owner'
 import { loadEnabledVaults } from '../lib/registry.ts'
@@ -1452,11 +1452,13 @@ async function processAllTriggers(): Promise<void> {
  * Check for trigger files written by the MCP server for one vault and fire those jobs.
  */
 async function processTriggers(ctx: VaultContext): Promise<void> {
-    const triggers = await drainTriggers(ctx.triggerDir, isOwner)
+    const triggers = await listTriggers(ctx.triggerDir, isOwner)
     if (triggers.length === 0) return
 
     const lastFired = await loadLastFired(ctx)
     for (const name of triggers) {
+        await consumeTrigger(ctx.triggerDir, name)
+
         if (runningJobs.has(jobKey(ctx, name))) {
             console.log(
                 `[cron] Trigger for "${name}" ignored — already running`,

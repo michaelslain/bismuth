@@ -1841,7 +1841,7 @@ Stable per-machine device identity. `getDeviceId(home?)` reads (or generates + a
 A simple `---`-delimited frontmatter parser returning raw string key/value pairs plus the body — shared by the cron and process modules. (The memory graph has its own typed parser in `memory/src/graph.ts`.) `parseFrontmatter(content)`.
 
 #### `lib/drainTriggers.ts`
-`drainTriggers(dir, isOwner)` — the shared trigger-file drain for cron, process and page triggers: readdir, drop dotfiles, unlink every trigger, and return the names (`[]` when empty or when this device is not the owner).
+`listTriggers(dir, isOwner)` + `consumeTrigger(dir, name)` — the shared trigger-file helpers for cron, process and page triggers: `listTriggers` readdirs, drops dotfiles and returns the names (`[]` when empty, or when this device is not the owner, in which case it unlinks them all); each caller `consumeTrigger`s one trigger at the top of its loop iteration.
 
 #### `lib/owner.ts`
 Multi-device ownership coordination. `devices.json` (every daemon upserts its own heartbeat entry each tick, even idle) and `owner.json` (absent = unclaimed, legacy single-device behavior) under `MACHINE_DIR`. `DeviceEntry`, `DevicesFile`, `Owner`, `DeviceListEntry`, `DeviceInfo`. `getOwner()`, `heartbeatDevice()`, `listDevices()`, `isOwner(home?)` (true when unclaimed, or when this device is the claimed owner), `deviceInfo()`, `setOwnerDevice()`.
