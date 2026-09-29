@@ -5,12 +5,9 @@
    (editor/livePreview.ts is untouched, see the scope ruling). The checkbox itself lives in
    TaskCheck.module.css — the table renders it without the row.
 
-   NOTHING HERE MAY BE NAMED `bismuth-*`. `.bismuth-task-field` is a GLOBAL class for
-   runtime-generated HTML strings (it currently has no live writer); it stays in global.css's
-   `styles/content.css` section —
-   this component's fields are styled entirely by the module-local `.field` in TaskFieldChips.module.css instead
-   of also carrying that global class, since the compact register no longer shares the boxed
-   chip look `.bismuth-task-field` draws. app/src/cssLayering.test.ts guards the distinction. */
+   NOTHING HERE MAY BE NAMED `bismuth-*` — those are GLOBAL classes for runtime-generated HTML
+   strings. This component's fields are styled entirely by the module-local `.field` in
+   TaskFieldChips.module.css. app/src/cssLayering.test.ts guards the distinction. */
 .taskItem {
   display: flex;
   align-items: baseline;
