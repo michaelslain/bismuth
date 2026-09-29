@@ -19,6 +19,7 @@ import {
 import { TASK_LINE } from '../bases/taskLine'
 import { findBareUrls } from './urls'
 import { openExternalUrl } from '../appWindow'
+import { openNote } from '../ui/openNote'
 
 // A disk-pulled reload is annotated so the autosave listener skips it — otherwise reloading an
 // external change would write the file back to itself, looping against any external writer.
@@ -324,11 +325,7 @@ export function navigateOnLinkClick(e: MouseEvent, view: EditorView): boolean {
         const s = line.from + (m.index ?? 0)
         if (pos >= s && pos <= s + m[0].length) {
             const target = m[1].split('|')[0].split('#')[0].trim()
-            window.dispatchEvent(
-                new CustomEvent('bismuth-open', {
-                    detail: target.endsWith('.md') ? target : `${target}.md`,
-                }),
-            )
+            openNote(target.endsWith('.md') ? target : `${target}.md`)
             return true
         }
     }

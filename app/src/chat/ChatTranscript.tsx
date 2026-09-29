@@ -18,6 +18,7 @@ import {
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import { openNote } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
@@ -148,7 +149,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
         const href = a.getAttribute('data-href')
         if (!href) return
         e.preventDefault()
-        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: href }))
+        openNote(href)
     }
 
     /** Right-click a prose bubble → Reply/Copy. Reply always quotes the WHOLE message (the floating

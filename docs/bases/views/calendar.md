@@ -406,7 +406,7 @@ Global calendar display settings live in `.settings` under `calendar:`. Like eve
 | `defaultView` | `"month" \| "week" \| "3day" \| "day"` | `"week"` | The view selected when the calendar first opens |
 | `weekStartsOnMonday` | `boolean` | `true` | Whether the week begins on Monday (ISO standard) or Sunday |
 | `militaryTime` | `boolean` | `false` | Use 24-hour time in chips and the time grid gutter |
-| `defaultCategoryColor` | `string` | `"#4a90e2"` | Default hex color pre-filled when creating a new category |
+| `defaultCategoryColor` | `string` | `"#8296C6"` | Default hex color pre-filled when creating a new category |
 
 ### Default view hydration
 

@@ -18,13 +18,10 @@
 //   3. A views-less base changes kind through the `view: <kind>` shorthand, never `type:`.
 //
 // Also holds the panel's other pure decisions — which kinds show which sections, the per-kind
-// column bindings, the keys a kind manages — and the two I/O helpers SAVE runs (`readFrontmatter`,
-// `runOp`). Framework-free so every rule is unit-tested (baseSettingsPlan.test.ts).
+// column bindings, the keys a kind manages — and nothing else: SAVE's I/O lives in baseSettingsIO.ts.
+// Framework-free so every rule is unit-tested (baseSettingsPlan.test.ts).
 
-import { parse as parseYaml } from 'yaml'
-import { api } from '../api'
 import type { ViewType } from '../../../core/src/bases/types'
-import { FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import type { SelectOption } from '../ui/Select'
 
 export type WriteOp =
@@ -426,30 +423,4 @@ export function indexAfterMove(
     b: number,
 ): number | null {
     return open === a ? b : open === b ? a : open
-}
-
-// ---------------------------------------------------------------------------------------
-// SAVE's I/O
-// ---------------------------------------------------------------------------------------
-
-/** Run one planned write against the base file. */
-export async function runOp(path: string, o: WriteOp): Promise<void> {
-    if (o.op === 'set') await api.setProperty(path, o.key, o.value)
-    else if (o.op === 'delete') await api.deleteProperty(path, o.key)
-    else if (o.op === 'setView')
-        await api.setViewProperty(path, o.index, o.key, o.value)
-    else await api.deleteViewProperty(path, o.index, o.key)
-}
-
-/** The base file's frontmatter as it is on disk right now. */
-export async function readFrontmatter(
-    path: string,
-): Promise<Record<string, unknown>> {
-    const text = await api.read(path)
-    const m = text.match(FRONTMATTER_RE)
-    if (!m) return {}
-    const data = parseYaml(m[2])
-    return data && typeof data === 'object'
-        ? (data as Record<string, unknown>)
-        : {}
 }
