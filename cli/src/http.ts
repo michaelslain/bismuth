@@ -1,13 +1,35 @@
 // Shared HTTP helper for the CLI command groups that talk to a RUNNING server
-// (api.ts, app.ts, gcal.ts, relay.ts, chat.ts). Everything else in the CLI works
+// (api.ts, app.ts, gcal.ts, relay.ts, chat.ts, update.ts). Everything else in the CLI works
 // headlessly; these hit live routes and therefore need one small fetch wrapper. Kept
 // dependency-light so any server-talking group can import a stable contract.
-import { fail } from './args'
-import { readRunRecords } from '../../core/src/runRegistry'
+import { fail, flag } from './args'
+import { readRunRecords, resolveRunRegistryBase } from '../../core/src/runRegistry'
 
 /** Builds the "could not reach" message for a failed connection to `base`. Lets each
  *  caller keep its own wording (e.g. "server" vs "Bismuth app") while sharing `call`. */
 export type UnreachableLabel = (base: string) => string
+
+/** The `unreachable` wording shared by the groups that name the feature that needs a server:
+ *  `needsServer('relay list needs a running server')`. `what` is the sentence fragment before the
+ *  "(`bismuth serve`, or the app)" hint. */
+export const needsServer =
+    (what: string): UnreachableLabel =>
+    base =>
+        `could not reach a running Bismuth server at ${base} — ${what} (\`bismuth serve\`, or the app) — pass --api <url> or start one`
+
+/** Resolve the running core's base URL: --api <url> → BISMUTH_API → CLAUDE_RELAY_URL → run-registry
+ *  (~/.bismuth/run, matched by --vault/BISMUTH_VAULT, else the single running core) → :4321. */
+export function resolveCore(args: string[]): string {
+    const explicit =
+        flag(args, 'api') ??
+        process.env.BISMUTH_API ??
+        process.env.CLAUDE_RELAY_URL
+    if (explicit) return explicit.replace(/\/+$/, '')
+    const vault = flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+    const fromRegistry = resolveRunRegistryBase(vault)
+    if (fromRegistry) return fromRegistry
+    return 'http://localhost:4321'
+}
 
 /** Loopback hostnames a run record's token may ever be attached to. `new URL(...).hostname`
  *  never carries brackets, even for a literal IPv6 host, so "::1" (not "[::1]") is the form
@@ -70,8 +92,8 @@ function errorMessageOf(text: string): string {
 }
 
 /** Fetch `method base+path` (optional JSON `body`), returning parsed JSON, else the raw
- *  text. Fails (exit non-zero) on a non-2xx response, or with `errLabel(base)` — a caller-
- *  supplied message — when the server is unreachable.
+ *  text. Fails (exit non-zero) on a non-2xx response, or when the server is unreachable — with
+ *  `errLabel(base)` if given, else the generic "start one with `bismuth serve`" message.
  *
  *  Attaches `X-Bismuth-Token` (core/src/ownerToken.ts) whenever `base` names a local core
  *  this machine's run registry has a token for (see {@link ownerTokenFor}) — the CLI IS the
@@ -103,7 +125,7 @@ export async function call(
         return fail(
             errLabel
                 ? errLabel(base)
-                : `could not reach a running server at ${base} (or pass --api <url>)`,
+                : `could not reach a running server at ${base} — start one with \`bismuth serve\` (or pass --api <url>)`,
         )
     }
     const text = await res.text()

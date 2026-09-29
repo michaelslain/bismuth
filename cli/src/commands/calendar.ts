@@ -16,6 +16,7 @@ import {
     readNote,
     writeNote,
 } from '../../../core/src/files'
+import { noteStem } from '../../../core/src/pathUtils'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
     parseCalendarFile,
@@ -117,7 +118,7 @@ export const commands: CommandMap = {
                 const { data } = parseFrontmatter(text)
                 if (!isCalendarBase(data)) continue
                 const { events } = parseCalendarFile(text)
-                const basename = path.split('/').pop()!.replace(/\.md$/i, '')
+                const basename = noteStem(path)
                 result.push({
                     path,
                     title:

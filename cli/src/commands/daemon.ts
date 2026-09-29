@@ -35,6 +35,15 @@ import {
     unloadDaemon,
 } from '../../../daemon/src/lib/platform'
 
+/** `daemon setup` — `daemon update` reuses it (same body, its own summary). */
+const daemonSetup: CommandMap[string] = {
+    summary: 'Run the idempotent, adopt-only daemon setup and print the result',
+    usage: '[--pretty]',
+    run: async args => {
+        out(await runSetup(), args)
+    },
+}
+
 export const commands: CommandMap = {
     'daemon status': {
         summary:
@@ -71,21 +80,11 @@ export const commands: CommandMap = {
             out(await installStatus(), args)
         },
     },
-    'daemon setup': {
-        summary:
-            'Run the idempotent, adopt-only daemon setup and print the result',
-        usage: '[--pretty]',
-        run: async args => {
-            out(await runSetup(), args)
-        },
-    },
+    'daemon setup': daemonSetup,
     'daemon update': {
+        ...daemonSetup,
         summary:
             'Re-register the bundled daemon service (the daemon updates with the app)',
-        usage: '[--pretty]',
-        run: async args => {
-            out(await runSetup(), args)
-        },
     },
     'daemon stop': {
         summary:
