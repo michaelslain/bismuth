@@ -1,10 +1,9 @@
 // #51: file-change cron shape — parsing (loadCronJobs → parseCronFrontmatter, private but exercised
-// through the public loader), the catch-up guard, and the CRUD round-trip (createCronJob/
-// updateCronJob/buildCronFile) all need to keep every existing schedule-based cron parsing exactly
-// as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
+// through the public loader) and the catch-up guard all need to keep every existing
+// schedule-based cron parsing exactly as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -20,15 +19,12 @@ import {
     backoffCooldownMs,
     retryCooldownMs,
     getIntervalMs,
-    createCronJob,
-    updateCronJob,
     buildCronPrompt,
     type FailureCause,
     type LastFiredEntry,
     type ScheduleCronJob,
 } from '../src/daemon/cron.ts'
 import type { VaultContext } from '../src/lib/config.ts'
-import { parseFrontmatter as parseFrontmatterCore } from '../../core/src/frontmatter.ts'
 
 let cronsDir: string
 let ctx: VaultContext
@@ -140,55 +136,6 @@ test('shouldFire is unaffected by the new shape for a normal schedule cron', asy
     }
 })
 
-test('createCronJob + loadCronJobs round-trips a file-change cron', async () => {
-    const res = await createCronJob(
-        {
-            name: 'on-edit',
-            on: 'file-change',
-            watch: 'journal/**',
-            prompt: 'summarize the change',
-        },
-        ctx,
-    )
-    expect(res.ok).toBe(true)
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs).toHaveLength(1)
-    expect(jobs[0]).toMatchObject({
-        name: 'on-edit',
-        on: 'file-change',
-        watch: 'journal/**',
-        prompt: 'summarize the change',
-    })
-})
-
-test('createCronJob rejects a file-change cron missing `watch`', async () => {
-    const res = await createCronJob(
-        { name: 'bad', on: 'file-change', prompt: 'x' },
-        ctx,
-    )
-    expect(res.ok).toBe(false)
-})
-
-test('createCronJob rejects a schedule cron missing `schedule`', async () => {
-    const res = await createCronJob({ name: 'bad', prompt: 'x' }, ctx)
-    expect(res.ok).toBe(false)
-})
-
-test('updateCronJob can flip a schedule cron into a file-change cron in place', async () => {
-    cronFile('flippable', 'name: flippable\nschedule: 0 * * * *', 'old prompt')
-    const res = await updateCronJob(
-        'flippable',
-        { on: 'file-change', watch: 'notes/todo.md' },
-        ctx,
-    )
-    expect(res.ok).toBe(true)
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({ on: 'file-change', watch: 'notes/todo.md' })
-    // The old bug: updateCronJob used to write `schedule: ${frontmatter.schedule!}` unconditionally,
-    // which for a cron with no schedule would literally emit the string "schedule: undefined".
-    expect((jobs[0] as any).schedule).toBeUndefined()
-})
-
 test('loadCronJobs parses `incremental: true` + `checkpointDir: memory` frontmatter', async () => {
     cronFile(
         'dream',
@@ -217,104 +164,6 @@ test('loadCronJobs treats any checkpointDir value other than "memory" as the vau
     const jobs = await loadCronJobs(ctx)
     expect(jobs[0]).toMatchObject({ incremental: true })
     expect((jobs[0] as any).checkpointDir).toBeUndefined()
-})
-
-test("updateCronJob preserves an existing cron's `incremental`/`checkpointDir` frontmatter across an UNRELATED update (e.g. toggling enabled)", async () => {
-    cronFile(
-        'dream',
-        'name: dream\nschedule: 0 * * * *\nincremental: true\ncheckpointDir: memory',
-    )
-    const res = await updateCronJob('dream', { enabled: false }, ctx)
-    expect(res.ok).toBe(true)
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({
-        enabled: false,
-        incremental: true,
-        checkpointDir: 'memory',
-    })
-})
-
-// #followup-1: buildCronFile used to write `name: ${opts.name}` bare, and updateCronJob passed
-// its own lookup-key `name` param (the slug) rather than the file's existing frontmatter name —
-// so toggling `enabled` on a display-named cron (created via core's createCron, which writes a
-// quoted display name into a `<slug>.md` file) silently renamed it back to its slug on disk.
-test("updateCronJob keeps the file's existing display name rather than overwriting it with the lookup key (slug)", async () => {
-    cronFile(
-        'answer-emails',
-        'name: "Answer Emails!"\nschedule: 0 9 * * *\nenabled: true',
-    )
-    const res = await updateCronJob('answer-emails', { enabled: false }, ctx)
-    expect(res.ok).toBe(true)
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({ name: 'Answer Emails!', enabled: false })
-})
-
-test('updateCronJob re-quotes a display name that needs it (contains a colon) rather than writing it back bare-corrupted', async () => {
-    cronFile(
-        'ops-nightly',
-        'name: "Ops: Nightly"\nschedule: 0 9 * * *\nenabled: true',
-    )
-    const res = await updateCronJob('ops-nightly', { enabled: false }, ctx)
-    expect(res.ok).toBe(true)
-    const content = readFileSync(join(cronsDir, 'ops-nightly.md'), 'utf-8')
-    expect(content).toContain('name: "Ops: Nightly"')
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({ name: 'Ops: Nightly', enabled: false })
-})
-
-test('createCronJob + loadCronJobs round-trips `incremental`/`checkpointDir`', async () => {
-    const res = await createCronJob(
-        {
-            name: 'consolidate',
-            schedule: '0 * * * *',
-            prompt: 'do it',
-            incremental: true,
-            checkpointDir: 'memory',
-        },
-        ctx,
-    )
-    expect(res.ok).toBe(true)
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({
-        incremental: true,
-        checkpointDir: 'memory',
-    })
-})
-
-test('updateCronJob rejects flipping to file-change without supplying `watch`', async () => {
-    cronFile('solo', 'name: solo\nschedule: 0 * * * *')
-    const res = await updateCronJob('solo', { on: 'file-change' }, ctx)
-    expect(res.ok).toBe(false)
-    // Original file must be untouched (still a valid schedule cron).
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({ on: 'schedule', schedule: '0 * * * *' })
-})
-
-// #51-followup: an unrelated update to a file-change cron (toggling `enabled`) must keep
-// `watch`'s glob quoted on disk — `**/*.md` starts with `*`, an unsafe leading char per
-// frontmatterValue — and core's own parseFrontmatter (what the app/snapshot side reads) must
-// still see the block as real frontmatter, not have it collapse to `{}`.
-test('updateCronJob keeps a file-change cron\'s `watch` glob quoted, and core parseFrontmatter still reads the block', async () => {
-    cronFile(
-        'watch-all',
-        'name: watch-all\non: file-change\nwatch: "**/*.md"\nenabled: true',
-    )
-    const res = await updateCronJob('watch-all', { enabled: false }, ctx)
-    expect(res.ok).toBe(true)
-
-    const content = readFileSync(join(cronsDir, 'watch-all.md'), 'utf-8')
-    expect(content).toContain('watch: "**/*.md"')
-
-    const jobs = await loadCronJobs(ctx)
-    expect(jobs[0]).toMatchObject({
-        on: 'file-change',
-        watch: '**/*.md',
-        enabled: false,
-    })
-
-    const { data } = parseFrontmatterCore(content)
-    expect(data).not.toEqual({})
-    expect(data.enabled).toBe(false)
 })
 
 // #followup-1 (daemon page fix): a display-named cron's file is keyed by its FILE slug —

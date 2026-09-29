@@ -136,10 +136,10 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 | `crons/<name>.md` | cron def frontmatter, EITHER `{ name?, schedule, catchup?(default true) }` (time-based, the default) OR `{ name?, on: file-change, watch }` (fires on a vault file/glob change instead) — both share `{ enabled?(default true), notify?, model?, effort?, timeout?, waitFor?, incremental?(default false), checkpointDir?("vault"\|"memory", default "vault") }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the two defaults (`dream`, `vault-review`) are seeded, both schedule-based and `incremental: true`. Full model incl. file-change crons and incremental scoping: [crons-and-processes.md](crons-and-processes.md#file-change-crons) |
 | `crons/.last-fired.json` | `{ "<name>": { timestamp: ISO, result: "success"\|"failed"\|"unknown"\|"killed"\|"skipped", detail?: string } }`, keyed by job name | `daemon/cron.ts` | `updateLastFired` (unique-tmp atomic write under a per-file serial queue). `loadLastFired` migrates a legacy plain-string value to `{ timestamp, result: "success" }`. `result: "skipped"` + `detail` (e.g. `"skipped: no changes since 2026-07-20T10:00:00Z"`) is written by an `incremental` cron's pre-fire check (see [crons-and-processes.md](crons-and-processes.md#incremental-crons)) instead of ever starting a session; `daemonGraph.ts` surfaces `detail` verbatim as the daemon graph's `lastResult` so a skip is visible, not silent |
 | `crons/.running.json` | `{ "<name>": { startedAt: ISO } }`, keyed by job name | `daemon/cron.ts` | `markRunning` / `markDone` (same serial-queue + atomic write) |
-| `crons/.triggers/<name>` | ISO-timestamp file (content unused; presence is the signal); filename = job name, **no** `.md` | `daemon/cron.ts` | `requestCronRun` (or core's `runCron`); consumed (unlinked) by `processTriggers` every 5s. Owner-gated — a non-owner daemon unlinks without firing |
+| `crons/.triggers/<name>` | ISO-timestamp file (content unused; presence is the signal); filename = job name, **no** `.md` | `daemon/cron.ts` | core's `runCron`; consumed (unlinked) by `processTriggers` every 5s. Owner-gated — a non-owner daemon unlinks without firing |
 | `processes/<name>.md` | process def frontmatter `{ command(required), name?, args?, cwd?, env?, restart?(default on-failure), restartDelay?(default 1000), enabled?(default true) }` | `daemon/process.ts` | `daemon/process.ts`. Full model: [crons-and-processes.md](crons-and-processes.md) |
 | `processes/.pids/<name>.pid` | plain int (`PIDS_SUBDIR = ".pids"`) | `daemon/process.ts` | `writePidFile` — the cross-restart link a fresh daemon reads (`reapOrphans`) to kill children orphaned by a previous instance. Removed on confirmed exit. No `.running.json` for processes; liveness is in-memory + this pid file |
-| `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | `requestProcessRun` (or core's `setProcessEnabled`); consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
+| `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | core's `setProcessEnabled`; consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
 | `logs/<process>.{stdout,stderr}.log` | plain text | `daemon/process.ts` | `spawnProcess` opens these append-mode and wires the child's stdio to them |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSONL: one `ActivityEvent` object per line, day bucketed by UTC | `daemon/src/lib/activityLog.ts` | `logActivity(ctx, event)` appends (via `enqueueWrite`, the same per-file serial queue `.last-fired.json`/`.running.json` use); pruned by `pruneActivityLogs` on every brain-start. **Never throws** — a full disk or a read-only vault degrades to a console error, not a failed cron. See [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl) below |
 | `PAGES.md` | plain markdown (the `PAGES_GUIDE` string constant) | `daemon/seeds.ts` (content from `daemon/src/daemon/pagesGuide.ts`) | Seeded once, non-clobbering, alongside `identity.md`. A format-discovery doc, not a cron — any page-authoring session (a cron, the persistent vault thread) `Read`s it to learn the page frontmatter shape; there is no other hardcoded page-format knowledge |
@@ -181,18 +181,11 @@ interface ActivityEvent {
 | `cron` | `started` | — |
 | `cron` | `finished` | `outcome` (`success`/`failed`/`unknown`/`killed`), `cause` on failure, `durationMs`, `detail` |
 | `cron` | `skipped` | `outcome: "skipped"`, `detail` — the incremental cron's pre-fire skip reason, verbatim (the same string written to `.last-fired.json`'s `detail`) |
-| `cron` | `stopped` | `outcome: "killed"`, `cause: "timeout"`, `detail: "stopped by request"` — the abort **request** |
 | `process` | `started` | `detail: "pid <n>"` |
 | `process` | `exited` | `outcome` (`success` on code 0, `failed` on a non-zero code, `killed` on a signal), `detail` |
 | `process` | `restarting` | `detail: "in <n>ms (restart #<n>)"` |
 | `process` | `reaped` | `detail` — an orphan from a previous daemon instance |
 | `daemon` | `brain-started` | — (no `detail`; see below) |
-
-**A `stopCronJob` request produces TWO lines, not one** — the `stopped` event above records the
-abort *request*, and the abort also rejects the running session's promise, so `fireJob`'s own catch
-branch appends a second `finished`/`killed` line for the *outcome* moments later. This is intended,
-not a bug: the two lines answer two different questions ("was a stop requested" vs. "did the run
-actually end").
 
 **`daemon`/`brain-started` deliberately carries no `detail`.** An earlier draft put the vault's
 absolute filesystem root there; it was removed because `GET /daemon/logs` is ungated like its

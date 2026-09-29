@@ -22,16 +22,12 @@
 // interleave on the event loop rather than across OSprocesses — a per-vault async lock makes the
 // read→compute→write sequence atomic. Steady-state writes are a bare O_APPEND of one short line
 // (atomic under POSIX, and crash-safe in a way a full rewrite is not); only a prune rewrites the
-// file, via temp-then-rename.
-import {
-    readFile,
-    writeFile,
-    appendFile,
-    mkdir,
-    rename,
-} from 'node:fs/promises'
+// file, via atomicWrite (temp-then-rename). The lock is lib/writeQueue's enqueueWrite, keyed by vault root.
+import { readFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { VaultContext } from '../lib/config.ts'
+import { enqueueWrite } from '../lib/writeQueue.ts'
+import { atomicWrite } from '../lib/atomicJson.ts'
 
 /** Keep at most this many ids. A daemon mints roughly one session per cron fire (~50/day for the
  *  seeded dream + vault-review crons), so this holds ~40 days of provenance in ~74KB — far beyond
@@ -81,22 +77,6 @@ export function appendSessionId(
     return next.length > cap ? next.slice(next.length - cap) : next
 }
 
-// Per-vault async lock. One machine process multiplexes every vault's brain, so concurrent
-// fireJob calls are interleaved event-loop turns, not parallel processes: chaining each vault's
-// writes onto its own promise makes read→compute→write atomic without a lockfile.
-const writeChains = new Map<string, Promise<unknown>>()
-
-function withVaultLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prev = writeChains.get(key) ?? Promise.resolve()
-    // Run `fn` whether or not the previous write settled — one failed write must not wedge the chain.
-    const run = prev.then(fn, fn)
-    writeChains.set(
-        key,
-        run.catch(() => {}),
-    )
-    return run
-}
-
 /** Read the pointer file's current value — the ONE pre-existing daemon session we can still
  *  identify when this vault has no durable set yet (see recordDaemonSessionId). */
 async function readPointer(ctx: VaultContext): Promise<string | undefined> {
@@ -105,12 +85,6 @@ async function readPointer(ctx: VaultContext): Promise<string | undefined> {
     } catch {
         return undefined
     }
-}
-
-async function writeAtomic(file: string, content: string): Promise<void> {
-    const tmp = `${file}.tmp-${process.pid}`
-    await writeFile(tmp, content, 'utf-8')
-    await rename(tmp, file)
 }
 
 /**
@@ -137,7 +111,7 @@ export async function recordDaemonSessionId(
 ): Promise<void> {
     const sid = id.trim()
     if (!sid) return
-    await withVaultLock(ctx.root, async () => {
+    await enqueueWrite(ctx.root, async () => {
         const file = sessionIdsFile(ctx)
         let existing: readonly string[]
         let fresh = false
@@ -160,6 +134,6 @@ export async function recordDaemonSessionId(
             await appendFile(file, `${sid}\n`, 'utf-8')
             return
         }
-        await writeAtomic(file, formatSessionIds(next))
+        await atomicWrite(file, formatSessionIds(next))
     })
 }
