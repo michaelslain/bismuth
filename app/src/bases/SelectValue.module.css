@@ -11,7 +11,7 @@
     height: var(--kb-meta-height, auto);
     min-height: 0;
     box-sizing: border-box;
-    padding: var(--sp-1) var(--kb-meta-select-gutter) var(--sp-1) var(--sp-3);
+    padding: var(--sp-1) var(--kb-meta-select-gutter) var(--sp-1) var(--kb-meta-select-inset, var(--sp-3));
     font-size: var(--fs-ui);
     border-radius: var(--r-0);
 }

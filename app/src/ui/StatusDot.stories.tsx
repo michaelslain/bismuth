@@ -48,6 +48,16 @@ export const Dots: Story = {
     ),
 }
 
+/** The two dot sizes: sm (6px, default) and md (8px, kanban column headers). */
+export const Sizes: Story = {
+    render: () => (
+        <Row label="sm // md" gap="10px">
+            <StatusDot status="Reading" size="sm" />
+            <StatusDot status="Reading" size="md" />
+        </Row>
+    ),
+}
+
 /** An unrecognized status string falls back to the faint dot color. */
 export const UnknownStatus: Story = {
     render: () => <StatusDot status="Someday" />,
