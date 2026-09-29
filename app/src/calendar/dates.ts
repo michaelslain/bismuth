@@ -1,4 +1,5 @@
 import { ViewType } from './types'
+import { todayISO } from '../../../core/src/dates'
 
 /** Parse an ISO `YYYY-MM-DD` as local midnight, the one date-string convention for this module. */
 export function parseLocalDate(iso: string): Date {
@@ -31,13 +32,6 @@ export function prettyDate(iso: string): string {
     })
 }
 
-export function toDateStr(d: Date): string {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-}
-
 export function addDays(d: Date, n: number): Date {
     const result = new Date(d)
     result.setDate(result.getDate() + n)
@@ -53,14 +47,14 @@ export function startOfWeek(d: Date, mondayFirst: boolean): Date {
 /** Returns [startDateStr, endDateStr] for the week containing `d`. */
 export function weekRange(d: Date, mondayFirst: boolean): [string, string] {
     const start = startOfWeek(d, mondayFirst)
-    return [toDateStr(start), toDateStr(addDays(start, 6))]
+    return [todayISO(start), todayISO(addDays(start, 6))]
 }
 
 /** The calendar toolbar's subject line: which slice of time is on screen.
  *
  *  TWO LENGTHS, deliberately. The toolbar collapses to the short form in a narrow pane through a
  *  container query, and CSS cannot rewrite text — so both strings are produced here and the bar
- *  hides one. Before this existed the toolbar built its label from `toDateStr`, so week and 3-day
+ *  hides one. Before this existed the toolbar built its label from `todayISO`, so week and 3-day
  *  read "2026-01-12 — 2026-01-18": 23 characters of ISO in a header slot, and the single reason
  *  the label ellipsized to "2026-…" at an ordinary split-pane width. Month meanwhile read
  *  "January 2026", so the same slot spoke two different vocabularies depending on the view. */

@@ -12,7 +12,7 @@ import { IconButton } from '../../ui/IconButton'
 import BarLabel from '../../ui/BarLabel'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
-import { toDateStr } from '../dates'
+import { todayISO } from '../../../../core/src/dates'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
@@ -106,7 +106,7 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                     label="New event"
                     onClick={() =>
                         (showEventModal.value = {
-                            date: toDateStr(currentDate.value),
+                            date: todayISO(currentDate.value),
                         })
                     }
                 />

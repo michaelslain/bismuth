@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import { expandRecurrence } from '../../../core/src/bases/recurrence'
+import { todayISO } from '../../../core/src/dates'
 import {
-    toDateStr,
     addDays,
     formatTime,
     startOfWeek,
@@ -12,9 +12,8 @@ import {
     weekdayNames,
 } from './dates'
 
-test('toDateStr / addDays', () => {
-    expect(toDateStr(new Date('2026-05-27T00:00:00'))).toBe('2026-05-27')
-    expect(toDateStr(addDays(new Date('2026-05-27T00:00:00'), 5))).toBe(
+test('addDays', () => {
+    expect(todayISO(addDays(new Date('2026-05-27T00:00:00'), 5))).toBe(
         '2026-06-01',
     )
 })
@@ -80,22 +79,22 @@ test('monthly on the 31st clamps to the last day of shorter months', () => {
 
 test('startOfWeek sundayFirst — 2026-05-27 (Wed) → 2026-05-24 (Sun)', () => {
     const d = new Date('2026-05-27T00:00:00')
-    expect(toDateStr(startOfWeek(d, false))).toBe('2026-05-24')
+    expect(todayISO(startOfWeek(d, false))).toBe('2026-05-24')
 })
 
 test('startOfWeek mondayFirst — 2026-05-27 (Wed) → 2026-05-25 (Mon)', () => {
     const d = new Date('2026-05-27T00:00:00')
-    expect(toDateStr(startOfWeek(d, true))).toBe('2026-05-25')
+    expect(todayISO(startOfWeek(d, true))).toBe('2026-05-25')
 })
 
 test('startOfWeek mondayFirst — on Monday itself returns same day', () => {
     const d = new Date('2026-05-25T00:00:00') // Monday
-    expect(toDateStr(startOfWeek(d, true))).toBe('2026-05-25')
+    expect(todayISO(startOfWeek(d, true))).toBe('2026-05-25')
 })
 
 test('startOfWeek sundayFirst — on Sunday itself returns same day', () => {
     const d = new Date('2026-05-24T00:00:00') // Sunday
-    expect(toDateStr(startOfWeek(d, false))).toBe('2026-05-24')
+    expect(todayISO(startOfWeek(d, false))).toBe('2026-05-24')
 })
 
 test('weekRange mondayFirst — correct start+end', () => {
@@ -181,17 +180,17 @@ test('rangeLabel — does not mutate the date it is handed', () => {
 
 test('stepDate — each view moves in its own unit, both directions', () => {
     const d = new Date(2026, 0, 12)
-    expect(toDateStr(stepDate(d, 'month', 1))).toBe('2026-02-12')
-    expect(toDateStr(stepDate(d, 'month', -1))).toBe('2025-12-12')
-    expect(toDateStr(stepDate(d, 'week', 1))).toBe('2026-01-19')
-    expect(toDateStr(stepDate(d, '3day', 1))).toBe('2026-01-15')
-    expect(toDateStr(stepDate(d, 'day', -1))).toBe('2026-01-11')
+    expect(todayISO(stepDate(d, 'month', 1))).toBe('2026-02-12')
+    expect(todayISO(stepDate(d, 'month', -1))).toBe('2025-12-12')
+    expect(todayISO(stepDate(d, 'week', 1))).toBe('2026-01-19')
+    expect(todayISO(stepDate(d, '3day', 1))).toBe('2026-01-15')
+    expect(todayISO(stepDate(d, 'day', -1))).toBe('2026-01-11')
 })
 
 test('stepDate — does not mutate its input', () => {
     const d = new Date(2026, 0, 12)
     stepDate(d, 'month', 1)
-    expect(toDateStr(d)).toBe('2026-01-12')
+    expect(todayISO(d)).toBe('2026-01-12')
 })
 
 test('weekdayNames starts on the chosen weekday', () => {
@@ -204,14 +203,14 @@ test('monthGrid pads to whole weeks and marks spill days', () => {
     const sun = monthGrid(2026, 8, false)
     expect(sun.length % 7).toBe(0)
     expect(sun.length).toBe(35)
-    expect(toDateStr(sun[0].date)).toBe('2026-08-30')
+    expect(todayISO(sun[0].date)).toBe('2026-08-30')
     expect(sun[0].inMonth).toBe(false)
-    expect(toDateStr(sun[2].date)).toBe('2026-09-01')
+    expect(todayISO(sun[2].date)).toBe('2026-09-01')
     expect(sun[2].inMonth).toBe(true)
     expect(sun.filter(c => c.inMonth).length).toBe(30)
     const mon = monthGrid(2026, 8, true)
-    expect(toDateStr(mon[0].date)).toBe('2026-08-31')
-    expect(toDateStr(mon[1].date)).toBe('2026-09-01')
+    expect(todayISO(mon[0].date)).toBe('2026-08-31')
+    expect(todayISO(mon[1].date)).toBe('2026-09-01')
 })
 
 test('monthGrid grows to six rows when the month needs it', () => {

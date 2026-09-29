@@ -11,7 +11,8 @@ import { TimeGrid } from './TimeGrid'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
 import { events, categories, showEventModal, settings } from '../../state'
-import { addDays, toDateStr } from '../../dates'
+import { addDays } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 import CalendarFrame from '../CalendarFrame'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
@@ -79,7 +80,7 @@ export const Default: Story = {
  *  stacking them on top of each other. */
 export const OverlappingEvents: Story = {
     render: () => {
-        const day = toDateStr(anchor)
+        const day = todayISO(anchor)
         seedCalendarState({
             date: anchor,
             categories: [
@@ -259,7 +260,7 @@ export const DragRetimesAnEvent: Story = {
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         await dragStore.load()
-        const created = await dragStore.addEvent({ title: 'Drag me', date: toDateStr(anchor), startTime: '09:00', endTime: '10:00', category: 'Work' })
+        const created = await dragStore.addEvent({ title: 'Drag me', date: todayISO(anchor), startTime: '09:00', endTime: '10:00', category: 'Work' })
         events.value = [created]
         const slot = await c.findByTestId('time-grid-event')
         const col = c.getByTestId('time-grid-day-col')

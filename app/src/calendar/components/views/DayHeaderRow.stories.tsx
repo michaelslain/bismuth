@@ -3,7 +3,8 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import DayHeaderRow from './DayHeaderRow'
-import { toDateStr, addDays } from '../../dates'
+import { addDays } from '../../dates'
+import { todayISO } from '../../../../../core/src/dates'
 
 const meta = {
     title: 'Calendar/Views/DayHeaderRow',
@@ -19,7 +20,7 @@ const dates = Array.from({ length: 7 }, (_, i) => addDays(anchor, i))
 
 /** 7 dates, today pinned to the 3rd — exercises the today-circle DayNumber renders inline. */
 export const Week: Story = {
-    render: () => <DayHeaderRow dates={dates} today={toDateStr(addDays(anchor, 2))} />,
+    render: () => <DayHeaderRow dates={dates} today={todayISO(addDays(anchor, 2))} />,
     play: async ({ canvasElement }) => {
         const heads = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="day-header"]')]
         expect(heads).toHaveLength(7)
@@ -51,11 +52,11 @@ export const GutterComparison: Story = {
         <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
             <div>
                 <p>gutter (default)</p>
-                <DayHeaderRow dates={dates} today={toDateStr(addDays(anchor, 2))} />
+                <DayHeaderRow dates={dates} today={todayISO(addDays(anchor, 2))} />
             </div>
             <div>
                 <p>gutter={'{false}'}</p>
-                <DayHeaderRow dates={dates} today={toDateStr(addDays(anchor, 2))} gutter={false} />
+                <DayHeaderRow dates={dates} today={todayISO(addDays(anchor, 2))} gutter={false} />
             </div>
         </div>
     ),
