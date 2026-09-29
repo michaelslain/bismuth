@@ -69,7 +69,7 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
         }
         if (kind === 'boolean' && typeof v === 'boolean') {
             return (
-                <Text as="span" inherit tone={v ? 'inherit' : 'muted'}>
+                <Text as="span" inherit tone={v ? 'default' : 'muted'}>
                     {v ? 'Yes' : 'No'}
                 </Text>
             )

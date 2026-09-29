@@ -44,7 +44,7 @@ const CardMeta: Component<CardMetaProps> = props => {
                 <For each={shown()}>
                     {id => (
                         <div class={styles.item}>
-                            <Label tone="muted" class={styles.key}>
+                            <Label tone="faint" class={styles.key}>
                                 {labelOf(id)}
                             </Label>
                             <Text as="span" inherit class={styles.value}>
