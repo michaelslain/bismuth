@@ -285,7 +285,7 @@ export const DeleteIsImmediateWithUndo: Story = {
 
 // ---- event-look comparison — phase 2 keeps one ----------------------------------------------
 
-const LOOKS = ['tint', 'outline', 'bracket', 'ledger', 'hatch'] as const
+const LOOKS = ['tint', 'outline', 'outline-tint', 'brick-tint', 'brick-outline'] as const
 
 const LOOK_DAY = '2026-01-12'
 const LOOK_EVENTS: CalendarEvent[] = [

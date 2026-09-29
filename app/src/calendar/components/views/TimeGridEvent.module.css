@@ -10,6 +10,3 @@
    off from the lane behind with a hard (0-blur) line of ground drawn OUTSIDE its box — 2px on the
    left, 1px on top — which paints over the event it overlaps rather than under its own chip. */
 [data-event-look] .stacked { box-shadow: -2px -1px 0 0 var(--bg); }
-/* event-look comparison — the slot is a size container so a look can reflow a chip in a narrow lane
-   (ledger drops its time gutter below ~8rem). */
-[data-event-look] .slot { container-type: inline-size; }

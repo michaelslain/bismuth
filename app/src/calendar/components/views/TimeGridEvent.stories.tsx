@@ -60,7 +60,7 @@ export const DimmedWhileDragged: Story = {
 export const Looks: Story = {
     render: () => (
         <div style={{ display: 'flex', gap: '16px' }}>
-            {(['tint', 'outline', 'bracket', 'ledger', 'hatch'] as const).map(look => (
+            {(['tint', 'outline', 'outline-tint', 'brick-tint', 'brick-outline'] as const).map(look => (
                 <div data-event-look={look}>
                     <Column events={[ev('a', '00:30', '03:00'), ev('b', '01:00', '02:00'), ev('c', '01:30', '03:30')]} />
                 </div>

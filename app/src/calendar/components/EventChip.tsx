@@ -107,20 +107,11 @@ export function EventChip(props: Props) {
         >
             <Show when={props.event.startTime}>
                 <Text as="span" inherit class={styles['event-chip-time']}>
-                    {/* Start, separator and end are separate inline runs (rendering exactly as one)
-                        so a look can stack start over end and drop the dash. */}
-                    <Text as="span" inherit>
-                        {formatTime(props.event.startTime!, military())}
-                    </Text>
+                    {formatTime(props.event.startTime!, military())}
                     {/* Compact (short) events show only the start time so the title gets the room. */}
-                    <Show when={!props.compact && props.event.endTime}>
-                        <Text as="span" inherit class={styles['event-chip-sep']}>
-                            {' — '}
-                        </Text>
-                        <Text as="span" inherit>
-                            {formatTime(props.event.endTime!, military())}
-                        </Text>
-                    </Show>
+                    {!props.compact && props.event.endTime
+                        ? ` — ${formatTime(props.event.endTime, military())}`
+                        : ''}
                 </Text>
             </Show>
             <Text as="span" inherit class={styles['event-chip-title']}>
