@@ -177,7 +177,7 @@
   },
   "calendar.defaultCategoryColor": {
     "type": "string",
-    "default": "#4a90e2",
+    "default": "#8296C6",
     "min": null,
     "max": null,
     "required": false

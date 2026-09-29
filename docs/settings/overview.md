@@ -249,7 +249,7 @@ Embed resolution is always filename-first (like wikilinks), so moving an attachm
 | `militaryTime` | boolean | `false` | — | Use 24-hour time format. |
 | `monthCellMinHeight` | number | `80` | 50–160 | Minimum height of a day cell in month view in px. |
 | `timeGutterWidth` | number | `50` | 40–80 | Width of the hour-label gutter in week/day views in px. |
-| `defaultCategoryColor` | string | `#4a90e2` | — | Default color for a newly created event category (hex string). |
+| `defaultCategoryColor` | string | `#8296C6` | — | Default color for a newly created event category (hex string). |
 
 ### `googleCalendar`
 

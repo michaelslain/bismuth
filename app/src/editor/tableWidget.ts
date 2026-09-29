@@ -79,6 +79,7 @@ import { parseWikilink, resolveNotePath, wikilinkOpenPath } from './wikilink'
 // CodeMirror — we DEFER the blur teardown (both leaveEdit + the root commit) while a gallery is up so
 // the gallery's deferred applyInsert has a live editor to write into + refocus (#49).
 import { isGalleryOpen } from '../ui/gallery/galleryState'
+import { openNote } from '../ui/openNote'
 import { emojiQuickAction, type QuickActionSpec } from './emojiQuickAction'
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
 // its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform
@@ -712,11 +713,7 @@ function openCellWikilink(view: EditorView, raw: string): void {
     if (!target) return
     const notes = view.state.facet(noteNamesFacet)?.() ?? []
     const resolved = resolveNotePath(target, notes)
-    window.dispatchEvent(
-        new CustomEvent('bismuth-open', {
-            detail: { path: wikilinkOpenPath(target, resolved), heading },
-        }),
-    )
+    openNote(wikilinkOpenPath(target, resolved), heading)
 }
 
 export class TableWidget extends WidgetType {

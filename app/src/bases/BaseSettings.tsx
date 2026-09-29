@@ -36,12 +36,11 @@ import {
     numberOrUndefined,
     orUndefined,
     planSettingsWrites,
-    readFrontmatter,
-    runOp,
     showsColumns,
     showsMode,
     viewKeysFor,
 } from './baseSettingsPlan'
+import { readFrontmatter, runOp } from './baseSettingsIO'
 import { filterToForm, formToFilter } from './filterForm'
 import { formToSource, sourceToForm, toWikilink } from './sourceForm'
 import {
@@ -398,7 +397,7 @@ export function BaseSettings(props: {
         <FormModal
             onClose={props.onClose}
             label={`${kind()} settings`}
-                    >
+        >
             <ModalHeader
                 title={`${kind()} settings`}
                 subtitle={props.basePath ? noteLabel(props.basePath) : undefined}

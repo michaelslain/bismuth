@@ -193,7 +193,7 @@ Calendar Bases-view defaults. (Calendar is a Bases view kind — see [bases over
 | `militaryTime` | boolean | `false` | — | Use 24-hour time. |
 | `monthCellMinHeight` | number | `80` | min `50`, max `160` | Minimum height of a day cell in month view (px). |
 | `timeGutterWidth` | number | `50` | min `40`, max `80` | Width of the hour-label gutter in week/day views (px). |
-| `defaultCategoryColor` | string | `#4a90e2` | — | Default color for a newly created event category (hex). |
+| `defaultCategoryColor` | string | `#8296C6` | — | Default color for a newly created event category (hex). |
 
 Example:
 
