@@ -35,7 +35,7 @@ tasks` is active — everything below this point describes `mode: normal`, the d
 
 `cardContent: properties` (or omitted) renders a 5-column wrapping grid of book-style cards. Each card has:
 
-1. A **cover** — either a generated text cover (gradient background + spine bar, with title and author text) or a real image when `image:` is configured.
+1. A **cover** — either a generated text cover (a typed glyph fingerprint unique to the note, with title and author text) or a real image when `image:` is configured.
 2. A **body row** below the cover — status word on the left, star rating or page count on the right, plus the title and author when an image cover is used (they don't appear on the cover itself in that case).
 
 The grid is a responsive CSS `display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr))` (`.cardGrid` in `CardsView.module.css`) — as many equal columns as fit at or above the minimum width, each column stretching to share the leftover space. Row-major flow keeps cards in sorted/grouped order (a CSS-multicol masonry would scramble it reading top-to-bottom down each column). The minimum column width is configurable via `settings.ui.cardGridMinWidth` (default `220`, range 150–360px), projected to the `--card-grid-min` CSS variable by `settingsCssVars.ts` — there's no per-base override, but the vault-wide setting changes it for every cards view. `mode: tasks` cards render in a separate, narrower grid (`.taskCardGrid`, `minmax(180px, 1fr)`, not tied to `cardGridMinWidth`) since a task line is shorter than a note preview.
@@ -152,9 +152,11 @@ In properties mode without an `image:` property, the generated text cover draws:
 
 This is a simpler rule than the `CardBody` heuristic: it always takes column index 1, not the first non-title/non-meta column.
 
-### Cover spine colors
+### The generated cover's fingerprint and colour
 
-The generated text cover has a 4px colored spine bar on the left edge and a gradient background. These cycle through 7 accent palette colors (`--teal`, `--violet`, `--blue`, `--graph-1`, `--graph-4`, `--green`, `--gold`) based on the card's CSS `nth-child` position (1-indexed mod 7). This is purely cosmetic and not configurable.
+The generated text cover (`bases/CardCover.tsx`) is a neutral ground (`--surface-2`) typed over with a sparse field of the app's own glyphs (`| - + / \ _ # . o @`, the same `ui/ascii/noiseField.ts` texture the graph backdrop uses), with the title and author on a cleared band at its foot. The field is **seeded by the note's path** (`bases/coverFingerprint.ts`), so every note has its own pattern and it never changes when the view is re-sorted, filtered or regrouped.
+
+Colour appears **only when the view is grouped** (`groupBy`): each card's glyphs and a light wash of the ground take its group's hue — the same key→colour rule as a kanban column (`bases/groupHue.ts`: a known status colour, else a `--graph-0..4` slot hashed from the group key), and a view's `groupColors` override wins. An ungrouped view's covers stay neutral. Not otherwise configurable.
 
 ---
 

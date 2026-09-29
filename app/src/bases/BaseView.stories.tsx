@@ -24,7 +24,6 @@ import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { toasts } from '../toastStore'
 import taskRowStyles from './TaskRow.module.css'
 import tableViewStyles from './TableView.module.css'
-import cardsViewStyles from './CardsView.module.css'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import { currentView } from '../calendar/state'
 import { taskRow } from '../ui/_calendarAssertions'
@@ -1139,7 +1138,7 @@ export const TaskShapedRowsInNormalMode: Story = {
         // The cards renderer, untouched: a cover per row and a click-to-open card…
         await waitFor(() => {
             expect(
-                canvasElement.querySelectorAll(`.${cardsViewStyles.cardCover}`)
+                canvasElement.querySelectorAll('[data-testid="card-cover"]')
                     .length,
             ).toBe(2)
         })
