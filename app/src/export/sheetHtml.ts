@@ -1,5 +1,6 @@
 // app/src/export/sheetHtml.ts
 import { renderCellHtml } from '../bases/markdown'
+import type { WorkbookSnapshot } from '../sheet/snapshot'
 
 interface CellLike {
     v?: unknown
@@ -8,8 +9,8 @@ interface SheetLike {
     cellData?: Record<string, Record<string, CellLike>>
 }
 
-function firstSheet(snap: any): SheetLike | null {
-    const sheets = snap?.sheets
+function firstSheet(snap: WorkbookSnapshot): SheetLike | null {
+    const sheets = snap?.sheets as Record<string, SheetLike> | undefined
     if (!sheets || typeof sheets !== 'object') return null
     const order: string[] = Array.isArray(snap.sheetOrder)
         ? snap.sheetOrder
@@ -18,7 +19,7 @@ function firstSheet(snap: any): SheetLike | null {
     return null
 }
 
-export function snapshotToHtmlTable(snap: any): string {
+export function snapshotToHtmlTable(snap: WorkbookSnapshot): string {
     const sheet = firstSheet(snap)
     const cellData = sheet?.cellData ?? {}
     let maxRow = -1,

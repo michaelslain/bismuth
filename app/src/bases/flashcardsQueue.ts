@@ -258,8 +258,3 @@ export function saveSession(
     if (!key) return
     sessions.set(key, { ...state, retired: [...state.retired] })
 }
-
-/** Drop a deck's saved session. Exposed for tests / explicit resets. */
-export function clearSession(key: string | undefined): void {
-    if (key) sessions.delete(key)
-}
