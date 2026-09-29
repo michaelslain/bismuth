@@ -3,28 +3,23 @@ import {
     createMemo,
     createResource,
     createEffect,
-    For,
 } from 'solid-js'
 import {
     FIELDS,
     seedColumnMap,
     defaultColumnMap,
     columnVocabulary,
-    columnOptions,
 } from '../calendarColumnMap'
 import { withBusy } from '../withBusy'
 import { showCalendarSettings } from '../state'
 import { api } from '../../api'
-import Select from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import FormModal from '../../ui/FormModal'
 import ModalBody from '../../ui/ModalBody'
-import SettingsSection from '../../ui/SettingsSection'
-import SettingsGrid from '../../ui/SettingsGrid'
-import SettingsField from '../../ui/SettingsField'
+import CalendarColumnMapping from './CalendarColumnMapping'
 import { GcalSyncPanel } from './GcalSyncPanel'
 
 export function CalendarSettings(props: {
@@ -74,27 +69,11 @@ export function CalendarSettings(props: {
             <ModalHeader title="calendar settings" onClose={close} />
 
             <ModalBody>
-                <SettingsSection>column mapping</SettingsSection>
-                <SettingsGrid>
-                    <For each={FIELDS}>
-                        {f => (
-                            <SettingsField
-                                label={f.role}
-                                badge={f.req ? 'required' : 'optional'}
-                                hint={f.hint}
-                            >
-                                <Select
-                                    value={map()[f.key] ?? ''}
-                                    options={columnOptions(columns(), !f.req)}
-                                    placeholder="not set"
-                                    onChange={c =>
-                                        setMap(m => ({ ...m, [f.key]: c }))
-                                    }
-                                />
-                            </SettingsField>
-                        )}
-                    </For>
-                </SettingsGrid>
+                <CalendarColumnMapping
+                    values={map()}
+                    columns={columns()}
+                    onChange={(key, c) => setMap(m => ({ ...m, [key]: c }))}
+                />
 
                 <GcalSyncPanel basePath={props.basePath} />
             </ModalBody>

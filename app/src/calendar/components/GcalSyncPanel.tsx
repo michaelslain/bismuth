@@ -9,12 +9,9 @@ import { createEffect, createResource, createSignal, Show } from 'solid-js'
 import { settings, setSettings } from '../../settings'
 import { api, summarizeSync } from '../../api'
 import Select from '../../ui/Select'
-import { TextButton } from '../../ui/TextButton'
 import { TextInput } from '../../ui/TextInput'
-import Text from '../../ui/Text'
 import { IconTextButton } from '../../ui/IconTextButton'
 import InlineCode from '../../ui/InlineCode'
-import StatusDot from '../../ui/StatusDot'
 import SettingsSection from '../../ui/SettingsSection'
 import SettingsField from '../../ui/SettingsField'
 import SettingsHint from '../../ui/SettingsHint'
@@ -23,6 +20,8 @@ import ToggleRow from '../../ui/ToggleRow'
 import { pushToast } from '../../Toast'
 import { withBusy } from '../withBusy'
 import { isConfirmKey } from '../../ui/widgetKeys'
+import GcalConnectPrompt from './GcalConnectPrompt'
+import GcalStatusRow from './GcalStatusRow'
 import { GcalConnectModal } from '../../GcalConnectModal'
 import styles from './GcalSyncPanel.module.css'
 
@@ -106,38 +105,14 @@ export function GcalSyncPanel(props: { basePath: string }) {
             <Show
                 when={status()?.connected}
                 fallback={
-                    <div class={styles['gcal-connect']}>
-                        <SettingsHint>
-                            two-way sync between this calendar and google —
-                            events only (no gmail, drive, or contacts).
-                        </SettingsHint>
-                        <IconTextButton
-                            icon="calendar"
-                            variant="selected"
-                            onClick={() => setShowConnect(true)}
-                        >
-                            connect google calendar
-                        </IconTextButton>
-                    </div>
+                    <GcalConnectPrompt onConnect={() => setShowConnect(true)} />
                 }
             >
-                <div class={styles['gcal-status']}>
-                    <StatusDot color="var(--green)" />
-                    <Text
-                        as="span"
-                        inherit
-                        class={styles['gcal-acct']}
-                    >
-                        {status()!.account}
-                    </Text>
-                    <TextButton
-                        danger
-                        onClick={disconnect}
-                        disabled={busy()}
-                    >
-                        disconnect
-                    </TextButton>
-                </div>
+                <GcalStatusRow
+                    account={status()!.account!}
+                    disabled={busy()}
+                    onDisconnect={disconnect}
+                />
 
                 <div class={styles['gcal-toggle-group']}>
                     <ToggleList>
