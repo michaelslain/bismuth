@@ -15,6 +15,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { GcalSyncPanel } from './GcalSyncPanel'
+import ModalBody from '../../ui/ModalBody'
 import { ToastHost } from '../../Toast'
 import { toasts, dismissToast } from '../../toastStore'
 import { setTransport, type Transport } from '../../api'
@@ -26,6 +27,17 @@ const meta = {
     title: 'Calendar/GcalSyncPanel',
     component: GcalSyncPanel,
     parameters: { layout: 'fullscreen' },
+    // The real host is CalendarSettings' FormModal > ModalBody (548px panel); 520px is that
+    // panel's body, so field spacing and side padding match the modal.
+    decorators: [
+        Story => (
+            <div style={{ width: '520px', 'max-width': '100%' }}>
+                <ModalBody>
+                    <Story />
+                </ModalBody>
+            </div>
+        ),
+    ],
 } satisfies Meta<typeof GcalSyncPanel>
 
 export default meta
@@ -214,7 +226,7 @@ export const SyncFailure: Story = {
     play: async () => {
         const body = within(document.body)
         await userEvent.click(await body.findByRole('button', { name: /sync now/ }))
-        expect(await body.findByText('Sync failed: quota exceeded')).toBeTruthy()
+        expect(await body.findByText('sync failed: quota exceeded')).toBeTruthy()
         await waitFor(() =>
             expect(body.getByRole('button', { name: /sync now/ })).not.toBeDisabled(),
         )

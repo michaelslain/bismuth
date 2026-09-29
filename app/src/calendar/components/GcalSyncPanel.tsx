@@ -86,7 +86,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
         withBusy(busyState, "Couldn't save the calendar id", commitCalId)
 
     const syncNow = () =>
-        withBusy(busyState, 'Sync failed', async () => {
+        withBusy(busyState, 'sync failed', async () => {
             await commitCalId() // flush any pending id edit so this sync targets the right calendar
             pushToast(summarizeSync(await api.gcalSync(props.basePath)))
         })
