@@ -19,8 +19,6 @@ import {
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-export const DAEMON_LABEL = 'com.bismuth.daemon'
-
 /** Stable installed path of the daemon binary (env override BISMUTH_DAEMON_BIN). */
 export function daemonBinPath(): string {
     return (

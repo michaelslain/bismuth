@@ -14,7 +14,7 @@
 // with `env: {...process.env}` HARD-CODED into the helper — no way to inject the augmented PATH
 // (`claudeWhich.ts`'s `claudeLookupPath`/`claudeSpawnEnv`) every other Bismuth-spawned CLI needs so a
 // Finder-launched bundle (a minimal launchd PATH with no Homebrew/nvm dirs) can still find the user's
-// `opencode` binary. So this module resolves the binary itself (opencode.ts's `whichOpencode`) and
+// `opencode` binary. So this module resolves the binary itself (`whichBinary('opencode')` in claudeWhich.ts) and
 // spawns `opencode serve` directly via Bun.spawn + claudeSpawnEnv, exactly like every other driver in
 // this codebase (chat.ts, terminal.ts, chatProviders/acp/driver.ts) — then binds the SDK's typed
 // client to the resulting URL via createOpencodeClient({baseUrl}). Startup detection mirrors the
