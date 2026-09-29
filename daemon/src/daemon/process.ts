@@ -5,6 +5,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
 import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
+import { drainTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
     RESTART_BACKOFF_RESET_MS,
@@ -897,6 +898,42 @@ export async function listProcesses(
     return { processes, orphans }
 }
 
+/** Read + parse one process definition by file basename. Shared by enable/disable and the
+ *  trigger reconciler; `error` carries the exact user-facing message when there is no def. */
+async function loadProcessDef(
+    name: string,
+    ctx: VaultContext,
+): Promise<
+    | {
+          ok: true
+          filePath: string
+          def: ProcessDef
+          frontmatter: Record<string, string>
+          body: string
+      }
+    | { ok: false; error: string; missing?: true }
+> {
+    const filePath = join(ctx.processesDir, `${name}.md`)
+    let content: string
+    try {
+        content = await readFile(filePath, 'utf-8')
+    } catch {
+        return {
+            ok: false,
+            error: `No process definition found for "${name}"`,
+            missing: true,
+        }
+    }
+    const { frontmatter, body } = parseFrontmatter(content)
+    const def = parseProcessFrontmatter(name, frontmatter)
+    if (!def)
+        return {
+            ok: false,
+            error: `Process "${name}" is missing required "command" field`,
+        }
+    return { ok: true, filePath, def, frontmatter, body }
+}
+
 /**
  * Flip `enabled: true` on disk and register the process if not already known
  * to the daemon. Does NOT spawn — caller must call startProcess to actually
@@ -906,21 +943,9 @@ export async function enableProcess(
     name: string,
     ctx: VaultContext,
 ): Promise<{ ok: boolean; error?: string }> {
-    const filePath = join(ctx.processesDir, `${name}.md`)
-    let content: string
-    try {
-        content = await readFile(filePath, 'utf-8')
-    } catch {
-        return { ok: false, error: `No process definition found for "${name}"` }
-    }
-
-    const { frontmatter, body } = parseFrontmatter(content)
-    const def = parseProcessFrontmatter(name, frontmatter)
-    if (!def)
-        return {
-            ok: false,
-            error: `Process "${name}" is missing required "command" field`,
-        }
+    const loaded = await loadProcessDef(name, ctx)
+    if (!loaded.ok) return loaded
+    const { filePath, def, frontmatter, body } = loaded
 
     // Must mirror parseProcessFrontmatter's `enabled !== "false"` default: a definition with NO
     // `enabled:` key is already ENABLED, so treating a missing key as disabled (=== "true") made a
@@ -945,21 +970,9 @@ export async function disableProcess(
     name: string,
     ctx: VaultContext,
 ): Promise<{ ok: boolean; error?: string }> {
-    const filePath = join(ctx.processesDir, `${name}.md`)
-    let content: string
-    try {
-        content = await readFile(filePath, 'utf-8')
-    } catch {
-        return { ok: false, error: `No process definition found for "${name}"` }
-    }
-
-    const { frontmatter, body } = parseFrontmatter(content)
-    const def = parseProcessFrontmatter(name, frontmatter)
-    if (!def)
-        return {
-            ok: false,
-            error: `Process "${name}" is missing required "command" field`,
-        }
+    const loaded = await loadProcessDef(name, ctx)
+    if (!loaded.ok) return loaded
+    const { filePath, def, frontmatter, body } = loaded
 
     // Stop first if running. stopProcess only works for entries in `managed`,
     // so register the def before stopping (no-op if already registered).
@@ -1003,40 +1016,6 @@ function isRunning(ctx: VaultContext, name: string): boolean {
 }
 
 /**
- * Write a trigger file so the daemon reconciles this process on its next poll.
- * Symmetric counterpart of requestCronRun — used by the MCP server / external
- * tools (which may also just drop the file directly) as a first-class API.
- */
-export async function requestProcessRun(
-    name: string,
-    ctx: VaultContext,
-): Promise<{ ok: boolean; error?: string }> {
-    let content: string
-    try {
-        content = await readFile(join(ctx.processesDir, `${name}.md`), 'utf-8')
-    } catch {
-        return { ok: false, error: `No process definition found for "${name}"` }
-    }
-    const def = parseProcessFrontmatter(
-        name,
-        parseFrontmatter(content).frontmatter,
-    )
-    if (!def)
-        return {
-            ok: false,
-            error: `Process "${name}" is missing required "command" field`,
-        }
-
-    await mkdir(ctx.processTriggerDir, { recursive: true })
-    await writeFile(
-        join(ctx.processTriggerDir, name),
-        new Date().toISOString(),
-        'utf-8',
-    )
-    return { ok: true }
-}
-
-/**
  * Check for trigger files dropped by an external program for one vault and
  * reconcile each named process's runtime to its on-disk frontmatter. Symmetric
  * counterpart of cron's processTriggers: owner-gated (non-owner consumes triggers
@@ -1044,32 +1023,9 @@ export async function requestProcessRun(
  * the loop.
  */
 export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
-    let files: string[]
-    try {
-        files = await readdir(ctx.processTriggerDir)
-    } catch {
-        return
-    }
-
-    const triggers = files.filter(f => !f.startsWith('.'))
-    if (triggers.length === 0) return
-
-    // Not the owner device: idle. Consume the trigger files so they don't pile
-    // up, but don't start/stop. Unclaimed => isOwner true => normal behavior.
-    if (!(await isOwner())) {
-        for (const name of triggers) {
-            try {
-                await unlink(join(ctx.processTriggerDir, name))
-            } catch {}
-        }
-        return
-    }
+    const triggers = await drainTriggers(ctx.processTriggerDir, isOwner)
 
     for (const name of triggers) {
-        try {
-            await unlink(join(ctx.processTriggerDir, name))
-        } catch {}
-
         // Defense-in-depth: the trigger filename addresses a .md file by basename,
         // so reject anything with path separators that could escape the dir.
         if (name.includes('/') || name.includes('\\')) {
@@ -1081,13 +1037,14 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
 
         // Resolve the basename to a def by reading its .md directly (reload from
         // disk so we see the fresh `enabled`). Tolerate unknown/removed defs.
-        let content: string
-        try {
-            content = await readFile(
-                join(ctx.processesDir, `${name}.md`),
-                'utf-8',
-            )
-        } catch {
+        const loaded = await loadProcessDef(name, ctx)
+        if (!loaded.ok) {
+            if (!loaded.missing) {
+                console.warn(
+                    `[process] Trigger for "${name}" missing required "command" — skipping`,
+                )
+                continue
+            }
             const mp = managed.get(procKey(ctx, name))
             if (mp) {
                 mp.stopping = true
@@ -1102,16 +1059,7 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
             }
             continue
         }
-        const def = parseProcessFrontmatter(
-            name,
-            parseFrontmatter(content).frontmatter,
-        )
-        if (!def) {
-            console.warn(
-                `[process] Trigger for "${name}" missing required "command" — skipping`,
-            )
-            continue
-        }
+        const { def } = loaded
 
         // Reconcile runtime ↔ disk using the existing enable/disable/start funcs.
         const running = isRunning(ctx, def.file)
