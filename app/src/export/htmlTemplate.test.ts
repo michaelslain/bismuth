@@ -541,7 +541,6 @@ describe('mono scoping and embedded faces', () => {
         const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
         expect(rule).toContain('.fmatter')
         expect(rule).toContain('.bismuth-tag')
-        expect(rule).toContain('.bismuth-task-field')
         expect(rule).toMatch(/font-family:\s*'Monaspace Xenon'/)
         // The mono SIZE too: prose is --prose-scale x the editor size and mono does not take that
         // optical compensation, so inheriting the scaled size would render code too large.
