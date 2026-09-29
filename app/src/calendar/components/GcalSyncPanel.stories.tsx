@@ -48,7 +48,7 @@ const BASE_PATH = 'Calendar.md'
 function baseFixture(view: Record<string, unknown>): ParsedBase {
     return {
         config: {
-            views: [{ type: 'calendar', name: 'Calendar', ...view }],
+            view: { type: 'calendar', ...view },
         },
         rows: [],
     } as unknown as ParsedBase

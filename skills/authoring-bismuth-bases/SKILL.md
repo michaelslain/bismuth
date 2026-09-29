@@ -1,13 +1,45 @@
 ---
 name: authoring-bismuth-bases
-description: Use when creating, editing, or debugging a Bismuth "base" — a `type: base` markdown note whose frontmatter declares filters/formulas/views over the vault. Covers picking the right view kind (table, cards, list, bullets, kanban, map, calendar, flashcards, bar, line, stat, heatmap) and writing frontmatter that actually matches the code.
+description: Use when creating, editing, or debugging a Bismuth "base" — a `type: base` markdown note whose frontmatter declares filters/formulas and one view over the vault. Covers picking the right view kind (table, cards, list, bullets, kanban, map, calendar, flashcards, bar, line, stat, heatmap) and writing frontmatter that actually matches the code.
 ---
 
 # Authoring Bismuth bases
 
 ## The model
 
-A **base** is an ordinary `.md` file with `type: base` in its YAML frontmatter — there is **no `.base` extension**. The frontmatter *is* the config: `source` says where rows come from (vault notes, checkbox tasks, or another base), `filters`/`formulas` shape and compute over those rows, and `views` is an array of one-or-more view configs, each with a `type` (one of the 12 kinds below) plus that kind's own fields. A minimal `---\ntype: base\n---` alone renders every vault note as a table — the safe default.
+A **base** is an ordinary `.md` file with `type: base` in its YAML frontmatter — there is **no `.base` extension**. The frontmatter *is* the config: `source` says where rows come from (vault notes, checkbox tasks, or another base), `filters`/`formulas` shape and compute over those rows, and `view: <kind>` (one of the 12 kinds below) picks how they render, with that kind's own keys alongside at the top level. A minimal `---\ntype: base\n---` alone renders every vault note as a table — the safe default.
+
+## One base, one view
+
+A base has exactly ONE view. Write it flat: `type: base`, `view: <kind>` (the kind key is `view`, never `type`), and every view key (`sort`, `groupBy`, `order`, `columns`, `limit`, `x`, `y`, `mode`, ...) at the top level beside the base keys `filters`, `source`, `formulas`, `properties`. There is no view name and no per-view `filters`/`source`.
+
+For another view of the same rows, make a second base file that composes the first:
+
+```yaml
+# Board.md
+---
+type: base
+source: notes where "#book"
+view: kanban
+groupBy:
+  property: note.status
+---
+```
+
+```yaml
+# Book Table.md
+---
+type: base
+source: base
+ref: "[[Board]]"
+view: table
+order: [note.title, note.status]
+---
+```
+
+Composition semantics: the referenced base contributes its ROWS ONLY (its own `source` rows, or its inline table rows if it declares none). Its `filters`, `formulas`, `properties`, sort, group and limit are NOT applied, so restate any filter you want in the composing base. Cycles resolve to zero rows.
+
+Legacy `views:` lists still read (first entry only; extra entries are ignored) and are flattened on the app's first write. Do not author them.
 
 ## Which view kind to use
 
@@ -31,20 +63,20 @@ A **base** is an ordinary `.md` file with `type: base` in its YAML frontmatter �
 A `stat` view renders one tile per entry in `stats:` — each entry is a bare string (label = value = that string) or `{ label?, value }` with `value` a metric expression: `count()`, `count(status == "done")`, `sum(priority)`, `avg(price)`, `sum(price) / sum(units)`. A bare property name outside `sum`/`avg`/`min`/`max`/`count` fails to parse — a metric has no single row to evaluate it against. With no `stats:` declared, the view synthesizes one metric from its own `x`/`y`/`aggregate`. Full semantics + the KaTeX/period-split/sparkline rendering: `docs/bases/views/charts.md`.
 
 ```yaml
-views:
-  - type: stat
-    stats:
-      - label: total pages
-        value: sum(pages)
-      - value: count()
+type: base
+view: stat
+stats:
+  - label: total pages
+    value: sum(pages)
+  - value: count()
 ```
 
 ## Workflow
 
 1. **Pick a kind** from the table above.
 2. **Read `references/<kind>.md`** in this skill for that kind's exact config keys, a working frontmatter example, and its specific failure modes — do not guess a key name from memory or from another kind's shape.
-3. **Create the note**: a `.md` file (any path/name) with `type: base` frontmatter, `source:` if you don't want the whole vault, and a `views:` array with your chosen `type:` plus its fields.
-4. **Verify with `bismuth base validate <path>`** before opening it in the app — it catches bad `views[].type`, unresolvable `source`/`filters`, and invalid `properties` defaults that `parseBaseFile` would otherwise silently downgrade/ignore (e.g. an unrecognized `views[].type` quietly renders as `table` instead of erroring, which `base validate` surfaces explicitly). Then re-read the file (or open it in the app / query it) and confirm the frontmatter parses the way you intended, especially `source:` (see gotcha below): a typo'd `source` silently falls back to a default rather than erroring. `bismuth base create` and `bismuth base render` are the companion CLI commands for scaffolding and previewing a base headlessly.
+3. **Create the note**: a `.md` file (any path/name) with `type: base` frontmatter, `source:` if you don't want the whole vault, `view: <kind>`, and that kind's keys at the top level.
+4. **Verify with `bismuth base validate <path>`** before opening it in the app — it catches a bad `view:` kind, a legacy `views:` list with more than one entry, unresolvable `source`/`filters`, and invalid `properties` defaults that `parseBaseFile` would otherwise silently downgrade/ignore (e.g. an unrecognized `view:` kind quietly renders as `table` instead of erroring, which `base validate` surfaces explicitly). Then re-read the file (or open it in the app / query it) and confirm the frontmatter parses the way you intended, especially `source:` (see gotcha below): a typo'd `source` silently falls back to a default rather than erroring. `bismuth base create` and `bismuth base render` are the companion CLI commands for scaffolding and previewing a base headlessly.
 
 ## Cross-cutting gotchas (apply to every kind)
 

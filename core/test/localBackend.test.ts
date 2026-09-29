@@ -277,37 +277,53 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(seen).toEqual([['a.md', 'b.md']])
     })
 
-    test('set-property with viewIndex writes into views[i], not top level', async () => {
+    test('set-property on a legacy views: base flattens it, then writes top level', async () => {
         const { fa, files } = memVault({
             'board.md':
-                '---\ntype: base\nviews:\n  - type: table\n  - type: kanban\n---\n',
+                '---\ntype: base\nviews:\n  - type: kanban\n    name: Board\n---\n',
         })
         setFileAccess(fa)
         const be = createLocalBackend({ vault: '/v' })
         await be.dispatch('POST', '/set-property', {
             path: 'board.md',
-            viewIndex: 1,
             key: 'columns',
             value: ['todo', 'done'],
         })
-        expect(files['board.md']).not.toMatch(/^columns:/m)
-        expect(files['board.md']).toMatch(/type: kanban\n\s+columns:/)
+        expect(files['board.md']).not.toContain('views:')
+        expect(files['board.md']).toMatch(/^view: kanban$/m)
+        expect(files['board.md']).toMatch(/^columns:/m)
     })
 
-    test('delete-property with viewIndex deletes from views[i], not top level', async () => {
+    test('delete-property on a legacy views: base flattens it, then deletes top level', async () => {
         const { fa, files } = memVault({
             'board.md':
-                '---\ntype: base\ngroupColors: keep\nviews:\n  - type: table\n  - type: kanban\n    groupColors:\n      todo: rose\n---\n',
+                '---\ntype: base\nviews:\n  - type: kanban\n    groupBy: status\n    groupColors:\n      todo: rose\n---\n',
         })
         setFileAccess(fa)
         const be = createLocalBackend({ vault: '/v' })
         await be.dispatch('POST', '/delete-property', {
             path: 'board.md',
-            viewIndex: 1,
             key: 'groupColors',
         })
         expect(files['board.md']).not.toContain('todo: rose')
-        expect(files['board.md']).toMatch(/^groupColors: keep/m)
+        expect(files['board.md']).toMatch(/^groupBy: status$/m)
+        expect(files['board.md']).not.toContain('views:')
+    })
+
+    test('a write to a base declaring several views is refused, file untouched', async () => {
+        const text =
+            '---\ntype: base\nviews:\n  - type: table\n  - type: kanban\n---\n'
+        const { fa, files } = memVault({ 'board.md': text })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/set-property', {
+                path: 'board.md',
+                key: 'columns',
+                value: ['a'],
+            }),
+        ).rejects.toThrow(/2 views/)
+        expect(files['board.md']).toBe(text)
     })
 
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {

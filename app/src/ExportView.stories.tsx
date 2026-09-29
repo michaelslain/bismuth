@@ -39,20 +39,14 @@ const NOTE_BODY = [
 ].join('\n')
 
 const BASE_PATH = 'boards/tasks.md'
-// Two views (not one) so the view picker actually renders — it's gated on `views().length > 1`
-// (a single-view base has nothing to pick between).
 const BASE_BODY = [
     '---',
     'type: base',
-    'views:',
-    '  - type: table',
-    '    name: Table',
-    '  - type: cards',
-    '    name: Cards',
+    'view: cards',
     '---',
 ].join('\n')
 
-/** A plain note: the format picker (HTML/PDF/MD/PNG) defaults to HTML, no view/mode controls
+/** A plain note: the format picker (HTML/PDF/MD/PNG) defaults to HTML, no mode controls
  *  (those are base-only), and the preview iframe renders the note's own rendered markdown. */
 export const Note: Story = {
     render: () => {
@@ -74,9 +68,7 @@ export const Note: Story = {
 }
 
 /** A `type: base` file: ExportView reads its frontmatter (parseBaseFile) to discover its
- *  declared views and shows the extra view-picker + Visual/Data toggle a plain note never gets —
- *  the view picker itself only renders once there's something to pick between (`views().length
- *  > 1`), so this fixture declares two. */
+ *  view kind and shows the Visual/Data toggle a plain note never gets. */
 export const Base: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [BASE_PATH]: BASE_BODY } }))
@@ -86,8 +78,8 @@ export const Base: Story = {
         const canvas = within(canvasElement)
         expect(canvas.getByText(/export base/i)).toBeInTheDocument()
         await waitFor(() => {
-            expect(canvas.getByText('Table')).toBeInTheDocument()
-            expect(canvas.getByText('Cards')).toBeInTheDocument()
+            expect(canvas.getByText('Visual')).toBeInTheDocument()
+            expect(canvas.getByText('Data')).toBeInTheDocument()
         })
     },
 }

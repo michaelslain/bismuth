@@ -8,9 +8,7 @@ An offline, self-contained vector world map plotting rows as pins by lat/lng. No
 ---
 type: base
 source: notes where "#location"
-views:
-  - type: map
-    name: Places
+view: map
 ---
 ```
 
@@ -19,13 +17,11 @@ Custom field names + fixed framing:
 ```yaml
 ---
 type: base
-views:
-  - type: map
-    name: Atlas
-    lat: latitude
-    lng: longitude
-    zoom: 6
-    center: { lat: 40.7, lng: -74 }
+view: map
+lat: latitude
+lng: longitude
+zoom: 6
+center: { lat: 40.7, lng: -74 }
 ---
 ```
 
@@ -37,10 +33,9 @@ type: base
 formulas:
   computed_lat: "note.geo_lat * 1"
   computed_lng: "note.geo_lng * 1"
-views:
-  - type: map
-    lat: formula.computed_lat
-    lng: formula.computed_lng
+view: map
+lat: formula.computed_lat
+lng: formula.computed_lng
 ---
 ```
 

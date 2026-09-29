@@ -437,11 +437,9 @@ These are **not** part of the per-row expression dispatch — they are the named
 
 Example view config:
 ```yaml
-views:
-  - type: table
-    name: V
-    summaries:
-      note.price: Sum
+view: table
+summaries:
+  note.price: Sum
 ```
 Over rows with prices `10, 4, 20` → `summaries["note.price"] === "34"`. With a filter excluding `done`, the same `Sum` over `10, 20` → `"30"`. Numeric `Min`/`Max` drop non-numbers; `Count`/`Empty`/`Filled`/`Unique` operate over all values.
 

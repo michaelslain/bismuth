@@ -8,15 +8,13 @@ A spaced-repetition (SM-2) review UI over a base's rows. Each row is one card.
 ---
 type: base
 source: notes where "#vocab"
-views:
-  - type: flashcards
-    name: Vocabulary
-    frontField: front
-    backField: back
-    dueField: due
-    easeField: ease
-    intervalField: interval
-    bidirectional: false
+view: flashcards
+frontField: front
+backField: back
+dueField: due
+easeField: ease
+intervalField: interval
+bidirectional: false
 ---
 ```
 

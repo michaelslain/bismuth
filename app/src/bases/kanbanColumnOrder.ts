@@ -47,7 +47,7 @@ export function reorderColumnKeys(
 /** The column-key order after adding a new column named `name` at the end (pinned, empty).
  *  Trims `name`; refuses (returns `null`) an empty/whitespace-only name or one that already
  *  matches an existing key (post-trim). Pure — the caller persists the result the same way
- *  `reorderColumns` does (optimistic set, then `setViewProperty(..., 'columns', keys)`). */
+ *  `reorderColumns` does (optimistic set, then `setProperty(..., 'columns', keys)`). */
 export function appendColumnKey(keys: string[], name: string): string[] | null {
     const trimmed = name.trim()
     if (trimmed === '' || isColumnNameTaken(keys, trimmed)) return null
@@ -65,7 +65,7 @@ export function isColumnNameTaken(keys: string[], name: string): boolean {
  *  no mutation) an empty/whitespace-only `to`, an unknown `from`, or a `to` that already
  *  matches an existing key — which also catches a no-op rename (`to === from`), since `from`
  *  is itself among `keys`. Caller persists the same way `reorderColumns` does (optimistic
- *  `pendingColOrder`, then `setViewProperty(..., 'columns', keys)`). */
+ *  `pendingColOrder`, then `setProperty(..., 'columns', keys)`). */
 export function renameColumnKey(
     keys: string[],
     from: string,

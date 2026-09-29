@@ -51,7 +51,7 @@ function seedRows(): void {
 export const Table: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: table\n'} />
+        return <BaseView source={'view: table\n'} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -68,7 +68,7 @@ export const Table: Story = {
 export const Cards: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: cards\n'} />
+        return <BaseView source={'view: cards\n'} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -88,7 +88,7 @@ export const Kanban: Story = {
         return (
             <BaseView
                 source={
-                    'views:\n  - type: kanban\n    groupBy: status\n'
+                    'view: kanban\ngroupBy: status\n'
                 }
             />
         )
@@ -105,7 +105,7 @@ export const Kanban: Story = {
 }
 
 /** A `type: base` md FILE (not an inline source) with no rows of its own — a "query base"
- *  (filters/views over the vault) that BaseView defaults to `{kind: "notes"}` when the config
+ *  (filters and a view over the vault) that BaseView defaults to `{kind: "notes"}` when the config
  *  declares no explicit source and the file's own GFM table is empty. `body` is handed in
  *  pre-fetched (as FileView always does), so no `/file` round-trip is needed for this story. */
 export const FromBaseFile: Story = {
@@ -114,7 +114,7 @@ export const FromBaseFile: Story = {
         return (
             <BaseView
                 path="boards/tasks.md"
-                body={'---\ntype: base\nviews:\n  - type: table\n---\n'}
+                body={'---\ntype: base\nview: table\n---\n'}
             />
         )
     },
@@ -128,7 +128,7 @@ export const FromBaseFile: Story = {
     },
 }
 
-/** A distinct row set for the PerViewSource story below — deliberately NOT part of SAMPLE_ROWS,
+/** A distinct row set for the DeclaredSource story below — deliberately NOT part of SAMPLE_ROWS,
  *  so a story assertion that finds this text can only have come from resolving the SECOND
  *  view's own `source: tasks`, never a stale render of the first view's `source: notes`. */
 const TASKS_VIEW_ROW: Row = {
@@ -148,12 +148,10 @@ const TASKS_VIEW_ROW: Row = {
     formula: {},
 }
 
-/** Two views over ONE base, each with its OWN `source:` — the gap this fixes: `ViewConfig.source`
- *  was parsed and typed but BaseView only ever resolved the base-level `config.source`, so a
- *  per-view override was silently ignored. `fakeTransport`'s /rows resolver returns different
- *  rows per spec.kind, so switching tabs proves the SECOND view's own source actually resolved
- *  (not a stale render of the first view's rows). */
-export const PerViewSource: Story = {
+/** A base's `source:` is what resolves its rows — `fakeTransport`'s /rows resolver returns
+ *  different rows per spec.kind, so seeing the tasks-sourced row (and none of the notes
+ *  fixture rows) proves the declared source, not the default, was resolved. */
+export const DeclaredSource: Story = {
     render: () => {
         setTransport(
             fakeTransport({
@@ -163,24 +161,15 @@ export const PerViewSource: Story = {
         )
         return (
             <BaseView
-                path="boards/multi.md"
+                path="boards/tasks.md"
                 body={
-                    '---\ntype: base\nviews:\n' +
-                    '  - type: table\n    name: Notes\n    source:\n      kind: notes\n' +
-                    '  - type: table\n    name: Tasks\n    source:\n      kind: tasks\n' +
-                    '---\n'
+                    '---\ntype: base\nview: table\nsource:\n  kind: tasks\n---\n'
                 }
             />
         )
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        // First view (its own `source: notes`) resolves the notes-sourced fixture rows.
-        await waitFor(() => {
-            expect(canvas.getByText('Draft the roadmap')).toBeInTheDocument()
-        })
-        // Click the second view's tab — it must resolve ITS OWN source, not reuse the first's.
-        await userEvent.click(canvas.getByText('Tasks'))
         await waitFor(() => {
             expect(
                 canvas.getByText('Distinct tasks-sourced row'),
@@ -202,7 +191,7 @@ export const EmbeddedQueryHeader: Story = {
         seedRows()
         return (
             <BaseView
-                source={'views:\n  - type: table\n'}
+                source={'view: table\n'}
                 embeddedSource={{ onReveal: () => {}, onEditQuery: () => {} }}
             />
         )
@@ -270,7 +259,7 @@ const FLASHCARD_DECK: Row[] = [
 ]
 
 const FLASHCARD_BASE_BODY =
-    '---\ntype: base\nviews:\n  - type: flashcards\n    name: Vocabulary\n---\n'
+    '---\ntype: base\nview: flashcards\n---\n'
 
 /** A sized stand-in for a real editor pane. BaseView fills its host, and the flashcards stage only
  *  lays out inside a bounded box — and the bar's collapse ladder is a CONTAINER query on the bar
@@ -984,7 +973,7 @@ export const KanbanOwnRowsAddCard: Story = {
     render: () => {
         const path = 'boards/kanban-own-rows.md'
         const body =
-            '---\ntype: base\nviews:\n  - type: kanban\n    groupBy:\n      property: status\n    order:\n      - title\n      - priority\n---\n\n' +
+            '---\ntype: base\nview: kanban\ngroupBy:\n  property: status\norder:\n  - title\n  - priority\n---\n\n' +
             '- title: Write docs\n  status: todo\n  priority: low\n' +
             '- title: Fix bug\n  status: doing\n  priority: high\n'
         taskPosts = recordingTransport({ files: { [path]: body } }).posts
@@ -1079,10 +1068,8 @@ export const TasksFromAnotherBase: Story = {
     render: () => {
         const path = 'boards/projects.md'
         const body =
-            '---\ntype: base\nviews:\n' +
-            '  - type: table\n    name: Projects\n' +
-            '  - type: list\n    name: Tasks\n    mode: tasks\n' +
-            '    source:\n      kind: base\n      ref: "[[Tasks]]"\n' +
+            '---\ntype: base\nview: list\nmode: tasks\n' +
+            'source:\n  kind: base\n  ref: "[[Tasks]]"\n' +
             '---\n\n- name: Rebuild the graph\n- name: Ship tasks mode\n'
         taskPosts = recordingTransport({
             files: { [path]: body },
@@ -1093,7 +1080,6 @@ export const TasksFromAnotherBase: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(await waitFor(() => canvas.getByText('Tasks')))
         const boxes = await waitFor(() => {
             const b = canvas.getAllByTitle(
                 'Toggle task — right-click to set status',
@@ -1168,7 +1154,7 @@ async function painted(canvasElement: HTMLElement): Promise<void> {
 export const List: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: list\n'} />
+        return <BaseView source={'view: list\n'} />
     },
     play: async ({ canvasElement }) => {
         await waitFor(() =>
@@ -1181,7 +1167,7 @@ export const List: Story = {
 export const Bullets: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: bullets\n'} />
+        return <BaseView source={'view: bullets\n'} />
     },
     play: async ({ canvasElement }) => {
         await waitFor(() =>
@@ -1194,7 +1180,7 @@ export const Bullets: Story = {
 export const MapView: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: map\n'} />
+        return <BaseView source={'view: map\n'} />
     },
     play: async ({ canvasElement }) => painted(canvasElement),
 }
@@ -1203,7 +1189,7 @@ export const MapView: Story = {
 export const CalendarTasks: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: calendar\n    mode: tasks\n'} />
+        return <BaseView source={'view: calendar\nmode: tasks\n'} />
     },
     play: async ({ canvasElement }) => painted(canvasElement),
 }
@@ -1212,7 +1198,7 @@ export const CalendarTasks: Story = {
 export const BarChart: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: bar\n    x: status\n'} />
+        return <BaseView source={'view: bar\nx: status\n'} />
     },
     play: async ({ canvasElement }) => {
         await painted(canvasElement)
@@ -1223,7 +1209,7 @@ export const BarChart: Story = {
 export const LineChart: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: line\n    x: due\n'} />
+        return <BaseView source={'view: line\nx: due\n'} />
     },
     play: async ({ canvasElement }) => {
         await painted(canvasElement)
@@ -1234,7 +1220,7 @@ export const LineChart: Story = {
 export const StatTiles: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: stat\n'} />
+        return <BaseView source={'view: stat\n'} />
     },
     play: async ({ canvasElement }) => {
         await painted(canvasElement)
@@ -1245,7 +1231,7 @@ export const StatTiles: Story = {
 export const HeatmapChart: Story = {
     render: () => {
         seedRows()
-        return <BaseView source={'views:\n  - type: heatmap\n    x: due\n'} />
+        return <BaseView source={'view: heatmap\nx: due\n'} />
     },
     play: async ({ canvasElement }) => {
         await painted(canvasElement)
@@ -1265,7 +1251,7 @@ export const Loading: Story = {
             postJson: <T,>(path: string, body: unknown): Promise<T> =>
                 hang(path) ? new Promise<never>(() => {}) : inner.postJson<T>(path, body),
         } as Transport)
-        return <BaseView source={'views:\n  - type: table\n'} />
+        return <BaseView source={'view: table\n'} />
     },
     play: async ({ canvasElement }) => {
         await waitFor(() =>
@@ -1288,7 +1274,7 @@ export const LoadError: Story = {
                     ? Promise.reject(new Error('vault unreachable'))
                     : inner.postJson<T>(path, body),
         } as Transport)
-        return <BaseView source={'views:\n  - type: table\n'} />
+        return <BaseView source={'view: table\n'} />
     },
     play: async ({ canvasElement }) => {
         await waitFor(() => {
@@ -1304,7 +1290,7 @@ export const LoadError: Story = {
 export const EmptyVault: Story = {
     render: () => {
         setTransport(fakeTransport({ rows: [] }))
-        return <BaseView source={'views:\n  - type: table\n'} />
+        return <BaseView source={'view: table\n'} />
     },
     play: async ({ canvasElement }) => {
         await waitFor(() => {
@@ -1534,8 +1520,8 @@ export const TasksNoStoredStatus: Story = {
 // flush; the second mounts a macrotask later with the RIGHT body. A unique path keeps other stories'
 // cache entries out of it (docCache is module-level and shared by the whole Storybook tab).
 const DISPOSED_PATH = 'regressions/disposed-mount.md'
-const DISPOSED_WRONG = '---\ntype: base\nviews:\n  - type: table\n---\n\n- description: wrong-row-from-a-dead-mount\n'
-const DISPOSED_RIGHT = '---\ntype: base\nviews:\n  - type: table\n---\n\n- description: right-row-for-this-path\n'
+const DISPOSED_WRONG = '---\ntype: base\nview: table\n---\n\n- description: wrong-row-from-a-dead-mount\n'
+const DISPOSED_RIGHT = '---\ntype: base\nview: table\n---\n\n- description: right-row-for-this-path\n'
 
 function DisposedMountHarness() {
     const [phase, setPhase] = createSignal<'wrong' | 'gap' | 'right'>('wrong')
@@ -1837,7 +1823,7 @@ export const KanbanLateStaleResolve: Story = {
         })
 
         return (
-            <BaseView source={'views:\n  - type: kanban\n    groupBy: status\n'} />
+            <BaseView source={'view: kanban\ngroupBy: status\n'} />
         )
     },
     play: async ({ canvasElement }) => {

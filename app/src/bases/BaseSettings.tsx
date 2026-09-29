@@ -15,7 +15,6 @@ import type {
 import { viewMode } from '../../../core/src/bases/types'
 import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
-import { capitalize } from './columnKinds'
 import { columnLabel } from './columnLabel'
 import { columnsOf } from './propertyColumns'
 import { declaredPropertyKeys } from '../../../core/src/bases/properties'
@@ -40,7 +39,7 @@ import {
     showsMode,
     viewKeysFor,
 } from './baseSettingsPlan'
-import { readFrontmatter, runOp } from './baseSettingsIO'
+import { runOp } from './baseSettingsIO'
 import { filterToForm, formToFilter } from './filterForm'
 import { formToSource, sourceToForm, toWikilink } from './sourceForm'
 import {
@@ -97,36 +96,29 @@ const DIR_OPTS = [
 ]
 
 /**
- * Per-view settings as a modal overlay — same FormModal chrome as the calendar's
+ * A base's settings as a modal overlay — same FormModal chrome as the calendar's
  * CalendarSettings, so every base type shares one polished design:
  * header / sectioned body / footer with RESET + CANCEL + SAVE. Floats over the live view.
  *
- * Covers every key a base or view reads, so no base has to be configured by editing YAML:
- * the view's name / kind / mode, its source, base + view filters, columns, sort, group, limit,
- * per-kind field bindings, table summaries, formulas and the declared property set.
+ * A base has ONE view, so the panel edits `config.view` and the base's own keys together.
+ * Covers every key a base reads, so no base has to be configured by editing YAML:
+ * the view's kind / mode, its source, filters, columns, sort, group, limit, per-kind field
+ * bindings, table summaries, formulas and the declared property set.
  *
- * SAVE writes only the keys that changed (baseSettingsPlan.ts `diffPatch`), VIEW keys into
- * `views[viewIndex]` and BASE keys at the top level — see `planSettingsWrites` for the
- * flat-key traps it routes around.
+ * SAVE writes only the keys that changed (baseSettingsPlan.ts `diffPatch`), each as a plain
+ * top-level frontmatter key — see `planSettingsWrites`.
  */
 export function BaseSettings(props: {
     type: ViewType
     config: BaseConfig
-    /** Index of the view these settings edit — the active view, not always the first. */
-    viewIndex?: number
-    /** Older spelling of `viewIndex`, still accepted. */
-    viewIdx?: number
     basePath?: string
     rows: Row[]
     onClose: () => void
     onSaved: () => void
 }) {
-    const viewIndex = () => props.viewIndex ?? props.viewIdx ?? 0
-    const view = () => props.config.views[viewIndex()]
+    const view = () => props.config.view
 
     // ---- view identity ----
-    const initialName = view()?.name ?? capitalize(props.type)
-    const [name, setName] = createSignal(initialName)
     const [kind, setKind] = createSignal<ViewType>(props.type)
     const [mode, setMode] = createSignal<'normal' | 'tasks'>(
         view() ? viewMode(view()!) : 'normal',
@@ -236,18 +228,14 @@ export function BaseSettings(props: {
         seedSummaryChoices(view()?.summaries, cols().map(c => c.col)),
     )
 
-    // ---- filters: this view's + every view's (base-level) ----
-    const [viewFilters, setViewFilters] = createSignal(
-        filterToForm(view()?.filters),
-    )
-    const [baseFilters, setBaseFilters] = createSignal(
+    // ---- filters ----
+    const [filters, setFilters] = createSignal(
         filterToForm(props.config.filters),
     )
 
-    // ---- source: the view's own override when it has one, else the base's ----
-    const sourceScope: 'base' | 'view' = view()?.source ? 'view' : 'base'
+    // ---- source ----
     const [sourceForm, setSourceForm] = createSignal(
-        sourceToForm(view()?.source ?? props.config.source),
+        sourceToForm(props.config.source),
     )
     // Base pickers (`from` / `ref`): every note, as `[[name]]`.
     const [tree] = createResource<TreeEntry[]>(() => api.tree())
@@ -259,7 +247,7 @@ export function BaseSettings(props: {
     )
 
     // ---- properties form (#104: define the base's OWN declared property set) ----
-    // Base-level, not per-view — shown regardless of the kind. Seeded ONLY from an
+    // Shown regardless of the kind. Seeded ONLY from an
     // existing list-form declaration (`declaredProperties`); a base using classic map-form
     // metadata (or no `properties:` at all) starts from an empty list so the panel never
     // surfaces entries it can't losslessly round-trip as a list. `hadDeclared` is captured
@@ -275,13 +263,18 @@ export function BaseSettings(props: {
     const duplicateNames = createMemo(() => duplicatePropertyNames(propRows()))
 
     // ---- what SAVE would write: the full desired value of every managed key ----
-    const desiredView = (): Record<string, unknown> => {
+    const desired = (): Record<string, unknown> => {
         const f = form()
         const out: Record<string, unknown> = {
-            name: name().trim() || initialName,
-            type: kind(),
+            view: kind(),
             mode: mode(),
-            filters: formToFilter(viewFilters()),
+            filters: formToFilter(filters()),
+            source: formToSource(sourceForm()),
+            formulas: buildFormulas(formulaRows()),
+            properties:
+                hadDeclared || propRows().length > 0
+                    ? buildPropertiesYaml(propRows())
+                    : undefined,
             limit: limitOrUndefined(limitText()),
             order: colsTouched() ? orderOf(cols()) : view()?.order,
             sort: sort().length ? sort() : undefined,
@@ -305,28 +298,17 @@ export function BaseSettings(props: {
         }
         for (const fd of ALL_FIELDS)
             out[fd.key] = fd.optional ? orUndefined(f[fd.key] ?? '') : f[fd.key]
-        if (sourceScope === 'view') out.source = formToSource(sourceForm())
         return out
     }
-    const desiredBase = (): Record<string, unknown> => ({
-        filters: formToFilter(baseFilters()),
-        formulas: buildFormulas(formulaRows()),
-        properties:
-            hadDeclared || propRows().length > 0
-                ? buildPropertiesYaml(propRows())
-                : undefined,
-        ...(sourceScope === 'base'
-            ? { source: formToSource(sourceForm()) }
-            : {}),
-    })
-    const viewKeys = (): string[] => viewKeysFor(kind(), sourceScope)
-    const BASE_KEYS = ['source', 'filters', 'formulas', 'properties']
+    const keys = (): string[] => [
+        ...viewKeysFor(kind()),
+        'formulas',
+        'properties',
+    ]
     // Captured once, from the seeded form — diffed against at SAVE.
-    const initialView = untrack(desiredView)
-    const initialBase = untrack(desiredBase)
+    const initial = untrack(desired)
 
     const reset = () => {
-        setName(initialName)
         setKind(props.type)
         setMode(view() ? viewMode(view()!) : 'normal')
         setForm(Object.fromEntries(ALL_FIELDS.map(f => [f.key, f.def])))
@@ -343,9 +325,8 @@ export function BaseSettings(props: {
         setFraming({ zoom: '', centerLat: '', centerLng: '' })
         setLook({ cardContent: '', imageFit: '', aspect: '' })
         setSummaryChoices({})
-        setViewFilters(filterToForm(view()?.filters))
-        setBaseFilters(filterToForm(props.config.filters))
-        setSourceForm(sourceToForm(view()?.source ?? props.config.source))
+        setFilters(filterToForm(props.config.filters))
+        setSourceForm(sourceToForm(props.config.source))
         setFormulaRows(seedFormulaRows(props.config.formulas))
         setPropRows(seedPropertyRows(props.config))
         setEditingProp(null)
@@ -358,31 +339,15 @@ export function BaseSettings(props: {
 
     const save = async () => {
         const path = props.basePath
-        const viewPatch = diffPatch(initialView, desiredView(), viewKeys())
-        const basePatch = diffPatch(initialBase, desiredBase(), BASE_KEYS)
-        if (
-            !path ||
-            (Object.keys(viewPatch).length === 0 &&
-                Object.keys(basePatch).length === 0)
-        ) {
+        const patch = diffPatch(initial, desired(), keys())
+        if (!path || Object.keys(patch).length === 0) {
             props.onSaved()
             return
         }
         setSaving(true)
         setError(null)
         try {
-            const plan = planSettingsWrites({
-                frontmatter: await readFrontmatter(path),
-                viewIndex: viewIndex(),
-                view: viewPatch,
-                base: basePatch,
-                current: { type: kind(), name: desiredView().name as string },
-            })
-            if ('error' in plan) {
-                setError(plan.error)
-                return
-            }
-            for (const o of plan.ops) await runOp(path, o)
+            for (const o of planSettingsWrites(patch)) await runOp(path, o)
             props.onSaved()
         } catch (e) {
             setError(
@@ -407,11 +372,9 @@ export function BaseSettings(props: {
             <ModalBody>
                 <SettingsSection>view</SettingsSection>
                 <ViewIdentityFields
-                    name={name()}
                     kind={kind()}
                     mode={mode()}
                     showMode={showMode()}
-                    onName={setName}
                     onKind={setKind}
                     onMode={setMode}
                 />
@@ -421,32 +384,20 @@ export function BaseSettings(props: {
                     value={sourceForm()}
                     onChange={setSourceForm}
                     bases={baseOptions()}
-                    scope={sourceScope}
-                    viewCount={props.config.views.length}
                     properties={allCols()}
                     rows={props.rows}
                     config={props.config}
                 />
 
                 <SettingsSection>filters</SettingsSection>
-                <SettingsField label="this view" span>
+                <SettingsField label="conditions" span>
                     <FiltersEditor
-                        value={viewFilters()}
-                        onChange={setViewFilters}
+                        value={filters()}
+                        onChange={setFilters}
                         properties={allCols()}
                         rows={props.rows}
                         config={props.config}
-                        emptyHint="no conditions — this view keeps every row."
-                    />
-                </SettingsField>
-                <SettingsField label="every view" span>
-                    <FiltersEditor
-                        value={baseFilters()}
-                        onChange={setBaseFilters}
-                        properties={allCols()}
-                        rows={props.rows}
-                        config={props.config}
-                        emptyHint="no conditions. these apply to every view of the base, on top of each view's own."
+                        emptyHint="no conditions — every row is kept."
                     />
                 </SettingsField>
 
@@ -576,7 +527,7 @@ export function BaseSettings(props: {
 
                 <SettingsSection>formulas</SettingsSection>
                 <SettingsHint>
-                    computed columns for every view — use one as{' '}
+                    computed columns — use one as{' '}
                     <InlineCode>formula.name</InlineCode> in columns, sort,
                     group and filters.
                 </SettingsHint>

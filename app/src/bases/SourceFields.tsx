@@ -17,10 +17,6 @@ export type SourceFieldsProps = {
     onChange: (form: SourceForm) => void
     /** `[[Name]]` options for the base pickers (from / ref). */
     bases: SelectOption[]
-    /** Whether this is the VIEW's own source override or the base-level one. */
-    scope: 'base' | 'view'
-    /** How many views share a base-level source (for the hint). */
-    viewCount: number
     properties: string[]
     rows: Row[]
     config?: BaseConfig
@@ -30,7 +26,7 @@ export type SourceFieldsProps = {
 const stripLink = (v: string) => v.replace(/^\[\[|\]\]$/g, '')
 
 /**
- * Where a view's rows come from: this base's own body rows, vault notes, vault tasks, or
+ * Where a base's rows come from: this base's own body rows, vault notes, vault tasks, or
  * another base — with the notes/tasks `where` filter built from condition rows and the
  * `from` / `ref` base pickers. Writes the canonical object form (sourceForm.ts).
  */
@@ -58,11 +54,7 @@ const SourceFields: Component<SourceFieldsProps> = props => {
                 hint={
                     props.value.kind === 'own'
                         ? "rows come from the table in this base's body — with no table, every note in the vault."
-                        : props.scope === 'view'
-                          ? "this view has its own source — it overrides the base's."
-                          : props.viewCount > 1
-                            ? `shared by all ${props.viewCount} views of this base.`
-                            : undefined
+                        : undefined
                 }
             >
                 <Select

@@ -17,7 +17,6 @@ export function clampPdfFontSize(pt: number): number {
 
 export function defaultExportOptions(): ExportOptions {
     return {
-        viewIndex: 0,
         mode: 'data',
         calSpan: 'month',
         calStart: '',

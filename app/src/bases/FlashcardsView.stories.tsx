@@ -1,6 +1,6 @@
 // Visual spec for <FlashcardsView> — the spaced-repetition review UI. Unlike the other Bases
 // views it takes a flat `rows: Row[]` (not a `ViewResult`) plus a `BaseConfig` whose
-// `views[0]` carries the flashcards field config (frontField/backField/dueField/...). `rows`
+// `view` carries the flashcards field config (frontField/backField/dueField/...). `rows`
 // need real front/back/due columns, which `_baseFixtures`' curated dataset doesn't carry, so
 // this story mints its own small deck (real FileMeta shape).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
@@ -92,7 +92,7 @@ const DECK: Row[] = [
 ]
 
 const config: BaseConfig = {
-    views: [{ type: 'flashcards', name: 'Vocabulary' }],
+    view: { type: 'flashcards' },
 }
 
 /** Walks the deck end to end, grading each card "easy" via the keyboard shortcut, and returns
@@ -809,7 +809,7 @@ export const RebindingKeysReplacesTheOldOnes: Story = {
 // graded column into the future the way the server does, so grading really drops the entry from the
 // due queue and the NEXT entry shows — real state, asserted in play().
 const biConfig: BaseConfig = {
-    views: [{ type: 'flashcards', name: 'Vocabulary', bidirectional: true }],
+    view: { type: 'flashcards', bidirectional: true },
 }
 const BI_BASE_PATH = 'stories/flashcards-bidirectional-demo.md'
 const [biRows, setBiRows] = createSignal<Row[]>(DECK)

@@ -1,5 +1,5 @@
 // app/src/export/baseView.ts
-// "Visual" base export: resolve a base's chosen view and render it AS ITS KIND (calendar
+// "Visual" base export: resolve a base's view and render it AS ITS KIND (calendar
 // grid / cards / kanban / list). Unsupported kinds (table, map, charts, stat, heatmap,
 // flashcards) degrade to the flat data table so the export never throws. Returns an HTML
 // body fragment + a scoped CSS block the exporter injects into the document head.
@@ -20,11 +20,7 @@ export async function baseViewHtml(
     opts: ExportOptions,
     palette: ThemePalette,
 ): Promise<VisualHtml> {
-    const { config, vr, categories } = await baseToViewResult(
-        path,
-        deps,
-        opts.viewIndex,
-    )
+    const { config, vr, categories } = await baseToViewResult(path, deps)
     switch (vr.view.type) {
         case 'calendar':
             return calendarHtml(config, vr, opts, palette, categories)

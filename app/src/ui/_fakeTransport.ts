@@ -26,9 +26,8 @@ import {
     parseFrontmatter,
     setFrontmatterKey,
     deleteFrontmatterKey,
-    setFrontmatterViewKey,
-    deleteFrontmatterViewKey,
 } from '../../../core/src/frontmatter'
+import { flattenBaseViews } from '../../../core/src/bases/flattenViews'
 import {
     start as startServerVersion,
     serverVersion,
@@ -336,53 +335,41 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 writes: Array<{ path: string; key: string; value: unknown }>
             }
             for (const w of writes) {
+                const raw = files.get(w.path)
+                if (raw !== undefined)
+                    files.set(
+                        w.path,
+                        setFrontmatterKey(flattenBaseViews(raw), w.key, w.value),
+                    )
                 const row = rowIndex.get(w.path)
                 if (row) row.note[w.key] = w.value
             }
             return new Response('ok')
         }
-        // A `viewIndex` targets `views[viewIndex][key]` of a `type: base` note (kanban column
-        // rename/colour, view-tab rename/reorder) — mirror the real server (`setFrontmatterViewKey`/
-        // `deleteFrontmatterViewKey` in core/src/server.ts) by editing the SEEDED FILE TEXT, not a
-        // row: a base's own `views:` config lives in its frontmatter, not in any row `/rows` ever
-        // resolved. Without this, `armFakeServerVersion`'s bump still fires but the next `/file`
-        // read (BaseView's doc refetch) hands back the same unedited text, so a gallery tile's
-        // kanban column rename/delete looks acked but never shows.
+        // Mirror the real server: a base's view keys live at the TOP LEVEL of its frontmatter
+        // (`flattenBaseViews` first rewrites a legacy `views:` list into that flat form), so a
+        // property write edits the SEEDED FILE TEXT, not only a row. Without this,
+        // `armFakeServerVersion`'s bump still fires but the next `/file` read (BaseView's doc
+        // refetch) hands back the same unedited text, so a gallery tile's kanban column
+        // rename/delete looks acked but never shows.
         if (pathname === '/set-property') {
-            const { path: p, key, value, viewIndex } = body as {
+            const { path: p, key, value } = body as {
                 path: string
                 key: string
                 value: unknown
-                viewIndex?: number
             }
             const raw = files.get(p)
-            if (raw !== undefined) {
-                files.set(
-                    p,
-                    typeof viewIndex === 'number'
-                        ? setFrontmatterViewKey(raw, viewIndex, key, value)
-                        : setFrontmatterKey(raw, key, value),
-                )
-            }
+            if (raw !== undefined)
+                files.set(p, setFrontmatterKey(flattenBaseViews(raw), key, value))
             const row = rowIndex.get(p)
             if (row) row.note[key] = value
             return new Response('ok')
         }
         if (pathname === '/delete-property') {
-            const { path: p, key, viewIndex } = body as {
-                path: string
-                key: string
-                viewIndex?: number
-            }
+            const { path: p, key } = body as { path: string; key: string }
             const raw = files.get(p)
-            if (raw !== undefined) {
-                files.set(
-                    p,
-                    typeof viewIndex === 'number'
-                        ? deleteFrontmatterViewKey(raw, viewIndex, key)
-                        : deleteFrontmatterKey(raw, key),
-                )
-            }
+            if (raw !== undefined)
+                files.set(p, deleteFrontmatterKey(flattenBaseViews(raw), key))
             const row = rowIndex.get(p)
             if (row) delete row.note[key]
             return new Response('ok')

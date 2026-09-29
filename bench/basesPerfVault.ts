@@ -18,7 +18,7 @@ export interface PerfVaultOptions {
 export interface PerfVault {
     root: string // vault root, populated with notes
     calendarBasePath: string // vault-relative path of a `type: base` md: mode: tasks,
-    // views: [{ type: calendar }], one regex-using filter, one declared formula
+    // view: calendar, one regex-using filter, one declared formula
     composedBasePath: string // vault-relative path of a second base whose source is
     // { kind: 'base', ref: calendarBasePath } (exercises composition)
     cleanup(): Promise<void> // rm -rf outDir
@@ -76,10 +76,8 @@ function calendarBaseText(): string {
         '---',
         'type: base',
         'source: tasks',
-        'views:',
-        '  - type: calendar',
-        '    name: Calendar',
-        '    mode: tasks',
+        'view: calendar',
+        'mode: tasks',
         // Regex-using filter — a `/pattern/flags` REGEX LITERAL (docs/bases/filters.md),
         // not a quoted string, so this exercises the lexer's regex-literal path (the same
         // AST node task 2 in this plan adds compiled-regex caching for). Every generated
@@ -104,9 +102,7 @@ function composedBaseText(): string {
         'source:',
         '  kind: base',
         `  ref: "[[${CALENDAR_BASE_NAME}]]"`,
-        'views:',
-        '  - type: table',
-        '    name: Composed',
+        'view: table',
         '---',
         '',
     ].join('\n')

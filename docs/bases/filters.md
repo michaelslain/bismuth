@@ -1,6 +1,6 @@
 # Bases Filters
 
-Filtering decides which rows survive: `filters:` in a base/view config, `where:` in a `where`/`from` source spec. This covers the `FilterNode` shape, the `and`/`or`/`not` combinator trees, how a single string filter is parsed and evaluated against one note's context, the truthiness rule that decides pass/fail, comparison semantics per value type, short-circuit operators, and the date/duration arithmetic filter expressions can use. Drawn from `core/src/bases/filters.ts`, `evaluate.ts`, `values.ts`, `functions.ts`, `parser.ts`, `lexer.ts`, `query.ts`, `source.ts`, and the colocated tests.
+Filtering decides which rows survive: `filters:` in a base config, `where:` in a `where`/`from` source spec. This covers the `FilterNode` shape, the `and`/`or`/`not` combinator trees, how a single string filter is parsed and evaluated against one note's context, the truthiness rule that decides pass/fail, comparison semantics per value type, short-circuit operators, and the date/duration arithmetic filter expressions can use. Drawn from `core/src/bases/filters.ts`, `evaluate.ts`, `values.ts`, `functions.ts`, `parser.ts`, `lexer.ts`, `query.ts`, `source.ts`, and the colocated tests.
 
 For the broader Bases model see [bases overview](./overview.md); for sources and composition see [sources](./sources.md); for the full function/method catalog see [functions](./functions.md); for sorting/grouping/columns see [query](./query-syntax.md).
 
@@ -20,8 +20,7 @@ It is recursive: the children of `and`/`or`/`not` are themselves `FilterNode`s, 
 
 Two places consume filters:
 
-- `BaseConfig.filters` — global, ANDed with each view's filters (see [Where filters live](#where-filters-live)).
-- `ViewConfig.filters` — per-view.
+- `BaseConfig.filters` — the base's only filter; a base has one view and the view has no filters of its own (see [Where filters live](#where-filters-live)).
 - A `SourceSpec`'s `where` field (`{ kind: "notes", where? }` / `{ kind: "tasks", where? }`) is a **plain string filter** (not a full `FilterNode` tree) — see [`where:` in sources](#where-in-sources).
 
 ## Evaluating a filter: `passesFilter`
@@ -316,31 +315,23 @@ filters:
 
 ## Where filters live
 
-### Base-level `filters:` ANDed with each view's `filters:`
+### The base's `filters:`
 
-In `runView` (`query.ts`), the effective filter for a view is `combineFilters(base.filters, view.filters)`:
-
-```ts
-export function combineFilters(a, b) {
-  if (a === undefined) return b;
-  if (b === undefined) return a;
-  return { and: [a, b] };
-}
-```
-
-So a base's global `filters:` is **ANDed** with the view's `filters:`. Test `applies global + view filters with AND`:
+`filters:` is a top-level key of the base, and it is the only place a filter lives besides a source's `where:`. `runView` (`query.ts`) applies `base.filters` to the rows:
 
 ```yaml
-filters: 'file.hasTag("book")'      # base-level global
-views:
-  - type: table
-    name: V
-    filters: 'status == "open"'     # view-level
-    order: [file.name]
+type: base
+filters: 'file.hasTag("book") && status == "open"'
+view: table
+order: [file.name]
 # Effective: file.hasTag("book") AND status == "open"  → only "alpha"
 ```
 
-`combineFilters` also passes through when one side is `undefined` (test `combineFilters ANDs two nodes`): `combineFilters(undefined, "price > 5")` returns `"price > 5"` unchanged.
+To combine conditions, use an `and:`/`or:`/`not:` tree or `&&` / `||` in one string.
+
+A legacy `views:` entry's own `filters:` is ANDed onto the base's when the file is read, and on the first write the file is flattened to `{ and: [base filters, entry filters] }` under the top-level `filters:` (see [overview](./overview.md#legacy-views-lists)).
+
+A base that composes another (`source: base`, `ref: "[[Other]]"`) receives only the other base's rows; the other base's `filters:` are not applied, so restate them (see [composing](./overview.md#one-view-per-base-composing)).
 
 ### `where:` in sources
 
@@ -373,28 +364,25 @@ source:
 
 ## Editing filters in the settings panel
 
-The view settings modal (gear in the view bar, `app/src/bases/BaseSettings.tsx`) has a **filters** section with two editors — **this view** (`views[i].filters`) and **every view** (the base-level `filters:`) — and the same editor builds a notes/tasks source's `where:`. Each is a list of conditions under one **match all / any** switch (`and:` / `or:`):
+The base settings modal (gear in the view bar, `app/src/bases/BaseSettings.tsx`) has a **filters** section that edits the base's `filters:` — and the same editor builds a notes/tasks source's `where:`. Each is a list of conditions under one **match all / any** switch (`and:` / `or:`):
 
 - A **condition** is property / operator / value pickers (the operator set follows the property's type: text, number, date, checkbox, tag, list). It compiles to the same leaf the ` ```query ` builder emits (`queryGen.ts`'s `compileNotesRow`).
 - An **expression** row holds any Bases expression verbatim. "Edit as expression" turns a condition into one.
 - Nothing is dropped on save (`app/src/bases/filterForm.ts`): an untouched editor writes nothing; a row you didn't edit is written back exactly as it was — a nested `or:`/`not:` subtree, or a top-level `not:`, shows as one expression row and is saved as the **same subtree**; a leaf becomes a visual condition only when recompiling it reproduces its exact tokens (`done == true` stays an expression, since the builder would write `done == "true"`); a malformed or mixed `&&`/`||` string is one expression row. A condition still missing its value is skipped until it has one.
 - Written shape: one condition → a bare string; several → `{and: [...]}` / `{or: [...]}`; none → the key is removed. A source `where` (a string, not a tree) joins rows as `(a) && (b)`.
-- On a base with no `views:` array, a view filter would collide with the base-level `filters:` key, so the first save of one converts the base to a one-entry `views:` list (its flat keys keep folding onto that view).
 
 ## `this.` host-note context
 
-When a base is rendered **inline inside another note** (an embedded `query` block), the host note's frontmatter flows in as `this.*`. `runView(base, rows, viewIndex, hostThis)` passes `hostThis` into both formula computation and `toContext`, so filters can reference it.
+When a base is rendered **inline inside another note** (an embedded `query` block), the host note's frontmatter flows in as `this.*`. `runView(base, rows, hostThis)` passes `hostThis` into both formula computation and `toContext`, so filters can reference it.
 
 Test `hostThis flows into filters / formulas / groupBy as this.*`:
 
 ```yaml
 formulas:
   adj: 'price * this.markup'
-views:
-  - type: table
-    name: V
-    filters: 'price >= this.minPrice'    # this.minPrice comes from the host note
-    order: [file.name, formula.adj]
+filters: 'price >= this.minPrice'    # this.minPrice comes from the host note
+view: table
+order: [file.name, formula.adj]
 # host = { minPrice: 10, markup: 2, tier: "open" }
 # → only alpha (price 10) and gamma (price 20) clear minPrice; adj = price * 2
 ```
@@ -480,7 +468,7 @@ filters:
 - **Ordered comparisons (`> < >= <=`) with a missing operand are `false`** (`cmpSafe` → NaN), and **mismatched non-null types fall back to locale string comparison** — keep operands the same type.
 - **Formulas are available in filters** because they're computed before filtering, but **only the formulas declared on the base config** (`base.formulas`). A typo in a formula name resolves to `undefined` (falsey).
 - **`&&`/`||` return operand values, not booleans**, but the filter boundary always applies `truthy()`, so this is transparent for the pass/fail decision; it matters when chaining into another expression/formula.
-- **Source `where:` is a string, not a tree.** You cannot put `and:`/`or:`/`not:` YAML under a source `where`; combine with `&&`/`||`/`!` inside the single expression instead. Full `FilterNode` trees are only available under `filters:` in a base/view config.
+- **Source `where:` is a string, not a tree.** You cannot put `and:`/`or:`/`not:` YAML under a source `where`; combine with `&&`/`||`/`!` inside the single expression instead. Full `FilterNode` trees are only available under `filters:` in a base config.
 - **`this.*` is only populated for embedded bases.** A standalone base file has no host note, so `this.minPrice` is `undefined` (filters using it then fail-closed via NaN/falsey). Source `where:` strings never get a `hostThis`.
 
 Source: `core/src/bases/filters.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/values.ts`, `core/src/bases/functions.ts`, `core/src/bases/parser.ts`, `core/src/bases/lexer.ts`, `core/src/bases/query.ts`, `core/src/bases/source.ts`, `core/src/bases/types.ts`, `core/src/bases/yamlComment.ts`, `core/test/bases/filters.test.ts`, `core/test/bases/evaluate.test.ts`, `core/test/bases/query.test.ts`, `core/test/bases/yamlComment.test.ts`

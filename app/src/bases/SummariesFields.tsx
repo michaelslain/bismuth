@@ -32,7 +32,7 @@ const SummariesFields: Component<SummariesFieldsProps> = props => (
             <For each={props.columns}>
                 {col => (
                     <SettingsField
-                        label={columnLabel(col, props.config ?? { views: [] })}
+                        label={columnLabel(col, props.config ?? { view: { type: 'table' } })}
                     >
                         <Select
                             value={props.choices[col] ?? ''}

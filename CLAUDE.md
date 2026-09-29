@@ -117,7 +117,7 @@ The `bismuth` binary (a thin wrapper over `@bismuth/core`) controls the vault fr
 
 ### Bases (`core/src/bases/` + `app/src/bases/`)
 
-A query/view system (deep reference: `docs/bases/`, per kind in `docs/bases/views/`). A **base is a `type: base` md file** whose frontmatter declares filters, formulas and views over the vault's notes. There is **no `.base` extension**.
+A query/view system (deep reference: `docs/bases/`, per kind in `docs/bases/views/`). A **base is a `type: base` md file** whose frontmatter declares filters, formulas and ONE view over the vault's notes — flat: `view: <kind>` + every view key top-level. Another view of the same rows = another base with `source: base` + `ref: "[[That Base]]"` (rows only — the referenced base's filters/formulas do not carry over). A legacy `views:` list reads first-entry-only and is flattened on the first write (>1 entries: writes fail, `base validate` reports it). There is **no `.base` extension**.
 
 **Backend pipeline** (`core/src/bases/`): `lexer`→`parser`→`parse` → `evaluate`+`filters` → `functions` → `query` (Base × the `basesData.ts` feed → rows + grouping). **Frontend** (`app/src/bases/`): one renderer per kind; `ViewType` spans 12 — `table|cards|list|bullets|kanban|map|calendar|flashcards|bar|line|stat|heatmap`. `BaseView.tsx` picks it, owns the single `ViewBar`, and merges in whatever slots the view kind contributes.
 
@@ -125,11 +125,11 @@ A base can also be **queried inside a note** via a ` ```query ` block — the on
 
 **Sources** (`sourceSpec.ts`, `source.ts`): every base/view resolves a `SourceSpec` to a uniform `Row[]` — `base` (recursive), `notes`, or `tasks`. Cycle-guarded + **server-side** via `POST /rows {spec}` (`rowsCache`/`tasksCache`, in-flight dedup), client SWR in `bases/rowCache.ts`. Detail: `docs/bases/sources.md`.
 
-**Authoring**: `bismuth base create|validate|render` + the `skills/authoring-bismuth-bases` skill. `parseBaseFile` silently downgrades an invalid `views[].type` to `table`, so `base validate` reads raw frontmatter instead.
+**Authoring**: `bismuth base create|validate|render` + the `skills/authoring-bismuth-bases` skill. `parseBaseFile` silently downgrades an invalid `view:` kind to `table`, so `base validate` reads raw frontmatter instead.
 
 ### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
-Calendar is a **Bases view kind** — no standalone page; open one via a `type: base` md with `views: [{ type: calendar }]`. `app/src/calendar/` holds shared state + components (`EventStore.ts`, `state.ts`, `components/views/` Month/Week/ThreeDay/Day/TimeGrid); its toolbar is `calendarSlots()` merged into `BaseView`'s bar. Two-way **Google Calendar** sync: `core/src/gcal/`, `docs/gcal/overview.md`. The **tasks register** (`mode: tasks`) has no bar-level create button — a day cell's `+` (or a click on empty cell space) opens an inline composer whose `→` picker chooses the destination note/category, writing a row or a checkbox line depending on whether the base owns its rows; clicking a chip opens the shared task editor (`bases/openTaskEditor.tsx`). Ref: `docs/bases/views/calendar.md`.
+Calendar is a **Bases view kind** — no standalone page; open one via a `type: base` md with `view: calendar`. `app/src/calendar/` holds shared state + components (`EventStore.ts`, `state.ts`, `components/views/` Month/Week/ThreeDay/Day/TimeGrid); its toolbar is `calendarSlots()` merged into `BaseView`'s bar. Two-way **Google Calendar** sync: `core/src/gcal/`, `docs/gcal/overview.md`. The **tasks register** (`mode: tasks`) has no bar-level create button — a day cell's `+` (or a click on empty cell space) opens an inline composer whose `→` picker chooses the destination note/category, writing a row or a checkbox line depending on whether the base owns its rows; clicking a chip opens the shared task editor (`bases/openTaskEditor.tsx`). Ref: `docs/bases/views/calendar.md`.
 
 ### Tasks (`core/src/tasks*.ts`)
 

@@ -18,7 +18,6 @@ function row(note: Record<string, unknown>): Row {
 }
 const view = (v: Partial<ViewConfig>): ViewConfig => ({
     type: 'stat',
-    name: 'S',
     ...v,
 })
 
@@ -27,7 +26,7 @@ describe('parseBase stats normalization', () => {
         const cfg = parseBase(
             'views:\n  - type: stat\n    name: S\n    stats:\n      - "sum(priority)"\n',
         )
-        expect(cfg.views[0].stats).toEqual([
+        expect(cfg.view.stats).toEqual([
             { label: 'sum(priority)', value: 'sum(priority)' },
         ])
     })
@@ -36,7 +35,7 @@ describe('parseBase stats normalization', () => {
         const cfg = parseBase(
             'views:\n  - type: stat\n    name: S\n    stats:\n      - label: Total\n        value: "sum(priority)"\n      - value: "count()"\n',
         )
-        expect(cfg.views[0].stats).toEqual([
+        expect(cfg.view.stats).toEqual([
             { label: 'Total', value: 'sum(priority)' },
             { label: 'count()', value: 'count()' },
         ])
@@ -46,14 +45,14 @@ describe('parseBase stats normalization', () => {
         const cfg = parseBase(
             'views:\n  - type: stat\n    name: S\n    stats:\n      - 5\n      - {}\n      - label: NoValue\n',
         )
-        expect(cfg.views[0].stats).toBeUndefined()
+        expect(cfg.view.stats).toBeUndefined()
     })
 
     test('a non-array stats key is dropped', () => {
         const cfg = parseBase(
             'views:\n  - type: stat\n    name: S\n    stats: "sum(priority)"\n',
         )
-        expect(cfg.views[0].stats).toBeUndefined()
+        expect(cfg.view.stats).toBeUndefined()
     })
 })
 

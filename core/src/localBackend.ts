@@ -24,11 +24,10 @@ import { getFileAccess } from './fileAccess'
 import {
     parseFrontmatter,
     setFrontmatterKey,
-    setFrontmatterViewKey,
     deleteFrontmatterKey,
-    deleteFrontmatterViewKey,
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
+import { flattenBaseViews } from './bases/flattenViews'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import { collectVaultTasks, toggleTaskLine } from './tasks'
@@ -195,15 +194,11 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                const next =
-                    typeof b.viewIndex === 'number'
-                        ? setFrontmatterViewKey(
-                              raw,
-                              b.viewIndex,
-                              b.key,
-                              b.value,
-                          )
-                        : setFrontmatterKey(raw, b.key, b.value)
+                const next = setFrontmatterKey(
+                    flattenBaseViews(raw),
+                    b.key,
+                    b.value,
+                )
                 await access.writeNote(vault, b.path, next)
                 emit([b.path])
                 return 'ok'
@@ -230,7 +225,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 for (const [path, ops] of byPath) {
                     const raw = await readOrNull(path)
                     if (raw === null) continue // skip a note that vanished; don't fail the batch
-                    let next = raw
+                    let next = flattenBaseViews(raw)
                     for (const op of ops)
                         next = setFrontmatterKey(next, op.key, op.value)
                     await access.writeNote(vault, path, next)
@@ -243,10 +238,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                const next =
-                    typeof b.viewIndex === 'number'
-                        ? deleteFrontmatterViewKey(raw, b.viewIndex, b.key)
-                        : deleteFrontmatterKey(raw, b.key)
+                const next = deleteFrontmatterKey(flattenBaseViews(raw), b.key)
                 await access.writeNote(vault, b.path, next)
                 emit([b.path])
                 return 'ok'

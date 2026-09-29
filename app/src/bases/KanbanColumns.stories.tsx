@@ -25,7 +25,7 @@ import {
     restGlyphOrigin,
 } from '../ui/_kanbanAddColumnAssertions'
 import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
-import { focusColumnHeaderButton, kanbanViews } from '../ui/_kanbanProbes'
+import { focusColumnHeaderButton, kanbanView } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
 import { toasts } from '../toastStore'
@@ -47,20 +47,20 @@ let kanbanCalls: { path: string; body: unknown }[] = []
 
 /** The trailing bare `+` ghost — clicking it, typing a name and hitting Enter adds a fourth,
  *  empty column ("Blocked") alongside the 3 status groups the sample rows already produce, and
- *  persists it via `api.setViewProperty(basePath, viewIndex, 'columns', [...])` (KanbanView's
+ *  persists it via `api.setProperty(basePath, 'columns', [...])` (KanbanView's
  *  `addColumn`, optimistic like `reorderColumns`). `status` is a declared `select` property here
  *  (`_baseFixtures.ts`), so `addColumn` also appends the option to `properties` — a second write
  *  the assertion below doesn't care about, only that the `columns` one carries `Blocked`. */
 export const AddColumn: Story = {
     render: () => {
-        const views = kanbanViews({ order: undefined })
+        const view = kanbanView({ order: undefined })
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -139,11 +139,11 @@ export const RenameColumn: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -262,11 +262,11 @@ export const RenameColumnRoundTrip: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-rename-round-trip.md"
                 onChange={noop}
             />
@@ -326,13 +326,13 @@ export const DeleteEmptyColumn: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews({
+        const view = kanbanView({
             groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
         })
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-demo.md"
                 onChange={noop}
             />
@@ -383,11 +383,11 @@ export const RenameColumnPartial: Story = {
             },
         }
         setTransport(transport)
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-rename-partial.md"
                 onChange={noop}
             />
@@ -439,14 +439,14 @@ export const DeleteColumnPartial: Story = {
             },
         }
         setTransport(transport)
-        const views = kanbanViews({
+        const view = kanbanView({
             groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
             groupColors: { Blocked: '#e06c6c' },
         })
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-delete-partial.md"
                 onChange={noop}
             />
@@ -500,13 +500,13 @@ export const AddColumnFailsRestoresRemoved: Story = {
         }
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews({
+        const view = kanbanView({
             groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
         })
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-addcolumn-fails.md"
                 onChange={noop}
             />
@@ -550,11 +550,11 @@ export const RenameColumnKeepsAuto: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-rename-keeps-auto.md"
                 onChange={noop}
             />
@@ -600,11 +600,11 @@ export const DeleteColumnWithCards: Story = {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const views = kanbanViews()
+        const view = kanbanView()
         return (
             <KanbanView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
                 basePath="stories/kanban-delete-with-cards.md"
                 onChange={noop}
             />
@@ -659,12 +659,10 @@ const REAL_PATH = 'stories/kanban-real.md'
 const REAL_BODY = [
     '---',
     'type: base',
-    'views:',
-    '  - type: kanban',
-    '    name: Kanban',
-    '    groupBy: status',
-    '    order: [priority, tags]',
-    '    columns: [Todo, Doing, Done]',
+    'view: kanban',
+    'groupBy: status',
+    'order: [priority, tags]',
+    'columns: [Todo, Doing, Done]',
     '---',
     '',
 ].join('\n')

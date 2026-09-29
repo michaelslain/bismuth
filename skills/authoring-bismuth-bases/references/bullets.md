@@ -8,14 +8,12 @@ A plain `<ul>` list in editor prose style — no table chrome, no icons, no bord
 ---
 type: base
 source: notes where "#quote"
-views:
-  - type: bullets
-    name: Reading Quotes
-    groupBy:
-      property: note.author
-    sort:
-      - property: note.author
-        direction: ASC
+view: bullets
+groupBy:
+  property: note.author
+sort:
+  - property: note.author
+    direction: ASC
 ---
 ```
 

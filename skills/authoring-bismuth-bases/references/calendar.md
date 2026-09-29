@@ -23,8 +23,6 @@ categories:
   category: Work
 ```
 
-(`view: calendar` is shorthand for `views: [{ type: calendar, name: Calendar }]` — only applies when no `views:` array is present.)
-
 ## Config keys
 
 | Key | Type | Default | Notes |

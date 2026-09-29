@@ -45,8 +45,8 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | Route | Handler |
 |---|---|
 | `PUT /file` | `FileAccess.writeNote` |
-| `POST /set-property`, `POST /delete-property` | `setFrontmatterKey` / `deleteFrontmatterKey` then write; a numeric `viewIndex` targets `views[viewIndex][key]` via `setFrontmatterViewKey` / `deleteFrontmatterViewKey` instead (how the kanban view persists per-view column order/colors) |
-| `POST /set-properties` | batched `POST /set-property` — groups writes by `path`, one read-modify-write per path via `setFrontmatterKey`, skips a path that no longer exists rather than failing the whole batch (mirrors `server.ts`; the kanban drag-drop's write path) |
+| `POST /set-property`, `POST /delete-property` | `flattenBaseViews` (a legacy `views:` list becomes flat; a multi-entry list throws `BASE_VIEWS_FORMAT_ERROR`) then `setFrontmatterKey` / `deleteFrontmatterKey` then write — every view key is a plain top-level key (how the kanban view persists column order/colors) |
+| `POST /set-properties` | batched `POST /set-property` — groups writes by `path`, one read-modify-write per path via `flattenBaseViews` + `setFrontmatterKey`, skips a path that no longer exists rather than failing the whole batch (mirrors `server.ts`; the kanban drag-drop's write path) |
 | `POST /row/update`, `POST /row/delete`, `POST /row/reorder`, `POST /rows/update` | `upsertRow` / `deleteRow` / `reorderRow` / `upsertRows` (`bases/rowOps.ts`) |
 | `POST /tasks/toggle` | `toggleTaskLine` on the target line, then `reorderTaskBlocks` |
 | `POST /cards/review` | dual-mode — row review (`applyReviewToRow` + `upsertRow`) when `{file,index}`, else markdown-card review (`applyReview`) by `{id}` |

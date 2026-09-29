@@ -8,17 +8,15 @@ A visual card grid. Three sub-modes via `cardContent`: `properties` (book-cover 
 ---
 type: base
 source: notes where "#book"
-views:
-  - type: cards
-    name: Reading List
-    cardContent: properties
-    image: cover
-    imageFit: cover
-    imageAspectRatio: 0.667
-    order: [file.name, note.author, note.status, note.rating]
-    groupBy:
-      property: note.status
-      direction: ASC
+view: cards
+cardContent: properties
+image: cover
+imageFit: cover
+imageAspectRatio: 0.667
+order: [file.name, note.author, note.status, note.rating]
+groupBy:
+  property: note.status
+  direction: ASC
 ---
 ```
 

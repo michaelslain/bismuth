@@ -40,10 +40,8 @@ const METRIC_ROWS: Partial<Row>[] = [
  *  sum(units)`) — each rendering its own value/period/sparkline/KaTeX tile. */
 export const DeclaredMetrics: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'stat' as const,
-                name: 'Stats',
                 x: 'due',
                 bin: 'week' as const,
                 stats: [
@@ -51,12 +49,11 @@ export const DeclaredMetrics: Story = {
                     { label: 'units sold', value: 'sum(units)' },
                     { label: 'price per unit', value: 'sum(price) / sum(units)' },
                 ],
-            },
-        ]
-        const config = sampleBaseConfig({ views, properties: METRIC_PROPERTIES })
+            }
+        const config = sampleBaseConfig({ view, properties: METRIC_PROPERTIES })
         return (
             <StatView
-                result={sampleViewResult(METRIC_ROWS, { views, properties: METRIC_PROPERTIES })}
+                result={sampleViewResult(METRIC_ROWS, { view, properties: METRIC_PROPERTIES })}
                 config={config}
             />
         )
@@ -103,13 +100,11 @@ export const HoverSparkline: Story = {
  *  (`defaultMetric` in metrics.ts), still period-split and sparklined off the same rows. */
 export const DefaultMetric: Story = {
     render: () => {
-        const views = [
-            { type: 'stat' as const, name: 'Stats', x: 'due', y: 'price', aggregate: 'sum' as const, bin: 'week' as const },
-        ]
-        const config = sampleBaseConfig({ views, properties: METRIC_PROPERTIES })
+        const view = { type: 'stat' as const, x: 'due', y: 'price', aggregate: 'sum' as const, bin: 'week' as const }
+        const config = sampleBaseConfig({ view, properties: METRIC_PROPERTIES })
         return (
             <StatView
-                result={sampleViewResult(METRIC_ROWS, { views, properties: METRIC_PROPERTIES })}
+                result={sampleViewResult(METRIC_ROWS, { view, properties: METRIC_PROPERTIES })}
                 config={config}
             />
         )
@@ -120,24 +115,21 @@ export const DefaultMetric: Story = {
  *  the bad tile shows `—` and `cannot read: …` in `--danger`; the good tile is unaffected. */
 export const MetricError: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'stat' as const,
-                name: 'Stats',
                 x: 'due',
                 bin: 'week' as const,
                 stats: [
                     { label: 'total priority', value: 'sum(priority)' },
                     { label: 'bad metric', value: 'priority' },
                 ],
-            },
-        ]
+            }
         const rows = SAMPLE_ROWS.map((r, i) => ({
             ...r,
             note: { ...r.note, due: back(i * 3) },
         }))
-        const config = sampleBaseConfig({ views })
-        return <StatView result={sampleViewResult(rows, { views })} config={config} />
+        const config = sampleBaseConfig({ view })
+        return <StatView result={sampleViewResult(rows, { view })} config={config} />
     },
 }
 
@@ -145,18 +137,15 @@ export const MetricError: Story = {
  *  omits the period line and sparkline, showing just value/label/KaTeX. */
 export const NoDateAxis: Story = {
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'stat' as const,
-                name: 'Stats',
                 x: 'status',
                 stats: [
                     { label: 'total priority', value: 'sum(priority)' },
                     { label: 'done notes', value: 'count(status == "Done")' },
                 ],
-            },
-        ]
-        const config = sampleBaseConfig({ views })
-        return <StatView result={sampleViewResult(undefined, { views })} config={config} />
+            }
+        const config = sampleBaseConfig({ view })
+        return <StatView result={sampleViewResult(undefined, { view })} config={config} />
     },
 }

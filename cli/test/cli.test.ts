@@ -1201,15 +1201,15 @@ test('`base create --view kanban --group-by ...` writes a file that parses back 
         path: 'Board.md',
         view: 'kanban',
         source: 'notes',
-        title: 'Board',
     })
     expect(result.json.missing).toBeUndefined() // groupBy was supplied — nothing left to fill in
 
     const text = await readNote(vault, 'Board.md')
     const { config } = parseBaseFile(text, { name: 'Board', path: 'Board.md' })
-    expect(config.views).toHaveLength(1)
-    expect(config.views[0].type).toBe('kanban')
-    expect(config.views[0].groupBy).toEqual({
+    expect(text).not.toContain('views:') // the flat spelling, never a views list
+    expect(text).toContain('view: kanban')
+    expect(config.view.type).toBe('kanban')
+    expect(config.view.groupBy).toEqual({
         property: 'note.status',
         direction: 'ASC',
     })
@@ -1253,7 +1253,7 @@ test('`base create --view kanban` without --group-by still writes the file, but 
     // (an omitted groupBy would make the board silently render a hint message instead of data).
     const text = await readNote(vault, 'Board.md')
     const { config } = parseBaseFile(text, { name: 'Board', path: 'Board.md' })
-    expect(config.views[0].groupBy).toEqual({ property: '', direction: 'ASC' })
+    expect(config.view.groupBy).toEqual({ property: '', direction: 'ASC' })
 })
 
 test('`base create` reports missing config for map (lat/lng) and chart (x) views too, cleared once supplied', async () => {
@@ -1345,7 +1345,7 @@ test('`base migrate-queries` writes a priority sort instead of refusing to conve
 test('`base validate` on a base with an unknown view type reports it AND exits non-zero', async () => {
     const vault = makeVault({
         'Bad.md':
-            '---\ntype: base\nviews:\n  - type: gantt\n    name: Bad\n---\n',
+            '---\ntype: base\nview: gantt\n---\n',
     })
     const result = await runCli(vault, 'base', 'validate', 'Bad.md')
     expect(result.code).toBe(1)
@@ -1363,7 +1363,7 @@ test('`base validate` on a base with an unknown view type reports it AND exits n
 test('`base validate` on a well-formed base returns ok: true, exit 0', async () => {
     const vault = makeVault({
         'Good.md':
-            '---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n---\n',
+            '---\ntype: base\nsource: notes\nview: table\n---\n',
     })
     const result = await runCli(vault, 'base', 'validate', 'Good.md')
     expect(result.code).toBe(0)
@@ -1373,7 +1373,7 @@ test('`base validate` on a well-formed base returns ok: true, exit 0', async () 
 test('`base validate` flags a declared property default that fails its own type', async () => {
     const vault = makeVault({
         'Typed.md':
-            '---\ntype: base\nproperties:\n  - name: age\n    type: number\n    default: not-a-number\nviews:\n  - type: table\n    name: Table\n---\n',
+            '---\ntype: base\nproperties:\n  - name: age\n    type: number\n    default: not-a-number\nview: table\n---\n',
     })
     const result = await runCli(vault, 'base', 'validate', 'Typed.md')
     expect(result.code).toBe(1)
@@ -1388,7 +1388,7 @@ test('`base validate` flags a declared property default that fails its own type'
 test("`base validate` flags a source ref that doesn't resolve to a file in the vault", async () => {
     const vault = makeVault({
         'Composed.md':
-            "---\ntype: base\nsource:\n  kind: base\n  ref: '[[Nonexistent]]'\nviews:\n  - type: table\n    name: Table\n---\n",
+            "---\ntype: base\nsource:\n  kind: base\n  ref: '[[Nonexistent]]'\nview: table\n---\n",
     })
     const result = await runCli(vault, 'base', 'validate', 'Composed.md')
     expect(result.code).toBe(1)
@@ -1404,8 +1404,7 @@ test('`base validate` flags an expression a yaml comment truncated', async () =>
             '---',
             'type: base',
             'filters: tags.contains(" #book")',
-            'views:',
-            '  - type: table',
+            'view: table',
             '---',
             '',
         ].join('\n'),
@@ -1441,8 +1440,7 @@ test('`base validate` on a truncated `and:` leaf suggests quoting the VALUE, not
             '  and:',
             '    - tags.contains(" #book")',
             '    - status == "done"',
-            'views:',
-            '  - type: table',
+            'view: table',
             '---',
             '',
         ].join('\n'),
@@ -1470,8 +1468,7 @@ test('`base validate` names the FILE line for a yaml comment truncation, not the
             'type: base',
             'source: notes',
             'filters: tags.contains(" #book")',
-            'views:',
-            '  - type: table',
+            'view: table',
             '---',
             '',
         ].join('\n'),
@@ -1492,8 +1489,7 @@ test('`base validate` suggested fix reproduces real internal whitespace exactly'
             '---',
             'type: base',
             'filters: description.contains("a  #b")',
-            'views:',
-            '  - type: table',
+            'view: table',
             '---',
             '',
         ].join('\n'),
@@ -1512,8 +1508,7 @@ test('`base validate` suggested fix escapes an embedded apostrophe and round-tri
             '---',
             'type: base',
             `filters: description.contains("don't #panic")`,
-            'views:',
-            '  - type: table',
+            'view: table',
             '---',
             '',
         ].join('\n'),
@@ -1532,8 +1527,7 @@ test('`base validate` suggested fix escapes an embedded apostrophe and round-tri
         '---',
         'type: base',
         `filters: ${suggestion}`,
-        'views:',
-        '  - type: table',
+        'view: table',
         '---',
         '',
     ].join('\n')
@@ -1556,10 +1550,9 @@ test('`base validate` flags a taskFile outside the from: scope', async () => {
             'source:',
             '  kind: tasks',
             '  from: "[[Keep]]"',
-            'views:',
-            '  - type: list',
-            '    mode: tasks',
-            '    taskFile: "[[Inbox]]"',
+            'view: list',
+            'mode: tasks',
+            'taskFile: "[[Inbox]]"',
             '---',
             '',
         ].join('\n'),
@@ -1583,10 +1576,9 @@ test('`base validate` accepts a taskFile INSIDE the from: scope', async () => {
             'source:',
             '  kind: tasks',
             '  from: "[[Keep]]"',
-            'views:',
-            '  - type: list',
-            '    mode: tasks',
-            '    taskFile: "[[keep/A]]"',
+            'view: list',
+            'mode: tasks',
+            'taskFile: "[[keep/A]]"',
             '---',
             '',
         ].join('\n'),
@@ -1605,10 +1597,9 @@ test('`base validate` says nothing about taskFile when there is no from: scope',
             '---',
             'type: base',
             'source: tasks',
-            'views:',
-            '  - type: list',
-            '    mode: tasks',
-            '    taskFile: "[[Inbox]]"',
+            'view: list',
+            'mode: tasks',
+            'taskFile: "[[Inbox]]"',
             '---',
             '',
         ].join('\n'),
@@ -1623,7 +1614,7 @@ test('`base validate` says nothing about taskFile when there is no from: scope',
 test('`base render` on a kanban base returns GROUPED output, not raw rows', async () => {
     const vault = makeVault({
         'Board.md':
-            '---\ntype: base\nsource: notes where status\nviews:\n  - type: kanban\n    name: Board\n    groupBy: { property: note.status }\n---\n',
+            '---\ntype: base\nsource: notes where status\nview: kanban\ngroupBy: { property: note.status }\n---\n',
         'Task1.md': '---\nstatus: todo\n---\nfirst\n',
         'Task2.md': '---\nstatus: done\n---\nsecond\n',
         'Task3.md': '---\nstatus: todo\n---\nthird\n',
@@ -1640,7 +1631,7 @@ test('`base render` on a kanban base returns GROUPED output, not raw rows', asyn
 test('`base render` on a stat base returns a computed aggregate, not the row list', async () => {
     const vault = makeVault({
         'Chart.md':
-            '---\ntype: base\nsource: notes where amount\nviews:\n  - type: stat\n    name: Stat\n    x: category\n---\n',
+            '---\ntype: base\nsource: notes where amount\nview: stat\nx: category\n---\n',
         'Sale1.md': '---\ncategory: A\namount: 10\n---\n',
         'Sale2.md': '---\ncategory: A\namount: 20\n---\n',
         'Sale3.md': '---\ncategory: B\namount: 5\n---\n',
@@ -1656,21 +1647,46 @@ test('`base render` on a stat base returns a computed aggregate, not the row lis
     expect(byKey.B).toBe(5)
 })
 
-test('`base render --view <n>` picks a non-default view', async () => {
+test('`base render` runs the base\'s one view, and reads a legacy single-entry views list', async () => {
+    const vault = makeVault({
+        'Flat.md': '---\ntype: base\nsource: notes\nview: list\n---\n',
+        'Legacy.md':
+            '---\ntype: base\nsource: notes\nviews:\n  - type: list\n    name: List\n---\n',
+    })
+    const flat = await runCli(vault, 'base', 'render', 'Flat.md')
+    expect(flat.code).toBe(0)
+    expect(flat.json.view.type).toBe('list')
+    const legacy = await runCli(vault, 'base', 'render', 'Legacy.md')
+    expect(legacy.code).toBe(0)
+    expect(legacy.json.view.type).toBe('list')
+})
+
+test('`base validate` errors on a legacy views list with more than one entry, naming the fix', async () => {
     const vault = makeVault({
         'Multi.md':
             '---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n  - type: list\n    name: List\n---\n',
     })
-    const result = await runCli(
-        vault,
-        'base',
-        'render',
-        'Multi.md',
-        '--view',
-        '1',
-    )
-    expect(result.code).toBe(0)
-    expect(result.json.view.type).toBe('list')
+    const result = await runCli(vault, 'base', 'validate', 'Multi.md')
+    expect(result.code).toBe(1)
+    expect(result.json.ok).toBe(false)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toContain('2 views')
+    expect(joined).toContain('source: base')
+    expect(joined).toContain('[[Multi]]')
+})
+
+test('`base validate` accepts a legacy single-entry views list and flags a bad kind in it', async () => {
+    const vault = makeVault({
+        'One.md':
+            '---\ntype: base\nsource: notes\nviews:\n  - type: table\n---\n',
+        'Bad.md':
+            '---\ntype: base\nsource: notes\nviews:\n  - type: gantt\n---\n',
+    })
+    const one = await runCli(vault, 'base', 'validate', 'One.md')
+    expect(one.code).toBe(0)
+    const bad = await runCli(vault, 'base', 'validate', 'Bad.md')
+    expect(bad.code).toBe(1)
+    expect(bad.json.errors.join('\n')).toContain('gantt')
 })
 
 // --- `daemon stop` / `daemon restart` (daemon.ts) — wiring to the platform module ---------------

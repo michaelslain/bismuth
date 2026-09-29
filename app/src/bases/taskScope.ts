@@ -41,7 +41,6 @@ import type {
     BaseConfig,
     FilterNode,
     Row,
-    ViewConfig,
 } from '../../../core/src/bases/types'
 
 /** The row a `rowCreate` on an own-rows base is about to produce, as the VIEW will see it —
@@ -71,17 +70,13 @@ export function prospectiveLineTaskRow(
     return task ? taskToRow(task) : null
 }
 
-/** Every filter this view applies to its rows: the base's, the view's own, and the source's
- *  `where:`. A `{kind: 'base'}` source composes ANOTHER base — its filters are that base's
+/** Every filter this base applies to its rows: its own and the source's `where:`. A `{kind: 'base'}` source composes ANOTHER base — its filters are that base's
  *  business and are not re-applied here, so reading `where` off it would apply a filter that
  *  does not exist. */
-function activeFilters(config: BaseConfig, view: ViewConfig) {
-    const spec = view.source ?? config.source
+function activeFilters(config: BaseConfig) {
+    const spec = config.source
     const where = spec && spec.kind !== 'base' ? spec.where : undefined
-    return combineFilters(
-        combineFilters(config.filters, view.filters),
-        where,
-    )
+    return combineFilters(config.filters, where)
 }
 
 /**
@@ -120,7 +115,7 @@ function referencesFormula(node: FilterNode): boolean {
 }
 
 /**
- * Would a row like `row` survive this view's filters?
+ * Would a row like `row` survive this base's filters?
  *
  * TRUE when there is nothing to say — no filters, or a filter that accepts it. The caller
  * toasts only on false, so every uncertainty must resolve to true: `passesFilter` also
@@ -141,12 +136,8 @@ function referencesFormula(node: FilterNode): boolean {
  * mentions `formula.` at all is treated as an uncertainty this module cannot safely resolve,
  * exactly like an unparseable one, and resolves to visible rather than risk a false toast.
  */
-export function newTaskVisible(
-    config: BaseConfig,
-    view: ViewConfig,
-    row: Row,
-): boolean {
-    const filter = activeFilters(config, view)
+export function newTaskVisible(config: BaseConfig, row: Row): boolean {
+    const filter = activeFilters(config)
     if (!filter) return true
     if (!filterParses(filter)) return true
     if (referencesFormula(filter)) return true

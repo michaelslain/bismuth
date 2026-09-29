@@ -24,7 +24,7 @@ export function reassemble(
     // handles `undefined` by falling back to natural row key order. (We must NOT fall back
     // to `groupOrder` — that's a list of GROUP keys for a grouped view, not column ids,
     // and using it as columns would emit empty rows.)
-    const columnOrder = config?.views?.[0]?.order
+    const columnOrder = config?.view.order
 
     const body = serializeRows(rows, columnOrder)
     return body ? `${fm}\n${body}\n` : fm

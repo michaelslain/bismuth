@@ -264,7 +264,7 @@ export function FlashcardsView(props: {
      *  header bar. Rendered without this prop (its own stories), the deck simply has no bar. */
     onBarSlots?: (slots: ViewBarSlots | undefined) => void
 }) {
-    const view = () => props.config.views[0] ?? { type: 'flashcards', name: '' }
+    const view = () => props.config.view
     const frontField = () => view().frontField ?? 'front'
     const backField = () => view().backField ?? 'back'
     const dueField = () => view().dueField ?? 'due'

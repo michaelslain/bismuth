@@ -1,6 +1,6 @@
 # Chart views — bar, line, stat, heatmap
 
-Bismuth provides four chart view types — `bar`, `line`, `stat`, and `heatmap` — all rendered from the same data-shaping pipeline in `core/src/bases/chart.ts`. Each is declared inside a `type: base` file's `views:` array by setting `type:` to the corresponding string. All four are **interactive**: hovering a bucket updates a readout line, clicking one drills into the notes behind it, and the ViewBar exposes pickers that write the view's axis/aggregation config straight back into the base file. Every chart stays **typed, not drawn** — no SVG, no `<canvas>`, no chart library; the one exception is KaTeX, used to show the math behind a line's trend and a stat tile's metric.
+Bismuth provides four chart view types — `bar`, `line`, `stat`, and `heatmap` — all rendered from the same data-shaping pipeline in `core/src/bases/chart.ts`. Each is declared in a `type: base` file by setting `view:` to the corresponding string, with the view's keys at the top level of the frontmatter. All four are **interactive**: hovering a bucket updates a readout line, clicking one drills into the notes behind it, and the ViewBar exposes pickers that write the view's axis/aggregation config straight back into the base file. Every chart stays **typed, not drawn** — no SVG, no `<canvas>`, no chart library; the one exception is KaTeX, used to show the math behind a line's trend and a stat tile's metric.
 
 **In this doc:** the shared bucketing/aggregation pipeline every chart view runs through → the config fields all four share, including `stats:` → per-view-type visual details, interaction and a minimal example each (bar, line, stat, heatmap) → the shared interaction chrome (readout, drill, ViewBar config pickers) → the stat metric expression language → the KaTeX definition/trend formats → the CLI's `base render`/`base validate` support → edge cases and gotchas.
 
@@ -123,20 +123,18 @@ For date axes, rows where the `x` property is `null`, `undefined`, or does not p
 ## View config fields summary (in a base frontmatter)
 
 ```yaml
-views:
-  - type: bar       # or line | stat | heatmap
-    name: My Chart
-    x: date         # property id for x-axis / category (auto-detected if omitted)
-    y: glasses      # property id for y-axis values (auto-detected if omitted)
-    aggregate: sum  # sum | avg | count | min | max  (default: sum when y exists, count otherwise)
-    bin: day        # day | week | month  (default: day; heatmap always forces day)
+view: bar       # or line | stat | heatmap
+x: date         # property id for x-axis / category (auto-detected if omitted)
+y: glasses      # property id for y-axis values (auto-detected if omitted)
+aggregate: sum  # sum | avg | count | min | max  (default: sum when y exists, count otherwise)
+bin: day        # day | week | month  (default: day; heatmap always forces day)
 ```
 
 A stat view additionally accepts `stats:` in place of (or alongside) `x`/`y`/`aggregate` — see [Stat view](#stat-view-type-stat) below.
 
 ---
 
-## Bar view (`type: bar`)
+## Bar view (`view: bar`)
 
 **File**: `app/src/bases/BarView.tsx` (row layout: `app/src/bases/barRows.ts`)
 
@@ -155,19 +153,17 @@ Renders each bucket as one full-width row of a character-grid meter — a text r
 ```yaml
 ---
 type: base
-views:
-  - type: bar
-    name: Glasses of Water
-    x: date
-    y: glasses
-    aggregate: sum
-    bin: week
+view: bar
+x: date
+y: glasses
+aggregate: sum
+bin: week
 ---
 ```
 
 ---
 
-## Line view (`type: line`)
+## Line view (`view: line`)
 
 **File**: `app/src/bases/LineView.tsx` (layout: `app/src/bases/asciiLine.ts`)
 
@@ -206,19 +202,17 @@ See [KaTeX definition and trend formats](#katex-definition-and-trend-formats) fo
 ```yaml
 ---
 type: base
-views:
-  - type: line
-    name: Weight Over Time
-    x: date
-    y: weight
-    aggregate: avg
-    bin: week
+view: line
+x: date
+y: weight
+aggregate: avg
+bin: week
 ---
 ```
 
 ---
 
-## Stat view (`type: stat`)
+## Stat view (`view: stat`)
 
 **File**: `app/src/bases/StatView.tsx` (tile grid: `app/src/bases/StatTiles.tsx`)
 
@@ -241,17 +235,15 @@ A metric that fails to parse or evaluate shows `—` as its value and `cannot re
 ### Declared metrics (`stats:`)
 
 ```yaml
-views:
-  - type: stat
-    name: Reading Stats
-    x: date
-    bin: week
-    stats:
-      - label: total pages
-        value: sum(pages)
-      - label: books
-        value: count()
-      - value: sum(pages) / sum(minutes)   # bare string: label defaults to the expression itself
+view: stat
+x: date
+bin: week
+stats:
+  - label: total pages
+    value: sum(pages)
+  - label: books
+    value: count()
+  - value: sum(pages) / sum(minutes)   # bare string: label defaults to the expression itself
 ```
 
 Each entry is either a bare string (label = value = that string) or an object `{ label?, value }` with a string `value` — label defaults to `value` when omitted. See [Stat metrics](#stat-view-declared-metrics) below for the expression language.
@@ -263,19 +255,17 @@ With **no `stats:`**, the view synthesizes exactly one metric from its own `x`/`
 ```yaml
 ---
 type: base
-views:
-  - type: stat
-    name: Reading Stats
-    x: date
-    y: pages
-    aggregate: sum
-    bin: month
+view: stat
+x: date
+y: pages
+aggregate: sum
+bin: month
 ---
 ```
 
 ---
 
-## Heatmap view (`type: heatmap`)
+## Heatmap view (`view: heatmap`)
 
 **File**: `app/src/bases/HeatmapView.tsx` (layout: `app/src/bases/heatmapLayout.ts`)
 
@@ -354,13 +344,11 @@ The streak statistics are one readout line under the grid — `<n> days logged /
 ```yaml
 ---
 type: base
-views:
-  - type: heatmap
-    name: Writing Activity
-    x: date
-    y: words
-    aggregate: sum
-    # bin is ignored for heatmap; always day-granularity
+view: heatmap
+x: date
+y: words
+aggregate: sum
+# bin is ignored for heatmap; always day-granularity
 ---
 ```
 
@@ -477,7 +465,7 @@ A stat tile renders its metric with `metricToLatex`, which writes the aggregates
 ## CLI support: `base render` / `base validate`
 
 - **`bismuth base render <path>`** on a chart view includes the same `chart: ChartData` (`buildChartData` output, including per-point `rows`) that the frontend renders from, plus `heatmapWeeks` for a `heatmap` view (`buildHeatmapWeeks(chart.points).weeks`, without a pane-width `range` — see the heatmap section above) and **`metrics: MetricResult[]`** for a `stat` view (`metricResults(flatRows, view, today())`), so a stat view's declared or synthesized metrics can be inspected headlessly.
-- **`bismuth base validate <path>`** parses every declared `stats[].value` expression and reports a failure as `views[<i>].stats[<j>].value: "<expr>" failed to parse — <reason>` — the same class of check as a filter/formula expression error, and the only place a bad metric expression surfaces before render time (a bad metric at render time just nulls that tile's numbers rather than throwing).
+- **`bismuth base validate <path>`** parses every declared `stats[].value` expression and reports a failure as `stats[<j>].value: "<expr>" failed to parse — <reason>` — the same class of check as a filter/formula expression error, and the only place a bad metric expression surfaces before render time (a bad metric at render time just nulls that tile's numbers rather than throwing).
 
 ---
 
@@ -533,7 +521,7 @@ Each declared `stats[]` entry is evaluated independently — a bad expression on
 
 ## Cross-references
 
-- [Bases overview](../overview.md) — how base files are structured and how views are declared
+- [Bases overview](../overview.md) — how base files are structured and how the view is declared
 - [ViewConfig type reference](../overview.md) — full `ViewConfig` interface including all view kinds
 - `core/src/dates.ts` — `Bin`, `binKey`, `binLabel`, `addDaysISO`
 - `core/src/bases/query.ts` — `resolveProperty` (property id namespacing)

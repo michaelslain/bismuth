@@ -28,7 +28,7 @@ const declared: BaseConfig = {
         'note.effort',
         'formula.ppu',
     ],
-    views: [{ type: 'kanban', name: 'B' }],
+    view: { type: 'kanban' },
 }
 
 test('declaredDefaults seeds every writable declared default under its bare key', () => {
@@ -48,9 +48,9 @@ test('declaredDefaults respects the exclude set (matched on bare names)', () => 
 
 test('declaredDefaults is empty for a map-form or property-less base', () => {
     expect(
-        declaredDefaults({ properties: { a: { default: 1 } }, views: [] }),
+        declaredDefaults({ properties: { a: { default: 1 } }, view: { type: 'table' } }),
     ).toEqual({})
-    expect(declaredDefaults({ views: [] })).toEqual({})
+    expect(declaredDefaults({ view: { type: 'table' } })).toEqual({})
 })
 
 test('declaredPropertyKeys returns bare names in declaration order, empty when undeclared', () => {
@@ -62,7 +62,7 @@ test('declaredPropertyKeys returns bare names in declaration order, empty when u
         'effort',
         'formula.ppu',
     ])
-    expect(declaredPropertyKeys({ properties: { a: {} }, views: [] })).toEqual(
+    expect(declaredPropertyKeys({ properties: { a: {} }, view: { type: 'table' } })).toEqual(
         [],
     )
 })
@@ -77,7 +77,7 @@ const withFormula: BaseConfig = {
         note_only: {},
     },
     declaredProperties: ['price', 'qty', 'total', 'note_only'],
-    views: [{ type: 'kanban', name: 'B' }],
+    view: { type: 'kanban' },
 }
 
 test("declaredFormulas collects formula-kind declared properties' expressions, keyed bare", () => {
@@ -86,7 +86,7 @@ test("declaredFormulas collects formula-kind declared properties' expressions, k
 
 test('declaredFormulas is empty when the base declares no formula-kind property', () => {
     expect(declaredFormulas(declared)).toEqual({})
-    expect(declaredFormulas({ views: [] })).toEqual({})
+    expect(declaredFormulas({ view: { type: 'table' } })).toEqual({})
 })
 
 test("declaredDefaults never seeds a formula-kind property's default (computed, not stored)", () => {
@@ -105,7 +105,7 @@ const typed: BaseConfig = {
         notes: {}, // declared, untyped
     },
     declaredProperties: ['priority', 'stage', 'note.effort', 'notes'],
-    views: [{ type: 'table', name: 'V' }],
+    view: { type: 'table' },
 }
 
 test('parseBasePropertyType: undefined when no type; malformed present-type → text', () => {
@@ -136,7 +136,7 @@ test('propertyType looks up by exact, bare, and note.-prefixed name', () => {
 test('propertyType is undefined for an untyped or undeclared property, and for a property-less base', () => {
     expect(propertyType(typed, 'notes')).toBeUndefined()
     expect(propertyType(typed, 'nonexistent')).toBeUndefined()
-    expect(propertyType({ views: [] }, 'anything')).toBeUndefined()
+    expect(propertyType({ view: { type: 'table' } }, 'anything')).toBeUndefined()
 })
 
 test('toSchemaType projects each kind onto a schema PropertyType', () => {

@@ -39,7 +39,7 @@ function looksLikeBaseConfig(body) {
 }
 ```
 
-- If the body declares any top-level key from **`views:` / `filters:` / `formulas:` / `properties:` / `schema:` / `source:`**, it is a **full inline base config** → parsed with `parseBase()` and passed to `BaseView` as the `source` prop:
+- If the body declares any top-level key from **`filters:` / `formulas:` / `properties:` / `schema:` / `source:`** (or a legacy `views:`), it is a **full inline base config** → parsed with `parseBase()` and passed to `BaseView` as the `source` prop:
   ```js
   BaseView({ source: this.source, hostPath, embeddedSource })
   ```
@@ -69,7 +69,7 @@ A flat block is a tiny `key: value` list (one per line). `parseQueryBlock(src)` 
 | `from: [[Base]]` | Only meaningful **with** `tasks:`. Scopes task extraction to that base's notes → sets `source.from`. `from:` alone (no `tasks:`) produces **no source**. |
 | `view: <type>` | Render mode. The current spelling; legacy alias is `as:`. See valid types below. |
 | `as: <type>` | Legacy alias for `view:`. `view:` is preferred; if both are given, `view:` wins (`kv.view ?? kv.as`). |
-| `where: <expr>` | A per-view filter — a Bases filter expression applied to the resolved rows (see [filters](./filters.md)). Maps to the view's `filters`. |
+| `where: <expr>` | A filter — a Bases filter expression applied to the resolved rows (see [filters](./filters.md)). Maps to the block's `filters`. |
 | `sort: <property>[ desc][, <property>[ desc]...]` | Sort rows by one or more properties, applied in order. `sort: note.due` sorts ascending; `sort: note.due desc` descending; a trailing ` desc` or ` reverse` on any key reverses just that key, e.g. `sort: note.due desc, note.name`. Maps to the view's `sort`, which sorts through `compareForSort` (`core/src/bases/query.ts`) — a property whose bare name is `priority` ranks by urgency (`highest` < `high` < `medium` < `none` < `low` < `lowest`), not alphabetically; every other property sorts by the plain value comparator (see the gotcha below). |
 | `group: <field>` | Group rows by a property (sets the view's `groupBy.property`, direction `ASC`). |
 | `limit: <n>` | Cap the number of rows. Parsed via `Number(...)`. |
@@ -129,28 +129,28 @@ interface QueryBlock {
 }
 ```
 
-`sort:` splits its value on `,` into one `SortSpec` per key; a key ending in ` desc` or ` reverse` becomes `{ property, direction: "DESC" }`, everything else `{ property, direction: "ASC" }`. Sorting is also available in the full inline config form via `views: [{ sort: ... }]`, or by referencing a base with `of:` that defines its own sort.
+`sort:` splits its value on `,` into one `SortSpec` per key; a key ending in ` desc` or ` reverse` becomes `{ property, direction: "DESC" }`, everything else `{ property, direction: "ASC" }`. Sorting is also available in the full inline config form via a top-level `sort:`, or by referencing a base with `of:` that defines its own sort.
 
 ### How `BaseView` renders a flat `view`
 
-In `BaseView.loadConfig()`, the `view` prop is turned into a one-view `BaseConfig`:
+In `BaseView.loadConfig()`, the `view` prop is turned into a `BaseConfig` (one view, the block's `where:` as the base `filters`):
 
 ```js
 const config = {
-  views: [{
+  view: {
     type: v.as,
-    name: capitalize(v.as),
-    filters: v.where,
     sort: v.sort,
     groupBy: v.group ? { property: v.group } : undefined,
     limit: v.limit,
-  }],
+  },
+  filters: v.where,
+  source: v.source,
 };
-return { config, spec: v.source, inlineRows: null,
+return { config, rows: [],
          basePath: v.source?.kind === "base" ? refToPath(v.source.ref) : undefined };
 ```
 
-- The rows are resolved **server-side** via `POST /rows {spec}` (`api.resolveRows(loaded.spec)`) when `spec` is set; if `spec` is `undefined` (no `of:`/`tasks:`), rows resolve to `[]` → empty state.
+- The rows are resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`) when `source` is set; if it is `undefined` (no `of:`/`tasks:`), rows resolve to `[]` → empty state.
 - For `of: [[Base]]`, `basePath` is set to the referenced base's path (`refToPath` turns `[[Base]]` → `Base.md`), which surfaces a base crumb + the Settings/Source chrome.
 
 ### Flat-spec examples (copy-paste)
@@ -261,11 +261,11 @@ Unknown view fallbacks (from the tests):
 
 ## Form 2 — Full inline base config
 
-When the body declares a top-level base key, the whole block body is parsed as a base's YAML config with `parseBase(text)` (`core/src/bases/parse.ts`) — **the exact same parser** used for a `type: base` file's frontmatter (via `parseBaseObject`). This lets you embed a complete multi-view base inline, without a separate base file.
+When the body declares a top-level base key, the whole block body is parsed as a base's YAML config with `parseBase(text)` (`core/src/bases/parse.ts`) — **the exact same parser** used for a `type: base` file's frontmatter (via `parseBaseObject`). This lets you embed a complete base inline, without a separate base file. Like a base file it has one view, spelled flat.
 
 ### Recognized top-level keys (any one triggers this form)
 
-`views:`, `filters:`, `formulas:`, `properties:`, `schema:`, `source:`.
+`filters:`, `formulas:`, `properties:`, `schema:`, `source:` (plus a legacy `views:`). A block that carries only `view:` and view keys (no key from that list) is read as a flat spec, not a config, so add a `source:` (or another config key) when you want the config form.
 
 ### Parsed shape (`BaseConfig`)
 
@@ -273,35 +273,34 @@ When the body declares a top-level base key, the whole block body is parsed as a
 
 ```ts
 interface BaseConfig {
-  filters?: FilterNode;                 // global filter, ANDed with each view's filters
+  filters?: FilterNode;                 // the base's filter
   formulas?: Record<string, string>;    // name -> expression string
   properties?: Record<string, { displayName?: string; hidden?: boolean }>;
-  views: ViewConfig[];                  // at least one; defaults to a table if none
-  source?: SourceSpec;                  // base-level default source for all views
+  view: ViewConfig;                     // the one view; defaults to a table
+  source?: SourceSpec;                  // where the rows come from
   schema?: Record<string, string>;      // column -> "text"|"date"|"time"|"number"|"checkbox"|"list"|"link"
 }
 ```
 
 Parser behavior worth knowing (from `parse.ts`):
 
-- **Malformed/non-object YAML** → returns `EMPTY_BASE` = `{ views: [{ type: "table", name: "Table" }] }`. (`safeYaml` swallows YAML errors.)
-- **`views:`** is an array of view configs. Each is normalized by `normalizeView`. If `views` is empty/missing, a default `{ type: "table", name: "Table" }` is pushed.
-- An **invalid `view.type`** falls back to `"table"`; a missing/empty `name` becomes `"Untitled view"`.
+- **Malformed/non-object YAML** → returns `EMPTY_BASE` = `{ view: { type: "table" } }`. (`safeYaml` swallows YAML errors.)
+- **`view: <kind>`** names the one view, and every other top-level key that is not a base key (`type`, `view`, `views`, `name`, `filters`, `source`, `from`, `where`, `ref`, `formulas`, `properties`, `schema`, `categories`) is a view key, all normalized by `normalizeView`. With no `view:` the view is a table.
+- An **invalid `view:` kind** falls back to `"table"`.
+- A legacy **`views:`** list still reads, first entry only (its `type` is the kind); further entries are ignored. A base file is flattened on its first write; a query block has no such write path, so rewrite it flat by hand.
 - **`source:`** accepts a string (`source: notes where #book`) OR an object (`source: { kind: tasks, from: "[[X]]" }`) — both coerced by `normalizeSource` (see [sources & composition](./sources.md)). An unrecognized value yields `undefined`.
 - **`formulas:`** — each value is stringified.
 - **`properties:`** — per-property `{ displayName?, hidden? }`; `hidden: true` drops the property from auto-derived columns.
-- A top-level **`columnWidths:`** map configures the first view's table widths (unless that view already declared its own).
+- A top-level **`columnWidths:`** map configures the table's column widths.
 
-> Note: the flat-spec keys (`of:`, `tasks:`, `view:`, `as:`, `group:`, `limit:`) are **not** part of this form. The config form uses the base grammar — `source:`, `views: [{ type, filters, sort, groupBy, limit, … }]`, etc. `looksLikeBaseConfig` only checks for the six config keys above, so a block mixing the two (e.g. `views:` + `of:`) is parsed as a config and the flat keys are ignored.
+> Note: the flat-spec keys `of:`, `tasks:`, `as:` and `group:` are **not** part of this form. The config form uses the base grammar — `source:`, `view:`, `filters:`, `sort:`, `groupBy:`, `limit:`, etc. (`view:` and `limit:` mean the same in both forms.) `looksLikeBaseConfig` only checks for the config keys above, so a block mixing the two (e.g. `source:` + `of:`) is parsed as a config and the flat keys are ignored.
 
-### `ViewConfig` fields you can set per view
+### View keys
 
-Each entry in `views:` is a `ViewConfig` (`core/src/bases/types.ts`). The full set normalized by `normalizeView`:
+The one view is a `ViewConfig` (`core/src/bases/types.ts`), spelled as top-level keys. The full set normalized by `normalizeView`:
 
-- `type` — one of the 12 `VIEW_TYPES` (invalid → `table`).
-- `name` — view label (empty → `"Untitled view"`).
+- `view` — one of the 12 `VIEW_TYPES` (invalid → `table`).
 - `limit` — number; row cap.
-- `filters` — a `FilterNode` (string expr, or `{and|or|not: [...]}`), ANDed with the base-level `filters`.
 - `order` — array of property ids to display (e.g. `["file.name", "formula.ppu"]`).
 - `sort` — array of `{ property, direction: "ASC"|"DESC" }` (a bare string → `ASC`; `column` accepted as an alias for `property`).
 - `groupBy` — `{ property, direction }` (a bare string → `ASC`).
@@ -311,12 +310,11 @@ Each entry in `views:` is a `ViewConfig` (`core/src/bases/types.ts`). The full s
 - `columns` — explicit group order / kanban columns.
 - `columnWidths` — `{ propertyId: px }` (table).
 - `lat`, `lng`, `zoom`, `center` — map view.
-- `source` — per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`).
 - Calendar bindings: `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`.
 - Flashcards bindings: `frontField`, `backField`, `dueField`, `easeField`, `intervalField`, `bidirectional`.
 - Chart bindings: `x`, `y`, `aggregate` (`sum`/`avg`/`count`/`min`/`max`), `bin` (`day`/`week`/`month`).
 
-(For the deep dive on each, see [views](./overview.md).)
+`filters:` and `source:` are base keys, not view keys. (For the deep dive on each, see [the view](./overview.md#the-view).)
 
 ### How `BaseView` renders an inline config
 
@@ -332,35 +330,28 @@ return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null };
 
 ### Inline-config examples (copy-paste)
 
-A single-view base over `#book` notes, sorted by rating, shown as cards:
+A base over `#book` notes, sorted by rating, shown as cards:
 
 ````markdown
 ```query
 source: notes where tags.contains("book")
-views:
-  - type: cards
-    name: Library
-    sort:
-      - property: rating
-        direction: DESC
-    cardContent: properties
+view: cards
+sort:
+  - property: rating
+    direction: DESC
+cardContent: properties
 ```
 ````
 
-A multi-view inline base (table + kanban) with a global filter and a formula:
+An inline base with a filter and a formula (one view; a second view would be a second base that composes this one, see [overview](./overview.md#one-view-per-base-composing)):
 
 ````markdown
 ```query
 filters: status != "archived"
 formulas:
   ppu: price / pages
-views:
-  - type: table
-    name: All
-    order: [file.name, status, formula.ppu]
-  - type: kanban
-    name: Board
-    groupBy: status
+view: table
+order: [file.name, status, formula.ppu]
 ```
 ````
 
@@ -369,9 +360,7 @@ An inline base with **no `source:`** (defaults to `{ kind: "notes" }`, iterating
 ````markdown
 ```query
 filters: file.folder == "reading"
-views:
-  - type: list
-    name: Reading
+view: list
 ```
 ````
 
@@ -382,9 +371,7 @@ A config that composes another base via a `source:` object:
 source:
   kind: base
   ref: "[[Master Library]]"
-views:
-  - type: table
-    name: Mirror
+view: table
 ```
 ````
 
@@ -409,7 +396,7 @@ The builder's `SegmentedToggle` picks one of three unrelated `BuilderSource`s (`
 
 | Builder source | Generated body form | Shape |
 |---|---|---|
-| **Notes** | Full inline config (Form 2) | `source: notes where <Bases-expr>` + a one-entry `views: [{ type, name, sort, groupBy, limit }]`. This is the ONLY inline way to iterate notes-with-filters, since a flat block can't. |
+| **Notes** | Full inline config (Form 2) | `source: notes where <Bases-expr>` + the flat view keys `view`, `sort`, `groupBy`, `limit`. This is the ONLY inline way to iterate notes-with-filters, since a flat block can't. |
 | **Tasks** | Flat spec (Form 1) | `tasks: <Obsidian-Tasks DSL>` (+ optional `from:`, `view:`, `group:`, `limit:`). |
 | **Base** | Flat spec (Form 1) | `of: [[Base]]` (+ optional `where:`, `view:`, `group:`, `limit:`). |
 
@@ -467,11 +454,10 @@ Because the builder only models a bounded subset of each form, `isBuilderReprese
 
 - Any **flat** tasks/base spec round-trips losslessly (`true`) — the builder always regenerates an equivalent flat spec, even when some DSL leaves fall through to the advanced/raw field.
 - A **full inline config** is representable only if all of the following hold:
-  - it has **no top-level key other than `source`/`views`** (a config with `filters:`/`formulas:`/`properties:`/`schema:` is NOT representable — those would be silently dropped on save);
+  - it has **no top-level key other than `source`, `view`, `sort`, `groupBy`, `limit`** (a legacy single-entry `views:` is also read; a config with `filters:`/`formulas:`/`properties:`/`schema:` is NOT representable — those would be silently dropped on save);
   - its `source` is exactly `notes` or `notes where <expr>` (a `tasks`/`base` **config**-form source isn't representable, since the builder always emits those two flat);
   - the `where` expression fully reverses into filter rows (`reverseWhere` didn't have to fall back to `rawWhere`);
-  - there is **at most one** view; and
-  - that view has no keys beyond `type`/`name`/`sort`/`groupBy`/`limit`.
+  - a legacy `views:` list, if present, has at most one entry, with no keys beyond `type`/`name`/`sort`/`groupBy`/`limit`.
 - `QueryBlockWidget` (`app/src/editor/queryBlock.ts`) only sets `onEditQuery` (the pencil) when this returns `true`, so a richer hand-authored block can only be edited as raw source, never silently clobbered by the visual form.
 
 ---
@@ -535,11 +521,11 @@ Key-skeleton inserts (from `KEY_SPECS`):
 - **Unknown `view:` doesn't error** — it silently falls back (`list` for tasks, `table` otherwise).
 - **A legacy `tasks:` DSL body is translated at READ time, not by `parseQueryBlock`.** The parser just carries whatever follows `tasks:` verbatim as `source.where`; `source.ts` is what checks `looksLikeTaskDsl` and calls `translateTaskDsl` before filtering. A block that has already been migrated (`tasks:` bare + `where:`/`sort:`) skips that translation entirely.
 - **`sort: note.priority` ranks by urgency, not alphabetically.** The flat spec's `sort:` is applied at the VIEW level (`runView` in `core/src/bases/query.ts`) through `compareForSort`, which special-cases any property whose bare name is `priority` (dropping its `note./file./formula./this.` namespace) with a rank table — `highest` < `high` < `medium` < `none` < `low` < `lowest` — and falls back to the plain value comparator for every other property. `applyTaskSort` (`core/src/bases/taskDsl.ts`), which runs for a legacy `tasks:` DSL's `sort by priority` line at the SOURCE level, imports and uses this same `compareForSort` — so a migrated block sorts identically to an un-migrated one. `bismuth base migrate-queries` rewrites a `sort by priority` DSL line into a modern `sort:` key rather than leaving it in legacy form, since doing so no longer changes the sort's behavior (see [tasks](../tasks/query-dsl.md)).
-- **One config key flips the whole block to config mode** — adding any of `views:/filters:/formulas:/properties:/schema:/source:` makes the flat keys (`of:`, `tasks:`, etc.) ignored.
+- **One config key flips the whole block to config mode** — adding any of `filters:/formulas:/properties:/schema:/source:` (or a legacy `views:`) makes the flat keys (`of:`, `tasks:`, etc.) ignored.
 - **First `:` splits a flat line** — values may contain colons (e.g. `where: date == today` is fine; `where: a:b` keeps `a:b` as the value). Duplicate keys: last one wins.
 - **`livePreview` skips `query` fences** — if you ever see a raw `query` code block rendered as plain code, the `queryBlock` extension isn't mounted.
 - **`from: [[Base]]` in YAML** parses as a nested flow sequence, not a string — `normalizeSource`'s `wikiStr` reconstructs `"[[Base]]"` from the array form so unquoted refs don't silently drop the scope (relevant to the full-config form; the flat parser keeps the literal string).
 
-See also: [bases overview](./overview.md), [sources & composition](./sources.md), [views](./overview.md), [tasks](../tasks/syntax.md).
+See also: [bases overview](./overview.md), [sources & composition](./sources.md), [the view](./overview.md#the-view), [tasks](../tasks/syntax.md).
 
 Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/queryBuilderEdit.test.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/slashComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/query.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`

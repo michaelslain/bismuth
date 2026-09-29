@@ -7,7 +7,6 @@ import type { ViewConfig } from '../../src/bases/types'
 
 const view = (v: Partial<ViewConfig>): ViewConfig => ({
     type: 'calendar',
-    name: 'Calendar',
     ...v,
 })
 

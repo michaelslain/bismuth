@@ -55,7 +55,7 @@ test('parsePropertyOptions: comma, newline, and mixed, trims + dedupes, drops em
 })
 
 test('seedPropertyRows: empty when base has no declared list-form properties', () => {
-    expect(seedPropertyRows({ views: [] } as unknown as BaseConfig)).toEqual([])
+    expect(seedPropertyRows({ view: { type: 'table' } } as unknown as BaseConfig)).toEqual([])
     // Map-form properties (no declaredProperties) — deliberately not surfaced.
     const mapForm: BaseConfig = {
         views: [],

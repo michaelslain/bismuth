@@ -4,7 +4,7 @@
 // notes) -> runView, which applies the base's filters, formulas, sort and column
 // selection. We then flatten the resulting ViewResult to plain string cells so the
 // HTML/Markdown exporters don't need the bases engine. This is why a filters-style
-// base (filters: + views:, no source:) exports its real rows instead of nothing.
+// base (filters: + view:, no source:) exports its real rows instead of nothing.
 import { parseBaseFile } from '../../../core/src/bases/parse'
 import { runView, resolveProperty } from '../../../core/src/bases/query'
 import { isLink, type Link } from '../../../core/src/bases/values'
@@ -54,15 +54,13 @@ export function viewResultToTable(
     return { columns: ids.map(id => columnLabel(id, config)), rows }
 }
 
-// Read a `type: base` md file and resolve the chosen view to a ViewResult, mirroring
+// Read a `type: base` md file and resolve its view to a ViewResult, mirroring
 // BaseView: a base with an inline table renders its own rows; a query base
-// (filters:/views:, no source:) defaults to all notes (kind: "notes"), which runView
-// then narrows. `viewIndex` selects which of the base's views to run (default 0 = the
-// first view, the historical behavior). Shared by the data (table) and visual paths.
+// (filters:/view:, no source:) defaults to all notes (kind: "notes"), which runView
+// then narrows. Shared by the data (table) and visual paths.
 export async function baseToViewResult(
     path: string,
     deps: ExportDeps,
-    viewIndex = 0,
 ): Promise<{
     config: BaseConfig
     vr: ViewResult
@@ -80,7 +78,7 @@ export async function baseToViewResult(
             : await deps.resolveRows(spec)
     return {
         config,
-        vr: runView(config, allRows, viewIndex),
+        vr: runView(config, allRows),
         categories: categoriesOf(text),
     }
 }
@@ -89,8 +87,7 @@ export async function baseToViewResult(
 export async function baseToTable(
     path: string,
     deps: ExportDeps,
-    viewIndex = 0,
 ): Promise<TableData> {
-    const { config, vr } = await baseToViewResult(path, deps, viewIndex)
+    const { config, vr } = await baseToViewResult(path, deps)
     return viewResultToTable(config, vr)
 }

@@ -11,7 +11,7 @@ import type { Expr } from './ast'
 import { viewMode } from './types'
 import { parseExpr } from './parser'
 import { evaluate } from './evaluate'
-import { passesFilter, combineFilters } from './filters'
+import { passesFilter } from './filters'
 import { compare, toNumber } from './values'
 import { declaredFormulas } from './properties'
 
@@ -286,10 +286,9 @@ function summarize(name: string, values: unknown[]): string {
 export function runView(
     base: BaseConfig,
     allRows: Row[],
-    viewIndex: number,
     hostThis?: Record<string, unknown>,
 ): ViewResult {
-    const view = base.views[viewIndex] ?? base.views[0]
+    const view = base.view
 
     // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*).
     //    `hostThis` (the embedding note's frontmatter, when this base is being
@@ -301,10 +300,9 @@ export function runView(
     const formulas = { ...declaredFormulas(base), ...base.formulas }
     computeFormulas(rows, formulas, hostThis)
 
-    // 2. Filter (global AND view)
-    const filter = combineFilters(base.filters, view.filters)
+    // 2. Filter
     let filtered = rows.filter(r =>
-        passesFilter(filter, toContext(r, hostThis)),
+        passesFilter(base.filters, toContext(r, hostThis)),
     )
 
     // 3. Sort

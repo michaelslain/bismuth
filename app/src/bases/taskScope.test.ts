@@ -7,13 +7,10 @@ import {
 import type {
     BaseConfig,
     SourceSpec,
-    ViewConfig,
 } from '../../../core/src/bases/types'
 
-const view = (over: Partial<ViewConfig> = {}): ViewConfig =>
-    ({ type: 'list', ...over }) as ViewConfig
 const config = (over: Partial<BaseConfig> = {}): BaseConfig =>
-    ({ views: [], ...over }) as BaseConfig
+    ({ view: { type: 'list' }, ...over }) as BaseConfig
 
 describe('prospective rows', () => {
     test('a stored row is normalized the same way the view will see it', () => {
@@ -45,38 +42,31 @@ describe('prospective rows', () => {
 describe('newTaskVisible', () => {
     test('no filters anywhere means always visible', () => {
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
-        expect(newTaskVisible(config(), view(), r)).toBe(true)
+        expect(newTaskVisible(config(), r)).toBe(true)
     })
 
-    test('a view filter the new task cannot satisfy makes it invisible', () => {
+    test('a filter the new task cannot satisfy makes it invisible', () => {
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
         expect(
-            newTaskVisible(config(), view({ filters: 'note.priority == "high"' }), r),
-        ).toBe(false)
-    })
-
-    test('a BASE-level filter counts too', () => {
-        const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
-        expect(
-            newTaskVisible(config({ filters: 'note.priority == "high"' }), view(), r),
+            newTaskVisible(config({ filters: 'note.priority == "high"' }), r),
         ).toBe(false)
     })
 
     test("the source's own where: counts too", () => {
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
-        const v = view({
+        const c = config({
             source: { kind: 'tasks', where: 'note.priority == "high"' },
         })
-        expect(newTaskVisible(config(), v, r)).toBe(false)
+        expect(newTaskVisible(c, r)).toBe(false)
     })
 
     test('a filter the new task DOES satisfy leaves it visible', () => {
         // `!done`, not the tasks-DSL spelling `not done` — this module evaluates a
-        // ViewConfig.filters STRING through the Bases expression language (parseExpr),
+        // BaseConfig.filters STRING through the Bases expression language (parseExpr),
         // which has no `not`/`and`/`or` keywords (those belong to taskDsl.ts's translator,
         // a different input). `done` is undefined on a fresh task, so `!done` is true.
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
-        expect(newTaskVisible(config(), view({ filters: '!done' }), r)).toBe(true)
+        expect(newTaskVisible(config({ filters: '!done' }), r)).toBe(true)
     })
 
     test('a base source ref carries no where: to apply, even when one is attached', () => {
@@ -97,8 +87,7 @@ describe('newTaskVisible', () => {
             ref: '[[Other]]',
             where: 'note.priority == "high"',
         } as unknown as SourceSpec
-        const v = view({ source: spec })
-        expect(newTaskVisible(config(), v, r)).toBe(true)
+        expect(newTaskVisible(config({ source: spec }), r)).toBe(true)
     })
 
     test('an unparseable filter does NOT report the task as invisible', () => {
@@ -106,7 +95,7 @@ describe('newTaskVisible', () => {
         // will not appear" would toast on every base with a typo in it, which is a different
         // problem with a different message (`base validate` owns it). Fail toward silence.
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
-        expect(newTaskVisible(config(), view({ filters: 'not ((' }), r)).toBe(true)
+        expect(newTaskVisible(config({ filters: 'not ((' }), r)).toBe(true)
     })
 
     test('a formula-referencing filter does NOT report the task as invisible', () => {
@@ -120,7 +109,7 @@ describe('newTaskVisible', () => {
         // formula here too" (see the comment on `newTaskVisible`).
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
         expect(
-            newTaskVisible(config(), view({ filters: 'formula.ppu > 10' }), r),
+            newTaskVisible(config({ filters: 'formula.ppu > 10' }), r),
         ).toBe(true)
     })
 })

@@ -19,8 +19,6 @@ export type ViewRendererProps = {
     mode: 'normal' | 'tasks'
     /** True when the base owns its rows (no `source:`). */
     ownsRows: boolean
-    /** The active view's index, clamped to the document's view count. */
-    viewIndex: number
     /** The combined refetch — fires for writes that land on the base file AND on other notes,
      *  and the callback does not say which. */
     onChange: () => void
@@ -57,7 +55,6 @@ const ViewRenderer: Component<ViewRendererProps> = props => (
                 result={props.result}
                 config={props.config}
                 basePath={props.basePath}
-                viewIndex={props.viewIndex}
                 onChange={props.onChange}
                 mode={props.mode}
                 ownsRows={props.ownsRows}

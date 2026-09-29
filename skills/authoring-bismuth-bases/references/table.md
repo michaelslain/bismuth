@@ -8,19 +8,17 @@ Spreadsheet-style grid. The default/fallback view — used when no `type:` is se
 ---
 type: base
 source: notes where "#book"
-views:
-  - type: table
-    name: Reading List
-    order: [file.name, note.status, note.rating, note.pages]
-    sort:
-      - property: note.rating
-        direction: DESC
-    groupBy:
-      property: note.status
-      direction: ASC
-    summaries:
-      note.rating: Average
-    limit: 200
+view: table
+order: [file.name, note.status, note.rating, note.pages]
+sort:
+  - property: note.rating
+    direction: DESC
+groupBy:
+  property: note.status
+  direction: ASC
+summaries:
+  note.rating: Average
+limit: 200
 ---
 ```
 

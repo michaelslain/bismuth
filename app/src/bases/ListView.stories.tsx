@@ -41,7 +41,7 @@ export const Default: Story = {
 // A row STORED in a base's own body (see TableView.stories.tsx's STORED_CONFIG for the shape).
 const STORED_CONFIG: BaseConfig = {
     declaredProperties: ['description', 'status'],
-    views: [{ type: 'list', name: 'List' }],
+    view: { type: 'list' },
 }
 const STORED_ROWS: Row[] = [
     {
@@ -58,7 +58,7 @@ const STORED_ROWS: Row[] = [
 export const EditableOwnedRow: Story = {
     render: () => (
         <ListView
-            result={runView(STORED_CONFIG, STORED_ROWS, 0)}
+            result={runView(STORED_CONFIG, STORED_ROWS)}
             config={STORED_CONFIG}
             basePath="boards/stored-list.md"
         />
@@ -103,17 +103,14 @@ export const Grouped: Story = {
         expect(canvasElement.textContent).toMatch(/\/\/ \d+/)
     },
     render: () => {
-        const views = [
-            {
+        const view = {
                 type: 'list' as const,
-                name: 'List',
                 groupBy: { property: 'status' },
-            },
-        ]
+            }
         return (
             <ListView
-                result={sampleViewResult(undefined, { views })}
-                config={sampleBaseConfig({ views })}
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
             />
         )
     },
@@ -159,7 +156,7 @@ function taskRow(
     }
 }
 
-const TASKS_VIEW: ViewConfig = { type: 'list', name: 'List' }
+const TASKS_VIEW: ViewConfig = { type: 'list' }
 
 function tasksResult(rows: Row[]): ViewResult {
     return {
@@ -172,7 +169,7 @@ function tasksResult(rows: Row[]): ViewResult {
 
 const TASKS_BASE_CONFIG: BaseConfig = {
     source: { kind: 'tasks' },
-    views: [TASKS_VIEW],
+    view: TASKS_VIEW,
 }
 
 // Computed ONCE at module load, not re-derived separately inside `render()` and `play()` —

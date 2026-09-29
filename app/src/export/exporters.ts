@@ -73,7 +73,7 @@ async function bodyHtml(
             return { html: v.body, css: v.css, prose: false }
         }
         return {
-            html: tableToHtml(await baseToTable(path, deps, opts.viewIndex)),
+            html: tableToHtml(await baseToTable(path, deps)),
             css: '',
             prose: false,
         }
@@ -242,7 +242,7 @@ async function markdownText(
     // A `type: base` md exports its chosen view's table as a markdown table (no frontmatter in
     // that output regardless); any other md is its own text, minus frontmatter when excluded.
     if (isBaseText(text))
-        return tableToMarkdown(await baseToTable(path, deps, opts.viewIndex))
+        return tableToMarkdown(await baseToTable(path, deps))
     return opts.includeFrontmatter ? text : stripFrontmatter(text)
 }
 
@@ -250,12 +250,11 @@ async function markdownText(
 async function csvText(
     path: string,
     deps: ExportDeps,
-    opts: ExportOptions,
 ): Promise<string> {
     const text = await deps.read(path)
     if (!isBaseText(text))
         throw new Error('CSV export is only available for bases')
-    return tableToCsv(await baseToTable(path, deps, opts.viewIndex))
+    return tableToCsv(await baseToTable(path, deps))
 }
 
 /**
@@ -290,7 +289,7 @@ export async function renderPreview(
         return { previewHtml: wrapHtmlDocument(pre, name, palette) }
     }
     if (format === 'csv') {
-        const pre = `<pre>${escapeHtml(await csvText(path, deps, opts))}</pre>`
+        const pre = `<pre>${escapeHtml(await csvText(path, deps))}</pre>`
         return { previewHtml: wrapHtmlDocument(pre, name, palette) }
     }
     // PDF previews as the REAL bytes the download produces — same engine, same print, so preview
@@ -385,7 +384,7 @@ export async function renderExport(
             }
         }
         case 'csv': {
-            const csv = await csvText(path, deps, opts)
+            const csv = await csvText(path, deps)
             return {
                 bytes: TEXT.encode(csv),
                 mime: 'text/csv',
