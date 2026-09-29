@@ -8,6 +8,7 @@ import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { spyApi } from './_apiSpy'
 import { toasts } from '../Toast'
+import { dismissToast } from '../toastStore'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -921,5 +922,66 @@ export const FailedDeleteLeavesCounters: Story = {
         )
         expect(front()).toBe(before)
         expect(reviewed.n).toBe(0)
+    },
+}
+
+const UNDO_DELETE_BASE_PATH = 'stories/flashcards-undo-delete-demo.md'
+saveSession(UNDO_DELETE_BASE_PATH, { cram: true, pos: 0, good: 0, hard: 0, easy: 0, retired: [] })
+// What the base file holds once the first card is deleted — undo re-counts rows from it.
+const AFTER_DELETE =
+    '---\ntype: base\n---\n\n| front | back |\n| --- | --- |\n| capital of Japan | Tokyo |\n| capital of Kenya | Nairobi |\n| capital of Iceland | Reykjavik |\n'
+
+/** Deleting the current card is immediate and raises `deleted card <front>` with `[undo]`; undo
+ *  writes the card back (a `rowCreate` of the same note, then a `rowReorder` to its old index) and
+ *  the same card is on screen again. The rows are a signal the fake writes edit, standing in for
+ *  the host's refetch. */
+let setUndoRows: (r: Row[]) => void = () => {}
+let undoSpy: ReturnType<typeof spyApi>
+
+export const DeleteWithUndo: Story = {
+    render: () => {
+        const [rows, setRows] = createSignal(DECK)
+        setUndoRows = setRows
+        return (
+            <Pane w="1100px">
+                <FlashcardsView
+                    rows={rows()}
+                    config={config}
+                    basePath={UNDO_DELETE_BASE_PATH}
+                    onReviewed={() => reviewed.n++}
+                />
+            </Pane>
+        )
+    },
+    beforeEach: () => {
+        reviewed.n = 0
+        for (const t of toasts()) dismissToast(t.id)
+        undoSpy = spyApi(['rowDelete', 'rowCreate', 'rowReorder', 'read'], {
+            rowDelete: () => setUndoRows(DECK.slice(1)),
+            rowCreate: () => {},
+            rowReorder: () => setUndoRows(DECK),
+            read: async () => AFTER_DELETE,
+        })
+        return undoSpy.restore
+    },
+    play: async ({ canvasElement }) => {
+        const spy = undoSpy
+        const front = () => canvasElement.querySelector('[data-face="front"]')?.textContent?.trim() ?? ''
+        const before = await waitFor(() => {
+            const t = front()
+            expect(t).not.toBe('')
+            return t
+        })
+        await userEvent.click(await within(canvasElement).findByLabelText(/delete this card/i))
+        await waitFor(() => expect(front()).not.toBe(before))
+        expect(spy.named('rowDelete')[0].args).toEqual([UNDO_DELETE_BASE_PATH, 0])
+        const toast = toasts().at(-1)!
+        expect(toast.message).toBe(`deleted card ${before}`)
+        expect(toast.action?.label).toBe('undo')
+
+        toast.action!.onClick()
+        await waitFor(() => expect(front()).toBe(before))
+        expect(spy.named('rowCreate')[0].args[1]).toMatchObject({ front: before })
+        expect(spy.named('rowReorder')[0].args).toEqual([UNDO_DELETE_BASE_PATH, 3, 0])
     },
 }

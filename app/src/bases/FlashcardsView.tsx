@@ -10,6 +10,9 @@ import {
 } from 'solid-js'
 import { api } from '../api'
 import { pushToast } from '../Toast'
+import { pushUndoToast } from '../undoToast'
+import { restoreRowAt } from './restoreRow'
+import { storedNote } from './taskWrite'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { TextInput } from '../ui/TextInput'
@@ -500,8 +503,11 @@ export function FlashcardsView(props: {
         if (!c || !props.basePath) return
         // Delete first: the counters below only move once the row is really gone, so a failed
         // delete leaves the session exactly as it was.
+        const basePath = props.basePath
+        const note = storedNote(props.rows[c.index])
+        const front = String(note[frontField()] ?? '').trim()
         try {
-            await api.rowDelete(props.basePath, c.index)
+            await api.rowDelete(basePath, c.index)
         } catch (e) {
             pushToast(`Could not delete the card: ${(e as Error).message}`)
             return
@@ -535,6 +541,13 @@ export function FlashcardsView(props: {
             setPos(np === -1 ? newQueue.length : np)
         }
         props.onReviewed()
+        pushUndoToast(
+            `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`,
+            async () => {
+                await restoreRowAt(basePath, note, c.index)
+                props.onReviewed()
+            },
+        )
     }
 
     // Edit / reset / delete for the current card, handed to FlipCard's `actions` slot — which pins
@@ -576,8 +589,8 @@ export function FlashcardsView(props: {
                 /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
         )
             return
-        // Space on a focused action/grade button must activate it; only the flip card (aria-pressed) flips.
-        if (el?.tagName === 'BUTTON' && !el.hasAttribute('aria-pressed')) return
+        // Space on a focused action/grade button must activate it; only the flip card flips.
+        if (el?.tagName === 'BUTTON' && !el.hasAttribute('data-flip-card')) return
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
