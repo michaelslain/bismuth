@@ -46,75 +46,75 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
     // The picker anchors to the whole header row so it opens below the header rule.
     let headerEl: HTMLDivElement | undefined
     return (
-    <div
-        ref={headerEl}
-        class={styles.header}
-        onPointerDown={e => props.onPointerDown(e)}
-    >
-        <Text as="span" inherit class={styles.dotSlot}>
+        <div
+            ref={headerEl}
+            class={styles.header}
+            onPointerDown={e => props.onPointerDown(e)}
+        >
+            <Text as="span" inherit class={styles.dotSlot}>
+                <Show
+                    when={props.editable}
+                    fallback={<StatusDot color={props.color} size="md" />}
+                >
+                    <ColorChip
+                        trigger={<StatusDot color={props.color} size="md" />}
+                        anchor={() => headerEl}
+                        placement="below"
+                        color={props.color}
+                        palette={props.palette}
+                        open={props.pickerOpen}
+                        onToggle={props.onTogglePicker}
+                        onPick={props.onPickColor}
+                        auto={{
+                            label: 'auto',
+                            selected: !props.hasOverride,
+                            onPick: () => props.onPickColor(null),
+                        }}
+                    />
+                </Show>
+            </Text>
             <Show
-                when={props.editable}
-                fallback={<StatusDot color={props.color} size="md" />}
+                when={props.renaming}
+                fallback={
+                    <Text as="span" inherit class={styles.title}>
+                        {props.columnKey === '' ? '(empty)' : props.columnKey}
+                    </Text>
+                }
             >
-                <ColorChip
-                    trigger={<StatusDot color={props.color} size="md" />}
-                    anchor={() => headerEl}
-                    placement="below"
-                    color={props.color}
-                    palette={props.palette}
-                    open={props.pickerOpen}
-                    onToggle={props.onTogglePicker}
-                    onPick={props.onPickColor}
-                    auto={{
-                        label: 'auto',
-                        selected: !props.hasOverride,
-                        onPick: () => props.onPickColor(null),
-                    }}
+                <KanbanColumnNameInput
+                    initial={props.columnKey}
+                    existing={props.existing}
+                    selectOnMount
+                    onSubmit={props.onRename}
+                    onCancel={props.onCancelRename}
                 />
             </Show>
-        </Text>
-        <Show
-            when={props.renaming}
-            fallback={
-                <Text as="span" inherit class={styles.title}>
-                    {props.columnKey === '' ? '(empty)' : props.columnKey}
-                </Text>
-            }
-        >
-            <KanbanColumnNameInput
-                initial={props.columnKey}
-                existing={props.existing}
-                selectOnMount
-                onSubmit={props.onRename}
-                onCancel={props.onCancelRename}
-            />
-        </Show>
-        {/* Count flush right; the actions bar hangs off its left edge (absolute), so revealing
-            it moves nothing. */}
-        <div class={styles.trail}>
-            <Show when={props.actions && !props.renaming}>
-                <IconBar label="Column actions" class={styles.actions}>
-                    <IconButton
-                        icon="Pencil"
-                        label="Rename column"
-                        onClick={props.onStartRename}
-                    />
-                    {/* The "(empty)" lane is where cards with no value live — it is not a
-                        column that can be deleted. */}
-                    <Show when={props.columnKey !== ''}>
+            {/* Count flush right; the actions bar hangs off its left edge (absolute), so revealing
+                it moves nothing. */}
+            <div class={styles.trail}>
+                <Show when={props.actions && !props.renaming}>
+                    <IconBar label="Column actions" class={styles.actions}>
                         <IconButton
-                            icon="Trash2"
-                            label="Delete column"
-                            onClick={props.onDelete}
+                            icon="Pencil"
+                            label="Rename column"
+                            onClick={props.onStartRename}
                         />
-                    </Show>
-                </IconBar>
-            </Show>
-            <Text as="span" inherit class={styles.count}>
-                {padCount(props.count)}
-            </Text>
+                        {/* The "(empty)" lane is where cards with no value live — it is not a
+                            column that can be deleted. */}
+                        <Show when={props.columnKey !== ''}>
+                            <IconButton
+                                icon="Trash2"
+                                label="Delete column"
+                                onClick={props.onDelete}
+                            />
+                        </Show>
+                    </IconBar>
+                </Show>
+                <Text as="span" inherit class={styles.count}>
+                    {padCount(props.count)}
+                </Text>
+            </div>
         </div>
-    </div>
     )
 }
 
