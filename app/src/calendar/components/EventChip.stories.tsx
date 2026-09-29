@@ -8,9 +8,16 @@ import { showEventModal, events } from '../state'
 import { toasts } from '../../toastStore'
 import { EventChip } from './EventChip'
 import { EventStore, MemoryBackend } from '../EventStore'
-import { createSignal, Show } from 'solid-js'
+import { createSignal, For, onMount, Show } from 'solid-js'
 import type { CalendarEvent, Category } from '../types'
 import { Row } from '../../ui/_storyKit'
+import { seedCalendarState } from '../../ui/_calendarFixtures'
+import CalendarFrame from './CalendarFrame'
+import { DayView } from './views/DayView'
+import MonthCell from './views/MonthCell'
+import DragGhost from './views/DragGhost'
+import { ghostBox } from './views/timeGridLayout'
+import { categoryFill, eventCategoryColors } from '../categoryColor'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -272,5 +279,87 @@ export const DeleteIsImmediateWithUndo: Story = {
         await waitFor(() => expect(toasts().some(t => t.message === 'deleted Doomed sync')).toBe(true))
         expect(toasts().find(t => t.message === 'deleted Doomed sync')?.action?.label).toBe('undo')
         expect(events.value.length).toBe(0)
+    },
+}
+
+
+// ---- event-look comparison — phase 2 keeps one ----------------------------------------------
+
+const LOOKS = ['tint', 'outline', 'solid'] as const
+
+const LOOK_DAY = '2026-01-12'
+const LOOK_EVENTS: CalendarEvent[] = [
+    { id: 'lk-1', title: 'Conference', date: LOOK_DAY, category: 'Work', categories: ['Work', 'Focus'] },
+    { id: 'lk-2', title: 'Dentist', date: LOOK_DAY, category: 'Personal' },
+    { id: 'lk-3', title: 'Standup', date: LOOK_DAY, startTime: '08:30', endTime: '08:45', category: 'Work' },
+    { id: 'lk-4', title: 'Sync with design', date: LOOK_DAY, startTime: '09:30', endTime: '10:30', category: 'Work' },
+    { id: 'lk-5', title: '1:1 with manager', date: LOOK_DAY, startTime: '09:45', endTime: '10:15', category: 'Personal' },
+    { id: 'lk-6', title: 'Focus block', date: LOOK_DAY, startTime: '10:00', endTime: '11:30', category: 'Focus' },
+    { id: 'lk-7', title: 'Team offsite planning', date: LOOK_DAY, startTime: '12:00', endTime: '13:30', category: 'Work', categories: ['Work', 'Focus'] },
+    { id: 'lk-8', title: 'Unfiled reminder', date: LOOK_DAY, startTime: '14:00', endTime: '15:00' },
+    { id: 'lk-9', title: 'Speak Out BBQ', date: LOOK_DAY, startTime: '15:30', endTime: '17:00', category: 'Personal', location: 'Marina Park, San Leandro' },
+]
+
+/** One look's column: the real DayView (all-day row, a compact block, three overlapping lanes, a
+ *  two-category block, an uncategorised block, a block with a location), a month cell's pills of
+ *  the same events, and the drag ghost for a create and for a two-category move. */
+const LookColumn = (props: { look: (typeof LOOKS)[number] }) => {
+    let host!: HTMLDivElement
+    // The day view opens at midnight; scroll its body to 8am so the fixtures are in view.
+    onMount(() =>
+        requestAnimationFrame(() => {
+            for (const el of host.querySelectorAll<HTMLElement>('*'))
+                if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = 7.5 * 50
+        }),
+    )
+    const moveFill = categoryFill(eventCategoryColors(LOOK_EVENTS[6], CATEGORIES)) ?? 'var(--accent)'
+    return (
+        <div ref={host} data-event-look={props.look} style={{ flex: '1', 'min-width': '0' }}>
+            <Row label={props.look} column gap="12px">
+                <div style={{ height: '500px' }}>
+                    <CalendarFrame>
+                        <DayView store={store} />
+                    </CalendarFrame>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', 'align-items': 'flex-start' }}>
+                    <div style={{ width: '220px', 'flex-shrink': '0' }}>
+                        <MonthCell date={LOOK_DAY} day={12} inMonth today={false} onOpen={() => {}}>
+                            <For each={LOOK_EVENTS.filter(e => e.id !== 'lk-5' && e.id !== 'lk-9')}>
+                                {e => <EventChip event={e} categories={CATEGORIES} store={store} />}
+                            </For>
+                        </MonthCell>
+                    </div>
+                    <div style={{ flex: '1', display: 'flex', 'flex-direction': 'column', gap: '12px' }}>
+                        <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
+                            <DragGhost {...ghostBox(0, 90)} startMin={540} endMin={630} color="var(--accent)" />
+                        </div>
+                        <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
+                            <DragGhost {...ghostBox(0, 90)} startMin={720} endMin={810} color={moveFill} />
+                        </div>
+                    </div>
+                </div>
+            </Row>
+        </div>
+    )
+}
+
+/** The three candidate event looks side by side, over the SAME fixtures and the real views.
+ *  Pick one; phase 2 deletes the other two and the `data-event-look` scaffold. */
+export const LookComparison: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => {
+        seedCalendarState({ date: new Date(2026, 0, 12), categories: CATEGORIES, events: LOOK_EVENTS })
+        return (
+            <div style={{ display: 'flex', gap: '24px', padding: '16px', background: 'var(--bg)' }}>
+                <For each={LOOKS}>{look => <LookColumn look={look} />}</For>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        for (const look of LOOKS) {
+            const col = canvasElement.querySelector<HTMLElement>(`[data-event-look="${look}"]`)!
+            // every fixture that should reach the grid did (all-day row + month pills + timed blocks)
+            await waitFor(() => expect(within(col).getAllByTestId('event-chip').length).toBeGreaterThanOrEqual(16))
+        }
     },
 }

@@ -3,6 +3,7 @@ import { formatTime } from '../../dates'
 import { settings } from '../../state'
 import Text from '../../../ui/Text'
 import { minutesToStr } from './timeGridDrag'
+import { asImage } from '../../categoryColor'
 import styles from './DragGhost.module.css'
 
 export type DragGhostProps = {
@@ -25,7 +26,12 @@ const DragGhost: Component<DragGhostProps> = props => (
         style={{
             top: `${props.top}px`,
             height: `${props.height}px`,
-            background: props.color,
+            // Custom properties, not an inline `background` (which would outrank every rule in the
+            // module): `--ghost-fill` is the fill as given, `--ghost-img` the same fill as an image,
+            // for the candidate looks' layered backgrounds and border-image (event-look
+            // comparison — phase 2 keeps one).
+            '--ghost-fill': props.color,
+            '--ghost-img': asImage(props.color),
         }}
     >
         <Text as="span" inherit>

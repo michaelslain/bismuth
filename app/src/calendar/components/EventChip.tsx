@@ -8,7 +8,7 @@ import CalendarChip from './CalendarChip'
 import { useOverflowHide } from './useOverflowHide'
 import { pushToast } from '../../toastStore'
 import { formatTime } from '../dates'
-import { eventCategoryColors, categoryFill } from '../categoryColor'
+import { eventCategoryColors, categoryFill, categoryBands } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
@@ -33,7 +33,20 @@ export function EventChip(props: Props) {
     // events with no resolvable category render as an outline-only ghost.
     const chipColors = () => eventCategoryColors(props.event, props.categories)
     const hasCategory = () => chipColors().length > 0
-    const chipBg = () => categoryFill(chipColors())
+    // The colours travel as custom properties, not an inline `background`, so the stylesheet
+    // decides how to paint them: `--ev-fill` is today's fill, `--ev-c` the first category, and
+    // `--ev-edge` / `--ev-cap` every category as hard bands for a thin edge (stacked) or cap (side
+    // by side). An inline `background` would outrank every rule in the module.
+    const chipVars = () => {
+        const colors = chipColors()
+        if (!colors.length) return undefined
+        return {
+            '--ev-fill': categoryFill(colors)!,
+            '--ev-c': colors[0],
+            '--ev-edge': categoryBands(colors, 180)!,
+            '--ev-cap': categoryBands(colors, 90)!,
+        }
+    }
     const military = () => settings.value.militaryTime
 
     let chipRef: HTMLDivElement | undefined
@@ -88,7 +101,8 @@ export function EventChip(props: Props) {
             onMenu={(x, y) => setMenu({ x, y })}
             data-testid="event-chip"
             class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}${props.inGrid ? ` ${styles['in-grid']}` : ''}`}
-            style={chipBg() ? { background: chipBg() } : undefined}
+            style={chipVars()}
+            data-multi={chipColors().length > 1 ? '' : undefined}
         >
             <Show when={props.event.startTime}>
                 <Text as="span" inherit class={styles['event-chip-time']}>

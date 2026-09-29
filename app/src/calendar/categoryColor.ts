@@ -111,6 +111,31 @@ export function categoryFill(colors: string[]): string | undefined {
     return `linear-gradient(90deg, ${stops.join(', ')})`
 }
 
+/**
+ * Full-strength hard-edged bands, one per category (capped at MAX_BANDS), as a `linear-gradient`
+ * image — for the thin edge/cap a chip draws its categories in, rather than its whole fill.
+ * `angle` 180deg stacks the bands top-to-bottom (a left edge), 90deg lays them left-to-right (a
+ * top cap). Always an IMAGE, even for one colour, so a caller can size it as a background layer.
+ * 0 colours → `undefined`.
+ */
+export function categoryBands(colors: string[], angle: 90 | 180): string | undefined {
+    if (colors.length === 0) return undefined
+    const shown = colors.slice(0, MAX_BANDS)
+    const width = 100 / shown.length
+    const at = (n: number) => `${Math.round(n * width * 1e4) / 1e4}%`
+    const stops = shown.flatMap((c, i) => [`${c} ${at(i)}`, `${c} ${at(i + 1)}`])
+    return `linear-gradient(${angle}deg, ${stops.join(', ')})`
+}
+
+/** Any CSS `background` value → an image: a gradient passes through, a plain colour becomes a
+ *  flat one-colour gradient. Lets a caller layer (or `border-image`) a fill whose kind it does
+ *  not know — DragGhost's `color` is either `var(--accent)` or a categoryFill() gradient. */
+export function asImage(fill: string): string {
+    return /^(repeating-)?(linear|radial|conic)-gradient\(/.test(fill.trim())
+        ? fill
+        : `linear-gradient(${fill}, ${fill})`
+}
+
 /** How many categories a chip could not show as a band, for the caller's "+n" affordance.
  *  Returns 0 when everything fits, so a caller can render nothing without a special case. */
 export function categoryOverflow(colors: string[]): number {

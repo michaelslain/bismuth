@@ -4,8 +4,9 @@
    match (each file hashes `.event-chip` differently), so the chip now owns it as `.in-grid`. */
 .event-chip { display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-4); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--on-accent); cursor: pointer; overflow: hidden; margin-bottom: var(--sp-1); font-family: var(--ui-font-stack); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .event-chip:hover { filter: brightness(1.1); }
-/* Uncategorised events render as .ghost (outline-only). A categorised chip is tinted by an inline
-   style.background from categoryFill(), never a swatch class. */
+/* Uncategorised events render as .ghost (outline-only). A categorised chip is painted from the
+   custom properties EventChip sets inline (`--ev-fill` = categoryFill()), never a swatch class. */
+.ev { background: var(--ev-fill, transparent); }
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
 .event-chip-time { font-size: var(--fs-micro); opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; font-family: var(--ui-font-stack); }
@@ -36,3 +37,34 @@
 .event-chip.in-grid.compact .event-chip-title { flex: 1; min-width: 0; font-size: inherit; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-chip.in-grid.compact .event-chip-time { line-height: 1.25; }
 .event-chip.in-grid.compact .event-chip-meta { display: none; }
+
+/* ---- event-look comparison — phase 2 keeps one ------------------------------------------------
+   Three candidate looks, chosen by an ANCESTOR `data-event-look` (the LookComparison story wraps
+   each view in one). With no ancestor attribute every rule below is inert and the chip paints as
+   above. Attribute selectors are never hashed, so this needs no :global(). Colours come from the
+   chip's inline custom properties: --ev-c (first category), --ev-edge (all categories as stacked
+   bands), --ev-cap (all categories side by side). `[data-multi]` marks a 2+ category chip. */
+
+/* tint — a low wash of the category over the ground, a 2px category edge, ink in the three inks */
+[data-event-look='tint'] .ev:not(.ghost) { color: var(--fg); background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 22%, var(--bg)); }
+[data-event-look='tint'] .ev:not(.ghost):hover { filter: none; background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 32%, var(--bg)); }
+[data-event-look='tint'] .ev:not(.ghost) .event-chip-time,
+[data-event-look='tint'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
+
+/* outline — no fill, a 1px category rule, a 2px category edge, the title in the category hue */
+[data-event-look='outline'] .ev:not(.ghost) { color: var(--ev-c, var(--accent)); background: var(--ev-edge, none) left top / 2px 100% no-repeat, var(--bg); box-shadow: inset 0 0 0 1px var(--ev-c, var(--accent)); }
+[data-event-look='outline'] .ev:not(.ghost):hover { filter: none; background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 10%, var(--bg)); }
+[data-event-look='outline'] .ev:not(.ghost) .event-chip-time,
+[data-event-look='outline'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
+
+/* solid — today's fill made opaque over the ground; the time drops to a quieter regular weight; a
+   2+ category chip keeps ONE fill (its first category) and names every category in a 3px cap,
+   ruled off from the fill by a 1px line of ground */
+[data-event-look='solid'] .ev:not(.ghost) { background: color-mix(in srgb, var(--ev-c, var(--accent)) 85%, var(--bg)); }
+[data-event-look='solid'] .ev[data-multi]:not(.ghost) { background: var(--ev-cap, none) left top / 100% 3px no-repeat, linear-gradient(var(--bg), var(--bg)) left 3px / 100% 1px no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 85%, var(--bg)); padding-top: calc(var(--sp-1) + var(--sp-2)); }
+[data-event-look='solid'] .ev.in-grid[data-multi]:not(.ghost) { padding-top: calc(var(--sp-2) + var(--sp-2)); }
+[data-event-look='solid'] .ev.in-grid.compact[data-multi]:not(.ghost) { padding-top: var(--sp-2); }
+[data-event-look='solid'] .ev:not(.ghost) .event-chip-time { color: color-mix(in srgb, var(--on-accent) 72%, transparent); opacity: 1; font-weight: 400; }
+
+/* every look: an uncategorised chip in the grid is opaque, so an overlap never shows through it */
+[data-event-look] .ev.ghost.in-grid { background: var(--bg); }

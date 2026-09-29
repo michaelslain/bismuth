@@ -6,6 +6,8 @@ import {
     categoryFill,
     eventCategoryFill,
     categoryOverflow,
+    categoryBands,
+    asImage,
 } from './categoryColor'
 import type { Category } from './types'
 
@@ -103,4 +105,29 @@ test('eventCategoryFill: single-category event stays solid, multi-category blend
     expect(single).not.toContain('linear-gradient')
     const multi = eventCategoryFill({ categories: ['Work', 'Home'] }, cats)!
     expect(multi).toContain('linear-gradient')
+})
+
+test('categoryBands: 0 colours → undefined', () => {
+    expect(categoryBands([], 180)).toBeUndefined()
+})
+
+test('categoryBands: one colour is still an image (a flat two-stop gradient)', () => {
+    expect(categoryBands(['var(--blue)'], 180)).toBe(
+        'linear-gradient(180deg, var(--blue) 0%, var(--blue) 100%)',
+    )
+})
+
+test('categoryBands: full-strength hard bands, capped at MAX_BANDS, in the given direction', () => {
+    expect(categoryBands(['var(--blue)', 'var(--rose)'], 90)).toBe(
+        'linear-gradient(90deg, var(--blue) 0%, var(--blue) 50%, var(--rose) 50%, var(--rose) 100%)',
+    )
+    const four = categoryBands(['a', 'b', 'c', 'd'], 180)!
+    expect(four).not.toContain(' d ')
+    expect(four).toContain('b 33.3333%, b 66.6667%')
+})
+
+test('asImage: a gradient passes through, a colour becomes a flat gradient', () => {
+    const g = 'linear-gradient(90deg, red 0%, red 50%)'
+    expect(asImage(g)).toBe(g)
+    expect(asImage('var(--accent)')).toBe('linear-gradient(var(--accent), var(--accent))')
 })

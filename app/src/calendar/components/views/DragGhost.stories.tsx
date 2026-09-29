@@ -5,6 +5,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import DragGhost from './DragGhost'
 import { ghostBox, GRID_PX } from './timeGridLayout'
+import { categoryFill } from '../../categoryColor'
 
 const meta = {
     title: 'Calendar/Views/DragGhost',
@@ -40,4 +41,25 @@ export const ShortFloorsToFifteenMinutes: Story = {
         const ghost = within(canvasElement).getByTestId('drag-ghost')
         expect(Math.round(ghost.getBoundingClientRect().height)).toBe(Math.round(ghostBox(90, 90).height))
     },
+}
+
+// ---- event-look comparison — phase 2 keeps one ----------------------------------------------
+
+/** The ghost under each candidate look (an ancestor `data-event-look`): a create (accent) and a
+ *  move of a two-category event (the categoryFill bands). */
+export const Looks: Story = {
+    render: () => (
+        <div style={{ display: 'flex', gap: '16px' }}>
+            {(['tint', 'outline', 'solid'] as const).map(look => (
+                <div data-event-look={look} style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                    <Column start={60} end={120} color="var(--accent)" />
+                    <Column
+                        start={60}
+                        end={120}
+                        color={categoryFill(['var(--blue)', 'var(--violet)'])!}
+                    />
+                </div>
+            ))}
+        </div>
+    ),
 }
