@@ -5,9 +5,9 @@ import { api } from '../api'
 import type { Row } from '../../../core/src/bases/types'
 import type { TaskStatus } from '../../../core/src/tasks'
 import { statusFromChar, statusToChar } from '../../../core/src/taskReorder'
-import { removeTaskItem } from '../../../core/src/taskEdit'
-import { parseBaseFile } from '../../../core/src/bases/parse'
+import { leadingWidth, removeTaskItem } from '../../../core/src/taskEdit'
 import { todayISO } from '../../../core/src/dates'
+import { restoreRowAt } from './restoreRow'
 import { setStoredTaskStatus, storedNote } from './taskWrite'
 import {
     updateTask,
@@ -111,7 +111,10 @@ export async function saveTaskEdit(
  *  above the block at delete time: if it is still above `index` the block goes at `index`; if the
  *  note shifted and the anchor occurs exactly once, the block goes right after it; otherwise
  *  `index`, clamped to the note's current length (before a trailing newline's empty tail), so a
- *  note that shrank since the delete still gets the block back rather than an error. Pure. */
+ *  note that shrank since the delete still gets the block back rather than an error. Whichever
+ *  way `at` was chosen it then steps past any lines indented deeper than the block's own head:
+ *  at delete time the line after the block was at or above the block's indent, so a deeper line
+ *  now sitting there is new and belongs to the line above, not to the block. Pure. */
 export function reinsertTaskBlock(
     content: string,
     block: string[],
@@ -129,6 +132,13 @@ export function reinsertTaskBlock(
         const first = lines.indexOf(anchor)
         if (first !== -1 && first === lines.lastIndexOf(anchor)) at = first + 1
     }
+    const head = leadingWidth(block[0] ?? '')
+    while (
+        at < lines.length &&
+        lines[at].trim() !== '' &&
+        leadingWidth(lines[at]) > head
+    )
+        at++
     lines.splice(at, 0, ...block)
     return lines.join(eol)
 }
@@ -157,10 +167,7 @@ export async function deleteTaskUndoable(
         const note = { ...storedNote(row) }
         const index = row.index!
         restore = async () => {
-            const meta = { name: row.file.name, path }
-            const count = parseBaseFile(await api.read(path), meta).rows.length
-            await api.rowCreate(path, note)
-            if (index < count) await api.rowReorder(path, count, index)
+            await restoreRowAt(path, note, index)
         }
     }
     await deleteTask(row)
