@@ -1,9 +1,62 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import type { Row } from '../../../core/src/bases/types'
+import { api } from '../api'
 import {
     groupUpdatesByPath,
     rollbackPending,
     rollbackRemoved,
+    writeStatus,
 } from './kanbanRollback'
+
+// Spies on the real `api` (restored after each test) — never `mock.module`, which is process-wide
+// in Bun and would leak a fake `../api` into every other test file.
+const calls: Array<[string, ...unknown[]]> = []
+const spies: Array<{ mockRestore: () => void }> = []
+beforeEach(() => {
+    calls.length = 0
+    const rec = (k: string) => async (...a: unknown[]) => void calls.push([k, ...a])
+    spies.push(
+        spyOn(api, 'rowUpdateMany').mockImplementation(rec('many') as never),
+        spyOn(api, 'setProperties').mockImplementation(rec('set') as never),
+        spyOn(api, 'deleteProperty').mockImplementation(rec('del') as never),
+    )
+})
+afterEach(() => {
+    for (const s of spies.splice(0)) s.mockRestore()
+})
+
+const stored = (path: string, index: number, note: object) =>
+    ({ file: { path }, index, note, stored: true }) as unknown as Row
+const noteRow = (path: string) =>
+    ({ file: { path }, note: { status: 'a' } }) as unknown as Row
+
+describe('writeStatus', () => {
+    test('stored rows grouped per file, note rows via setProperties', async () => {
+        calls.length = 0
+        const rows = [stored('a.md', 0, { x: 1 }), stored('b.md', 2, {}), stored('a.md', 1, {}), noteRow('n.md')]
+        await writeStatus(rows, 'status', 'done')
+        const many = calls.filter(c => c[0] === 'many')
+        const set = calls.filter(c => c[0] === 'set')
+        expect(many).toHaveLength(2)
+        expect(many.map(c => c[1]).sort()).toEqual(['a.md', 'b.md'])
+        expect(many.find(c => c[1] === 'a.md')![2]).toEqual([
+            { index: 0, note: { x: 1, status: 'done' } },
+            { index: 1, note: { status: 'done' } },
+        ])
+        expect(set).toHaveLength(1)
+        expect(set[0][1]).toEqual([{ path: 'n.md', key: 'status', value: 'done' }])
+    })
+
+    test('undefined deletes the key per note row and strips it from stored notes', async () => {
+        calls.length = 0
+        await writeStatus([noteRow('n.md'), noteRow('m.md')], 'status', undefined)
+        expect(calls.filter(c => c[0] === 'del')).toEqual([
+            ['del', 'n.md', 'status'],
+            ['del', 'm.md', 'status'],
+        ])
+        expect(calls.some(c => c[0] === 'set')).toBe(false)
+    })
+})
 
 describe('groupUpdatesByPath', () => {
     test('groups items by path, insertion-ordered', () => {
