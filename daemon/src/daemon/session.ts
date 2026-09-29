@@ -1,4 +1,7 @@
-import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk'
+import {
+    query as claudeQuery,
+    type Options as SdkOptions,
+} from '@anthropic-ai/claude-agent-sdk'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { parseFrontmatter } from '../lib/frontmatter.ts'
 import type { VaultContext } from '../lib/config.ts'
@@ -251,6 +254,12 @@ export interface BismuthTools {
     docs?: string
 }
 
+/** The SDK's public Options plus `appendSystemPrompt`, which sdk.d.ts declares only on an internal
+ *  type (line ~3150), not on Options — the public spelling is `systemPrompt: { type: 'preset',
+ *  preset: 'claude_code', append }`. Kept as-is (semantics unchanged) and named here so the one
+ *  key the compiler cannot vouch for is visible; whether the SDK honors it is unverified. */
+export type DaemonQueryOptions = SdkOptions & { appendSystemPrompt?: string }
+
 /**
  * Assemble the SDK `query()` options for one vault session. Extracted from sendMessage so the
  * MCP/env wiring — the change most likely to silently regress — is unit-testable without invoking
@@ -262,9 +271,8 @@ export interface BismuthTools {
  * the CLI through the MCP server's own env regardless of cwd (mcp/src/cli.ts passes env through). We
  * also set `settingSources: []` so the daemon does NOT inherit a human's ambient `-s user` MCP config
  * — explicit > implicit for an unattended process (chat.ts deliberately does the opposite: it wants
- * the user's interactive config). SDK version skew: core resolves @anthropic-ai/claude-agent-sdk
- * 0.3.186, the daemon 0.2.141 — both expose Options.mcpServers, settingSources, and
- * McpStdioServerConfig.env, so this shape typechecks + runs under either.
+ * the user's interactive config). Typed as the SDK's own Options, so a misspelled or unknown
+ * key fails the typecheck instead of being silently ignored.
  */
 export function buildQueryOptions(
     ctx: VaultContext,
@@ -272,8 +280,8 @@ export function buildQueryOptions(
     existingSessionId: string | undefined,
     tools: { claudeBin?: string; systemPrompt: string } & BismuthTools,
     denyEntries: DenyEntry[] = [],
-): Record<string, unknown> {
-    const options: Record<string, unknown> = {
+): DaemonQueryOptions {
+    const options: DaemonQueryOptions = {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         // Operate inside the vault, with this vault's memory dir injected so the bot's memory
@@ -288,9 +296,7 @@ export function buildQueryOptions(
         env: {
             ...process.env,
             BISMUTH_MEMORY_DIR: ctx.memoryDir,
-            PATH: augmentPath(
-                process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin',
-            ),
+            PATH: augmentPath(process.env.PATH),
             ...(tools.cli ? { BISMUTH_CLI: tools.cli } : {}),
             // The signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell this daemon
             // session's OWN Bash-tool `bismuth` invocations from the vault owner's (unstamped) ones. This
@@ -509,11 +515,7 @@ export async function sendMessage(
     }
 
     let latestSessionId = existingSessionId ?? 'unknown'
-    // The SDK types are incomplete — cast options once at the boundary
-    const q = claudeQuery({
-        prompt: message,
-        options: options as Parameters<typeof claudeQuery>[0]['options'],
-    })
+    const q = claudeQuery({ prompt: message, options })
     let resultText = ''
 
     try {

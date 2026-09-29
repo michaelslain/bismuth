@@ -91,7 +91,7 @@ test('buildQueryOptions keeps the bismuth MCP vault-targeted under inheritance',
         undefined,
         { systemPrompt: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
     )
-    const servers = o.mcpServers as { bismuth: { env: Record<string, string> } }
+    const servers = o.mcpServers as unknown as { bismuth: { env: Record<string, string> } }
     expect(servers.bismuth.env.BISMUTH_VAULT).toBe('/vault')
     expect(servers.bismuth.env.BISMUTH_MCP_CHANNEL).toBe('daemon')
     expect(servers.bismuth.env.BISMUTH_AGENT_CHANNEL).toBe('daemon')
@@ -310,7 +310,7 @@ test("buildQueryOptions passes reasoning effort as `effort` (the SDK's real fiel
         systemPrompt: 'x',
     })
     expect(o.effort).toBe('high')
-    expect(o.thinkingBudget).toBeUndefined()
+    expect((o as Record<string, unknown>).thinkingBudget).toBeUndefined()
 })
 
 test('buildQueryOptions maps low/medium effort onto `effort` too, and omits it entirely when unset', () => {

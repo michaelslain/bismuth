@@ -81,7 +81,7 @@ export function buildCodexEnv(
 ): Record<string, string> {
     const env: Record<string, string> = {}
     for (const [k, v] of Object.entries(base)) if (v !== undefined) env[k] = v
-    env.PATH = augmentPath(base.PATH || '/usr/bin:/bin:/usr/sbin:/sbin')
+    env.PATH = augmentPath(base.PATH)
     env.CODEX_HOME = codexHome
     // This vault's brain, named the same way session.ts's Claude path names it. UNCONDITIONAL and
     // never omitted: ctx.memoryDir/ctx.root are computed strings (lib/config.ts's vaultPaths), so

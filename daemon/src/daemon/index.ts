@@ -288,9 +288,7 @@ async function ensureInstalled(): Promise<void> {
         // it spawns) of the CLI's install dirs. Augment it so the plist's PATH includes /usr/local/bin,
         // /opt/homebrew/bin, and ~/.bismuth/bin — defense in depth alongside the per-worker env PATH in
         // session.ts. See childEnv.ts (Bug #105).
-        envPath: augmentPath(
-            process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin',
-        ),
+        envPath: augmentPath(process.env.PATH),
     })
     // Never bounce a healthy, already-correct service — see planEnsureInstalled. core runs this on
     // every app boot, so an unconditional unload/load meant opening Bismuth killed any in-flight
