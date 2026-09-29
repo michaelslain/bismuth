@@ -60,45 +60,12 @@
 /* every look: an uncategorised chip in the grid is opaque, so an overlap never shows through it */
 [data-event-look] .ev.ghost.in-grid { background: var(--bg); }
 
-/* outline + tint — outline, with tint's wash behind it instead of the bare ground */
-[data-event-look='outline-tint'] .ev:not(.ghost) { color: var(--ev-c, var(--accent)); background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 14%, var(--bg)); box-shadow: inset 0 0 0 1px var(--ev-c, var(--accent)); }
+/* outline + tint — outline, with tint's wash behind it instead of the bare ground; the title reads
+   in --fg (the hue is carried by the rule and the edge) */
+[data-event-look='outline-tint'] .ev:not(.ghost) { color: var(--fg); background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 14%, var(--bg)); box-shadow: inset 0 0 0 1px var(--ev-c, var(--accent)); }
 [data-event-look='outline-tint'] .ev:not(.ghost):hover { filter: none; background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 24%, var(--bg)); }
 [data-event-look='outline-tint'] .ev:not(.ghost) .event-chip-time,
 [data-event-look='outline-tint'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
-
-/* bricks — tint or outline as a toy brick seen from the side: a --sp-2 strip of square studs in the
-   category hue sits ON TOP of the block (the strip itself is open ground, so the studs stand proud
-   of it). Always four chunky studs, evenly spaced whatever the block's width — a brick, not a
-   dashed rule. Two categories alternate stud colours. The block's body and its rules start below the strip. */
-[data-event-look^='brick'] .ev:not(.ghost) {
-    --studs: linear-gradient(90deg, transparent calc(25% - 8px), var(--ev-c, var(--accent)) calc(25% - 8px) calc(25% + 8px), transparent calc(25% + 8px) calc(75% - 8px), var(--ev-c2, var(--accent)) calc(75% - 8px) calc(75% + 8px), transparent calc(75% + 8px)) left top / 50% var(--sp-2) repeat-x;
-    --body: left var(--sp-2) / 100% calc(100% - var(--sp-2)) no-repeat;
-    --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 22%, var(--bg));
-    padding-top: calc(var(--sp-1) + var(--sp-2));
-}
-[data-event-look^='brick'] .ev.in-grid:not(.ghost) { padding-top: calc(var(--sp-2) + var(--sp-2)); }
-[data-event-look^='brick'] .ev.in-grid.compact:not(.ghost) { padding-top: var(--sp-2); }
-[data-event-look^='brick'] .ev:not(.ghost) .event-chip-time,
-[data-event-look^='brick'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
-[data-event-look^='brick'] .ev:not(.ghost):hover { filter: none; --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 32%, var(--bg)); }
-
-[data-event-look='brick-tint'] .ev:not(.ghost) {
-    color: var(--fg);
-    background: var(--studs), var(--ev-edge, none) left var(--sp-2) / 2px calc(100% - var(--sp-2)) no-repeat, linear-gradient(var(--wash), var(--wash)) var(--body);
-}
-[data-event-look='brick-outline'] .ev:not(.ghost) {
-    --rule: linear-gradient(var(--ev-c, var(--accent)), var(--ev-c, var(--accent)));
-    --wash: var(--bg);
-    color: var(--ev-c, var(--accent));
-    background:
-        var(--studs),
-        var(--ev-edge, none) left var(--sp-2) / 2px calc(100% - var(--sp-2)) no-repeat,
-        var(--rule) left var(--sp-2) / 100% 1px no-repeat,
-        var(--rule) left bottom / 100% 1px no-repeat,
-        var(--rule) right var(--sp-2) / 1px calc(100% - var(--sp-2)) no-repeat,
-        linear-gradient(var(--wash), var(--wash)) var(--body);
-}
-[data-event-look='brick-outline'] .ev:not(.ghost):hover { --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 10%, var(--bg)); }
 
 /* title face — the comparison story's mono/prose switch (DESIGN.md's Register Rule: a card title is
    written text, `<Text register="prose">`). Phase 2 keeps one and deletes this. */

@@ -5,5 +5,5 @@
 /* ---- event-look comparison — phase 2 keeps one. The ghost follows the event look it previews;
    `--ghost-img` is the event's fill as an image (a flat colour or the category bands), and a
    `linear-gradient` of ground laid over it is the wash — it works whatever the fill's kind. */
-[data-event-look='tint'] .ghost, [data-event-look='brick-tint'] .ghost { opacity: 1; color: var(--fg); background: var(--ghost-img, none) left top / 2px 100% no-repeat, linear-gradient(color-mix(in srgb, var(--bg) 72%, transparent), color-mix(in srgb, var(--bg) 72%, transparent)), var(--ghost-img, none); }
-[data-event-look='outline'] .ghost, [data-event-look='outline-tint'] .ghost, [data-event-look='brick-outline'] .ghost { opacity: 1; color: var(--fg); background: color-mix(in srgb, var(--bg) 80%, transparent); border: 1px solid transparent; border-image: var(--ghost-img, none) 1; }
+[data-event-look='tint'] .ghost { opacity: 1; color: var(--fg); background: var(--ghost-img, none) left top / 2px 100% no-repeat, linear-gradient(color-mix(in srgb, var(--bg) 72%, transparent), color-mix(in srgb, var(--bg) 72%, transparent)), var(--ghost-img, none); }
+[data-event-look='outline'] .ghost, [data-event-look='outline-tint'] .ghost { opacity: 1; color: var(--fg); background: color-mix(in srgb, var(--bg) 80%, transparent); border: 1px solid transparent; border-image: var(--ghost-img, none) 1; }
