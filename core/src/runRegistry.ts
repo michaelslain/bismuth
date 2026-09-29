@@ -13,14 +13,8 @@
 // See the block comment above readRunRecords.
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import {
-    mkdirSync,
-    writeFileSync,
-    renameSync,
-    readdirSync,
-    readFileSync,
-    unlinkSync,
-} from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { writeFileAtomicSync } from './atomicWrite'
 import { pidAlive } from './daemonState'
 import { isTempPath } from './tempPath'
 
@@ -65,14 +59,11 @@ export function writeRunRecord(rec: RunRecord): void {
         const dir = runRegistryDir()
         mkdirSync(dir, { recursive: true })
         const file = runRecordPath(rec.vault)
-        const tmp = `${file}.${process.pid}.tmp`
         // 0600: this record now carries the boot's owner token (ownerToken.ts) — a per-process
-        // secret that must not be world-readable. The mode applies to the tmp file at CREATE time
-        // (writeFileSync always creates `tmp` fresh — its name is unique per pid+file, so it never
-        // already exists); renameSync then moves that same inode onto `file`, so the mode survives
-        // the rename rather than being reset to the destination path's prior permissions.
-        writeFileSync(tmp, JSON.stringify(rec, null, 2), { mode: 0o600 })
-        renameSync(tmp, file)
+        // secret that must not be world-readable. writeFileAtomicSync applies the mode to a fresh
+        // tmp file at CREATE time and renames that inode onto `file`, so the mode survives rather
+        // than being reset to the destination path's prior permissions.
+        writeFileAtomicSync(file, JSON.stringify(rec, null, 2), { mode: 0o600 })
         cleanupVault = rec.vault
         if (!cleanupInstalled) {
             cleanupInstalled = true

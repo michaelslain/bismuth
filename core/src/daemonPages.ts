@@ -17,14 +17,13 @@
 import { join, dirname } from 'node:path'
 import {
     readFileSync,
-    writeFileSync,
-    renameSync,
     mkdirSync,
     unlinkSync,
     readdirSync,
     existsSync,
 } from 'node:fs'
 import { stringify as yamlStringify } from 'yaml'
+import { writeFileAtomicSync } from './atomicWrite'
 import { parseFrontmatter } from './frontmatter'
 import { writeTrigger } from './daemon'
 import { AppError } from './error'
@@ -135,9 +134,7 @@ export function readPageState(vault: string, slug: string): PageState | null {
 function writePageState(vault: string, slug: string, state: PageState): void {
     const file = stateFile(vault, slug)
     mkdirSync(dirname(file), { recursive: true })
-    const tmp = `${file}.${process.pid}.tmp`
-    writeFileSync(tmp, JSON.stringify(state, null, 2))
-    renameSync(tmp, file)
+    writeFileAtomicSync(file, JSON.stringify(state, null, 2))
 }
 
 function deletePageState(vault: string, slug: string): void {
@@ -401,9 +398,7 @@ export function createDaemonPage(
     const md = `---\n${yamlStringify(fm)}---\n\n${body}\n`
 
     mkdirSync(dir, { recursive: true })
-    const tmp = `${file}.${process.pid}.tmp`
-    writeFileSync(tmp, md)
-    renameSync(tmp, file)
+    writeFileAtomicSync(file, md)
     return { path: rel, slug }
 }
 
@@ -427,11 +422,7 @@ export function archivePage(vault: string, path: string): void {
     assertPagePath(path)
     const slug = slugOf(path)
     if (readPageState(vault, slug)?.status === 'working')
-        throw new AppError(
-            'EBUSY',
-            `page is being worked on: ${path}`,
-            409,
-        )
+        throw new AppError('EBUSY', `page is being worked on: ${path}`, 409)
     try {
         unlinkSync(join(vault, path))
     } catch {

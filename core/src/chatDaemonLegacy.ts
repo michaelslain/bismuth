@@ -35,13 +35,14 @@
 // their logs means) trips nothing: their first message is their own prose. When in doubt this
 // module says "not the daemon's", which lists the chat.
 import { existsSync } from 'node:fs'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import {
     listSessions,
     getSessionMessages,
     type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { extractText, type TranscriptEntry } from '@bismuth/memory'
+import { writeFileAtomic } from './atomicWrite'
 import { vaultDaemonDir, vaultLegacySessionIdsFile } from './daemon'
 
 /** The prompt the pre-fix daemon sent on EVERY startup, minting a session per boot/relaunch.
@@ -175,13 +176,7 @@ export async function backfillLegacyDaemonSessions(
             // Re-check under the same guard: a concurrent process may have finished while we scanned.
             if (existsSync(file)) return
             await mkdir(vaultDaemonDir(vault), { recursive: true })
-            const tmp = `${file}.tmp-${process.pid}`
-            await writeFile(
-                tmp,
-                ids.length ? `${ids.join('\n')}\n` : '',
-                'utf-8',
-            )
-            await rename(tmp, file)
+            await writeFileAtomic(file, ids.length ? `${ids.join('\n')}\n` : '')
         } catch {
             // Unwritable/unreadable store → leave the marker absent and retry on the next open.
         } finally {

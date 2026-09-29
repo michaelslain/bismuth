@@ -27,7 +27,6 @@ import {
     cpSync,
     existsSync,
     statSync,
-    renameSync,
     appendFileSync,
     unlinkSync,
 } from 'node:fs'
@@ -35,6 +34,7 @@ import { parse } from 'yaml'
 import { parseFrontmatter, setFrontmatterKey } from './frontmatter'
 import { isDaemonAlive, readFrontmatter, readJsonObj } from './daemonState'
 import { isTempPath } from './tempPath'
+import { writeFileAtomicSync } from './atomicWrite'
 import { SETTINGS_FILE } from './settings'
 import { AppError } from './error'
 
@@ -220,9 +220,7 @@ export function readVaultsSeen(
 function writeVaultsSeen(home: string, seen: Record<string, string>): void {
     try {
         mkdirSync(home, { recursive: true })
-        const tmp = join(home, `vaults-seen.json.${process.pid}.tmp`)
-        writeFileSync(tmp, JSON.stringify(seen, null, 2))
-        renameSync(tmp, vaultsSeenFile(home))
+        writeFileAtomicSync(vaultsSeenFile(home), JSON.stringify(seen, null, 2))
     } catch {
         // best-effort — never blocks boot, never fails registration
     }
@@ -574,9 +572,7 @@ export function registerVaultRoot(
             onDisk.length === kept.length &&
             kept.every((p, i) => onDisk[i] === p)
         if (!unchanged) {
-            const tmp = join(home, `vaults.json.${process.pid}.tmp`)
-            writeFileSync(tmp, JSON.stringify(kept, null, 2))
-            renameSync(tmp, file)
+            writeFileAtomicSync(file, JSON.stringify(kept, null, 2))
         }
         writeVaultsSeen(home, nextSeen)
     } catch {
