@@ -18,7 +18,8 @@ export type ButtonProps = {
     state?: ButtonState
     /** Ignored for `kind="text"` — every text button is one size. Still applies to `icon`. */
     size?: ButtonSize
-    danger?: boolean
+    /** Destructive tone. `'hover'` holds it back until the pointer is on the button. */
+    danger?: boolean | 'hover'
     /** Accent + bold, no box — the view's one emphasized action. See buttonClass.ts. */
     primary?: boolean
     /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
@@ -64,7 +65,9 @@ function Button(props: ButtonProps) {
                     ? local.size
                     : undefined
             }
-            data-danger={local.danger ? '' : undefined}
+            data-danger={
+                local.danger === 'hover' ? 'hover' : local.danger ? '' : undefined
+            }
             data-primary={local.primary ? '' : undefined}
             class={buttonClass(
                 {

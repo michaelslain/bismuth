@@ -38,7 +38,7 @@ export const EnterAddsOne: Story = {
     render: () => <Host />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        const input = c.getByPlaceholderText('category name') as HTMLInputElement
+        const input = c.getByPlaceholderText('new category') as HTMLInputElement
         await userEvent.type(input, 'Reading{Enter}')
         expect(c.getAllByRole('listitem')).toHaveLength(2)
         expect(input.value).toBe('')

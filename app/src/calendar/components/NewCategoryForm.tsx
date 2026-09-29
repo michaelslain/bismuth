@@ -1,15 +1,18 @@
-// The "new category" card: a colour chip, a name field and an add button. Enter in the field adds —
+// The "new category" row: a colour chip, a name field and an add button, as a ListRow — the panel
+// renders it as the LAST row of the category list, so its chip, field and button sit on the same
+// columns as the rows above it. Enter in the field adds —
 // that key is the field's alone (no window listener), and the add itself is deduped by
 // categoryActions, so a double Enter still adds one.
 import { createSignal, type Component } from 'solid-js'
 import type { Category } from '../types'
 import { settings } from '../../settings'
-import { Icon } from '../../icons/Icon'
-import Text from '../../ui/Text'
 import ColorChip from '../../ui/ColorChip'
+import StatusDot from '../../ui/StatusDot'
+import { resolvePaletteColor } from '../../ui/palette'
 import { TextInput } from '../../ui/TextInput'
 import { IconTextButton } from '../../ui/IconTextButton'
 import { isConfirmKey } from '../../ui/widgetKeys'
+import ListRow from '../../ui/ListRow'
 import styles from './NewCategoryForm.module.css'
 
 export type NewCategoryFormProps = {
@@ -33,17 +36,17 @@ const NewCategoryForm: Component<NewCategoryFormProps> = props => {
     }
 
     return (
-        <div
-            class={[styles.form, props.class ?? ''].filter(Boolean).join(' ')}
-            data-testid="new-category-form"
-        >
-            <Text as="div" inherit class={styles.head}>
-                <Icon value="plus" strokeWidth={2.2} />
-                new category
-            </Text>
-            <div class={styles.row}>
+        <ListRow
+            class={props.class}
+            leading={
                 <ColorChip
                     color={color()}
+                    trigger={
+                        <StatusDot
+                            size="md"
+                            color={resolvePaletteColor(color()) || 'var(--accent)'}
+                        />
+                    }
                     open={pickerOpen()}
                     onToggle={() => setPickerOpen(o => !o)}
                     onPick={c => {
@@ -51,22 +54,26 @@ const NewCategoryForm: Component<NewCategoryFormProps> = props => {
                         setPickerOpen(false)
                     }}
                 />
-                <TextInput
-                    class={styles.input}
-                    placeholder="category name"
-                    value={name()}
-                    onInput={setName}
-                    onKeyDown={e => {
-                        if (!isConfirmKey(e)) return
-                        e.preventDefault()
-                        void submit()
-                    }}
-                />
+            }
+            trailing={
                 <IconTextButton icon="plus" variant="selected" onClick={submit}>
                     add
                 </IconTextButton>
-            </div>
-        </div>
+            }
+        >
+            <TextInput
+                class={styles.input}
+                placeholder="new category"
+                aria-label="new category"
+                value={name()}
+                onInput={setName}
+                onKeyDown={e => {
+                    if (!isConfirmKey(e)) return
+                    e.preventDefault()
+                    void submit()
+                }}
+            />
+        </ListRow>
     )
 }
 

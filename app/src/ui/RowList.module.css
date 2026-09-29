@@ -1,0 +1,5 @@
+/* app/src/ui/RowList.module.css — see RowList.tsx. No fill, no border, no rule between rows: rows
+   sit on whatever ground the modal paints and are separated by their height alone, the way the
+   daemon's crons list is (daemon/DaemonRow.module.css). */
+.list { display: flex; flex-direction: column; }
+.scroll { overflow: hidden auto; }

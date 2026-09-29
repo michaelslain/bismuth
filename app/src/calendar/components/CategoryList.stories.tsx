@@ -4,6 +4,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'
 import CategoryList from './CategoryList'
+import NewCategoryForm from './NewCategoryForm'
 import type { Category } from '../types'
 
 const meta = {
@@ -20,7 +21,7 @@ const SEED: Category[] = [
     { name: 'Focus', color: 'violet' },
 ]
 
-function Host() {
+function Host(props: { composer?: boolean }) {
     const [list, setList] = createSignal(SEED)
     return (
         <CategoryList
@@ -32,11 +33,38 @@ function Host() {
                 setList(l => l.map(c => (c.name === n ? { ...c, color } : c)))
             }
             onDelete={n => setList(l => l.filter(c => c.name !== n))}
+            composer={
+                props.composer ? (
+                    <NewCategoryForm
+                        onAdd={async c => {
+                            if (list().some(x => x.name === c.name)) return false
+                            setList(l => [...l, c])
+                            return true
+                        }}
+                    />
+                ) : undefined
+            }
         />
     )
 }
 
 export const Default: Story = { render: () => <Host /> }
+
+/** With the add row as the list's last row — how CategoryPanel ships it. */
+export const WithComposer: Story = { render: () => <Host composer /> }
+
+/** No categories: the add row alone. */
+export const EmptyWithComposer: Story = {
+    render: () => (
+        <CategoryList
+            categories={[]}
+            onRename={() => {}}
+            onRecolor={() => {}}
+            onDelete={() => {}}
+            composer={<NewCategoryForm onAdd={async () => true} />}
+        />
+    ),
+}
 
 export const RenameAndDelete: Story = {
     render: () => <Host />,

@@ -111,7 +111,7 @@ export const EnterAddsExactlyOne: Story = {
     },
     play: async () => {
         const before = rows().length
-        const input = within(document.body).getByPlaceholderText('category name')
+        const input = within(document.body).getByPlaceholderText('new category')
         await userEvent.type(input, 'Reading')
         await userEvent.keyboard('{Enter}')
         await waitFor(() => expect(rows().length).toBe(before + 1))
@@ -135,6 +135,57 @@ export const Rename: Story = {
             expect(categories.value.map(c => c.name)).toContain('Deep work'),
         )
         expect(body.getByText('Deep work')).toBeTruthy()
+    },
+}
+
+/** Mid-rename: the first row's name is an inline field, in the same column as the names under it
+ *  and the add row's field. Left open (no commit), so the frame shows the editing state. */
+export const MidRename: Story = {
+    render: () => {
+        const store = seededStore([
+            ['Health', 'green'],
+            ['Hygiene', 'teal'],
+            ['Career', 'gold'],
+        ])
+        return <CategoryPanel {...{ store }} />
+    },
+    play: async () => {
+        const body = within(document.body)
+        await userEvent.click(body.getByText('Health'))
+        expect(body.getByLabelText('Rename Health')).toBeTruthy()
+    },
+}
+
+/** The user's own shape: ten categories. Rows at `--h-control` on the modal ground (no inset
+ *  panel), `[x]` faint until hovered, and the add row continuing the same columns. `play` proves
+ *  the columns: every row's chip and trailing control share one x with the add row's. */
+export const Full: Story = {
+    render: () => {
+        const store = seededStore([
+            ['Health', 'green'],
+            ['Hygiene', 'teal'],
+            ['Career', 'gold'],
+            ['Education', 'blue'],
+            ['Knowledge', 'violet'],
+            ['Creativity', 'rose'],
+            ['Spirituality', 'gold'],
+            ['Connection', 'rose'],
+            ['Care', 'accent'],
+            ['Exams', 'accent'],
+        ])
+        return <CategoryPanel {...{ store }} />
+    },
+    play: async () => {
+        const rows = [
+            ...document.querySelectorAll<HTMLElement>('[data-testid="list-row"]'),
+        ]
+        expect(rows.length).toBe(11) // ten categories + the add row
+        const lefts = rows.map(r => r.firstElementChild!.getBoundingClientRect().left)
+        const rights = rows.map(r => r.lastElementChild!.getBoundingClientRect().right)
+        for (const l of lefts) expect(l).toBe(lefts[0])
+        for (const r of rights) expect(Math.abs(r - rights[0]!)).toBeLessThan(1)
+        for (const r of rows.slice(0, -1))
+            expect(r.getBoundingClientRect().height).toBeLessThan(32)
     },
 }
 
@@ -163,7 +214,7 @@ export const DeleteWithUndo: Story = {
     },
 }
 
-/** No categories yet — only the add form shows. */
+/** No categories yet — the hint, and the add row as the list's only row. */
 export const Empty: Story = {
     render: () => {
         const store = seededStore([])

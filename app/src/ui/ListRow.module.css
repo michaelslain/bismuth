@@ -1,0 +1,17 @@
+/* app/src/ui/ListRow.module.css — the app's list row (DESIGN.md, Overlays: lists in a modal), with
+   daemon/DaemonRow's measurements: 22px, --sp-3 gaps, no fill, no rule. */
+.row {
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-height: calc(var(--row-h) + 2 * var(--sp-1)); padding: 0;
+    font-family: var(--ui-font-stack); font-size: var(--fs-ui); font-weight: var(--fw-regular);
+    color: var(--fg);
+}
+.edge { flex: 0 0 auto; display: inline-flex; align-items: center; }
+.main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+/* opacity, never display/visibility: the trailing column keeps its width (no shift on hover) and a
+   tabbed-to control stays in tab order while hidden — DaemonRow's `.actions` rule. Revealed by the
+   row's hover or by focus on the TRAILING control itself — not the row's focus-within, because a
+   modal focuses its first control on open and that would show the first row's `[x]` at rest. */
+.reveal .trailing { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.reveal:hover .trailing, .reveal .trailing:focus-within { opacity: 1; }
+@media (hover: none) { .reveal .trailing { opacity: 1; } }

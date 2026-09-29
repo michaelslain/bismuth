@@ -1,6 +1,7 @@
 import { createMemo, Index, Show, type Component } from 'solid-js'
 import { IconTextButton } from '../ui/IconTextButton'
 import PropertyRowEditor from './PropertyRowEditor'
+import RowList from '../ui/RowList'
 import {
     blankPropertyRow,
     duplicatePropertyNames,
@@ -53,7 +54,7 @@ const PropertiesFields: Component<PropertiesFieldsProps> = props => {
     return (
         <div class={props.class}>
             <Show when={props.rows.length > 0}>
-                <div class={styles.list}>
+                <RowList>
                     {/* <Index>, not <For>: update() replaces the row object on every keystroke,
                         and <For> would remount the row and drop focus on the first character. */}
                     <Index each={props.rows}>
@@ -75,9 +76,9 @@ const PropertiesFields: Component<PropertiesFieldsProps> = props => {
                             />
                         )}
                     </Index>
-                </div>
+                </RowList>
             </Show>
-            <div class={styles.add}>
+            <div class={styles.addProperty}>
                 <IconTextButton icon="Plus" onClick={add}>
                     add property
                 </IconTextButton>

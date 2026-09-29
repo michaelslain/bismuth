@@ -264,3 +264,15 @@
 .btn--icon.btn--sm.btn--danger:not(:disabled)::before,
 .btn--icon.btn--sm.btn--danger:not(:disabled)::after { color: var(--faint); }
 .btn--icon.btn--sm:hover:not(:disabled) { color: var(--fg); }
+
+/* danger held back until hover (`danger: 'hover'`, RemoveRowButton): --faint at rest, --danger under
+   the pointer. The sm pair repeats the plain pair at one more class so it outranks the three-class
+   sm muted/hover rules above regardless of source order; brackets stay --faint on hover, the same
+   call the sm danger rule makes — a red glyph reads, red brackets read as an error box. */
+.btn--icon.btn--danger-hover:not(:disabled),
+.btn--icon.btn--sm.btn--danger-hover:not(:disabled) { color: var(--faint); }
+.btn--icon.btn--danger-hover:hover:not(:disabled),
+.btn--icon.btn--sm.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }
+.btn--icon.btn--danger-hover:hover:not(:disabled)::before,
+.btn--icon.btn--danger-hover:hover:not(:disabled)::after { color: var(--faint); }
+.btn--text.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }

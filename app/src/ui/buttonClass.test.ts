@@ -23,6 +23,11 @@ describe('buttonClass', () => {
             ),
         ).toBe('btn btn--icon btn--selected btn--sm btn--danger x')
     })
+    it("emits btn--danger-hover, not btn--danger, for danger: 'hover'", () => {
+        expect(buttonClass({ kind: 'icon', size: 'sm', danger: 'hover' }, id)).toBe(
+            'btn btn--icon btn--normal btn--sm btn--danger-hover',
+        )
+    })
     it('omits size class for md', () => {
         expect(
             buttonClass({ kind: 'text', state: 'unselected', size: 'md' }, id),

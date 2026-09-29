@@ -11,7 +11,7 @@ import { TextButton } from '../../ui/TextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import OptionRow from '../../ui/OptionRow'
-import OptionList from '../../ui/OptionList'
+import RowList from '../../ui/RowList'
 
 type Scope = RecurrenceScope
 
@@ -125,7 +125,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                 />
 
                 <ModalBody>
-                    <OptionList>
+                    <RowList>
                         <For each={options()}>
                             {opt => (
                                 <OptionRow
@@ -137,7 +137,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                                 />
                             )}
                         </For>
-                    </OptionList>
+                    </RowList>
                 </ModalBody>
 
                 <ModalFooter>

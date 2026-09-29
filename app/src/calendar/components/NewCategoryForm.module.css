@@ -1,5 +1,2 @@
-/* new category: a distinct dashed card under the list */
-.form { margin-top: var(--sp-7); border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }
-.head { font-family: var(--ui-font-stack); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); }
-.row { display: flex; gap: var(--sp-5); align-items: center; }
-.input { flex: 1; }
+/* the name field fills ListRow's main slot */
+.input { flex: 1; min-width: 0; }
