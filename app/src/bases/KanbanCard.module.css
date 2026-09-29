@@ -25,8 +25,8 @@
    label + value spans become direct grid children of `.kbMeta` — two cells in the SAME row —
    rather than a nested box the grid can't see into. */
 .kbMeta {
-  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px;
-  font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
+  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px; /* 1px optical nudge under the title */
+  font-size: var(--fs-ui); color: var(--fg); line-height: 1.35; overflow-wrap: anywhere;
 }
 /* `hideLabels` (#105): no key column at all — every value starts flush left in one column. */
 .kbMetaHideLabels { grid-template-columns: 1fr; }
@@ -43,7 +43,7 @@
 
 .kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; align-self: baseline; }
 .kbMetaClickable {
-  cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px;
+  cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: calc(-0.5 * var(--sp-1)) calc(-1 * var(--sp-2)); /* -1px (half --sp-1; tokenLint rejects a bare px): optical nudge so the chip text sits on the row baseline */
   transition: background 120ms ease, color 120ms ease;
 }
 .kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
