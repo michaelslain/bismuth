@@ -334,8 +334,11 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             const { writes } = body as {
                 writes: Array<{ path: string; key: string; value: unknown }>
             }
+            const skipped = new Set<string>()
             for (const w of writes) {
                 const raw = files.get(w.path)
+                if (raw === undefined && !rowIndex.has(w.path))
+                    skipped.add(w.path)
                 if (raw !== undefined)
                     files.set(
                         w.path,
@@ -344,7 +347,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const row = rowIndex.get(w.path)
                 if (row) row.note[w.key] = w.value
             }
-            return new Response('ok')
+            return Response.json({ skipped: [...skipped] })
         }
         // Mirror the real server: a base's view keys live at the TOP LEVEL of its frontmatter
         // (`flattenBaseViews` first rewrites a legacy `views:` list into that flat form), so a
