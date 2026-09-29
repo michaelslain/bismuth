@@ -71,6 +71,7 @@ export async function deleteCategoryWithUndo(
     const before = store.getCategories()
     const removed = before.find(c => c.name === name)
     if (!removed) return
+    const at = before.findIndex(c => c.name === name)
     const reassign = before.find(
         c =>
             c.name !== name &&
@@ -90,7 +91,7 @@ export async function deleteCategoryWithUndo(
 
     pushUndoToast(`deleted ${name}`, async () => {
         if (!store.getCategories().some(c => c.name === name))
-            await store.addCategory(removed)
+            await store.addCategory(removed, at)
         for (const s of snapshot)
             await store.updateEvent(s.id, {
                 category: s.category,

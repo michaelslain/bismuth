@@ -10,8 +10,8 @@
 //
 // Undo snapshots the affected masters (the event, or the whole series — a split creates new masters
 // under the same seriesId) BEFORE the delete, and on undo replaces the series with that snapshot.
-// EventStore keeps its rows private and has no restore-with-id API, so the snapshot reads `data`
-// through a cast; restored masters get fresh ids and localUpdated stamps, everything else identical.
+// EventStore keeps its rows private, so the snapshot reads `data` through a cast; undo puts the
+// rows back through `restoreEvents`, with their original ids.
 import type { CalendarEvent, EventsFile } from './types'
 import { EventStore, uuid } from './EventStore'
 import { refreshEvents } from './refresh'
@@ -44,9 +44,10 @@ export async function deleteEventWithUndo(
     await refreshEvents(store)
 
     pushUndoToast(`deleted ${event.title}`, async () => {
+        // a split ('one') can leave extra masters under the seriesId with fresh ids: clear them,
+        // then put the snapshot back under its ORIGINAL ids so gcal links survive.
         if (seriesId) await store.deleteSeries(seriesId)
-        else await store.deleteEvent(event.id)
-        for (const row of snapshot) await store.addEvent(withoutId(row))
+        await store.restoreEvents(snapshot)
         await refreshEvents(store)
     })
 }

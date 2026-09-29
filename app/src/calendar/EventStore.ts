@@ -215,8 +215,20 @@ export class EventStore {
         await this.truncateSeriesBefore(master, occurrenceDate)
     }
 
-    async addCategory(category: Category): Promise<void> {
-        this.data.categories.push(category)
+    /** Puts snapshot rows back with their ORIGINAL ids: a row with the same id is replaced,
+     *  anything else is appended. */
+    async restoreEvents(rows: CalendarEvent[]): Promise<void> {
+        for (const row of structuredClone(rows)) {
+            const at = this.data.events.findIndex(e => e.id === row.id)
+            if (at >= 0) this.data.events[at] = row
+            else this.data.events.push(row)
+        }
+        await this.save()
+    }
+
+    async addCategory(category: Category, index?: number): Promise<void> {
+        if (index === undefined) this.data.categories.push(category)
+        else this.data.categories.splice(index, 0, category)
         await this.save()
     }
 
