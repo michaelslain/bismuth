@@ -5,7 +5,8 @@ import { whichBinary } from '../lib/claudeWhich.ts'
 import { augmentPath } from '../lib/childEnv.ts'
 import { writeAgentsMdBlock } from '../lib/agentsMd.ts'
 import { parseFrontmatter } from '../lib/frontmatter.ts'
-import { buildDaemonPersona } from './persona.ts'
+import { buildDaemonPersona, DEFAULT_DAEMON_IDENTITY } from './persona.ts'
+import type { DenyEntry } from '../lib/visibility.ts'
 import type { BotResponse, SendOptions } from './session.ts'
 
 /**
@@ -52,9 +53,6 @@ import type { BotResponse, SendOptions } from './session.ts'
  *    used `--experimental-json` internally). The working spelling is learned once per vault root
  *    and cached in {@link jsonFlagByRoot} for every later send.
  */
-
-const DEFAULT_DAEMON_IDENTITY_FALLBACK =
-    'A persistent personal-assistant daemon for this Bismuth vault, running continuously in the background.'
 
 function codexThreadIdFile(ctx: VaultContext): string {
     return join(ctx.daemonDir, 'codex-session-id')
@@ -128,7 +126,7 @@ async function saveCodexThreadId(ctx: VaultContext, id: string): Promise<void> {
  *  ctx.codexWriteAgentsMd (settings.codex.writeAgentsMd); a no-op when off. */
 async function refreshIdentityAgentsMd(ctx: VaultContext): Promise<void> {
     if (!ctx.codexWriteAgentsMd) return
-    let identity = DEFAULT_DAEMON_IDENTITY_FALLBACK
+    let identity = DEFAULT_DAEMON_IDENTITY
     try {
         const { body } = parseFrontmatter(
             await readFile(ctx.identityFile, 'utf-8'),
@@ -312,6 +310,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 export async function sendCodexMessage(
     message: string,
     ctx: VaultContext,
+    denyEntries: DenyEntry[],
     opts?: SendOptions,
 ): Promise<BotResponse> {
     const bin = codexBin()
@@ -323,9 +322,7 @@ export async function sendCodexMessage(
     }
 
     await refreshIdentityAgentsMd(ctx)
-    // A Codex daemon only ever runs on a vault with no denied notes (resolveDaemonBackend refuses
-    // it otherwise), so there is no deny-list appendix to carry.
-    const developerInstructions = await buildDaemonPersona(ctx, [])
+    const developerInstructions = await buildDaemonPersona(ctx, denyEntries)
 
     const existingThreadId = opts?.newSession
         ? undefined

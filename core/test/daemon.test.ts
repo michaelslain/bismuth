@@ -482,7 +482,7 @@ test("runCron writes a trigger file named by the cron's basename, validating it 
     expect(existsSync(join(home, 'crons', '.triggers', 'vault-review'))).toBe(
         true,
     )
-    // Content is an ISO timestamp (matches claude-bot's requestCronRun).
+    // Content is an ISO timestamp (what a manual cron-run request writes).
     const body = readFileSync(
         join(home, 'crons', '.triggers', 'vault-review'),
         'utf8',

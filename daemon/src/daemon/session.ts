@@ -74,8 +74,6 @@ async function saveSessionId(ctx: VaultContext, id: string): Promise<void> {
     await writeFile(ctx.sessionFile, id, 'utf-8')
 }
 
-export { DEFAULT_DAEMON_IDENTITY } from './persona.ts'
-
 export interface BotResponse {
     result: string
     sessionId: string
@@ -404,9 +402,9 @@ export async function sendMessage(
     if (refusal) console.error(`[session:${ctx.name}] ${refusal}`)
 
     if (backend === 'codex') {
-        return await sendCodexMessage(message, ctx, opts)
+        return await sendCodexMessage(message, ctx, denyEntries, opts)
     }
-    if (!(backend in DAEMON_PERSONA_CHANNELS)) {
+    if (!Object.hasOwn(DAEMON_PERSONA_CHANNELS, backend)) {
         throw new Error(
             `daemon backend "${backend}" has no declared persona channel (DAEMON_PERSONA_CHANNELS in persona.ts) — ` +
                 `a daemon backend must deliver the vault's identity through its own system-prompt channel`,

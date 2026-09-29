@@ -1,11 +1,15 @@
 import { test, expect } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
     buildQueryOptions,
-    DEFAULT_DAEMON_IDENTITY,
+    sendMessage,
     resolveDaemonBackend,
     composeBackendRefusalNote,
     finalizeBotResponse,
 } from '../src/daemon/session.ts'
+import { DEFAULT_DAEMON_IDENTITY } from '../src/daemon/persona.ts'
 import { buildCodexEnv } from '../src/daemon/codexSession.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 import { ownerTokenDenyPath } from '../src/lib/bismuthPaths.ts'
@@ -426,3 +430,26 @@ test('buildCodexEnv augments PATH with the CLI install dirs and preserves the in
     expect(env.PATH).toContain('/opt/homebrew/bin')
     expect(env.HOME).toBe('/home/me')
 })
+
+// --- sendMessage persona-channel guard -----------------------------------------------------------
+// A backend with no DAEMON_PERSONA_CHANNELS entry must be refused BEFORE any SDK/binary is touched.
+// `'toString'` is `in` every object, so the guard must use an own-property check.
+for (const backend of ['opencode', 'toString']) {
+    test(`sendMessage rejects backend "${backend}" with no declared persona channel`, async () => {
+        const root = await mkdtemp(join(tmpdir(), 'session-'))
+        try {
+            const c = {
+                root,
+                name: 'Atlas',
+                daemonDir: join(root, '.daemon'),
+                sessionFile: join(root, '.daemon', 'session-id'),
+                backend,
+            } as unknown as VaultContext
+            await expect(sendMessage('hi', c)).rejects.toThrow(
+                /persona channel/,
+            )
+        } finally {
+            await rm(root, { recursive: true, force: true })
+        }
+    })
+}
