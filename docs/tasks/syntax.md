@@ -359,16 +359,20 @@ Picking one closes the bracket, so the inserted text is a complete
 
 ### Rendering: chips, not raw brackets, but the SAME text
 
-The editor (`app/src/editor/livePreview.ts`) and the cards-view task body
-(`app/src/bases/TaskFieldChips.tsx`) both draw a recognized bracket field as a
-visually distinct **chip** (`.cm-task-field` in the editor,
-the module-local `.field` in task rows) — but this is a **mark on the literal
-text**, not a widget that replaces or hides it. There is nothing to reveal on
-cursor-enter and nothing invented: what you see is exactly what's on disk.
-Both renderers filter `FIELD_SCAN`'s candidates through the same
-`isFieldText`/`classify` guard the parser uses, so a bracket group that is
-NOT a real field (`[chapter 3]`, a malformed date) never gets chip styling —
-it stays plain text, exactly as the parser treats it.
+The editor (`app/src/editor/livePreview.ts`) marks the literal bracket text of a
+recognized field as a chip (`.cm-task-field`) — a **mark on the literal text**,
+not a widget that replaces or hides it. There is nothing to reveal on
+cursor-enter and nothing invented: what you see is exactly what's on disk. The
+editor filters `FIELD_SCAN`'s candidates through the same `isFieldText`/`classify`
+guard the parser uses, so a bracket group that is NOT a real field
+(`[chapter 3]`, a malformed date) stays plain text, exactly as the parser
+treats it.
+
+Task rows (`app/src/bases/TaskFieldChips.tsx`) work differently: they render the
+parser's already-parsed fields (`priority`, `due`, …) as separate chips in the
+module-local `.field`, reformatting dates with `formatDateField`. A non-field
+like `[chapter 3]` never becomes a chip there because the parser never produced
+one.
 
 ## Tags
 

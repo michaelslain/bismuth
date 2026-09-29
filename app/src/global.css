@@ -688,8 +688,8 @@ body { background: var(--bg); color: var(--fg); }
 .bismuth-cell-list li { margin: 0.05em 0; }
 
 /* Bracket task fields (`[due 2026-09-14]`, `[every week]`, `[high]`) rendered as chips inside a
-   task card's body (bases/taskCardMarkup.ts sets .bismuth-task-field as a plain string literal
-   in the generated markup, so this rule lives here, not a CSS Module — see this file's header).
+   task card's body (.bismuth-task-field is a plain string-literal class for generated markup, so this rule lives
+   here, not in a CSS Module — see this file's header). It currently has no live writer in the app.
    Understated on purpose: the bracket text itself still reads as the field's value, this just
    sets it off from the surrounding prose. --r-0, no pill: same "no radius survives" rule as
    ui/Badge.module.css's .badge--solid. */
