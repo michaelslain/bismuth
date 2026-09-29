@@ -595,9 +595,23 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
             }),
         ).toBe('of: [[Draft the roadmap]]\nwhere: priority >= 2')
     })
-    test('AddFilterRow -> insert (first column, empty value)', () => {
+    test('AddFilterRow -> insert (first column, empty value) is dropped as incomplete', () => {
         expect(body(notesState([row('file.name', 'equals', '')]))).toBe(
-            'source: notes where file.name == ""\nviews:\n  - type: table\n    name: Table',
+            'source: notes\nviews:\n  - type: table\n    name: Table',
+        )
+    })
+    test('one complete + one incomplete row emits only the complete one', () => {
+        expect(
+            body(
+                notesState([
+                    row('status', 'equals', 'Doing'),
+                    row('file.name', 'contains', '  '),
+                    row('', 'raw', ''),
+                    row('done', 'checked'),
+                ]),
+            ),
+        ).toBe(
+            'source: notes where (status == "Doing") && (done)\nviews:\n  - type: table\n    name: Table',
         )
     })
     test('rawWhere wins over rows', () => {

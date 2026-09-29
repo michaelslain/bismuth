@@ -210,6 +210,12 @@ describe('materializeViews', () => {
         expect(result.views).toEqual([{ type: 'table', name: 'Table' }])
         expect(result.removedKeys).toEqual(['view'])
     })
+
+    test('removedValues holds each removed key old value (shorthand base)', () => {
+        const result = materializeViews({ view: 'cards', groupBy: 'status', source: 'notes' })
+        expect(result.removedValues).toEqual({ view: 'cards', groupBy: 'status' })
+        expect(materializeViews({ views: [{ type: 'table' }] }).removedValues).toEqual({})
+    })
 })
 
 describe('readViews (file text)', () => {

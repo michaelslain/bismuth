@@ -37,6 +37,7 @@ import { appendTaskLine } from './taskCreate'
 import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../toastStore'
+import { pushUndoToast } from '../undoToast'
 import {
     planSetValue,
     planToggle,
@@ -519,14 +520,15 @@ export function BaseView(props: {
         pickActive: (views: RawView[]) => number,
     ) => {
         const path = editPath()
-        if (!path) return
+        if (!path) return null
         const text = await api.read(path)
-        const { views, removedKeys } = readViews(text)
+        const { views, removedKeys, removedValues } = readViews(text)
         const next = edit(views)
         await api.setProperty(path, 'views', next)
         for (const key of removedKeys) await api.deleteProperty(path, key)
         setActiveView(pickActive(next))
         await refetchAll()
+        return { views, removedKeys, removedValues }
     }
 
     const handleAddView = (type: string) =>
@@ -545,7 +547,26 @@ export function BaseView(props: {
         void editViews(
             views => removeView(views, i),
             next => Math.min(Math.max(0, i - 1), next.length - 1),
-        ).catch(writeFailed('delete the view'))
+        )
+            .then(prev => {
+                if (!prev) return
+                const gone = prev.views[i]
+                const name = String(gone?.name ?? gone?.type ?? 'view')
+                const path = editPath()
+                if (!path) return
+                pushUndoToast(`deleted view ${name}`, async () => {
+                    // A shorthand base (no `views:` key) goes back to its flat keys, not to a
+                    // `views:` array sitting beside them.
+                    if (prev.removedKeys.length > 0) {
+                        await api.deleteProperty(path, 'views')
+                        for (const key of prev.removedKeys)
+                            await api.setProperty(path, key, prev.removedValues[key])
+                    } else await api.setProperty(path, 'views', prev.views)
+                    setActiveView(i)
+                    await refetchAll()
+                })
+            })
+            .catch(writeFailed('delete the view'))
 
     const handleRenameView = (i: number, name: string) =>
         void editViews(
