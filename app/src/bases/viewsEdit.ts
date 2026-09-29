@@ -27,6 +27,8 @@ export interface ViewsEditResult {
      *  duplicated in two places. Empty when the base already had an explicit `views:` array —
      *  nothing to materialize. */
     removedKeys: string[]
+    /** Each removed key's old top-level value, so an undo can restore the file's prior shape. */
+    removedValues: Record<string, unknown>
 }
 
 function capitalize(s: string): string {
@@ -90,19 +92,24 @@ export function materializeViews(
     raw: Record<string, unknown>,
 ): ViewsEditResult {
     if (Array.isArray(raw.views)) {
-        return { views: raw.views as RawView[], removedKeys: [] }
+        return { views: raw.views as RawView[], removedKeys: [], removedValues: {} }
     }
     const type = typeof raw.view === 'string' ? raw.view : 'table'
     const view0: RawView = { type, name: capitalize(type) }
     const removedKeys: string[] = []
-    if (raw.view !== undefined) removedKeys.push('view')
+    const removedValues: Record<string, unknown> = {}
+    if (raw.view !== undefined) {
+        removedKeys.push('view')
+        removedValues.view = raw.view
+    }
     for (const k of FLAT_VIEW_KEYS) {
         if (raw[k] !== undefined) {
             view0[k] = raw[k]
             removedKeys.push(k)
+            removedValues[k] = raw[k]
         }
     }
-    return { views: [view0], removedKeys }
+    return { views: [view0], removedKeys, removedValues }
 }
 
 /** Parse a base file's raw frontmatter text and materialize its views — the one entry point
