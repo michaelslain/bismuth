@@ -145,4 +145,26 @@ describe('buildGraphFromNotes byBase tie-break for duplicate basenames', () => {
         const { edges } = await buildGraphFromNotes('/vault', node, edgeExtractor)
         expect(edges).toEqual([{ from: 'Linker', to: 'a/b/Name', kind: 'link' }])
     })
+
+    test('a note deleted between listing and reading gets no node and no link target', async () => {
+        const base = memAccess({
+            'Linker.md': 'links to [[Gone]]',
+            'Gone.md': 'x',
+        })
+        setFileAccess({
+            ...base,
+            readNote: async (_root, rel) => {
+                if (rel === 'Gone.md') throw new Error('ENOENT')
+                return 'links to [[Gone]]'
+            },
+        })
+        const { nodes, edges, byBase } = await buildGraphFromNotes(
+            '/vault',
+            node,
+            edgeExtractor,
+        )
+        expect(nodes.map(n => n.id)).toEqual(['Linker'])
+        expect(byBase.has('Gone')).toBe(false)
+        expect(edges).toEqual([])
+    })
 })
