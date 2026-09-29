@@ -1,5 +1,6 @@
 import type { GraphNode, GraphEdge } from './graph'
 import { getFileAccess } from './fileAccess'
+import { readAllNotes } from './readAllNotes'
 import { noteId } from './pathUtils'
 import { preferId } from './linkTarget'
 
@@ -27,7 +28,7 @@ export async function buildGraphFromNotes(
     byBase: Map<string, string>
     byPath: Map<string, string>
 }> {
-    const { listMarkdown, readNote } = await getFileAccess()
+    const { listMarkdown } = await getFileAccess()
     const rels = await listMarkdown(root)
     const nodes: GraphNode[] = []
     const byBase = new Map<string, string>()
@@ -54,10 +55,11 @@ export async function buildGraphFromNotes(
         byPath.set(pathKey, node.id)
     }
 
-    // Read all contents in parallel
+    // Read all contents through the bounded pool; a note that vanished since the listing
+    // is skipped (it keeps its node, contributes no edges).
     const contents = new Map<string, string>(
-        await Promise.all(
-            rels.map(async rel => [rel, await readNote(root, rel)] as const),
+        (await readAllNotes(root, rels)).map(
+            ({ rel, content }) => [rel, content] as const,
         ),
     )
 
@@ -65,7 +67,8 @@ export async function buildGraphFromNotes(
     const edges: GraphEdge[] = []
     for (const rel of rels) {
         const node = nodeMap.get(rel)!
-        const content = contents.get(rel)!
+        const content = contents.get(rel)
+        if (content === undefined) continue
         const extractedEdges = edgeExtractor(node.id, content, byBase, byPath)
         edges.push(...extractedEdges)
     }
