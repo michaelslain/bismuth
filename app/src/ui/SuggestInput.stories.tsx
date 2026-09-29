@@ -118,3 +118,16 @@ export const ArrowThenEnterAccepts: Story = {
         expect(within(canvasElement).getByTestId('suggest-value').textContent).toBe('Workout')
     },
 }
+
+/** Tab on an untouched highlight closes the popup and leaves the typed text alone. */
+export const TabClosesPopupKeepsText: Story = {
+    render: () => <Host options={WORKOUT} />,
+    play: async ({ canvasElement }) => {
+        const el = input(canvasElement)
+        await userEvent.type(el, 'Work')
+        await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).not.toBeNull())
+        await userEvent.tab()
+        await waitFor(() => expect(document.body.querySelector('.bismuth-popover')).toBeNull())
+        expect(el.value).toBe('Work')
+    },
+}

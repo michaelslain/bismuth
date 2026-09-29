@@ -1,6 +1,6 @@
 // The property ids a set of resolved rows offers as columns: every note key seen, in first-seen
 // order, with `file.name` in front when any row has a file name. One copy for the query builder
-// and the base settings panel (BaseSettings still carries its own until it is repointed here).
+// and the base settings panel.
 import type { Row } from '../../../core/src/bases/types'
 
 /** Note columns present across the resolved rows. */

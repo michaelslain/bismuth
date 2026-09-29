@@ -107,10 +107,10 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
             <Show when={props.open}>
                 <div class={styles.body}>
                     <div class={styles.fields}>
-                        <SettingsField label="name" class={styles.field}>
+                        <SettingsField label="name" span>
                             <TextInput
                                 value={props.row.name}
-                                placeholder="Property name"
+                                placeholder="property name"
                                 onInput={v => props.onChange({ name: v })}
                             />
                             <Show when={props.duplicate}>
@@ -119,7 +119,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                                 </SettingsHint>
                             </Show>
                         </SettingsField>
-                        <SettingsField label="kind" class={styles.kindSelect}>
+                        <SettingsField label="kind" span>
                             <Select
                                 value={props.row.kind}
                                 options={KIND_OPTS}
@@ -142,7 +142,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                             class={`${styles.extra} ${styles.options}`}
                             multiline
                             value={props.row.optionsText}
-                            placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
+                            placeholder="options — one per line or comma-separated (e.g. todo, doing, done)"
                             onInput={v => props.onChange({ optionsText: v })}
                         />
                     </Show>
@@ -173,8 +173,8 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                                     value={props.row.unit}
                                     placeholder={
                                         props.row.number === 'currency'
-                                            ? 'Currency code (e.g. USD)'
-                                            : 'Unit label (e.g. kg)'
+                                            ? 'currency code (e.g. USD)'
+                                            : 'unit label (e.g. kg)'
                                     }
                                     onInput={v => props.onChange({ unit: v })}
                                     class={styles.numrowUnit}
@@ -187,7 +187,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                         <TextInput
                             class={styles.extra}
                             value={props.row.expr}
-                            placeholder="Expression, e.g. note.qty * note.price"
+                            placeholder="expression, e.g. note.qty * note.price"
                             onInput={v => props.onChange({ expr: v })}
                         />
                     </Show>
@@ -196,7 +196,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                         <TextInput
                             class={styles.extra}
                             value={props.row.defaultText}
-                            placeholder="Default value (optional)"
+                            placeholder="default value (optional)"
                             onInput={v => props.onChange({ defaultText: v })}
                         />
                     </Show>

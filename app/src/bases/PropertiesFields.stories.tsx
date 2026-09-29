@@ -47,7 +47,7 @@ export const Empty: Story = {
         const c = within(canvasElement)
         await userEvent.click(c.getByRole('button', { name: /add property/i }))
         // the new row opens straight into its editor
-        await expect(await c.findByPlaceholderText('Property name')).toBeVisible()
+        await expect(await c.findByPlaceholderText('property name')).toBeVisible()
     },
 }
 
@@ -73,10 +73,10 @@ export const ExpandAndRemove: Story = {
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         await userEvent.click(c.getByRole('button', { name: /^status/ }))
-        await expect(c.getAllByPlaceholderText('Property name')).toHaveLength(1)
+        await expect(c.getAllByPlaceholderText('property name')).toHaveLength(1)
         // opening another collapses the first: one editor at a time
         await userEvent.click(c.getByRole('button', { name: /^priority/ }))
-        const inputs = c.getAllByPlaceholderText('Property name')
+        const inputs = c.getAllByPlaceholderText('property name')
         await expect(inputs).toHaveLength(1)
         await expect((inputs[0] as HTMLInputElement).value).toBe('priority')
         await userEvent.click(c.getByLabelText('Remove property'))
