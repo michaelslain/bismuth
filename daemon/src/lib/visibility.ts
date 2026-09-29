@@ -9,17 +9,20 @@
 // Storage: a file's frontmatter `visibility: "chat-only" | "hidden"` (absent = INHERIT, not
 // "visible"); a folder's entry in the vault's `.settings` `folderVisibility: {folderPath:
 // "chat-only"|"hidden"}` map. Settings are read with the same tolerant fallback chain
-// registry.ts already uses (`.settings`, the interim `.settings/settings.yaml`, and the legacy
+// vaultSettings.ts provides (`.settings`, the interim `.settings/settings.yaml`, and the legacy
 // root `settings.yaml` — first readable wins), since the daemon may see a vault before core has
 // migrated it.
 //
 // The discovery walk (listVisibilityFiles + buildDenyPaths) is the whole enforcement surface —
 // a file it misses is unprotected. Keep this file's walk logic byte-for-byte in step with
 // core/src/visibility.ts's; see that file's comments for the reasoning behind each fix.
-import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import { parseFrontmatter } from './frontmatter.ts'
+import {
+    readVaultSettingsDoc,
+    VaultSettingsParseError,
+} from './vaultSettings.ts'
 import { ownerTokenDenyPaths } from './bismuthPaths.ts'
 
 export type Visibility = 'all' | 'chat-only' | 'hidden'
@@ -97,8 +100,8 @@ function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
 }
 
 /**
- * Read the folderVisibility map from the vault's settings, trying the same shapes registry.ts's
- * readDaemonSettings does (first readable wins).
+ * Read the folderVisibility map from the vault's settings, via vaultSettings.ts's readVaultSettingsDoc
+ * (first readable wins).
  *
  * NOT tolerant of a corrupt file, unlike every other `.settings` reader in this codebase. An
  * absent settings file and one whose YAML has a syntax error both used to yield `{}`, and `{}`
@@ -110,28 +113,17 @@ function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
 async function readFolderVisibility(
     root: string,
 ): Promise<Record<string, Visibility>> {
-    for (const rel of [
-        '.settings',
-        join('.settings', 'settings.yaml'),
-        'settings.yaml',
-    ]) {
-        let raw: string
-        try {
-            raw = await readFile(join(root, rel), 'utf-8')
-        } catch {
-            continue // absent, a directory, or unreadable in this shape → try the next
-        }
-        let doc: { folderVisibility?: unknown } | null
-        try {
-            doc = parseYaml(raw) as { folderVisibility?: unknown } | null
-        } catch (e) {
-            throw new VisibilityUndeterminedError(
-                `${rel} is not valid YAML (${e instanceof Error ? e.message : String(e)})`,
-            )
-        }
-        if (doc !== null) return normalizeFolderVisibility(doc.folderVisibility)
+    let doc: { folderVisibility?: unknown } | null
+    try {
+        doc = (await readVaultSettingsDoc(root, { strict: true })) as {
+            folderVisibility?: unknown
+        } | null
+    } catch (e) {
+        if (e instanceof VaultSettingsParseError)
+            throw new VisibilityUndeterminedError(e.message)
+        throw e
     }
-    return {}
+    return doc === null ? {} : normalizeFolderVisibility(doc.folderVisibility)
 }
 
 /**
@@ -260,7 +252,22 @@ const MAX_FRONTMATTER_BYTES = 64 * 1024
 const FRONTMATTER_OPEN_RE = /^---\r?\n/
 /** The FULL frontmatter block (opening fence through closing fence) — used only to check
  *  whether a closing fence already lies within whatever slice we've read so far. */
-const FRONTMATTER_CLOSED_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/
+const FRONTMATTER_CLOSED_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
+
+/** A note's frontmatter, parsed with the `yaml` package exactly as core/src/frontmatter.ts does —
+ *  so `visibility: hidden # private` reads `hidden`. Malformed YAML → {} (tolerated, as in core). */
+function parseNoteFrontmatter(md: string): Record<string, unknown> {
+    const m = md.match(FRONTMATTER_CLOSED_RE)
+    if (!m) return {}
+    try {
+        const data = parseYaml(m[1] ?? '') as unknown
+        return data && typeof data === 'object' && !Array.isArray(data)
+            ? (data as Record<string, unknown>)
+            : {}
+    } catch {
+        return {}
+    }
+}
 
 function stripBOM(s: string): string {
     return s.length > 0 && s.charCodeAt(0) === 0xfeff ? s.slice(1) : s
@@ -318,10 +325,8 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
             return undefined
         }
     }
-    const { frontmatter } = parseFrontmatter(text)
-    return isVisibilityLiteral(frontmatter.visibility)
-        ? (frontmatter.visibility as Visibility)
-        : undefined
+    const data = parseNoteFrontmatter(text)
+    return isVisibilityLiteral(data.visibility) ? data.visibility : undefined
 }
 
 /** Memoized per-directory folder-cascade lookup: many files share a directory, and
