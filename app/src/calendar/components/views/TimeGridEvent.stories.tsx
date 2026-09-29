@@ -60,7 +60,7 @@ export const DimmedWhileDragged: Story = {
 export const Looks: Story = {
     render: () => (
         <div style={{ display: 'flex', gap: '16px' }}>
-            {(['tint', 'outline', 'solid'] as const).map(look => (
+            {(['tint', 'outline', 'bracket', 'ledger', 'hatch'] as const).map(look => (
                 <div data-event-look={look}>
                     <Column events={[ev('a', '00:30', '03:00'), ev('b', '01:00', '02:00'), ev('c', '01:30', '03:30')]} />
                 </div>
@@ -71,6 +71,6 @@ export const Looks: Story = {
         const stacked = canvasElement.querySelectorAll<HTMLElement>('[data-event-look] [data-testid="time-grid-event"]')
         // lanes 1 and 2 of each look carry the separator; lane 0 does not
         const shadows = [...stacked].map(s => getComputedStyle(s).boxShadow)
-        expect(shadows.filter(s => s !== 'none').length).toBe(6)
+        expect(shadows.filter(s => s !== 'none').length).toBe(10)
     },
 }

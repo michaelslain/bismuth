@@ -18,6 +18,7 @@
    location visibly airier than the title (1.3) and time (1.3) stacked right above it. */
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; line-height: 1.3; }
 .event-chip-link { flex-shrink: 0; }
+.event-chip-sep { white-space: pre; }
 .event-chip-title p, .event-chip-location p { margin: 0; }
 .event-chip-title *, .event-chip-location * { color: inherit; }
 
@@ -57,14 +58,65 @@
 [data-event-look='outline'] .ev:not(.ghost) .event-chip-time,
 [data-event-look='outline'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
 
-/* solid — today's fill made opaque over the ground; the time drops to a quieter regular weight; a
-   2+ category chip keeps ONE fill (its first category) and names every category in a 3px cap,
-   ruled off from the fill by a 1px line of ground */
-[data-event-look='solid'] .ev:not(.ghost) { background: color-mix(in srgb, var(--ev-c, var(--accent)) 85%, var(--bg)); }
-[data-event-look='solid'] .ev[data-multi]:not(.ghost) { background: var(--ev-cap, none) left top / 100% 3px no-repeat, linear-gradient(var(--bg), var(--bg)) left 3px / 100% 1px no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 85%, var(--bg)); padding-top: calc(var(--sp-1) + var(--sp-2)); }
-[data-event-look='solid'] .ev.in-grid[data-multi]:not(.ghost) { padding-top: calc(var(--sp-2) + var(--sp-2)); }
-[data-event-look='solid'] .ev.in-grid.compact[data-multi]:not(.ghost) { padding-top: var(--sp-2); }
-[data-event-look='solid'] .ev:not(.ghost) .event-chip-time { color: color-mix(in srgb, var(--on-accent) 72%, transparent); opacity: 1; font-weight: 400; }
-
 /* every look: an uncategorised chip in the grid is opaque, so an overlap never shows through it */
 [data-event-look] .ev.ghost.in-grid { background: var(--bg); }
+
+/* bracket — the block held between a tall [ and ] in the category hue (Bismuth's bracket idiom:
+   every button, toggle and chip draws one), over a low wash. Left and right rules with 6px serifs,
+   open top and bottom middle. A month pill reads as [ Dentist ]. Two categories: [ in the first,
+   ] in the second. */
+[data-event-look='bracket'] .ev:not(.ghost) {
+    --bl: linear-gradient(var(--ev-c, var(--accent)), var(--ev-c, var(--accent)));
+    --br: linear-gradient(var(--ev-c2, var(--accent)), var(--ev-c2, var(--accent)));
+    --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 14%, var(--bg));
+    color: var(--fg);
+    background:
+        var(--bl) left top / 1px 100% no-repeat, var(--bl) left top / 6px 1px no-repeat, var(--bl) left bottom / 6px 1px no-repeat,
+        var(--br) right top / 1px 100% no-repeat, var(--br) right top / 6px 1px no-repeat, var(--br) right bottom / 6px 1px no-repeat,
+        var(--wash);
+}
+[data-event-look='bracket'] .ev:not(.ghost):hover { filter: none; --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 24%, var(--bg)); }
+[data-event-look='bracket'] .ev:not(.ghost) .event-chip-time,
+[data-event-look='bracket'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
+
+/* ledger — a log line: the time is a right-aligned gutter column in the category hue, start over
+   end, ruled off from the title by a hairline of that hue; wash + 2px edge as in tint. A short
+   block reads `08:30 │ Standup`. */
+[data-event-look='ledger'] .ev:not(.ghost) { color: var(--fg); background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 14%, var(--bg)); display: grid; grid-template-columns: auto 1fr; grid-auto-rows: min-content; align-content: start; }
+[data-event-look='ledger'] .ev:not(.ghost):hover { filter: none; background: var(--ev-edge, none) left top / 2px 100% no-repeat, color-mix(in srgb, var(--ev-c, var(--accent)) 24%, var(--bg)); }
+[data-event-look='ledger'] .ev:not(.ghost) .event-chip-time { grid-column: 1; grid-row: 1 / span 3; display: flex; flex-direction: column; align-items: flex-end; min-width: 5ch; align-self: stretch; padding-right: var(--sp-3); margin-right: var(--sp-3); border-right: 1px solid color-mix(in srgb, var(--ev-c, var(--accent)) 55%, transparent); color: var(--ev-c, var(--accent)); opacity: 1; font-variant-numeric: tabular-nums; }
+[data-event-look='ledger'] .ev:not(.ghost) .event-chip-sep { display: none; }
+[data-event-look='ledger'] .ev:not(.ghost) .event-chip-title,
+[data-event-look='ledger'] .ev:not(.ghost) .event-chip-meta { grid-column: 2; }
+[data-event-look='ledger'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
+[data-event-look='ledger'] .ev.in-grid.compact:not(.ghost) { display: flex; }
+[data-event-look='ledger'] .ev.in-grid.compact:not(.ghost) .event-chip-time { align-self: center; padding-right: var(--sp-3); margin-right: 0; }
+
+/* ledger in a narrow lane (the time-grid slot is a size container): no room for a gutter, so the
+   time returns to one line above the title, still in the hue. */
+@container (max-width: 8rem) {
+    [data-event-look='ledger'] .ev.in-grid:not(.ghost):not(.compact) { display: flex; }
+    [data-event-look='ledger'] .ev.in-grid:not(.ghost):not(.compact) .event-chip-time { display: block; min-width: 0; border-right: 0; padding-right: 0; margin-right: 0; }
+    [data-event-look='ledger'] .ev.in-grid:not(.ghost):not(.compact) .event-chip-sep { display: inline; }
+}
+
+/* hatch — wash + 2px edge, and below the title a fine 135deg hatch in the category hue, the texture
+   of the ASCII graph's character grid. Two categories hatch in alternating hues, so one block names
+   both. Kept off the text: it starts under the time + title and never shows in a short block. */
+[data-event-look='hatch'] .ev:not(.ghost) {
+    --hc: color-mix(in srgb, var(--ev-c, var(--accent)) 45%, transparent);
+    --hc2: color-mix(in srgb, var(--ev-c2, var(--accent)) 45%, transparent);
+    --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 12%, var(--bg));
+    color: var(--fg);
+    background:
+        var(--ev-edge, none) left top / 2px 100% no-repeat,
+        repeating-linear-gradient(135deg, var(--hc) 0 1px, transparent 1px 5px, var(--hc2) 5px 6px, transparent 6px 10px) left 36px / 100% 100% no-repeat,
+        var(--wash);
+}
+[data-event-look='hatch'] .ev:not(.ghost):hover { filter: none; --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 22%, var(--bg)); }
+[data-event-look='hatch'] .ev:not(.ghost) .event-chip-time,
+[data-event-look='hatch'] .ev:not(.ghost) .event-chip-location { color: var(--text-muted); opacity: 1; }
+
+/* title face — the comparison story's mono/prose switch (DESIGN.md's Register Rule: a card title is
+   written text, `<Text register="prose">`). Phase 2 keeps one and deletes this. */
+[data-event-title='prose'] .event-chip-title { font-family: var(--prose-font); font-weight: 600; letter-spacing: 0; }

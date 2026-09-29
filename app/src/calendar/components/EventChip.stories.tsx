@@ -285,7 +285,7 @@ export const DeleteIsImmediateWithUndo: Story = {
 
 // ---- event-look comparison — phase 2 keeps one ----------------------------------------------
 
-const LOOKS = ['tint', 'outline', 'solid'] as const
+const LOOKS = ['tint', 'outline', 'bracket', 'ledger', 'hatch'] as const
 
 const LOOK_DAY = '2026-01-12'
 const LOOK_EVENTS: CalendarEvent[] = [
@@ -321,36 +321,41 @@ const LookColumn = (props: { look: (typeof LOOKS)[number] }) => {
                         <DayView store={store} />
                     </CalendarFrame>
                 </div>
-                <div style={{ display: 'flex', gap: '12px', 'align-items': 'flex-start' }}>
-                    <div style={{ width: '220px', 'flex-shrink': '0' }}>
-                        <MonthCell date={LOOK_DAY} day={12} inMonth today={false} onOpen={() => {}}>
-                            <For each={LOOK_EVENTS.filter(e => e.id !== 'lk-5' && e.id !== 'lk-9')}>
-                                {e => <EventChip event={e} categories={CATEGORIES} store={store} />}
-                            </For>
-                        </MonthCell>
-                    </div>
-                    <div style={{ flex: '1', display: 'flex', 'flex-direction': 'column', gap: '12px' }}>
-                        <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
-                            <DragGhost {...ghostBox(0, 90)} startMin={540} endMin={630} color="var(--accent)" />
-                        </div>
-                        <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
-                            <DragGhost {...ghostBox(0, 90)} startMin={720} endMin={810} color={moveFill} />
-                        </div>
-                    </div>
+                <div style={{ width: '220px' }}>
+                    <MonthCell date={LOOK_DAY} day={12} inMonth today={false} onOpen={() => {}}>
+                        <For each={LOOK_EVENTS.filter(e => e.id !== 'lk-5' && e.id !== 'lk-9')}>
+                            {e => <EventChip event={e} categories={CATEGORIES} store={store} />}
+                        </For>
+                    </MonthCell>
+                </div>
+                <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
+                    <DragGhost {...ghostBox(0, 90)} startMin={540} endMin={630} color="var(--accent)" />
+                </div>
+                <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
+                    <DragGhost {...ghostBox(0, 90)} startMin={720} endMin={810} color={moveFill} />
                 </div>
             </Row>
         </div>
     )
 }
 
-/** The three candidate event looks side by side, over the SAME fixtures and the real views.
- *  Pick one; phase 2 deletes the other two and the `data-event-look` scaffold. */
-export const LookComparison: Story = {
+type TitleFont = 'mono' | 'prose'
+
+/** The candidate event looks side by side, over the SAME fixtures and the real views: a day view
+ *  (all-day row, compact, overlapping lanes, two categories, uncategorised, a location), a month
+ *  cell's pills, and the drag ghost for a create and a two-category move. `titleFont` flips every
+ *  title between the mono UI face and the prose serif. Pick one; phase 2 deletes the rest. */
+export const LookComparison: StoryObj<{ titleFont: TitleFont }> = {
     parameters: { layout: 'fullscreen' },
-    render: () => {
+    args: { titleFont: 'mono' },
+    argTypes: { titleFont: { control: 'inline-radio', options: ['mono', 'prose'] } },
+    render: args => {
         seedCalendarState({ date: new Date(2026, 0, 12), categories: CATEGORIES, events: LOOK_EVENTS })
         return (
-            <div style={{ display: 'flex', gap: '24px', padding: '16px', background: 'var(--bg)' }}>
+            <div
+                data-event-title={args.titleFont}
+                style={{ display: 'flex', gap: '20px', padding: '16px', background: 'var(--bg)' }}
+            >
                 <For each={LOOKS}>{look => <LookColumn look={look} />}</For>
             </div>
         )

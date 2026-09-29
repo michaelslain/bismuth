@@ -50,7 +50,7 @@ export const ShortFloorsToFifteenMinutes: Story = {
 export const Looks: Story = {
     render: () => (
         <div style={{ display: 'flex', gap: '16px' }}>
-            {(['tint', 'outline', 'solid'] as const).map(look => (
+            {(['tint', 'outline', 'bracket', 'ledger', 'hatch'] as const).map(look => (
                 <div data-event-look={look} style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                     <Column start={60} end={120} color="var(--accent)" />
                     <Column
