@@ -56,6 +56,7 @@ import {
     nextPosAfterGrade,
     nextCramPos,
     reindexRetiredAfterDelete,
+    reindexRetiredAfterInsert,
     itemKey,
     canGrade,
     progressTotal,
@@ -504,8 +505,12 @@ export function FlashcardsView(props: {
         // Delete first: the counters below only move once the row is really gone, so a failed
         // delete leaves the session exactly as it was.
         const basePath = props.basePath
-        const note = storedNote(props.rows[c.index])
+        const row = props.rows[c.index]
+        if (!row) return
+        const note = storedNote(row)
         const front = String(note[frontField()] ?? '').trim()
+        const wasCram = cram()
+        const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
         try {
             await api.rowDelete(basePath, c.index)
         } catch (e) {
@@ -513,8 +518,7 @@ export function FlashcardsView(props: {
             return
         }
         setRevealed(false)
-        if (cram()) {
-            const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
+        if (wasCram) {
             const newRetired = new Set(
                 reindexRetiredAfterDelete(retired(), c.index),
             )
@@ -542,9 +546,17 @@ export function FlashcardsView(props: {
         }
         props.onReviewed()
         pushUndoToast(
-            `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`,
+            front
+                ? `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`
+                : 'deleted card',
             async () => {
                 await restoreRowAt(basePath, note, c.index)
+                if (wasCram) {
+                    setRetired(
+                        new Set(reindexRetiredAfterInsert(retired(), c.index)),
+                    )
+                    setSessionTotal(t => (t === null ? t : t + perRow))
+                }
                 props.onReviewed()
             },
         )

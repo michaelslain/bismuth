@@ -5,6 +5,7 @@ import {
     itemKey,
     nextCramPos,
     reindexRetiredAfterDelete,
+    reindexRetiredAfterInsert,
     canGrade,
     progressTotal,
     nextPosAfterGrade,
@@ -502,4 +503,22 @@ test('delete-mid-cram: reindexed pool + shrunk queue never falsely completes or 
     const np = nextCramPos(newQueue, /* from */ -1, newRetired)
     expect(np).not.toBe(-1)
     expect(String(newQueue[np].r.note.front)).toBe('b')
+})
+
+test('reindexRetiredAfterInsert shifts keys at or above the inserted index up, keeps dir', () => {
+    expect(
+        reindexRetiredAfterInsert(['0:fwd', '1:fwd', '2:rev'], 1).sort(),
+    ).toEqual(['0:fwd', '2:fwd', '3:rev'].sort())
+})
+
+test('reindexRetiredAfterInsert undoes reindexRetiredAfterDelete for surviving rows', () => {
+    const before = ['0:fwd', '3:fwd', '4:rev']
+    const afterDelete = reindexRetiredAfterDelete(before, 2)
+    expect(reindexRetiredAfterInsert(afterDelete, 2).sort()).toEqual(
+        before.sort(),
+    )
+})
+
+test('reindexRetiredAfterInsert on an empty pool returns empty', () => {
+    expect(reindexRetiredAfterInsert([], 0)).toEqual([])
 })
