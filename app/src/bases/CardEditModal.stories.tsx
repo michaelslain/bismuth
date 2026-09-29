@@ -561,6 +561,15 @@ export const CustomHeadingEmptyColumns: Story = {
 export const EscapeTwoStep: Story = {
     render: () => <Live />,
     play: async () => {
+        // Title leg: Escape reverts the draft and keeps the modal open.
+        const title = document.querySelector<HTMLInputElement>('input[placeholder="Untitled"]')!
+        const originalTitle = title.value
+        title.focus()
+        await userEvent.type(title, 'xyz')
+        expect(title.value).toBe(`${originalTitle}xyz`)
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(title.value).toBe(originalTitle))
+        expect(logText()).not.toContain('close')
         const priority = document.querySelector<HTMLInputElement>('input[type="number"]')!
         const original = priority.value
         priority.focus()
