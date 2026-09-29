@@ -10,7 +10,7 @@
 // still fall back to DEFAULT_PALETTE, since there is no DOM here to resolve the live theme from.
 import { writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
-import { flag, bool, requireVault, fail, today, out } from '../args'
+import { flag, bool, positionals, requireVault, fail, today, out } from '../args'
 import { readNote } from '../../../core/src/files'
 import { resolveSource } from '../../../core/src/bases/source'
 import { parseDoc } from '../../../core/src/drawing/model'
@@ -126,7 +126,7 @@ function optionsFrom(args: string[]): ExportOptions {
 }
 
 async function run(args: string[]): Promise<void> {
-    const file = args.find(a => !a.startsWith('--'))
+    const [file] = positionals(args)
     if (!file)
         fail(
             'usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]',
