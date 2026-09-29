@@ -2,6 +2,7 @@ import { recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
 import { deleteEventWithUndo, type RecurrenceScope } from '../eventActions'
+import { pushToast } from '../../toastStore'
 import { prettyDate } from '../dates'
 import { Show, For } from 'solid-js'
 import FormModal from '../../ui/FormModal'
@@ -23,13 +24,18 @@ export function RecurrenceDialog(props: { store: EventStore }) {
         if (type === 'delete') {
             // deleteEventWithUndo refreshes itself and pushes the undo toast
             const master = events.value.find(e => e.id === masterId)
-            if (master)
-                await deleteEventWithUndo(
-                    props.store,
-                    { ...master, date: occurrenceDate },
-                    scope,
-                )
-            recurrenceAction.value = null
+            try {
+                if (master)
+                    await deleteEventWithUndo(
+                        props.store,
+                        { ...master, date: occurrenceDate },
+                        scope,
+                    )
+            } catch (e) {
+                pushToast(`Could not delete: ${(e as Error).message}`)
+            } finally {
+                recurrenceAction.value = null
+            }
             return
         } else if (type === 'edit' && updates) {
             if (scope === 'one') {

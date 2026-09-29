@@ -1,10 +1,12 @@
-import { createSignal, onMount, onCleanup, Show } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
 import { showEventModal, settings, recurrenceAction } from '../state'
 import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
 import { isOpenableUrl } from '../openableUrl'
 import CalendarChip from './CalendarChip'
+import { useOverflowHide } from './useOverflowHide'
+import { pushToast } from '../../toastStore'
 import { formatTime } from '../dates'
 import { eventCategoryColors, categoryFill } from '../categoryColor'
 import { EventStore } from '../EventStore'
@@ -55,7 +57,11 @@ export function EventChip(props: Props) {
                 occurrenceDate: props.occurrenceDate,
             }
         } else {
-            await deleteEventWithUndo(props.store, props.event)
+            try {
+                await deleteEventWithUndo(props.store, props.event)
+            } catch (e) {
+                pushToast(`Could not delete: ${(e as Error).message}`)
+            }
         }
     }
 
@@ -68,28 +74,11 @@ export function EventChip(props: Props) {
             .filter(Boolean)
             .join(', ')
 
-    onMount(() => {
-        const chip = chipRef
-        const meta = metaRef
-        if (!chip || !meta) return
-        let decided = false
-        const check = (): void => {
-            if (decided) return
-            const metaBottom = meta.offsetTop + meta.offsetHeight
-            if (metaBottom > chip.clientHeight + 1) {
-                decided = true
-                setMetaVisible(false)
-            }
-        }
-        const obs = new ResizeObserver(check)
-        obs.observe(chip)
-        obs.observe(meta)
-        const timer = setTimeout(check, 50)
-        onCleanup(() => {
-            obs.disconnect()
-            clearTimeout(timer)
-        })
-    })
+    useOverflowHide(
+        () => chipRef,
+        () => metaRef,
+        () => setMetaVisible(false),
+    )
 
     return (
         <CalendarChip

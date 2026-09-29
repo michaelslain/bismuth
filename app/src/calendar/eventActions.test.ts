@@ -9,8 +9,7 @@ async function freshStore() {
     return s
 }
 
-const masters = (s: EventStore) =>
-    (s as any).data.events.map(({ id, localUpdated, ...rest }: any) => rest)
+const masters = (s: EventStore) => structuredClone((s as any).data.events)
 
 function clickUndo(): void {
     const t = toasts().find(x => x.action?.label === 'undo')!

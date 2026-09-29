@@ -13,6 +13,7 @@ import { TextButton } from '../../ui/TextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import SettingsHint from '../../ui/SettingsHint'
+import { pushToast } from '../../toastStore'
 import CategoryList from './CategoryList'
 import NewCategoryForm from './NewCategoryForm'
 
@@ -37,9 +38,18 @@ export function CategoryPanel(props: { store: EventStore }) {
                             onRecolor={(name, color) =>
                                 void recolorCategory(props.store, name, color)
                             }
-                            onDelete={name =>
-                                void deleteCategoryWithUndo(props.store, name)
-                            }
+                            onDelete={async name => {
+                                try {
+                                    await deleteCategoryWithUndo(
+                                        props.store,
+                                        name,
+                                    )
+                                } catch (e) {
+                                    pushToast(
+                                        `Could not delete: ${(e as Error).message}`,
+                                    )
+                                }
+                            }}
                         />
                     </Show>
 
