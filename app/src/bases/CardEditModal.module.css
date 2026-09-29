@@ -34,6 +34,9 @@
      local override needed — TextInput/FormControl already sets --h-control) and DUE reads the
      same var through PropertyValueEditor's `.kbMetaDate`. */
   --kb-meta-height: var(--h-control);
+  /* The status select's text starts at the same x as TITLE/PRIORITY/DUE: the trigger's default
+     left inset (kanban + table selects keep it) is zeroed here. */
+  --kb-meta-select-inset: 0;
 }
 
 /* The rich Milkdown description surface — a neutral underline field, matching every other value

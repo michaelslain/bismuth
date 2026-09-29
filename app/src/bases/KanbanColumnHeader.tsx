@@ -54,10 +54,10 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
         <Text as="span" inherit class={styles.dotSlot}>
             <Show
                 when={props.editable}
-                fallback={<StatusDot color={props.color} />}
+                fallback={<StatusDot color={props.color} size="md" />}
             >
                 <ColorChip
-                    trigger={<StatusDot color={props.color} />}
+                    trigger={<StatusDot color={props.color} size="md" />}
                     anchor={() => headerEl}
                     placement="below"
                     color={props.color}
