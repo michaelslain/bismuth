@@ -64,8 +64,8 @@ const allFiles = (dir: string, acc: string[] = []): string[] => {
 const stripComments = (css: string): string =>
     css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** Strip `:global(...)` regions, matching parens so nested ones survive — the codebase really does
- *  write `:global(li:has(> .cm-tag))`, which a lazy `\([^)]*\)` would cut in half and
+/** Strip `:global(...)` regions, matching parens so nested ones survive — a selector such as
+ *  `:global(li:has(> .cm-tag))`, which a lazy `\([^)]*\)` would cut in half and
  *  then flag the tail of. */
 function stripGlobal(css: string): string {
     let out = ''

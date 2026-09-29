@@ -6,6 +6,8 @@
 export function isMacPlatform(): boolean {
     return (
         typeof navigator !== 'undefined' &&
-        /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
+        /Mac|iPhone|iPad|iPod/.test(
+            navigator.platform || navigator.userAgent || '',
+        )
     )
 }

@@ -6,7 +6,7 @@ import {
     Show,
 } from 'solid-js'
 import {
-    FIELDS,
+    writeColumnMap,
     seedColumnMap,
     defaultColumnMap,
     columnVocabulary,
@@ -59,16 +59,7 @@ export function CalendarSettings(props: {
             { get: busy, set: setBusy },
             'Could not save calendar settings',
             async () => {
-                const m = map()
-                const { skipped } = await api.setProperties(
-                    FIELDS.map(f => ({
-                        path: props.basePath,
-                        key: f.key,
-                        value: m[f.key] ?? '',
-                    })),
-                )
-                if (skipped.includes(props.basePath))
-                    throw new Error('base no longer exists')
+                await writeColumnMap(api.setProperties, props.basePath, map())
                 props.onChange?.()
             },
         )
