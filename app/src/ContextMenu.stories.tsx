@@ -3,7 +3,9 @@
 // cursor placement + dismiss + one level of submenu flyout over the shared <PopoverList>
 // surface; no IO.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { createSignal } from 'solid-js'
+import { expect, waitFor } from 'storybook/test'
+import { Modal } from './ui/Modal'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 
 const meta = {
@@ -99,5 +101,50 @@ export const NearBottomEdge: Story = {
         await expect(r.top).toBeGreaterThanOrEqual(0)
         // …and it got there by flipping ABOVE the cursor, not by being clamped on top of it.
         await expect(r.bottom).toBeLessThanOrEqual(window.innerHeight - 40 + 1)
+    },
+}
+
+/** A ContextMenu opened from inside a Modal: Escape closes the menu ONLY. The menu's Escape is
+ *  defaultPrevented (createMenuNav), which the Modal's window listener checks before closing. */
+export const InsideModalEscape: Story = {
+    render: () => {
+        const [menu, setMenu] = createSignal(true)
+        const [modal, setModal] = createSignal(true)
+        return (
+            <>
+                {modal() && (
+                    <Modal label="host" onClose={() => setModal(false)}>
+                        <div
+                            style={{ padding: '40px', color: 'var(--fg)' }}
+                            data-modal-body=""
+                        >
+                            right-click target
+                            {menu() && (
+                                <ContextMenu
+                                    x={200}
+                                    y={200}
+                                    items={FILE_ROW_ITEMS}
+                                    onClose={() => setMenu(false)}
+                                />
+                            )}
+                        </div>
+                    </Modal>
+                )}
+            </>
+        )
+    },
+    play: async () => {
+        const menus = () => document.querySelectorAll('.bismuth-popover')
+        await waitFor(() => expect(menus().length).toBeGreaterThan(0))
+        document.body.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'Escape',
+                code: 'Escape',
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+        await waitFor(() => expect(menus().length).toBe(0))
+        await expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     },
 }
