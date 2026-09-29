@@ -23,6 +23,9 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {}
 
+/** A row title: --fg at rest, accent + underline on hover. */
+export const TitleTone: Story = { args: { tone: 'title' } }
+
 /** No children — the path itself is the label. */
 export const PathAsLabel: Story = {
     args: { path: 'journal/2026-08-04.md', children: undefined },

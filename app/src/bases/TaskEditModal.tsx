@@ -14,6 +14,7 @@ import { api } from '../api'
 import { pushToast } from '../toastStore'
 import { pushUndoToast } from '../undoToast'
 import { isConfirmKey } from '../ui/widgetKeys'
+import { openNote as openNoteEvent } from '../ui/openNote'
 import { TASK_STATUS_OPTIONS } from '../taskStatusMenu'
 import type { TaskPriority } from './taskEdit'
 import {
@@ -149,9 +150,7 @@ const TaskEditModal: Component<TaskEditModalProps> = props => {
     }
 
     function openNote(): void {
-        window.dispatchEvent(
-            new CustomEvent('bismuth-open', { detail: props.row.file.path }),
-        )
+        openNoteEvent(props.row.file.path)
         props.onClose()
     }
 

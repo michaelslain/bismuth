@@ -41,7 +41,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
     return (
         <Text as="span" inherit class={styles.cellTitle}>
             <Show when={linkable} fallback={<>{content()}</>}>
-                <NoteLink path={target}>{content()}</NoteLink>
+                <NoteLink path={target} tone="title">{content()}</NoteLink>
             </Show>
         </Text>
     )

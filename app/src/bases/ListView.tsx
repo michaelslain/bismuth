@@ -63,7 +63,7 @@ export function ListView(props: {
                         when={!rowEditable(row) && linkable(row)}
                         fallback={titleOf(row, firstCol())}
                     >
-                        <NoteLink path={row.file.path}>
+                        <NoteLink path={row.file.path} tone="title">
                             {titleOf(row, firstCol())}
                         </NoteLink>
                     </Show>

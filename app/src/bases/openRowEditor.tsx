@@ -14,6 +14,7 @@ import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
 import { storedTitleColumn, metaColumns, writableKey } from './kanbanMeta'
 import { commitRename, commitMeta, commitDelete } from './rowWrites'
 import { mountModal } from '../ui/mountModal'
+import { openNote } from '../ui/openNote'
 
 /** The `order:`/declared-property id list to show as editable meta on a bare row — mirrors
  *  `metaSource`'s declared-properties fallback (kanbanMeta.ts) minus the `groupBy` exclusion,
@@ -132,11 +133,7 @@ export function openRowEditor(opts: {
                     ? undefined
                     : () =>
                           void enqueue(async r => {
-                              window.dispatchEvent(
-                                  new CustomEvent('bismuth-open', {
-                                      detail: { path: r.file.path },
-                                  }),
-                              )
+                              openNote(r.file.path)
                               return r
                           })
             }
