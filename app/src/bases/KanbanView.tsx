@@ -77,7 +77,7 @@ import {
 import { type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
 import { declaredDefaults } from '../../../core/src/bases/properties'
-import { STATUS_COLOR } from '../ui/StatusDot'
+import { GROUP_PALETTE, autoGroupColor } from './groupHue'
 import { pushToast } from '../Toast'
 import { suppressCardContextMenu } from './kanbanCardMenu'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
@@ -98,14 +98,9 @@ const ORDER_KEY = 'order'
 // The active theme's graph-node ramp (`accentPalette` → --graph-0..4), a designed set of
 // distinguishable-yet-cohesive colors. Used as the per-column fallback so columns vary out of
 // the box (issue: every custom column was the same accent color) AND as the picker swatches —
-// so it stays on-theme and adapts to light/dark + whichever theme is active.
-const PALETTE = [
-    'var(--graph-0)',
-    'var(--graph-1)',
-    'var(--graph-2)',
-    'var(--graph-3)',
-    'var(--graph-4)',
-]
+// so it stays on-theme and adapts to light/dark + whichever theme is active. Lives in
+// groupHue.ts with the key→colour rule, which CardsView's grouped covers share.
+const PALETTE = GROUP_PALETTE
 
 // Human names for the PALETTE swatches above, parallel by index — every theme's --graph-0..4
 // ramp is rose/violet/blue/teal/green in that order. Used as each Swatch's accessible name +
@@ -202,12 +197,7 @@ export function KanbanView(props: {
     // recolors them. Extracted so a rename can compare "what color would this key get on its
     // own" for both the old and the new key, without writing an override just to ask.
     function autoColor(key: string): string {
-        if (STATUS_COLOR[key.trim().toLowerCase()])
-            return STATUS_COLOR[key.trim().toLowerCase()]
-        let h = 0
-        for (let i = 0; i < key.length; i++)
-            h = (h * 31 + key.charCodeAt(i)) | 0
-        return PALETTE[Math.abs(h) % PALETTE.length]
+        return autoGroupColor(key)
     }
 
     // Per-column color: explicit override > auto.

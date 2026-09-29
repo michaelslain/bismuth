@@ -5,9 +5,10 @@ import { api } from '../api'
 import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
 import TaskRow from './TaskRow'
-import Label from '../ui/Label'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
+import CardCover from './CardCover'
+import { autoGroupColor } from './groupHue'
 import { isStoredPlaceholder } from './taskWrite'
 import { openRowEditor } from './openRowEditor'
 import styles from './CardsView.module.css'
@@ -101,6 +102,14 @@ export function CardsView(props: {
         return v == null || typeof v === 'object' ? null : String(v)
     }
 
+    // A generated cover is coloured only when the base is grouped — the category ramp means
+    // category, never decoration — with the same key→colour rule (and per-view `groupColors`
+    // overrides) as a kanban column, so one group reads as one hue across views.
+    const groupHue = (key: string): string | undefined =>
+        key === ''
+            ? undefined
+            : (props.result.view.groupColors?.[key] ?? autoGroupColor(key))
+
     // Click anywhere on a (non-body) card opens its note. `bismuth-open` always opens a
     // fresh tab now (#56), so this needs no flag to get that.
     const openCard = (row: Row) =>
@@ -179,43 +188,23 @@ export function CardsView(props: {
                                                         <Show
                                                             when={coverUrl(row)}
                                                             fallback={
-                                                                <div
-                                                                    class={
-                                                                        styles.cardCover
+                                                                <CardCover
+                                                                    path={
+                                                                        row
+                                                                            .file
+                                                                            .path
                                                                     }
-                                                                >
-                                                                    <Label
-                                                                        as="div"
-                                                                        tone="default"
-                                                                        lines={
-                                                                            2
-                                                                        }
-                                                                        class={
-                                                                            styles.coverTitle
-                                                                        }
-                                                                    >
-                                                                        {coverTitle(
-                                                                            row,
-                                                                        )}
-                                                                    </Label>
-                                                                    <Show
-                                                                        when={coverAuthor(
-                                                                            row,
-                                                                        )}
-                                                                    >
-                                                                        <Label
-                                                                            as="div"
-                                                                            tone="muted"
-                                                                            class={
-                                                                                styles.coverAuthor
-                                                                            }
-                                                                        >
-                                                                            {coverAuthor(
-                                                                                row,
-                                                                            )}
-                                                                        </Label>
-                                                                    </Show>
-                                                                </div>
+                                                                    title={coverTitle(
+                                                                        row,
+                                                                    )}
+                                                                    author={coverAuthor(
+                                                                        row,
+                                                                    )}
+                                                                    hue={groupHue(
+                                                                        group()
+                                                                            .key,
+                                                                    )}
+                                                                />
                                                             }
                                                         >
                                                             {url => (
