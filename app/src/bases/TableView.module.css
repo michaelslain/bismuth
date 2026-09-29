@@ -2,6 +2,8 @@
 /* --fs-ui cells, per bases-table.card.html; hairline row rules. The header, group band and
    summary footer are their own components (TableHeader / TableGroupRow / TableSummaryRow), each
    with its own module — this file is the table shell and the data cell. */
+/* One root for the table + its empty state; a plain block, so the parent sees a single child. */
+.frame { display: block; }
 .table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
 .cell {
   padding: var(--sp-4) var(--sp-5);

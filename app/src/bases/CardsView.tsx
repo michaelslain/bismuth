@@ -165,7 +165,19 @@ export function CardsView(props: {
                                                                     ? 0
                                                                     : undefined
                                                             }
-                                                            onClick={() => {
+                                                            onClick={e => {
+                                                                // A click on a link/button inside the card is that control's.
+                                                                const inner = (
+                                                                    e.target as Element
+                                                                ).closest(
+                                                                    'a, button',
+                                                                )
+                                                                if (
+                                                                    inner &&
+                                                                    inner !==
+                                                                        e.currentTarget
+                                                                )
+                                                                    return
                                                                 if (
                                                                     rowEditable(
                                                                         row,

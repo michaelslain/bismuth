@@ -382,3 +382,33 @@ export const KeyboardReach: Story = {
         await waitFor(() => expect(canvas.queryByText('clear')).toBeNull())
     },
 }
+
+/** Space on the focused plot with no hover column is swallowed — the page must not scroll. */
+export const SpaceWithoutHoverDoesNotScroll: Story = {
+    render: () => {
+        const views = [{ type: 'line' as const, name: 'Chart' }]
+        return (
+            <LineView
+                result={sampleViewResult(undefined, { views })}
+                config={sampleBaseConfig({ views })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('pre')
+            if (!el) throw new Error('plot not mounted yet')
+            return el
+        })
+        pre.focus()
+        const ev = new KeyboardEvent('keydown', {
+            key: ' ',
+            code: 'Space',
+            bubbles: true,
+            cancelable: true,
+        })
+        pre.dispatchEvent(ev)
+        expect(ev.defaultPrevented).toBe(true)
+        expect(canvasElement.textContent).not.toContain('clear')
+    },
+}

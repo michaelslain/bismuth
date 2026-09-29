@@ -119,8 +119,9 @@ export function LineView(props: ChartViewProps) {
     // Keyboard path: the arrows / Home / End move the hover column, Enter or Space drills into it.
     const onKeyDown = (e: KeyboardEvent) => {
         if (isActivateKey(e)) {
-            if (hoverIdx() === null) return
+            // No hover column: swallow the key so Space does not scroll the page.
             e.preventDefault()
+            if (hoverIdx() === null) return
             toggleDrillAt(hoverIdx())
             return
         }
