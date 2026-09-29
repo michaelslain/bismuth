@@ -31,6 +31,7 @@ import { writableKey } from './kanbanMeta'
 import {
     groupUpdatesByPath,
     rollbackPending,
+    writeStatus,
     rollbackRemoved,
 } from './kanbanRollback'
 import { appendOrder } from './kanbanOrder'
@@ -546,30 +547,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
             // blindly, which would land on the wrong base for a `source:` board), so the
             // updates are grouped by path and issued one `rowUpdateMany` call per path — one
             // call total for an own-rows board, where every row shares the same path.
-            const rows = movedRows
-            const storedRows = rows.filter(canWriteStoredRow)
-            const noteRows = rows.filter(r => !canWriteStoredRow(r))
-            if (storedRows.length > 0) {
-                const items = storedRows.map(r => ({
-                    path: r.file.path,
-                    index: r.index!,
-                    note: { ...storedNote(r), [statusKey]: trimmed },
-                }))
-                for (const [path, group] of groupUpdatesByPath(items)) {
-                    await api.rowUpdateMany(
-                        path,
-                        group.map(g => ({ index: g.index, note: g.note })),
-                    )
-                }
-            }
-            if (noteRows.length > 0) {
-                const writes = noteRows.map(r => ({
-                    path: r.file.path,
-                    key: statusKey,
-                    value: trimmed,
-                }))
-                await api.setProperties(writes)
-            }
+            await writeStatus(movedRows, statusKey, trimmed)
             deps.onChange()
         } catch (e) {
             rollbackColOrder(keys, prevOrder)
@@ -657,25 +635,9 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
                     )
             }
             if (cardRows.length > 0 && statusKey !== null) {
-                const storedRows = cardRows.filter(canWriteStoredRow)
-                const noteRows = cardRows.filter(r => !canWriteStoredRow(r))
                 // The cards lose the grouping key entirely (they fall into the no-value lane) —
                 // never an empty string, which a declared `select` would read as invalid.
-                if (storedRows.length > 0) {
-                    const items = storedRows.map(r => {
-                        const note = { ...storedNote(r) }
-                        delete note[statusKey!]
-                        return { path: r.file.path, index: r.index!, note }
-                    })
-                    for (const [path, group] of groupUpdatesByPath(items)) {
-                        await api.rowUpdateMany(
-                            path,
-                            group.map(g => ({ index: g.index, note: g.note })),
-                        )
-                    }
-                }
-                for (const r of noteRows)
-                    await api.deleteProperty(r.file.path, statusKey!)
+                await writeStatus(cardRows, statusKey, undefined)
             }
             deps.onChange()
             if (cardRows.length > 0 && statusKey !== null) {
@@ -762,29 +724,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
             const live = cardRows
                 .map(r => current.get(rowId(r)))
                 .filter(stillCleared)
-            const storedRows = live.filter(canWriteStoredRow)
-            const noteRows = live.filter(r => !canWriteStoredRow(r))
-            if (storedRows.length > 0) {
-                const items = storedRows.map(r => ({
-                    path: r.file.path,
-                    index: r.index!,
-                    note: { ...storedNote(r), [statusKey]: key },
-                }))
-                for (const [path, group] of groupUpdatesByPath(items)) {
-                    await api.rowUpdateMany(
-                        path,
-                        group.map(g => ({ index: g.index, note: g.note })),
-                    )
-                }
-            }
-            if (noteRows.length > 0) {
-                const writes = noteRows.map(r => ({
-                    path: r.file.path,
-                    key: statusKey,
-                    value: key,
-                }))
-                await api.setProperties(writes)
-            }
+            await writeStatus(live, statusKey, key)
             deps.onChange()
         }
     }

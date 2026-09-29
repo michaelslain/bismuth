@@ -60,8 +60,13 @@ export function CalendarSettings(props: {
             'Could not save calendar settings',
             async () => {
                 const m = map()
-                for (const f of FIELDS)
-                    await api.setProperty(props.basePath, f.key, m[f.key] ?? '')
+                await api.setProperties(
+                    FIELDS.map(f => ({
+                        path: props.basePath,
+                        key: f.key,
+                        value: m[f.key] ?? '',
+                    })),
+                )
                 props.onChange?.()
             },
         )
