@@ -186,6 +186,12 @@ Vault file I/O with path-traversal protection. Key exports:
 #### `concurrency.ts`
 `mapWithConcurrency(items, limit, fn)` — the one bounded-concurrency worker-pool helper, shared by every caller that needs to run many async calls (file reads, stats) with a cap on how many are in flight rather than either serially or all at once (`Promise.all` over thousands of vault files risks exhausting file descriptors). Each worker claims the next index off a shared counter, so `results[i]` always corresponds to `items[i]` regardless of completion order. Extracted from `visibility.ts`; `files.ts` (`listTree`'s mtime pre-stat) and `search.ts` (`buildSearchIndex`) had each hand-rolled the same shape before switching to this.
 
+#### `readAllNotes.ts`
+`readAllNotes(root, rels, onError?)` — the one whole-vault read: every listed note read through a bounded pool (`mapWithConcurrency`, 32 in flight), returning `{ rel, content }[]` in `rels` order. A note that cannot be read (deleted between the listing and the read) is SKIPPED — absent from the result, never an empty note — and reported to `onError` when given. Replaced five hand-rolled unbounded `Promise.all` loops (graph build, bases feed, task scan, flashcard scan, task migration); `collectTasksFromPaths` in `tasks.ts` now uses it too.
+
+#### `atomicWrite.ts`
+The one temp-then-rename write for core: `writeFileAtomicSync(file, data, opts?)` and async `writeFileAtomic()`. A reader (the daemon, the CLI, a second core) racing the writer sees the old file or the new one, never a torn half. The tmp name is unique per pid + call; on failure the tmp file is removed and the error rethrown. The caller owns `mkdir` of the parent dir. `AtomicWriteOptions.mode` is applied when the tmp file is created, so it survives the rename regardless of the destination's prior permissions.
+
 #### `heic.ts` + `heic-convert.d.ts`
 HEIC/HEIF → JPEG transcoding, so a photo dragged out of Finder is usable downstream — done in the backend (not the WebView) because Chromium can't decode HEIC natively while WebKit can, and doing it in-page would silently behave differently across the packaged macOS app, the browser dev build, and Windows/Linux. `isHeicName`/`jpegNameFor`/`looksLikeHeic` (magic-byte sniff) plus `convertHeicToJpeg` — tries `sips` first on macOS (system tool, ~10× faster), falls back to the pure-JS `heic-convert` (libheif wasm + jpeg-js) on Windows/Linux or whenever `sips` is absent/errors. `heic-convert.d.ts` is a hand-written ambient module declaration for the untyped `heic-convert` package, asserted narrow at its one import site in `heic.ts`.
 
@@ -1409,6 +1415,9 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 #### `debounce.ts`
 `debounce(fn, ms)` — generic debounce utility. Tested.
 
+#### `platform.ts`
+The one platform check — `isMacPlatform()`, true on macOS/iPadOS/iOS (decides the overlay titlebar chrome and the `⌘`/`⌥` glyphs vs Ctrl/Alt text). Imports nothing, so `App.tsx`, `appWindow.ts` and `ui/ascii/parseCombo.ts` can all share it without a cycle.
+
 #### `appWindow.ts`
 `openAppWindow(url)`, `pickFolder()`, `openExternalUrl(url)` — Tauri window and dialog abstractions. Gracefully degrades outside Tauri.
 
@@ -1772,6 +1781,9 @@ The per-vault daemon runtime, absorbed from claude-bot: cron scheduler, process 
 
 ### `daemon/` — Runtime Modules
 
+#### `daemon/persona.ts`
+The daemon's identity as text. `buildDaemonPersona(ctx, denyEntries): Promise<string>` renders the daemon's identity plus the visibility deny-list as one block of text. `DAEMON_PERSONA_CHANNELS` maps each daemon backend to how that text reaches it — Claude: appended to the Claude Code preset system prompt; Codex: passed as the `developer_instructions` config.
+
 #### `daemon/codexSession.ts`
 The Codex daemon backend: runs a vault's brain on OpenAI's Codex CLI, spawned directly (`codex exec`) as a subprocess rather than via `@openai/codex-sdk` (whose own binary resolution has no PATH lookup and bundles a ~310MB platform binary — a bad fit for a daemon that itself compiles to a standalone binary). Selected only through `session.ts`'s `resolveDaemonBackend`, which refuses this backend outright for any vault with a hidden note, since Codex has no equivalent of Claude's managed-settings/sandbox/disallowed-tools visibility-gate triple. `buildCodexEnv()` builds the child environment; `sendCodexMessage()` spawns the CLI, pipes its NDJSON stdout, and returns a `BotResponse` mirroring `session.ts`'s Claude path (per-vault conversation continuity via a separate `.daemon/codex-session-id` file).
 
@@ -1852,11 +1864,21 @@ launchd (macOS) / systemd (Linux) service lifecycle. `daemonConfigPath()` — re
 #### `lib/registry.ts`
 The set of vault brains the daemon runs. Bismuth core writes the list of known vault roots to `VAULTS_FILE`; each vault opts in via `settings.daemon.enabled`. The cron/process loops call `loadEnabledVaults()` every tick, so toggling a vault's daemon setting takes effect without a daemon restart — no separate enable/disable RPC. `knownVaultRoots()` accepts both the canonical plain-string-array shape and a legacy `{path,...}` object shape (migrated back to strings by core on its next boot). `VAULT_SEEN_REFRESH_MS` (1 hour), `stampVaultsSeen()`, `resetVaultsSeenThrottle()`, `refreshVaultsSeen()`, `loadEnabledVaults()`, `loadAllVaults()`.
 
+#### `lib/vaultSettings.ts`
+`readVaultSettingsDoc(root, { strict? })` — the parsed YAML doc of a vault's settings, trying each layout in order: the single `.settings` file, the interim `.settings/settings.yaml`, then the legacy root `settings.yaml` (the daemon is a separate process and may read a vault before core migrates it). Returns null when none is readable. By default a shape with invalid YAML is skipped like a missing one; `strict` throws `VaultSettingsParseError` instead, for callers (the visibility walk) where "cannot read" must not collapse into "nothing set".
+
 #### `lib/visibility.ts` (+ `lib/visibility.test.ts`)
 The daemon's own ported copy of `core/src/visibility.ts`'s per-file/folder AI-visibility resolution — deliberately duplicated (not imported) since the daemon workspace has no dependency on `@bismuth/core`, only on `@bismuth/memory`. An honesty boundary, not a security boundary: restricts the daemon's own tool calls, never the vault owner. `Visibility`/`FileVisibility`, `resolveVisibility()`/`resolveFolderVisibility()`, `isVisibleToDaemon()`, `VisibilityUndeterminedError`, `MAX_WALK_ENTRIES` (200,000) + `WalkLimits` (discovery-walk bounds). `DenyEntry`/`DenyPlan`, `resolveDenyPlan()`, `buildDenyPaths()`. `buildManagedSettingsDeny(entries)` — the dual-form (relative + absolute) deny list fix, since a model's Read tool call may report either form. `absDenyPaths()`, `sandboxDenyRead()`, `buildSandboxDenyPaths()`, `sandboxFailIfUnavailable()`. The `.test.ts` mirrors `core/test/visibility.test.ts` for this ported copy.
 
 #### `lib/writeQueue.ts`
 Per-file serial write queue, keyed by absolute path, so two concurrent saves to the same sidecar can't race on a shared temp filename or clobber each other's load-modify-save cycle. Extracted from `cron.ts` so `activityLog.ts` shares the one implementation instead of growing a second, subtly different copy. `enqueueWrite<T>(file, fn)`.
+
+---
+
+## `mcp/src/` — MCP Server (`@bismuth/mcp`)
+
+#### `paths.ts`
+`resolveWithin(root, relPath)` — the path-traversal guard shared by `docs.ts` (`readDoc`) and `skills.ts` (`readSkill`): resolves `relPath` under `root` and throws `Path traversal rejected` if the result would escape it. `node:path` only, no other deps.
 
 ---
 

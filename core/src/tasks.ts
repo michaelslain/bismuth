@@ -318,9 +318,6 @@ export async function collectTasksFromPaths(
     root: string,
     paths: string[],
 ): Promise<Task[]> {
-    const { readNote } = await getFileAccess()
-    const contents = await Promise.all(
-        paths.map(p => readNote(root, p).catch(() => '')),
-    )
-    return paths.flatMap((p, i) => extractTasks(contents[i], p))
+    const contents = await readAllNotes(root, paths)
+    return contents.flatMap(({ rel, content }) => extractTasks(content, rel))
 }
