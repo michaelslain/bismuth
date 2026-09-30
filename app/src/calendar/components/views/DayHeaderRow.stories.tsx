@@ -41,6 +41,11 @@ export const Week: Story = {
             return Boolean(el)
         })
         expect(withCircle).toHaveLength(1)
+        // typed as an ASCII grid: every header types a top-left and a bottom-left corner (its
+        // bottom is the heavy `=` under the labels), and only the LAST adds the right ones
+        expect(canvasElement.querySelectorAll('[data-corner="bottom-left"]')).toHaveLength(7)
+        expect(canvasElement.querySelectorAll('[data-corner="bottom-right"]')).toHaveLength(1)
+        heads.forEach(h => expect(getComputedStyle(h).borderLeftWidth).toBe('0px'))
     },
 }
 

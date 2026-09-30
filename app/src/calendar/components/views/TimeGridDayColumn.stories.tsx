@@ -63,6 +63,25 @@ export const DayWithOverlap: Story = {
     },
 }
 
+/** The typed grid: 24 hour blocks each host one overlay (top `-` + left `|`, + the column's right
+ *  `|` since it stands alone), the half-hour cell carries none, and no CSS border draws a line. */
+export const TypedGrid: Story = {
+    render: () => <Harness />,
+    play: async ({ canvasElement }) => {
+        const col = within(canvasElement).getByTestId('time-grid-day-col')
+        expect(getComputedStyle(col).borderLeftWidth).toBe('0px')
+        // one overlay per hour block, a top-left corner in each (first hour included: standalone)
+        expect(col.querySelectorAll('[data-corner="top-left"]')).toHaveLength(24)
+        // closed on the right in every hour, and at the bottom of the last hour only
+        expect(col.querySelectorAll('[data-corner="top-right"]')).toHaveLength(24)
+        expect(col.querySelectorAll('[data-corner="bottom-left"]')).toHaveLength(1)
+        // the overlay is a third child of the hour block, after the hour and half-hour cells
+        const block = col.firstElementChild as HTMLElement
+        expect(block.children).toHaveLength(3)
+        expect(getComputedStyle(block.children[0] as HTMLElement).borderTopWidth).toBe('0px')
+    },
+}
+
 export const Today: Story = {
     render: () => <Harness today />,
     play: async ({ canvasElement }) => {
