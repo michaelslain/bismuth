@@ -222,13 +222,15 @@ function MiniGrid(props: { width: number }) {
     )
 }
 
-type Ink = { cx: number; cy: number }
+type Ink = { cx: number; cy: number; strokes: number }
 
 /** Where one tile of a sprite puts its ink, in CSS px from the tile's top-left, read off the
  *  sprite's own pixels: `cx` = the x of its vertical stroke (the columns carrying at least half the
  *  heaviest column's alpha, alpha-weighted), `cy` = the y of its horizontal stroke, the same way
  *  over rows. So a `+` gives its stem and its crossbar, a `|` its stem, a `-`/`=` its stroke —
- *  unaffected by a neighbouring glyph's ink. `null` = the tile is empty. */
+ *  unaffected by a neighbouring glyph's ink. `strokes` = the number of maximal runs of rows whose
+ *  alpha is at least half the peak row's: 1 for a `-`, 2 for an `=` (its two bars), which is what
+ *  tells the two sprites apart. `null` = the tile is empty. */
 function tileInk(px: ImageData, col: number, row: number, bw: number, bh: number, dpr: number): Ink | null {
     const cols = new Array<number>(bw).fill(0)
     const rows = new Array<number>(bh).fill(0)
@@ -247,7 +249,12 @@ function tileInk(px: ImageData, col: number, row: number, bw: number, bh: number
         return at / w
     }
     if (Math.max(...cols) === 0) return null
-    return { cx: peak(cols) / dpr, cy: peak(rows) / dpr }
+    const rowMax = Math.max(...rows)
+    let strokes = 0
+    rows.forEach((v, i) => {
+        if (v >= rowMax / 2 && !(i > 0 && rows[i - 1]! >= rowMax / 2)) strokes++
+    })
+    return { cx: peak(cols) / dpr, cy: peak(rows) / dpr, strokes }
 }
 
 async function spritePixels(url: string) {
@@ -294,6 +301,8 @@ async function probeGrid(root: HTMLElement) {
 
         // the mask actually applied: this edge set's sprite, sliced into one-glyph tiles, round
         const cs = getComputedStyle(el)
+        // the ink is the element's background-color seen through the mask: transparent = nothing paints
+        expect(cs.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
         const src = urlOf(cs.webkitMaskBoxImageSource)
         if (!src.startsWith('data:image/png')) {
             problems.push(`[${el.dataset.edges}] has no glyph sprite (${cs.webkitMaskBoxImageSource.slice(0, 40)})`)
@@ -344,6 +353,8 @@ async function probeGrid(root: HTMLElement) {
                 if (Math.abs(bar.cx - plus.cx) > 1) problems.push(`'|' ${(bar.cx - plus.cx).toFixed(2)}px off the '+' stem`)
             }
             const run = ink(1, row)
+            if (run && run.strokes !== (heavy.includes(v) ? 2 : 1))
+                problems.push(`[${el.dataset.edges}] ${v} run has ${run.strokes} strokes, want ${heavy.includes(v) ? 2 : 1}`)
             if (run) {
                 stats.maxDy = Math.max(stats.maxDy, Math.abs(run.cy - plus.cy))
                 if (Math.abs(run.cy - plus.cy) > 1) problems.push(`'${heavy.includes(v) ? '=' : '-'}' ${(run.cy - plus.cy).toFixed(2)}px off the '+' crossbar`)

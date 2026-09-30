@@ -151,14 +151,16 @@ function readMetrics() {
     return out
 }
 
-function install(): void {
+function install(retried = false): void {
     const m = readMetrics()
     if (!m.family || !(m.size > 0) || !(m.cellH > 0)) return
     const dpr = window.devicePixelRatio || 1
     const font = `400 ${m.size}px ${m.family}`
-    // never rasterise from a fallback face: wait for the real one, then come back
-    if (!document.fonts.check(font, '+-=|')) {
-        document.fonts.load(font, '+-=|').then(install, () => {})
+    // never rasterise from a fallback face: wait for the real one and come back ONCE. If the load
+    // rejects (a face that 404s) or the check is still false after it, draw with whatever face
+    // resolved rather than leave the mask transparent and the whole grid invisible.
+    if (!retried && !document.fonts.check(font, '+-=|')) {
+        document.fonts.load(font, '+-=|').then(() => install(true), () => install(true))
         return
     }
     const key = tileCacheKey(m.family, m.size, m.cellH, dpr)
@@ -207,12 +209,21 @@ function install(): void {
 
 /** Rasterise and install the sprites for the current font / size / cell height / dpr, once the
  *  UI font has loaded. Idempotent and cheap when nothing in the key changed; a no-op outside the
- *  DOM. Called from settingsCssVars.ts's setCssVars, which every surface routes through. */
+ *  DOM. Re-runs from settingsCssVars.ts's setCssVars (which every surface routes through), from
+ *  the fonts `loadingdone` event, and from a resolution watcher — a devicePixelRatio change (the
+ *  window moved between a 2x and a 1x display, or the app zoom in zoom.ts) fires no event of its
+ *  own, but a `(resolution: <dpr>dppx)` media query stops matching, and `install()` re-keys on dpr. */
 export function refreshAsciiGlyphTiles(): void {
     if (typeof document === 'undefined' || typeof window === 'undefined' || !document.fonts) return
     if (!listening) {
         listening = true
         document.fonts.addEventListener('loadingdone', () => refreshAsciiGlyphTiles())
+        const watchDpr = () => {
+            window
+                .matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+                .addEventListener('change', () => { refreshAsciiGlyphTiles(); watchDpr() }, { once: true })
+        }
+        watchDpr()
     }
     if (scheduled) return
     scheduled = true
