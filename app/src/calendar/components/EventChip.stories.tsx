@@ -1,24 +1,17 @@
 // Visual spec for <EventChip> — the single event pill rendered inside the day grid, month
-// cell, and all-day row. Category colour(s) determine the fill: one category tints solid,
-// two+ blend into a gradient, and no resolvable category renders an outline-only "ghost"
-// chip (categoryColor.ts's categoryFill()).
+// cell, and all-day row. Its category colour(s) draw a 1px frame + 2px leading edge over a faint
+// wash of the first category, title in the prose face; a 2+ category event splits its frame into
+// one band per category and shows a dot per category (up to three, then "+n"); no resolvable
+// category renders an outline-only "ghost" chip.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { showEventModal, events } from '../state'
 import { toasts } from '../../toastStore'
 import { EventChip } from './EventChip'
 import { EventStore, MemoryBackend } from '../EventStore'
-import { createSignal, For, onMount, Show } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { CalendarEvent, Category } from '../types'
 import { Row } from '../../ui/_storyKit'
-import { seedCalendarState } from '../../ui/_calendarFixtures'
-import CalendarFrame from './CalendarFrame'
-import { DayView } from './views/DayView'
-import { WeekView } from './views/WeekView'
-import MonthCell from './views/MonthCell'
-import DragGhost from './views/DragGhost'
-import { ghostBox } from './views/timeGridLayout'
-import { categoryFill, eventCategoryColors } from '../categoryColor'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -57,9 +50,9 @@ export const Default: Story = {
     ),
 }
 
-/** Three variants side by side: a multi-category gradient chip, an outline-only "ghost"
- *  chip (no resolvable category), and the compact layout TimeGrid uses for short
- *  (<= 30min) blocks. */
+/** The variants side by side: two-, three- and four-category chips (split frame + a dot per
+ *  category, "+1" past three), an outline-only "ghost" chip (no resolvable category), and the
+ *  compact layout TimeGrid uses for short (<= 30min) blocks. */
 export const Variants: Story = {
     render: () => (
         <Row gap="10px" column>
@@ -73,6 +66,34 @@ export const Variants: Story = {
                         categories: ['Work', 'Focus'],
                     }}
                     categories={CATEGORIES}
+                    store={store}
+                />
+            </div>
+            <div style={{ width: '220px' }}>
+                <EventChip
+                    event={{
+                        id: '2b',
+                        title: 'Offsite dinner',
+                        date: '2026-01-16',
+                        startTime: '19:00',
+                        endTime: '21:00',
+                        category: 'Work',
+                        categories: ['Work', 'Personal', 'Focus'],
+                    }}
+                    categories={CATEGORIES}
+                    store={store}
+                />
+            </div>
+            <div style={{ width: '220px' }}>
+                <EventChip
+                    event={{
+                        id: '2c',
+                        title: 'Everything at once',
+                        date: '2026-01-16',
+                        category: 'Work',
+                        categories: ['Work', 'Personal', 'Focus', 'Health'],
+                    }}
+                    categories={[...CATEGORIES, { name: 'Health', color: 'green' }]}
                     store={store}
                 />
             </div>
@@ -108,6 +129,19 @@ export const Variants: Story = {
             </div>
         </Row>
     ),
+    play: async ({ canvasElement }) => {
+        const chips = within(canvasElement).getAllByTestId('event-chip')
+        // StatusDot marks itself with data-size; the "+n" is plain Text
+        const dots = (el: HTMLElement) => el.querySelectorAll('[data-size]').length
+        // one dot per category for 2 and 3; three dots + a "+1" past three; none on a single category
+        expect(dots(chips[0])).toBe(2)
+        expect(dots(chips[1])).toBe(3)
+        expect(dots(chips[2])).toBe(3)
+        expect(chips[2].textContent).toContain('+1')
+        expect(dots(chips[4])).toBe(0)
+        // the two-category frame is the banded image; a single category's is too (one band)
+        expect(getComputedStyle(chips[0]).borderImageSource).toContain('linear-gradient')
+    },
 }
 
 /** A wrapping location line. The chip's meta row renders `location` at --fs-micro (10.5px),
@@ -280,170 +314,5 @@ export const DeleteIsImmediateWithUndo: Story = {
         await waitFor(() => expect(toasts().some(t => t.message === 'deleted Doomed sync')).toBe(true))
         expect(toasts().find(t => t.message === 'deleted Doomed sync')?.action?.label).toBe('undo')
         expect(events.value.length).toBe(0)
-    },
-}
-
-
-// ---- event-look comparison — phase 2 keeps one ----------------------------------------------
-
-const LOOKS = ['tint', 'outline', 'outline-tint'] as const
-
-const LOOK_DAY = '2026-01-12'
-const LOOK_EVENTS: CalendarEvent[] = [
-    { id: 'lk-1', title: 'Conference', date: LOOK_DAY, category: 'Work', categories: ['Work', 'Focus'] },
-    { id: 'lk-2', title: 'Dentist', date: LOOK_DAY, category: 'Personal' },
-    { id: 'lk-3', title: 'Standup', date: LOOK_DAY, startTime: '08:30', endTime: '08:45', category: 'Work' },
-    { id: 'lk-4', title: 'Sync with design', date: LOOK_DAY, startTime: '09:30', endTime: '10:30', category: 'Work' },
-    { id: 'lk-5', title: '1:1 with manager', date: LOOK_DAY, startTime: '09:45', endTime: '10:15', category: 'Personal' },
-    { id: 'lk-6', title: 'Focus block', date: LOOK_DAY, startTime: '10:00', endTime: '11:30', category: 'Focus' },
-    { id: 'lk-7', title: 'Team offsite planning', date: LOOK_DAY, startTime: '12:00', endTime: '13:30', category: 'Work', categories: ['Work', 'Focus'] },
-    { id: 'lk-8', title: 'Unfiled reminder', date: LOOK_DAY, startTime: '14:00', endTime: '15:00' },
-    { id: 'lk-9', title: 'Speak Out BBQ', date: LOOK_DAY, startTime: '15:30', endTime: '17:00', category: 'Personal', location: 'Marina Park, San Leandro' },
-]
-
-/** One look's column: the real DayView (all-day row, a compact block, three overlapping lanes, a
- *  two-category block, an uncategorised block, a block with a location), a month cell's pills of
- *  the same events, and the drag ghost for a create and for a two-category move. */
-const LookColumn = (props: { look: (typeof LOOKS)[number] }) => {
-    let host!: HTMLDivElement
-    // The day view opens at midnight; scroll its body to 8am so the fixtures are in view.
-    onMount(() =>
-        requestAnimationFrame(() => {
-            for (const el of host.querySelectorAll<HTMLElement>('*'))
-                if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = 7.5 * 50
-        }),
-    )
-    const moveFill = categoryFill(eventCategoryColors(LOOK_EVENTS[6], CATEGORIES)) ?? 'var(--accent)'
-    return (
-        <div ref={host} data-event-look={props.look} style={{ flex: '1', 'min-width': '0' }}>
-            <Row label={props.look} column gap="12px">
-                <div style={{ height: '500px' }}>
-                    <CalendarFrame>
-                        <DayView store={store} />
-                    </CalendarFrame>
-                </div>
-                <div style={{ width: '220px' }}>
-                    <MonthCell date={LOOK_DAY} day={12} inMonth today={false} onOpen={() => {}}>
-                        <For each={LOOK_EVENTS.filter(e => e.id !== 'lk-5' && e.id !== 'lk-9')}>
-                            {e => <EventChip event={e} categories={CATEGORIES} store={store} />}
-                        </For>
-                    </MonthCell>
-                </div>
-                <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
-                    <DragGhost {...ghostBox(0, 90)} startMin={540} endMin={630} color="var(--accent)" />
-                </div>
-                <div style={{ position: 'relative', height: '84px', border: '1px solid var(--border-soft)' }}>
-                    <DragGhost {...ghostBox(0, 90)} startMin={720} endMin={810} color={moveFill} />
-                </div>
-            </Row>
-        </div>
-    )
-}
-
-type TitleFont = 'mono' | 'prose'
-
-/** The candidate event looks side by side, over the SAME fixtures and the real views: a day view
- *  (all-day row, compact, overlapping lanes, two categories, uncategorised, a location), a month
- *  cell's pills, and the drag ghost for a create and a two-category move. `titleFont` flips every
- *  title between the mono UI face and the prose serif. Pick one; phase 2 deletes the rest. */
-export const LookComparison: StoryObj<{ titleFont: TitleFont }> = {
-    parameters: { layout: 'fullscreen' },
-    args: { titleFont: 'prose' },
-    argTypes: { titleFont: { control: 'inline-radio', options: ['mono', 'prose'] } },
-    render: args => {
-        seedCalendarState({ date: new Date(2026, 0, 12), categories: CATEGORIES, events: LOOK_EVENTS })
-        return (
-            <div
-                data-event-title={args.titleFont}
-                style={{ display: 'flex', gap: '20px', padding: '16px', background: 'var(--bg)' }}
-            >
-                <For each={LOOKS}>{look => <LookColumn look={look} />}</For>
-            </div>
-        )
-    },
-    play: async ({ canvasElement }) => {
-        for (const look of LOOKS) {
-            const col = canvasElement.querySelector<HTMLElement>(`[data-event-look="${look}"]`)!
-            // every fixture that should reach the grid did (all-day row + month pills + timed blocks)
-            await waitFor(() => expect(within(col).getAllByTestId('event-chip').length).toBeGreaterThanOrEqual(16))
-        }
-    },
-}
-
-// A realistic busy week — back-to-back meetings in one category, overlaps, two-category and
-// unfiled events — because one light day is exactly where the looks differ least.
-const WEEK_CATEGORIES: Category[] = [...CATEGORIES, { name: 'Health', color: 'green' }, { name: 'Admin', color: 'gold' }]
-const wk = (d: number, id: string, title: string, start: string, end: string, cats: string[] = []): CalendarEvent => ({
-    id, title, date: `2026-01-${String(d).padStart(2, '0')}`, startTime: start, endTime: end,
-    ...(cats.length ? { category: cats[0], categories: cats } : {}),
-})
-const WEEK_EVENTS: CalendarEvent[] = [
-    { id: 'w-ad1', title: 'Conference', date: '2026-01-14', category: 'Work', categories: ['Work', 'Focus'] },
-    { id: 'w-ad2', title: 'Rent due', date: '2026-01-16', category: 'Admin' },
-    wk(12, 'w1', 'Standup', '09:00', '09:15', ['Work']),
-    wk(12, 'w2', 'Design review', '09:30', '10:30', ['Work']),
-    wk(12, 'w3', 'Roadmap sync', '10:30', '11:30', ['Work']),
-    wk(12, 'w4', 'Lunch with Sam', '12:00', '13:00', ['Personal']),
-    wk(12, 'w5', 'Deep work', '13:30', '16:00', ['Focus']),
-    wk(13, 'w6', 'Standup', '09:00', '09:15', ['Work']),
-    wk(13, 'w7', 'Dentist', '10:00', '11:00', ['Health']),
-    wk(13, 'w8', '1:1 with manager', '11:00', '11:30', ['Work']),
-    wk(13, 'w9', 'Call the bank', '14:00', '14:30'),
-    wk(13, 'w10', 'Pairing', '14:00', '15:30', ['Work', 'Focus']),
-    wk(14, 'w11', 'Standup', '09:00', '09:15', ['Work']),
-    wk(14, 'w12', 'Interview loop', '10:00', '12:00', ['Work']),
-    wk(14, 'w13', 'Hiring debrief', '11:00', '11:45', ['Work']),
-    wk(14, 'w14', 'Gym', '17:00', '18:00', ['Health']),
-    wk(15, 'w15', 'Standup', '09:00', '09:15', ['Work']),
-    wk(15, 'w16', 'Focus block', '09:30', '12:00', ['Focus']),
-    wk(15, 'w17', 'Taxes', '13:00', '14:00', ['Admin']),
-    wk(15, 'w18', 'Coffee with Ana', '15:00', '15:45', ['Personal']),
-    wk(16, 'w19', 'Standup', '09:00', '09:15', ['Work']),
-    wk(16, 'w20', 'Demo prep', '10:00', '11:00', ['Work']),
-    wk(16, 'w21', 'Team demo', '11:00', '12:00', ['Work']),
-    wk(16, 'w22', 'Retro', '12:00', '13:00', ['Work']),
-    wk(16, 'w23', 'Unfiled thing', '15:00', '16:00'),
-    wk(17, 'w24', 'Farmers market', '10:00', '11:30', ['Personal']),
-    wk(17, 'w25', 'Run', '08:00', '09:00', ['Health']),
-    wk(18, 'w26', 'Family dinner', '17:30', '19:30', ['Personal']),
-]
-
-const WeekLook = (props: { look: (typeof LOOKS)[number] }) => {
-    let host!: HTMLDivElement
-    onMount(() =>
-        requestAnimationFrame(() => {
-            for (const el of host.querySelectorAll<HTMLElement>('*'))
-                if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = 7.5 * 50
-        }),
-    )
-    return (
-        <div ref={host} data-event-look={props.look}>
-            <Row label={props.look} column gap="8px">
-                <div style={{ height: '620px' }}>
-                    <CalendarFrame>
-                        <WeekView store={store} />
-                    </CalendarFrame>
-                </div>
-            </Row>
-        </div>
-    )
-}
-
-/** The same candidate looks over a full, busy week (stacked, one week view per look) — the case a
- *  calendar is actually read in. Same `titleFont` switch as LookComparison. */
-export const LookComparisonWeek: StoryObj<{ titleFont: TitleFont }> = {
-    parameters: { layout: 'fullscreen' },
-    args: { titleFont: 'prose' },
-    argTypes: { titleFont: { control: 'inline-radio', options: ['mono', 'prose'] } },
-    render: args => {
-        seedCalendarState({ date: new Date(2026, 0, 12), categories: WEEK_CATEGORIES, events: WEEK_EVENTS })
-        return (
-            <div
-                data-event-title={args.titleFont}
-                style={{ display: 'flex', 'flex-direction': 'column', gap: '28px', padding: '16px', background: 'var(--bg)' }}
-            >
-                <For each={LOOKS.filter(l => l !== 'outline')}>{look => <WeekLook look={look} />}</For>
-            </div>
-        )
     },
 }

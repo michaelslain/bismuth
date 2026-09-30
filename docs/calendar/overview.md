@@ -463,13 +463,11 @@ Converts a stored color to a CSS value usable in `background` / `color` inline s
 - Any other string (hex, `rgb()`, named color) → passed through unchanged
 - `undefined` → `"var(--accent)"`
 
-Used by `EventChip` to tint chips:
-```typescript
-// chip background: category color at 85% opacity, blended with transparent
-`color-mix(in srgb, ${resolveCategoryColor(cat.color)} 85%, transparent)`
-```
+Used by `EventChip` (via `eventCategoryColors`) to draw chips. A chip is a **1px frame + a 2px leading edge in the category hue, over a 14% wash of that hue** (`color-mix(in srgb, <hue> 14%, var(--bg))`), with the time in `--text-muted` and the title in `--fg`, in the prose face (`<Text register="prose">`). The colours reach the stylesheet as custom properties (`--ev-c`, `--ev-frame`), never an inline `background`.
 
-Events with no matching category get class `ghost` (outline-only, no fill).
+**Multi-category events** keep ONE wash (the first category's — it is one event) but split the frame: `categoryBands(colors, 90)` returns hard-edged bands (coincident gradient stops, never a blend) that `border-image` paints, so the top and bottom rules show one band per category. The chip also shows a `StatusDot` per category at its first line's trailing edge — up to `MAX_BANDS` (3), then a `+n` from `categoryOverflow()`.
+
+Events with no matching category get class `ghost` (a `--border` outline over the bare ground, muted ink). The time-grid drag preview (`DragGhost`) takes the moved event's `colors` and draws the same frame + wash (accent for a create).
 
 ### `categoryColorHex(color)`
 

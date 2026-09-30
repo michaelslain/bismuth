@@ -1,12 +1,7 @@
 /* The absolutely-positioned slot one timed event occupies in a day column. */
 .slot { position: absolute; overflow: hidden; z-index: 1; cursor: grab; }
-/* A stacked (overlapping) chip reads a flat inset separator against the one behind it — not a
-   blurred elevation shadow. */
-.stacked { box-shadow: inset 2px 0 0 0 var(--bg); }
+/* A stacked (overlapping) lane rules itself off from the lane behind with a hard, 0-blur line of
+   ground drawn OUTSIDE its box — 2px on the left, 1px on top — so it paints over the event it
+   overlaps. (An inset shadow here paints UNDER the chip that fills the slot and never shows.) */
+.stacked { box-shadow: -2px -1px 0 0 var(--bg); }
 .dim { opacity: 0.3; }
-
-/* event-look comparison — phase 2 keeps one. The inset separator above paints UNDER the chip that
-   fills the slot, so it never shows. Under every candidate look a stacked lane instead rules itself
-   off from the lane behind with a hard (0-blur) line of ground drawn OUTSIDE its box — 2px on the
-   left, 1px on top — which paints over the event it overlaps rather than under its own chip. */
-[data-event-look] .stacked { box-shadow: -2px -1px 0 0 var(--bg); }

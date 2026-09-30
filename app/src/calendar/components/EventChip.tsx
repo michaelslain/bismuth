@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js'
+import { createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
 import { showEventModal, settings, recurrenceAction } from '../state'
@@ -8,11 +8,12 @@ import CalendarChip from './CalendarChip'
 import { useOverflowHide } from './useOverflowHide'
 import { pushToast } from '../../toastStore'
 import { formatTime } from '../dates'
-import { eventCategoryColors, categoryFill, categoryBands } from '../categoryColor'
+import { eventCategoryColors, categoryBands, categoryOverflow, MAX_BANDS } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
 import Text from '../../ui/Text'
+import StatusDot from '../../ui/StatusDot'
 import { gestureStops } from '../../ui/stopGestures'
 import styles from './EventChip.module.css'
 
@@ -28,24 +29,25 @@ interface Props {
 }
 
 export function EventChip(props: Props) {
-    // The chip is tinted by its category's colour (a theme token → var(--token), or a
-    // custom colour). Multiple categories blend into a linear-gradient across the chip;
-    // events with no resolvable category render as an outline-only ghost.
+    // The chip is drawn in its categories' colours (a theme token → var(--token), or a custom
+    // colour): a 1px frame, a 2px leading edge and a faint wash of the FIRST category behind
+    // --fg ink. A 2+ category event splits its frame into one hard band per category and shows a
+    // dot per category, while its wash stays one colour — one event, visibly several categories.
+    // Events with no resolvable category render as an outline-only ghost.
     const chipColors = () => eventCategoryColors(props.event, props.categories)
     const hasCategory = () => chipColors().length > 0
+    const isMulti = () => chipColors().length > 1
     // The colours travel as custom properties, not an inline `background`, so the stylesheet
-    // decides how to paint them: `--ev-fill` is today's fill, `--ev-c` the first category, and
-    // `--ev-edge` / `--ev-cap` every category as hard bands for a thin edge (stacked) or cap (side
-    // by side). An inline `background` would outrank every rule in the module.
+    // decides how to paint them (an inline `background` would outrank every rule in the module):
+    // `--ev-c` is the first category, `--ev-frame` every category as side-by-side hard bands,
+    // `--ev-dots` how many dots the chip reserves room for.
     const chipVars = () => {
         const colors = chipColors()
         if (!colors.length) return undefined
         return {
-            '--ev-fill': categoryFill(colors)!,
             '--ev-c': colors[0],
-            '--ev-c2': colors[1] ?? colors[0],
-            '--ev-edge': categoryBands(colors, 180)!,
-            '--ev-cap': categoryBands(colors, 90)!,
+            '--ev-frame': categoryBands(colors, 90)!,
+            '--ev-dots': String(Math.min(colors.length, MAX_BANDS)),
         }
     }
     const military = () => settings.value.militaryTime
@@ -103,8 +105,20 @@ export function EventChip(props: Props) {
             data-testid="event-chip"
             class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}${props.inGrid ? ` ${styles['in-grid']}` : ''}`}
             style={chipVars()}
-            data-multi={chipColors().length > 1 ? '' : undefined}
+            data-multi={isMulti() ? '' : undefined}
         >
+            <Show when={isMulti()}>
+                <div class={styles['event-chip-dots']} aria-hidden="true">
+                    <For each={chipColors().slice(0, MAX_BANDS)}>
+                        {color => <StatusDot color={color} />}
+                    </For>
+                    <Show when={categoryOverflow(chipColors()) > 0}>
+                        <Text as="span" inherit class={styles['event-chip-more']}>
+                            +{categoryOverflow(chipColors())}
+                        </Text>
+                    </Show>
+                </div>
+            </Show>
             <Show when={props.event.startTime}>
                 <Text as="span" inherit class={styles['event-chip-time']}>
                     {formatTime(props.event.startTime!, military())}
@@ -114,7 +128,7 @@ export function EventChip(props: Props) {
                         : ''}
                 </Text>
             </Show>
-            <Text as="span" inherit class={styles['event-chip-title']}>
+            <Text as="span" inherit register="prose" class={styles['event-chip-title']}>
                 {props.event.title}
             </Text>
             <Show when={props.event.location || props.event.link}>
