@@ -56,6 +56,24 @@ export const Default: Story = {
             </div>
         )
     },
+    // The grid is typed, closed on all four sides, each boundary typed by exactly one cell:
+    // header + body cells each type a top-left `+`, except the first body row (the header's heavy
+    // `=` is its top); the right column adds top-right, the last row adds bottom-right.
+    play: async ({ canvasElement }) => {
+        const cells = canvasElement.querySelectorAll('[data-testid="month-cell"]').length
+        const rows = cells / 7
+        const n = (corner: string) =>
+            canvasElement.querySelectorAll(`[data-corner="${corner}"]`).length
+        expect(n('top-left')).toBe(7 + 7 * (rows - 1))
+        expect(n('top-right')).toBe(rows)
+        expect(n('bottom-left')).toBe(14) // the header's heavy underline + the last row, one per column
+        expect(n('bottom-right')).toBe(2) // the header's last column + the grid's last cell
+        // the header is tall enough (two line boxes) for a whole `|` between its corners
+        const head = canvasElement
+            .querySelector<HTMLElement>('[data-testid="month-day-name"]')!
+            .parentElement!.getBoundingClientRect()
+        expect(head.height).toBeGreaterThanOrEqual(36)
+    },
 }
 
 /** One day packed with six events, to see how the month grid handles a dense day — the
@@ -218,8 +236,13 @@ export const QuietTasks: Story = {
             scroller.clientHeight + 1,
         )
         const last = cells[cells.length - 1].getBoundingClientRect()
+        // the scroller pads its bottom by half a line box, room for the last row's typed `-`
+        const padBottom = parseFloat(getComputedStyle(scroller).paddingBottom)
+        expect(padBottom).toBeGreaterThan(0)
         expect(
-            Math.abs(last.bottom - scroller.getBoundingClientRect().bottom),
+            Math.abs(
+                last.bottom - (scroller.getBoundingClientRect().bottom - padBottom),
+            ),
         ).toBeLessThanOrEqual(2)
         const heights = new Set(
             cells.map(c => Math.round(c.getBoundingClientRect().height)),

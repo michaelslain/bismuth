@@ -1,7 +1,9 @@
 /* One day of the month grid. Rows GROW, they do not squash (see MonthView.module.css): the cell
    is content-sized, floored by its own min-height. The number owns the top-left; a `[data-add-task]`
-   button (TaskDayCell) is absolutely positioned into the top-right and shown on hover/focus. */
-.cell { position: relative; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: var(--sp-4); min-height: var(--month-cell-min-h, 80px); min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-2); }
+   button (TaskDayCell) is absolutely positioned into the top-right and shown on hover/focus. The cell's
+   edges are typed by an <AsciiCellEdges> overlay (see MonthCell.tsx), whose glyphs straddle the
+   boundary — so the cell must not clip, and the content stays inside the padding. */
+.cell { position: relative; padding: var(--sp-4); min-height: var(--month-cell-min-h, 80px); min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-2); }
 .cell:hover { background: var(--hover-bg); }
 .cell:hover [data-add-task], .cell:focus-within [data-add-task] { opacity: 1; }
 .number { font-size: var(--fs-ui); font-weight: 400; color: var(--text-muted); flex-shrink: 0; }
