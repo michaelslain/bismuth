@@ -1,0 +1,105 @@
+/* app/src/ui/ascii/AsciiCellEdges.module.css — the typed cell-grid overlay. Sole importer:
+   AsciiCellEdges.tsx.
+
+   Every glyph is real text in the UI mono face, set as a pseudo-element `content` string so a
+   non-virtualized table of thousands of cells carries no per-cell text nodes. Runs are clipped
+   by their own box (overflow hidden, white-space pre), so a fluid cell width just cuts the last
+   glyph; the HOST does not clip, which is what lets a line box straddle the cell boundary.
+
+   Geometry, all measured from the host's padding box (the overlay is inset:0):
+     - a horizontal run is one line box (--cell-h) centred on its edge, spanning the room between
+       the two corner `+` glyphs (each one `ch` wide, centred on its corner), i.e. from half a
+       `ch` right of the left edge to half a `ch` left of the right edge;
+     - a vertical run is a stack of `|` lines, one per --cell-h, one `ch` wide and centred on
+       its edge, spanning from half a line below the top edge to half a line above the bottom.
+   A run is clipped to a WHOLE number of glyphs (round(down …)) and the leftover is split
+   evenly at both ends, so a fluid width never prints a sliver of a cut glyph beside a `+`; the
+   gap it leaves at each end is at most half a glyph.
+   `+`, `-` and `=` share a font, size and line-height, so their crossbars are colinear by
+   construction; `--stroke-dy` lifts them all together so the stroke lands ON the boundary
+   rather than on the line box's centre (a glyph's stroke sits above its line box's middle). */
+
+.edges {
+    /* the stroke's own height above its line box's centre, measured off the rendered glyph —
+       see AsciiCellEdges.stories.tsx's probe, which asserts it stays within 1px */
+    --stroke-dy: 0.067em;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    color: var(--faint);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    font-weight: 400;
+    line-height: var(--cell-h);
+    white-space: pre;
+    /* Monaspace's texture healing and ligatures re-space runs of - = + and would break the
+       one-glyph-one-ch rule the whole overlay is built on */
+    font-variant-ligatures: none;
+    font-feature-settings: 'calt' 0, 'liga' 0;
+    font-kerning: none;
+    /* the room a run has between its two corners, and how much of it whole glyphs can fill */
+    --room-x: calc(100% - 1ch);
+    --room-y: calc(100% - var(--cell-h));
+    --fit-x: round(down, var(--room-x), 1ch);
+    --fit-y: round(down, var(--room-y), var(--cell-h));
+}
+
+.firm {
+    color: var(--border);
+}
+
+.run,
+.corner,
+.bar {
+    position: absolute;
+    overflow: hidden;
+}
+
+.run {
+    left: calc(0.5ch + (var(--room-x) - var(--fit-x)) / 2);
+    width: var(--fit-x);
+    height: var(--cell-h);
+}
+
+.top {
+    top: calc(var(--cell-h) / -2 + var(--stroke-dy));
+}
+
+.bottom {
+    bottom: calc(var(--cell-h) / -2 - var(--stroke-dy));
+}
+
+.rule::before {
+    content: '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------';
+}
+
+.heavy::before {
+    content: '============================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================';
+}
+
+.bar {
+    width: 1ch;
+    top: calc(var(--cell-h) / 2 + (var(--room-y) - var(--fit-y)) / 2);
+    height: var(--fit-y);
+}
+
+.bar::before {
+    content: '|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|';
+}
+
+.left {
+    left: -0.5ch;
+}
+
+.right {
+    right: -0.5ch;
+}
+
+.corner {
+    width: 1ch;
+    height: var(--cell-h);
+}
+
+.corner::before {
+    content: '+';
+}
