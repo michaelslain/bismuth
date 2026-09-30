@@ -1,6 +1,6 @@
-// The typed cell-grid overlay: draws a cell's edges with `+ - | =` as real text, so a table or a
-// calendar is typed on the character grid rather than drawn with `border`. See DESIGN.md's Typed
-// Grid Rule.
+// The typed cell-grid overlay: draws a cell's edges with the UI font's own `+ - | =` glyphs
+// (rasterised once into mask tiles by asciiGlyphTiles.ts), so a table or a calendar is typed on
+// the character grid rather than drawn with `border`. See DESIGN.md's Typed Grid Rule.
 //
 // Host contract: the host cell is `position: relative` and does not clip (the glyphs straddle
 // the boundary — half a line box above the top edge, half a `ch` left of the left edge). Render
@@ -8,7 +8,8 @@
 // types its top + left; the last column adds right, the last row adds bottom; a header types its
 // bottom heavy and the first body row omits top; a summary row types its top heavy and the row
 // above omits bottom; a full-width band types top, left, right (no interior `|`).
-import { Show, type Component } from 'solid-js'
+import { createMemo, type Component } from 'solid-js'
+import { edgeAttrs, edgesKey } from './asciiGlyphTiles'
 import styles from './AsciiCellEdges.module.css'
 
 export type AsciiEdge = 'top' | 'right' | 'bottom' | 'left'
@@ -26,43 +27,21 @@ export type AsciiCellEdgesProps = {
 }
 
 const AsciiCellEdges: Component<AsciiCellEdgesProps> = props => {
-    const has = (edge: AsciiEdge) => (props.edges ?? ['top', 'left']).includes(edge)
-    const weight = (edge: 'top' | 'bottom') =>
-        (props.edgeWeight?.[edge] ?? props.weight ?? 'rule') === 'heavy'
-            ? styles.heavy
-            : styles.rule
-    // a corner is typed only where BOTH of its edges are drawn
-    const corner = (v: 'top' | 'bottom', h: 'left' | 'right') => has(v) && has(h)
+    // ONE memo per instance: the edge set as the two runtime hooks the stylesheet selects the
+    // glyph sprite from — `data-edges` (drawn edges, `top right bottom left` order) and
+    // `data-heavy` (the ones typed `=`, absent when none)
+    const attrs = createMemo(() =>
+        edgeAttrs(edgesKey(props.edges, props.weight, props.edgeWeight)),
+    )
+    // ONE element, no children: the edges are a nine-slice mask of the UI font's own glyphs
+    // (asciiGlyphTiles.ts) over the ink colour
     return (
         <div
             aria-hidden="true"
+            data-edges={attrs().edges}
+            data-heavy={attrs().heavy}
             class={`${styles.edges} ${props.ink === 'firm' ? styles.firm : ''} ${props.class ?? ''}`}
-        >
-            <Show when={has('top')}>
-                <div class={`${styles.run} ${styles.top} ${weight('top')}`} />
-            </Show>
-            <Show when={has('bottom')}>
-                <div class={`${styles.run} ${styles.bottom} ${weight('bottom')}`} />
-            </Show>
-            <Show when={has('left')}>
-                <div class={`${styles.bar} ${styles.left}`} />
-            </Show>
-            <Show when={has('right')}>
-                <div class={`${styles.bar} ${styles.right}`} />
-            </Show>
-            <Show when={corner('top', 'left')}>
-                <div class={`${styles.corner} ${styles.top} ${styles.left}`} data-corner="top-left" />
-            </Show>
-            <Show when={corner('top', 'right')}>
-                <div class={`${styles.corner} ${styles.top} ${styles.right}`} data-corner="top-right" />
-            </Show>
-            <Show when={corner('bottom', 'left')}>
-                <div class={`${styles.corner} ${styles.bottom} ${styles.left}`} data-corner="bottom-left" />
-            </Show>
-            <Show when={corner('bottom', 'right')}>
-                <div class={`${styles.corner} ${styles.bottom} ${styles.right}`} data-corner="bottom-right" />
-            </Show>
-        </div>
+        />
     )
 }
 

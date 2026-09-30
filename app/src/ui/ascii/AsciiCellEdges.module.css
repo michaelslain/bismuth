@@ -1,126 +1,79 @@
 /* app/src/ui/ascii/AsciiCellEdges.module.css — the typed cell-grid overlay. Sole importer:
    AsciiCellEdges.tsx.
 
-   Every glyph is real text in the UI mono face, set as a pseudo-element `content` string so a
-   non-virtualized table of thousands of cells carries no per-cell text nodes. Runs are clipped
-   by their own box (overflow hidden, white-space pre), so a fluid cell width just cuts the last
-   glyph; the HOST does not clip, which is what lets a line box straddle the cell boundary.
+   ONE element per cell and no children: the edges are a nine-slice MASK over a background-color of
+   the ink token. The mask is a 3x3 sprite of the UI font's own `+ - = |` glyphs, rasterised once by
+   asciiGlyphTiles.ts (canvas fillText in the computed --ui-font-stack at --fs-ui, one tile = the
+   font's `ch` x --cell-h at devicePixelRatio) and installed on :root as --ascii-edges-<key>. No
+   text, no pseudo-elements, no container queries, no per-cell measurement: a 2000x8 table
+   costs one masked box per cell.
 
-   Geometry, all measured from the host's padding box (the overlay is inset:0):
-     - a horizontal run is one line box (--cell-h) centred on its edge, spanning the room between
-       the two corner `+` glyphs (each one `ch` wide, centred on its corner), i.e. from half a
-       `ch` right of the left edge to half a `ch` left of the right edge;
-     - a vertical run is a stack of `|` lines, one per --cell-h, one `ch` wide and centred on
-       its edge, spanning from half a line below the top edge to half a line above the bottom.
-   A run is clipped to a WHOLE number of glyphs (round(down …)) and the leftover is split
-   evenly at both ends, so a fluid width never prints a sliver of a cut glyph beside a `+`; the
-   gap it leaves at each end is at most half a glyph.
-   `+`, `-` and `=` share a font, size and line-height, so their crossbars are colinear by
-   construction; `--stroke-dy` lifts them all together so the stroke lands ON the boundary
-   rather than on the line box's centre (a glyph's stroke sits above its line box's middle). */
+   Geometry. The element overhangs the host by half a tile on every side (inset: -tile-h/2
+   -tile-w/2), so the nine-slice's corner tiles are centred ON the host's corners and its edge
+   tiles are centred ON the host's edges:
+     - corners paint 1:1 (a `+` is never resampled), its ink centre drawn on the tile centre;
+     - the top/bottom slices repeat `-`/`=` between the two corner tiles, and the left/right
+       slices stack `|` at --cell-h pitch between them, both with `round`: a whole number of
+       glyphs fits, stretched by under 1/(2n) of a glyph, so a fluid width never cuts a glyph
+       into a sliver beside a `+`;
+     - every glyph shares the `+`'s origin inside its tile, so `-`/`=` share its baseline and
+       `|` shares its stem, exactly as the text-run build typed them.
+   Which glyph sits in which slice is the sprite, selected by the
+   edge set's runtime hooks — data-edges (drawn edges, in top right bottom left order) and data-heavy
+   (the ones typed `=`, absent when none), asciiGlyphTiles.ts's edgeAttrs — one rule per edge set below.
+   Until the sprites are installed (the UI font still loading) the mask is fully transparent, so
+   nothing paints rather than a solid block. */
 
 .edges {
-    /* the stroke's own height above its line box's centre, measured off the rendered glyph —
-       see AsciiCellEdges.stories.tsx's probe, which asserts it stays within 1px */
-    --stroke-dy: 0.067em;
     position: absolute;
-    inset: 0;
+    top: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
+    bottom: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
+    left: calc(var(--ascii-tile-w, 1ch) / -2);
+    right: calc(var(--ascii-tile-w, 1ch) / -2);
     pointer-events: none;
-    /* size containment is harmless (the overlay is inset:0) and lets the long glyph literals below
-       switch on only where a cell really is that big; 12k cells x 700-glyph runs cost seconds */
-    container-type: size;
-    color: var(--faint);
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    font-weight: 400;
-    line-height: var(--cell-h);
-    white-space: pre;
-    /* Monaspace's texture healing and ligatures re-space runs of - = + and would break the
-       one-glyph-one-ch rule the whole overlay is built on */
-    font-variant-ligatures: none;
-    font-feature-settings: 'calt' 0, 'liga' 0;
-    font-kerning: none;
-    /* the room a run has between its two corners, and how much of it whole glyphs can fill */
-    --room-x: calc(100% - 1ch);
-    --room-y: calc(100% - var(--cell-h));
-    --fit-x: round(down, var(--room-x), 1ch);
-    --fit-y: round(down, var(--room-y), var(--cell-h));
+    background-color: var(--faint);
+    -webkit-mask-box-image-source: linear-gradient(transparent, transparent);
+    -webkit-mask-box-image-slice: var(--ascii-slice-y, 1) var(--ascii-slice-x, 1);
+    -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-tile-w, 1ch);
+    -webkit-mask-box-image-outset: 0;
+    -webkit-mask-box-image-repeat: round;
 }
 
 .firm {
-    color: var(--border);
+    background-color: var(--border);
 }
-
-.run,
-.corner,
-.bar {
-    position: absolute;
-    overflow: hidden;
-}
-
-.run {
-    left: calc(0.5ch + (var(--room-x) - var(--fit-x)) / 2);
-    width: var(--fit-x);
-    height: var(--cell-h);
-}
-
-.top {
-    top: calc(var(--cell-h) / -2 + var(--stroke-dy));
-}
-
-.bottom {
-    bottom: calc(var(--cell-h) / -2 - var(--stroke-dy));
-}
-
-.rule::before {
-    content: '------------------------------------------------------------------------------------------------------------------------';
-}
-
-.heavy::before {
-    content: '========================================================================================================================';
-}
-
-.bar {
-    width: 1ch;
-    top: calc(var(--cell-h) / 2 + (var(--room-y) - var(--fit-y)) / 2);
-    height: var(--fit-y);
-}
-
-.bar::before {
-    content: '|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|';
-}
-
-.left {
-    left: -0.5ch;
-}
-
-.right {
-    right: -0.5ch;
-}
-
-.corner {
-    width: 1ch;
-    height: var(--cell-h);
-}
-
-.corner::before {
-    content: '+';
-}
-
-/* short literals above are the default; the long ones keep the 4000px / 1300px capacity where a
-   cell is actually that big (the pseudo-elements are descendants of .edges, the container) */
-@container (min-width: 900px) {
-    .rule::before {
-        content: '----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------';
-    }
-
-    .heavy::before {
-        content: '============================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================';
-    }
-}
-
-@container (min-height: 500px) {
-    .bar::before {
-        content: '|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|\A|';
-    }
-}
+.edges[data-edges='left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0121, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1000, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1121, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2000, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2121, linear-gradient(transparent, transparent)); }

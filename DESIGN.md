@@ -521,8 +521,9 @@ linked, `@` hub, coloured by cluster from the ramp, over a noise field at 45% op
 under every edge and label.
 
 `AsciiCellEdges` types one cell's edges (`+` at every corner where two drawn edges meet, `-`
-or `=` along top and bottom, `|` down left and right) as an absolutely positioned,
-non-clipping overlay in the UI mono face; the host cell is `position: relative` and each
+or `=` along top and bottom, `|` down left and right) as ONE absolutely positioned,
+non-clipping overlay element in the UI mono face — still the face's own glyphs, rasterised once
+into mask tiles (`asciiGlyphTiles.ts`) rather than a line of text per edge; the host cell is `position: relative` and each
 boundary is owned by exactly one cell: a cell types `top` + `left`, the last column adds `right`,
 the last row adds `bottom`, a header types `bottom` as `=` and the first body row omits `top`.
 
