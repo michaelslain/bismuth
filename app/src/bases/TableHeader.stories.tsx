@@ -31,13 +31,13 @@ export const Static: Story = {
         expect(canvasElement.querySelector('th [class*="thResize"]')).toBeNull()
         // The typed grid: each header hosts its own overlay, and there is no border-bottom rule.
         for (const th of ths) {
-            expect(th.querySelector('[aria-hidden="true"]')).toBeTruthy()
-            expect(th.querySelector('[class*="heavy"]')).toBeTruthy()
+            expect(th.querySelector('[data-edges]')).toBeTruthy()
+            expect(th.querySelector('[data-heavy~="bottom"]')).toBeTruthy()
             expect(getComputedStyle(th).borderBottomWidth).toBe('0px')
         }
         // Only the last header closes the right edge.
-        expect(ths[3].querySelector('[class*="right"]')).toBeTruthy()
-        expect(ths[0].querySelector('[class*="right"]')).toBeNull()
+        expect(ths[3].querySelector('[data-edges~="right"]')).toBeTruthy()
+        expect(ths[0].querySelector('[data-edges~="right"]')).toBeNull()
     },
 }
 
@@ -75,10 +75,16 @@ export const WithBodyRow: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const th = canvasElement.querySelector('th')!.getBoundingClientRect()
-        const td = canvasElement.querySelector('td')!.getBoundingClientRect()
+        const thEl = canvasElement.querySelector('th')!
+        const tdEl = canvasElement.querySelector('td')!
+        const th = thEl.getBoundingClientRect()
+        const td = tdEl.getBoundingClientRect()
         // the body row starts where the header ends: one shared boundary, typed once
         expect(Math.abs(td.top - th.bottom)).toBeLessThanOrEqual(1)
+        // typed once: the header owns the line (its bottom, heavy), the first body cell omits its top
+        expect(thEl.querySelector('[data-edges~="bottom"]')).toBeTruthy()
+        expect(tdEl.querySelector('[data-edges]')).toBeTruthy()
+        expect(tdEl.querySelector('[data-edges~="top"]')).toBeNull()
     },
 }
 

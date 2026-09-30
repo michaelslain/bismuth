@@ -69,12 +69,13 @@ export const Default: Story = {
         expect(cells.length).toBe(3)
         // each summary cell types a heavy top, closes with left + bottom, and there is no 2px bar
         for (const c of cells) {
-            expect(c.querySelector('[class*="run"][class*="top"][class*="heavy"]')).toBeTruthy()
-            expect(c.querySelector('[class*="run"][class*="bottom"]')).toBeTruthy()
+            expect(c.querySelector('[data-edges~="top"][data-heavy~="top"]')).toBeTruthy()
+            expect(c.querySelector('[data-edges~="bottom"]')).toBeTruthy()
+            expect(c.querySelector('[data-edges~="left"]')).toBeTruthy()
             expect(getComputedStyle(c).borderTopWidth).toBe('0px')
         }
-        expect(cells[2]!.querySelector('[class*="bar"][class*="right"]')).toBeTruthy()
-        expect(cells[0]!.querySelector('[class*="bar"][class*="right"]')).toBeNull()
+        expect(cells[2]!.querySelector('[data-edges~="right"]')).toBeTruthy()
+        expect(cells[0]!.querySelector('[data-edges~="right"]')).toBeNull()
         expect((cells[0].textContent ?? '').trim()).toBe('')
         expect(cells[1].textContent).toContain('1,240')
         expect(cells[2].textContent).toContain('4.2')

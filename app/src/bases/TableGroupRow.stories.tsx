@@ -63,11 +63,13 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const td = canvasElement.querySelector('td[colspan]')!
         expect(td.getAttribute('colspan')).toBe('3')
-        // a band: left + right bars, a top run, and no bottom run, no interior bar
-        expect(td.querySelector('[class*="bar"][class*="left"]')).toBeTruthy()
-        expect(td.querySelector('[class*="bar"][class*="right"]')).toBeTruthy()
-        expect(td.querySelector('[class*="run"][class*="top"]')).toBeTruthy()
-        expect(td.querySelector('[class*="bottom"]')).toBeNull()
+        // a band: left + right edges, a top run, and no bottom edge (no interior `|` exists at all —
+        // the overlay draws the outline of its own box, so left + right + top is the whole band)
+        expect(td.querySelector('[data-edges~="left"]')).toBeTruthy()
+        expect(td.querySelector('[data-edges~="right"]')).toBeTruthy()
+        expect(td.querySelector('[data-edges~="top"]')).toBeTruthy()
+        expect(td.querySelector('[data-edges~="bottom"]')).toBeNull()
+        expect(td.querySelector('[data-edges]')!.getAttribute('data-edges')).toBe('top right left')
         expect(getComputedStyle(td).borderBottomWidth).toBe('0px')
         expect(td.textContent).toContain('doing')
         expect(td.textContent).toContain('3')
@@ -91,7 +93,7 @@ export const Several: Story = {
         expect(canvasElement.querySelectorAll('td[colspan]').length).toBe(3)
         // the band directly under the header types no top of its own
         expect(
-            canvasElement.querySelector('td[colspan]')!.querySelector('[class*="run"]'),
+            canvasElement.querySelector('td[colspan]')!.querySelector('[data-edges~="top"]'),
         ).toBeNull()
         expect(canvasElement.textContent).toContain('11')
     },

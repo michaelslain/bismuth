@@ -66,18 +66,17 @@ export const Default: Story = {
         // The grid is typed, not drawn: every body cell hosts an overlay, no cell or header
         // carries a border, the header underline is `=` and the last column closes the right edge.
         const table = canvasElement.querySelector('table')!
-        const overlays = (el: Element) => el.querySelectorAll('[aria-hidden="true"]')
         for (const c of table.querySelectorAll('td, th')) {
-            expect(overlays(c).length).toBeGreaterThan(0)
+            expect(c.querySelector('[data-edges]')).toBeTruthy()
             expect(getComputedStyle(c).borderBottomWidth).toBe('0px')
         }
-        const headerRuns = table.querySelectorAll<HTMLElement>('th [class*="heavy"]')
+        const headerRuns = table.querySelectorAll<HTMLElement>('th [data-heavy~="bottom"]')
         expect(headerRuns.length).toBe(table.querySelectorAll('th').length)
         const lastCol = table.querySelectorAll('tbody tr:first-child td')
         expect(
-            lastCol[lastCol.length - 1]!.querySelector('[class*="right"]'),
+            lastCol[lastCol.length - 1]!.querySelector('[data-edges~="right"]'),
         ).toBeTruthy()
-        expect(lastCol[0]!.querySelector('[class*="right"]')).toBeNull()
+        expect(lastCol[0]!.querySelector('[data-edges~="right"]')).toBeNull()
     },
 }
 
@@ -116,6 +115,10 @@ const LARGE_ROWS: Row[] = Array.from({ length: 2000 }, (_, i) => ({
     },
     formula: {},
 }))
+// Resolved ONCE at module level: an inline `result={runView(…)}` is a getter in Solid, so every
+// `props.result` read in the table re-ran the 2000-row query and the bench timed the story's query,
+// not the table.
+const LARGE_RESULT = runView(LARGE_CONFIG, LARGE_ROWS)
 
 /** 2000 rows x 8 columns in a fixed-height scroller: the fixture `bench/tableRenderPerf.ts`
  *  measures (render time + scroll fps), so the typed grid's cost on a big table stays a number. */
@@ -126,7 +129,7 @@ export const LargeTable: Story = {
             style={{ height: '600px', overflow: 'auto' }}
         >
             <TableView
-                result={runView(LARGE_CONFIG, LARGE_ROWS)}
+                result={LARGE_RESULT}
                 config={LARGE_CONFIG}
             />
         </div>
@@ -160,15 +163,15 @@ export const Grouped: Story = {
         for (const b of bands) expect(b.textContent).toMatch(/\S+\s*\/\/\s*\d+/)
         // A band types top/left/right only — no interior bars, no bottom — and the first band,
         // directly under the header, omits its own top too.
-        const bar = (td: HTMLElement, side: string) =>
-            td.querySelector(`[class*="bar"][class*="${side}"]`)
+        const edge = (td: HTMLElement, side: string) =>
+            td.querySelector(`[data-edges~="${side}"]`)
         for (const b of bands) {
-            expect(bar(b, 'left')).toBeTruthy()
-            expect(bar(b, 'right')).toBeTruthy()
-            expect(b.querySelector('[class*="bottom"]')).toBeNull()
+            expect(edge(b, 'left')).toBeTruthy()
+            expect(edge(b, 'right')).toBeTruthy()
+            expect(edge(b, 'bottom')).toBeNull()
         }
-        expect(bands[0]!.querySelector('[class*="top"]')).toBeNull()
-        expect(bands[1]!.querySelector('[class*="run"][class*="top"]')).toBeTruthy()
+        expect(edge(bands[0]!, 'top')).toBeNull()
+        expect(edge(bands[1]!, 'top')).toBeTruthy()
     },
 }
 
