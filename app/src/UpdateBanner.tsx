@@ -3,16 +3,24 @@
 // updateCheck.ts). The Update button starts the background self-update (POST /update/apply),
 // polls progress (GET /update/progress), and when the build is ready invokes the Tauri
 // `quit_app` command so the detached relauncher can swap the .app bundle + reopen it.
+//
+// It IS a ViewBar, not a callout: the message is the identity, the phase is a readout, update +
+// dismiss are the actions. That is what puts it on the toolbars' edges — same --h-band height, the
+// same --sp-5 inset (ViewBar renders through ui/Band), the same hairline and the same 18px `sm`
+// icon box, so the dismiss [x] sits in the column a toolbar's last icon sits in. It used to compose
+// ui/Callout, whose accent left edge and --sp-4 vertical padding made it the one strip in the
+// column that lined up with nothing. It has no stylesheet of its own on purpose: narrowing, too, is
+// ViewBar's — below its floor tier the message scrolls under the fade mask and the actions stay
+// pinned, exactly as a toolbar's lead does.
 import { createSignal, Show } from 'solid-js'
 import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
 import { pushToast } from './Toast'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
 import { plural } from './plural'
-import Callout from './ui/Callout'
+import ViewBar from './ui/ViewBar'
 import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
 import { IconButton } from './ui/IconButton'
-import styles from './UpdateBanner.module.css'
 
 function phaseLabel(p: UpdatePhase | ''): string {
     switch (p) {
@@ -27,7 +35,12 @@ function phaseLabel(p: UpdatePhase | ''): string {
     }
 }
 
-export function UpdateBanner() {
+export type UpdateBannerProps = {
+    /** Merged onto the root, so a caller can adjust one instance without forking the banner. */
+    class?: string
+}
+
+export function UpdateBanner(props: UpdateBannerProps) {
     const [dismissed, setDismissed] = createSignal(false)
     const [working, setWorking] = createSignal(false)
     const [phase, setPhase] = createSignal<UpdatePhase | ''>('')
@@ -52,29 +65,40 @@ export function UpdateBanner() {
 
     return (
         <Show when={show()}>
-            <Callout class={styles['update-banner']}>
-                <Text as="span" inherit>
-                    Bismuth update available — {plural(behind(), 'commit')}{' '}
-                    behind
-                </Text>
-                <div class={styles['update-banner-actions']}>
+            <ViewBar
+                class={props.class}
+                identity={
+                    <Text as="span" size="ui" tone="muted">
+                        Bismuth update available — {plural(behind(), 'commit')}{' '}
+                        behind
+                    </Text>
+                }
+                readouts={
                     <Show when={working()}>
-                        <Text as="span" size="micro" tone="muted">
+                        <Text as="span" size="micro" tone="faint">
                             {phaseLabel(phase())}
                         </Text>
                     </Show>
-                    <TextButton onClick={update} disabled={working()} variant="selected">
-                        {working() ? 'updating…' : 'update'}
-                    </TextButton>
-                    <IconButton
-                        icon="X"
-                        label="Dismiss"
-                        size="sm"
-                        onClick={() => setDismissed(true)}
-                        disabled={working()}
-                    />
-                </div>
-            </Callout>
+                }
+                actions={
+                    <>
+                        <TextButton
+                            onClick={update}
+                            disabled={working()}
+                            variant="selected"
+                        >
+                            {working() ? 'updating…' : 'update'}
+                        </TextButton>
+                        <IconButton
+                            icon="X"
+                            label="Dismiss"
+                            size="sm"
+                            onClick={() => setDismissed(true)}
+                            disabled={working()}
+                        />
+                    </>
+                }
+            />
         </Show>
     )
 }
