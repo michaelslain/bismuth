@@ -63,6 +63,11 @@ const CONCURRENCY = Number(arg('concurrency', String(poolSize(8))))
  *  drift, not a decision —
  *  every value here was reconciled against the scale in the 2026-08 standardization pass. */
 const SCALE = [10.5, 11.5, 13, 13.5, 15, 19, 24]
+/** --fs-nano (9.5px): the ONE size below the floor, and DESIGN.md says avoid it. It passes only
+ *  inside a calendar event chip (its location line — the sole sanctioned use); anywhere else it
+ *  is still reported by both font checks, so a second consumer surfaces here before it spreads. */
+const NANO = 9.5
+const NANO_HOST = '[data-testid="event-chip"]'
 /** Sizes deliberately off the scale, with the reason. Anything not listed is reported. */
 const SCALE_EXEMPT = new Set([
     17, 21, 22, 26, 30, 34, 38, 40, 48, // display/hero type in intro + note titles
@@ -182,18 +187,21 @@ const CHECKS = `(() => {
 
         // 1. TEXT TOO SMALL TO READ. Under any design, body text below the smallest scale step is a
         //    mistake. Uses the scale's own floor rather than an invented number.
+        const nanoOk = fs => Math.abs(fs - ${NANO}) < 0.01 && el.closest('${NANO_HOST}')
         if (hasText(el)) {
             const fs = parseFloat(cs.fontSize)
             // 10px, not 10.5: --fs-micro IS 10.5, and em-derived values land a hair under it
             // (10.49, 9.98) without being a legibility problem. Below 10 is genuinely too small.
-            if (fs && fs < 10) add('text-too-small', cs.fontSize, el)
+            if (fs && fs < 10 && !nanoOk(fs)) add('text-too-small', cs.fontSize, el)
         }
 
         // 2. FONT-SIZE OFF THE TYPE SCALE. Survives restyling: change a token's VALUE and this still
         //    passes, because it checks membership of the scale, not a pixel number.
         if (hasText(el)) {
             const fs = Math.round(parseFloat(cs.fontSize) * 100) / 100
-            if (fs && !seenSize.has(fs)) {
+            // A sanctioned nano is skipped BEFORE the per-size dedupe, so it cannot mark 9.5px as
+            // seen and hide a later, unsanctioned 9.5px outside a chip.
+            if (fs && !seenSize.has(fs) && !nanoOk(fs)) {
                 seenSize.add(fs)
                 const onScale = ${JSON.stringify(SCALE)}.some(s => Math.abs(s - fs) < 0.01)
                 const exempt = ${JSON.stringify([...SCALE_EXEMPT])}.some(s => Math.abs(s - fs) < 0.01)

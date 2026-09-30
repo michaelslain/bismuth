@@ -57,6 +57,11 @@ typography:
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: ".14em"
+  nano:
+    fontFamily: "Monaspace Xenon, ui-monospace, monospace"
+    fontSize: "9.5px"
+    fontWeight: 400
+    lineHeight: 1.3
   prose:
     fontFamily: "IBM Plex Serif, Georgia, serif"
     fontSize: "calc(var(--editor-font-size) * var(--prose-scale))"
@@ -278,7 +283,12 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
 - **UI** (11.5px `--fs-ui`, line-height 1.7): the workhorse. Rail, tabs, tables, menus, popovers,
   and every `[text button]`.
 - **Label / Micro** (10.5px `--fs-micro`, uppercase, `.06em`–`.14em` tracking): eyebrows,
-  status bar, legends. Nothing in the app is set smaller.
+  status bar, legends. The floor: nothing in the app is set smaller, bar the one exception below.
+- **Nano** (9.5px `--fs-nano`) — **avoid.** The single sanctioned exception to the 10.5px floor:
+  a calendar event chip's location line, trailing the title inside a time-grid block too dense
+  for `--fs-micro`. It is not a general "small" size. Its only consumer today is
+  `EventChip.module.css`; a new one needs this entry amended first, naming the use and why
+  `--fs-micro` cannot serve it.
 - **Prose** (`--prose-font-size` = the user's editor size × the face's `--prose-scale`: 1.00 for Plex,
   1.04 for Lora): note body, note headings,
   note tables, chat messages and the chat composer.
@@ -536,6 +546,7 @@ under every edge and label.
 - **Don't** put more than one accent or one `primary` button in a view.
 - **Don't** use emoji in chrome, or add photography, illustration or hand-drawn SVG.
 - **Don't** retype the Monaspace stack; read `--ui-font-stack` (or `--prose-font`).
-- **Don't** set anything smaller than 10.5px, or track body text.
+- **Don't** set anything smaller than 10.5px, or track body text. The one exception is `--fs-nano`
+  for a calendar chip's location; do not reach for it anywhere else (see **Nano**).
 - **Don't** import another component's stylesheet. A second importer means a component nobody
   extracted: extract it, and never copy the stylesheet.
