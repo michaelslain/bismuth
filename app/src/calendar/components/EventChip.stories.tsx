@@ -1,7 +1,8 @@
 // Visual spec for <EventChip> — the single event pill rendered inside the day grid, month
-// cell, and all-day row. Category colour(s) determine the fill: one category tints solid,
-// two+ blend into a gradient, and no resolvable category renders an outline-only "ghost"
-// chip (categoryColor.ts's categoryFill()).
+// cell, and all-day row. Its category colour(s) draw a 1px frame + 2px leading edge over a faint
+// wash of the first category, title in the prose face; a 2+ category event splits its frame into
+// one band per category and shows a dot per category (up to three, then "+n"); no resolvable
+// category renders an outline-only "ghost" chip.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { showEventModal, events } from '../state'
@@ -49,9 +50,9 @@ export const Default: Story = {
     ),
 }
 
-/** Three variants side by side: a multi-category gradient chip, an outline-only "ghost"
- *  chip (no resolvable category), and the compact layout TimeGrid uses for short
- *  (<= 30min) blocks. */
+/** The variants side by side: two-, three- and four-category chips (split frame + a dot per
+ *  category, "+1" past three), an outline-only "ghost" chip (no resolvable category), and the
+ *  compact layout TimeGrid uses for short (<= 30min) blocks. */
 export const Variants: Story = {
     render: () => (
         <Row gap="10px" column>
@@ -65,6 +66,34 @@ export const Variants: Story = {
                         categories: ['Work', 'Focus'],
                     }}
                     categories={CATEGORIES}
+                    store={store}
+                />
+            </div>
+            <div style={{ width: '220px' }}>
+                <EventChip
+                    event={{
+                        id: '2b',
+                        title: 'Offsite dinner',
+                        date: '2026-01-16',
+                        startTime: '19:00',
+                        endTime: '21:00',
+                        category: 'Work',
+                        categories: ['Work', 'Personal', 'Focus'],
+                    }}
+                    categories={CATEGORIES}
+                    store={store}
+                />
+            </div>
+            <div style={{ width: '220px' }}>
+                <EventChip
+                    event={{
+                        id: '2c',
+                        title: 'Everything at once',
+                        date: '2026-01-16',
+                        category: 'Work',
+                        categories: ['Work', 'Personal', 'Focus', 'Health'],
+                    }}
+                    categories={[...CATEGORIES, { name: 'Health', color: 'green' }]}
                     store={store}
                 />
             </div>
@@ -100,6 +129,19 @@ export const Variants: Story = {
             </div>
         </Row>
     ),
+    play: async ({ canvasElement }) => {
+        const chips = within(canvasElement).getAllByTestId('event-chip')
+        // StatusDot marks itself with data-size; the "+n" is plain Text
+        const dots = (el: HTMLElement) => el.querySelectorAll('[data-size]').length
+        // one dot per category for 2 and 3; three dots + a "+1" past three; none on a single category
+        expect(dots(chips[0])).toBe(2)
+        expect(dots(chips[1])).toBe(3)
+        expect(dots(chips[2])).toBe(3)
+        expect(chips[2].textContent).toContain('+1')
+        expect(dots(chips[4])).toBe(0)
+        // the two-category frame is the banded image; a single category's is too (one band)
+        expect(getComputedStyle(chips[0]).borderImageSource).toContain('linear-gradient')
+    },
 }
 
 /** A wrapping location line. The chip's meta row renders `location` at --fs-micro (10.5px),

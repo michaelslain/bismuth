@@ -42,6 +42,9 @@ export const Overlapping: Story = {
         // the second lane starts to the right of the first and both reach the right edge
         expect(b.left).toBeGreaterThan(a.left + 20)
         expect(Math.round(b.right)).toBe(Math.round(a.right))
+        // the stacked lane rules itself off from the one behind; the first lane does not
+        expect(getComputedStyle(slots[0]).boxShadow).toBe('none')
+        expect(getComputedStyle(slots[1]).boxShadow).not.toBe('none')
     },
 }
 

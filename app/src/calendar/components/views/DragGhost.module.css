@@ -1,3 +1,12 @@
 /* Calendar event-create/move drag preview, drawn inside a time-grid day column. NOT `.drag-ghost` —
-   that class belongs to the global pane drag-and-drop ghost (global.css, position:fixed). */
-.ghost { position: absolute; left: var(--sp-2); right: var(--sp-2); z-index: 10; opacity: 0.7; border-radius: var(--r-0); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-ui); color: var(--on-accent); font-weight: 500; pointer-events: none; }
+   that class belongs to the global pane drag-and-drop ghost (global.css, position:fixed).
+   Drawn like an event chip (EventChip.module.css) — a 1px frame split into one band per category,
+   and a wash of the first category — but a step louder (24% wash) so the
+   preview reads as "in motion" over the real events. */
+.ghost {
+    position: absolute; left: var(--sp-2); right: var(--sp-2); z-index: 10; box-sizing: border-box;
+    border-radius: var(--r-0); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-ui); color: var(--fg); font-weight: var(--fw-medium); pointer-events: none;
+    border: 1px solid var(--ghost-c, var(--accent));
+    border-image: var(--ghost-frame, none) 1;
+    background: color-mix(in srgb, var(--ghost-c, var(--accent)) 24%, var(--bg));
+}
