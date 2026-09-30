@@ -1,14 +1,12 @@
 /* Calendar event-create/move drag preview, drawn inside a time-grid day column. NOT `.drag-ghost` —
    that class belongs to the global pane drag-and-drop ghost (global.css, position:fixed).
    Drawn like an event chip (EventChip.module.css) — a 1px frame split into one band per category,
-   a 2px leading edge and a wash of the first category — but a step louder (24% wash) so the
+   and a wash of the first category — but a step louder (24% wash) so the
    preview reads as "in motion" over the real events. */
 .ghost {
     position: absolute; left: var(--sp-2); right: var(--sp-2); z-index: 10; box-sizing: border-box;
     border-radius: var(--r-0); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-ui); color: var(--fg); font-weight: var(--fw-medium); pointer-events: none;
     border: 1px solid var(--ghost-c, var(--accent));
     border-image: var(--ghost-frame, none) 1;
-    background: linear-gradient(var(--ghost-c, var(--accent)), var(--ghost-c, var(--accent))) left top / 2px 100% no-repeat border-box, color-mix(in srgb, var(--ghost-c, var(--accent)) 24%, var(--bg));
+    background: color-mix(in srgb, var(--ghost-c, var(--accent)) 24%, var(--bg));
 }
-/* A 2+ category move: the same 2px banded cap as the event chip. */
-.ghost[data-multi] { border-top-width: 2px; }

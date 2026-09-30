@@ -27,7 +27,6 @@ const DragGhost: Component<DragGhostProps> = props => {
         <div
             class={`${styles.ghost} ${props.class ?? ''}`.trim()}
             data-testid="drag-ghost"
-            data-multi={colors().length > 1 ? '' : undefined}
             style={{
                 top: `${props.top}px`,
                 height: `${props.height}px`,

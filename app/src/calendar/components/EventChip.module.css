@@ -5,7 +5,7 @@
 .event-chip { position: relative; display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-4); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--fg); cursor: pointer; overflow: hidden; margin-bottom: var(--sp-1); font-family: var(--ui-font-stack); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 
 /* The look (2026-09-29, picked over a solid pastel fill, a tint-only and an outline-only variant):
-   a 1px frame and a 2px leading edge in the category hue, over a faint wash of that hue, with the
+   an even 1px frame in the category hue on all four sides, over a faint wash of that hue, with the
    title in --fg. The colours come from custom properties EventChip sets inline — `--ev-c` (first
    category) and `--ev-frame` (every category as side-by-side hard bands) — never a swatch class.
    The frame is a real border painted by `border-image`, so a 2+ category event's top and bottom
@@ -15,7 +15,7 @@
     --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 14%, var(--bg));
     border: 1px solid var(--ev-c, var(--border));
     border-image: var(--ev-frame, none) 1;
-    background: linear-gradient(var(--ev-c, var(--accent)), var(--ev-c, var(--accent))) left top / 2px 100% no-repeat border-box, var(--wash);
+    background: var(--wash);
 }
 .ev:hover { --wash: color-mix(in srgb, var(--ev-c, var(--accent)) 24%, var(--bg)); }
 /* Uncategorised events render as .ghost: a --border outline over the bare ground, muted ink. */
@@ -60,8 +60,7 @@
 .event-chip.in-grid.compact .event-chip-meta { display: none; }
 .event-chip.in-grid.compact .event-chip-dots { top: 0; bottom: 0; height: auto; }
 
-/* A 2+ category event: its top rule thickens to 2px, so the banded frame reads as a cap of its
-   categories at a glance; and room is reserved for the dots (one 6px dot + one gap per shown
+/* A 2+ category event: room is reserved for the dots (one 6px dot + one gap per shown
    category). Last, so it beats every padding shorthand above (in-grid, compact). */
-.event-chip.ev[data-multi] { border-top-width: 2px; padding-right: calc(var(--sp-4) + var(--ev-dots, 0) * (6px + var(--sp-2))); }
+.event-chip.ev[data-multi] { padding-right: calc(var(--sp-4) + var(--ev-dots, 0) * (6px + var(--sp-2))); }
 .event-chip-more { font-size: var(--fs-micro); color: var(--text-muted); line-height: 1; }

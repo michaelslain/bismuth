@@ -30,7 +30,7 @@ interface Props {
 
 export function EventChip(props: Props) {
     // The chip is drawn in its categories' colours (a theme token → var(--token), or a custom
-    // colour): a 1px frame, a 2px leading edge and a faint wash of the FIRST category behind
+    // colour): an even 1px frame and a faint wash of the FIRST category behind
     // --fg ink. A 2+ category event splits its frame into one hard band per category and shows a
     // dot per category, while its wash stays one colour — one event, visibly several categories.
     // Events with no resolvable category render as an outline-only ghost.
