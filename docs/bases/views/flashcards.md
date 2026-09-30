@@ -137,7 +137,7 @@ nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): num
 | Scenario | Behavior | Reason |
 |---|---|---|
 | `cram: true` | `pos + 1` | Standalone helper only — the view routes cram through `nextCramPos` (below). |
-| `cram: false, persisted: true` | stay at `pos` | Graded card drops out on refetch; next card shifts into `pos`. |
+| `cram: false, persisted: true` | stay at `pos` | Graded card leaves the queue at once as a pending grade (see below); next card shifts into `pos`. |
 | `cram: false, persisted: false` | `pos + 1` | Card stays due (no write); must advance to avoid showing it again. |
 
 ```ts
@@ -193,7 +193,7 @@ While the flashcards view is active (and no modal or text field has focus):
 
 Keys `1`/`2`/`3` are ignored until the card is revealed.
 
-These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. There is no on-card `SPACE to reveal answer` hint and no boxed key chip beside the grade buttons — each grading button's `title` attribute (`hard (1)`, `good (2)`, `easy (3)`) renders `settings.keybindings[id]` instead, so a rebind updates the hover hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
+These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. There is no on-card `SPACE to reveal answer` hint. Each grade button (`bases/GradeButton.tsx`) shows its key as a muted cap directly under its label, and its `title` (`hard (1)`, `good (2)`, `easy (3)`) names it too — both render `settings.keybindings[id]`, so a rebind updates the caps and the hover hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
 
 ---
 
@@ -393,7 +393,7 @@ For grading, the `fields` parameter overrides which due/ease/interval columns ar
 
 **New card with null/empty due is always due**: this is intentional — when you add a card without scheduling columns it surfaces immediately for first review.
 
-**Queue position stays put on grade (non-cram, persisted)**: after grading, `onReviewed()` triggers a refetch. The graded card's due date is now in the future so it drops out of the queue. The queue array shrinks by one, shifting all subsequent cards left. By keeping `pos` at the same integer the component automatically advances to what was previously `pos + 1` — without incrementing. This prevents a skip-one bug where `pos` would jump over the immediately next card.
+**Queue position stays put on grade (non-cram, persisted)**: grading records the card as a **pending grade** (`flashcardsQueue.ts`'s `withoutPending`/`livePending`, keyed by `itemKey` → the due value it was graded at), which drops it from the queue in the same update that un-reveals it. The queue shrinks by one, so keeping `pos` at the same integer shows what was previously `pos + 1` — without incrementing, which would skip a card. The host refetch (`onReviewed()`) is NOT what advances: BaseView serves it from a cache that stays fresh until the SSE version bump, which lands after the write's response, so it can come back with the pre-write rows. Relying on it once turned the graded card back to its front and needed a second grade (and a second review write) to move on. The pending entry hides the card only while its row still carries the pre-grade due; the refetch that brings the new due prunes it. A failed write removes the entry, putting the card back.
 
 **Drag-reorder uses native HTML5 drag-and-drop**: it fires on the row-number handle element only (`draggable={true}` on `.cards-num`). The row itself handles `onDragOver` + `onDrop`. `onDragEnd` clears state if the drop lands outside a valid target.
 

@@ -1,0 +1,5 @@
+/* GradeButton.module.css — one flashcard grade (bases/GradeButton.tsx): the bracket button over its
+   keybinding caps. A column centred on the label, so each cap sits under the middle of its word
+   whatever the word's width. */
+.grade { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+.key { display: flex; justify-content: center; }
