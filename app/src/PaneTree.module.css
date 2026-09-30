@@ -33,6 +33,15 @@
 /* During a divider drag, sizing must track the cursor exactly — no transition/anim lag. */
 .pane-split.resizing > .pane-child { transition: none; animation: none; }
 
-.pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
-.pane-divider.col { cursor: row-resize; }
-.pane-divider:hover { background: var(--accent); }
+/* THE DIVIDER IS THE APP'S BORDER. It takes no layout width of its own and paints exactly the
+   hairline every other boundary uses (--rule-soft: the sidebar's border-right, the tab rail's
+   border-left, every bar's bottom) — it used to be a 5px --border slab, a second, heavier kind of
+   line that read as a gutter rather than an edge. A 1px line is too thin to grab, so the drag
+   target is an invisible ::before centred on it, --pane-divider-width wide (ui.paneDividerWidth,
+   which is therefore a GRAB width now, not a painted one). It overlaps the panes' edges by half
+   that on each side; z-index keeps it above them so the resize cursor wins there. */
+.pane-divider { position: relative; z-index: 1; flex: 0 0 0; border-left: var(--rule-soft); cursor: col-resize; }
+.pane-divider.col { border-left: 0; border-top: var(--rule-soft); cursor: row-resize; }
+.pane-divider::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: var(--pane-divider-width, 5px); transform: translateX(-50%); }
+.pane-divider.col::before { top: 50%; bottom: auto; left: 0; right: 0; width: auto; height: var(--pane-divider-width, 5px); transform: translateY(-50%); }
+.pane-divider:hover { border-color: var(--accent); }

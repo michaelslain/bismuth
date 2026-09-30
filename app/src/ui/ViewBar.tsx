@@ -4,9 +4,11 @@
 // (readouts · config · actions), composed through NAMED SLOTS rather than positional
 // children. Replaces per-view bespoke `.viewbar` markup so every header is
 // structurally identical.
-import { children, type JSX, Show } from 'solid-js'
+import { children, type JSX, onCleanup, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Band from './Band'
+import IconButton from './IconButton'
+import { usePaneChrome } from './paneChrome'
 import styles from './ViewBar.module.css'
 
 /** Appends an optional extra class to a base (hashed) one — used throughout for the `class`/
@@ -92,13 +94,39 @@ function ViewBar(props: ViewBarProps) {
         return Array.isArray(v) ? v.some(present) : present(v)
     }
 
+    // PANE CHROME (ui/paneChrome.ts). Inside a pane the first bar to mount claims the pane's close +
+    // drag, so a split pane shows ONE row — this bar — instead of PaneHeader stacked over it
+    // repeating the same icon and name. Claimed synchronously in the body, not onMount, so
+    // PaneLeaf never paints its fallback header for a frame first. An unsplit tab has no chrome,
+    // so the bar is unchanged there.
+    const pane = usePaneChrome()
+    const me = Symbol('viewbar')
+    if (pane) onCleanup(pane.claim(me))
+    const ownsChrome = () => !!pane && pane.split() && pane.owner() === me
+    // The bar is the drag handle, except where the press lands on something that is its own
+    // control. TAG and attribute selectors only — a class name would be hashed and silently
+    // match nothing (CLAUDE.md "Reach through the tree").
+    const onPointerDown = (e: PointerEvent) => {
+        if (!ownsChrome() || e.button !== 0) return
+        const t = e.target as Element | null
+        if (t?.closest('button, input, textarea, select, a, [contenteditable]'))
+            return
+        pane!.startDrag(e)
+    }
+
     // Every region wrapper below carries `styles.vbRegion` in addition to its own slot class —
     // purely so the collapse ladder (ViewBar.module.css) can find "any of the six regions" without
     // a `[class^='vb-']` prefix match, which breaks the moment these classes are hashed (a hashed
     // local no longer starts with the literal "vb-"). `styles.vbRegion` is never referenced from
     // outside this file.
     return (
-        <Band class={cx(styles.viewbar, props.class)} data-viewbar>
+        <Band
+            class={cx(styles.viewbar, props.class)}
+            data-viewbar
+            data-pane-chrome={ownsChrome() ? '' : undefined}
+            data-pane-dim={ownsChrome() && !pane!.focused() ? '' : undefined}
+            onPointerDown={onPointerDown}
+        >
             <div
                 class={cx(styles['vb-lead'], props.parts?.lead)}
                 data-testid="vb-lead"
@@ -154,6 +182,24 @@ function ViewBar(props: ViewBarProps) {
                         data-testid="vb-actions"
                     >
                         {actions()}
+                    </div>
+                </Show>
+                {/* The pane's [×]: last in the trail, after the primary action, and never on the
+                    collapse ladder (no data-bar-drop, no vbRegion) — it is the only close a split
+                    pane has. Handlers are PaneHeader.tsx's, verbatim. */}
+                <Show when={ownsChrome()}>
+                    <div class={styles['vb-pane']} data-testid="vb-pane">
+                        <IconButton
+                            icon="X"
+                            label="Close pane"
+                            variant="unselected"
+                            onPointerDown={e => e.stopPropagation()} // don't start a pane drag
+                            onMouseDown={e => {
+                                e.stopPropagation() // don't also trigger focus
+                                e.preventDefault()
+                                pane!.close()
+                            }}
+                        />
                     </div>
                 </Show>
             </div>

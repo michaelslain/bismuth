@@ -1,63 +1,45 @@
 // app/src/PaneHeader.tsx
-// The mini view-bar breadcrumb shown atop a pane when a tab's tree has more than one leaf —
-// lifted out of PaneLeaf (PaneTree.tsx) so the header chrome can be posed and gated on its own.
+// The title row of a split pane whose view draws NO bar of its own — notes, terminal, sheets,
+// drawings, the empty pane. A view that does draw a ViewBar claims the pane's close + drag through
+// ui/paneChrome.ts and carries the [×] in its own bar, so PaneLeaf renders this only while nothing
+// has claimed (it used to sit above every view, repeating the icon and name the view's bar
+// already showed).
 //
-// Class names are reached through this component's own colocated `PaneHeader.module.css`. The
-// "focused" brightening used to be a class-based descendant selector (`.pane-leaf.focused
-// .pane-header`) that forced this module to be shared with PaneLeaf — now it reads a
-// `data-pane-focused` attribute PaneLeaf.tsx sets on its root instead (see PaneHeader.module.css),
-// so each component owns its own stylesheet.
+// IT IS A NAME-ONLY ViewBar under its own pane chrome, not a bespoke row. It used to be a 24px
+// strip on --rail with its own title rule, beside a neighbouring pane's 36px bar on the plain
+// ground — two heights, two fills, two [×] sizes, hairlines that never lined up across a split.
+// Rendering through ViewBar makes every split pane's top the same primitive, and the [×], the
+// drag handle (the bar outside its controls) and the unfocused-pane title dim all come from
+// ViewBar's own pane-chrome handling rather than a second copy here.
 //
-// The header's own `onPointerDown` starts a pane drag (see PaneLeaf's `onStartPaneDrag`). The
-// close button used to guard against that by having the PARENT interrogate `e.target`'s class
-// list for `"pane-header-x"` — a DOM-string check that would silently stop matching once the CSS
-// half hashes that class. The close button now declares the pointerdown is its own by stopping it
-// directly (`stopPropagation` on `onPointerDown`), so the header's own pointerdown handler never
-// sees it. Note `stopPropagation` on `onClick`/`onMouseDown` would NOT have covered this — pointerdown
-// is its own event and bubbles independently.
-//
-// The close button is `variant="unselected"` (ds-bridges Task 1) — a rest opacity of 0.5 that
-// goes to full opacity + accent brackets on hover, with NO background fill (IconButton's own
-// unselected/hover treatment). It used to carry a PaneHeader-local hover rule that painted
-// `--state-hover-bg` behind it; that fill is gone at the user's request (no background fills on
-// buttons) and the plain `variant="unselected"` state already gives the right rest/hover opacity,
-// so the local override and its `pane-header-x` class are gone too.
-import { Show } from 'solid-js'
-import styles from './PaneHeader.module.css'
-import { Icon } from './icons/Icon'
-import { IconButton } from './ui/IconButton'
-import Label from './ui/Label'
+// Its chrome is its OWN createPaneChrome, not PaneLeaf's: PaneLeaf shows this header only while
+// its chrome is unclaimed, so if this bar claimed that same chrome it would hide itself.
+import ViewBar, { Crumb } from './ui/ViewBar'
+import { createPaneChrome, PaneChromeContext } from './ui/paneChrome'
 
-export function PaneHeader(props: {
+export type PaneHeaderProps = {
     icon?: string
     label: string
+    /** The pane has focus; unfocused, the title dims. Defaults to focused. */
+    focused?: boolean
     onPointerDown: (e: PointerEvent) => void
     onClose: () => void
-}) {
+    class?: string
+}
+
+export function PaneHeader(props: PaneHeaderProps) {
+    const chrome = createPaneChrome({
+        split: () => true,
+        focused: () => props.focused ?? true,
+        close: () => props.onClose(),
+        startDrag: e => props.onPointerDown(e),
+    })
     return (
-        <div class={styles['pane-header']} onPointerDown={props.onPointerDown}>
-            <Show when={props.icon}>
-                {icon => (
-                    <Icon
-                        value={icon()}
-                        class={styles['pane-header-icon']}
-                    />
-                )}
-            </Show>
-            <Label fill class={styles['pane-header-label']}>
-                {props.label}
-            </Label>
-            <IconButton
-                icon="X"
-                label="Close pane"
-                variant="unselected"
-                onPointerDown={e => e.stopPropagation()} // don't start a pane drag
-                onMouseDown={e => {
-                    e.stopPropagation() // don't also trigger focus
-                    e.preventDefault()
-                    props.onClose()
-                }}
+        <PaneChromeContext.Provider value={chrome}>
+            <ViewBar
+                class={props.class}
+                identity={<Crumb icon={props.icon}>{props.label}</Crumb>}
             />
-        </div>
+        </PaneChromeContext.Provider>
     )
 }

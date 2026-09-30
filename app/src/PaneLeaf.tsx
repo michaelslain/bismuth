@@ -7,17 +7,14 @@
 // `PaneDropZone.tsx` — see those files for why.
 //
 // Class names are reached through this component's own colocated `PaneLeaf.module.css`. Focus
-// state used to brighten PaneHeader via the class-based ancestor selector `.pane-leaf.focused
-// .pane-header`, which required sharing one module across both components (CSS Modules hash per
-// file, so a selector spanning two components' classes cannot resolve once they hash separately).
-// Now this component sets a `data-pane-focused` RUNTIME HOOK (data-* attribute, never hashed) on
-// its own root, and PaneHeader.module.css's rule reads `[data-pane-focused] .pane-header` — no
-// class from this module involved, so each component keeps its own stylesheet.
+// reaches the pane's title through ui/paneChrome.ts's `focused` (the bar that owns the chrome dims
+// its title when unfocused), not through any selector crossing into another component's styles.
 import { Show, type Accessor } from 'solid-js'
 import styles from './PaneLeaf.module.css'
 import type { PaneNode, Leaf } from './panes'
 import { PaneContent } from './PaneContent'
 import { PaneHeader } from './PaneHeader'
+import { createPaneChrome, PaneChromeContext } from './ui/paneChrome'
 import { PaneDropZone } from './PaneDropZone'
 import { contentLabel, contentIcon } from './tabIds'
 import type { DragState } from './dnd/viewDrag'
@@ -100,6 +97,20 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
         return null
     }
 
+    const label = () =>
+        props.terminalLabel?.(props.node.content) ??
+        contentLabel(props.node.content)
+
+    // Close + drag, handed to the content (ui/paneChrome.ts). A view with a ViewBar claims them and
+    // carries the [×] in its own bar, so a split pane shows ONE row; PaneHeader below is the
+    // fallback for views that draw no bar (notes, terminal, sheets, drawings).
+    const chrome = createPaneChrome({
+        split: () => props.showHeader,
+        focused: () => props.node.id === props.focusId,
+        close: () => props.onClose(props.node.id),
+        startDrag: e => props.onStartPaneDrag(e, props.node.id, label()),
+    })
+
     return (
         <div
             class={styles['pane-leaf']}
@@ -109,46 +120,34 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
             // is hashed at build time, so a string-literal class selector would compile and match
             // nothing.
             data-pane-content={props.node.content}
-            // Runtime hook read by PaneHeader.module.css's `[data-pane-focused] .pane-header`
-            // rule, so the focus brightening can cross the file boundary without a shared module.
-            data-pane-focused={
-                props.node.id === props.focusId ? true : undefined
-            }
             onMouseDown={() => props.onFocus(props.node.id)}
             onContextMenu={e => {
                 e.preventDefault()
                 props.onMenu(props.node.id, e.clientX, e.clientY)
             }}
         >
-            <Show when={props.showHeader}>
+            <Show when={props.showHeader && !chrome.owner()}>
                 <PaneHeader
                     icon={contentIcon(props.node.content)}
-                    label={
-                        props.terminalLabel?.(props.node.content) ??
-                        contentLabel(props.node.content)
-                    }
-                    onPointerDown={e =>
-                        props.onStartPaneDrag(
-                            e,
-                            props.node.id,
-                            props.terminalLabel?.(props.node.content) ??
-                                contentLabel(props.node.content),
-                        )
-                    }
-                    onClose={() => props.onClose(props.node.id)}
+                    label={label()}
+                    focused={props.node.id === props.focusId}
+                    onPointerDown={chrome.startDrag}
+                    onClose={chrome.close}
                 />
             </Show>
             <div class={styles['pane-body']}>
-                <PaneContent
-                    path={props.node.content}
-                    onSaved={props.onSaved}
-                    onOpen={props.onOpen}
-                    onNewTerminal={() => props.onNewTerminal(props.node.id)}
-                    noteNames={props.noteNames}
-                    memoryNames={props.memoryNames}
-                    tagNames={props.tagNames}
-                    tabName={() => props.chatTabName?.(props.node.content)}
-                />
+                <PaneChromeContext.Provider value={chrome}>
+                    <PaneContent
+                        path={props.node.content}
+                        onSaved={props.onSaved}
+                        onOpen={props.onOpen}
+                        onNewTerminal={() => props.onNewTerminal(props.node.id)}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                        tabName={() => props.chatTabName?.(props.node.content)}
+                    />
+                </PaneChromeContext.Provider>
             </div>
             <Show when={activeZone()}>{z => <PaneDropZone zone={z()} />}</Show>
             {/* Reference drop cue (Row 74 + 74c): a full-pane affordance that reads "drop to

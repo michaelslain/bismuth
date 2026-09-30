@@ -453,7 +453,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 5,
             min: 3,
             max: 12,
-            doc: 'Thickness of the draggable divider between split panes (px).',
+            doc: 'Grab width of the divider between split panes (px). The visible line is always the 1px app border; this is the invisible strip around it you can drag.',
         },
         cardGridMinWidth: {
             type: 'number',

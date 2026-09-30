@@ -11,6 +11,7 @@ import { SegmentedToggle } from './SegmentedToggle'
 import { IconButton } from './IconButton'
 import { TextButton } from './TextButton'
 import Text from './Text'
+import { createPaneChrome, PaneChromeContext } from './paneChrome'
 
 const meta = {
     title: 'UI/ViewBar',
@@ -379,5 +380,98 @@ export const BelowFloor: Story = {
          * to `auto` too, so a focused button's outline-offset inside `.vb-lead` gets clipped by
          * the scrolling band. Reported to the controller rather than fixed here — the rule lives in
          * ui/ViewBar.module.css, which is another task's file. */
+    },
+}
+
+/** A pane's chrome, posed without PaneLeaf: `split` is the only input that matters to the bar. */
+function InPane(props: { split: boolean; children: JSX.Element }) {
+    const chrome = createPaneChrome({
+        split: () => props.split,
+        focused: () => true,
+        close: () => {},
+        startDrag: () => {},
+    })
+    return (
+        <PaneChromeContext.Provider value={chrome}>
+            {props.children}
+        </PaneChromeContext.Provider>
+    )
+}
+
+/**
+ * PANE CHROME (ui/paneChrome.ts). Inside a SPLIT pane the bar claims the pane's close + drag: the
+ * [×] is the trail's last group, after the primary action, and the bar is the drag handle
+ * (`data-pane-chrome`, grab cursor). This is what replaces PaneHeader stacked over the bar
+ * repeating the same icon and name — see App/PaneTree's RowSplitBarBesideNote for the two side by
+ * side.
+ */
+export const InSplitPane: Story = {
+    render: () => (
+        <Frame>
+            <InPane split={true}>
+                <ViewBar
+                    identity={
+                        <Crumb icon="FileText">
+                            Topic 6: Market power and antitrust.pdf
+                        </Crumb>
+                    }
+                    readouts={<Text tone="muted">p. 8 / 56</Text>}
+                    config={<TextButton title="Fit width">fit</TextButton>}
+                    actions={<IconButton icon="PanelRight" label="Bookmarks" />}
+                />
+            </InPane>
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector('[data-viewbar]')!
+        await expect(bar.hasAttribute('data-pane-chrome')).toBe(true)
+        const trail = bar.querySelector('[data-testid="vb-trail"]')!
+        await expect(trail.lastElementChild?.getAttribute('data-testid')).toBe(
+            'vb-pane',
+        )
+        await expect(
+            within(bar as HTMLElement).getByLabelText('Close pane'),
+        ).toBeTruthy()
+    },
+}
+
+/** An UNSPLIT tab has no pane chrome: the bar claims, but draws no [×] and is no drag handle —
+ *  identical to a bar outside any pane. */
+export const InUnsplitPane: Story = {
+    render: () => (
+        <Frame>
+            <InPane split={false}>
+                <ViewBar identity={<Crumb icon="FileText">example.ts</Crumb>} />
+            </InPane>
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector('[data-viewbar]')!
+        await expect(bar.hasAttribute('data-pane-chrome')).toBe(false)
+        await expect(bar.querySelector('[data-testid="vb-pane"]')).toBeNull()
+    },
+}
+
+/** FIRST CLAIMANT WINS: a view that nests a second bar (the daemon page's bar, then its chat's
+ *  header) shows the [×] once, on the first. */
+export const NestedBarsFirstClaims: Story = {
+    render: () => (
+        <Frame>
+            <InPane split={true}>
+                <ViewBar identity={<Crumb icon="Bot">Daemon</Crumb>} />
+                <ViewBar identity={<Crumb icon="MessageSquare">Chat</Crumb>} />
+            </InPane>
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bars = canvasElement.querySelectorAll('[data-viewbar]')
+        await expect(bars.length).toBe(2)
+        await expect(
+            bars[0].querySelector('[data-testid="vb-pane"]'),
+        ).not.toBeNull()
+        await expect(
+            bars[1].querySelector('[data-testid="vb-pane"]'),
+        ).toBeNull()
+        await expect(bars[1].hasAttribute('data-pane-chrome')).toBe(false)
     },
 }
