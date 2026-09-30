@@ -17,6 +17,8 @@ import type {
 import { AsciiGraphRenderer } from './graph/AsciiGraphRenderer'
 import { GraphAtmosphere, type BloomSink } from './graph/GraphAtmosphere'
 import GraphLayerToggles from './graph/GraphLayerToggles'
+import GraphStatusLine from './graph/GraphStatusLine'
+import fpsColor from './graph/fpsColor'
 import {
     graphClusters,
     graphGradient,
@@ -31,7 +33,6 @@ import { resolveAppearance } from './themes'
 import { readCache, writeCache } from './viewCache'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
-import { plural } from './plural'
 import { IconButton } from './ui/IconButton'
 import IconBar from './ui/IconBar'
 import { TextButton } from './ui/TextButton'
@@ -58,14 +59,6 @@ function hoverLabel(node: HoverNode): string {
     return node.kind === 'note' ? `${node.id}.md` : node.label
 }
 
-// FPS readout color is a fixed traffic-light scale (green/yellow/red), NOT derived
-// from the theme's palette CSS vars — it should mean the same thing in every theme.
-// The scale itself lives as --hud-fps-* tokens in global.css's `styles/tokens.css` section.
-function fpsColor(fps: number): string {
-    if (fps >= 50) return 'var(--hud-fps-good)' // green: smooth
-    if (fps >= 30) return 'var(--hud-fps-ok)' // yellow: usable
-    return 'var(--hud-fps-bad)' // red: janky
-}
 
 // Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
 // NOT a persisted setting. Toggling it must never write settings.yaml (doing so
@@ -172,6 +165,10 @@ export function GraphView(props: {
     let mounted = false
     let lastGraph: GraphData | null = null
     const [hovered, setHovered] = createSignal<HoverNode | null>(null)
+    const hoverText = () => {
+        const node = hovered()
+        return node ? hoverLabel(node) : null
+    }
     const [fps, setFps] = createSignal<number | null>(null)
     // Zoom is RESOLUTION, not scale: 100% fits the whole graph on the grid (graph-size relative),
     // 0% is a fixed absolute resolution with every note individually distinguishable, independent of
@@ -736,15 +733,6 @@ export function GraphView(props: {
                             </TextButton>
                         </div>
                     </Show>
-                    <Show when={!props.mini && hovered()}>
-                        {node => (
-                            <Badge
-                                class={`${styles['graph-hud-pill']} ${styles['graph-hud-hover']}`}
-                            >
-                                {hoverLabel(node())}
-                            </Badge>
-                        )}
-                    </Show>
                     <Show when={settings.graph.showFps && fps() !== null}>
                         <Badge
                             class={styles['graph-bottom-fps']}
@@ -753,46 +741,21 @@ export function GraphView(props: {
                             {fps()} fps
                         </Badge>
                     </Show>
-                    {/* Readout — last child of `.graph-bottom-bar` (moved off `position: absolute`
-                so it can no longer be painted over by a long hover pill; see this file's header
-                and GraphView.module.css). Same .asc-popover surface as the legend card and the
-                find panel, because all three float over the same field and must read as one
-                material.
-                    Task 3 (ds-polish): one running `//`-joined line — nodes // edges // mode // zoom%
-                    (// fps only while the fps segment shows) — same font-size (--fs-ui) and
-                    `bottom` as `.graph-hud-hover` below, so the two pills read as one HUD register.
-                    ONE `<Text>`, not several: `.graph-stats` is `display: flex`, and a flex ITEM's
-                    own leading/trailing whitespace gets trimmed by the browser's line-box edge
-                    rules (each flex item is its own isolated line) — splitting the zoom%/fps
-                    segments into sibling flex items silently ate the spaces around their `//`
-                    separators ("brain //100%//60 fps"). Nesting them INSIDE the one flex item's
-                    content keeps them in normal inline flow, where interior whitespace is not an
-                    edge and survives. */}
-                    <Popover class={styles['graph-stats']}>
-                        <Text as="span" inherit>
-                            {plural(nodeCount(), 'node')} //{' '}
-                            {plural(edgeCount(), 'edge')} // {modeLabel()} //{' '}
-                            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles['graph-zoom-pct']}
-                            >
-                                {zoomPct()}%
-                            </Text>
-                            <Show when={settings.graph.showFps && fps() !== null}>
-                                {' '}//{' '}
-                                <Text
-                                    as="span"
-                                    inherit
-                                    style={{ color: fpsColor(fps()!) }}
-                                >
-                                    {fps()} fps
-                                </Text>
-                            </Show>
-                        </Text>
-                    </Popover>
                 </div>
+                {/* The floor's status line — the full pane only; under 521px (and always in the
+                sidebar mini-graph) `.graph-status` hides it and the bottom bar's own fps badge
+                takes over. */}
+                <Show when={!props.mini}>
+                    <GraphStatusLine
+                        class={styles['graph-status']}
+                        hover={hoverText()}
+                        nodes={nodeCount()}
+                        edges={edgeCount()}
+                        mode={modeLabel()}
+                        zoom={zoomPct()}
+                        fps={settings.graph.showFps ? fps() : null}
+                    />
+                </Show>
             </div>
         </div>
     )

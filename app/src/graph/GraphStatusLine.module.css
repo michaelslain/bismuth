@@ -1,0 +1,63 @@
+/* app/src/graph/GraphStatusLine.module.css — GraphStatusLine.tsx's own stylesheet.
+
+   A terminal status bar along the graph's floor. The side padding is Band's (--sp-5), so the path
+   starts on the same edge as the "Knowledge Graph" crumb in the ViewBar above; the hairline is the
+   same --rule-soft that band draws under itself, mirrored to the top. The ground is --pop-bg (the
+   HUD surface every graph overlay uses, --bg at .88) so field glyphs drifting under the strip dim
+   out instead of colliding with the text. Height is --h-control: one row of --fs-ui text with air
+   above and below; --h-row would crowd it against the hairline. */
+.status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--h-control);
+  padding: 0 var(--sp-5);
+  box-sizing: border-box;
+  border-top: var(--rule-soft);
+  background: var(--pop-bg);
+  font-family: inherit;
+  font-size: var(--fs-ui);
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Left: shrinks first. Two items inside so the FOLDER gives way before the file name — the
+   100:1 shrink weights make the folder absorb nearly all of the squeeze. The folder ellipsizes
+   from its LEFT (rtl + an LRM in the markup keeping the trailing slash in place), so what survives
+   is the part nearest the file, and its 6ch floor keeps a visible `…es/` rather than letting the
+   folder vanish without a trace. */
+.path {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.dir {
+  flex: 0 100 auto;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  color: var(--faint);
+}
+.name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
+/* Right: never shrinks, tabular so the digits don't jitter as the zoom steps. */
+.readout {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}

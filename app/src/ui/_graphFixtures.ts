@@ -23,7 +23,7 @@ const NOTE_TITLES = [
 const TAG_NAMES = ['project', 'logistics', 'reading']
 
 /** The id of `sampleGraphData`'s hub note — an index note linking every other note, so it settles
- *  at the layout's centroid (the HudBadges story hovers the canvas centre and relies on that). A
+ *  at the layout's centroid (the StatusLine story hovers the canvas centre and relies on that). A
  *  real note, not the retired `self`/"You" node: no live graph mode carries that any more
  *  (displayGraph.ts), so a fixture showing it would picture a graph the app never draws. */
 export const SAMPLE_HUB_ID = 'index'
