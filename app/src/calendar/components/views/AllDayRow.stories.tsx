@@ -35,6 +35,12 @@ export const FillsParent: Story = {
         // Fails if `fill` stops growing the row (reverts to content-sized) — the row's bottom
         // would sit well above the parent's, leaving a blank void below it.
         expect(Math.abs(cells[0].parentElement!.getBoundingClientRect().bottom - parentBottom)).toBeLessThanOrEqual(1)
+        // typed as an ASCII grid: this is the band's last row, so every cell closes its bottom, and
+        // its top belongs to the header above (none here)
+        expect(canvasElement.querySelectorAll('[data-corner="bottom-left"]')).toHaveLength(5)
+        expect(canvasElement.querySelectorAll('[data-corner="top-left"]')).toHaveLength(0)
+        expect(canvasElement.querySelectorAll('[data-corner="bottom-right"]')).toHaveLength(1)
+        cells.forEach(c => expect(getComputedStyle(c).borderLeftWidth).toBe('0px'))
     },
 }
 

@@ -3,6 +3,7 @@ import type { CalendarEvent, Category } from '../../types'
 import { EventStore } from '../../EventStore'
 import { dragState } from '../../state'
 import { eventCategoryColors } from '../../categoryColor'
+import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
 import DragGhost from './DragGhost'
 import TimeGridEvent from './TimeGridEvent'
 import {
@@ -20,6 +21,13 @@ export type TimeGridDayColumnProps = {
     /** `YYYY-MM-DD` */
     date: string
     today?: boolean
+    /** The rightmost day: adds the `|` that closes the grid on its right. Default true, so a column
+     *  on its own is closed. TimeGrid passes it for the last date only. */
+    last?: boolean
+    /** Something above the column (TimeGrid's all-day row) already types the first hour's `-`, so
+     *  this column leaves it out rather than overprint it. Default false: a column on its own
+     *  types its own top. */
+    topTyped?: boolean
     /** Every event in view; the column keeps its own day's timed ones. */
     events: CalendarEvent[]
     categories: Category[]
@@ -30,7 +38,9 @@ export type TimeGridDayColumnProps = {
     onEventMouseDown: (e: MouseEvent, event: CalendarEvent, masterId?: string) => void
 }
 
-/** One day of the hourly grid. Reads the shared `dragState` for its own ghost and to dim the
+/** One day of the hourly grid, typed as an ASCII grid: each hour block hosts an `AsciiCellEdges`
+ *  overlay giving its hour `-` (top) and the day `|` (left); the last column adds its right `|`
+ *  and the last hour its bottom `-`. The half-hour cell carries no line. Reads the shared `dragState` for its own ghost and to dim the
  *  event being moved; every pointer handler is the grid's. */
 const TimeGridDayColumn: Component<TimeGridDayColumnProps> = props => {
     const layout = createMemo(() => layoutDay(timedOn(props.events, props.date)))
@@ -63,10 +73,18 @@ const TimeGridDayColumn: Component<TimeGridDayColumnProps> = props => {
             onMouseDown={e => props.onMouseDown(e)}
         >
             <Index each={HOURS}>
-                {() => (
+                {(_, h) => (
                     <div class={styles.hourBlock}>
                         <div class={styles.hourCell} />
                         <div class={styles.halfCell} />
+                        <AsciiCellEdges
+                            edges={[
+                                ...(h === 0 && props.topTyped ? [] : ['top' as const]),
+                                'left' as const,
+                                ...((props.last ?? true) ? ['right' as const] : []),
+                                ...(h === HOURS.length - 1 ? ['bottom' as const] : []),
+                            ]}
+                        />
                     </div>
                 )}
             </Index>
